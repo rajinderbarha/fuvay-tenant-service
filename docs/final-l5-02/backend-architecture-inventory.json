@@ -1,0 +1,541 @@
+{
+ "engine_count": 67,
+ "engines": [
+  {
+   "engine": "admin_catalog",
+   "path": "app/engines/admin_catalog",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": true
+  },
+  {
+   "engine": "ai_chat",
+   "path": "app/engines/ai_chat",
+   "has_router": true,
+   "has_service": true,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "ai_conversation",
+   "path": "app/engines/ai_conversation",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "analytics",
+   "path": "app/engines/analytics",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "appointment",
+   "path": "app/engines/appointment",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "auth",
+   "path": "app/engines/auth",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": true
+  },
+  {
+   "engine": "booking",
+   "path": "app/engines/booking",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "brands",
+   "path": "app/engines/brands",
+   "has_router": true,
+   "has_service": true,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "chat",
+   "path": "app/engines/chat",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "coaching_appointment",
+   "path": "app/engines/coaching_appointment",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "complaints",
+   "path": "app/engines/complaints",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "compliance",
+   "path": "app/engines/compliance",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "customer_credits",
+   "path": "app/engines/customer_credits",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "customer_flow",
+   "path": "app/engines/customer_flow",
+   "has_router": true,
+   "has_service": true,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "customer_reviews",
+   "path": "app/engines/customer_reviews",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "dashboard_command_center",
+   "path": "app/engines/dashboard_command_center",
+   "has_router": true,
+   "has_service": true,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "data_science",
+   "path": "app/engines/data_science",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "dispatch",
+   "path": "app/engines/dispatch",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "document",
+   "path": "app/engines/document",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "engine_mgmt",
+   "path": "app/engines/engine_mgmt",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "enterprise_grid",
+   "path": "app/engines/enterprise_grid",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "execution",
+   "path": "app/engines/execution",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "field_ops",
+   "path": "app/engines/field_ops",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "final_records",
+   "path": "app/engines/final_records",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "finance_hub",
+   "path": "app/engines/finance_hub",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "food",
+   "path": "app/engines/food",
+   "has_router": true,
+   "has_service": false,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "form_builder",
+   "path": "app/engines/form_builder",
+   "has_router": false,
+   "has_service": false,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "geo",
+   "path": "app/engines/geo",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "home_service_assignment",
+   "path": "app/engines/home_service_assignment",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "home_service_booking",
+   "path": "app/engines/home_service_booking",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "inventory",
+   "path": "app/engines/inventory",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "invoice_payment",
+   "path": "app/engines/invoice_payment",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "leads",
+   "path": "app/engines/leads",
+   "has_router": true,
+   "has_service": false,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "location_engine",
+   "path": "app/engines/location_engine",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "loyalty",
+   "path": "app/engines/loyalty",
+   "has_router": true,
+   "has_service": false,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "marketing",
+   "path": "app/engines/marketing",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "marketing_automation",
+   "path": "app/engines/marketing_automation",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "marketing_command_center",
+   "path": "app/engines/marketing_command_center",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "media",
+   "path": "app/engines/media",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "notification",
+   "path": "app/engines/notification",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "package_commerce",
+   "path": "app/engines/package_commerce",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "payment",
+   "path": "app/engines/payment",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "platform_commerce",
+   "path": "app/engines/platform_commerce",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": true
+  },
+  {
+   "engine": "platform_notifications",
+   "path": "app/engines/platform_notifications",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "pricing",
+   "path": "app/engines/pricing",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": true
+  },
+  {
+   "engine": "profile",
+   "path": "app/engines/profile",
+   "has_router": true,
+   "has_service": true,
+   "has_models": false,
+   "has_schemas": true
+  },
+  {
+   "engine": "promo",
+   "path": "app/engines/promo",
+   "has_router": true,
+   "has_service": false,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "provider_portal",
+   "path": "app/engines/provider_portal",
+   "has_router": true,
+   "has_service": false,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "public_registration",
+   "path": "app/engines/public_registration",
+   "has_router": true,
+   "has_service": false,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "quote_checklist",
+   "path": "app/engines/quote_checklist",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "rag",
+   "path": "app/engines/rag",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "real_estate",
+   "path": "app/engines/real_estate",
+   "has_router": true,
+   "has_service": false,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "real_estate_lead",
+   "path": "app/engines/real_estate_lead",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "review",
+   "path": "app/engines/review",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "roles_permissions",
+   "path": "app/engines/roles_permissions",
+   "has_router": true,
+   "has_service": true,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "security",
+   "path": "app/engines/security",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "service_catalog",
+   "path": "app/engines/service_catalog",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "service_setup",
+   "path": "app/engines/service_setup",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "serviceability",
+   "path": "app/engines/serviceability",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": true
+  },
+  {
+   "engine": "settings_engine",
+   "path": "app/engines/settings_engine",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "subscription",
+   "path": "app/engines/subscription",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "tenant_engine",
+   "path": "app/engines/tenant_engine",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "trust_quality",
+   "path": "app/engines/trust_quality",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "vertical_billing",
+   "path": "app/engines/vertical_billing",
+   "has_router": false,
+   "has_service": false,
+   "has_models": false,
+   "has_schemas": false
+  },
+  {
+   "engine": "vertical_catalog",
+   "path": "app/engines/vertical_catalog",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "webhook",
+   "path": "app/engines/webhook",
+   "has_router": true,
+   "has_service": true,
+   "has_models": true,
+   "has_schemas": false
+  },
+  {
+   "engine": "workflows",
+   "path": "app/engines/workflows",
+   "has_router": true,
+   "has_service": true,
+   "has_models": false,
+   "has_schemas": false
+  }
+ ]
+}

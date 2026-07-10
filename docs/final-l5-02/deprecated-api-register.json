@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {"path": "/v1/admin/service-setup/templates*", "router": "admin_catalog.service_setup_template_router", "reason": "Sprint 34F duplicate, migration-058 schema", "replacement": "/v1/admin/service-setup-templates* (service_setup.templates_router, 097 schema)", "consumers": "unknown - needs audit", "removal_condition": "confirm no frontend calls this prefix", "target": "FINAL-L5-03"},
+    {"path": "app/engines/brands/{admin,provider}_router.py", "reason": "dead, unmounted", "replacement": "admin_catalog/brand_router.py", "consumers": "none", "removal_condition": "final confirmation", "target": "FINAL-L5-03"},
+    {"path": "tenant_wallets + ProviderCreditWalletService", "reason": "legacy compatibility", "replacement": "tenant_billing.credit_balance + usage_credit_ledger", "consumers": "reporting only, not bookability", "removal_condition": "reporting migrated off wallet", "target": "FINAL-L5-03+"},
+    {"path": "/v1/jobs/*, /v1/staff/me/jobs/*, /v1/customer/jobs/* (field_ops jobs table)", "reason": "legacy Field Ops job system", "replacement": "service_jobs canonical endpoints", "consumers": "may serve non-home-services verticals", "removal_condition": "consumer audit", "target": "FINAL-L5-03+"},
+    {"path": "leads/loyalty/real_estate/promo plugin routers", "reason": "intentionally disabled", "replacement": "n/a feature-flagged", "consumers": "none", "removal_condition": "vertical activation", "target": "vertical activation"}
+  ]
+}
