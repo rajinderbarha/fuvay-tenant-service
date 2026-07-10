@@ -19,6 +19,25 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # ── FINAL-L5-01B corrective guard ─────────────────────────────────────────
+    # Migration 058 (Sprint 34F) already creates `service_setup_templates` and
+    # `service_setup_template_items` with a DIFFERENT, earlier schema. On every
+    # existing environment these migrations were applied via
+    # `Base.metadata.create_all()` + `alembic stamp head` (never executed
+    # sequentially), so this migration's body has never actually run there and
+    # the live schema is this file's (097) canonical version. But a genuine
+    # base->head replay (e.g. a fresh CI/E2E database) runs 058 first, then this
+    # file, and previously crashed with DuplicateTableError. These guards drop
+    # 058's superseded versions of exactly the two shared tables so 097 — the
+    # canonical schema the app models expect — can recreate them cleanly.
+    # This changes nothing on any already-stamped environment (alembic never
+    # re-runs an applied revision); it only makes fresh from-empty replay work.
+    # 058's other tables (relationships, runs, run_items) are intentionally left
+    # intact — 097 does not recreate them. Documented in
+    # docs/final-l5-01b-plus/FINAL_L5_01B_PLUS_MIGRATION_CONFLICT_FIX_REPORT.md.
+    op.execute("DROP TABLE IF EXISTS service_setup_template_items CASCADE")
+    op.execute("DROP TABLE IF EXISTS service_setup_templates CASCADE")
+
     op.create_table(
         "service_setup_templates",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
