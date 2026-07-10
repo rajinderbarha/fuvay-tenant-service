@@ -1,0 +1,56 @@
+path,type,git_tracked,classification,reason,risk,approved_action,rollback_method
+backend.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_8000_final.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_8000_final2.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_8000_final3.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_8001.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_8001_v2.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_8001_v3.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_8001_v4.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_8001_v5.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_8001_v6.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_dashboard.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_dashboard2.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_err.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_live.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_live_err.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_marketing.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_new.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_new_err.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_stderr.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_stderr_8001.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_stdout.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_stdout_8001.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_v2.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+backend_v2_err.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+frontend-admin.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+frontend-customer.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+frontend_sa.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+frontend_tp.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+server.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+server_new.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+server_out.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+start_err.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+super-admin.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+super_admin_dev.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+tenant-portal.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+tenant_portal_dev.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+uvicorn.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+uvicorn_out.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+uvicorn_start.log,log,false,DELETE_CONFIRMED,stale debug log gitignored,none,DELETE,not applicable - regenerable log
+{app/{core,schemas,...} (junk dir),directory,false,DELETE_CONFIRMED,empty broken brace-expansion artifact,none,DELETE,not applicable - was empty
+backend_new_run.log,log,false,KEEP,actively written by running dev server at scan time,low,KEEP,n/a
+customer-app-run.log,log,false,KEEP,actively written by running dev server at scan time,low,KEEP,n/a
+frontend-tenant.log,log,false,KEEP,actively written by running dev server at scan time,low,KEEP,n/a
+super-admin-run.log,log,false,KEEP,actively written by running dev server at scan time,low,KEEP,n/a
+db/pgsql,directory,false,GENERATED_RECREATABLE,bundled local PostgreSQL binary install not source,none - already gitignored never committed,IGNORE_VIA_GITIGNORE,reinstall from postgresql-16-fresh.zip if needed
+db/pgdata,directory,false,GENERATED_RECREATABLE,live local database data directory not source,none - already gitignored never committed,IGNORE_VIA_GITIGNORE,recreate via initdb / restore from backup
+app/engines/brands/admin_router.py,source,true,REVIEW_REQUIRED,unmounted; superseded by app/engines/admin_catalog/brand_router.py per backend endpoint inventory,medium - source code deletion requires human confirmation,REVIEW_REQUIRED,git revert if removed later and found needed
+app/engines/brands/provider_router.py,source,true,REVIEW_REQUIRED,unmounted; superseded by app/engines/admin_catalog/brand_provider_router.py per backend endpoint inventory,medium,REVIEW_REQUIRED,git revert if removed later and found needed
+app/engines/vertical_billing,directory,true,REVIEW_REQUIRED,no import references found in sampled grep scan,medium,REVIEW_REQUIRED,git revert if removed later and found needed
+app/engines/form_builder,directory,true,REVIEW_REQUIRED,no import references found in sampled grep scan,medium,REVIEW_REQUIRED,git revert if removed later and found needed
+design-system/,directory,true,REVIEW_REQUIRED,fully-built shared UI package never imported by any frontend; each frontend reimplements its own ui.tsx instead,medium - large directory decision needs product input (wire up vs remove),REVIEW_REQUIRED,git revert if removed later and found needed
+check_all_routes.py,script,true,REVIEW_REQUIRED,superseded by check_all_routes2.py/3.py per dead-code scan,low,REVIEW_REQUIRED,git revert if removed later
+check_router.py,script,true,REVIEW_REQUIRED,superseded by check_router2.py/3.py per dead-code scan,low,REVIEW_REQUIRED,git revert if removed later
+check_routes.py,script,true,REVIEW_REQUIRED,superseded by check_routes2.py/3.py per dead-code scan,low,REVIEW_REQUIRED,git revert if removed later
+663 root-level *.md historical report files,documentation,true,ARCHIVE_HISTORICAL,historical sprint/phase certification snapshots; safe to archive not delete per mission rule against deleting the only record of a decision,low if archived not deleted,MOVE_TO_DOC_ARCHIVE,git mv back from docs/archive/pre-final-l5/ if archived

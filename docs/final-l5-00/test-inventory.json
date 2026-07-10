@@ -1,0 +1,22 @@
+[
+  { "path_or_pattern": "tests/test_p0_*.py", "application": "backend", "test_type": "integration", "approx_count": 2524, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "tests/test_sprint*.py", "application": "backend", "test_type": "integration", "approx_count": 2295, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "tests/test_sprint34d_brands.py", "application": "backend", "test_type": "integration", "approx_count": 70, "classification": "REVIEW_REQUIRED" },
+  { "path_or_pattern": "tests/test_sprint34d_brand_management.py", "application": "backend", "test_type": "integration", "approx_count": 107, "classification": "REVIEW_REQUIRED" },
+  { "path_or_pattern": "tests/test_phase*.py", "application": "backend", "test_type": "integration", "approx_count": 1263, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "tests/test_tenant_*.py", "application": "backend", "test_type": "integration", "approx_count": 342, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "tests/test_admin_*.py", "application": "backend", "test_type": "integration", "approx_count": 127, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "tests/test_hs*.py", "application": "backend", "test_type": "integration", "approx_count": 115, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "tests/test_step*.py", "application": "backend", "test_type": "integration", "approx_count": 113, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "tests/test_step6_smoke.py, test_step7_smoke.py, test_step8_smoke.py, test_step9_smoke.py", "application": "backend", "test_type": "integration", "approx_count": null, "classification": "REVIEW_REQUIRED" },
+  { "path_or_pattern": "tests/test_customer_*.py", "application": "backend", "test_type": "integration", "approx_count": 51, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "tests/test_frontend_connect_*.py", "application": "backend", "test_type": "integration", "approx_count": 15, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "tests/test_ai_chat*.py", "application": "backend", "test_type": "integration", "approx_count": 21, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "tests/test_*.py (misc singleton bugfix/regression files, ~43 files)", "application": "backend", "test_type": "integration", "approx_count": 500, "classification": "KEEP_ACTIVE" },
+  { "path_or_pattern": "e2e/super-admin/*.spec.ts", "application": "super-admin frontend", "test_type": "e2e", "approx_count": 14, "classification": "KEEP_CRITICAL" },
+  { "path_or_pattern": "e2e/tenant-portal/*.spec.ts", "application": "tenant-portal frontend", "test_type": "e2e", "approx_count": 11, "classification": "KEEP_CRITICAL" },
+  { "path_or_pattern": "frontend/e2e-admin-tenant/e2e/*.spec.ts", "application": "admin+tenant combined frontend", "test_type": "e2e", "approx_count": 10, "classification": "REVIEW_REQUIRED" },
+  { "path_or_pattern": "frontend/super-admin/tests/*.py", "application": "super-admin frontend", "test_type": "unit", "approx_count": 4, "classification": "REVIEW_REQUIRED" },
+  { "path_or_pattern": "frontend/super-admin/{app,components,lib,hooks}/**/*.test.ts(x)", "application": "super-admin frontend", "test_type": "unit", "approx_count": 0, "classification": "REVIEW_REQUIRED" },
+  { "path_or_pattern": "frontend/tenant-portal/**/*.test.ts(x)", "application": "tenant-portal frontend", "test_type": "unit", "approx_count": 0, "classification": "REVIEW_REQUIRED" }
+]
