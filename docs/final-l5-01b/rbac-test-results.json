@@ -1,0 +1,20 @@
+{
+  "test_file": "tests/test_final_l5_01b_admin_tenant_rbac.py",
+  "total": 21,
+  "passed": 21,
+  "failed": 0,
+  "roles_tested": ["anonymous", "customer", "technician", "tenant_owner", "tenant_manager", "tenant_readonly", "super_admin"],
+  "endpoints_tested": ["/v1/admin/tenants", "/v1/admin/tenants/summary", "/v1/admin/tenants/insights", "/v1/admin/tenants/{tenant_id}"],
+  "endpoints_fixed_not_individually_tested": [
+    "/v1/admin/tenants/export", "/v1/admin/tenants/{tenant_id}/overview", "/v1/admin/tenants/{tenant_id}/settings",
+    "/v1/admin/tenants/{tenant_id}/users", "/v1/admin/tenants/{tenant_id}/staff", "/v1/admin/tenants/{tenant_id}/service-areas",
+    "/v1/admin/tenants/{tenant_id}/wallet", "/v1/admin/tenants/{tenant_id}/wallet/ledger", "/v1/admin/tenants/{tenant_id}/audit-logs",
+    "/v1/admin/tenants/{tenant_id}/export", "/v1/admin/tenants/{tenant_id}/offerings/enabled",
+    "/v1/admin/tenants/{tenant_id}/team-members", "/v1/admin/tenants/{tenant_id}/availability"
+  ],
+  "fix": "Depends(get_current_user) -> Depends(require_super_admin) on 17 GET routes in app/engines/tenant_engine/admin_router.py",
+  "vulnerability_confirmed_before_fix": true,
+  "fix_verified_in_process": true,
+  "fix_verified_live_server": false,
+  "live_server_verification_note": "Sandboxed tool environment could not reliably restart the shared dev server for live re-verification; in-process automated test suite is authoritative."
+}

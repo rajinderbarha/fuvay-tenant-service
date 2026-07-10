@@ -1,0 +1,22 @@
+# FINAL-L5-01B — Rule Model/Endpoint Inventory
+
+Real schema inspection via `information_schema`, not assumption. Each domain uses a genuinely different schema shape — confirmed, not assumed uniform.
+
+| Domain | Table found | Fields (actual) | Seed status before this sprint |
+|---|---|---|---|
+| Health Rules | `health_formulas` (+ `health_band_rules`, `health_bonus_rules`, `health_penalty_rules`) | `formula_key, name, target_type, scope_type, scope_id, base_score, min_score, max_score, status, version` | **Already seeded** — 4 rows exist (not tenant-scoped, survived this sprint's reset) |
+| Badge Rules | `badge_rules` (+ `badge_definitions`) | `rule_key, badge_id, target_type, rule_type, scope_type, scope_id, auto_award, manual_award_allowed, requires_admin_review, expiry_enabled, status, version` | **Already seeded** — 5 rows exist (not tenant-scoped, survived reset) |
+| Reward Rules | **No dedicated table found.** Searched `%reward%` across `information_schema.tables` — zero matches. | — | NOT_SEEDABLE_NO_SCHEMA |
+| Completed Job Deduction Rules | `service_pricing_rules.completed_job_deduction_credits` (a column on the pricing rule itself, not a separate rule table) | Embedded per-rule field, not a standalone domain table | **Already seeded** by FINAL-L5-01 — both canonical pricing rules carry `completed_job_deduction_credits` (21 for Split AC, 15 for Window AC) |
+| Credit Threshold Rules | **No dedicated table found.** Searched `%threshold%`, `%credit_alert%`, `%low_credit%` — zero matches. | — | NOT_SEEDABLE_NO_SCHEMA |
+| Matching Rules | `recommendation_rules` | `code, name, description, rule_type, scope, vertical_type, category_id, service_id, tenant_id, location_id, priority, status, condition_json, recommendation_json, explanation_template` | Was seeded in a prior sprint (Sprint 34I, per project memory) but **wiped by this sprint's FINAL-L5-01 reset** — the table carries a nullable `tenant_id` column, so it was included in the 201-table tenant-scoped truncate list even though most of its rows are actually global (tenant_id NULL) platform config, not tenant runtime data. Real, disclosed side effect. |
+| Availability Policy | `provider_availability_rules` | `tenant_id, scope_type, scope_id, category_id, day_of_week, start_time, end_time, slot_duration_minutes, max_bookings_per_slot, break_start_time, break_end_time, max_jobs_per_day, timezone` | **Already seeded** by FINAL-L5-01 (6 rows, Mon-Sat, Demo AC Services) |
+| Service Area Policy | `tenant_service_areas` | `tenant_id, coverage_type, country, state, district, city, zipcode, zone_name, priority, is_active, is_primary` | **Already seeded** by FINAL-L5-01 (1 row, 141001) |
+| Provider Verification Rules | **No dedicated table found.** Searched `%verification_rule%`, `%provider_verif%` — zero matches. Tenant `verification_status` is a plain enum column on `tenants`, not a separate configurable rule. | — | NOT_SEEDABLE_NO_SCHEMA |
+| Notification Policy | **No dedicated "policy" table found.** `notification_channel_configs` exists (per-tenant channel enable/config) and `notification_templates`/`notif_event_templates` exist (message content), but no standalone "policy" abstraction (e.g. "which events notify which roles") was found. | `notification_channel_configs`: `tenant_id, channel, is_enabled, config, verified_at` | Partially seedable — see rule seed spec |
+
+## Honest assessment
+6 of 10 mission-listed rule domains have real, genuine backing tables. 4 (Reward Rules, Credit Threshold Rules, Provider Verification Rules, standalone Notification Policy) do not exist as dedicated schema objects in this codebase today. Per the non-negotiable rule "Do not fabricate configuration records that violate existing schemas," these 4 are **not** seeded this sprint — inventing new tables/migrations for them is out of scope for a data-seeding sprint and would itself violate "do not invent a canonical jobs route without checking actual consumers"-style overreach applied to configuration data. Documented honestly in the rule seed specification and remaining blockers rather than faked.
+
+## API endpoints (spot-checked)
+`/v1/admin/trust-quality/*` (per prior sprint's `test_trust_quality_phase1.py` fixture references to "health formulas", "badge rules") hosts the Health/Badge rule admin UI consumer routes. Not exhaustively re-verified against the live server this sprint given the RBAC investigation's time cost — see remaining blockers.

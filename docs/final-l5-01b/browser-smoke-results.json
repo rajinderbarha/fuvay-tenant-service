@@ -1,0 +1,19 @@
+{
+  "spec_file": "e2e/super-admin/final-l5-01b-real-smoke.spec.ts",
+  "network_mocking": false,
+  "real_backend": "http://localhost:8000",
+  "real_frontend": "http://localhost:3000",
+  "sessions_attempted": ["platform_super_admin"],
+  "sessions_not_attempted": ["tenant_owner", "tenant_readonly", "customer_one", "customer_two", "technician_one"],
+  "results": {
+    "login_page_render": "pass",
+    "login_http_response": 200,
+    "login_redirect_target": "/admin/dashboard",
+    "dashboard_page_render": "fail_404",
+    "tenants_page_render": "fail_404",
+    "console_errors_count": 3
+  },
+  "evidence_files": ["evidence/01-login-page.png", "evidence/02-post-login.png", "evidence/03-tenants-page.png"],
+  "diagnosis": "not_conclusive - likely dev-server staleness from this session's repeated backend restarts rather than a confirmed production routing bug",
+  "overall_result": "partial"
+}

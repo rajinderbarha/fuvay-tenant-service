@@ -53,7 +53,7 @@ def _rid(r: Request) -> str:
 async def get_tenants_summary(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> ApiResponse[dict]:
     """Summary counts for KPI cards (delegates to provider portal summary SQL)."""
     from sqlalchemy import text
@@ -89,7 +89,7 @@ async def get_tenants_summary(
 async def get_tenants_insights(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> ApiResponse[dict]:
     """All insight panels: verification overview, plan distribution, top locations, health, finance, activity."""
     svc = _svc(db, request, user)
@@ -106,7 +106,7 @@ async def export_tenants(
     city: str | None = Query(None),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ):
     from fastapi.responses import StreamingResponse
     svc = _svc(db, request, user)
@@ -163,7 +163,7 @@ async def list_tenants(
     created_from: str | None = Query(None, description="ISO date string"),
     created_to: str | None = Query(None, description="ISO date string"),
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> ApiResponse[dict]:
     """
     Server-side paginated tenant list.
@@ -188,7 +188,7 @@ async def get_tenant(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> dict:
     svc = _svc(db, request, user)
     return await svc.get_tenant(tenant_id)
@@ -389,7 +389,7 @@ async def get_overview(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> dict:
     svc = _svc(db, request, user)
     return await svc.get_overview(tenant_id)
@@ -402,7 +402,7 @@ async def get_settings(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> dict:
     svc = _svc(db, request, user)
     return await svc.get_settings(tenant_id)
@@ -430,7 +430,7 @@ async def list_users(
     request: Request,
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> dict:
     svc = _svc(db, request, user)
     return await svc.list_users(tenant_id, search=search)
@@ -506,7 +506,7 @@ async def list_staff(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> dict:
     svc = _svc(db, request, user)
     return await svc.list_staff(tenant_id)
@@ -598,7 +598,7 @@ async def list_service_areas(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> dict:
     svc = _svc(db, request, user)
     return await svc.list_service_areas(tenant_id)
@@ -656,7 +656,7 @@ async def get_credit_wallet(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> dict:
     svc = _svc(db, request, user)
     return await svc.get_credit_wallet(tenant_id)
@@ -668,7 +668,7 @@ async def get_credit_ledger(
     request: Request,
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> dict:
     svc = _svc(db, request, user)
     return await svc.get_credit_ledger(tenant_id, limit=limit)
@@ -714,7 +714,7 @@ async def get_audit_logs(
     request: Request,
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ) -> dict:
     svc = _svc(db, request, user)
     return await svc.get_audit_logs(tenant_id, limit=limit)
@@ -725,7 +725,7 @@ async def export_tenant_report(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ):
     from fastapi.responses import StreamingResponse
     svc = _svc(db, request, user)
@@ -743,7 +743,7 @@ async def admin_list_offerings(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ):
     result = await db.execute(text("""
         SELECT peo.id as provider_enabled_offering_id,
@@ -876,7 +876,7 @@ async def admin_list_team_members(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ):
     result = await db.execute(text("""
         SELECT id as member_id, member_type, full_name, phone, email,
@@ -894,7 +894,7 @@ async def admin_list_availability(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_super_admin),
 ):
     result = await db.execute(text("""
         SELECT id as availability_id, scope_type, scope_id, day_of_week,
