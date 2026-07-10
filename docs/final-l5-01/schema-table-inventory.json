@@ -1,0 +1,1430 @@
+[
+  {
+    "table": "admin_bulk_setup_drafts",
+    "row_count": 0
+  },
+  {
+    "table": "admin_bulk_setup_run_items",
+    "row_count": 0
+  },
+  {
+    "table": "admin_bulk_setup_runs",
+    "row_count": 0
+  },
+  {
+    "table": "ai_action_logs",
+    "row_count": 0
+  },
+  {
+    "table": "ai_conversation_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "ai_conversation_messages",
+    "row_count": 0
+  },
+  {
+    "table": "ai_conversation_sessions",
+    "row_count": 0
+  },
+  {
+    "table": "ai_llm_call_logs",
+    "row_count": 0
+  },
+  {
+    "table": "ai_prompt_templates",
+    "row_count": 0
+  },
+  {
+    "table": "ai_settlement_sessions",
+    "row_count": 0
+  },
+  {
+    "table": "ai_tool_call_logs",
+    "row_count": 0
+  },
+  {
+    "table": "ai_usage_logs",
+    "row_count": 0
+  },
+  {
+    "table": "ai_workflow_states",
+    "row_count": 0
+  },
+  {
+    "table": "alembic_version",
+    "row_count": 1
+  },
+  {
+    "table": "analytics_daily_metrics",
+    "row_count": 0
+  },
+  {
+    "table": "analytics_events",
+    "row_count": 0
+  },
+  {
+    "table": "analytics_report_runs",
+    "row_count": 0
+  },
+  {
+    "table": "anomaly_records",
+    "row_count": 0
+  },
+  {
+    "table": "api_key_usage_logs",
+    "row_count": 0
+  },
+  {
+    "table": "api_keys",
+    "row_count": 0
+  },
+  {
+    "table": "appointment_status_history",
+    "row_count": 0
+  },
+  {
+    "table": "appointments",
+    "row_count": 0
+  },
+  {
+    "table": "auth_audit_logs",
+    "row_count": 7
+  },
+  {
+    "table": "badge_assignments",
+    "row_count": 2
+  },
+  {
+    "table": "badge_definitions",
+    "row_count": 8
+  },
+  {
+    "table": "badge_rule_criteria",
+    "row_count": 10
+  },
+  {
+    "table": "badge_rule_removal_criteria",
+    "row_count": 2
+  },
+  {
+    "table": "badge_rules",
+    "row_count": 5
+  },
+  {
+    "table": "bargain_rules",
+    "row_count": 0
+  },
+  {
+    "table": "billing_router_logs",
+    "row_count": 0
+  },
+  {
+    "table": "bookability_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "booking_notes",
+    "row_count": 0
+  },
+  {
+    "table": "booking_reschedule_requests",
+    "row_count": 0
+  },
+  {
+    "table": "booking_status_history",
+    "row_count": 0
+  },
+  {
+    "table": "bookings",
+    "row_count": 5
+  },
+  {
+    "table": "brand_adjustments",
+    "row_count": 0
+  },
+  {
+    "table": "brand_category_mappings",
+    "row_count": 0
+  },
+  {
+    "table": "brand_mappings",
+    "row_count": 3
+  },
+  {
+    "table": "brand_requests",
+    "row_count": 0
+  },
+  {
+    "table": "brand_service_option_mappings",
+    "row_count": 0
+  },
+  {
+    "table": "brand_template_items",
+    "row_count": 0
+  },
+  {
+    "table": "brand_templates",
+    "row_count": 0
+  },
+  {
+    "table": "brands",
+    "row_count": 35
+  },
+  {
+    "table": "catalog_module_definitions",
+    "row_count": 38
+  },
+  {
+    "table": "category_engine_matrix",
+    "row_count": 39
+  },
+  {
+    "table": "chat_message_reads",
+    "row_count": 0
+  },
+  {
+    "table": "chat_messages",
+    "row_count": 0
+  },
+  {
+    "table": "chat_thread_participants",
+    "row_count": 0
+  },
+  {
+    "table": "chat_threads",
+    "row_count": 0
+  },
+  {
+    "table": "churn_signals",
+    "row_count": 0
+  },
+  {
+    "table": "city_tier_configs",
+    "row_count": 0
+  },
+  {
+    "table": "coaching_appointment_draft_events",
+    "row_count": 0
+  },
+  {
+    "table": "coaching_appointment_drafts",
+    "row_count": 0
+  },
+  {
+    "table": "coaching_appointment_execution_events",
+    "row_count": 0
+  },
+  {
+    "table": "coaching_appointment_notes",
+    "row_count": 0
+  },
+  {
+    "table": "coaching_appointment_slot_holds",
+    "row_count": 0
+  },
+  {
+    "table": "coaching_appointments",
+    "row_count": 0
+  },
+  {
+    "table": "commission_records",
+    "row_count": 0
+  },
+  {
+    "table": "complaint_events",
+    "row_count": 0
+  },
+  {
+    "table": "complaint_media",
+    "row_count": 0
+  },
+  {
+    "table": "complaint_messages",
+    "row_count": 0
+  },
+  {
+    "table": "complaint_policies",
+    "row_count": 0
+  },
+  {
+    "table": "complaint_resolutions",
+    "row_count": 0
+  },
+  {
+    "table": "compliance_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "compliance_exports",
+    "row_count": 0
+  },
+  {
+    "table": "compliance_request_items",
+    "row_count": 0
+  },
+  {
+    "table": "compliance_requests",
+    "row_count": 0
+  },
+  {
+    "table": "consent_records",
+    "row_count": 0
+  },
+  {
+    "table": "content_templates",
+    "row_count": 0
+  },
+  {
+    "table": "conversations",
+    "row_count": 0
+  },
+  {
+    "table": "credit_packages",
+    "row_count": 0
+  },
+  {
+    "table": "credit_reservations",
+    "row_count": 0
+  },
+  {
+    "table": "credit_topup_orders",
+    "row_count": 0
+  },
+  {
+    "table": "customer_addresses",
+    "row_count": 0
+  },
+  {
+    "table": "customer_booking_confirmations",
+    "row_count": 11
+  },
+  {
+    "table": "customer_booking_drafts",
+    "row_count": 0
+  },
+  {
+    "table": "customer_complaints",
+    "row_count": 0
+  },
+  {
+    "table": "customer_credit_balances",
+    "row_count": 0
+  },
+  {
+    "table": "customer_credit_ledger",
+    "row_count": 6
+  },
+  {
+    "table": "customer_flow_configs",
+    "row_count": 0
+  },
+  {
+    "table": "customer_health_scores",
+    "row_count": 0
+  },
+  {
+    "table": "customer_ltv_scores",
+    "row_count": 0
+  },
+  {
+    "table": "customer_reviews",
+    "row_count": 0
+  },
+  {
+    "table": "customer_service_credits",
+    "row_count": 0
+  },
+  {
+    "table": "customer_transactions",
+    "row_count": 0
+  },
+  {
+    "table": "daily_metrics",
+    "row_count": 0
+  },
+  {
+    "table": "dashboard_action_states",
+    "row_count": 0
+  },
+  {
+    "table": "dashboard_snapshots",
+    "row_count": 0
+  },
+  {
+    "table": "data_deletion_requests",
+    "row_count": 0
+  },
+  {
+    "table": "data_portability_requests",
+    "row_count": 0
+  },
+  {
+    "table": "data_retention_policies",
+    "row_count": 0
+  },
+  {
+    "table": "demand_forecasts",
+    "row_count": 0
+  },
+  {
+    "table": "dispatch_escalation_logs",
+    "row_count": 0
+  },
+  {
+    "table": "dispatch_records",
+    "row_count": 0
+  },
+  {
+    "table": "dispute_settlements",
+    "row_count": 0
+  },
+  {
+    "table": "document_chunks",
+    "row_count": 0
+  },
+  {
+    "table": "document_events",
+    "row_count": 0
+  },
+  {
+    "table": "document_templates",
+    "row_count": 0
+  },
+  {
+    "table": "documents",
+    "row_count": 0
+  },
+  {
+    "table": "dpdp_action_states",
+    "row_count": 0
+  },
+  {
+    "table": "dpdp_evidence_packs",
+    "row_count": 0
+  },
+  {
+    "table": "dpdp_legal_holds",
+    "row_count": 0
+  },
+  {
+    "table": "dynamic_pricing_rules",
+    "row_count": 0
+  },
+  {
+    "table": "engine_audit_logs",
+    "row_count": 79
+  },
+  {
+    "table": "engine_dependencies",
+    "row_count": 59
+  },
+  {
+    "table": "engine_health_checks",
+    "row_count": 71
+  },
+  {
+    "table": "engine_permissions",
+    "row_count": 18
+  },
+  {
+    "table": "enterprise_column_preferences",
+    "row_count": 0
+  },
+  {
+    "table": "enterprise_export_jobs",
+    "row_count": 0
+  },
+  {
+    "table": "enterprise_saved_views",
+    "row_count": 0
+  },
+  {
+    "table": "feature_flags",
+    "row_count": 1
+  },
+  {
+    "table": "final_creation_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "finance_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "finance_vertical_configs",
+    "row_count": 1
+  },
+  {
+    "table": "financial_events",
+    "row_count": 0
+  },
+  {
+    "table": "generated_assets",
+    "row_count": 0
+  },
+  {
+    "table": "health_band_rules",
+    "row_count": 21
+  },
+  {
+    "table": "health_bonus_rules",
+    "row_count": 2
+  },
+  {
+    "table": "health_formula_components",
+    "row_count": 29
+  },
+  {
+    "table": "health_formulas",
+    "row_count": 4
+  },
+  {
+    "table": "health_penalty_rules",
+    "row_count": 5
+  },
+  {
+    "table": "health_scores",
+    "row_count": 0
+  },
+  {
+    "table": "home_service_booking_draft_events",
+    "row_count": 250
+  },
+  {
+    "table": "home_service_booking_drafts",
+    "row_count": 59
+  },
+  {
+    "table": "in_app_notifications",
+    "row_count": 4
+  },
+  {
+    "table": "intel_anomalies",
+    "row_count": 0
+  },
+  {
+    "table": "intel_data_quality_checks",
+    "row_count": 0
+  },
+  {
+    "table": "intel_model_registry",
+    "row_count": 0
+  },
+  {
+    "table": "intel_prediction_jobs",
+    "row_count": 0
+  },
+  {
+    "table": "intel_risk_scores",
+    "row_count": 0
+  },
+  {
+    "table": "inventory_items",
+    "row_count": 0
+  },
+  {
+    "table": "invoice_records",
+    "row_count": 0
+  },
+  {
+    "table": "ip_block_hits",
+    "row_count": 0
+  },
+  {
+    "table": "ip_blocklist",
+    "row_count": 0
+  },
+  {
+    "table": "job_media",
+    "row_count": 0
+  },
+  {
+    "table": "job_notes",
+    "row_count": 0
+  },
+  {
+    "table": "job_quotes",
+    "row_count": 0
+  },
+  {
+    "table": "job_status_history",
+    "row_count": 0
+  },
+  {
+    "table": "jobs",
+    "row_count": 0
+  },
+  {
+    "table": "kb_documents",
+    "row_count": 0
+  },
+  {
+    "table": "knowledge_bases",
+    "row_count": 0
+  },
+  {
+    "table": "location_import_batches",
+    "row_count": 0
+  },
+  {
+    "table": "login_events",
+    "row_count": 7
+  },
+  {
+    "table": "marketing_ai_budget",
+    "row_count": 1
+  },
+  {
+    "table": "marketing_ai_budget_ledger",
+    "row_count": 0
+  },
+  {
+    "table": "marketing_audit_logs",
+    "row_count": 4
+  },
+  {
+    "table": "marketing_campaign_events",
+    "row_count": 0
+  },
+  {
+    "table": "marketing_campaign_messages",
+    "row_count": 0
+  },
+  {
+    "table": "marketing_campaign_rules",
+    "row_count": 0
+  },
+  {
+    "table": "marketing_campaigns",
+    "row_count": 0
+  },
+  {
+    "table": "marketing_content_templates",
+    "row_count": 0
+  },
+  {
+    "table": "marketing_post_assets",
+    "row_count": 0
+  },
+  {
+    "table": "marketing_posts",
+    "row_count": 0
+  },
+  {
+    "table": "marketing_publish_attempts",
+    "row_count": 0
+  },
+  {
+    "table": "master_checklist_items",
+    "row_count": 4
+  },
+  {
+    "table": "master_data_audit_log",
+    "row_count": 1576
+  },
+  {
+    "table": "master_issue_types",
+    "row_count": 39
+  },
+  {
+    "table": "master_offerings",
+    "row_count": 1
+  },
+  {
+    "table": "master_service_brands",
+    "row_count": 3
+  },
+  {
+    "table": "master_service_options",
+    "row_count": 653
+  },
+  {
+    "table": "master_service_types",
+    "row_count": 2
+  },
+  {
+    "table": "master_services",
+    "row_count": 60
+  },
+  {
+    "table": "master_workflow_templates",
+    "row_count": 7
+  },
+  {
+    "table": "media_assets",
+    "row_count": 0
+  },
+  {
+    "table": "media_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "media_files",
+    "row_count": 0
+  },
+  {
+    "table": "media_links",
+    "row_count": 0
+  },
+  {
+    "table": "media_signed_links",
+    "row_count": 0
+  },
+  {
+    "table": "media_upload_sessions",
+    "row_count": 0
+  },
+  {
+    "table": "messages",
+    "row_count": 0
+  },
+  {
+    "table": "mfa_backup_codes",
+    "row_count": 0
+  },
+  {
+    "table": "mfa_secrets",
+    "row_count": 0
+  },
+  {
+    "table": "model_versions",
+    "row_count": 0
+  },
+  {
+    "table": "notif_event_templates",
+    "row_count": 25
+  },
+  {
+    "table": "notification_channel_configs",
+    "row_count": 0
+  },
+  {
+    "table": "notification_events",
+    "row_count": 0
+  },
+  {
+    "table": "notification_outbox",
+    "row_count": 0
+  },
+  {
+    "table": "notification_preferences",
+    "row_count": 0
+  },
+  {
+    "table": "notification_records",
+    "row_count": 0
+  },
+  {
+    "table": "notification_template_audit_logs",
+    "row_count": 490
+  },
+  {
+    "table": "notification_template_versions",
+    "row_count": 246
+  },
+  {
+    "table": "notification_templates",
+    "row_count": 0
+  },
+  {
+    "table": "notification_test_sends",
+    "row_count": 4
+  },
+  {
+    "table": "onboarding_requests",
+    "row_count": 0
+  },
+  {
+    "table": "otp_records",
+    "row_count": 0
+  },
+  {
+    "table": "package_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "package_engine_entitlements",
+    "row_count": 0
+  },
+  {
+    "table": "package_features",
+    "row_count": 0
+  },
+  {
+    "table": "package_limits",
+    "row_count": 2
+  },
+  {
+    "table": "password_reset_tokens",
+    "row_count": 0
+  },
+  {
+    "table": "payment_records",
+    "row_count": 0
+  },
+  {
+    "table": "payout_records",
+    "row_count": 0
+  },
+  {
+    "table": "plan_settings",
+    "row_count": 0
+  },
+  {
+    "table": "platform_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "platform_engines",
+    "row_count": 39
+  },
+  {
+    "table": "platform_settings",
+    "row_count": 92
+  },
+  {
+    "table": "post_deliveries",
+    "row_count": 0
+  },
+  {
+    "table": "prediction_records",
+    "row_count": 0
+  },
+  {
+    "table": "price_snapshots",
+    "row_count": 0
+  },
+  {
+    "table": "pricing_tiers",
+    "row_count": 3
+  },
+  {
+    "table": "provider_availability_rules",
+    "row_count": 6
+  },
+  {
+    "table": "provider_enabled_offerings",
+    "row_count": 1
+  },
+  {
+    "table": "provider_offering_bookable_statuses",
+    "row_count": 0
+  },
+  {
+    "table": "provider_pricing_overrides",
+    "row_count": 0
+  },
+  {
+    "table": "provider_team_members",
+    "row_count": 0
+  },
+  {
+    "table": "provider_visibility_statuses",
+    "row_count": 0
+  },
+  {
+    "table": "rag_document_chunks",
+    "row_count": 0
+  },
+  {
+    "table": "rag_documents",
+    "row_count": 0
+  },
+  {
+    "table": "rag_indexing_jobs",
+    "row_count": 0
+  },
+  {
+    "table": "rag_kb_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "rag_kb_versions",
+    "row_count": 0
+  },
+  {
+    "table": "rag_knowledge_bases",
+    "row_count": 0
+  },
+  {
+    "table": "rag_manual_articles",
+    "row_count": 0
+  },
+  {
+    "table": "rag_queries",
+    "row_count": 0
+  },
+  {
+    "table": "rag_query_logs",
+    "row_count": 0
+  },
+  {
+    "table": "rag_retrieval_feedback",
+    "row_count": 0
+  },
+  {
+    "table": "real_estate_lead_draft_events",
+    "row_count": 0
+  },
+  {
+    "table": "real_estate_lead_drafts",
+    "row_count": 0
+  },
+  {
+    "table": "real_estate_lead_execution_events",
+    "row_count": 0
+  },
+  {
+    "table": "real_estate_lead_notes",
+    "row_count": 0
+  },
+  {
+    "table": "real_estate_lead_routing_rules",
+    "row_count": 0
+  },
+  {
+    "table": "real_estate_lead_scores",
+    "row_count": 0
+  },
+  {
+    "table": "real_estate_leads",
+    "row_count": 0
+  },
+  {
+    "table": "recommendation_results",
+    "row_count": 0
+  },
+  {
+    "table": "recommendation_rules",
+    "row_count": 0
+  },
+  {
+    "table": "refresh_token_families",
+    "row_count": 1728
+  },
+  {
+    "table": "refresh_tokens",
+    "row_count": 1789
+  },
+  {
+    "table": "refund_records",
+    "row_count": 0
+  },
+  {
+    "table": "refund_requests",
+    "row_count": 0
+  },
+  {
+    "table": "review_aggregates",
+    "row_count": 0
+  },
+  {
+    "table": "review_events",
+    "row_count": 0
+  },
+  {
+    "table": "review_flags",
+    "row_count": 0
+  },
+  {
+    "table": "review_policies",
+    "row_count": 0
+  },
+  {
+    "table": "review_replies",
+    "row_count": 0
+  },
+  {
+    "table": "review_requests",
+    "row_count": 0
+  },
+  {
+    "table": "review_status_history",
+    "row_count": 0
+  },
+  {
+    "table": "reviews",
+    "row_count": 0
+  },
+  {
+    "table": "risk_rules",
+    "row_count": 0
+  },
+  {
+    "table": "risk_scores",
+    "row_count": 1
+  },
+  {
+    "table": "scheduled_posts",
+    "row_count": 0
+  },
+  {
+    "table": "security_deposit_adjustments",
+    "row_count": 0
+  },
+  {
+    "table": "security_deposit_transactions",
+    "row_count": 0
+  },
+  {
+    "table": "security_deposits",
+    "row_count": 0
+  },
+  {
+    "table": "security_policies",
+    "row_count": 10
+  },
+  {
+    "table": "service_bookings",
+    "row_count": 0
+  },
+  {
+    "table": "service_catalog_items",
+    "row_count": 0
+  },
+  {
+    "table": "service_categories",
+    "row_count": 14
+  },
+  {
+    "table": "service_groups",
+    "row_count": 62
+  },
+  {
+    "table": "service_invoice_items",
+    "row_count": 0
+  },
+  {
+    "table": "service_invoices",
+    "row_count": 0
+  },
+  {
+    "table": "service_issue_mappings",
+    "row_count": 20
+  },
+  {
+    "table": "service_job_assignment_events",
+    "row_count": 0
+  },
+  {
+    "table": "service_job_assignments",
+    "row_count": 0
+  },
+  {
+    "table": "service_job_checklist_items",
+    "row_count": 0
+  },
+  {
+    "table": "service_job_checklists",
+    "row_count": 0
+  },
+  {
+    "table": "service_job_execution_events",
+    "row_count": 0
+  },
+  {
+    "table": "service_job_execution_notes",
+    "row_count": 0
+  },
+  {
+    "table": "service_job_media_uploads",
+    "row_count": 0
+  },
+  {
+    "table": "service_job_parts_requests",
+    "row_count": 0
+  },
+  {
+    "table": "service_job_quote_events",
+    "row_count": 0
+  },
+  {
+    "table": "service_job_quote_items",
+    "row_count": 0
+  },
+  {
+    "table": "service_job_quotes",
+    "row_count": 0
+  },
+  {
+    "table": "service_jobs",
+    "row_count": 5
+  },
+  {
+    "table": "service_option_groups",
+    "row_count": 0
+  },
+  {
+    "table": "service_option_mappings",
+    "row_count": 2
+  },
+  {
+    "table": "service_packages",
+    "row_count": 1
+  },
+  {
+    "table": "service_payment_records",
+    "row_count": 0
+  },
+  {
+    "table": "service_pricing_rules",
+    "row_count": 2
+  },
+  {
+    "table": "service_rework_requests",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_bulk_drafts",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_bulk_preview_items",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_bulk_run_items",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_bulk_runs",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_bulk_validation_results",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_template_items",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_template_modules",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_template_relationships",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_template_run_items",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_template_runs",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_template_usage",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_template_versions",
+    "row_count": 0
+  },
+  {
+    "table": "service_setup_templates",
+    "row_count": 0
+  },
+  {
+    "table": "service_type_mappings",
+    "row_count": 2
+  },
+  {
+    "table": "service_type_prices",
+    "row_count": 0
+  },
+  {
+    "table": "service_types",
+    "row_count": 2
+  },
+  {
+    "table": "service_zones",
+    "row_count": 0
+  },
+  {
+    "table": "serviceability_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "session_inventory",
+    "row_count": 0
+  },
+  {
+    "table": "setting_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "settlement_proposals",
+    "row_count": 0
+  },
+  {
+    "table": "sj_checklist_template_items",
+    "row_count": 0
+  },
+  {
+    "table": "sj_checklist_templates",
+    "row_count": 0
+  },
+  {
+    "table": "social_accounts",
+    "row_count": 0
+  },
+  {
+    "table": "staff_calendar_blocks",
+    "row_count": 0
+  },
+  {
+    "table": "staff_locations",
+    "row_count": 0
+  },
+  {
+    "table": "staff_performance_scores",
+    "row_count": 0
+  },
+  {
+    "table": "staff_permissions",
+    "row_count": 0
+  },
+  {
+    "table": "staff_rating_summaries",
+    "row_count": 0
+  },
+  {
+    "table": "staff_working_hours",
+    "row_count": 0
+  },
+  {
+    "table": "stock_balances",
+    "row_count": 0
+  },
+  {
+    "table": "stock_locations",
+    "row_count": 0
+  },
+  {
+    "table": "stock_reservations",
+    "row_count": 0
+  },
+  {
+    "table": "stock_transactions",
+    "row_count": 0
+  },
+  {
+    "table": "subscription_events",
+    "row_count": 0
+  },
+  {
+    "table": "subscription_periods",
+    "row_count": 0
+  },
+  {
+    "table": "subscriptions",
+    "row_count": 0
+  },
+  {
+    "table": "suspicious_activity_logs",
+    "row_count": 0
+  },
+  {
+    "table": "svc_commission_records",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_api_keys",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_availability_exceptions",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_badges",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_billing",
+    "row_count": 1
+  },
+  {
+    "table": "tenant_billing_profiles",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_booking_window_settings",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_branding",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_business_profiles",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_engine_overrides",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_engines",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_feature_flags",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_limits",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_operational_settings",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_package_assignments",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_penalties",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_rating_summaries",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_service_area_services",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_service_areas",
+    "row_count": 1
+  },
+  {
+    "table": "tenant_service_brands",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_service_types",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_services",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_settings",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_supported_brands",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_supported_service_options",
+    "row_count": 0
+  },
+  {
+    "table": "tenant_wallets",
+    "row_count": 0
+  },
+  {
+    "table": "tenants",
+    "row_count": 2
+  },
+  {
+    "table": "tier_locations",
+    "row_count": 1
+  },
+  {
+    "table": "trust_quality_audit_logs",
+    "row_count": 1308
+  },
+  {
+    "table": "trust_quality_recalculation_jobs",
+    "row_count": 6
+  },
+  {
+    "table": "usage_credit_ledger",
+    "row_count": 1
+  },
+  {
+    "table": "user_sessions",
+    "row_count": 7
+  },
+  {
+    "table": "users",
+    "row_count": 13
+  },
+  {
+    "table": "vertical_billing_configs",
+    "row_count": 6
+  },
+  {
+    "table": "vertical_catalog_modules",
+    "row_count": 59
+  },
+  {
+    "table": "vertical_engine_mappings",
+    "row_count": 2
+  },
+  {
+    "table": "vertical_menu_config",
+    "row_count": 0
+  },
+  {
+    "table": "verticals",
+    "row_count": 7
+  },
+  {
+    "table": "wallet_transactions",
+    "row_count": 0
+  },
+  {
+    "table": "warranty_claims",
+    "row_count": 0
+  },
+  {
+    "table": "webhook_deliveries",
+    "row_count": 0
+  },
+  {
+    "table": "webhook_endpoints",
+    "row_count": 0
+  },
+  {
+    "table": "workflow_audit_logs",
+    "row_count": 0
+  },
+  {
+    "table": "workflow_runtime_events",
+    "row_count": 0
+  },
+  {
+    "table": "workflow_service_mappings",
+    "row_count": 0
+  },
+  {
+    "table": "workflow_template_versions",
+    "row_count": 0
+  },
+  {
+    "table": "workflow_templates",
+    "row_count": 0
+  },
+  {
+    "table": "zone_analytic_snapshots",
+    "row_count": 0
+  },
+  {
+    "table": "zone_surcharges",
+    "row_count": 0
+  }
+]

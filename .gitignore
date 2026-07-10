@@ -39,6 +39,9 @@ Thumbs.db
 # Uploads (runtime data, not source)
 uploads/
 
+# Local database backups (may contain data, never commit)
+.backups/
+
 # Bundled local PostgreSQL install + live data + installers (not source, huge, regenerable)
 db/pgsql/
 db/pgdata/

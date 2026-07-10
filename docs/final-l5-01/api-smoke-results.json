@@ -1,0 +1,11 @@
+{
+  "auth_login_admin": {"method": "POST", "path": "/v1/auth/login", "expected": 200, "actual": 200, "pass": true},
+  "auth_login_customer": {"method": "POST", "path": "/v1/auth/login", "expected": 200, "actual": 200, "pass": true},
+  "unauthenticated_tenant_staff": {"method": "GET", "path": "/v1/tenant/staff", "expected": 401, "actual": 401, "pass": true},
+  "admin_tenants_list": {"method": "GET", "path": "/v1/admin/tenants", "expected": 200, "actual": 200, "pass": true},
+  "admin_service_job_assignments": {"method": "GET", "path": "/v1/admin/service-job-assignments", "expected": 200, "actual": 200, "pass": true},
+  "tenant_staff_as_owner": {"method": "GET", "path": "/v1/tenant/staff", "expected": 200, "actual": 200, "pass": true},
+  "admin_tenant_not_found": {"method": "GET", "path": "/v1/admin/tenants/00000000-0000-0000-0000-000000000000", "expected": 404, "actual": 404, "pass": true},
+  "customer_accessing_admin_tenants": {"method": "GET", "path": "/v1/admin/tenants", "expected": 403, "actual": 200, "pass": false, "note": "RBAC gap - customer role can read admin tenant list, real security finding, not fixed this sprint"},
+  "canonical_home_services_route": {"method": "GET", "path": "/admin/home-services/service-jobs", "expected": 200, "actual": 404, "pass": false, "note": "route does not exist in live backend; mission's assumed canonical route is wrong, real route is /v1/admin/service-job-assignments*"}
+}
