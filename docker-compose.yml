@@ -1,0 +1,111 @@
+# ServiceOS — Docker Compose (Development)
+# Production: use docker-compose.prod.yml with secrets management
+
+version: "3.9"
+
+services:
+
+  # ── FastAPI Application ──────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: serviceos_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://serviceos:serviceos@postgres:5432/serviceos
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app                  # Hot reload in dev
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+    restart: unless-stopped
+    networks:
+      - serviceos_net
+
+  # ── PostgreSQL ───────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg17     # pgvector for RAG engine (Phase 4)
+    container_name: serviceos_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: serviceos
+      POSTGRES_PASSWORD: serviceos
+      POSTGRES_DB: serviceos
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_postgres.sql:/docker-entrypoint-initdb.d/01_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U serviceos -d serviceos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - serviceos_net
+
+  # ── Redis ────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: serviceos_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save 60 1
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - serviceos_net
+
+  # ── pgAdmin (Dev only) ───────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: serviceos_pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@serviceos.io
+      PGADMIN_DEFAULT_PASSWORD: admin
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - serviceos_net
+    profiles:
+      - dev                     # Only starts with: docker compose --profile dev up
+
+  # ── Redis Commander (Dev only) ───────────────────────────────────
+  redis_commander:
+    image: rediscommander/redis-commander:latest
+    container_name: serviceos_redis_ui
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    depends_on:
+      - redis
+    networks:
+      - serviceos_net
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+  redis_data:
+  pgadmin_data:
+
+networks:
+  serviceos_net:
+    driver: bridge

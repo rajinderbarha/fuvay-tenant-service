@@ -1,0 +1,45 @@
+{
+  "status": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "id": "34b427a7-b2be-496c-b826-6d51bb181248",
+      "tenant_id": "34b427a7-b2be-496c-b826-6d51bb181248",
+      "tenant_name": "Demo AC Services",
+      "business_name": "E2E_READONLY_PROBE_DO_NOT_PERSIST",
+      "legal_name": null,
+      "owner_name": "Rajinder",
+      "phone": "+919041624576",
+      "email": "contact@demoacservices.test",
+      "gst_number": "44gfedb567g",
+      "business_type": null,
+      "address_line1": "123 Model Town",
+      "address_line2": null,
+      "city": "Ludhiana",
+      "district": null,
+      "state": "Punjab",
+      "country": "India",
+      "zipcode": "141001",
+      "logo_url": "https://res.cloudinary.com/dr1b4ezct/image/upload/v1783604993/serviceos/provider_business_logo/e0d6471496a40da316e3a33f.png.png",
+      "business_logo_media_id": "19063d50-203e-40cd-ae6b-bbb13fa0b8bf",
+      "shop_photo_media_id": "48341c89-8f8a-4f1f-b359-ea1bf96223dc",
+      "verification_status": "changes_pending_review",
+      "status": "active",
+      "plan_type": "starter",
+      "website_url": "",
+      "description": "test",
+      "slug": "demo-ac-services",
+      "created_at": "2026-07-08T06:23:58.146343+00:00",
+      "reverification_triggered": false
+    },
+    "links": null,
+    "meta": {
+      "request_id": "req_fe96d735e9b0",
+      "timestamp": "2026-07-10T15:15:00.979829+00:00",
+      "version": "2.4.1",
+      "engine_id": null,
+      "tenant_id": null,
+      "idempotent": false
+    }
+  }
+}

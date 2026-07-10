@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "ServiceOS Staff",
+    "slug": "serviceos-staff",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#1E3A5F"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.serviceos.staff",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "ServiceOS needs location to track your jobs."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1E3A5F"
+      },
+      "package": "com.serviceos.staff",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "plugins": [
+      "expo-location",
+      "expo-notifications"
+    ],
+    "sdkVersion": "56.0.0"
+  }
+}

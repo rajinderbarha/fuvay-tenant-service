@@ -1,0 +1,173 @@
+"""P0 Cross-App Frontend Runtime Verification Sprint — static-inspection
+regression tests, matching this session's established convention: read
+source files as text and assert the fields/labels/endpoints that make the
+credit/payable/payment breakdown actually reach the tenant/staff/customer/
+admin UIs (rather than only existing on the backend, unused)."""
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _read(rel: str) -> str:
+    return (ROOT / rel).read_text(encoding="utf-8")
+
+
+# ── Backend: _booking_dict must expose credit/payable fields ──────────────
+
+def test_booking_dict_exposes_credit_applied_and_payable_amount():
+    src = _read("app/engines/booking/service.py")
+    assert '"credit_applied": float(b.credit_applied or 0)' in src
+    assert '"payable_amount": float(b.payable_amount)' in src
+    assert '"payment_collection_mode": "customer_pays_provider_directly"' in src
+    assert '"platform_payment_collected": False' in src
+
+
+def test_admin_bookings_join_falls_back_to_converted_job_id():
+    src = _read("app/engines/booking/admin_router.py")
+    assert "COALESCE(b.job_id, b.converted_job_id)" in src
+
+
+def test_job_dict_exposes_payment_recorded_and_amount_collected():
+    src = _read("app/engines/field_ops/service.py")
+    assert '"payment_recorded": j.payment_id is not None' in src
+    assert '"amount_collected":' in src
+
+
+def test_admin_booking_router_exposes_credit_applied_and_payable_amount():
+    src = _read("app/engines/booking/admin_router.py")
+    assert "b.credit_applied" in src
+    assert "b.payable_amount" in src
+    assert '"credit_applied":' in src
+    assert '"payable_amount":' in src
+    assert '"payment_recorded":' in src
+
+
+# ── Tenant portal ───────────────────────────────────────────────────────────
+
+def test_tenant_booking_detail_shows_payment_breakdown():
+    src = _read("frontend/tenant-portal/app/(tenant)/bookings/[id]/page.tsx")
+    assert "Payment Breakdown" in src
+    assert "ServiceOS Credit Applied" in src
+    assert "Payable To Provider" in src
+    assert "Customer pays provider directly" in src
+
+
+def test_tenant_job_detail_shows_payment_collection_and_deduction():
+    src = _read("frontend/tenant-portal/app/(tenant)/jobs/[id]/page.tsx")
+    assert "Payment Collection" in src
+    assert "Usage Credit Deduction" in src
+    assert "Completed Job Deduction" in src
+    assert "deduct commission from your wallet" not in src  # old forbidden phrasing removed
+
+
+def test_tenant_finance_ledger_labels_completed_job_deduction():
+    # E2E-11: /finance/page.tsx now redirects to /finance/package (the
+    # legacy Wallet/Payouts page it used to render violated the
+    # platform's no-wallet/no-payout business rules). The real page
+    # showing Completed Job Deduction / Usage Credit Ledger labels is
+    # the dedicated ledger page.
+    src = _read("frontend/tenant-portal/app/(tenant)/finance/usage-credit-ledger/page.tsx")
+    assert "Completed Job Deduction" in src
+    assert "Usage Credit" in src
+
+
+def test_tenant_api_types_have_payment_breakdown_fields():
+    src = _read("frontend/tenant-portal/lib/api.ts")
+    assert "BookingPaymentBreakdown" in src
+    assert "JobPaymentBreakdown" in src
+    assert "customer_credit_applied?:number" in src
+    assert "payable_to_provider?:number" in src
+    assert "recordPayment:" in src
+
+
+# ── Admin ───────────────────────────────────────────────────────────────────
+
+def test_admin_booking_detail_shows_payment_breakdown():
+    src = _read("frontend/super-admin/app/admin/bookings/[id]/page.tsx")
+    assert "Payment Breakdown" in src
+    assert "Customer Credit Applied" in src
+    assert "Payable To Provider" in src
+
+
+def test_admin_job_detail_shows_credit_and_deduction_record():
+    src = _read("frontend/super-admin/app/admin/operations/[jobId]/page.tsx")
+    assert "Payment / Credit / Deduction Record" in src
+    assert "Completed Job Deduction" in src
+    assert "usage credit deduction" in src
+
+
+def test_admin_api_types_have_payment_breakdown_fields():
+    src = _read("frontend/super-admin/lib/api.ts")
+    assert "customer_credit_applied?: number" in src
+    assert "payable_to_provider?: number" in src
+    assert "credit_applied?: number;" in src
+    assert "payable_amount?: number;" in src
+
+
+# ── Staff app (React Native) ────────────────────────────────────────────────
+
+def test_staff_app_has_payment_recording_form():
+    src = _read("mobile/staff-app/src/screens/JobDetailScreen.tsx")
+    assert "Payment Collection" in src
+    assert "Record Payment Collected" in src
+    assert "Collect From Customer" in src
+    assert "Amount collected must match payable-to-provider amount" in src
+    assert "Payout" not in src and "Withdraw" not in src and "Cash Wallet" not in src
+
+
+def test_staff_app_completion_requires_payment_when_owed():
+    src = _read("mobile/staff-app/src/screens/JobDetailScreen.tsx")
+    assert "Record the payment collected before closing this job" in src
+
+
+def test_staff_app_api_client_has_record_payment():
+    src = _read("mobile/staff-app/src/lib/api.ts")
+    assert "recordPayment:" in src
+    assert "/record-payment" in src
+    assert "payable_to_provider?:number" in src
+
+
+# ── Customer app (React Native) ─────────────────────────────────────────────
+
+def test_customer_app_booking_detail_shows_credit_and_direct_payment():
+    src = _read("mobile/customer-app/src/screens/BookingDetailScreen.tsx")
+    assert "ServiceOS Credit Used" in src
+    assert "Paid Directly To Provider" in src
+    assert "pay the remaining amount directly to the provider" in src
+
+
+def test_customer_app_does_not_show_provider_deduction_language():
+    src = _read("mobile/customer-app/src/screens/BookingDetailScreen.tsx")
+    forbidden = ["commission", "Commission", "usage credit balance", "wallet"]
+    for term in forbidden:
+        assert term not in src, f"Customer app must not show '{term}'"
+
+
+def test_customer_app_api_types_have_credit_applied_and_payable_amount():
+    src = _read("mobile/customer-app/src/lib/api.ts")
+    assert "credit_applied?:number" in src
+    assert "payable_amount?:number" in src
+
+
+# ── Forbidden-term scan on all fixed job-completion-facing pages ────────────
+
+_FORBIDDEN = ["Payout", "Withdraw", "Cash Wallet", "Escrow", "Provider Earnings Wallet"]
+
+def test_no_forbidden_labels_on_job_completion_facing_pages():
+    # "Platform Payment" is exempted: the ticket's own Part C spec requires the
+    # literal disclosure line "Platform Payment: Not collected by ServiceOS" —
+    # a negation clarifying ServiceOS does NOT hold the payment, not a payout
+    # feature name. The other 5 forbidden terms have no such carve-out.
+    pages = [
+        "frontend/tenant-portal/app/(tenant)/bookings/[id]/page.tsx",
+        "frontend/tenant-portal/app/(tenant)/jobs/[id]/page.tsx",
+        "frontend/super-admin/app/admin/bookings/[id]/page.tsx",
+        "frontend/super-admin/app/admin/operations/[jobId]/page.tsx",
+        "mobile/staff-app/src/screens/JobDetailScreen.tsx",
+        "mobile/customer-app/src/screens/BookingDetailScreen.tsx",
+    ]
+    for page in pages:
+        src = _read(page)
+        for term in _FORBIDDEN:
+            assert term not in src, f"{page} must not contain forbidden term '{term}'"

@@ -1,0 +1,293 @@
+"""
+MediaStorageService — pluggable storage backend.
+
+Drivers: local | cloudinary | s3_compatible
+Selected by FILE_STORAGE_DRIVER env var (defaults to 'local').
+
+Local driver stores files in ./uploads/ and serves them via FastAPI StaticFiles.
+"""
+from __future__ import annotations
+
+import hashlib
+import mimetypes
+import os
+import pathlib
+import secrets
+import time
+import hashlib
+import structlog
+from dataclasses import dataclass
+from typing import Literal
+
+from app.config import get_settings
+
+logger = structlog.get_logger("media.storage")
+
+StorageDriver = Literal["local", "cloudinary", "s3_compatible", "cloudflare_r2"]
+
+UPLOADS_DIR = pathlib.Path("uploads")  # relative to working dir; create if missing
+
+
+@dataclass
+class StoredFile:
+    storage_driver: str
+    storage_key: str
+    storage_bucket: str | None
+    public_url: str | None
+    file_name_stored: str
+    checksum: str | None
+
+
+class MediaStorageService:
+    """
+    Single entry point for all file storage operations.
+    The driver is chosen from FILE_STORAGE_DRIVER (or 'cloudinary' if Cloudinary is configured
+    and no explicit FILE_STORAGE_DRIVER is set).
+    """
+
+    def __init__(self) -> None:
+        self._settings = get_settings()
+        self._driver: StorageDriver = self._resolve_driver()
+
+    def _resolve_driver(self) -> StorageDriver:
+        explicit = getattr(self._settings, "FILE_STORAGE_DRIVER", "").strip().lower()
+        if explicit in ("local", "s3_compatible", "cloudflare_r2", "cloudinary"):
+            return explicit  # type: ignore[return-value]
+        # Auto-select: prefer Cloudinary if configured
+        from app.cloudinary_client import is_configured as cloudinary_ok
+        if cloudinary_ok():
+            return "cloudinary"
+        return "local"
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    async def store_file(
+        self,
+        file_bytes: bytes,
+        original_filename: str,
+        mime_type: str,
+        media_context: str,
+        owner_id: str,
+    ) -> StoredFile:
+        """Upload bytes to the configured storage driver. Returns StoredFile."""
+        ext = self._extract_extension(original_filename, mime_type)
+        stored_name = f"{secrets.token_hex(12)}{ext}"
+        checksum = hashlib.sha256(file_bytes).hexdigest()
+
+        if self._driver == "cloudinary":
+            return await self._store_cloudinary(file_bytes, stored_name, media_context, owner_id, checksum)
+        if self._driver in ("s3_compatible", "cloudflare_r2"):
+            return await self._store_s3(file_bytes, stored_name, media_context, owner_id, checksum, mime_type)
+        # default: local
+        return self._store_local(file_bytes, stored_name, media_context, owner_id, checksum)
+
+    async def delete_file(self, storage_driver: str, storage_key: str) -> bool:
+        """Delete a file from storage. Returns True if deleted."""
+        try:
+            if storage_driver == "local":
+                path = UPLOADS_DIR / storage_key
+                if path.exists():
+                    path.unlink()
+                return True
+            if storage_driver == "cloudinary":
+                return await self._delete_cloudinary(storage_key)
+            if storage_driver in ("s3_compatible", "cloudflare_r2"):
+                return await self._delete_s3(storage_key)
+        except Exception as exc:
+            logger.warning("media.storage.delete_failed", driver=storage_driver,
+                           storage_key=storage_key, error=str(exc))
+        return False
+
+    def get_view_url(self, storage_driver: str, storage_key: str,
+                     public_url: str | None, is_public: bool) -> str:
+        """Return the URL to serve/view a file. For private files, use the serve endpoint."""
+        if is_public and public_url:
+            return public_url
+        # Private: route through our serve endpoint (access-checked)
+        return f"/v1/media/assets/{storage_key.replace('/', '%2F')}/serve"
+
+    def get_local_path(self, storage_key: str) -> pathlib.Path | None:
+        """Resolve local file path. Returns None if not a local file or missing."""
+        path = UPLOADS_DIR / storage_key
+        return path if path.exists() else None
+
+    def validate_storage_config(self) -> None:
+        """Raise ValueError if the configured driver is missing required settings."""
+        if self._driver == "local":
+            return  # always valid
+        if self._driver == "cloudinary":
+            s = self._settings
+            missing = [k for k in ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET")
+                       if not getattr(s, k, "")]
+            if missing:
+                raise ValueError(f"Cloudinary storage configured but missing: {', '.join(missing)}")
+        if self._driver in ("s3_compatible", "cloudflare_r2"):
+            s = self._settings
+            missing = [k for k in ("FILE_STORAGE_BUCKET", "FILE_STORAGE_ACCESS_KEY", "FILE_STORAGE_SECRET_KEY")
+                       if not getattr(s, k, "")]
+            if missing:
+                raise ValueError(f"S3 storage configured but missing: {', '.join(missing)}")
+
+    @property
+    def driver(self) -> StorageDriver:
+        return self._driver
+
+    # ── Local ─────────────────────────────────────────────────────────────────
+
+    def _store_local(
+        self, file_bytes: bytes, stored_name: str, media_context: str,
+        owner_id: str, checksum: str
+    ) -> StoredFile:
+        rel_dir = pathlib.Path(media_context)
+        abs_dir = UPLOADS_DIR / rel_dir
+        abs_dir.mkdir(parents=True, exist_ok=True)
+        storage_key = str(rel_dir / stored_name)
+        abs_path = UPLOADS_DIR / storage_key
+        abs_path.write_bytes(file_bytes)
+        public_url = f"/uploads/{storage_key}"
+        return StoredFile(
+            storage_driver="local",
+            storage_key=storage_key,
+            storage_bucket=None,
+            public_url=public_url,
+            file_name_stored=stored_name,
+            checksum=checksum,
+        )
+
+    # ── Cloudinary ────────────────────────────────────────────────────────────
+
+    async def _store_cloudinary(
+        self, file_bytes: bytes, stored_name: str, media_context: str,
+        owner_id: str, checksum: str
+    ) -> StoredFile:
+        """Upload directly to Cloudinary via server-side upload (not client-side)."""
+        import httpx
+        from app.cloudinary_client import build_upload_params
+
+        public_id = f"serviceos/{media_context}/{stored_name}"
+        params = build_upload_params(public_id=public_id)
+        params.pop("upload_url", None)
+
+        settings = self._settings
+        upload_url = f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}/auto/upload"
+
+        form_data: dict = {k: str(v) for k, v in params.items()}
+        files = {"file": (stored_name, file_bytes)}
+
+        timeout = httpx.Timeout(connect=8.0, read=45.0, write=45.0, pool=5.0)
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(upload_url, data=form_data, files=files)
+                resp.raise_for_status()
+                result = resp.json()
+        except httpx.TimeoutException:
+            from app.exceptions import ServiceOSException
+            raise ServiceOSException(
+                "MEDIA_STORAGE_TIMEOUT",
+                "File upload timed out. Please try again with a smaller file or check your connection.",
+            )
+        except httpx.HTTPStatusError as exc:
+            from app.exceptions import ServiceOSException
+            raise ServiceOSException(
+                "MEDIA_STORAGE_ERROR",
+                f"Storage service returned an error ({exc.response.status_code}). Please try again.",
+            )
+        except httpx.RequestError as exc:
+            from app.exceptions import ServiceOSException
+            raise ServiceOSException(
+                "MEDIA_STORAGE_UNAVAILABLE",
+                "Could not reach the storage service. Please try again shortly.",
+            )
+
+        public_url = result.get("secure_url") or result.get("url")
+        storage_key = result.get("public_id", public_id)
+
+        return StoredFile(
+            storage_driver="cloudinary",
+            storage_key=storage_key,
+            storage_bucket=settings.CLOUDINARY_CLOUD_NAME,
+            public_url=public_url,
+            file_name_stored=stored_name,
+            checksum=checksum,
+        )
+
+    async def _delete_cloudinary(self, storage_key: str) -> bool:
+        import httpx
+        import hashlib
+        settings = self._settings
+        timestamp = int(time.time())
+        sign_str = f"public_id={storage_key}&timestamp={timestamp}{settings.CLOUDINARY_API_SECRET}"
+        signature = hashlib.sha1(sign_str.encode()).hexdigest()
+        url = f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}/image/destroy"
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, data={
+                "public_id": storage_key, "timestamp": timestamp,
+                "api_key": settings.CLOUDINARY_API_KEY, "signature": signature,
+            })
+        return resp.status_code == 200
+
+    # ── S3-compatible ─────────────────────────────────────────────────────────
+
+    async def _store_s3(
+        self, file_bytes: bytes, stored_name: str, media_context: str,
+        owner_id: str, checksum: str, mime_type: str
+    ) -> StoredFile:
+        """Upload to any S3-compatible endpoint (including Cloudflare R2)."""
+        import httpx
+        from datetime import datetime
+
+        settings = self._settings
+        bucket = getattr(settings, "FILE_STORAGE_BUCKET", "")
+        endpoint = getattr(settings, "FILE_STORAGE_ENDPOINT", "").rstrip("/")
+        region = getattr(settings, "FILE_STORAGE_REGION", "auto")
+        access_key = getattr(settings, "FILE_STORAGE_ACCESS_KEY", "")
+        secret_key = getattr(settings, "FILE_STORAGE_SECRET_KEY", "")
+
+        storage_key = f"{media_context}/{stored_name}"
+        url = f"{endpoint}/{bucket}/{storage_key}"
+
+        # Simple AWS SigV4 signing is complex; for brevity use presigned URL approach
+        # or boto3. For now, POST directly with basic auth if configured.
+        # Production deployments should use boto3 / real SigV4.
+        headers = {
+            "Content-Type": mime_type,
+            "Content-Length": str(len(file_bytes)),
+        }
+
+        async with httpx.AsyncClient(timeout=60, auth=(access_key, secret_key)) as client:
+            resp = await client.put(url, content=file_bytes, headers=headers)
+            resp.raise_for_status()
+
+        base_url = getattr(settings, "FILE_STORAGE_PUBLIC_BASE_URL", "").rstrip("/")
+        public_url = f"{base_url}/{storage_key}" if base_url else None
+
+        return StoredFile(
+            storage_driver=self._driver,
+            storage_key=storage_key,
+            storage_bucket=bucket,
+            public_url=public_url,
+            file_name_stored=stored_name,
+            checksum=checksum,
+        )
+
+    async def _delete_s3(self, storage_key: str) -> bool:
+        import httpx
+        settings = self._settings
+        bucket = getattr(settings, "FILE_STORAGE_BUCKET", "")
+        endpoint = getattr(settings, "FILE_STORAGE_ENDPOINT", "").rstrip("/")
+        access_key = getattr(settings, "FILE_STORAGE_ACCESS_KEY", "")
+        secret_key = getattr(settings, "FILE_STORAGE_SECRET_KEY", "")
+        url = f"{endpoint}/{bucket}/{storage_key}"
+        async with httpx.AsyncClient(timeout=15, auth=(access_key, secret_key)) as client:
+            resp = await client.delete(url)
+        return resp.status_code in (200, 204)
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_extension(filename: str, mime_type: str) -> str:
+        ext = pathlib.Path(filename).suffix.lower()
+        if ext:
+            return ext
+        guessed = mimetypes.guess_extension(mime_type)
+        return guessed or ".bin"

@@ -1,0 +1,294 @@
+# E2E-12 Final Route Smoke Report
+
+**Date:** 2026-07-10  
+**Method:** Static analysis — page.tsx file enumeration only (no live browser testing)
+
+---
+
+## Admin Portal Routes (super-admin)
+
+| Route | File Present |
+|-------|-------------|
+| /login | YES |
+| /admin/dashboard | YES |
+| /admin/tenants | YES |
+| /admin/tenants/[id] | YES |
+| /admin/tenants/onboarding | YES |
+| /admin/users | YES |
+| /admin/users/[id] | YES |
+| /admin/users/permissions | YES |
+| /admin/users/roles | YES |
+| /admin/categories | YES |
+| /admin/categories/[id] | YES |
+| /admin/verticals | YES |
+| /admin/catalog | YES |
+| /admin/catalog/[vertical] | YES |
+| /admin/catalog-module/[key] | YES |
+| /admin/brands | YES |
+| /admin/brand-requests | YES |
+| /admin/service-groups | YES |
+| /admin/master-services | YES |
+| /admin/service-options | YES |
+| /admin/service-options/[id] | YES |
+| /admin/issue-types | YES |
+| /admin/checklists | YES |
+| /admin/checklist-templates | YES |
+| /admin/types-brands | YES |
+| /admin/packages | YES |
+| /admin/bookings | YES |
+| /admin/bookings/[id] | YES |
+| /admin/customers | YES |
+| /admin/customers/[id] | YES |
+| /admin/staff | YES |
+| /admin/staff/[id] | YES |
+| /admin/operations | YES |
+| /admin/operations/[jobId] | YES |
+| /admin/complaints | YES |
+| /admin/refund-requests | YES |
+| /admin/rework-requests | YES |
+| /admin/reviews | YES |
+| /admin/review-flags | YES |
+| /admin/review-policies | YES |
+| /admin/review-replies | YES |
+| /admin/rating-summaries | YES |
+| /admin/finance | YES |
+| /admin/finance/wallets | YES |
+| /admin/finance/wallets/[wallet_id] | YES |
+| /admin/finance/deposits | YES |
+| /admin/finance/deposits/[deposit_id] | YES |
+| /admin/finance/payouts | YES |
+| /admin/finance/payouts/[payout_id] | YES |
+| /admin/finance/topups | YES |
+| /admin/finance/topups/[topup_id] | YES |
+| /admin/finance/claims | YES |
+| /admin/finance/claims/[claim_id] | YES |
+| /admin/finance/dispute-settlements | YES |
+| /admin/finance/customer-credits | YES |
+| /admin/finance/usage-credits | YES |
+| /admin/finance/tenant-penalties | YES |
+| /admin/financial-events | YES |
+| /admin/payments | YES |
+| /admin/commission-records | YES |
+| /admin/provider-wallets | YES |
+| /admin/service-invoices | YES |
+| /admin/settings | YES |
+| /admin/engines | YES |
+| /admin/engines/[engine_key] | YES |
+| /admin/engines/resolver | YES |
+| /admin/analytics | YES |
+| /admin/analytics/categories | YES |
+| /admin/analytics/categories/[id] | YES |
+| /admin/analytics/providers | YES |
+| /admin/analytics/providers/[id] | YES |
+| /admin/analytics/financial | YES |
+| /admin/analytics/complaints | YES |
+| /admin/analytics/quality | YES |
+| /admin/analytics/staff | YES |
+| /admin/analytics/alerts | YES |
+| /admin/reports | YES |
+| /admin/marketing | YES |
+| /admin/marketing/campaigns | YES |
+| /admin/marketing/campaigns/[id] | YES |
+| /admin/marketing/assets | YES |
+| /admin/marketing/templates | YES |
+| /admin/marketing/segments | YES |
+| /admin/marketing/events | YES |
+| /admin/marketing/generate | YES |
+| /admin/marketing/publish-queue | YES |
+| /admin/marketing/automation | YES |
+| /admin/compliance | YES |
+| /admin/security | YES |
+| /admin/security/threats/[threat_id] | YES |
+| /admin/audit-logs | YES |
+| /admin/notifications | YES |
+| /admin/notifications/templates | YES |
+| /admin/notification-templates | YES (legacy redirect page) |
+| /admin/notification-outbox | YES |
+| /admin/chat | YES |
+| /admin/ai | YES |
+| /admin/ai/sessions | YES |
+| /admin/ai/sessions/[session_id] | YES |
+| /admin/ai/metrics | YES |
+| /admin/ai/failed-actions | YES |
+| /admin/ai-chat | YES |
+| /admin/ai-chat/sessions | YES |
+| /admin/ai-chat/logs | YES |
+| /admin/ai-chat/prompt-templates | YES |
+| /admin/ai-chat/test-console | YES |
+| /admin/intelligence | YES |
+| /admin/intelligence/knowledge-bases/[id] | YES |
+| /admin/automation/recommendation-rules | YES |
+| /admin/automation/recommendation-rules/[ruleId] | YES |
+| /admin/automation/recommendation-results | YES |
+| /admin/pricing | YES |
+| /admin/pricing/bargain-rules | YES (deprecated page, labeled as such) |
+| /admin/pricing/provider-overrides | YES |
+| /admin/pricing/tiers/[tier_id] | YES |
+| /admin/pricing-rules | YES |
+| /admin/pricing-tiers | YES |
+| /admin/bookability/providers | YES |
+| /admin/home-services/overview | YES |
+| /admin/home-services/settings | YES |
+| /admin/home-services/service-catalog | YES |
+| /admin/home-services/pricing-rules | YES |
+| /admin/home-services/price-experience | YES |
+| /admin/home-services/provider-matching | YES |
+| /admin/home-services/matching-diagnostics | YES |
+| /admin/home-services/service-areas | YES |
+| /admin/home-services/service-jobs | YES |
+| /admin/home-services/service-jobs/[jobId] | YES |
+| /admin/home-services/booking-drafts | YES |
+| /admin/home-services/completed-job-deduction | YES |
+| /admin/location-mapping | YES |
+| /admin/media | YES |
+| /admin/onboarding/providers | YES |
+| /admin/workflows/templates | YES |
+| /admin/workflows/templates/[id] | YES |
+| /admin/workflow-templates | YES |
+| /admin/service-setup | YES |
+| /admin/service-setup/templates | YES |
+| /admin/service-setup/templates/[templateId] | YES |
+| /admin/service-setup/templates/[templateId]/runs | YES |
+| /admin/service-setup/bulk-wizard | YES |
+| /admin/service-setup/bulk-wizard/[draftId] | YES |
+| /admin/service-setup/bulk-runs | YES |
+| /admin/service-setup/bulk-runs/[runId] | YES |
+| /admin/service-setup/brands | YES |
+| /admin/service-setup/brands/[brand_id] | YES |
+| /admin/service-setup/brand-requests | YES |
+| /admin/service-setup/brand-templates | YES |
+| /admin/service-setup/issue-types | YES |
+| /admin/service-setup/option-groups | YES |
+| /admin/service-setup/service-options | YES |
+| /admin/customer-flow | YES |
+| /admin/customer-flow/drafts | YES |
+| /admin/customer-flow/drafts/[draftId] | YES |
+| /admin/coaching/appointment-drafts | YES |
+| /admin/real-estate/lead-drafts | YES |
+| /admin/complaint-policies | YES |
+| /admin/account | YES |
+| /admin/account/sessions | YES |
+| /admin/account/login-history | YES |
+| /admin/profile | YES |
+| /admin/users/permissions | YES |
+| /change-password-required | YES |
+
+**Total admin routes:** ~140+
+
+---
+
+## Tenant Portal Routes (tenant-portal)
+
+| Route | File Present |
+|-------|-------------|
+| /login | YES |
+| /register | YES |
+| /onboarding | YES |
+| /change-password | YES |
+| /change-password-required | YES |
+| /forgot-password | YES |
+| /(tenant)/dashboard | YES |
+| /(tenant)/bookings | YES |
+| /(tenant)/bookings/[id] | YES |
+| /(tenant)/jobs | YES |
+| /(tenant)/jobs/[id] | YES |
+| /(tenant)/service-jobs | YES |
+| /(tenant)/service-jobs/[id] | YES |
+| /(tenant)/service-jobs/[id]/execution | YES |
+| /(tenant)/service-jobs/[id]/quotes | YES |
+| /(tenant)/dispatch | YES |
+| /(tenant)/staff | YES |
+| /(tenant)/staff/[id] | YES |
+| /(tenant)/customers | YES |
+| /(tenant)/customers/[id] | YES |
+| /(tenant)/catalog | YES |
+| /(tenant)/services | YES |
+| /(tenant)/service-areas | YES |
+| /(tenant)/reviews | YES |
+| /(tenant)/analytics | YES |
+| /(tenant)/analytics/financial | YES |
+| /(tenant)/analytics/quality | YES |
+| /(tenant)/analytics/staff | YES |
+| /(tenant)/analytics/complaints | YES |
+| /(tenant)/analytics/alerts | YES |
+| /(tenant)/insights | YES |
+| /(tenant)/reports | YES |
+| /(tenant)/marketing | YES |
+| /(tenant)/marketing/campaign-impact | YES |
+| /(tenant)/marketing/visibility | YES |
+| /(tenant)/notifications | YES |
+| /(tenant)/chat | YES |
+| /(tenant)/finance | YES |
+| /(tenant)/finance/package | YES |
+| /(tenant)/finance/security-deposit | YES |
+| /(tenant)/finance/usage-credit-ledger | YES |
+| /(tenant)/wallet | YES |
+| /(tenant)/packages | YES |
+| /(tenant)/profile | YES |
+| /(tenant)/settings | YES |
+| /(tenant)/settings/engines | YES |
+| /(tenant)/account | YES |
+| /(tenant)/account/credits | YES |
+| /(tenant)/account/privacy | YES |
+| /(tenant)/account/privacy/requests | YES |
+| /(tenant)/account/privacy/requests/[id] | YES |
+| /(tenant)/activity | YES |
+| /(tenant)/documents | YES |
+| /(tenant)/inventory | YES |
+| /(tenant)/media | YES |
+| /(tenant)/ai-chat | YES |
+| /(tenant)/onboarding-status | YES |
+| /(tenant)/setup/checklist | YES |
+| /(tenant)/setup/service-coverage | YES |
+| /(tenant)/appointments | YES |
+| /(tenant)/users | YES |
+| /(tenant)/provider/service-setup | YES |
+| /(tenant)/provider/offerings | YES |
+| /(tenant)/provider/service-coverage | YES |
+| /(tenant)/provider/service-areas | YES |
+| /(tenant)/provider/pricing | YES |
+| /(tenant)/provider/team-members | YES |
+| /(tenant)/provider/availability | YES |
+| /(tenant)/provider/status | YES |
+| /(tenant)/provider/services | YES |
+| /(tenant)/provider/service-options | YES |
+| /(tenant)/provider/service-invoices | YES |
+| /(tenant)/provider/reviews | YES |
+| /(tenant)/provider/reviews/summary | YES |
+| /(tenant)/provider/reviews/staff-summary | YES |
+| /(tenant)/provider/complaints | YES |
+| /(tenant)/provider/refund-requests | YES |
+| /(tenant)/provider/rework-requests | YES |
+| /(tenant)/provider/compliance | YES |
+| /(tenant)/provider/compliance/requests/[id] | YES |
+| /(tenant)/provider/notifications | YES |
+| /(tenant)/provider/chat | YES |
+| /(tenant)/provider/marketing | YES |
+| /(tenant)/provider/customer-price-preview | YES |
+| /(tenant)/provider/wallet | YES |
+| /(tenant)/provider/subscription-status | YES |
+| /(tenant)/provider/staff | YES |
+| /(tenant)/tenant/setup/services | YES |
+| /(tenant)/tenant/setup/availability | YES |
+| /staff/login | YES |
+| /staff/dashboard | YES |
+| /staff/jobs | YES |
+| /staff/jobs/[job_id] | YES |
+| /staff/home-services/jobs | YES |
+| /staff/home-services/jobs/[job_id] | YES |
+| /staff/profile | YES |
+| /staff/availability | YES |
+| /staff/service-areas | YES |
+| /staff/skills | YES |
+| /staff/notifications | YES |
+| /staff/activity | YES |
+| /staff/documents | YES |
+| /staff/security/sessions | YES |
+
+**Total tenant routes:** ~100+
+
+---
+
+## Summary
+
+All expected routes have corresponding page.tsx files. No missing pages detected by static analysis. Browser-level verification (actual rendering, API response, auth guard) was NOT performed in this sprint.

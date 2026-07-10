@@ -1,0 +1,151 @@
+"""Media Vault — MediaService."""
+from __future__ import annotations
+import uuid, secrets
+from datetime import datetime, timezone, timedelta
+import structlog
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.engines.media.models import MediaFile, MediaUploadSession
+from app.exceptions import ServiceOSException, NotFoundException
+from app.schemas.base import encode_cursor, decode_cursor
+from app.cloudinary_client import is_configured as cloudinary_configured, build_upload_params, build_delivery_url
+
+logger = structlog.get_logger("media.service")
+utcnow = lambda: datetime.now(timezone.utc)
+MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB default
+
+
+class MediaService:
+    def __init__(self, db: AsyncSession, request_id: str = "—",
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+        self.db = db; self.request_id = request_id
+        self.actor_id = actor_id; self.actor_role = actor_role
+
+    def _file_dict(self, f: MediaFile, signed_url: str | None = None) -> dict:
+        return {"file_id": str(f.id), "tenant_id": str(f.tenant_id),
+                "original_name": f.original_name, "mime_type": f.mime_type,
+                "size_bytes": f.size_bytes, "entity_type": f.entity_type,
+                "entity_id": f.entity_id, "is_public": f.is_public,
+                "scan_status": f.scan_status, "signed_url": signed_url,
+                "created_at": f.created_at.isoformat()}
+
+    async def initiate_upload(self, tenant_id: uuid.UUID, file_name: str,
+                               mime_type: str, size_bytes: int,
+                               entity_type: str | None, entity_id: str | None) -> dict:
+        if size_bytes > MAX_FILE_SIZE_BYTES:
+            raise ServiceOSException("VALIDATION_ERROR",
+                f"File exceeds maximum size of {MAX_FILE_SIZE_BYTES // (1024*1024)}MB.")
+
+        # Check quota (5GB default per tenant)
+        quota_r = await self.db.execute(select(func.sum(MediaFile.size_bytes)).where(
+            MediaFile.tenant_id == tenant_id, MediaFile.is_deleted == False))
+        used = quota_r.scalar_one_or_none() or 0
+        quota_bytes = 5 * 1024 * 1024 * 1024
+        if used + size_bytes > quota_bytes:
+            raise ServiceOSException("PLAN_LIMIT_EXCEEDED",
+                "Storage quota exceeded.",
+                context={"used_gb": round(used/1024**3, 2),
+                         "quota_gb": quota_bytes // 1024**3})
+
+        storage_key = f"tenants/{tenant_id}/{secrets.token_hex(8)}/{file_name}"
+        expires_at = utcnow() + timedelta(hours=1)
+
+        if cloudinary_configured():
+            upload_params = build_upload_params(public_id=storage_key, folder=f"tenants/{tenant_id}")
+            upload_url = upload_params["upload_url"]
+        else:
+            upload_params = None
+            upload_url = f"https://s3.placeholder.com/upload?key={storage_key}&token={secrets.token_hex(16)}"
+
+        session = MediaUploadSession(
+            tenant_id=tenant_id, owner_id=self.actor_id or tenant_id,
+            file_name=file_name, mime_type=mime_type, size_bytes=size_bytes,
+            storage_key=storage_key, upload_url=upload_url,
+            entity_type=entity_type, entity_id=entity_id, expires_at=expires_at,
+        )
+        self.db.add(session); await self.db.flush()
+        result = {"session_id": str(session.id), "upload_url": upload_url,
+                  "storage_key": storage_key, "expires_at": expires_at.isoformat(),
+                  "max_size_bytes": MAX_FILE_SIZE_BYTES}
+        if upload_params:
+            result["upload_params"] = upload_params
+        return result
+
+    async def confirm_upload(self, session_id: uuid.UUID, is_public: bool) -> dict:
+        r = await self.db.execute(select(MediaUploadSession).where(
+            MediaUploadSession.id == session_id))
+        sess = r.scalar_one_or_none()
+        if not sess: raise NotFoundException("UploadSession", str(session_id))
+        if sess.status == "confirmed":
+            raise ServiceOSException("CONFLICT", "Upload already confirmed.")
+        if sess.expires_at < utcnow():
+            raise ServiceOSException("CONFLICT", "Upload session expired.")
+
+        file = MediaFile(
+            tenant_id=sess.tenant_id, owner_id=sess.owner_id,
+            original_name=sess.file_name, storage_key=sess.storage_key,
+            mime_type=sess.mime_type, size_bytes=sess.size_bytes,
+            is_public=is_public, entity_type=sess.entity_type,
+            entity_id=sess.entity_id, scan_status="clean",
+        )
+        self.db.add(file)
+        sess.status = "confirmed"
+        await self.db.flush()
+        signed_url = self._signed_url(file.storage_key, file.mime_type)
+        return self._file_dict(file, signed_url)
+
+    async def get_file(self, file_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
+        r = await self.db.execute(select(MediaFile).where(
+            MediaFile.id == file_id, MediaFile.tenant_id == tenant_id,
+            MediaFile.is_deleted == False))
+        f = r.scalar_one_or_none()
+        if not f: raise NotFoundException("MediaFile", str(file_id))
+        signed_url = self._signed_url(f.storage_key, f.mime_type)
+        return self._file_dict(f, signed_url)
+
+    def _signed_url(self, storage_key: str, mime_type: str) -> str:
+        if cloudinary_configured():
+            resource_type = "image" if mime_type.startswith("image/") else "video" if mime_type.startswith("video/") else "raw"
+            return build_delivery_url(storage_key, resource_type)
+        return f"https://cdn.placeholder.com/{storage_key}?sig={secrets.token_hex(8)}"
+
+    async def list_files(self, tenant_id: uuid.UUID, entity_type: str | None,
+                          entity_id: str | None, limit: int, cursor: str | None) -> dict:
+        q = select(MediaFile).where(
+            MediaFile.tenant_id == tenant_id, MediaFile.is_deleted == False
+        ).order_by(MediaFile.created_at.desc())
+        if entity_type: q = q.where(MediaFile.entity_type == entity_type)
+        if entity_id: q = q.where(MediaFile.entity_id == entity_id)
+        if cursor:
+            try:
+                c = decode_cursor(cursor)
+                q = q.where(MediaFile.created_at < datetime.fromisoformat(c["created_at"]))
+            except Exception: pass
+        q = q.limit(limit + 1)
+        r = await self.db.execute(q)
+        files = r.scalars().all()
+        has_next = len(files) > limit; files = files[:limit]
+        nc = encode_cursor({"created_at": files[-1].created_at.isoformat()}) if has_next and files else None
+        return {"files": [self._file_dict(f) for f in files],
+                "has_next": has_next, "next_cursor": nc}
+
+    async def delete_file(self, file_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
+        r = await self.db.execute(select(MediaFile).where(
+            MediaFile.id == file_id, MediaFile.tenant_id == tenant_id))
+        f = r.scalar_one_or_none()
+        if not f: raise NotFoundException("MediaFile", str(file_id))
+        f.is_deleted = True; f.deleted_at = utcnow()
+        return {"file_id": str(file_id), "deleted": True}
+
+    async def get_storage_quota(self, tenant_id: uuid.UUID) -> dict:
+        r = await self.db.execute(select(func.sum(MediaFile.size_bytes),
+                                          func.count(MediaFile.id)).where(
+            MediaFile.tenant_id == tenant_id, MediaFile.is_deleted == False))
+        row = r.one()
+        used = row[0] or 0; file_count = row[1]
+        quota = 5 * 1024 * 1024 * 1024
+        return {"tenant_id": str(tenant_id),
+                "used_bytes": used, "used_gb": round(used/1024**3, 3),
+                "quota_bytes": quota, "quota_gb": quota//1024**3,
+                "usage_pct": round(used/quota*100, 1), "file_count": file_count,
+                "alert": used/quota > 0.85}

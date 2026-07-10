@@ -1,0 +1,721 @@
+"""Admin Catalog — Tenant Service Enablement.
+
+Tenants enable master services from the admin catalog.
+Tenant cannot change job_type, cannot price below admin min, cannot select
+unsupported brands/types.
+"""
+from __future__ import annotations
+import uuid
+from decimal import Decimal
+from datetime import datetime, timezone
+
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.engines.admin_catalog.models import (
+    MasterService, ServiceCategory, ServicePricingRule,
+    TenantService, TenantServiceType, TenantServiceBrand,
+    MasterServiceType, MasterServiceBrand, ServiceType, Brand,
+)
+from app.engines.admin_catalog.bargain_engine import (
+    compute_symmetric_customer_price_tiers, BargainValidationError,
+)
+from app.engines.serviceability.models import TenantServiceArea
+from app.exceptions import ServiceOSException, NotFoundException
+
+utcnow = lambda: datetime.now(timezone.utc)
+
+
+class TenantCatalogService:
+    def __init__(self, db: AsyncSession, request_id: str = "—",
+                 actor_id: uuid.UUID | None = None,
+                 actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
+        self.db = db
+        self.request_id = request_id
+        self.actor_id = actor_id
+        self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_tenant_id(self, tenant_id_raw) -> uuid.UUID:
+        if tenant_id_raw:
+            return uuid.UUID(str(tenant_id_raw))
+        if self.actor_tenant_id:
+            return self.actor_tenant_id
+        raise ServiceOSException("TENANT_NOT_FOUND", "tenant_id is required.", status_code=422)
+
+    # ═══════════════════════════════════════════════════════════
+    # Available Services (from admin master catalog)
+    # ═══════════════════════════════════════════════════════════
+
+    async def get_home_services_category_id(self) -> uuid.UUID:
+        res = await self.db.execute(
+            select(ServiceCategory).where(ServiceCategory.vertical_type == "home_services"))
+        cat = res.scalars().first()
+        if not cat:
+            raise ServiceOSException("HOME_SERVICES_CATEGORY_NOT_FOUND",
+                "No Home Services category is configured.", status_code=422)
+        return cat.id
+
+    async def list_available_services(self, tenant_id_raw=None, category_id: uuid.UUID | None = None) -> dict:
+        """All active master services — with is_enabled flag per tenant.
+        category_id is optional and additive (existing callers unaffected);
+        the Home Services Setup Wizard always passes the Home Services
+        category id so it never sees another vertical's catalog."""
+        tenant_id = self._require_tenant_id(tenant_id_raw)
+
+        stmt = select(MasterService).where(
+            MasterService.is_active == True,
+            MasterService.deleted_at.is_(None),
+        )
+        if category_id:
+            stmt = stmt.where(MasterService.category_id == category_id)
+        svc_res = await self.db.execute(stmt.order_by(MasterService.display_order, MasterService.service_name))
+        services = svc_res.scalars().all()
+
+        # Which ones the tenant has already enabled
+        enabled_res = await self.db.execute(
+            select(TenantService).where(
+                TenantService.tenant_id == tenant_id,
+                TenantService.is_enabled == True,
+                TenantService.deleted_at.is_(None),
+            ))
+        enabled_set = {ts.master_service_id for ts in enabled_res.scalars().all()}
+
+        return {"services": [
+            {
+                "service_id": str(s.id),
+                "category_id": str(s.category_id),
+                "service_name": s.service_name,
+                "description": s.description,
+                "job_type": s.job_type,
+                "pricing_model": s.pricing_model,
+                "base_price": float(s.base_price),
+                "min_price": float(s.min_price) if s.min_price else None,
+                "max_price": float(s.max_price) if s.max_price else None,
+                "visit_fee": float(s.visit_fee),
+                "is_brand_required": s.is_brand_required,
+                "is_type_required": s.is_type_required,
+                "requires_checklist": s.requires_checklist,
+                "tenant_override_allowed": s.tenant_override_allowed,
+                "is_active": s.is_active,
+                "is_enabled": s.id in enabled_set,
+            }
+            for s in services
+        ]}
+
+    # ═══════════════════════════════════════════════════════════
+    # Enabled Services (tenant's active list)
+    # ═══════════════════════════════════════════════════════════
+
+    async def list_enabled_services(self, tenant_id_raw=None, category_id: uuid.UUID | None = None) -> dict:
+        tenant_id = self._require_tenant_id(tenant_id_raw)
+        stmt = select(TenantService).where(
+            TenantService.tenant_id == tenant_id,
+            TenantService.is_enabled == True,
+            TenantService.deleted_at.is_(None),
+        )
+        if category_id:
+            stmt = stmt.where(TenantService.category_id == category_id)
+        res = await self.db.execute(stmt.order_by(TenantService.created_at))
+        services = res.scalars().all()
+        return {"services": [self._ts_dict(ts) for ts in services]}
+
+    async def list_home_services_available(self, tenant_id_raw=None) -> dict:
+        cat_id = await self.get_home_services_category_id()
+        return await self.list_available_services(tenant_id_raw, category_id=cat_id)
+
+    async def list_home_services_enabled(self, tenant_id_raw=None) -> dict:
+        cat_id = await self.get_home_services_category_id()
+        return await self.list_enabled_services(tenant_id_raw, category_id=cat_id)
+
+    async def get_enabled_service(self, tenant_service_id: uuid.UUID) -> dict:
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        return self._ts_dict(ts)
+
+    # ═══════════════════════════════════════════════════════════
+    # Enable Service
+    # ═══════════════════════════════════════════════════════════
+
+    async def enable_service(self, data: dict, tenant_id_raw=None) -> dict:
+        tenant_id = self._require_tenant_id(tenant_id_raw)
+        svc_id_raw = data.get("master_service_id")
+        if not svc_id_raw:
+            raise ServiceOSException("MASTER_SERVICE_NOT_FOUND", "master_service_id is required.", status_code=422)
+        svc_id = uuid.UUID(str(svc_id_raw))
+
+        # Load master service
+        svc_res = await self.db.execute(
+            select(MasterService).where(MasterService.id == svc_id, MasterService.deleted_at.is_(None)))
+        svc = svc_res.scalar_one_or_none()
+        if not svc:
+            raise NotFoundException("MasterService", str(svc_id))
+        if not svc.is_active:
+            raise ServiceOSException("MASTER_SERVICE_INACTIVE", "Service is not active.", status_code=422)
+
+        # Check category active
+        cat_res = await self.db.execute(
+            select(ServiceCategory).where(ServiceCategory.id == svc.category_id))
+        cat = cat_res.scalar_one_or_none()
+        if not cat or not cat.is_active:
+            raise ServiceOSException("SERVICE_CATEGORY_INACTIVE", "Service category is inactive.", status_code=422)
+
+        # Check not already enabled
+        existing = await self.db.execute(
+            select(TenantService).where(
+                TenantService.tenant_id == tenant_id,
+                TenantService.master_service_id == svc_id,
+                TenantService.deleted_at.is_(None),
+            ))
+        existing_ts = existing.scalar_one_or_none()
+        if existing_ts and existing_ts.is_enabled:
+            raise ServiceOSException("TENANT_SERVICE_ALREADY_ENABLED", "Service is already enabled for this tenant.", status_code=409)
+
+        if existing_ts:
+            # Re-enable
+            existing_ts.is_enabled = True
+            ts = existing_ts
+        else:
+            # Validate price overrides
+            tenant_base  = _decimal_or_none(data.get("tenant_base_price"))
+            tenant_min   = _decimal_or_none(data.get("tenant_min_price"))
+            tenant_max   = _decimal_or_none(data.get("tenant_max_price"))
+            tenant_visit = _decimal_or_none(data.get("tenant_visit_fee"))
+
+            if any([tenant_base, tenant_min, tenant_max, tenant_visit]):
+                if not svc.tenant_override_allowed:
+                    raise ServiceOSException("TENANT_SERVICE_OVERRIDE_NOT_ALLOWED",
+                        "Price override is not allowed for this service.", status_code=422)
+                if tenant_min and svc.min_price and tenant_min < svc.min_price:
+                    raise ServiceOSException("TENANT_PRICE_BELOW_ADMIN_MIN",
+                        f"Tenant min price cannot be below admin min (₹{svc.min_price}).", status_code=422)
+                if tenant_max and svc.max_price and tenant_max > svc.max_price:
+                    raise ServiceOSException("TENANT_PRICE_ABOVE_ADMIN_MAX",
+                        f"Tenant max price cannot exceed admin max (₹{svc.max_price}).", status_code=422)
+
+            ts = TenantService(
+                tenant_id=tenant_id,
+                master_service_id=svc_id,
+                category_id=svc.category_id,
+                job_type=svc.job_type,
+                is_enabled=True,
+                tenant_display_name=data.get("tenant_display_name"),
+                tenant_description=data.get("tenant_description"),
+                tenant_base_price=tenant_base,
+                tenant_min_price=tenant_min,
+                tenant_max_price=tenant_max,
+                tenant_visit_fee=tenant_visit,
+                override_allowed=svc.tenant_override_allowed,
+                requires_brand=svc.is_brand_required,
+                requires_type=svc.is_type_required,
+                is_active=True,
+            )
+            self.db.add(ts)
+
+        await self.db.flush()
+        return self._ts_dict(ts)
+
+    async def update_enabled_service(self, tenant_service_id: uuid.UUID, data: dict) -> dict:
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+
+        if not ts.override_allowed:
+            for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
+                if data.get(field) is not None:
+                    raise ServiceOSException("TENANT_SERVICE_OVERRIDE_NOT_ALLOWED",
+                        "Price override is not allowed for this service.", status_code=422)
+
+        for field in ("tenant_display_name", "tenant_description"):
+            if field in data and data[field] is not None:
+                setattr(ts, field, data[field])
+        for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
+            if field in data and data[field] is not None:
+                setattr(ts, field, Decimal(str(data[field])))
+
+        await self.db.flush()
+        return self._ts_dict(ts)
+
+    async def disable_service(self, data: dict = None, tenant_id_raw=None) -> dict:
+        tenant_id = self._require_tenant_id(tenant_id_raw)
+        svc_id_raw = (data or {}).get("master_service_id")
+        if not svc_id_raw:
+            raise ServiceOSException("MASTER_SERVICE_NOT_FOUND", "master_service_id is required.", status_code=422)
+        svc_id = uuid.UUID(str(svc_id_raw))
+        res = await self.db.execute(
+            select(TenantService).where(
+                TenantService.tenant_id == tenant_id,
+                TenantService.master_service_id == svc_id,
+                TenantService.deleted_at.is_(None),
+            ))
+        ts = res.scalar_one_or_none()
+        if not ts:
+            raise ServiceOSException("TENANT_SERVICE_NOT_ENABLED", "Service is not enabled for this tenant.", status_code=404)
+        ts.is_enabled = False
+        await self.db.flush()
+        return {"disabled": True, "tenant_service_id": str(ts.id)}
+
+    # ═══════════════════════════════════════════════════════════
+    # Tenant Supported Types
+    # ═══════════════════════════════════════════════════════════
+
+    async def get_tenant_service_types(self, tenant_service_id: uuid.UUID) -> dict:
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        res = await self.db.execute(
+            select(TenantServiceType, ServiceType)
+            .join(ServiceType, ServiceType.id == TenantServiceType.service_type_id)
+            .where(TenantServiceType.tenant_service_id == tenant_service_id,
+                   TenantServiceType.is_enabled == True))
+        rows = res.all()
+        return {"types": [
+            {"id": str(tst.id), "service_type_id": str(tst.service_type_id),
+             "name": st.name, "is_enabled": tst.is_enabled,
+             "tenant_price_adjustment": float(tst.tenant_price_adjustment) if tst.tenant_price_adjustment else None}
+            for tst, st in rows
+        ]}
+
+    async def set_tenant_service_types(self, tenant_service_id: uuid.UUID, type_ids: list[str]) -> dict:
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+
+        # Validate all type_ids are mapped to the master service
+        admin_types_res = await self.db.execute(
+            select(MasterServiceType).where(
+                MasterServiceType.master_service_id == ts.master_service_id,
+                MasterServiceType.is_active == True))
+        allowed_type_ids = {str(m.service_type_id) for m in admin_types_res.scalars().all()}
+
+        for tid in type_ids:
+            if tid not in allowed_type_ids:
+                raise ServiceOSException("SERVICE_TYPE_NOT_SUPPORTED",
+                    f"Type {tid} is not mapped to this service by admin.", status_code=422)
+
+        # Deactivate all existing, then upsert new ones
+        existing_res = await self.db.execute(
+            select(TenantServiceType).where(TenantServiceType.tenant_service_id == tenant_service_id))
+        existing_map = {str(x.service_type_id): x for x in existing_res.scalars().all()}
+
+        for tid in type_ids:
+            type_uuid = uuid.UUID(tid)
+            if tid in existing_map:
+                existing_map[tid].is_enabled = True
+            else:
+                tst = TenantServiceType(
+                    tenant_id=ts.tenant_id, tenant_service_id=tenant_service_id,
+                    service_type_id=type_uuid, is_enabled=True)
+                self.db.add(tst)
+
+        # Disable ones not in new list
+        for tid, tst in existing_map.items():
+            if tid not in type_ids:
+                tst.is_enabled = False
+
+        await self.db.flush()
+        return await self.get_tenant_service_types(tenant_service_id)
+
+    # ═══════════════════════════════════════════════════════════
+    # Tenant Supported Brands
+    # ═══════════════════════════════════════════════════════════
+
+    async def get_tenant_service_brands(self, tenant_service_id: uuid.UUID) -> dict:
+        """Brand *enablement* is type-independent (a tenant supports LG or
+        not, regardless of which types they price it for) — restricted to
+        the service_type_id IS NULL marker row per brand so this list isn't
+        polluted by the per-type pricing rows created via set_brand_pricing
+        (migration 120 — Type-Dependent Brand Pricing)."""
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        res = await self.db.execute(
+            select(TenantServiceBrand, Brand)
+            .join(Brand, Brand.id == TenantServiceBrand.brand_id)
+            .where(TenantServiceBrand.tenant_service_id == tenant_service_id,
+                   TenantServiceBrand.service_type_id.is_(None),
+                   TenantServiceBrand.is_enabled == True))
+        rows = res.all()
+        return {"brands": [
+            {"id": str(tsb.id), "brand_id": str(tsb.brand_id),
+             "name": b.name, "is_enabled": tsb.is_enabled,
+             "tenant_price_adjustment": float(tsb.tenant_price_adjustment) if tsb.tenant_price_adjustment else None}
+            for tsb, b in rows
+        ]}
+
+    async def set_tenant_service_brands(self, tenant_service_id: uuid.UUID, brand_ids: list[str]) -> dict:
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+
+        # Validate brands are mapped to master service
+        admin_brands_res = await self.db.execute(
+            select(MasterServiceBrand).where(
+                MasterServiceBrand.master_service_id == ts.master_service_id,
+                MasterServiceBrand.is_active == True))
+        allowed_brand_ids = {str(m.brand_id) for m in admin_brands_res.scalars().all()}
+
+        for bid in brand_ids:
+            if bid not in allowed_brand_ids:
+                raise ServiceOSException("BRAND_NOT_SUPPORTED",
+                    f"Brand {bid} is not mapped to this service by admin.", status_code=422)
+
+        existing_res = await self.db.execute(
+            select(TenantServiceBrand).where(TenantServiceBrand.tenant_service_id == tenant_service_id))
+        existing_map = {str(x.brand_id): x for x in existing_res.scalars().all()}
+
+        for bid in brand_ids:
+            brand_uuid = uuid.UUID(bid)
+            if bid in existing_map:
+                existing_map[bid].is_enabled = True
+            else:
+                tsb = TenantServiceBrand(
+                    tenant_id=ts.tenant_id, tenant_service_id=tenant_service_id,
+                    brand_id=brand_uuid, is_enabled=True)
+                self.db.add(tsb)
+
+        for bid, tsb in existing_map.items():
+            if bid not in brand_ids:
+                tsb.is_enabled = False
+
+        await self.db.flush()
+        return await self.get_tenant_service_brands(tenant_service_id)
+
+    # ═══════════════════════════════════════════════════════════
+    # Home Services Service Setup Wizard — per-type / per-brand pricing
+    # (Step 3 / Step 3B), price preview, and publish (Step 6)
+    # ═══════════════════════════════════════════════════════════
+
+    async def _find_admin_pricing_rule(self, master_service_id: uuid.UUID,
+                                        service_type_id: uuid.UUID | None,
+                                        brand_id: uuid.UUID | None) -> ServicePricingRule | None:
+        """Same scoping the admin console writes to (global default rule,
+        no tier/city) — the tenant reads the admin-approved floor/ceiling
+        from the identical row the admin console's Types & Pricing /
+        Brands tabs create."""
+        stmt = select(ServicePricingRule).where(
+            ServicePricingRule.master_service_id == master_service_id,
+            ServicePricingRule.deleted_at.is_(None),
+            ServicePricingRule.is_active == True,
+            ServicePricingRule.tier_id.is_(None),
+            ServicePricingRule.city.is_(None),
+        )
+        stmt = stmt.where(ServicePricingRule.service_type_id == service_type_id) if service_type_id \
+            else stmt.where(ServicePricingRule.service_type_id.is_(None))
+        stmt = stmt.where(ServicePricingRule.brand_id == brand_id) if brand_id \
+            else stmt.where(ServicePricingRule.brand_id.is_(None))
+        return (await self.db.execute(stmt)).scalars().first()
+
+    async def get_type_pricing_for_setup(self, tenant_service_id: uuid.UUID) -> dict:
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        res = await self.db.execute(
+            select(TenantServiceType, ServiceType)
+            .join(ServiceType, ServiceType.id == TenantServiceType.service_type_id)
+            .where(TenantServiceType.tenant_service_id == tenant_service_id,
+                   TenantServiceType.is_enabled == True))
+        rows = res.all()
+        out = []
+        for tst, st in rows:
+            rule = await self._find_admin_pricing_rule(ts.master_service_id, tst.service_type_id, None)
+            admin_floor = float(rule.min_price) if rule and rule.min_price is not None else None
+            admin_ceiling = float(rule.max_price) if rule and rule.max_price is not None else None
+            fee_pct = float(rule.platform_fee_percent) if rule and rule.platform_fee_percent is not None else 10.0
+            tenant_min = float(tst.tenant_min_price) if tst.tenant_min_price is not None else None
+            tenant_max = float(tst.tenant_max_price) if tst.tenant_max_price is not None else None
+            preview = None
+            if tenant_min is not None and tenant_max is not None:
+                try:
+                    preview = compute_symmetric_customer_price_tiers(tenant_min, tenant_max, fee_pct)
+                except BargainValidationError:
+                    preview = None
+            out.append({
+                "tenant_service_type_id": str(tst.id), "service_type_id": str(tst.service_type_id),
+                "name": st.name,
+                "admin_floor_price": admin_floor, "admin_ceiling_price": admin_ceiling,
+                "platform_fee_percent": fee_pct,
+                "tenant_min_price": tenant_min, "tenant_max_price": tenant_max,
+                "customer_price_preview": preview,
+            })
+        return {"types": out}
+
+    async def set_type_pricing(self, tenant_service_id: uuid.UUID, service_type_id: uuid.UUID,
+                                tenant_min_price, tenant_max_price) -> dict:
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        res = await self.db.execute(
+            select(TenantServiceType).where(
+                TenantServiceType.tenant_service_id == tenant_service_id,
+                TenantServiceType.service_type_id == service_type_id,
+                TenantServiceType.is_enabled == True))
+        tst = res.scalar_one_or_none()
+        if not tst:
+            raise ServiceOSException("SERVICE_TYPE_NOT_SUPPORTED",
+                "This type is not selected for this service.", status_code=422)
+
+        rule = await self._find_admin_pricing_rule(ts.master_service_id, service_type_id, None)
+        admin_floor = rule.min_price if rule else None
+        admin_ceiling = rule.max_price if rule else None
+        if admin_floor is None or admin_ceiling is None:
+            raise ServiceOSException("ADMIN_PRICE_RANGE_NOT_CONFIGURED",
+                "Admin has not configured a price range for this type yet.", status_code=422)
+
+        tmin = _decimal_or_none(tenant_min_price)
+        tmax = _decimal_or_none(tenant_max_price)
+        if tmin is None or tmax is None:
+            raise ServiceOSException("PRICE_RANGE_REQUIRED",
+                "Both minimum and maximum price are required.", status_code=422)
+        if tmin > tmax:
+            raise ServiceOSException("INVALID_PRICE_RANGE",
+                "Minimum price cannot exceed maximum price.", status_code=422)
+        if tmin < admin_floor:
+            raise ServiceOSException("TENANT_PRICE_BELOW_ADMIN_MIN",
+                f"Your minimum price cannot be below the admin floor (Rs. {admin_floor}).", status_code=422)
+        if tmax > admin_ceiling:
+            raise ServiceOSException("TENANT_PRICE_ABOVE_ADMIN_MAX",
+                f"Your maximum price cannot exceed the admin ceiling (Rs. {admin_ceiling}).", status_code=422)
+
+        tst.tenant_min_price = tmin
+        tst.tenant_max_price = tmax
+        await self.db.flush()
+        return await self.get_type_pricing_for_setup(tenant_service_id)
+
+    async def get_brand_pricing_for_setup(self, tenant_service_id: uuid.UUID,
+                                           service_type_id: uuid.UUID | None = None) -> dict:
+        """Type-Dependent Brand Pricing (migration 120): brand rows are now
+        scoped by service_type_id. For a type-based service, callers must
+        pass service_type_id to see/set that type's brand overrides —
+        omitting it returns only the service-level (NULL service_type_id)
+        rows, which only exist for fixed (non-type-based) services."""
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        stmt = (
+            select(TenantServiceBrand, Brand, MasterServiceBrand)
+            .join(Brand, Brand.id == TenantServiceBrand.brand_id)
+            .join(MasterServiceBrand, (MasterServiceBrand.master_service_id == ts.master_service_id) &
+                  (MasterServiceBrand.brand_id == TenantServiceBrand.brand_id))
+            .where(TenantServiceBrand.tenant_service_id == tenant_service_id,
+                   TenantServiceBrand.is_enabled == True)
+        )
+        stmt = stmt.where(TenantServiceBrand.service_type_id == service_type_id) if service_type_id \
+            else stmt.where(TenantServiceBrand.service_type_id.is_(None))
+        rows = (await self.db.execute(stmt)).all()
+        out = []
+        for tsb, b, msb in rows:
+            rule = await self._find_admin_pricing_rule(ts.master_service_id, service_type_id, tsb.brand_id)
+            admin_floor = float(rule.min_price) if rule and rule.min_price is not None else None
+            admin_ceiling = float(rule.max_price) if rule and rule.max_price is not None else None
+            fee_pct = float(rule.platform_fee_percent) if rule and rule.platform_fee_percent is not None else 10.0
+            tenant_min = float(tsb.tenant_min_price) if tsb.tenant_min_price is not None else None
+            tenant_max = float(tsb.tenant_max_price) if tsb.tenant_max_price is not None else None
+            preview = None
+            if msb.can_override_price and tenant_min is not None and tenant_max is not None:
+                try:
+                    preview = compute_symmetric_customer_price_tiers(tenant_min, tenant_max, fee_pct)
+                except BargainValidationError:
+                    preview = None
+            out.append({
+                "tenant_service_brand_id": str(tsb.id), "brand_id": str(tsb.brand_id), "name": b.name,
+                "service_type_id": str(tsb.service_type_id) if tsb.service_type_id else None,
+                "can_override_price": msb.can_override_price, "is_routing_only": msb.is_routing_only,
+                "admin_floor_price": admin_floor, "admin_ceiling_price": admin_ceiling,
+                "platform_fee_percent": fee_pct,
+                "tenant_min_price": tenant_min, "tenant_max_price": tenant_max,
+                "customer_price_preview": preview,
+            })
+        return {"brands": out}
+
+    async def set_brand_pricing(self, tenant_service_id: uuid.UUID, brand_id: uuid.UUID,
+                                 tenant_min_price, tenant_max_price,
+                                 service_type_id: uuid.UUID | None = None) -> dict:
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+
+        # Rule 1/2: type-based services require service_type_id for brand pricing.
+        if ts.requires_type and service_type_id is None:
+            raise ServiceOSException("SERVICE_TYPE_REQUIRED_FOR_BRAND_PRICING",
+                "Service type is required when adding brand pricing for a type-based service.",
+                status_code=422)
+
+        if service_type_id is not None:
+            # Rule 3: the type must actually be enabled for this tenant_service.
+            tst_res = await self.db.execute(
+                select(TenantServiceType).where(
+                    TenantServiceType.tenant_service_id == tenant_service_id,
+                    TenantServiceType.service_type_id == service_type_id,
+                    TenantServiceType.is_enabled == True))
+            if tst_res.scalar_one_or_none() is None:
+                raise ServiceOSException("SERVICE_TYPE_NOT_SUPPORTED",
+                    "This type is not selected for this service.", status_code=422)
+
+        msb_res = await self.db.execute(
+            select(MasterServiceBrand).where(
+                MasterServiceBrand.master_service_id == ts.master_service_id,
+                MasterServiceBrand.brand_id == brand_id,
+                MasterServiceBrand.is_active == True))
+        msb = msb_res.scalar_one_or_none()
+        if msb is None:
+            raise ServiceOSException("BRAND_NOT_SUPPORTED",
+                "This brand is not selected for this service.", status_code=422)
+        if not msb.can_override_price:
+            raise ServiceOSException("BRAND_OVERRIDE_NOT_ALLOWED",
+                "This brand is not configured for price override by admin.", status_code=422)
+
+        rule = await self._find_admin_pricing_rule(ts.master_service_id, service_type_id, brand_id)
+        admin_floor = rule.min_price if rule else None
+        admin_ceiling = rule.max_price if rule else None
+        if admin_floor is None or admin_ceiling is None:
+            raise ServiceOSException("ADMIN_PRICE_RANGE_NOT_CONFIGURED",
+                "Admin has not configured a price range for this brand yet.", status_code=422)
+
+        tmin = _decimal_or_none(tenant_min_price)
+        tmax = _decimal_or_none(tenant_max_price)
+        if tmin is None or tmax is None:
+            raise ServiceOSException("PRICE_RANGE_REQUIRED",
+                "Both minimum and maximum price are required.", status_code=422)
+        if tmin > tmax:
+            raise ServiceOSException("INVALID_PRICE_RANGE",
+                "Minimum price cannot exceed maximum price.", status_code=422)
+        if tmin < admin_floor:
+            raise ServiceOSException("TENANT_PRICE_BELOW_ADMIN_MIN",
+                f"Your minimum price cannot be below the admin floor (Rs. {admin_floor}).", status_code=422)
+        if tmax > admin_ceiling:
+            raise ServiceOSException("TENANT_PRICE_ABOVE_ADMIN_MAX",
+                f"Your maximum price cannot exceed the admin ceiling (Rs. {admin_ceiling}).", status_code=422)
+
+        # Upsert scoped by (tenant_service_id, service_type_id, brand_id) —
+        # this is the actual fix: previously this looked up by
+        # (tenant_service_id, brand_id) only, so Window AC's LG price and
+        # Split AC's LG price silently overwrote the same row.
+        existing_res = await self.db.execute(
+            select(TenantServiceBrand).where(
+                TenantServiceBrand.tenant_service_id == tenant_service_id,
+                TenantServiceBrand.brand_id == brand_id,
+                TenantServiceBrand.service_type_id == service_type_id
+                if service_type_id is not None else TenantServiceBrand.service_type_id.is_(None)))
+        tsb = existing_res.scalar_one_or_none()
+        if tsb is None:
+            tsb = TenantServiceBrand(
+                tenant_id=ts.tenant_id, tenant_service_id=tenant_service_id,
+                service_type_id=service_type_id, brand_id=brand_id, is_enabled=True)
+            self.db.add(tsb)
+
+        tsb.tenant_min_price = tmin
+        tsb.tenant_max_price = tmax
+        await self.db.flush()
+        return await self.get_brand_pricing_for_setup(tenant_service_id, service_type_id)
+
+    def price_options_preview(self, data: dict) -> dict:
+        try:
+            return compute_symmetric_customer_price_tiers(
+                provider_min_price=data.get("tenant_min_price"),
+                provider_max_price=data.get("tenant_max_price"),
+                platform_fee_percent=data.get("platform_fee_percent", 0),
+                platform_fee_fixed_amount=data.get("platform_fee_fixed_amount", 0),
+            )
+        except BargainValidationError as e:
+            raise ServiceOSException(e.code, e.message, status_code=422) from e
+
+    async def publish_service(self, tenant_service_id: uuid.UUID) -> dict:
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+
+        missing: list[dict] = []
+
+        types_res = await self.db.execute(
+            select(TenantServiceType).where(
+                TenantServiceType.tenant_service_id == tenant_service_id,
+                TenantServiceType.is_enabled == True))
+        types = types_res.scalars().all()
+        if ts.requires_type and not types:
+            missing.append({"field": "types", "message": "Select at least one type."})
+        # Any type the tenant selected — required or not — must be priced
+        # before publish (ticket rule: "Price range set for every selected type").
+        for t in types:
+            if t.tenant_min_price is None or t.tenant_max_price is None:
+                missing.append({"field": f"type_pricing:{t.service_type_id}",
+                                "message": "Set a price range for every selected type."})
+
+        brands_res = await self.db.execute(
+            select(TenantServiceBrand).where(
+                TenantServiceBrand.tenant_service_id == tenant_service_id,
+                TenantServiceBrand.is_enabled == True))
+        for b in brands_res.scalars().all():
+            has_partial = (b.tenant_min_price is None) != (b.tenant_max_price is None)
+            if has_partial:
+                missing.append({"field": f"brand_pricing:{b.brand_id}",
+                                 "message": "Brand override price range is incomplete."})
+
+        areas_res = await self.db.execute(
+            select(func.count()).select_from(TenantServiceArea).where(
+                TenantServiceArea.tenant_id == ts.tenant_id, TenantServiceArea.is_active.is_(True)))
+        active_areas = areas_res.scalar_one()
+        if active_areas == 0:
+            missing.append({"field": "service_areas",
+                             "message": "At least one active service area is required to publish."})
+
+        if missing:
+            raise ServiceOSException("SERVICE_SETUP_INCOMPLETE",
+                f"You must complete {len(missing)} item(s) before publishing.",
+                status_code=422, context={"missing": missing, "missing_count": len(missing)})
+
+        ts.setup_status = "published"
+        ts.published_at = utcnow()
+        ts.is_enabled = True
+        await self.db.flush()
+        return self._ts_dict(ts)
+
+    async def save_draft(self, tenant_service_id: uuid.UUID) -> dict:
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        if ts.setup_status != "published":
+            ts.setup_status = "draft"
+            await self.db.flush()
+        return self._ts_dict(ts)
+
+    # ═══════════════════════════════════════════════════════════
+    # Helpers
+    # ═══════════════════════════════════════════════════════════
+
+    async def _load_tenant_service(self, tenant_service_id: uuid.UUID) -> TenantService:
+        res = await self.db.execute(
+            select(TenantService).where(
+                TenantService.id == tenant_service_id,
+                TenantService.deleted_at.is_(None)))
+        ts = res.scalar_one_or_none()
+        if not ts:
+            raise NotFoundException("TenantService", str(tenant_service_id))
+        return ts
+
+    def _assert_tenant_owns_ts(self, ts: TenantService) -> None:
+        if self.actor_role in ("tenant_owner", "staff") and self.actor_tenant_id:
+            if ts.tenant_id != self.actor_tenant_id:
+                raise NotFoundException("TenantService", str(ts.id))
+
+    def _ts_dict(self, ts: TenantService) -> dict:
+        return {
+            "tenant_service_id": str(ts.id),
+            "tenant_id": str(ts.tenant_id),
+            "master_service_id": str(ts.master_service_id),
+            "category_id": str(ts.category_id),
+            "job_type": ts.job_type,
+            "is_enabled": ts.is_enabled,
+            "tenant_display_name": ts.tenant_display_name,
+            "tenant_description": ts.tenant_description,
+            "tenant_base_price": float(ts.tenant_base_price) if ts.tenant_base_price else None,
+            "tenant_min_price": float(ts.tenant_min_price) if ts.tenant_min_price else None,
+            "tenant_max_price": float(ts.tenant_max_price) if ts.tenant_max_price else None,
+            "tenant_visit_fee": float(ts.tenant_visit_fee) if ts.tenant_visit_fee else None,
+            "override_allowed": ts.override_allowed,
+            "requires_brand": ts.requires_brand,
+            "requires_type": ts.requires_type,
+            "is_active": ts.is_active,
+            "setup_status": ts.setup_status,
+            "published_at": ts.published_at.isoformat() if ts.published_at else None,
+            "created_at": ts.created_at.isoformat() if ts.created_at else None,
+        }
+
+
+def _decimal_or_none(val) -> Decimal | None:
+    if val is None:
+        return None
+    try:
+        return Decimal(str(val))
+    except Exception:
+        return None

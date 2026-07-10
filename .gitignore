@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+
+# Build output
+.next/
+dist/
+build/
+coverage/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Logs
+*.log
+
+# Playwright / test artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/
+
+# Uploads (runtime data, not source)
+uploads/
+
+# Bundled local PostgreSQL install + live data + installers (not source, huge, regenerable)
+db/pgsql/
+db/pgdata/
+db/pgvector.zip
+db/pgvector_extract/
+db/postgresql-16-fresh.zip
+db/*.tmp
+db/*.log.txt
+db/pg_log.txt
+db/pglog.txt

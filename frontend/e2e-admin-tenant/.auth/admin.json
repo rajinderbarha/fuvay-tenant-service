@@ -1,0 +1,26 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:3000",
+      "localStorage": [
+        {
+          "name": "serviceos-tenant-tour-done",
+          "value": "true"
+        },
+        {
+          "name": "serviceos_admin_refresh",
+          "value": "UpV1Ws81fdChvz50TQ5RUdj69BDM8iGoLbFcTjfvqIW15H1eBKfey4WHNCKmZ0mcLSmQZFy6CYcSu-5MPIUbBA"
+        },
+        {
+          "name": "serviceos_disable_tour_e2e",
+          "value": "true"
+        },
+        {
+          "name": "serviceos_admin_token",
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjNDUwM2MwYi05MTUyLTRkMzYtOTQwNC1mZjMxZjJlMWRiNTAiLCJqdGkiOiI0NDhmN2Y0Ny0wZGYyLTQ0ZWYtODc4OC01MTE3YTlhMTYwMjgiLCJpYXQiOjE3ODM2OTQyMjksImV4cCI6MTc4MzcyMzAyOSwiaXNzIjoic2VydmljZW9zIiwiYXVkIjoic2VydmljZW9zOmFkbWluIiwiZW1haWwiOiJhZG1pbkBzZXJ2aWNlb3MuaW4iLCJyb2xlIjoic3VwZXJfYWRtaW4iLCJ0ZW5hbnRfaWQiOm51bGwsInRlbmFudF9uYW1lIjpudWxsLCJwbGFuX3R5cGUiOm51bGwsInNlc3Npb25faWQiOiI0ZjAyZDlmYy1kMjc3LTRhMzMtYThiOS02Yzk2ZjBiNzQ5MDQiLCJkZXZpY2VfaWQiOiJ3ZWIiLCJtZmFfZW5hYmxlZCI6ZmFsc2UsIm9uYm9hcmRpbmdfY29tcGxldGUiOnRydWUsImVuZ2luZXMiOltdLCJmb3JjZV9wYXNzd29yZF9jaGFuZ2UiOmZhbHNlLCJmdWxsX25hbWUiOiJTdXBlciBBZG1pbiIsImlzX3ZlcmlmaWVkIjp0cnVlLCJwZXJtaXNzaW9uX292ZXJyaWRlcyI6e30sImFjY2Vzc19zY29wZSI6Imdsb2JhbCJ9.L8B67QmtaCXcGpeitEA6y3YQ5OMkWCadEodZemVY1Vo"
+        }
+      ]
+    }
+  ]
+}

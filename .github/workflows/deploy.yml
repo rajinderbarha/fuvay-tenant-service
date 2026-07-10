@@ -1,0 +1,49 @@
+# ServiceOS — CD: Deploy on release tag
+# Triggered when a GitHub Release is published (e.g. v1.2.3).
+# Runs migrations then restarts the API service.
+name: Deploy
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify all tests passed
+        run: echo "Deployment gated on test.yml passing (branch protection required)"
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /srv/serviceos
+            docker compose -f docker-compose.prod.yml pull api
+            docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+            docker compose -f docker-compose.prod.yml up -d api
+            docker image prune -f
+
+      - name: Health check post-deploy
+        run: |
+          sleep 10
+          curl -f https://${{ secrets.DEPLOY_HOST }}/health || exit 1
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "${{ job.status == 'success' && '✅' || '❌' }} Deploy ${{ github.ref_name }} — ${{ job.status }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

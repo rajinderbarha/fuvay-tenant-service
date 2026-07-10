@@ -1,0 +1,50 @@
+# ServiceOS API — Dockerfile
+# Multi-stage: builder (deps) → runtime (lean image)
+
+FROM python:3.13-slim AS builder
+
+WORKDIR /build
+
+# System deps for asyncpg, psycopg2
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python deps into /build/venv
+COPY requirements.txt .
+RUN python -m venv /build/venv && \
+    /build/venv/bin/pip install --upgrade pip && \
+    /build/venv/bin/pip install -r requirements.txt --no-cache-dir
+
+# ── Runtime Stage ─────────────────────────────────────────────────
+FROM python:3.13-slim AS runtime
+
+WORKDIR /app
+
+# Runtime system deps only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy venv from builder
+COPY --from=builder /build/venv /venv
+ENV PATH="/venv/bin:$PATH"
+
+# Copy source
+COPY . .
+
+# Non-root user for security
+RUN addgroup --system serviceos && \
+    adduser --system --group serviceos && \
+    chown -R serviceos:serviceos /app
+
+USER serviceos
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "4", "--log-level", "info"]

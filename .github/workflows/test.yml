@@ -1,0 +1,145 @@
+# ServiceOS — CI: Test Suite
+# Runs on every push and PR. Blocks merge on any failure.
+name: Test Suite
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  PYTHON_VERSION: "3.13"
+  DATABASE_URL: postgresql+asyncpg://serviceos:serviceos@localhost:5432/serviceos_test
+  REDIS_URL: redis://localhost:6379/1
+  SECRET_KEY: ci-test-secret-key-not-for-production
+  APP_ENV: testing
+  DEEPSEEK_API_KEY: ""   # not needed in CI — tests are structural
+
+jobs:
+  # ── Backend tests ──────────────────────────────────────────────────────────
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: serviceos
+          POSTGRES_PASSWORD: serviceos
+          POSTGRES_DB: serviceos_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: Run backend tests
+        run: python -m pytest tests/ -v --tb=short -q
+
+      - name: Upload coverage
+        if: success()
+        uses: codecov/codecov-action@v5
+        with:
+          flags: backend
+          fail_ci_if_error: false
+
+  # ── Design system tests ────────────────────────────────────────────────────
+  design-system:
+    name: Design System
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}" }
+      - run: pip install pytest
+      - run: python -m pytest design-system/tests/ -v -q
+
+  # ── Super Admin Portal tests ───────────────────────────────────────────────
+  super-admin:
+    name: Super Admin Portal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}" }
+      - run: pip install pytest
+      - run: python -m pytest frontend/super-admin/tests/ -v -q
+
+  # ── Tenant Portal tests ────────────────────────────────────────────────────
+  tenant-portal:
+    name: Tenant Portal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}" }
+      - run: pip install pytest
+      - run: python -m pytest frontend/tenant-portal/tests/ -v -q
+
+  # ── Mobile app tests ───────────────────────────────────────────────────────
+  mobile-apps:
+    name: Mobile Apps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}" }
+      - run: pip install pytest
+      - run: python -m pytest mobile/staff-app/tests/ mobile/customer-app/tests/ -v -q
+
+  # ── AI Chat engine tests ───────────────────────────────────────────────────
+  ai-chat:
+    name: AI Chat (Phase 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}" }
+      - run: pip install pytest
+      - run: python -m pytest tests/test_phase22_ai_chat.py -v -q
+
+  # ── E2E Test suite validator ───────────────────────────────────────────────
+  e2e-validator:
+    name: E2E Suite Validator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}" }
+      - run: pip install pytest
+      - run: python -m pytest tests/test_phase21_e2e.py -v -q
+
+  # ── Full suite gate ────────────────────────────────────────────────────────
+  all-pass:
+    name: All Tests Gate
+    needs: [backend, design-system, super-admin, tenant-portal, mobile-apps, ai-chat, e2e-validator]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "✅ All test suites passed"

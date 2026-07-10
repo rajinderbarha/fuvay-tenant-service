@@ -1,0 +1,116 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { customerFlowApi, CustomerFlowConfig } from "../../../lib/api";
+
+const FLOW_TYPE_COLORS: Record<string, string> = {
+  service_booking:     "#dbeafe",
+  appointment_booking: "#dcfce7",
+  lead_capture:        "#fef9c3",
+  subscription_only:   "#f3e8ff",
+};
+
+export default function CustomerFlowOverviewPage() {
+  const [configs, setConfigs] = useState<CustomerFlowConfig[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await customerFlowApi.adminListFlowConfigs();
+      setConfigs(res.items);
+      setTotal(res.total);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  return (
+    <div style={{ padding: "1.5rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+        <div>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>Customer Flow Configuration</h1>
+          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>
+            Per-category booking flow types. Backend validates all catalog choices — AI cannot invent IDs. ({total} configured)
+          </p>
+        </div>
+        <a href="/admin/customer-flow/drafts"
+          style={{ padding: "0.5rem 1rem", background: "#1e3a5f", color: "#fff", borderRadius: "0.375rem", textDecoration: "none", fontSize: "0.875rem", fontWeight: 600 }}>
+          View Booking Drafts
+        </a>
+      </div>
+
+      {/* Flow type legend */}
+      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+        {Object.entries(FLOW_TYPE_COLORS).map(([type, color]) => (
+          <span key={type} style={{ fontSize: "0.75rem", padding: "0.2rem 0.6rem", borderRadius: "9999px", background: color, fontWeight: 500 }}>
+            {type.replace(/_/g, " ")}
+          </span>
+        ))}
+      </div>
+
+      {loading ? (
+        <p style={{ color: "#6b7280" }}>Loading...</p>
+      ) : configs.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "3rem", background: "#f9fafb", borderRadius: "0.5rem" }}>
+          <p style={{ color: "#9ca3af", fontSize: "0.9rem" }}>
+            No customer flow configs configured. Bookings will default to service_booking flow.
+          </p>
+          <p style={{ color: "#6b7280", fontSize: "0.8rem", marginTop: "0.5rem" }}>
+            Configure flow types via Admin → Service Catalog → Category Flow Config.
+          </p>
+        </div>
+      ) : (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "0.5rem", overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#f9fafb" }}>
+                {["Category ID", "Flow Type", "Component Key", "Engine Key", "Required Steps", "Optional Steps"].map(h => (
+                  <th key={h} style={{ textAlign: "left", padding: "0.6rem 0.75rem", fontSize: "0.75rem", color: "#6b7280", fontWeight: 600, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {configs.map((cfg, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                  <td style={{ padding: "0.6rem 0.75rem", fontSize: "0.72rem", fontFamily: "monospace", color: "#6b7280" }}>
+                    {cfg.category_id.slice(0, 8)}…
+                  </td>
+                  <td style={{ padding: "0.6rem 0.75rem" }}>
+                    <span style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "9999px", background: FLOW_TYPE_COLORS[cfg.customer_flow_type] ?? "#f3f4f6", fontWeight: 500 }}>
+                      {cfg.customer_flow_type}
+                    </span>
+                  </td>
+                  <td style={{ padding: "0.6rem 0.75rem", fontSize: "0.78rem", fontFamily: "monospace" }}>{cfg.frontend_component_key}</td>
+                  <td style={{ padding: "0.6rem 0.75rem", fontSize: "0.78rem", fontFamily: "monospace" }}>{cfg.primary_engine_key}</td>
+                  <td style={{ padding: "0.6rem 0.75rem", fontSize: "0.75rem", color: "#4b5563" }}>
+                    {cfg.required_steps?.join(", ") ?? "—"}
+                  </td>
+                  <td style={{ padding: "0.6rem 0.75rem", fontSize: "0.75rem", color: "#9ca3af" }}>
+                    {cfg.optional_steps?.join(", ") ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Architecture note */}
+      <div style={{ marginTop: "1.5rem", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "0.5rem", padding: "1rem" }}>
+        <h3 style={{ fontSize: "0.875rem", fontWeight: 700, color: "#1e40af", margin: "0 0 0.5rem" }}>
+          Customer Flow Architecture
+        </h3>
+        <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.8rem", color: "#1e40af" }}>
+          <li>AI can guide conversation — backend validates all entity IDs</li>
+          <li>Customer sees only active categories, services, brands, options, and issue types</li>
+          <li>Draft confirms only after service selection + contact info validation</li>
+          <li>Flow type determined by category config, not by customer or AI</li>
+        </ul>
+      </div>
+    </div>
+  );
+}

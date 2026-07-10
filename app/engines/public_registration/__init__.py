@@ -1,0 +1,1 @@
+"""Public self-registration engine."""

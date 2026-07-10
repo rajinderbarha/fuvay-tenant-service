@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: ServiceOS
+    orgId: 1
+    folder: ServiceOS
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

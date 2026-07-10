@@ -1,0 +1,81 @@
+"""Field Ops Engine — Step 9: Super Admin Finance Router (platform-wide)."""
+import uuid
+from decimal import Decimal
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.dependencies.auth import UserContext, require_super_admin
+from app.dependencies.db import get_db
+from app.engines.field_ops.billing_service import BillingService
+from app.schemas.base import ApiResponse, ok
+
+router = APIRouter(prefix="/v1/admin/finance", tags=["Admin Finance"])
+wallet_router = APIRouter(prefix="/v1/admin/tenants", tags=["Admin Finance"])
+ENGINE_ID = "commerce"
+
+
+def _svc(r: Request, db: AsyncSession = Depends(get_db),
+         u: UserContext = Depends(require_super_admin)) -> BillingService:
+    return BillingService(db=db, request_id=getattr(r.state, "request_id", "—"),
+                           actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role)
+
+
+def _rid(r): return getattr(r.state, "request_id", "—")
+
+
+@router.get("/summary", summary="Step 9: Platform-wide finance summary", response_model=ApiResponse[dict])
+async def admin_finance_summary(r: Request, u: UserContext = Depends(require_super_admin),
+                                 s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.admin_finance_summary(), _rid(r), ENGINE_ID)
+
+
+@router.get("/invoices", summary="Step 9: All invoices (platform-wide)", response_model=ApiResponse[dict])
+async def admin_invoices(r: Request, u: UserContext = Depends(require_super_admin),
+                          s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.admin_list_invoices(), _rid(r), ENGINE_ID)
+
+
+@router.get("/payments", summary="Step 9: All payments (platform-wide)", response_model=ApiResponse[dict])
+async def admin_payments(r: Request, u: UserContext = Depends(require_super_admin),
+                          s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.admin_list_payments(), _rid(r), ENGINE_ID)
+
+
+@router.get("/commissions", summary="Step 9: All commissions (platform-wide)", response_model=ApiResponse[dict])
+async def admin_commissions(r: Request, u: UserContext = Depends(require_super_admin),
+                             s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.admin_list_commissions(), _rid(r), ENGINE_ID)
+
+
+@wallet_router.get("/{tenant_id}/wallet", summary="Step 9: Any tenant's wallet (admin)",
+                    response_model=ApiResponse[dict])
+async def admin_get_wallet(tenant_id: uuid.UUID, r: Request, u: UserContext = Depends(require_super_admin),
+                            s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.get_tenant_wallet(tenant_id), _rid(r), ENGINE_ID)
+
+
+@wallet_router.get("/{tenant_id}/wallet/ledger", summary="Step 9: Any tenant's wallet ledger (admin)",
+                    response_model=ApiResponse[dict])
+async def admin_get_wallet_ledger(tenant_id: uuid.UUID, r: Request,
+                                   u: UserContext = Depends(require_super_admin),
+                                   s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.get_tenant_wallet_ledger(tenant_id), _rid(r), ENGINE_ID)
+
+
+@wallet_router.post("/{tenant_id}/wallet/top-up", summary="Step 9: Admin tops up a tenant's wallet",
+                     response_model=ApiResponse[dict])
+async def admin_wallet_topup(tenant_id: uuid.UUID, r: Request,
+                              u: UserContext = Depends(require_super_admin),
+                              s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
+    body = await r.json()
+    return ok(await s.admin_wallet_topup(tenant_id, Decimal(str(body["amount"])), body.get("reason", "")),
+              _rid(r), ENGINE_ID)
+
+
+@wallet_router.post("/{tenant_id}/wallet/adjust", summary="Step 9: Admin adjusts a tenant's wallet (signed amount)",
+                     response_model=ApiResponse[dict])
+async def admin_wallet_adjust(tenant_id: uuid.UUID, r: Request,
+                               u: UserContext = Depends(require_super_admin),
+                               s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
+    body = await r.json()
+    return ok(await s.admin_wallet_adjust(tenant_id, Decimal(str(body["amount"])), body.get("reason", "")),
+              _rid(r), ENGINE_ID)

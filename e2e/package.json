@@ -1,0 +1,19 @@
+{
+  "name": "serviceos-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:super-admin": "playwright test --project=super-admin-chromium",
+    "test:tenant": "playwright test --project=tenant-portal-chromium",
+    "test:mobile": "playwright test --project=super-admin-mobile --project=tenant-portal-mobile",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "report": "playwright show-report",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.52.0",
+    "typescript": "5.8.3"
+  }
+}

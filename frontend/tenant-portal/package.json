@@ -1,0 +1,23 @@
+{
+  "name": "serviceos-tenant-portal",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "16.2.9",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "recharts": "2.15.0",
+    "lucide-react": "0.511.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.21",
+    "@types/react": "19.2.0",
+    "typescript": "5.8.3"
+  }
+}
