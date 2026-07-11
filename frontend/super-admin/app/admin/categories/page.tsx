@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
-import { AdminLayout } from "../../../components/layout/AdminLayout";
+import { AdminLayout, useAdminMenuRefresh } from "../../../components/layout/AdminLayout";
 import { Card, SectionHeader, Badge, Btn, Modal, Input, Select, Skeleton } from "../../../components/shared/ui";
 import {
   categoryRuntimeApi, catalogApi,
@@ -481,6 +481,7 @@ function CategoryForm({
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CategoriesPage() {
+  const refreshMenu = useAdminMenuRefresh();
   const [filters, setFilters] = useState<Filters>(BLANK_FILTERS);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -595,15 +596,17 @@ export default function CategoriesPage() {
     cats.refetch(); summary.refetch(); setDeleteId(null); notify("Category deleted.");
   }, [cats, summary]));
 
+  // FINAL-L5-04: also refresh AdminLayout's sidebar effective-menu, since
+  // category activation can affect vertical/module visibility derived from it.
   const activateAction = useAction(useCallback(async (id: string) => {
     await categoryRuntimeApi.activateCategory(id);
-    cats.refetch(); summary.refetch(); notify("Category activated.");
-  }, [cats, summary]));
+    cats.refetch(); summary.refetch(); refreshMenu(); notify("Category activated.");
+  }, [cats, summary, refreshMenu]));
 
   const deactivateAction = useAction(useCallback(async (id: string) => {
     await categoryRuntimeApi.deactivateCategory(id);
-    cats.refetch(); summary.refetch(); notify("Category deactivated.");
-  }, [cats, summary]));
+    cats.refetch(); summary.refetch(); refreshMenu(); notify("Category deactivated.");
+  }, [cats, summary, refreshMenu]));
 
   const exportAction = useAction(useCallback(async () => {
     const resp = await categoryRuntimeApi.exportCategories({

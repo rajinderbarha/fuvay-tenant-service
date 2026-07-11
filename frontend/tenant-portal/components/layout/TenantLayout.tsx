@@ -18,6 +18,7 @@ import { useTenant } from "../../hooks/useTenant";
 import { Toaster, type ToastItem } from "../shared/ui";
 import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
+import { Breadcrumbs } from "./Breadcrumbs";
 import { authApi, providerStatusApi, tenantSetupApi, staffApi, providerServiceAreasApi, usageCreditsApi } from "../../lib/api";
 import { useApi } from "../../hooks/useApi";
 
@@ -513,6 +514,7 @@ function TenantShellInner({ children, activeNav }: {
 
         <main style={{ flex: 1, overflowY: "auto", padding: "28px 32px", background: "var(--bg-gradient)" }}>
           <div style={{ maxWidth: 1440, margin: "0 auto" }}>
+            <Breadcrumbs/>
             {children}
           </div>
         </main>

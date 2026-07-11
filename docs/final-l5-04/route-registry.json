@@ -1,0 +1,1415 @@
+{
+  "meta": {
+    "generated_by": "FINAL-L5-04, live-extracted from real nav-config source files, not hand-typed",
+    "tenant_static_nav_count": 25,
+    "admin_static_nav_count": 44,
+    "note": "This registry documents currently-linked navigation items with full RouteDefinition-shaped detail. Full-shape entries for all ~266 routes inventoried in FINAL_L5_00_ROUTE_PAGE_INVENTORY.md (including ~79 disconnected and ~52 duplicate-cluster routes) were not produced this sprint -- see FINAL_L5_04_ROUTE_REGISTRY_CERTIFICATION_REPORT.md for the honest scope statement and FINAL_L5_04_DISCONNECTED_PAGE_RESOLUTION_REPORT.md / FINAL_L5_04_DUPLICATE_ROUTE_NAV_CONSOLIDATION_REPORT.md for their classification-level treatment."
+  },
+  "routes": [
+    {
+      "id": "admin-dashboard",
+      "app": "admin",
+      "path": "/admin/dashboard",
+      "label": "Dashboard",
+      "order": 1,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Overview"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-tenants",
+      "app": "admin",
+      "path": "/admin/tenants",
+      "label": "All Providers",
+      "order": 2,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Providers"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-onboarding",
+      "app": "admin",
+      "path": "/admin/tenants/onboarding",
+      "label": "New Requests",
+      "order": 3,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Providers"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-onboarding-providers",
+      "app": "admin",
+      "path": "/admin/onboarding/providers",
+      "label": "Verify & Approve",
+      "order": 4,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Providers"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-packages",
+      "app": "admin",
+      "path": "/admin/packages",
+      "label": "Packages",
+      "order": 5,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Providers"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-bookings",
+      "app": "admin",
+      "path": "/admin/bookings",
+      "label": "Bookings",
+      "order": 6,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Operations"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-operations",
+      "app": "admin",
+      "path": "/admin/operations",
+      "label": "Jobs",
+      "order": 7,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Operations"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-customers",
+      "app": "admin",
+      "path": "/admin/customers",
+      "label": "Customers",
+      "order": 8,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Operations"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-staff",
+      "app": "admin",
+      "path": "/admin/staff",
+      "label": "Staff",
+      "order": 9,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Operations"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-reviews",
+      "app": "admin",
+      "path": "/admin/reviews",
+      "label": "Reviews",
+      "order": 10,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Operations"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-complaints",
+      "app": "admin",
+      "path": "/admin/complaints",
+      "label": "Complaints",
+      "order": 11,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Operations"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-verticals",
+      "app": "admin",
+      "path": "/admin/verticals",
+      "label": "Verticals",
+      "order": 12,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Catalog"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-categories",
+      "app": "admin",
+      "path": "/admin/categories",
+      "label": "Categories",
+      "order": 13,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Catalog"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-pricing-tiers",
+      "app": "admin",
+      "path": "/admin/pricing-tiers",
+      "label": "Pricing Tiers",
+      "order": 14,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Pricing & Rules"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-location-mapping",
+      "app": "admin",
+      "path": "/admin/location-mapping",
+      "label": "City/Zip Mapping",
+      "order": 15,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Pricing & Rules"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-provider-overrides",
+      "app": "admin",
+      "path": "/admin/pricing/provider-overrides",
+      "label": "Provider Pricing Overrides",
+      "order": 16,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Pricing & Rules"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-hs-overview",
+      "app": "admin",
+      "path": "/admin/home-services/price-experience",
+      "label": "Overview",
+      "order": 17,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Home Services"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-hs-service-catalog",
+      "app": "admin",
+      "path": "/admin/home-services/service-catalog",
+      "label": "Service Catalog",
+      "order": 18,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Home Services"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-hs-pricing-rules",
+      "app": "admin",
+      "path": "/admin/home-services/pricing-rules",
+      "label": "Pricing Rules",
+      "order": 19,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Home Services"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-hs-price-experience",
+      "app": "admin",
+      "path": "/admin/home-services/price-experience",
+      "label": "Customer Price Experience",
+      "order": 20,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Home Services"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-hs-provider-matching",
+      "app": "admin",
+      "path": "/admin/home-services/provider-matching",
+      "label": "Provider Matching",
+      "order": 21,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Home Services"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-hs-matching-diagnostics",
+      "app": "admin",
+      "path": "/admin/home-services/matching-diagnostics",
+      "label": "Matching Diagnostics",
+      "order": 22,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Home Services"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-hs-service-areas",
+      "app": "admin",
+      "path": "/admin/home-services/service-areas",
+      "label": "Service Areas / Zones",
+      "order": 23,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Home Services"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-hs-completed-job-deduction",
+      "app": "admin",
+      "path": "/admin/home-services/completed-job-deduction",
+      "label": "Completed Job Deduction",
+      "order": 24,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Home Services"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-hs-settings",
+      "app": "admin",
+      "path": "/admin/home-services/settings",
+      "label": "Home Services Settings",
+      "order": 25,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Home Services"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-finance",
+      "app": "admin",
+      "path": "/admin/finance",
+      "label": "Finance Hub",
+      "order": 26,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Finance"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-finance-deposits",
+      "app": "admin",
+      "path": "/admin/finance/deposits",
+      "label": "Security Deposits",
+      "order": 27,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Finance"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-finance-topups",
+      "app": "admin",
+      "path": "/admin/finance/topups",
+      "label": "Credit Top-ups",
+      "order": 28,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Finance"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-finance-claims",
+      "app": "admin",
+      "path": "/admin/finance/claims",
+      "label": "Warranty Claims",
+      "order": 29,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Finance"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-finance-payouts",
+      "app": "admin",
+      "path": "/admin/finance/payouts",
+      "label": "Payouts",
+      "order": 30,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Finance"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-compliance",
+      "app": "admin",
+      "path": "/admin/compliance",
+      "label": "Compliance",
+      "order": 31,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Finance"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-marketing",
+      "app": "admin",
+      "path": "/admin/marketing",
+      "label": "Campaigns",
+      "order": 32,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Marketing & Growth"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-notifications",
+      "app": "admin",
+      "path": "/admin/notifications",
+      "label": "Notifications",
+      "order": 33,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Marketing & Growth"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-analytics",
+      "app": "admin",
+      "path": "/admin/analytics",
+      "label": "Analytics",
+      "order": 34,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Marketing & Growth"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-intelligence",
+      "app": "admin",
+      "path": "/admin/intelligence",
+      "label": "AI Intelligence",
+      "order": 35,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Marketing & Growth"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-engines",
+      "app": "admin",
+      "path": "/admin/engines",
+      "label": "Engines",
+      "order": 36,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Platform"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-security",
+      "app": "admin",
+      "path": "/admin/security",
+      "label": "Security",
+      "order": 37,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Platform"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-workflow-templates",
+      "app": "admin",
+      "path": "/admin/workflow-templates",
+      "label": "Workflows",
+      "order": 38,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Platform"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-audit-logs",
+      "app": "admin",
+      "path": "/admin/audit-logs",
+      "label": "Audit Logs",
+      "order": 39,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Platform"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-users",
+      "app": "admin",
+      "path": "/admin/users",
+      "label": "Users",
+      "order": 40,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Platform"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-roles",
+      "app": "admin",
+      "path": "/admin/users/roles",
+      "label": "Roles",
+      "order": 41,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Platform"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-permissions",
+      "app": "admin",
+      "path": "/admin/users/permissions",
+      "label": "Permissions",
+      "order": 42,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Platform"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-media",
+      "app": "admin",
+      "path": "/admin/media",
+      "label": "Media",
+      "order": 43,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Platform"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "admin-settings",
+      "app": "admin",
+      "path": "/admin/settings",
+      "label": "Settings",
+      "order": 44,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Platform"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/super-admin/components/layout/AdminLayout.tsx NAV_GROUPS (live-extracted)"
+    },
+    {
+      "id": "tenant-dashboard",
+      "app": "tenant",
+      "path": "/dashboard",
+      "label": "Dashboard",
+      "icon": "LayoutDashboard",
+      "order": 1,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Overview"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-provider-status",
+      "app": "tenant",
+      "path": "/provider/status",
+      "label": "Setup Checklist",
+      "icon": "CheckSquare",
+      "order": 2,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Setup"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-profile",
+      "app": "tenant",
+      "path": "/profile",
+      "label": "Business Profile",
+      "icon": "Building2",
+      "order": 3,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Setup"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-provider-service-areas",
+      "app": "tenant",
+      "path": "/provider/service-areas",
+      "label": "Service Areas",
+      "icon": "MapPin",
+      "order": 4,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Setup"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-provider-services",
+      "app": "tenant",
+      "path": "/tenant/setup/services",
+      "label": "Service Setup",
+      "icon": "Wrench",
+      "order": 5,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Setup"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-provider-service-coverage",
+      "app": "tenant",
+      "path": "/provider/service-coverage",
+      "label": "Service Coverage",
+      "icon": "Shield",
+      "order": 6,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Setup"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-provider-availability",
+      "app": "tenant",
+      "path": "/provider/availability",
+      "label": "Availability",
+      "icon": "Clock",
+      "order": 7,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Setup"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-provider-staff",
+      "app": "tenant",
+      "path": "/provider/staff",
+      "label": "Staff & Technicians",
+      "icon": "Users",
+      "order": 8,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Team"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-finance-package",
+      "app": "tenant",
+      "path": "/finance/package",
+      "label": "Package & Credits",
+      "icon": "Package",
+      "order": 9,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Finance"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-finance-credit-ledger",
+      "app": "tenant",
+      "path": "/finance/usage-credit-ledger",
+      "label": "Usage Credit Ledger",
+      "icon": "Receipt",
+      "order": 10,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Finance"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-finance-deposit",
+      "app": "tenant",
+      "path": "/finance/security-deposit",
+      "label": "Security Deposit",
+      "icon": "Shield",
+      "order": 11,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Finance"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-documents",
+      "app": "tenant",
+      "path": "/documents",
+      "label": "Documents",
+      "icon": "FileText",
+      "order": 12,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "More"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-notifications",
+      "app": "tenant",
+      "path": "/notifications",
+      "label": "Notifications",
+      "icon": "Bell",
+      "order": 13,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "More"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-activity",
+      "app": "tenant",
+      "path": "/activity",
+      "label": "Activity",
+      "icon": "Activity",
+      "order": 14,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "More"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-settings",
+      "app": "tenant",
+      "path": "/settings",
+      "label": "Settings",
+      "icon": "Settings",
+      "order": 15,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "More"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-jobs",
+      "app": "tenant",
+      "path": "/jobs",
+      "label": "Jobs",
+      "icon": "Wrench",
+      "order": 16,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Operations"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-bookings",
+      "app": "tenant",
+      "path": "/bookings",
+      "label": "Bookings",
+      "icon": "CalendarDays",
+      "order": 17,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Operations"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-appointments",
+      "app": "tenant",
+      "path": "/appointments",
+      "label": "Appointments",
+      "icon": "Calendar",
+      "order": 18,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Operations"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-dispatch",
+      "app": "tenant",
+      "path": "/dispatch",
+      "label": "Dispatch",
+      "icon": "Truck",
+      "order": 19,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Operations"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-customers",
+      "app": "tenant",
+      "path": "/customers",
+      "label": "Customers",
+      "icon": "User",
+      "order": 20,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Engagement"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-reviews",
+      "app": "tenant",
+      "path": "/reviews",
+      "label": "Reviews",
+      "icon": "Star",
+      "order": 21,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Engagement"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-marketing",
+      "app": "tenant",
+      "path": "/marketing",
+      "label": "Marketing",
+      "icon": "Megaphone",
+      "order": 22,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Engagement"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-chat",
+      "app": "tenant",
+      "path": "/chat",
+      "label": "Chat",
+      "icon": "MessageCircle",
+      "order": 23,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Engagement"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-analytics",
+      "app": "tenant",
+      "path": "/analytics",
+      "label": "Analytics",
+      "icon": "BarChart2",
+      "order": 24,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Insights"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    },
+    {
+      "id": "tenant-reports",
+      "app": "tenant",
+      "path": "/reports",
+      "label": "Reports",
+      "icon": "PieChart",
+      "order": 25,
+      "navigation": {
+        "visible": true,
+        "type": "primary",
+        "group": "Insights"
+      },
+      "access": {},
+      "feature": {},
+      "ui": {
+        "breadcrumb": true,
+        "pageTitle": true,
+        "mobileVisible": true
+      },
+      "source": "frontend/tenant-portal/lib/nav-config.ts (live-extracted)"
+    }
+  ]
+}

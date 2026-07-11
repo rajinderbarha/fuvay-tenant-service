@@ -1,9 +1,22 @@
 "use client";
-import React, { useState, useEffect, createContext, useContext } from "react";
+import React, { useState, useEffect, useCallback, createContext, useContext } from "react";
 
 // Prevents double-rendering when a page already wraps itself with AdminLayout
 // AND the route-level layout also renders AdminLayout.
 const AdminShellCtx = createContext(false);
+
+// FINAL-L5-04: lets a page (e.g. Verticals/Categories) tell the already-mounted
+// sidebar to re-fetch its effective-menu after a mutation, instead of the
+// sidebar only ever fetching once on mount. No query-cache library exists in
+// this codebase (see FINAL-L5-03's Query/Cache Standard) so this is a plain
+// callback-context, matching the existing refetch-on-demand pattern used
+// everywhere else in the app.
+const AdminMenuRefreshCtx = createContext<() => void>(() => {});
+/** Call after any mutation that can change which verticals/modules/categories
+ * are enabled, so the sidebar reflects it without a full page reload. */
+export function useAdminMenuRefresh(): () => void {
+  return useContext(AdminMenuRefreshCtx);
+}
 import {
   LayoutDashboard, Building2, Inbox, Settings2, Banknote,
   Shield, ClipboardCheck, Brain, Users, Star, Bell,
@@ -19,6 +32,7 @@ import { useTour } from "../../hooks/useTour";
 import { Toaster, type ToastItem } from "../shared/ui";
 import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
+import { Breadcrumbs } from "./Breadcrumbs";
 import { authApi, sprint27AdminApi } from "../../lib/api";
 
 type NavItem = { id: string; href: string; label: string; icon: React.ReactNode; badge?: number | null };
@@ -192,13 +206,15 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [effectiveMenu, setEffectiveMenu] = useState<EffectiveMenu | null>(null);
 
-  useEffect(() => {
+  const loadEffectiveMenu = useCallback(() => {
     const token = typeof window !== "undefined" && localStorage.getItem("serviceos_admin_token");
     if (!token) return;
     verticalCatalogApi.getEffectiveMenu()
       .then(r => setEffectiveMenu(r))
       .catch(() => {/* non-critical — sidebar degrades gracefully */});
   }, []);
+
+  useEffect(() => { loadEffectiveMenu(); }, [loadEffectiveMenu]);
 
   useEffect(() => {
     const token = localStorage.getItem("serviceos_admin_token");
@@ -221,6 +237,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
 
   return (
     <AdminShellCtx.Provider value={true}>
+    <AdminMenuRefreshCtx.Provider value={loadEffectiveMenu}>
     <div style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
 
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
@@ -312,6 +329,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
         <main style={{ flex: 1, overflowY: "auto", padding: "28px 32px", position: "relative",
           background: "var(--bg-gradient)" }}>
           <div style={{ maxWidth: 1440, margin: "0 auto" }}>
+            <Breadcrumbs/>
             {children}
           </div>
         </main>
@@ -320,6 +338,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
       {tour.mounted && <TourGuide tour={tour}/>}
       <Toaster toasts={toasts} onRemove={id => setToasts(prev => prev.filter(t => t.id !== id))}/>
     </div>
+    </AdminMenuRefreshCtx.Provider>
     </AdminShellCtx.Provider>
   );
 }

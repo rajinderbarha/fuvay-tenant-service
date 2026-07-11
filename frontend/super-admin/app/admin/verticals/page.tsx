@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { AdminLayout } from "../../../components/layout/AdminLayout";
+import { AdminLayout, useAdminMenuRefresh } from "../../../components/layout/AdminLayout";
 import {
   SectionHeader, Card, Badge, Btn, Modal,
 } from "../../../components/shared/ui";
@@ -181,6 +181,7 @@ function VerticalCard({ v, onToggle, onConfigure }: {
 
 export default function VerticalsPage() {
   const [configuring, setConfiguring] = useState<VerticalItem | null>(null);
+  const refreshMenu = useAdminMenuRefresh();
 
   const { data, loading, error, refetch } = useApi(
     () => verticalCatalogApi.listVerticals(true),
@@ -198,10 +199,14 @@ export default function VerticalsPage() {
   const enabledCount = items.filter(v => v.is_enabled).length;
   const betaCount = items.filter(v => v.is_beta).length;
 
+  // FINAL-L5-04: activating/deactivating a vertical must update the sidebar
+  // (AdminLayout's effectiveMenu), not just this page's own list -- the
+  // sidebar previously only fetched effectiveMenu once on mount.
   async function handleToggle(key: string, enable: boolean) {
     if (enable) await doEnable(key);
     else await doDisable(key);
     refetch();
+    refreshMenu();
   }
 
   return (
@@ -277,7 +282,7 @@ export default function VerticalsPage() {
         <VerticalDetailModal
           vertical={configuring}
           onClose={() => setConfiguring(null)}
-          onToggled={() => { refetch(); }}
+          onToggled={() => { refetch(); refreshMenu(); }}
         />
       )}
     </AdminLayout>
