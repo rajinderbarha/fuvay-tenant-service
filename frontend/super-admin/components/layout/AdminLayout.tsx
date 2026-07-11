@@ -96,7 +96,7 @@ const NAV_GROUPS: NavGroup[] = [
     // matching_engine.assert_home_services_vertical / get_home_services_category_id).
     label: "Home Services",
     items: [
-      { id: "hs-overview", href: "/admin/home-services/price-experience", label: "Overview", icon: <LayoutGrid size={16}/> },
+      { id: "hs-overview", href: "/admin/home-services/overview", label: "Overview", icon: <LayoutGrid size={16}/> },
       { id: "hs-service-catalog", href: "/admin/home-services/service-catalog", label: "Service Catalog", icon: <ListChecks size={16}/> },
       { id: "hs-pricing-rules", href: "/admin/home-services/pricing-rules", label: "Pricing Rules", icon: <Sliders size={16}/> },
       { id: "hs-price-experience", href: "/admin/home-services/price-experience", label: "Customer Price Experience", icon: <FlaskConical size={16}/> },
@@ -112,6 +112,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Finance",
     items: [
       { id: "finance",          href: "/admin/finance",          label: "Finance Hub",    icon: <Banknote size={16}/>      },
+      { id: "finance-usage-credits", href: "/admin/finance/usage-credits", label: "Usage Credits", icon: <Banknote size={16}/> },
       { id: "finance-deposits", href: "/admin/finance/deposits",  label: "Security Deposits", icon: <Shield size={16}/>     },
       { id: "finance-topups",   href: "/admin/finance/topups",    label: "Credit Top-ups",  icon: <Tag size={16}/>          },
       { id: "finance-claims",   href: "/admin/finance/claims",    label: "Warranty Claims", icon: <AlertOctagon size={16}/> },
@@ -125,6 +126,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "marketing",     href: "/admin/marketing",     label: "Campaigns",       icon: <Megaphone size={16}/> },
       { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>      },
       { id: "analytics",     href: "/admin/analytics",     label: "Analytics",       icon: <BarChart3 size={16}/> },
+      { id: "reports",       href: "/admin/reports",       label: "Reports",         icon: <ScrollText size={16}/> },
       { id: "intelligence",  href: "/admin/intelligence",  label: "AI Intelligence", icon: <Brain size={16}/>     },
     ],
   },

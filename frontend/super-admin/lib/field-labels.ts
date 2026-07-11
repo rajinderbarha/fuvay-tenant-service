@@ -44,8 +44,8 @@ export const FIELD_LABELS: Record<string, string> = {
   provider_verification_status:    "Verification Status",
   verification_status:             "Verification Status",
   onboarding_complete:             "Onboarding Complete",
-  wallet_balance:                  "Wallet Balance",
-  credit_balance:                  "Credit Balance",
+  wallet_balance:                  "Usage Credit Balance",
+  credit_balance:                  "Usage Credit Balance",
 
   // Media / Files
   media_assets:                    "Uploaded Files",

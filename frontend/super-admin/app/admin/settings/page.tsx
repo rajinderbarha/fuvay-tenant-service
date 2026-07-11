@@ -388,7 +388,7 @@ function CategorySettingsTab() {
         <EmptyState text="No categories found." />
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>Category</Th><Th>Vertical</Th><Th>Finance Model</Th><Th>Payment Collection</Th><Th>Tenant Payouts</Th><Th>Status</Th></tr></thead>
+          <thead><tr><Th>Category</Th><Th>Vertical</Th><Th>Finance Model</Th><Th>Payment Collection</Th><Th>Payouts</Th><Th>Status</Th></tr></thead>
           <tbody>
             {rows.map((c: CategorySettingRow) => (
               <tr key={c.id}>
