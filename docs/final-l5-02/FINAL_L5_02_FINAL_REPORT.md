@@ -28,7 +28,7 @@ PASS for the admin-tenant surface (the known-vulnerable one) — **RBAC fix conf
 PASS at data layer + critical cross-tenant admin-read vector. Exhaustive per-endpoint tenant_id-override fuzzing not run.
 
 ## 14. Frontend/backend contract result
-Not fully built this sprint (Part 8 deferred) — representative endpoints confirmed connected via live smoke; full per-call matrix is a documented gap.
+**2 real contract-drift/seed-gap bugs found via live browser testing**: (1) Tenant Portal Jobs page calls the legacy `/v1/jobs` instead of canonical `/v1/provider/service-jobs*` (BUG-L502-005); (2) Customer bookings correctly calls the canonical `/v1/customer/bookings`, but FINAL-L5-01's seed never populated the `service_bookings` table it reads from (BUG-L502-006, seed gap not a backend defect). Both root-caused with precise evidence. Full static per-call matrix across all 4 frontends remains a documented gap — real bugs from live testing were prioritized over exhaustive static mapping.
 
 ## 15-16. Error response / request_id result
 PASS — every error in the live smoke (401/403/404) carried `request_id`; stable error codes (`PERMISSION_DENIED`, `UNAUTHORIZED`, `NOT_FOUND`); no stack traces in error bodies.
@@ -58,10 +58,10 @@ Performance: ~2s/request local baseline noted (diagnostic, not a blocker). Rate-
 **12/12 PASS** across 7 roles — including the live RBAC confirmation. `live-api-smoke-results.json`.
 
 ## 35. Browser API connection result
-Admin dashboard 404 **fixed** (Turbopack cache); `/admin/dashboard` + `/admin/tenants` return 200. Full 6-session browser network-evidence capture not re-run this sprint.
+**All 6 canonical-role sessions run live** (Admin, Tenant Owner, Tenant Read Only, Customer One, Customer Two, Technician One). Admin: clean pass, real data confirmed rendering, no 404 (Turbopack cache fix holds). Customer Two: isolation confirmed (zero leak). Tenant Owner + Customer One: real bugs found (above). Tenant Read Only + Technician: inconclusive on 2 specific sub-checks (mutation-button precision; redirect timing), not failures.
 
 ## 36-38. Bugs found / fixed / remaining legacy
-Found: duplicate service-setup mount (deferred). Fixed+verified: RBAC-live, migration conflict, dashboard 404. Legacy: 5 families registered for deprecation, none removed (consumer audits pending).
+**Found**: duplicate service-setup mount (deferred), BUG-L502-005 (Tenant jobs contract drift), BUG-L502-006 (customer bookings seed gap). **Fixed+verified**: RBAC-live, migration conflict, dashboard 404, full-stack repeatability. Legacy: 5 families registered for deprecation, none removed (consumer audits pending).
 
 ## 39. Remaining blockers
 See `FINAL_L5_02_REMAINING_BLOCKERS.md` — foundational + critical-path parts certified; breadth/depth of all 2,253 endpoints and the security/performance/contract-matrix parts are representative, not exhaustive.
@@ -70,8 +70,8 @@ See `FINAL_L5_02_REMAINING_BLOCKERS.md` — foundational + critical-path parts c
 
 **PARTIAL_READY_WITH_FINAL_L5_02_BLOCKERS**
 
-Rationale: This sprint genuinely certified the **foundation and the critical security invariants** with real, live evidence — the complete 2,253-endpoint inventory + OpenAPI, router mount status, live authentication for all 7 roles, the **live-confirmed RBAC fix** (closing FINAL-L5-01B's open live-verification gap), auth-before-validation, tenant isolation on the critical vector, and canonical source-of-truth. It also fixed and verified three carried bugs (RBAC-live, the migration conflict enabling true empty-DB replay, and the dashboard 404).
+Rationale: This sprint genuinely certified the **foundation and the critical security invariants** with real, live evidence — the complete 2,253-endpoint inventory + OpenAPI, router mount status, live authentication for all 7 roles, the **live-confirmed RBAC fix** (closing FINAL-L5-01B's open live-verification gap), auth-before-validation, tenant isolation on the critical vector, and canonical source-of-truth. It also fixed and verified three carried bugs (RBAC-live, the migration conflict enabling true empty-DB replay, and the dashboard 404), proved full-stack repeatability (database + backend + frontend layers together for the first time), and ran all 6 required real authenticated browser sessions — which caught 2 genuine, precisely root-caused bugs (a frontend contract-drift and a seed-data gap) that source inspection alone would not have surfaced.
 
-It does **not** claim full certification of all 2,253 endpoints across all 33 parts — doing so credibly is a multi-sprint effort, and the non-negotiable rules explicitly forbid marking endpoints working from source inspection alone or fabricating verdicts. Per those rules, the honest result is PARTIAL: no unauthorized mutation succeeds on the tested surface, no active endpoint uses `tenant_wallets` as the credit source, the same job cannot be deducted twice, and no unexplained 500 was observed — but the deep per-domain, security-fuzzing, performance, contract-matrix, and full-browser-network parts are representative rather than exhaustive, and are enumerated as concrete remaining work rather than glossed over.
+It does **not** claim full certification of all 2,253 endpoints across all 33 parts — doing so credibly is a multi-sprint effort, and the non-negotiable rules explicitly forbid marking endpoints working from source inspection alone or fabricating verdicts. Per those rules, the honest result is PARTIAL: no unauthorized mutation succeeds on the tested surface, no active endpoint uses `tenant_wallets` as the credit source, the same job cannot be deducted twice, and no unexplained 500 was observed — but the deep per-domain, security-fuzzing, performance, and full-static-contract-matrix parts remain representative rather than exhaustive, and are enumerated as concrete remaining work rather than glossed over.
 
-One real finding that a future pass should resolve before full READY: the **duplicate service-setup-template router mount** (7 duplicate operation IDs), whose Sprint 34F copy is likely runtime-broken against the current schema — deferred here only because removing it safely needs a frontend-consumer audit.
+Two real findings a future pass should resolve before full READY: (1) the **duplicate service-setup-template router mount** (7 duplicate operation IDs), deferred pending a frontend-consumer audit; (2) the two newly-found live bugs — **BUG-L502-005** (Tenant jobs page on the wrong endpoint) and **BUG-L502-006** (customer bookings seed gap) — both precisely diagnosed with exact file/line evidence, ready for a focused fix pass.
