@@ -16,8 +16,12 @@ interface Props {
  */
 export function isReadOnly(role?: string | null): boolean {
   if (!role) return false;
+  // FINAL-L5-01D fix: the canonical backend role string (app/core/permissions.py)
+  // is "tenant_readonly" (no underscore before "only") — this previously only
+  // matched "tenant_read_only", so the banner and any gating built on
+  // isReadOnly() never activated for real tenant read-only users.
   const r = role.toLowerCase();
-  return r === "tenant_read_only" || r === "read_only" || r.endsWith("_viewer");
+  return r === "tenant_readonly" || r === "tenant_read_only" || r === "read_only" || r.endsWith("_viewer");
 }
 
 export default function ReadOnlyBanner({ role }: Props) {

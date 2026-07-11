@@ -335,21 +335,39 @@ async def run():
             if existing:
                 print(f"[SKIP]   service_job {job_number} (exists)")
                 return existing
-            booking_id = uuid.uuid4()
             addr_json = '{"line1": "H.No. 123, Model Town", "city": "Ludhiana", "zipcode": "141001"}'
+
+            # ── FINAL-L5-01D fix: service_jobs.booking_id must point at
+            # service_bookings.id, matching the real application flow in
+            # app/engines/final_records/creation_service.py (ServiceJob.booking_id
+            # = booking.id where booking is a ServiceBooking). FINAL-L5-01's
+            # original seed incorrectly pointed this at the generic `bookings`
+            # table instead — see FINAL_L5_01D_BOOKING_SOURCE_DECISION_REPORT.md.
+            # A minimal home_service_booking_drafts row is created first to
+            # satisfy service_bookings.draft_id's NOT NULL FK, exactly as the
+            # real customer booking flow would produce one.
+            draft_id = uuid.uuid4()
             await db.execute(text("""
-                INSERT INTO bookings
-                    (id, tenant_id, customer_id, service_type_id, service_category, status,
-                     booking_number, quoted_price, address, pincode, preflight_passed,
-                     preflight_result, cancellation_policy, tags, meta, city, service_id,
-                     created_at, updated_at)
+                INSERT INTO home_service_booking_drafts
+                    (id, customer_id, category_id, offering_id, selected_tenant_id, status,
+                     city, zipcode, address_snapshot, created_at, updated_at)
                 VALUES
-                    (:id, :t, :cust, :styp, 'ac_repair', :bstatus, :bnum, :price, CAST(:addr AS jsonb), '141001',
-                     true, CAST('{}' AS jsonb), 'standard', CAST('[]' AS jsonb), CAST('{}' AS jsonb), 'Ludhiana', :svc,
-                     now(), now())
-            """), {"id": str(booking_id), "t": str(tenant_id), "cust": str(cust1), "styp": str(split_ac),
-                    "bstatus": booking_status, "bnum": f"BK-{job_number}", "price": 775,
-                    "addr": addr_json, "svc": str(ac_repair)})
+                    (:id, :cust, :cat, :off, :t, 'converted', 'Ludhiana', '141001', CAST(:addr AS jsonb), now(), now())
+            """), {"id": str(draft_id), "cust": str(cust1), "cat": str(category_id),
+                    "off": str(offering) if offering else None, "t": str(tenant_id), "addr": addr_json})
+
+            booking_id = uuid.uuid4()
+            await db.execute(text("""
+                INSERT INTO service_bookings
+                    (id, booking_number, draft_id, customer_id, tenant_id, category_id, offering_id,
+                     city, zipcode, address_snapshot, status, assignment_status, created_at, updated_at)
+                VALUES
+                    (:id, :bnum, :did, :cust, :t, :cat, :off, 'Ludhiana', '141001', CAST(:addr AS jsonb),
+                     :bstatus, :astatus, now(), now())
+            """), {"id": str(booking_id), "bnum": f"L501-BK-{job_number[-4:]}", "did": str(draft_id),
+                    "cust": str(cust1), "t": str(tenant_id), "cat": str(category_id),
+                    "off": str(offering) if offering else None, "addr": addr_json,
+                    "bstatus": booking_status, "astatus": assignment_status})
 
             jid = uuid.uuid4()
             await db.execute(text("""
@@ -365,10 +383,8 @@ async def run():
                     "staff": str(assigned) if assigned else None,
                     "addr": addr_json,
                     "status": status, "astatus": assignment_status, "completion": completion})
-            await db.execute(text("UPDATE bookings SET job_id=:jid WHERE id=:bid"),
-                              {"jid": str(jid), "bid": str(booking_id)})
             created["jobs"] += 1
-            print(f"[CREATE] service_job {job_number} (status={status}, booking={booking_id})")
+            print(f"[CREATE] service_job {job_number} (status={status}, service_booking={booking_id})")
             return jid
 
         job_new = await upsert_job("L501-JOB-0001", "new", "unassigned")

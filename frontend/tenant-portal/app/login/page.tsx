@@ -38,6 +38,10 @@ export default function LoginPage() {
       const u = res.user;
       localStorage.setItem("serviceos_user_id",         u?.id ?? u?.user_id ?? "");
       localStorage.setItem("serviceos_tenant_id",       u?.tenant_id ?? "");
+      // FINAL-L5-01D fix: role was never persisted, so no page could ever
+      // detect a read-only user client-side (ReadOnlyBanner/isReadOnly()
+      // had nothing to read). See FINAL_L5_01D_TENANT_READONLY_UX_REPORT.md.
+      localStorage.setItem("serviceos_user_role",       u?.role ?? "");
       // Full name as display fallback; overridden by profile/runtime after redirect
       localStorage.setItem("serviceos_tenant_name",     u?.full_name ?? "");
       localStorage.setItem("serviceos_tenant_vertical", "");

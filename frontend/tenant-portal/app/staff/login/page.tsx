@@ -1,8 +1,10 @@
 "use client";
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { authApi } from "../../../lib/api";
 
 export default function StaffLoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -26,7 +28,13 @@ export default function StaffLoginPage() {
       localStorage.setItem("serviceos_user_id", u?.id ?? u?.user_id ?? "");
       localStorage.setItem("serviceos_tenant_id", u?.tenant_id ?? "");
       localStorage.setItem("serviceos_tenant_name", "");
-      window.location.href = "/staff/dashboard";
+      // FINAL-L5-01D fix: window.location.href triggered a full page reload,
+      // which is slower than necessary and was not reliably trackable by
+      // browser-automation navigation waits in this dev environment. Next.js
+      // router.push() is a client-side SPA transition -- faster, no white
+      // flash, and deterministic. See
+      // FINAL_L5_01D_TECHNICIAN_REDIRECT_ROOT_CAUSE_REPORT.md.
+      router.push("/staff/dashboard");
     } catch (e: unknown) {
       const err = e as { message?: string; requestId?: string };
       setError(err?.message || "Login failed. Check credentials.");

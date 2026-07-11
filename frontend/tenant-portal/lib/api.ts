@@ -26,6 +26,7 @@ export function getToken():        string | null { return typeof window !== "und
 export function getRefreshToken(): string | null { return typeof window !== "undefined" ? localStorage.getItem("serviceos_tenant_refresh") : null; }
 export function getTenantId():     string | null { return typeof window !== "undefined" ? localStorage.getItem("serviceos_tenant_id")      : null; }
 export function getUserId():       string | null { return typeof window !== "undefined" ? localStorage.getItem("serviceos_user_id")        : null; }
+export function getUserRole():     string | null { return typeof window !== "undefined" ? localStorage.getItem("serviceos_user_role")      : null; }
 
 /**
  * E2E-09B: reads the `access_scope` claim straight off the JWT (no extra API
@@ -2831,11 +2832,30 @@ export interface ServiceJobRecord {
   scheduled_date: string | null;
   scheduled_time_window: string | null;
   city: string | null;
+  zipcode?: string | null;
+  address_snapshot?: { line1?: string; city?: string; zipcode?: string } | null;
   status: string;
   assignment_status: string;
+  failure_reason?: string | null;
+  completion_data?: { work_summary?: string; collected_amount?: number; completion_notes?: string;
+    technician?: string; completed_at?: string } | null;
   created_at: string | null;
   updated_at: string | null;
 }
+
+// ── FINAL-L5-01D: canonical Tenant Jobs API (service_jobs, not legacy /v1/jobs) ──
+export const serviceJobsApi = {
+  list: (params?: { status?: string; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    qs.set("limit", String(params?.limit ?? 50));
+    qs.set("offset", String(params?.offset ?? 0));
+    return apiFetch<{ items: ServiceJobRecord[]; total: number; limit: number; offset: number }>(
+      `/v1/provider/my-records/jobs?${qs}`
+    );
+  },
+  get: (jobId: string) => apiFetch<ServiceJobRecord>(`/v1/provider/my-records/jobs/${jobId}`),
+};
 
 export interface ServiceJobAssignmentRecord {
   id: string;

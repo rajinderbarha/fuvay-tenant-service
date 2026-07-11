@@ -1,0 +1,17 @@
+{
+  "canonical_list": {"method": "GET", "path": "/v1/provider/my-records/jobs", "table": "service_jobs"},
+  "canonical_detail": {"method": "GET", "path": "/v1/provider/my-records/jobs/{job_id}", "table": "service_jobs"},
+  "canonical_assign": {"method": "POST", "path": "/v1/provider/service-jobs/{id}/assign", "table": "service_job_assignments"},
+  "canonical_reassign": {"method": "POST", "path": "/v1/provider/service-jobs/{id}/reassign", "table": "service_job_assignments"},
+  "canonical_cancel": {"method": "POST", "path": "/v1/provider/service-jobs/{id}/cancel-assignment", "table": "service_job_assignments"},
+  "canonical_schedule": {"method": "POST", "path": "/v1/provider/service-jobs/{id}/schedule", "table": "service_jobs"},
+  "canonical_timeline": {"method": "GET", "path": "/v1/provider/service-jobs/{id}/assignment-timeline", "table": "service_job_assignment_events"},
+  "legacy_endpoints": [
+    {"method": "GET", "path": "/v1/jobs", "table": "jobs", "status": "LEGACY"},
+    {"method": "GET", "path": "/v1/jobs/{id}", "table": "jobs", "status": "LEGACY"},
+    {"method": "PUT", "path": "/v1/jobs/{id}/status", "table": "jobs", "status": "LEGACY"},
+    {"method": "PUT", "path": "/v1/jobs/{id}/checklist", "table": "jobs", "status": "LEGACY"},
+    {"method": "GET", "path": "/v1/jobs/sla-alerts", "table": "jobs", "status": "LEGACY"},
+    {"method": "POST", "path": "/v1/jobs/{id}/close", "table": "jobs", "status": "LEGACY"}
+  ]
+}

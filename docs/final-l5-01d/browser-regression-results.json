@@ -1,0 +1,9 @@
+{
+  "admin": {"login": "pass", "dashboard": "pass_no_404", "tenants": "pass_real_data"},
+  "tenant_owner": {"login": "pass", "jobs_list": "pass_canonical_endpoint", "jobs_detail": "pass_real_data", "used_legacy_v1_jobs": false, "used_canonical_endpoint": true},
+  "tenant_readonly": {"login": "pass", "banner_consistent": true, "mutation_buttons_hidden": true},
+  "customer_one": {"login": "pass", "bookings_count": 5, "no_bookings_message": false},
+  "customer_two": {"login": "pass", "isolation_confirmed": true},
+  "technician": {"runs": 5, "success": 1, "failed": 4, "fastest_success_ms": 2756, "root_cause_fully_isolated": false},
+  "overall": "substantially_passing_with_one_open_item"
+}
