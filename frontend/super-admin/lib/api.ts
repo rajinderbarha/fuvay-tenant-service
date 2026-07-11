@@ -6119,6 +6119,19 @@ export const adminServiceJobAssignmentApi = {
     apiFetch<{ job_id: string; events: AdminAssignmentEvent[] }>(
       `/v1/admin/service-jobs/${jobId}/assignment-timeline`
     ),
+  // FINAL-L5-05C Part 4/13: admin reassignment mutation
+  reassignJob: (jobId: string, body: { technician_id: string; reason: string }) =>
+    apiFetch<{
+      job_id: string; assignment_id: string; assigned_staff_member_id: string;
+      status: string; assignment_status: string;
+    }>(`/v1/admin/service-jobs/${jobId}/reassign`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getEligibleTechnicians: (jobId: string) =>
+    apiFetch<{ job_id: string; technicians: { id: string; full_name: string; role: string }[] }>(
+      `/v1/admin/service-jobs/${jobId}/eligible-technicians`
+    ),
 };
 
 // ── Sprint 21: Admin Execution Timeline API ───────────────────────────────────

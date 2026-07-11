@@ -53,10 +53,21 @@ class HomeServiceJobAssignmentService:
         return res.scalars().first()
 
     async def _load_staff(self, staff_id: uuid.UUID):
+        """FINAL-L5-05C fix (L5-05C-001): real service_jobs.assigned_staff_id
+        values reference app.engines.auth.models.User (role='technician'/'staff'),
+        not ProviderTeamMember — that table is unpopulated in production/demo
+        data. Check ProviderTeamMember first (back-compat for any caller that
+        still seeds it), then fall back to the real User-backed staff source."""
         from app.engines.home_service_assignment.staff_model import ProviderTeamMember
         res = await self.db.execute(
             select(ProviderTeamMember).where(ProviderTeamMember.id == staff_id)
         )
+        staff = res.scalars().first()
+        if staff:
+            return staff
+
+        from app.engines.auth.models import User
+        res = await self.db.execute(select(User).where(User.id == staff_id))
         return res.scalars().first()
 
     async def _current_assignment(self, job_id: uuid.UUID) -> ServiceJobAssignment | None:
@@ -98,7 +109,11 @@ class HomeServiceJobAssignmentService:
     async def validate_staff_eligibility(
         self, job, staff_member_id: uuid.UUID
     ) -> tuple[Any, list[str]]:
-        """Return (staff, blocked_reasons). blocked_reasons empty = eligible."""
+        """Return (staff, blocked_reasons). blocked_reasons empty = eligible.
+
+        Handles both the legacy ProviderTeamMember shape (status/designation/
+        can_receive_assignment) and the real User shape (is_active/role) --
+        see _load_staff for why both are supported."""
         staff = await self._load_staff(staff_member_id)
         blocked = []
         if not staff:
@@ -106,11 +121,19 @@ class HomeServiceJobAssignmentService:
         if str(staff.tenant_id) != str(job.tenant_id):
             blocked.append("wrong_tenant")
             return staff, blocked
-        if staff.status != "active":
-            blocked.append("staff_inactive")
-        if not getattr(staff, "can_receive_assignment", True):
-            blocked.append("cannot_receive_assignment")
-        designation = (staff.designation or "").lower()
+
+        is_user = hasattr(staff, "role") and not hasattr(staff, "designation")
+        if is_user:
+            if not getattr(staff, "is_active", True):
+                blocked.append("staff_inactive")
+            designation = (staff.role or "").lower()
+        else:
+            if staff.status != "active":
+                blocked.append("staff_inactive")
+            if not getattr(staff, "can_receive_assignment", True):
+                blocked.append("cannot_receive_assignment")
+            designation = (staff.designation or "").lower()
+
         if designation and designation not in ELIGIBLE_DESIGNATIONS:
             blocked.append("role_not_allowed")
         return staff, blocked

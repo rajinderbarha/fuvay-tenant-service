@@ -4,12 +4,12 @@
  * Real job + booking (price/payment/provider) + Completed Job Deduction
  * ledger link, all from GET /v1/admin/final-records/jobs/{job_id}.
  */
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import { AdminLayout } from "../../../../../components/layout/AdminLayout";
 import { Card, Badge, SectionHeader, Skeleton } from "../../../../../components/shared/ui";
 import { ChevronRight, Copy, ExternalLink } from "lucide-react";
 import { finalRecordsAdminApi, adminServiceJobAssignmentApi, adminExecutionApi } from "../../../../../lib/api";
-import { useApi } from "../../../../../hooks/useApi";
+import { useApi, useAction } from "../../../../../hooks/useApi";
 
 function copyText(t: string) { if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {}); }
 
@@ -39,6 +39,77 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+// FINAL-L5-05C Part 15: real reassignment UI action — permission-aware
+// (super_admin only, enforced server-side too), requires a reason, confirms
+// before submitting. Technician list comes from the live eligible-technicians
+// endpoint, not a hardcoded/mocked list.
+function ReassignModal({ jobId, onClose, onDone }: { jobId: string; onClose: () => void; onDone: () => void }) {
+  const technicians = useApi(useCallback(() => adminServiceJobAssignmentApi.getEligibleTechnicians(jobId), [jobId]));
+  const reassign = useAction(adminServiceJobAssignmentApi.reassignJob);
+  const [technicianId, setTechnicianId] = useState("");
+  const [reason, setReason] = useState("");
+
+  const submit = async () => {
+    if (!technicianId || !reason.trim()) return;
+    const result = await reassign.execute(jobId, { technician_id: technicianId, reason: reason.trim() });
+    if (result) onDone();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex",
+      alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: "var(--surface)", borderRadius: 8, padding: 20, width: 420, maxWidth: "90vw" }}
+        onClick={e => e.stopPropagation()}>
+        <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px" }}>Reassign Technician</p>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Technician</div>
+          {technicians.loading ? (
+            <Skeleton height={32} />
+          ) : (
+            <select value={technicianId} onChange={e => setTechnicianId(e.target.value)}
+              style={{ width: "100%", padding: 8, fontSize: 13, border: "1px solid var(--border)", borderRadius: 6 }}>
+              <option value="">Select a technician…</option>
+              {(technicians.data?.technicians ?? []).map(t => (
+                <option key={t.id} value={t.id}>{t.full_name}</option>
+              ))}
+            </select>
+          )}
+          {!technicians.loading && (technicians.data?.technicians?.length ?? 0) === 0 && (
+            <p style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 4 }}>
+              No active technicians found for this job's tenant.
+            </p>
+          )}
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Reason (required)</div>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+            style={{ width: "100%", padding: 8, fontSize: 13, border: "1px solid var(--border)", borderRadius: 6 }}
+            placeholder="Why is this job being reassigned?" />
+        </div>
+
+        {reassign.error && (
+          <p style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 10 }}>
+            {reassign.error} {reassign.requestId && `(Request ID: ${reassign.requestId})`}
+          </p>
+        )}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6,
+            border: "1px solid var(--border)", background: "transparent" }}>Cancel</button>
+          <button onClick={submit} disabled={!technicianId || !reason.trim() || reassign.loading}
+            style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6, border: "none",
+              background: "var(--brand)", color: "#fff",
+              opacity: (!technicianId || !reason.trim() || reassign.loading) ? 0.5 : 1 }}>
+            {reassign.loading ? "Reassigning…" : "Confirm Reassignment"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminServiceJobDetailPage({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = React.use(params);
   const job = useApi(useCallback(() => finalRecordsAdminApi.getJob(jobId), [jobId]));
@@ -51,6 +122,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
   const assignmentTimeline = useApi(useCallback(() => adminServiceJobAssignmentApi.getJobTimeline(jobId), [jobId]));
   const executionTimeline = useApi(useCallback(() => adminExecutionApi.getJobTimeline(jobId), [jobId]));
   const jobNotes = useApi(useCallback(() => adminExecutionApi.getJobNotes(jobId), [jobId]));
+  const [showReassign, setShowReassign] = useState(false);
 
   const d = job.data;
   const priceSnapshot = (d?.booking?.price_snapshot ?? {}) as Record<string, any>;
@@ -66,10 +138,28 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
         <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{d?.job_number ?? jobId}</span>
       </div>
 
-      <SectionHeader
-        title={d?.job_number ?? "Job Detail"}
-        subtitle={d ? `Booking ${d.booking?.booking_number ?? d.booking_id}` : "Loading job detail…"}
-      />
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+        <SectionHeader
+          title={d?.job_number ?? "Job Detail"}
+          subtitle={d ? `Booking ${d.booking?.booking_number ?? d.booking_id}` : "Loading job detail…"}
+        />
+        {d && !["completed", "cancelled", "failed"].includes(d.status) && (
+          <button onClick={() => setShowReassign(true)}
+            style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
+              border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer",
+              whiteSpace: "nowrap", marginTop: 4 }}>
+            Reassign Technician
+          </button>
+        )}
+      </div>
+
+      {showReassign && d && (
+        <ReassignModal
+          jobId={jobId}
+          onClose={() => setShowReassign(false)}
+          onDone={() => { setShowReassign(false); job.refetch(); assignmentTimeline.refetch(); }}
+        />
+      )}
 
       {job.error && (
         <Card style={{ marginBottom: 16 }}>

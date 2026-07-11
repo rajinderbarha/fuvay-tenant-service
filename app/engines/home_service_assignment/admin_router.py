@@ -1,17 +1,33 @@
-"""Sprint 20 — Admin Service Job Assignment Visibility APIs (read-only)."""
+"""Sprint 20 — Admin Service Job Assignment Visibility APIs (read-only).
+
+FINAL-L5-05C: added the admin-facing reassignment mutation (Part 4). Reuses
+HomeServiceJobAssignmentService.reassign_job (already tenant-checked,
+staff-eligibility-checked, history-preserving, event-emitting) rather than
+duplicating that logic here.
+"""
 from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.core.audit import record_platform_audit
+from app.dependencies.auth import get_current_user, require_super_admin, UserContext
 from app.dependencies.db import get_db
+from app.exceptions import ServiceOSException
 from app.schemas.base import ApiResponse, ok
+from app.engines.home_service_assignment.constants import (
+    ERR_JOB_NOT_FOUND, ERR_JOB_CANCELLED, ERR_JOB_COMPLETED, ERR_ACCESS_DENIED,
+    ERR_STAFF_NOT_FOUND, ERR_STAFF_WRONG_TENANT, ERR_STAFF_INACTIVE,
+    ERR_ROLE_NOT_ALLOWED, ERR_STAFF_NOT_ELIGIBLE, ERR_REASON_REQUIRED,
+    ERR_REASSIGN_NOT_ALLOWED,
+)
 from app.engines.home_service_assignment.models import (
     ServiceJobAssignment, ServiceJobAssignmentEvent,
 )
+from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
 
 router = APIRouter(
     prefix="/v1/admin/service-job-assignments",
@@ -129,3 +145,100 @@ async def admin_get_timeline(
     )
     events = [e.to_dict() for e in res.scalars().all()]
     return ok({"job_id": str(job_id), "events": events}, _RID(r), "assignment")
+
+
+# ── FINAL-L5-05C Part 4: admin reassignment mutation ──────────────────────────
+
+class AdminReassignJobRequest(BaseModel):
+    technician_id: uuid.UUID
+    reason: str = Field(..., min_length=1)
+
+
+_REASSIGN_ERROR_MAP: dict[str, tuple[int, str]] = {
+    ERR_JOB_NOT_FOUND:        (404, "JOB_NOT_FOUND"),
+    ERR_JOB_CANCELLED:        (409, "JOB_REASSIGN_NOT_ALLOWED"),
+    ERR_JOB_COMPLETED:        (409, "JOB_REASSIGN_NOT_ALLOWED"),
+    ERR_ACCESS_DENIED:        (403, "JOB_REASSIGN_FORBIDDEN"),
+    ERR_STAFF_NOT_FOUND:      (422, "TECHNICIAN_NOT_ELIGIBLE"),
+    ERR_STAFF_WRONG_TENANT:   (409, "TECHNICIAN_TENANT_MISMATCH"),
+    ERR_STAFF_INACTIVE:       (422, "TECHNICIAN_NOT_ELIGIBLE"),
+    ERR_ROLE_NOT_ALLOWED:     (422, "TECHNICIAN_NOT_ELIGIBLE"),
+    ERR_STAFF_NOT_ELIGIBLE:   (422, "TECHNICIAN_NOT_ELIGIBLE"),
+    ERR_REASON_REQUIRED:      (422, "REASON_REQUIRED"),
+    ERR_REASSIGN_NOT_ALLOWED: (409, "JOB_REASSIGN_NOT_ALLOWED"),
+}
+
+
+@admin_jobs_router.get("/{job_id}/eligible-technicians", response_model=ApiResponse,
+                       summary="Admin: list real, active technicians eligible to be assigned to this job's tenant")
+async def admin_list_eligible_technicians(
+    job_id: uuid.UUID,
+    r:    Request      = ...,
+    user: UserContext  = Depends(require_super_admin),
+    db:   AsyncSession = Depends(get_db),
+):
+    """Reads real technician users (role='technician'/'staff', is_active) scoped
+    to the job's own tenant. Deliberately queries User rather than
+    ProviderTeamMember -- see the L5-05C-001 fix in service.py for why."""
+    from app.engines.final_records.models import ServiceJob
+    from app.engines.auth.models import User
+
+    job_row = (await db.execute(select(ServiceJob).where(ServiceJob.id == job_id))).scalars().first()
+    if not job_row:
+        raise ServiceOSException(error_code="JOB_NOT_FOUND", detail="Service job not found.",
+                                  status_code=404)
+
+    res = await db.execute(
+        select(User).where(
+            and_(User.tenant_id == job_row.tenant_id, User.role.in_(["technician", "staff"]),
+                 User.is_active == True)
+        )
+    )
+    technicians = [{"id": str(u.id), "full_name": u.full_name, "role": u.role} for u in res.scalars().all()]
+    return ok({"job_id": str(job_id), "technicians": technicians}, _RID(r), "assignment")
+
+
+@admin_jobs_router.post("/{job_id}/reassign", response_model=ApiResponse,
+                        summary="Admin: reassign a service job to a different technician")
+async def admin_reassign_job(
+    job_id: uuid.UUID,
+    body: AdminReassignJobRequest,
+    r:    Request      = ...,
+    user: UserContext  = Depends(require_super_admin),
+    db:   AsyncSession = Depends(get_db),
+):
+    from app.engines.final_records.models import ServiceJob
+
+    job_row = (await db.execute(select(ServiceJob).where(ServiceJob.id == job_id))).scalars().first()
+    if not job_row:
+        raise ServiceOSException(error_code="JOB_NOT_FOUND", detail="Service job not found.",
+                                  status_code=404)
+
+    before_state = {"assigned_staff_id": str(job_row.assigned_staff_id) if job_row.assigned_staff_id else None,
+                     "status": job_row.status, "assignment_status": job_row.assignment_status}
+
+    svc = HomeServiceJobAssignmentService(db)
+    try:
+        result = await svc.reassign_job(
+            job_id=job_id,
+            staff_member_id=body.technician_id,
+            tenant_id=job_row.tenant_id,
+            reason=body.reason,
+            actor_user_id=uuid.UUID(user.user_id) if user.user_id else None,
+            request_id=_RID(r),
+        )
+    except ValueError as e:
+        status_code, error_code = _REASSIGN_ERROR_MAP.get(str(e), (400, str(e)))
+        raise ServiceOSException(error_code=error_code, detail=str(e), status_code=status_code)
+
+    await record_platform_audit(
+        db, operation="service_job.reassigned", engine_id="home_service_assignment",
+        entity_id=str(job_id), entity_type="service_job", tenant_id=job_row.tenant_id,
+        actor_id=uuid.UUID(user.user_id) if user.user_id else None, actor_role=user.role,
+        request_id=_RID(r), before=before_state,
+        after={"assigned_staff_id": str(body.technician_id), "reason": body.reason,
+               "status": result.get("status"), "assignment_status": result.get("assignment_status")},
+    )
+    await db.commit()
+
+    return ok(result, _RID(r), "assignment")

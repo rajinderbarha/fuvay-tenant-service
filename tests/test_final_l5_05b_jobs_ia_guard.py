@@ -50,6 +50,17 @@ class TestJobsNavigationGuard:
         assert "adminExecutionApi" in src
         assert "Timeline & Notes" in src
 
+    def test_canonical_job_detail_page_has_real_reassign_action(self):
+        """Regression guard for the FINAL-L5-05C fix: the canonical page must
+        keep a real, working reassignment action (not a disabled button) --
+        this is the first of 4 mutation actions this sprint closed against
+        service_jobs."""
+        src = _read(SA / "app" / "admin" / "home-services" / "service-jobs" / "[jobId]" / "page.tsx")
+        assert "reassignJob" in src
+        assert "getEligibleTechnicians" in src
+        assert "Reassign Technician" in src
+        assert 'reason.trim()' in src  # reason is required, not optional
+
 
 class TestForbiddenTerminologyGuard:
     def test_no_forbidden_terminology_in_admin_source(self):

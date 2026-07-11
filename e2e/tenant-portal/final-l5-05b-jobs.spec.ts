@@ -22,5 +22,11 @@ test("real Chromium: canonical service-jobs detail page now shows Timeline & Not
   const body = await page.innerText("body");
   console.log("JOB_DETAIL_SNIPPET:", body.slice(body.indexOf("Timeline"), body.indexOf("Timeline") + 200));
   expect(body.toLowerCase()).toContain("timeline & notes");
-  expect(body).toContain("No timeline events recorded for this job.");
+  // FINAL-L5-05C note: this job now has real reassignment events (from the
+  // FINAL-L5-05C reassign E2E test), so it no longer reliably shows the empty
+  // state. Assert the section renders real content either way, rather than
+  // pinning to a specific data state that a later sprint's mutation changes.
+  const hasEmptyState = body.includes("No timeline events recorded for this job.");
+  const hasEvents = body.includes("assignment_created") || body.includes("assignment_reassigned");
+  expect(hasEmptyState || hasEvents).toBe(true);
 });

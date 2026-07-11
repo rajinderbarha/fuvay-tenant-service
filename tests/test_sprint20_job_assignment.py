@@ -228,7 +228,9 @@ class TestStaffEligibility:
         from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
         from app.engines.home_service_assignment.constants import ERR_STAFF_NOT_FOUND
         job = _job()
-        db  = _db_returning(None)  # staff not found
+        # FINAL-L5-05C: _load_staff now falls back from ProviderTeamMember to
+        # User (real assigned_staff_id values live there) — two misses, not one.
+        db  = _db_returning(None, None)  # staff not found in either source
         svc = HomeServiceJobAssignmentService(db)
         with pytest.raises(ValueError, match=ERR_STAFF_NOT_FOUND):
             await svc.validate_staff_eligibility(job, uuid.uuid4())

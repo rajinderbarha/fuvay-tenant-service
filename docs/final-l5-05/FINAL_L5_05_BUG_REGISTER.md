@@ -59,5 +59,24 @@
 - **Coverage**: legacy-page legacy-disclosure banner presence, canonical page non-stub check, timeline/notes wiring regression guard, zero-forbidden-terminology sweep across all of `frontend/super-admin/**/*.ts*` (not just the specific files fixed — the whole tree), zero-duplicate-NAV_GROUPS-href guard (regression guard for L5-05-001), Usage-Credits/Reports-remain-in-nav guard (regression guard for L5-05-007)
 - **Status**: **ADDED**, all 6 passing
 
+## L5-05C-001: `HomeServiceJobAssignmentService._load_staff` queried an empty table — real reassignment was unusable against production/demo data
+- **Severity**: P0 (the mutation this sprint was built to add would 422 on every real job)
+- **Evidence**: `provider_team_members` has 0 rows; every real `service_jobs.assigned_staff_id` actually references `users.id` (role `technician`/`staff`) — confirmed via live DB query. Calling the new admin reassign endpoint against a real job before the fix returned `422 TECHNICIAN_NOT_ELIGIBLE` / `JOB_ASSIGNMENT_STAFF_NOT_FOUND`.
+- **Root cause**: `HomeServiceJobAssignmentService._load_staff`/`validate_staff_eligibility` were built against `ProviderTeamMember`, a model/table that was apparently superseded by `users`-based staff (consistent with the separately-shipped "P0 Admin Staff fix" sprint, which already lists real staff from `users`) but never updated in this service.
+- **Files changed**: `app/engines/home_service_assignment/service.py` (`_load_staff` falls back to `User` when `ProviderTeamMember` misses; `validate_staff_eligibility` handles both shapes)
+- **Live API evidence**: `POST /v1/admin/service-jobs/7caeb8fd-2c6d-4629-be31-e60d940a56a2/reassign` returns real `200` against a live job/technician; job row, `platform_audit_logs`, and `service_job_assignment_events` all updated, confirmed via direct DB query
+- **Automated tests**: `tests/test_final_l5_05c_reassign.py` (7 tests); `tests/test_sprint20_job_assignment.py::TestStaffEligibility::test_staff_not_found_raises` updated (now expects 2 lookups, not 1)
+- **Status**: **FIXED**
+
+## L5-05C-002: Admin-facing service_jobs reassignment mutation built (Part 4 of FINAL-L5-05C, 1 of 4 required mutations)
+- **Severity**: P1 (real missing capability closed, not a defect fix)
+- **Files changed**: `app/engines/home_service_assignment/admin_router.py` (new `POST /{job_id}/reassign`, `GET /{job_id}/eligible-technicians`), `frontend/super-admin/lib/api.ts` (`reassignJob`, `getEligibleTechnicians`), `frontend/super-admin/app/admin/home-services/service-jobs/[jobId]/page.tsx` (`ReassignModal`, "Reassign Technician" action)
+- **RBAC**: `require_super_admin` dependency (platform's only granular-enough role for this write today — see Blocker 4, no distinct Admin Operations/Finance role exists yet)
+- **Audit**: real `platform_audit_logs` row via `record_platform_audit` (`operation="service_job.reassigned"`) plus the pre-existing `service_job_assignment_events` timeline row
+- **Error contract**: maps to the mission's required codes (404 `JOB_NOT_FOUND`, 403 `JOB_REASSIGN_FORBIDDEN`, 409 `JOB_REASSIGN_NOT_ALLOWED`/`TECHNICIAN_TENANT_MISMATCH`, 422 `TECHNICIAN_NOT_ELIGIBLE`/`REASON_REQUIRED`)
+- **Live API evidence**: 200 success case, 404 (unknown job), 422 (empty reason, schema-validated), 401 (no auth) all confirmed via live `curl`
+- **Browser evidence**: real Chromium E2E (`e2e/tenant-portal/final-l5-05c-reassign.spec.ts`) — login, open modal, real technician list loads (not empty/mocked), submit with reason, modal closes only on real success, new timeline event renders
+- **Status**: **FIXED** (1 of 4 required canonical mutations; status override / force-close / void remain unbuilt — see `FINAL_L5_05B_JOBS_MIGRATION.md`)
+
 ## Result
-9 of 10 real bugs/gaps found across FINAL-L5-05 and FINAL-L5-05B were fixed and live-verified via real Chromium (not just static analysis — several were only discoverable by actually rendering the page or calling the real API). 1 real, pre-existing, rule-relevant architecture gap (`/v1/jobs` on the primary Jobs nav item) was fully investigated this sprint (complete parity matrix built) and correctly, deliberately NOT force-migrated, since doing so would violate the mission's own non-negotiable rules — the single reason this sprint cannot honestly claim full READY certification.
+11 of 12 real bugs/gaps found across FINAL-L5-05, FINAL-L5-05B, and FINAL-L5-05C were fixed and live-verified via real Chromium and/or live API calls (not just static analysis — several were only discoverable by actually rendering the page or calling the real API). 1 real, pre-existing, rule-relevant architecture gap (`/v1/jobs` on the primary Jobs nav item) remains fully investigated (complete parity matrix built, now with 1 of 4 mutations closed) and correctly, deliberately NOT force-migrated, since doing so before the remaining 3 mutations (status override, force-close, void) plus SLA/summary exist would violate the mission's own non-negotiable rules — the single reason this sprint cannot honestly claim full READY certification.
