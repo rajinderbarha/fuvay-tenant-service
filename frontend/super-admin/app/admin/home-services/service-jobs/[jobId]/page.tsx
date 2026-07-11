@@ -8,7 +8,7 @@ import React, { useCallback } from "react";
 import { AdminLayout } from "../../../../../components/layout/AdminLayout";
 import { Card, Badge, SectionHeader, Skeleton } from "../../../../../components/shared/ui";
 import { ChevronRight, Copy, ExternalLink } from "lucide-react";
-import { finalRecordsAdminApi } from "../../../../../lib/api";
+import { finalRecordsAdminApi, adminServiceJobAssignmentApi, adminExecutionApi } from "../../../../../lib/api";
 import { useApi } from "../../../../../hooks/useApi";
 
 function copyText(t: string) { if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {}); }
@@ -42,6 +42,15 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 export default function AdminServiceJobDetailPage({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = React.use(params);
   const job = useApi(useCallback(() => finalRecordsAdminApi.getJob(jobId), [jobId]));
+  // FINAL-L5-05B — these two admin timeline endpoints (assignment + execution)
+  // plus the notes endpoint already existed as real, working backend routes
+  // and typed API-client methods, but were never wired into this page (dead
+  // code). Wiring them here closes part of the real feature-parity gap this
+  // sprint found between this canonical page and the legacy /admin/operations
+  // page (which shows a rendered timeline) — see FINAL_L5_05_JOBS_MIGRATION.md.
+  const assignmentTimeline = useApi(useCallback(() => adminServiceJobAssignmentApi.getJobTimeline(jobId), [jobId]));
+  const executionTimeline = useApi(useCallback(() => adminExecutionApi.getJobTimeline(jobId), [jobId]));
+  const jobNotes = useApi(useCallback(() => adminExecutionApi.getJobNotes(jobId), [jobId]));
 
   const d = job.data;
   const priceSnapshot = (d?.booking?.price_snapshot ?? {}) as Record<string, any>;
@@ -177,6 +186,48 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
               <Field label="Booking Number" value={d.booking?.booking_number} />
               <Field label="Booking Status" value={d.booking?.status} />
               <Field label="Booking ID" value={<span style={{ fontFamily: "monospace", fontSize: 12 }}>{d.booking_id}</span>} />
+            </Section>
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Section title="Timeline & Notes">
+              {(assignmentTimeline.loading || executionTimeline.loading || jobNotes.loading) ? (
+                <Skeleton height={80} />
+              ) : (
+                <>
+                  {[...(assignmentTimeline.data?.events ?? []).map(e => ({
+                      key: `a-${e.id}`, at: e.created_at, label: `${e.event_type}${e.old_value != null ? ` (${JSON.stringify(e.old_value)} → ${JSON.stringify(e.new_value)})` : ""}`,
+                    })),
+                    ...(executionTimeline.data ?? []).map(e => ({
+                      key: `e-${e.id}`, at: e.created_at, label: `${e.event_type}${e.old_status ? ` (${e.old_status} → ${e.new_status})` : ""}`,
+                    })),
+                  ].sort((a, b) => new Date(b.at ?? 0).getTime() - new Date(a.at ?? 0).getTime())
+                   .map(ev => (
+                    <div key={ev.key} style={{ display: "flex", gap: 10, padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
+                      <span style={{ color: "var(--text-tertiary)", flexShrink: 0, minWidth: 140 }}>
+                        {ev.at ? new Date(ev.at).toLocaleString() : "—"}
+                      </span>
+                      <span>{ev.label}</span>
+                    </div>
+                  ))}
+                  {(assignmentTimeline.data?.events?.length ?? 0) === 0 && (executionTimeline.data?.length ?? 0) === 0 && (
+                    <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No timeline events recorded for this job.</p>
+                  )}
+                  {(jobNotes.data?.length ?? 0) > 0 && (
+                    <div style={{ marginTop: 14 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--text-tertiary)", margin: "0 0 8px" }}>Notes</p>
+                      {jobNotes.data!.map(n => (
+                        <div key={n.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
+                          <span style={{ color: "var(--text-tertiary)", marginRight: 8 }}>
+                            {n.created_at ? new Date(n.created_at).toLocaleString() : "—"}
+                          </span>
+                          {n.note_text}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </Section>
           </div>
         </div>

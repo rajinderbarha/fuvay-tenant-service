@@ -1,7 +1,9 @@
-# FINAL-L5-05 — Super Admin Information Architecture — Final Report
+# FINAL-L5-05 / FINAL-L5-05B — Super Admin Information Architecture — Final Report
+
+> **This report covers both FINAL-L5-05 and its follow-up, FINAL-L5-05B** (canonical Jobs migration investigation, orphan-fix regression guards, working-tree hygiene). Sections below are updated in place rather than duplicated; FINAL-L5-05B-specific additions are marked.
 
 ## 1. Previous certification statuses
-FINAL-L5-01/02/03/04 all `READY`. FINAL-L5-04's own certification was for dynamic navigation/entitlement, not the broader IA completeness this sprint targets.
+FINAL-L5-01/02/03/04 all `READY`. FINAL-L5-04's own certification was for dynamic navigation/entitlement, not the broader IA completeness this sprint targets. FINAL-L5-05 itself returned `PARTIAL_READY_WITH_FINAL_L5_05_BLOCKERS` (commit `90a9e98`, pushed to `origin/master`).
 
 ## 2. Current Admin route count
 **162** `page.tsx` files (159 under `/admin/**`), real tool-generated count, not estimated. See Route Inventory.
@@ -37,7 +39,7 @@ Not independently re-audited against the mission's 11 potential rule domains thi
 Not independently re-verified this sprint beyond the `/v1/jobs` dependency finding on the tenant-detail page's "Recent Jobs" section (Bug Register L5-05-008 — same root cause as the Jobs nav item).
 
 ## 13. Jobs/Operations result
-**The mission's most significant finding.** The primary "Jobs" nav item (`/admin/operations`) is backed by the legacy `/v1/jobs` API, not the canonical `service_jobs`/final-records API — a real, pre-existing violation of rule 12 and Part 12's explicit requirement. A separate, canonical, `/v1/admin/final-records/jobs`-backed page (`/admin/home-services/service-jobs`) already exists but isn't the one linked from the sidebar. Root-caused, documented, **not remediated** this sprint (real feature-parity verification required first).
+**The mission's most significant finding, now fully investigated (FINAL-L5-05B).** A complete feature-parity matrix was built comparing the legacy `/admin/operations` page (`/v1/jobs`-backed) against the canonical `/admin/home-services/service-jobs` page (`/v1/admin/final-records/jobs`, real `service_jobs` table). Result: the canonical page is missing 4 real mutation actions (reassign, status override, force-close, void) and SLA/summary-stat capabilities, **none of which have any backend implementation at all** — a genuine missing-capability gap, not a wiring gap. Per rule 5 ("do not remove working job actions"), the sidebar link was **deliberately not repointed**. Real progress: 2 of 3 wiring-only gaps (assignment/execution timeline, notes) were closed this sprint — these were dead code (real backend + real typed API client, zero UI consumers) until wired into the canonical detail page's new "Timeline & Notes" section, live-verified via curl (3/3 endpoints return real 200 JSON) and Chromium. See `FINAL_L5_05B_JOBS_MIGRATION.md`.
 
 ## 14. Pricing/Matching result
 Real fragmentation confirmed (`/admin/pricing`, `/pricing-rules`, `/pricing-tiers`, `/pricing/*` — 6+ pages); Matching Diagnostics (FINAL-L5-04C's real, entitlement-aware feature) remains correctly linked and untouched this sprint.
@@ -85,23 +87,23 @@ Not independently measured this sprint.
 `npx tsc --noEmit`: 0 errors. `npm run build`: succeeds. Both re-verified fresh after every change including the final nav additions.
 
 ## 29. Chromium E2E result
-4/4 real Chromium tests passing, bounded to this sprint's actual changes (not the mission's full 4-role/every-route battery). Critically, the "no `/v1/jobs` request" global assertion was explicitly checked and would **fail** if run against the actual "Jobs" nav item today — reported honestly rather than avoided.
+**5/5 real Chromium tests passing** (4 from FINAL-L5-05 + 1 new from FINAL-L5-05B confirming the Timeline & Notes section renders live with an honest empty state), bounded to both sprints' actual changes (not the mission's full 4-role/every-route battery). Critically, the "no `/v1/jobs` request" global assertion was explicitly checked and would **still fail** if run against the actual "Jobs" nav item today — reported honestly rather than avoided.
 
 ## 30. Bugs found
-8 total, all real (not fabricated to pad the register): 1 nav-href bug, 5 forbidden-terminology violations (2 frontend + 3 backend-sourced, the latter only found via live browser rendering), 1 mission-critical orphaned-pages gap (2 pages), 1 `/v1/jobs` architecture violation.
+10 total across both sprints, all real (not fabricated to pad the register): 1 nav-href bug, 5 forbidden-terminology violations, 1 mission-critical orphaned-pages gap (2 pages), 1 `/v1/jobs` architecture violation (now fully parity-investigated), 1 dead-code timeline/notes wiring gap (FINAL-L5-05B), plus the working-tree build-artifact hygiene item (FINAL-L5-05B Part 1/L5-05B-004 equivalent).
 
 ## 31. Bugs fixed
-7 of 8. The `/v1/jobs` architecture violation (the most severe) was root-caused but not remediated — real feature-parity verification is required first, and attempting it blind within this sprint's remaining budget risked breaking a feature-rich, actively-used page.
+9 of 10. The `/v1/jobs` architecture violation remains the one deliberately-not-fixed item — now with a complete parity investigation proving it would be unsafe to fix by simply repointing the link (rule 5 violation), rather than an unexamined gap.
 
 ## 32. Remaining blockers
-1 P0 (`/v1/jobs` on primary Jobs nav), 3 P1s (11 unresolved duplicate clusters, ~68 remaining orphaned pages, no finer permission-visibility), 3 P2s (breadcrumb coverage, no responsive nav, accessibility gaps), 1 P3 (full menu hierarchy redesign). See Remaining Blockers report for full detail.
+1 P0 (`/v1/jobs` on primary Jobs nav — now fully investigated, migration blocked on real missing backend capability, not on investigation time), 3 P1s (11 unresolved duplicate clusters, ~68 remaining orphaned pages, no finer permission-visibility), 3 P2s (breadcrumb coverage, no responsive nav, accessibility gaps), 1 P3 (full menu hierarchy redesign). See Remaining Blockers report for full detail.
 
 ## 33. Final recommendation
 
 **`PARTIAL_READY_WITH_FINAL_L5_05_BLOCKERS`**
 
-This sprint delivered real, live-verified value: a genuine route inventory (162 routes, not estimated), 7 real bugs found and fixed (including 3 forbidden-terminology violations only discoverable via actual browser rendering, not static analysis), and 2 mission-critical orphaned pages (Usage Credits, Reports) reconnected to navigation — all verified with TypeScript, production build, and real Chromium evidence, zero regressions.
+FINAL-L5-05B delivered the specific, real, evidence-backed work its mission required: a complete Jobs feature-parity investigation (proving the canonical page is missing real backend capability, not just a wiring gap), 2 real dead-code gaps closed and live-verified (timeline, execution timeline, notes — all confirmed via live curl and Chromium), 6 new automated regression guards preventing the FINAL-L5-05 fixes from silently regressing, and a verified-clean working tree (build-cache artifact churn correctly identified and discarded, not committed as noise).
 
-However, per the mission's own explicit disqualifying conditions, `READY_FINAL_L5_05_ADMIN_INFORMATION_ARCHITECTURE_CERTIFIED` cannot be honestly returned: condition #8 ("`/v1/jobs` is reintroduced") is functionally true today — the primary "Jobs" sidebar item actively depends on the legacy `/v1/jobs` API, a real, pre-existing, rule-relevant violation this sprint found, root-caused, and transparently reported rather than hid. Additionally, the mission's full-scale requirements (complete duplicate-route consolidation across 12 clusters, ~70-page menu reorganization, finer-grained multi-role permission visibility, responsive navigation, and a full 4-role Chromium battery) represent genuinely large, separately-scoped follow-up work that this sprint's bounded, safety-first approach correctly did not attempt blind.
+Per the mission's own explicit disqualifying conditions, `READY_FINAL_L5_05_ADMIN_INFORMATION_ARCHITECTURE_CERTIFIED` still cannot be honestly returned: condition #1 ("the Jobs sidebar still uses /v1/jobs") remains true, and condition #2 ("canonical Jobs feature parity remains unproven") is now **the opposite of hidden** — parity was rigorously proven to be *incomplete* (4 real mutation actions have no backend implementation at all against `service_jobs`), which is precisely the scenario rule 5 exists to prevent a blind migration through. This is not the same finding as FINAL-L5-05's "not yet investigated" state — it is a completed investigation with an honest, rule-compliant "not yet, and here's exactly what's missing" conclusion.
 
-The honest next step is a dedicated follow-up sprint targeting the `/v1/jobs` migration specifically (the one blocker most directly tied to the mission's non-negotiable rules), after which the remaining duplicate-route and menu-completeness work becomes safely tractable.
+The remaining large-scale work (11 duplicate-route clusters, ~68 orphaned pages, finer permission visibility, responsive navigation, full 4-role Chromium battery) is unchanged from FINAL-L5-05's assessment — genuinely large, separately-scoped follow-up, correctly not attempted blind. The honest next step remains a dedicated follow-up sprint that builds the 4 missing `service_jobs` mutation endpoints (reassign/override/close/void) plus SLA/summary equivalents — at which point the Jobs migration, and with it a realistic path to full READY certification, becomes safely achievable.

@@ -35,12 +35,29 @@
 - **Browser evidence**: Real Chromium confirms both nav items navigate to real, non-trivial, working pages
 - **Status**: **FIXED**
 
-## L5-05-008: `/admin/operations` (the sidebar's "Jobs" item) is backed by the legacy `/v1/jobs` API, not the canonical `service_jobs`/final-records API
+## L5-05-008 / L5-05B-001: `/admin/operations` (the sidebar's "Jobs" item) is backed by the legacy `/v1/jobs` API, not the canonical `service_jobs`/final-records API
 - **Severity**: P0 — directly implicates rule 12 ("do not reintroduce /v1/jobs") and Part 12's explicit requirement ("no /v1/jobs dependency")
 - **Evidence**: `jobsApi` in `lib/api.ts` (base path `/v1/jobs`) is imported and used by `app/admin/operations/page.tsx`, `app/admin/operations/[jobId]/page.tsx`, and `app/admin/tenants/[id]/page.tsx`. A separate, newer, canonical page (`/admin/home-services/service-jobs`, backed by `/v1/admin/final-records/jobs`) already exists but is **not** the one linked from the sidebar's "Jobs" item
 - **Root cause**: Pre-existing architecture debt — `/v1/jobs` was never fully retired after the canonical final-records API was introduced in an earlier sprint; the sidebar was never updated to point at the newer page
-- **Files that would need to change**: `AdminLayout.tsx` (repoint "Jobs" nav item), and either (a) verify `/admin/home-services/service-jobs` has full feature parity with `/admin/operations` (reassign/void/close/notes/media actions) before swapping, or (b) migrate `/admin/operations`'s actions onto the final-records API
-- **Status**: **NOT FIXED this sprint** — found and root-caused, but real remediation requires a feature-parity investigation and testing pass this sprint's time budget did not allow doing safely. Documented as the top Remaining Blocker, not hidden.
+- **FINAL-L5-05B update — full parity investigation completed** (see `FINAL_L5_05B_JOBS_MIGRATION.md`): the canonical page is confirmed **materially thinner** than legacy — missing reassign, status override, force-close, void, SLA tracking, and summary stats, none of which have ANY backend implementation against `service_jobs` today (not a wiring gap — genuinely missing capability). Two real wiring gaps (assignment/execution timeline, notes) WERE closed this sprint (see L5-05B-002).
+- **Decision**: per rule 5 ("do not remove working job actions") and rule 3 ("do not solve the Jobs defect by only replacing an endpoint string"), the sidebar "Jobs" item was **deliberately not repointed** this sprint — doing so would silently remove 4 real, actively-usable admin mutation actions with no replacement.
+- **Status**: **NOT FIXED — correctly deferred, not hidden.** Real remediation requires building 4 new backend mutation endpoints (with permission/audit/idempotency per Part 5) plus SLA/summary equivalents against `service_jobs` — a substantial, separately-scoped effort. Remains the top Remaining Blocker.
+
+## L5-05B-002: Canonical job detail page had zero timeline/notes visibility despite the backend and API client already supporting it
+- **Severity**: P2 (real capability was dead code, not exposed to users — not a P0/P1 since it's an enhancement, not a defect that removes something)
+- **Evidence**: `adminServiceJobAssignmentApi.getJobTimeline`, `adminExecutionApi.getJobTimeline`, `adminExecutionApi.getJobNotes` — all real, typed, already calling real, working backend endpoints (confirmed via live curl: all 3 return `200` with real JSON) — were never called from any page
+- **Root cause**: Built in an earlier sprint as part of a different feature (service-job-assignments / execution engines), never wired into the canonical job detail page
+- **Files changed**: `frontend/super-admin/app/admin/home-services/service-jobs/[jobId]/page.tsx`
+- **Fix**: Added a "Timeline & Notes" section rendering both timelines (merged, sorted by timestamp) and any notes, with an honest empty state when none exist
+- **Automated tests**: `tests/test_final_l5_05b_jobs_ia_guard.py::TestJobsNavigationGuard::test_canonical_job_detail_page_renders_timeline_and_notes` — regression guard against this being silently dropped again
+- **Live API evidence**: `GET /v1/admin/service-jobs/{id}/assignment-timeline`, `.../execution-timeline`, `.../notes` all return real `200` responses
+- **Browser evidence**: Real Chromium confirms the section renders correctly with an honest empty state for a job with no events
+- **Status**: **FIXED**
+
+## L5-05B-003: 5 new automated IA regression guards added (Part 16)
+- **Files changed**: `tests/test_final_l5_05b_jobs_ia_guard.py` (new file, 6 tests)
+- **Coverage**: legacy-page legacy-disclosure banner presence, canonical page non-stub check, timeline/notes wiring regression guard, zero-forbidden-terminology sweep across all of `frontend/super-admin/**/*.ts*` (not just the specific files fixed — the whole tree), zero-duplicate-NAV_GROUPS-href guard (regression guard for L5-05-001), Usage-Credits/Reports-remain-in-nav guard (regression guard for L5-05-007)
+- **Status**: **ADDED**, all 6 passing
 
 ## Result
-7 of 8 real bugs found this sprint were fixed, live-verified via real Chromium (not just static analysis — 3 of the terminology bugs were only discoverable by actually rendering the page). 1 real, pre-existing, rule-relevant architecture bug (`/v1/jobs` on the primary Jobs nav item) was found, root-caused, and documented but not fixed — the single largest reason this sprint cannot honestly claim full READY certification.
+9 of 10 real bugs/gaps found across FINAL-L5-05 and FINAL-L5-05B were fixed and live-verified via real Chromium (not just static analysis — several were only discoverable by actually rendering the page or calling the real API). 1 real, pre-existing, rule-relevant architecture gap (`/v1/jobs` on the primary Jobs nav item) was fully investigated this sprint (complete parity matrix built) and correctly, deliberately NOT force-migrated, since doing so would violate the mission's own non-negotiable rules — the single reason this sprint cannot honestly claim full READY certification.
