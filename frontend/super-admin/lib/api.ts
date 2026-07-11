@@ -6152,6 +6152,32 @@ export const adminExecutionApi = {
     apiFetch<{ id: string; note_text: string; note_type: string; created_at: string | null }[]>(
       `/v1/admin/service-jobs/${jobId}/notes`
     ),
+  // FINAL-L5-05D: exceptional admin mutations
+  getAllowedServiceJobOverrideTargets: (jobId: string) =>
+    apiFetch<{ job_id: string; current_status: string; allowed_targets: string[] }>(
+      `/v1/admin/service-jobs/${jobId}/allowed-override-targets`
+    ),
+  overrideServiceJobStatus: (jobId: string, body: {
+    target_status: string; expected_current_status: string; reason_code: string; reason: string;
+  }) =>
+    apiFetch<{ job_id: string; previous_status: string; new_status: string }>(
+      `/v1/admin/service-jobs/${jobId}/status-override`,
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+  forceCloseServiceJob: (jobId: string, body: {
+    expected_current_status: string; reason_code: string; reason: string; completion_note?: string;
+  }) =>
+    apiFetch<{ job_id: string; previous_status: string; new_status: string; deduction_created: boolean; deduction_policy: string }>(
+      `/v1/admin/service-jobs/${jobId}/force-close`,
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+  voidServiceJob: (jobId: string, body: {
+    expected_current_status: string; reason_code: string; reason: string;
+  }) =>
+    apiFetch<{ job_id: string; previous_status: string; new_status: string }>(
+      `/v1/admin/service-jobs/${jobId}/void`,
+      { method: "POST", body: JSON.stringify(body) }
+    ),
   getApptTimeline: (apptId: string) =>
     apiFetch<AdminExecutionEvent[]>(`/v1/admin/coaching-appointments/${apptId}/execution-timeline`),
   getLeadTimeline: (leadId: string) =>

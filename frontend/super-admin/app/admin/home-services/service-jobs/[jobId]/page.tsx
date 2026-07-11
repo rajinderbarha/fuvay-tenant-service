@@ -39,6 +39,170 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+// FINAL-L5-05D: exceptional admin mutations — status override, force-close,
+// void. Each is a distinct, explicit operation (not one generic "change
+// status" endpoint), requires a reason, requires confirmation, and states
+// its real financial consequence rather than hiding it.
+function StatusOverrideModal({ jobId, currentStatus, onClose, onDone }: {
+  jobId: string; currentStatus: string; onClose: () => void; onDone: () => void;
+}) {
+  const targets = useApi(useCallback(() => adminExecutionApi.getAllowedServiceJobOverrideTargets(jobId), [jobId]));
+  const override = useAction(adminExecutionApi.overrideServiceJobStatus);
+  const [targetStatus, setTargetStatus] = useState("");
+  const [reason, setReason] = useState("");
+
+  const submit = async () => {
+    if (!targetStatus || !reason.trim()) return;
+    const result = await override.execute(jobId, {
+      target_status: targetStatus, expected_current_status: currentStatus,
+      reason_code: "admin_override", reason: reason.trim(),
+    });
+    if (result) onDone();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex",
+      alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: "var(--surface)", borderRadius: 8, padding: 20, width: 420, maxWidth: "90vw" }}
+        onClick={e => e.stopPropagation()}>
+        <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px" }}>Override Job Status</p>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>New status</div>
+          {targets.loading ? <Skeleton height={32} /> : (
+            <select value={targetStatus} onChange={e => setTargetStatus(e.target.value)}
+              style={{ width: "100%", padding: 8, fontSize: 13, border: "1px solid var(--border)", borderRadius: 6 }}>
+              <option value="">Select a target status…</option>
+              {(targets.data?.allowed_targets ?? []).map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+          {!targets.loading && (targets.data?.allowed_targets?.length ?? 0) === 0 && (
+            <p style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 4 }}>
+              No admin override is available from this job's current status ({currentStatus}).
+            </p>
+          )}
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Reason (required)</div>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+            style={{ width: "100%", padding: 8, fontSize: 13, border: "1px solid var(--border)", borderRadius: 6 }}
+            placeholder="Why is this status being overridden?" />
+        </div>
+        {override.error && <p style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 10 }}>
+          {override.error} {override.requestId && `(Request ID: ${override.requestId})`}
+        </p>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6,
+            border: "1px solid var(--border)", background: "transparent" }}>Cancel</button>
+          <button onClick={submit} disabled={!targetStatus || !reason.trim() || override.loading}
+            style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6, border: "none",
+              background: "var(--brand)", color: "#fff",
+              opacity: (!targetStatus || !reason.trim() || override.loading) ? 0.5 : 1 }}>
+            {override.loading ? "Submitting…" : "Confirm Override"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ForceCloseModal({ jobId, currentStatus, onClose, onDone }: {
+  jobId: string; currentStatus: string; onClose: () => void; onDone: () => void;
+}) {
+  const forceClose = useAction(adminExecutionApi.forceCloseServiceJob);
+  const [reason, setReason] = useState("");
+
+  const submit = async () => {
+    if (!reason.trim()) return;
+    const result = await forceClose.execute(jobId, {
+      expected_current_status: currentStatus, reason_code: "admin_force_close", reason: reason.trim(),
+    });
+    if (result) onDone();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex",
+      alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: "var(--surface)", borderRadius: 8, padding: 20, width: 440, maxWidth: "90vw" }}
+        onClick={e => e.stopPropagation()}>
+        <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 10px" }}>Force-Close Job</p>
+        <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 14px" }}>
+          This makes the job terminal (status: force_closed). It does <strong>not</strong> create a Completed
+          Job Deduction automatically — if real completion evidence exists, a finance review must apply it
+          manually afterward.
+        </p>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Reason (required)</div>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+            style={{ width: "100%", padding: 8, fontSize: 13, border: "1px solid var(--border)", borderRadius: 6 }}
+            placeholder="Why is this job being force-closed?" />
+        </div>
+        {forceClose.error && <p style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 10 }}>
+          {forceClose.error} {forceClose.requestId && `(Request ID: ${forceClose.requestId})`}
+        </p>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6,
+            border: "1px solid var(--border)", background: "transparent" }}>Cancel</button>
+          <button onClick={submit} disabled={!reason.trim() || forceClose.loading}
+            style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6, border: "none",
+              background: "var(--danger-text, #dc2626)", color: "#fff",
+              opacity: (!reason.trim() || forceClose.loading) ? 0.5 : 1 }}>
+            {forceClose.loading ? "Force-closing…" : "Confirm Force-Close"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VoidModal({ jobId, currentStatus, onClose, onDone }: {
+  jobId: string; currentStatus: string; onClose: () => void; onDone: () => void;
+}) {
+  const voidAction = useAction(adminExecutionApi.voidServiceJob);
+  const [reason, setReason] = useState("");
+
+  const submit = async () => {
+    if (!reason.trim()) return;
+    const result = await voidAction.execute(jobId, {
+      expected_current_status: currentStatus, reason_code: "admin_void", reason: reason.trim(),
+    });
+    if (result) onDone();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex",
+      alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: "var(--surface)", borderRadius: 8, padding: 20, width: 440, maxWidth: "90vw" }}
+        onClick={e => e.stopPropagation()}>
+        <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 10px" }}>Void Job</p>
+        <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 14px" }}>
+          The job remains permanently visible in history, timeline, and audit — voiding is not deletion. It no
+          longer counts as a valid active or completed record. If this job already has a Completed Job
+          Deduction, voiding is blocked until a manual finance reversal is recorded.
+        </p>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Reason (required)</div>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+            style={{ width: "100%", padding: 8, fontSize: 13, border: "1px solid var(--border)", borderRadius: 6 }}
+            placeholder="Why is this job being voided?" />
+        </div>
+        {voidAction.error && <p style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 10 }}>
+          {voidAction.error} {voidAction.requestId && `(Request ID: ${voidAction.requestId})`}
+        </p>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6,
+            border: "1px solid var(--border)", background: "transparent" }}>Cancel</button>
+          <button onClick={submit} disabled={!reason.trim() || voidAction.loading}
+            style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6, border: "none",
+              background: "var(--danger-text, #dc2626)", color: "#fff",
+              opacity: (!reason.trim() || voidAction.loading) ? 0.5 : 1 }}>
+            {voidAction.loading ? "Voiding…" : "Confirm Void"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // FINAL-L5-05C Part 15: real reassignment UI action — permission-aware
 // (super_admin only, enforced server-side too), requires a reason, confirms
 // before submitting. Technician list comes from the live eligible-technicians
@@ -123,6 +287,9 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
   const executionTimeline = useApi(useCallback(() => adminExecutionApi.getJobTimeline(jobId), [jobId]));
   const jobNotes = useApi(useCallback(() => adminExecutionApi.getJobNotes(jobId), [jobId]));
   const [showReassign, setShowReassign] = useState(false);
+  const [showOverride, setShowOverride] = useState(false);
+  const [showForceClose, setShowForceClose] = useState(false);
+  const [showVoid, setShowVoid] = useState(false);
 
   const d = job.data;
   const priceSnapshot = (d?.booking?.price_snapshot ?? {}) as Record<string, any>;
@@ -143,13 +310,39 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
           title={d?.job_number ?? "Job Detail"}
           subtitle={d ? `Booking ${d.booking?.booking_number ?? d.booking_id}` : "Loading job detail…"}
         />
-        {d && !["completed", "cancelled", "failed"].includes(d.status) && (
-          <button onClick={() => setShowReassign(true)}
-            style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
-              border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer",
-              whiteSpace: "nowrap", marginTop: 4 }}>
-            Reassign Technician
-          </button>
+        {d && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+            {!["completed", "cancelled", "failed", "force_closed", "voided"].includes(d.status) && (
+              <>
+                <button onClick={() => setShowReassign(true)}
+                  style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
+                    border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer",
+                    whiteSpace: "nowrap" }}>
+                  Reassign Technician
+                </button>
+                <button onClick={() => setShowOverride(true)}
+                  style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
+                    border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer",
+                    whiteSpace: "nowrap" }}>
+                  Override Status
+                </button>
+                <button onClick={() => setShowForceClose(true)}
+                  style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
+                    border: "1px solid var(--danger-text, #dc2626)", color: "var(--danger-text, #dc2626)",
+                    background: "transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  Force-Close
+                </button>
+              </>
+            )}
+            {d.status !== "voided" && (
+              <button onClick={() => setShowVoid(true)}
+                style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
+                  border: "1px solid var(--danger-text, #dc2626)", color: "var(--danger-text, #dc2626)",
+                  background: "transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
+                Void Job
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -158,6 +351,30 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
           jobId={jobId}
           onClose={() => setShowReassign(false)}
           onDone={() => { setShowReassign(false); job.refetch(); assignmentTimeline.refetch(); }}
+        />
+      )}
+
+      {showOverride && d && (
+        <StatusOverrideModal
+          jobId={jobId} currentStatus={d.status}
+          onClose={() => setShowOverride(false)}
+          onDone={() => { setShowOverride(false); job.refetch(); executionTimeline.refetch(); }}
+        />
+      )}
+
+      {showForceClose && d && (
+        <ForceCloseModal
+          jobId={jobId} currentStatus={d.status}
+          onClose={() => setShowForceClose(false)}
+          onDone={() => { setShowForceClose(false); job.refetch(); executionTimeline.refetch(); }}
+        />
+      )}
+
+      {showVoid && d && (
+        <VoidModal
+          jobId={jobId} currentStatus={d.status}
+          onClose={() => setShowVoid(false)}
+          onDone={() => { setShowVoid(false); job.refetch(); executionTimeline.refetch(); }}
         />
       )}
 

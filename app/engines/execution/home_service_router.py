@@ -8,10 +8,11 @@ from pydantic import BaseModel
 
 from sqlalchemy import select
 
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_super_admin
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+from app.engines.execution.admin_job_actions import AdminJobActionsService
 from app.exceptions import ServiceOSException
 
 _svc = HomeServiceJobExecutionService()
@@ -382,3 +383,88 @@ async def admin_get_notes(job_id: uuid.UUID, r: Request, user=Depends(get_curren
         raise ValueError(ERR_RECORD_NOT_FOUND)
     result = await _svc.get_job_notes(db, job_id, job.tenant_id)
     return ok(result, rid, "admin-exec-notes")
+
+
+# ── FINAL-L5-05D: exceptional admin mutations ──────────────────────────────
+
+class StatusOverrideRequest(BaseModel):
+    target_status: str
+    expected_current_status: str
+    reason_code: str
+    reason: str
+
+
+class ForceCloseRequest(BaseModel):
+    expected_current_status: str
+    reason_code: str
+    reason: str
+    completion_note: Optional[str] = None
+
+
+class VoidRequest(BaseModel):
+    expected_current_status: str
+    reason_code: str
+    reason: str
+
+
+@admin_router.get("/{job_id}/allowed-override-targets", response_model=ApiResponse,
+                   summary="Admin: list the status-override targets currently allowed for this job")
+async def admin_get_allowed_override_targets(
+    job_id: uuid.UUID, r: Request, user=Depends(require_super_admin), db=Depends(get_db),
+):
+    rid = getattr(r.state, "request_id", "—")
+    from app.engines.final_records.models import ServiceJob
+    job = (await db.execute(select(ServiceJob).where(ServiceJob.id == job_id))).scalars().first()
+    if not job:
+        raise ServiceOSException(error_code="JOB_NOT_FOUND", detail="Service job not found.", status_code=404)
+    svc = AdminJobActionsService(db)
+    targets = svc.get_allowed_override_targets(job.status)
+    return ok({"job_id": str(job_id), "current_status": job.status, "allowed_targets": targets}, rid, "admin-exec-jobs")
+
+
+@admin_router.post("/{job_id}/status-override", response_model=ApiResponse,
+                    summary="Admin: override a service job's status to a curated allowed target")
+async def admin_override_status(
+    job_id: uuid.UUID, body: StatusOverrideRequest, r: Request,
+    user=Depends(require_super_admin), db=Depends(get_db),
+):
+    rid = getattr(r.state, "request_id", "—")
+    svc = AdminJobActionsService(db)
+    result = await svc.override_status(
+        job_id=job_id, target_status=body.target_status, expected_current_status=body.expected_current_status,
+        reason_code=body.reason_code, reason=body.reason,
+        actor_user_id=uuid.UUID(user.user_id) if user.user_id else None, actor_role=user.role, request_id=rid,
+    )
+    return ok(result, rid, "admin-exec-jobs")
+
+
+@admin_router.post("/{job_id}/force-close", response_model=ApiResponse,
+                    summary="Admin: force-close a service job (never creates an automatic deduction)")
+async def admin_force_close(
+    job_id: uuid.UUID, body: ForceCloseRequest, r: Request,
+    user=Depends(require_super_admin), db=Depends(get_db),
+):
+    rid = getattr(r.state, "request_id", "—")
+    svc = AdminJobActionsService(db)
+    result = await svc.force_close(
+        job_id=job_id, expected_current_status=body.expected_current_status,
+        reason_code=body.reason_code, reason=body.reason, completion_note=body.completion_note,
+        actor_user_id=uuid.UUID(user.user_id) if user.user_id else None, actor_role=user.role, request_id=rid,
+    )
+    return ok(result, rid, "admin-exec-jobs")
+
+
+@admin_router.post("/{job_id}/void", response_model=ApiResponse,
+                    summary="Admin: void a service job (blocked if a Completed Job Deduction already exists)")
+async def admin_void(
+    job_id: uuid.UUID, body: VoidRequest, r: Request,
+    user=Depends(require_super_admin), db=Depends(get_db),
+):
+    rid = getattr(r.state, "request_id", "—")
+    svc = AdminJobActionsService(db)
+    result = await svc.void(
+        job_id=job_id, expected_current_status=body.expected_current_status,
+        reason_code=body.reason_code, reason=body.reason,
+        actor_user_id=uuid.UUID(user.user_id) if user.user_id else None, actor_role=user.role, request_id=rid,
+    )
+    return ok(result, rid, "admin-exec-jobs")
