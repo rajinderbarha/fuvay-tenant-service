@@ -910,6 +910,15 @@ class TestConfirmDraft:
         db.flush   = AsyncMock()
         db.commit  = AsyncMock()
         db.refresh = AsyncMock()
+        # FINAL-L5-04C: confirm_draft() looks up the draft's offering's
+        # service_group_id to re-validate entitlement; this synthetic draft's
+        # offering_id doesn't correspond to a real MasterService row, so the
+        # real query would return None (no group -> entitlement check is
+        # skipped, the correct behavior for offerings with no group) —
+        # simulate that here rather than leaving db.execute unmocked.
+        execute_result = MagicMock()
+        execute_result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=execute_result)
 
         async def fake_refresh(obj):
             obj.status = DRAFT_STATUS_CONFIRMED

@@ -1,5 +1,7 @@
 # FINAL-L5-04B — Static Quality and Build Report
 
+> **Updated in FINAL-L5-04C**: this sprint's entitlement-enforcement work (matching engine, booking confirmation guard) is entirely backend-only — no frontend files were changed. `npx tsc --noEmit` was re-run fresh in both apps after all 04C backend changes to confirm this claim rather than assume it; both remain 0 errors, unaffected as expected.
+
 ## Real commands, run fresh after all code changes (including the final `has_category_entitlement` fix)
 ```
 cd frontend/super-admin  && npx tsc --noEmit   → 0 errors

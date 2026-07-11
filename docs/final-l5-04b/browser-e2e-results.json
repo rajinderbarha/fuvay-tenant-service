@@ -1,17 +1,24 @@
 {
-  "sprint": "FINAL-L5-04B",
-  "spec": "e2e/tenant-portal/final-l5-04b-entitlement.spec.ts",
+  "sprint": "FINAL-L5-04C (extends FINAL-L5-04B)",
+  "specs": [
+    "e2e/tenant-portal/final-l5-04b-entitlement.spec.ts",
+    "e2e/tenant-portal/final-l5-04c-matching.spec.ts"
+  ],
   "project": "tenant-portal-chromium",
-  "result": {"passed": 3, "failed": 0, "workers": 1},
+  "result": {"passed": 5, "failed": 0, "workers": 1, "duration_seconds": 56.8},
   "tests": [
-    {"name": "Admin entitlement management: disable/re-enable with live UI + audit history", "status": "PASS"},
-    {"name": "Tenant navigation module-level entitlement gating: hide/restore nav", "status": "PASS"},
-    {"name": "Tenant isolation: distinct entitlement sets via real API", "status": "PASS"}
+    {"name": "[04B] Admin entitlement management: disable/re-enable with live UI + audit history", "status": "PASS"},
+    {"name": "[04B] Tenant navigation module-level entitlement gating: hide/restore nav", "status": "PASS"},
+    {"name": "[04B] Tenant isolation: distinct entitlement sets via real API", "status": "PASS"},
+    {"name": "[04C] Matching engine entitlement enforcement: disable/re-enable AC matching cycle", "status": "PASS"},
+    {"name": "[04C] Matching engine entitlement enforcement: enable-service denied/allowed", "status": "PASS"}
   ],
-  "real_bugs_found_via_e2e_process": [
-    "StringDataRightTruncationError on entitlement_audit_log.new_status (VARCHAR(20) overflow)",
-    "Admin GET entitlements endpoint hid disabled/inactive rows (effective_only always true)",
-    "has_category_entitlement did not cross-reference parent module status"
+  "real_bugs_found_via_e2e_or_testing_process": [
+    "StringDataRightTruncationError on entitlement_audit_log.new_status (VARCHAR(20) overflow) [04B]",
+    "Admin GET entitlements endpoint hid disabled/inactive rows (effective_only always true) [04B]",
+    "has_category_entitlement did not cross-reference parent module status [04B]",
+    "confirm_draft test regression: MagicMock db.execute not awaitable after adding booking-confirmation guard [04C]"
   ],
-  "not_covered_this_sprint": ["customer matching entitlement", "staff category scope", "historical job/booking access via entitlement"]
+  "covered_in_04c": ["matching engine entitlement enforcement", "customer availability (via shared matching pipeline)", "booking confirmation revalidation guard", "cross-tenant matching isolation"],
+  "not_covered": ["staff category scope (no such endpoint exists in this codebase)"]
 }

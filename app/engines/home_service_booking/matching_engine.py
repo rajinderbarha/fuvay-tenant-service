@@ -263,6 +263,7 @@ ELIGIBILITY_GATE_CODES = (
     "tenant_not_active",
     "suspended",
     "vertical_mismatch",
+    "TENANT_CATEGORY_NOT_ENTITLED",
     "NOT_BOOKABLE_CANONICAL_STATUS",
     "INSUFFICIENT_USAGE_CREDITS",
     "ZIPCODE_NOT_COVERED",
@@ -330,12 +331,35 @@ async def select_best_provider(
 
     exact_zip_ids = {row.tenant_id for row in base_rows if strip_zip and row.area_zipcode == strip_zip}
 
+    # FINAL-L5-04C — tenant category entitlement, resolved ONCE for every
+    # candidate in a single bulk query (not one query per candidate — see
+    # EntitlementService.get_entitled_tenant_ids_for_category()). offering_id
+    # is always a master_service_id (confirmed at both call sites); its
+    # service_group_id is the entitlement-gated category.
+    entitled_tenant_ids: set[uuid.UUID] | None = None
+    from app.engines.admin_catalog.models import MasterService
+    from app.engines.entitlement.service import entitlement_service
+    svc_group_row = (await db.execute(
+        select(MasterService.service_group_id).where(MasterService.id == offering_id)
+    )).scalar_one_or_none()
+    if svc_group_row:
+        entitled_tenant_ids = await entitlement_service.get_entitled_tenant_ids_for_category(
+            db, svc_group_row, tenant_ids=list(candidate_ids)
+        )
+
     signals_list: list[CandidateSignals] = []
     excluded = 0
     excluded_providers: list[dict] = []
 
     for row in base_rows:
         tid = row.tenant_id
+        if entitled_tenant_ids is not None and tid not in entitled_tenant_ids:
+            excluded += 1
+            excluded_providers.append({
+                "provider_name": row.business_name or row.tenant_name or "Service Provider",
+                "reason_code": "TENANT_CATEGORY_NOT_ENTITLED",
+            })
+            continue
         eligible, reason_code = await _passes_full_eligibility_gate(
             db, tenant_id=tid, offering_id=offering_id,
             offering_type_id=offering_type_id, brand_id=brand_id,

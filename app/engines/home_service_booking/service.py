@@ -33,6 +33,7 @@ from app.engines.home_service_booking.constants import (
     ERR_ADDRESS_REQUIRED, ERR_BRAND_REQUIRED, ERR_CATEGORY_INVALID,
     ERR_CONFIRMATION_NOT_READY, ERR_DRAFT_ACCESS_DENIED,
     ERR_DRAFT_NOT_FOUND, ERR_DRAFT_TERMINAL, ERR_NO_PROVIDER_AVAILABLE,
+    ERR_PROVIDER_ENTITLEMENT_CHANGED,
     ERR_OFFERING_INVALID, ERR_PHOTO_UPLOAD_FAILED,
     ERR_PRICE_ESTIMATE_FAILED, ERR_PROVIDER_NOT_IN_AREA,
     ERR_REQUIRED_FIELD_MISSING, ERR_TYPE_REQUIRED, MAX_PHOTO_SIZE_BYTES,
@@ -891,6 +892,28 @@ class HomeServiceChatbotBookingService:
                 f"Draft must be in 'ready_for_confirmation' status. Current: {draft.status}",
                 status_code=422,
             )
+
+        # FINAL-L5-04C — re-validate the selected provider's entitlement at
+        # confirmation time, not just at match time (Part 6). Entitlement
+        # could have been disabled by an admin in the window between the
+        # customer being matched and confirming — a controlled 409, not a
+        # stale confirmation or an unhandled 500.
+        if draft.selected_tenant_id and draft.offering_id:
+            from app.engines.admin_catalog.models import MasterService
+            from app.engines.entitlement.service import entitlement_service
+            svc_group_id = (await self.db.execute(
+                select(MasterService.service_group_id).where(MasterService.id == draft.offering_id)
+            )).scalar_one_or_none()
+            if svc_group_id:
+                still_entitled = await entitlement_service.has_category_entitlement(
+                    self.db, draft.selected_tenant_id, svc_group_id
+                )
+                if not still_entitled:
+                    raise ServiceOSException(
+                        ERR_PROVIDER_ENTITLEMENT_CHANGED,
+                        "The selected provider is no longer available for this category. Please search again.",
+                        status_code=409,
+                    )
 
         draft.status     = DRAFT_STATUS_CONFIRMED
         draft.updated_at = utcnow()

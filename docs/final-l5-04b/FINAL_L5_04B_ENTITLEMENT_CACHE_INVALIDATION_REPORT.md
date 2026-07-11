@@ -1,5 +1,7 @@
 # FINAL-L5-04B — Entitlement Cache Invalidation Report
 
+> **Updated in FINAL-L5-04C**: rows 4/5/6 below were N/A in 04B (matching/customer/staff not implemented). Now that matching and customer-availability are real (see Matching Entitlement Report), both are confirmed **structurally always-fresh** — same reasoning as row 3: `select_best_provider()` and `get_entitled_tenant_ids_for_category()` are live, uncached DB queries on every call, so there is no server-side cache to invalidate for matching/customer-availability either. Row 5 (staff filters) remains N/A — no such endpoint exists (see Staff Entitlement Scope Report), so there is nothing there to cache or invalidate.
+
 ## No query-cache library exists in this codebase
 Re-confirmed (consistent with FINAL-L5-03's and FINAL-L5-04's findings): no React Query/SWR, no backend Redis-based entitlement cache. Every entitlement read is a live, uncached database query — there is no stale-cache class of bug possible for entitlement reads themselves.
 
@@ -9,9 +11,9 @@ Re-confirmed (consistent with FINAL-L5-03's and FINAL-L5-04's findings): no Reac
 | 1. Admin Tenant Detail refreshes | `entApi.refetch()` called immediately after every mutation in `EntitlementsTab.tsx` | **Browser-verified** — disable/re-enable show live updated status without reload |
 | 2. Tenant navigation refreshes | `EntitlementCtx`'s `loadEntitlements()` — currently only called on mount, not on a live push signal (see gap below) | **Verified via fresh page load**, not via live cross-tab push |
 | 3. Tenant route guards refresh | Route guards (the one real one, `enable_service`) query the database live on every request — no caching layer to go stale | Structurally always fresh |
-| 4. Customer availability refreshes | N/A — not implemented this sprint (see Customer Category Availability Report) | N/A |
-| 5. Staff filters refresh | N/A — not implemented this sprint | N/A |
-| 6. Matching uses current entitlement | N/A — not implemented this sprint (see Matching Entitlement Report) | N/A |
+| 4. Customer availability refreshes | Live DB query on every `match_provider_and_price()` call, no caching layer | **Structurally always fresh — verified live in 04C** (disable→immediately excluded, re-enable→immediately restored) |
+| 5. Staff filters refresh | N/A — no staff category-filter endpoint exists (see Staff Entitlement Scope Report) | N/A |
+| 6. Matching uses current entitlement | Live, bulk-resolved DB query on every `select_best_provider()` call | **Structurally always fresh — verified live in 04C**, including a real Chromium E2E round-trip |
 | 7. Logout/login does not restore stale access | **Confirmed** — entitlement is never embedded in the JWT; every check is a live DB query on each request, so a fresh login always reflects current state | Structurally true |
 
 ## Honest gap: no live push to an already-open tenant portal tab

@@ -93,23 +93,92 @@ class EntitlementService:
         return bool(row) and _is_effective(row)
 
     async def has_category_entitlement(self, db: AsyncSession, tenant_id: uuid.UUID, category_id: uuid.UUID) -> bool:
+        """Single-tenant convenience wrapper — for per-request checks (e.g. a
+        mutation guard). For matching/candidate-list contexts, use
+        get_entitled_tenant_ids_for_category() instead to avoid N+1 queries."""
+        entitled = await self.get_entitled_tenant_ids_for_category(db, category_id, tenant_ids=[tenant_id])
+        return tenant_id in entitled
+
+    async def get_entitled_tenant_ids_for_category(
+        self, db: AsyncSession, category_id: uuid.UUID, *, tenant_ids: list[uuid.UUID] | None = None,
+    ) -> set[uuid.UUID]:
+        """FINAL-L5-04C — canonical, bulk-safe effective-entitlement resolver.
+
+        Returns the subset of `tenant_ids` (or, if None, ALL tenants) that
+        currently hold an effective category entitlement for `category_id`,
+        in a single query — this is the function matching/candidate-list
+        code must use instead of calling has_category_entitlement() once
+        per candidate (a real N+1 pattern that would not scale).
+
+        "Effective" requires all 8 mission conditions:
+          1. row exists, 2. status ACTIVE, 3. effective_from passed,
+          4. effective_until not passed, 5. parent module entitlement is
+          itself effective (ACTIVE + its own effective window), 6. the
+          global module (verticals.is_enabled) is active, 7. the global
+          category (service_categories.is_active) is active, 8. the
+          category belongs to the correct module (enforced structurally —
+          the join chain below only reaches a module via the category's
+          own real parent, so a mismatched module can never match).
+        """
+        now = _now()
+        q = (
+            select(TenantCategoryEntitlement.tenant_id)
+            .join(TenantModuleEntitlement, TenantModuleEntitlement.id == TenantCategoryEntitlement.module_entitlement_id)
+            .join(ServiceGroup, ServiceGroup.id == TenantCategoryEntitlement.category_id)
+            .join(ServiceCategory, ServiceCategory.id == ServiceGroup.category_id)
+            .join(Vertical, Vertical.id == TenantModuleEntitlement.module_id)
+            .where(
+                TenantCategoryEntitlement.category_id == category_id,
+                TenantCategoryEntitlement.status == "ACTIVE",
+                TenantModuleEntitlement.status == "ACTIVE",
+                Vertical.is_enabled.is_(True),
+                ServiceCategory.is_active.is_(True),
+                (TenantCategoryEntitlement.effective_from.is_(None)) | (TenantCategoryEntitlement.effective_from <= now),
+                (TenantCategoryEntitlement.effective_until.is_(None)) | (TenantCategoryEntitlement.effective_until >= now),
+                (TenantModuleEntitlement.effective_from.is_(None)) | (TenantModuleEntitlement.effective_from <= now),
+                (TenantModuleEntitlement.effective_until.is_(None)) | (TenantModuleEntitlement.effective_until >= now),
+            )
+        )
+        if tenant_ids is not None:
+            if not tenant_ids:
+                return set()
+            q = q.where(TenantCategoryEntitlement.tenant_id.in_(tenant_ids))
+        rows = (await db.execute(q)).scalars().all()
+        return set(rows)
+
+    async def get_category_entitlement_exclusion_reason(
+        self, db: AsyncSession, tenant_id: uuid.UUID, category_id: uuid.UUID,
+    ) -> str | None:
+        """Diagnostic-only — returns a specific reason code for why a tenant
+        is NOT effectively entitled, for matching-diagnostics surfaces. Not
+        used in the hot bulk-candidate path (that uses the set-based bulk
+        resolver above); intended for single-tenant admin/debug lookups."""
         row = (await db.execute(
             select(TenantCategoryEntitlement).where(
                 TenantCategoryEntitlement.tenant_id == tenant_id,
                 TenantCategoryEntitlement.category_id == category_id,
-                TenantCategoryEntitlement.status == "ACTIVE",
-            )
-        )).scalar_one_or_none()
-        if not row or not _is_effective(row):
-            return False
-        # A category entitlement is only truly usable while its parent
-        # module entitlement is also ACTIVE -- disabling a module must
-        # block category-gated actions even if the child row's own status
-        # was never mutated (see MODULE_DISABLE_CASCADE_POLICY.md).
+            ).order_by(TenantCategoryEntitlement.created_at.desc())
+        )).scalars().first()
+        if not row:
+            return "TENANT_CATEGORY_NOT_ENTITLED"
+        if row.status != "ACTIVE":
+            return "ENTITLEMENT_INACTIVE"
+        if not _is_effective(row):
+            return "ENTITLEMENT_EXPIRED"
         module_row = (await db.execute(
             select(TenantModuleEntitlement).where(TenantModuleEntitlement.id == row.module_entitlement_id)
         )).scalar_one_or_none()
-        return bool(module_row) and module_row.status == "ACTIVE"
+        if not module_row or module_row.status != "ACTIVE" or not _is_effective(module_row):
+            return "TENANT_MODULE_NOT_ENTITLED"
+        group = (await db.execute(select(ServiceGroup).where(ServiceGroup.id == category_id))).scalar_one_or_none()
+        vertical = (await db.execute(select(Vertical).where(Vertical.id == module_row.module_id))).scalar_one_or_none()
+        if vertical and not vertical.is_enabled:
+            return "GLOBAL_MODULE_INACTIVE"
+        if group:
+            cat = (await db.execute(select(ServiceCategory).where(ServiceCategory.id == group.category_id))).scalar_one_or_none()
+            if cat and not cat.is_active:
+                return "GLOBAL_CATEGORY_INACTIVE"
+        return None
 
     async def resolve_effective_entitlements(self, db: AsyncSession, tenant_id: uuid.UUID, *, effective_only: bool = True) -> dict[str, Any]:
         modules = await self.get_tenant_modules(db, tenant_id, effective_only=effective_only)

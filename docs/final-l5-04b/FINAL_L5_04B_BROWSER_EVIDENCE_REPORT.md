@@ -12,7 +12,13 @@
 9. **Admin-visibility bug found and fixed** — the admin entitlements GET endpoint originally filtered to effective-only, making disabled rows invisible/unmanageable in the UI; found via this exact E2E process, fixed.
 10. **has_category_entitlement cross-reference bug found and fixed** — a category could remain "entitled" per its own row status even while its parent module was disabled; found while writing this report (not caught by the E2E suite itself, which only exercises the module-level nav path), fixed proactively before shipping.
 
+### FINAL-L5-04C additions
+11. **Matching-engine live disable/re-enable cycle** — real Chromium session, real admin token, real `POST /v1/admin/home-services/matching/diagnostics` calls: baseline shows a candidate reaching the eligibility gate with no entitlement exclusion; disabling AC & HVAC entitlement flips the exclusion reason to `TENANT_CATEGORY_NOT_ENTITLED`; re-enabling reverts it to the pre-existing, unrelated `NOT_BOOKABLE_CANONICAL_STATUS` — proving entitlement is genuinely gating the match, independent of the other (pre-existing, unrelated) eligibility gates.
+12. **Service-setup denial, real browser session** — a real tenant-portal Chromium session's `enable-service` call for a non-entitled category returns `403 CATEGORY_NOT_ENTITLED`, confirmed via the actual response body inspected in-browser.
+13. **N+1 regression guard is real, not aspirational** — a dedicated pytest integration test counts actual SQL statements issued against the live database during bulk entitlement resolution and asserts exactly 1, regardless of candidate-pool size.
+14. **Cross-tenant matching leak-proof, live-verified** — Tenant One's Plumbing-service matching attempt is excluded with the entitlement reason even though Tenant Two holds a real, ACTIVE Plumbing entitlement at the same moment — proving no accidental cross-tenant grant leakage in the bulk resolver's SQL.
+
 See `browser-e2e-results.json` for the structured version.
 
 ## Result
-10 independent pieces of real evidence, 3 of them documenting real bugs found and fixed via the testing process itself — the kind of evidence that only comes from actually running the system, not from writing tests that were designed to pass.
+14 independent pieces of real evidence (10 from 04B, 4 new from 04C), 3 of them documenting real bugs found and fixed via the testing process itself — the kind of evidence that only comes from actually running the system, not from writing tests that were designed to pass.
