@@ -4,7 +4,7 @@ import {
   LayoutDashboard, UserCircle, Wrench, MapPin, Clock, FileText,
   ClipboardList, Bell, ShieldCheck, History, Settings, LogOut,
 } from "lucide-react";
-import { useStaffContext } from "../../hooks/useStaffContext";
+import { useStaffContext, StaffContextProvider } from "../../hooks/useStaffContext";
 import { Skeleton, Badge } from "../shared/ui";
 import { authApi } from "../../lib/api";
 
@@ -99,7 +99,9 @@ export function StaffLayout({ activeNav, children }: { activeNav: string; childr
           </div>
           <Badge variant="success" size="sm">Active</Badge>
         </header>
-        <main style={{ flex: 1, padding: 24, overflow: "auto" }}>{children}</main>
+        <main style={{ flex: 1, padding: 24, overflow: "auto" }}>
+          <StaffContextProvider value={ctx}>{children}</StaffContextProvider>
+        </main>
       </div>
     </div>
   );

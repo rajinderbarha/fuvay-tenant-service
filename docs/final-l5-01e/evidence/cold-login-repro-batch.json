@@ -1,0 +1,522 @@
+[
+  {
+    "run": 1,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3728,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1159.9ms login.submit",
+      "[auth-timeline] t=2050.8ms login.response_received",
+      "[auth-timeline] t=2051.3ms login.session_persisted",
+      "[auth-timeline] t=2056.5ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 2,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3617,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1195.6ms login.submit",
+      "[auth-timeline] t=1946.3ms login.response_received",
+      "[auth-timeline] t=1946.7ms login.session_persisted",
+      "[auth-timeline] t=1950.4ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 3,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3434,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1114.6ms login.submit",
+      "[auth-timeline] t=1788.7ms login.response_received",
+      "[auth-timeline] t=1789.4ms login.session_persisted",
+      "[auth-timeline] t=1793.0ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 4,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3557,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1201.5ms login.submit",
+      "[auth-timeline] t=1886.3ms login.response_received",
+      "[auth-timeline] t=1887.1ms login.session_persisted",
+      "[auth-timeline] t=1891.0ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 5,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3513,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1140.4ms login.submit",
+      "[auth-timeline] t=1843.1ms login.response_received",
+      "[auth-timeline] t=1843.5ms login.session_persisted",
+      "[auth-timeline] t=1847.1ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/notifications"
+    ]
+  },
+  {
+    "run": 6,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3679,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1230.0ms login.submit",
+      "[auth-timeline] t=1967.7ms login.response_received",
+      "[auth-timeline] t=1968.0ms login.session_persisted",
+      "[auth-timeline] t=1971.6ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 7,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3786,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1341.2ms login.submit",
+      "[auth-timeline] t=2062.1ms login.response_received",
+      "[auth-timeline] t=2062.7ms login.session_persisted",
+      "[auth-timeline] t=2066.5ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 8,
+    "outcome": "SUCCESS",
+    "elapsedMs": 4032,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1347.3ms login.submit",
+      "[auth-timeline] t=2094.0ms login.response_received",
+      "[auth-timeline] t=2094.5ms login.session_persisted",
+      "[auth-timeline] t=2098.3ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712"
+    ]
+  },
+  {
+    "run": 9,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3575,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1171.7ms login.submit",
+      "[auth-timeline] t=1920.8ms login.response_received",
+      "[auth-timeline] t=1921.2ms login.session_persisted",
+      "[auth-timeline] t=1925.0ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 10,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3423,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1079.8ms login.submit",
+      "[auth-timeline] t=1755.3ms login.response_received",
+      "[auth-timeline] t=1755.7ms login.session_persisted",
+      "[auth-timeline] t=1759.5ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 11,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3539,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1185.7ms login.submit",
+      "[auth-timeline] t=1857.0ms login.response_received",
+      "[auth-timeline] t=1857.5ms login.session_persisted",
+      "[auth-timeline] t=1861.2ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 12,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3373,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1053.6ms login.submit",
+      "[auth-timeline] t=1703.7ms login.response_received",
+      "[auth-timeline] t=1704.0ms login.session_persisted",
+      "[auth-timeline] t=1707.7ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 13,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3487,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1165.2ms login.submit",
+      "[auth-timeline] t=1817.4ms login.response_received",
+      "[auth-timeline] t=1817.8ms login.session_persisted",
+      "[auth-timeline] t=1821.3ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 14,
+    "outcome": "SUCCESS",
+    "elapsedMs": 4140,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1703.8ms login.submit",
+      "[auth-timeline] t=2389.2ms login.response_received",
+      "[auth-timeline] t=2389.9ms login.session_persisted",
+      "[auth-timeline] t=2393.5ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 15,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3451,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1069.7ms login.submit",
+      "[auth-timeline] t=1789.9ms login.response_received",
+      "[auth-timeline] t=1790.3ms login.session_persisted",
+      "[auth-timeline] t=1793.8ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 16,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3525,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1077.2ms login.submit",
+      "[auth-timeline] t=1752.4ms login.response_received",
+      "[auth-timeline] t=1752.8ms login.session_persisted",
+      "[auth-timeline] t=1756.5ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 17,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3993,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1212.9ms login.submit",
+      "[auth-timeline] t=2082.0ms login.response_received",
+      "[auth-timeline] t=2082.5ms login.session_persisted",
+      "[auth-timeline] t=2086.8ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 18,
+    "outcome": "SUCCESS",
+    "elapsedMs": 3598,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1178.0ms login.submit",
+      "[auth-timeline] t=1911.6ms login.response_received",
+      "[auth-timeline] t=1912.9ms login.session_persisted",
+      "[auth-timeline] t=1917.5ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 19,
+    "outcome": "SUCCESS",
+    "elapsedMs": 4104,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=1210.2ms login.submit",
+      "[auth-timeline] t=2327.2ms login.response_received",
+      "[auth-timeline] t=2328.1ms login.session_persisted",
+      "[auth-timeline] t=2332.8ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/provider/status"
+    ]
+  },
+  {
+    "run": 20,
+    "outcome": "SUCCESS",
+    "elapsedMs": 4518,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": "",
+    "timeline": [
+      "[auth-timeline] t=2179.2ms login.submit",
+      "[auth-timeline] t=2848.7ms login.response_received",
+      "[auth-timeline] t=2849.5ms login.session_persisted",
+      "[auth-timeline] t=2853.9ms login.router_push_called"
+    ],
+    "networkLog": [
+      "200 POST /v1/auth/login",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/auth/me",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/team-members",
+      "200 GET /v1/provider/status",
+      "200 GET /v1/staff/me/jobs?tenant_id=5209ef33-a53e-4fc0-b3f6-006335b8d712",
+      "200 GET /v1/staff/notifications",
+      "200 GET /v1/provider/status"
+    ]
+  }
+]

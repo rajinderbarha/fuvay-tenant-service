@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { authApi } from "../../../lib/api";
+import { authTimeline } from "../../../lib/authTimeline";
 
 export default function StaffLoginPage() {
   const router = useRouter();
@@ -15,8 +16,10 @@ export default function StaffLoginPage() {
     e.preventDefault();
     if (!email || !password) { setError("Both fields are required."); return; }
     setLoading(true); setError(""); setRequestId(null);
+    authTimeline("login.submit");
     try {
       const res = await authApi.login(email, password);
+      authTimeline("login.response_received");
       const u = res.user;
       if (u?.role !== "technician" && u?.role !== "staff") {
         setError("This login is for staff/technician accounts only. Please use the owner portal.");
@@ -27,7 +30,9 @@ export default function StaffLoginPage() {
       if (res.refresh_token) localStorage.setItem("serviceos_tenant_refresh", res.refresh_token);
       localStorage.setItem("serviceos_user_id", u?.id ?? u?.user_id ?? "");
       localStorage.setItem("serviceos_tenant_id", u?.tenant_id ?? "");
-      localStorage.setItem("serviceos_tenant_name", "");
+      localStorage.setItem("serviceos_tenant_name", res.tenant?.name ?? "");
+      localStorage.setItem("serviceos_user_role", u?.role ?? "");
+      authTimeline("login.session_persisted");
       // FINAL-L5-01D fix: window.location.href triggered a full page reload,
       // which is slower than necessary and was not reliably trackable by
       // browser-automation navigation waits in this dev environment. Next.js
@@ -35,8 +40,10 @@ export default function StaffLoginPage() {
       // flash, and deterministic. See
       // FINAL_L5_01D_TECHNICIAN_REDIRECT_ROOT_CAUSE_REPORT.md.
       router.push("/staff/dashboard");
+      authTimeline("login.router_push_called");
     } catch (e: unknown) {
       const err = e as { message?: string; requestId?: string };
+      authTimeline("login.error", err?.message);
       setError(err?.message || "Login failed. Check credentials.");
       setRequestId(err?.requestId ?? null);
     } finally {

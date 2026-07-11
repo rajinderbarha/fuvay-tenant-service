@@ -1,0 +1,37 @@
+[
+  {
+    "run": 1,
+    "outcome": "SUCCESS",
+    "elapsedMs": 5147,
+    "finalUrl": "http://localhost:3001/staff/jobs",
+    "errorText": ""
+  },
+  {
+    "run": 2,
+    "outcome": "SUCCESS",
+    "elapsedMs": 5082,
+    "finalUrl": "http://localhost:3001/staff/jobs",
+    "errorText": ""
+  },
+  {
+    "run": 3,
+    "outcome": "SUCCESS",
+    "elapsedMs": 4836,
+    "finalUrl": "http://localhost:3001/staff/jobs",
+    "errorText": ""
+  },
+  {
+    "run": 4,
+    "outcome": "SUCCESS",
+    "elapsedMs": 5011,
+    "finalUrl": "http://localhost:3001/staff/jobs",
+    "errorText": ""
+  },
+  {
+    "run": 5,
+    "outcome": "SUCCESS",
+    "elapsedMs": 4985,
+    "finalUrl": "http://localhost:3001/staff/jobs",
+    "errorText": ""
+  }
+]

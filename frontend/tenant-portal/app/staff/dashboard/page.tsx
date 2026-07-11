@@ -3,12 +3,25 @@ import React, { useCallback } from "react";
 import { StaffLayout } from "../../../components/layout/StaffLayout";
 import { Card, StatCard, Skeleton, EmptyState, Badge } from "../../../components/shared/ui";
 import { useApi } from "../../../hooks/useApi";
-import { useStaffContext } from "../../../hooks/useStaffContext";
+import { useStaffContextValue } from "../../../hooks/useStaffContext";
 import { staffSelfApi, tenantSetupApi, getTenantId } from "../../../lib/api";
 import { ClipboardList, Wrench, MapPin, Clock, FileText, Bell, CheckCircle2, AlertTriangle } from "lucide-react";
 
 export default function StaffDashboardPage() {
-  const ctx = useStaffContext();
+  return (
+    <StaffLayout activeNav="dashboard">
+      <StaffDashboardContent/>
+    </StaffLayout>
+  );
+}
+
+/** Renders only once StaffLayout has already resolved auth (loading=false,
+ * isTechnician=true) — reads that single resolved context via
+ * useStaffContextValue() instead of re-running useStaffContext(), and only
+ * fires its data fetches at that point rather than racing them against the
+ * layout's own /v1/auth/me call immediately after login. */
+function StaffDashboardContent() {
+  const ctx = useStaffContextValue();
   const tenantId = getTenantId() || "";
 
   const skills   = useApi(useCallback(() => staffSelfApi.getMySkills(), []));
@@ -16,8 +29,6 @@ export default function StaffDashboardPage() {
   const notifs   = useApi(useCallback(() => staffSelfApi.getNotifications(), []));
   const areas    = useApi(useCallback(() => staffSelfApi.getServiceAreas(), []));
   const status   = useApi(useCallback(() => tenantSetupApi.getStatus(), []));
-
-  if (!ctx.isTechnician) return <StaffLayout activeNav="dashboard"><Skeleton height={200}/></StaffLayout>;
 
   const jobCount = jobs.data?.jobs.length ?? 0;
   const skillCount = skills.data?.skills?.length ?? 0;
@@ -28,7 +39,7 @@ export default function StaffDashboardPage() {
   const bookable = !!readonlyStatus?.bookable;
 
   return (
-    <StaffLayout activeNav="dashboard">
+    <>
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>My Dashboard</h1>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
@@ -84,6 +95,6 @@ export default function StaffDashboardPage() {
           )}
         </Card>
       </div>
-    </StaffLayout>
+    </>
   );
 }

@@ -1,0 +1,142 @@
+[
+  {
+    "run": 1,
+    "outcome": "SUCCESS",
+    "elapsedMs": 4012,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 2,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2841,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 3,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2557,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 4,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2563,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 5,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2545,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 6,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2556,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 7,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2501,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 8,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2933,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 9,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2527,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 10,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2508,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 11,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2484,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 12,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2812,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 13,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2464,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 14,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2526,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 15,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2527,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 16,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2842,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 17,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2472,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 18,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2656,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 19,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2480,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  },
+  {
+    "run": 20,
+    "outcome": "SUCCESS",
+    "elapsedMs": 2847,
+    "finalUrl": "http://localhost:3001/staff/dashboard",
+    "errorText": ""
+  }
+]
