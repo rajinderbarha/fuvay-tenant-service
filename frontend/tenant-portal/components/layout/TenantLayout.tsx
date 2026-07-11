@@ -19,8 +19,25 @@ import { Toaster, type ToastItem } from "../shared/ui";
 import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "./Breadcrumbs";
-import { authApi, providerStatusApi, tenantSetupApi, staffApi, providerServiceAreasApi, usageCreditsApi } from "../../lib/api";
+import { authApi, providerStatusApi, tenantSetupApi, staffApi, providerServiceAreasApi, usageCreditsApi, entitlementApi } from "../../lib/api";
 import { useApi } from "../../hooks/useApi";
+
+// FINAL-L5-04B: live tenant module/category entitlement state, fetched once
+// per shell mount and refreshable after an admin entitlement mutation —
+// mirrors the AdminMenuRefreshCtx pattern used for the super-admin vertical
+// sidebar (FINAL-L5-04). This is a UX convenience layer only — the backend
+// independently enforces entitlement on every mutating endpoint regardless
+// of what this hides (see FINAL_L5_04B_SERVICE_SETUP_ENFORCEMENT_REPORT.md).
+const EntitlementCtx = createContext<{
+  entitledModuleKeys: string[];
+  hasAnyModule: boolean;
+  loaded: boolean;
+  refresh: () => void;
+}>({ entitledModuleKeys: [], hasAnyModule: true, loaded: false, refresh: () => {} });
+
+export function useTenantEntitlements() {
+  return useContext(EntitlementCtx);
+}
 
 type NavItem = { id: string; href: string; label: string; icon: React.ReactNode; badge?: number };
 type NavGroup = { label: string; items: NavItem[]; special?: string };
@@ -337,6 +354,16 @@ function TenantShellInner({ children, activeNav }: {
   const [myAvatar,     setMyAvatar]     = useState<string | null>(null);
   const [setupOpen,    setSetupOpen]    = useState(false);
   const [setupPct,     setSetupPct]     = useState<number | null>(null);
+  const [entitledModuleKeys, setEntitledModuleKeys] = useState<string[]>([]);
+  const [entitlementsLoaded, setEntitlementsLoaded] = useState(false);
+
+  const loadEntitlements = useCallback(() => {
+    entitlementApi.getMyModules()
+      .then(r => { setEntitledModuleKeys(r.modules.map(m => m.module_key)); setEntitlementsLoaded(true); })
+      .catch(() => { setEntitlementsLoaded(true); /* fail-open: don't hide nav on a transient error */ });
+  }, []);
+
+  useEffect(() => { loadEntitlements(); }, [loadEntitlements]);
 
   useEffect(() => {
     authApi.me().then(u => {
@@ -372,8 +399,18 @@ function TenantShellInner({ children, activeNav }: {
 
   const w = collapsed ? 68 : 248;
 
+  const hasAnyModule = entitlementsLoaded ? entitledModuleKeys.length > 0 : true;
+  const ALWAYS_VISIBLE_GROUPS = new Set(["Overview", "More"]);
+  const visibleNavGroups = hasAnyModule ? NAV_GROUPS : NAV_GROUPS.filter(g => ALWAYS_VISIBLE_GROUPS.has(g.label));
+
   return (
     <TenantShellCtx.Provider value={true}>
+    <EntitlementCtx.Provider value={{
+      entitledModuleKeys,
+      hasAnyModule: entitlementsLoaded ? entitledModuleKeys.length > 0 : true,
+      loaded: entitlementsLoaded,
+      refresh: loadEntitlements,
+    }}>
     <div style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
 
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
@@ -404,8 +441,13 @@ function TenantShellInner({ children, activeNav }: {
 
         {/* Nav */}
         <nav style={{ flex: 1, minHeight: 0, padding: "12px 8px", overflowY: "auto" }}>
-          {NAV_GROUPS.map((group, gi) => (
-            <div key={group.label} style={{ marginBottom: gi < NAV_GROUPS.length - 1 ? 8 : 0 }}>
+          {/* FINAL-L5-04B: operational groups (everything except Overview/More)
+              require at least one active tenant module entitlement. This is a
+              UX convenience, not the security boundary -- see the comment on
+              EntitlementCtx above. Fails open (shows everything) until the
+              entitlement fetch resolves, and always if it errors. */}
+          {visibleNavGroups.map((group, gi) => (
+            <div key={group.label} style={{ marginBottom: gi < visibleNavGroups.length - 1 ? 8 : 0 }}>
               {!collapsed && (
                 <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.09em", color: "var(--sidebar-category)", padding: "10px 10px 4px", margin: 0, textTransform: "uppercase" }}>
                   {group.label}
@@ -527,6 +569,7 @@ function TenantShellInner({ children, activeNav }: {
       <Toaster toasts={toasts} onRemove={id => setToasts(p => p.filter(t => t.id !== id))}/>
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }`}</style>
     </div>
+    </EntitlementCtx.Provider>
     </TenantShellCtx.Provider>
   );
 }

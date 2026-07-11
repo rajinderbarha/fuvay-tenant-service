@@ -625,6 +625,12 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     app.include_router(verticals_router)
     app.include_router(catalog_modules_router)
 
+    # FINAL-L5-04B — Tenant Module and Category Entitlement Architecture (migration 132)
+    from app.engines.entitlement.admin_router import router as entitlement_admin_router
+    from app.engines.entitlement.tenant_router import router as entitlement_tenant_router
+    app.include_router(entitlement_admin_router)
+    app.include_router(entitlement_tenant_router)
+
     # P0 Enterprise Service Setup Templates (migration 091)
     from app.engines.service_setup.templates_router import router as setup_templates_router
     app.include_router(setup_templates_router)

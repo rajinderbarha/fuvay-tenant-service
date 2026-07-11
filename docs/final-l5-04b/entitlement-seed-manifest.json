@@ -1,0 +1,18 @@
+{
+  "sprint": "FINAL-L5-04B",
+  "script": "scripts/seed_entitlements.py",
+  "plan": {
+    "demo-ac-services": {"module": "home_services", "category_code": "ac_services"},
+    "isolation-test-services": {"module": "home_services", "category_code": "plumbing"}
+  },
+  "idempotency_proof": {
+    "first_run": {"module_rows": 2, "category_rows": 2, "audit_rows": 4},
+    "second_run_immediately_after": {"module_rows": 2, "category_rows": 2, "audit_rows": 4},
+    "duplicate_rows_created": false
+  },
+  "isolation_proof": {
+    "tenant_one_categories": ["ac_services"],
+    "tenant_two_categories": ["plumbing"],
+    "cross_contamination": false
+  }
+}

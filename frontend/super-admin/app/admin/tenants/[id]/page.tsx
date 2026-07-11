@@ -22,6 +22,7 @@ import {
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { useViewport } from "../../../../hooks/useViewport";
+import { EntitlementsTab } from "../../../../components/enterprise/EntitlementsTab";
 import {
   Building, CreditCard, Banknote, ClipboardCheck,
   Zap, RefreshCw, Star, Clock, CheckCircle2, Users, CalendarCheck, MapPin,
@@ -35,7 +36,7 @@ type Tab =
   | "media" | "jobs" | "bookings"
   | "reviews" | "audit" | "onboarding"
   | "provider-offerings" | "provider-areas" | "provider-team" | "provider-availability"
-  | "bookability";
+  | "bookability" | "entitlements";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "overview",         label: "Overview",          icon: <Building/>        },
@@ -61,6 +62,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "provider-team",         label: "Team / Agents",    icon: <Users/>          },
   { id: "provider-availability", label: "Availability",     icon: <Clock/>          },
   { id: "bookability",           label: "Bookability",      icon: <CheckCircle2/>   },
+  { id: "entitlements",          label: "Modules & Categories", icon: <Zap/>        },
 ];
 
 // Grouped tab nav (Part 4 of Tenant 360 redesign) — 23 flat tabs collapsed into
@@ -70,6 +72,7 @@ const TAB_GROUPS: { key: string; label: string; tabs: Tab[] }[] = [
   { key: "setup",      label: "Setup",          tabs: [
     "onboarding", "users", "staff", "service-areas", "enabled-services", "pricing",
     "provider-offerings", "provider-areas", "provider-team", "provider-availability",
+    "entitlements",
   ] },
   { key: "operations", label: "Operations",     tabs: ["jobs", "bookings", "disputes", "reviews", "bookability"] },
   { key: "finance",    label: "Finance",        tabs: ["packages", "wallet", "deposit", "settlements"] },
@@ -2085,6 +2088,9 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
           </div>
         </div>
       )}
+
+      {/* ════════════════════ MODULES & CATEGORIES (FINAL-L5-04B) ════════════════════ */}
+      {tab === "entitlements" && <EntitlementsTab tenantId={id}/>}
 
       {/* ════════════════════ ENABLED SERVICES ════════════════════ */}
       {tab === "enabled-services" && (

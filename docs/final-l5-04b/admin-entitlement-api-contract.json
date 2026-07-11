@@ -1,0 +1,16 @@
+{
+  "sprint": "FINAL-L5-04B",
+  "base_path": "/v1/admin/tenants/{tenant_id}/entitlements",
+  "auth": "require_super_admin",
+  "endpoints": [
+    {"method": "GET", "path": "", "returns": "modules[] + categories[] (all statuses, not just effective)"},
+    {"method": "GET", "path": "/history", "returns": "audit log entries, newest first"},
+    {"method": "POST", "path": "/modules", "body": {"module_key": "string", "configuration": "object|null"}, "idempotent": true},
+    {"method": "POST", "path": "/modules/{module_key}/disable", "body": {"reason": "string|null"}},
+    {"method": "POST", "path": "/modules/{module_key}/reenable", "body": null},
+    {"method": "POST", "path": "/categories", "body": {"category_id": "uuid", "configuration": "object|null"}, "idempotent": true, "conflict_status": 409},
+    {"method": "POST", "path": "/categories/{category_id}/disable", "body": {"reason": "string|null"}},
+    {"method": "POST", "path": "/categories/{category_id}/reenable", "body": null, "conflict_status": 409}
+  ],
+  "error_codes": ["NOT_FOUND", "CONFLICT", "PERMISSION_DENIED", "UNAUTHORIZED"]
+}

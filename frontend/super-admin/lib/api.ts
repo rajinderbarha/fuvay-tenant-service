@@ -10030,3 +10030,38 @@ export const homeServicesCatalogConsoleApi = {
   getAudit: (serviceId: string) =>
     apiFetch<{ events: HsConsoleAuditEvent[] }>(`/v1/admin/home-services/service-catalog/services/${serviceId}/audit`),
 };
+
+// ── FINAL-L5-04B — Admin Tenant Entitlement Management ────────────────────────
+export interface AdminModuleEntitlement {
+  id: string; tenant_id: string; module_id: string; module_key: string; module_label: string;
+  status: string; source: string; enabled_at: string | null; disabled_at: string | null; version: number;
+}
+export interface AdminCategoryEntitlement {
+  id: string; tenant_id: string; category_id: string; category_slug: string | null; category_label: string | null;
+  module_entitlement_id: string; status: string; source: string;
+  enabled_at: string | null; disabled_at: string | null; version: number;
+}
+export interface AdminEntitlementAuditEvent {
+  id: string; entity_type: string; entity_id: string; event: string;
+  previous_status: string | null; new_status: string | null;
+  actor_id: string | null; actor_role: string | null; reason: string | null; created_at: string;
+}
+export const adminEntitlementApi = {
+  get: (tenantId: string) =>
+    apiFetch<{ modules: AdminModuleEntitlement[]; categories: AdminCategoryEntitlement[] }>(
+      `/v1/admin/tenants/${tenantId}/entitlements`),
+  getHistory: (tenantId: string) =>
+    apiFetch<{ history: AdminEntitlementAuditEvent[] }>(`/v1/admin/tenants/${tenantId}/entitlements/history`),
+  assignModule: (tenantId: string, moduleKey: string) =>
+    apiFetch(`/v1/admin/tenants/${tenantId}/entitlements/modules`, { method: "POST", body: JSON.stringify({ module_key: moduleKey }) }),
+  disableModule: (tenantId: string, moduleKey: string, reason?: string) =>
+    apiFetch(`/v1/admin/tenants/${tenantId}/entitlements/modules/${moduleKey}/disable`, { method: "POST", body: JSON.stringify({ reason }) }),
+  reenableModule: (tenantId: string, moduleKey: string) =>
+    apiFetch(`/v1/admin/tenants/${tenantId}/entitlements/modules/${moduleKey}/reenable`, { method: "POST" }),
+  assignCategory: (tenantId: string, categoryId: string) =>
+    apiFetch(`/v1/admin/tenants/${tenantId}/entitlements/categories`, { method: "POST", body: JSON.stringify({ category_id: categoryId }) }),
+  disableCategory: (tenantId: string, categoryId: string, reason?: string) =>
+    apiFetch(`/v1/admin/tenants/${tenantId}/entitlements/categories/${categoryId}/disable`, { method: "POST", body: JSON.stringify({ reason }) }),
+  reenableCategory: (tenantId: string, categoryId: string) =>
+    apiFetch(`/v1/admin/tenants/${tenantId}/entitlements/categories/${categoryId}/reenable`, { method: "POST" }),
+};

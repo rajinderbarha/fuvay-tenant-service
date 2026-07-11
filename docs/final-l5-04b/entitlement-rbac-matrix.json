@@ -1,0 +1,17 @@
+{
+  "sprint": "FINAL-L5-04B",
+  "real_roles_in_codebase": ["super_admin", "tenant_owner", "staff", "technician", "customer", "guest"],
+  "matrix": [
+    {"role": "super_admin", "admin_api": "full_access", "tenant_self_read": "n/a", "verification": "live_curl+pytest"},
+    {"role": "tenant_owner", "admin_api": "403", "tenant_self_read": "own_only", "verification": "live_curl+pytest"},
+    {"role": "tenant_manager", "admin_api": "403", "tenant_self_read": "not_independently_tested", "verification": "pytest_admin_side_only"},
+    {"role": "tenant_readonly", "admin_api": "403", "tenant_self_read": "not_independently_tested", "verification": "pytest_admin_side_only"},
+    {"role": "technician", "admin_api": "403", "tenant_self_read": "expected_allowed_not_independently_verified", "verification": "pytest_admin_side_only"},
+    {"role": "customer", "admin_api": "403", "tenant_self_read": "403", "verification": "pytest_both_directions"},
+    {"role": "anonymous", "admin_api": "401", "tenant_self_read": "401", "verification": "pytest_both_directions"}
+  ],
+  "honest_gaps": [
+    "This codebase has no distinct 'Admin Operations' vs 'Admin Read Only' roles as the mission's matrix assumes",
+    "technician self-read acceptance path not independently live-tested this sprint (only its admin-side rejection was)"
+  ]
+}

@@ -17,6 +17,7 @@ from app.dependencies.db import get_db
 from app.engines.tenant_engine.admin_service import AdminTenantService
 from app.engines.tenant_engine.models import Tenant
 from app.engines.admin_catalog.models import ServiceCategory
+from app.engines.entitlement.service import entitlement_service
 from app.exceptions import ServiceOSException
 from app.schemas.base import ok
 
@@ -350,6 +351,17 @@ async def get_dashboard_runtime(
     # guard in the app for every tenant, every time.
     vertical = tenant.vertical if tenant else None
 
+    # FINAL-L5-04B: modules/categories now come from the real
+    # tenant_module_entitlements / tenant_category_entitlements tables
+    # instead of the hardcoded empty arrays this endpoint returned before
+    # (tenant.category_id was always NULL for real tenants — see
+    # FINAL_L5_04B_TENANT_ENTITLEMENT_NAVIGATION_REPORT.md).
+    entitled_modules: list[dict] = []
+    entitled_categories: list[dict] = []
+    if tenant:
+        entitled_modules = await entitlement_service.get_tenant_modules(db, tid, effective_only=True)
+        entitled_categories = await entitlement_service.get_tenant_categories(db, tid, effective_only=True)
+
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     return ok({
         "tenant": {
@@ -360,8 +372,9 @@ async def get_dashboard_runtime(
         "category_type": vertical or (category.category_type if category else None),
         "dashboard_type": category.provider_dashboard_type if category else None,
         "primary_engine": category.primary_engine_key if category else None,
-        "enabled_engines": [],
-        "modules": [],
+        "enabled_engines": [m["module_key"] for m in entitled_modules],
+        "modules": entitled_modules,
+        "entitled_categories": entitled_categories,
         "category": category_obj,
     }, rid, "tenant_portal")
 
@@ -388,6 +401,11 @@ async def get_navigation(
 
     items = _NAV_BY_DASHBOARD_TYPE.get(dashboard_type or "", _NAV_GENERIC)
 
+    # FINAL-L5-04B: real per-tenant category entitlement, not just the
+    # dashboard-type-keyed static item list above (which is module-shaped,
+    # not category-shaped, and unaffected by this addition).
+    entitled_categories = await entitlement_service.get_tenant_categories(db, tid, effective_only=True) if tenant else []
+
     payload = {
         "category": {
             "id":                      str(category.id) if category else None,
@@ -396,6 +414,7 @@ async def get_navigation(
             "provider_dashboard_type": dashboard_type,
         },
         "items": items,
+        "entitled_categories": entitled_categories,
     }
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     return ok(payload, rid, "tenant_portal")

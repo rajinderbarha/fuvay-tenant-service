@@ -1,0 +1,30 @@
+{
+  "sprint": "FINAL-L5-04B",
+  "migration": "132",
+  "tables": {
+    "tenant_module_entitlements": {
+      "pk": "id",
+      "fks": {"tenant_id": "tenants.id", "module_id": "verticals.id"},
+      "unique_active_index": "uq_tme_tenant_module_active on (tenant_id, module_id) WHERE status='ACTIVE'",
+      "indexes": ["ix_tme_tenant_status", "ix_tme_module_status", "ix_tme_tenant_module"],
+      "status_check": "ck_tme_status_valid"
+    },
+    "tenant_category_entitlements": {
+      "pk": "id",
+      "fks": {"tenant_id": "tenants.id", "category_id": "service_groups.id", "module_entitlement_id": "tenant_module_entitlements.id"},
+      "unique_active_index": "uq_tce_tenant_category_active on (tenant_id, category_id) WHERE status='ACTIVE'",
+      "indexes": ["ix_tce_tenant_status", "ix_tce_category_status", "ix_tce_module_entitlement", "ix_tce_tenant_category"],
+      "status_check": "ck_tce_status_valid"
+    },
+    "entitlement_audit_log": {
+      "pk": "id",
+      "fks": {"tenant_id": "tenants.id"},
+      "indexes": ["ix_eal_tenant_id", "ix_eal_entity", "ix_eal_created_at"]
+    }
+  },
+  "statuses": ["ACTIVE", "INACTIVE", "SUSPENDED", "EXPIRED", "PENDING", "ARCHIVED"],
+  "constraint_verification": {
+    "duplicate_active_module_row_rejected_by_db": true,
+    "verification_method": "direct raw SQL INSERT against live Postgres, caught asyncpg.UniqueViolationError on uq_tme_tenant_module_active"
+  }
+}

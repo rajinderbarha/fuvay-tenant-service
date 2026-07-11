@@ -21,6 +21,7 @@ from app.engines.admin_catalog.bargain_engine import (
     compute_symmetric_customer_price_tiers, BargainValidationError,
 )
 from app.engines.serviceability.models import TenantServiceArea
+from app.engines.entitlement.service import entitlement_service
 from app.exceptions import ServiceOSException, NotFoundException
 
 utcnow = lambda: datetime.now(timezone.utc)
@@ -160,6 +161,21 @@ class TenantCatalogService:
         cat = cat_res.scalar_one_or_none()
         if not cat or not cat.is_active:
             raise ServiceOSException("SERVICE_CATEGORY_INACTIVE", "Service category is inactive.", status_code=422)
+
+        # FINAL-L5-04B: tenant must hold an ACTIVE entitlement for the
+        # service_group this service belongs to before it can configure it.
+        # This is a real backend enforcement point, not just a hidden menu
+        # item — see FINAL_L5_04B_SERVICE_SETUP_ENFORCEMENT_REPORT.md.
+        if svc.service_group_id:
+            has_entitlement = await entitlement_service.has_category_entitlement(
+                self.db, tenant_id, svc.service_group_id
+            )
+            if not has_entitlement:
+                raise ServiceOSException(
+                    "CATEGORY_NOT_ENTITLED",
+                    "Your tenant does not have an active entitlement for this service's category.",
+                    status_code=403,
+                )
 
         # Check not already enabled
         existing = await self.db.execute(

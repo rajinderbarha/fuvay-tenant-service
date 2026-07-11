@@ -1,0 +1,26 @@
+{
+  "sprint": "FINAL-L5-04B",
+  "backend": "http://localhost:8000",
+  "steps": [
+    {"step": 1, "method": "GET", "path": "/v1/admin/tenants/{tenant_id}/entitlements", "role": "super_admin", "status": 200},
+    {"step": 2, "method": "POST", "path": "/v1/admin/tenants/{tenant_id}/entitlements/categories", "role": "super_admin", "status": 200},
+    {"step": 3, "method": "GET", "path": "/v1/tenant/me/entitlements", "role": "tenant_owner_t1", "status": 200},
+    {"step": 4, "method": "GET", "path": "/v1/tenant/me/entitlements", "role": "tenant_owner_t2", "status": 200, "result": "no cross-contamination"},
+    {"step": 5, "method": "POST", "path": "/v1/admin/tenants/{tenant_id}/entitlements/categories/{id}/disable", "role": "super_admin", "status": 200},
+    {"step": 6, "method": "GET", "path": "/v1/tenant/me/categories", "role": "tenant_owner_t1", "status": 200, "result": "empty while disabled"},
+    {"step": 7, "method": "POST", "path": "/v1/tenant/catalog/enable-service", "role": "tenant_owner_t1", "status": 403, "error_code": "CATEGORY_NOT_ENTITLED"},
+    {"step": 8, "method": "POST", "path": "/v1/admin/tenants/{tenant_id}/entitlements/categories/{id}/reenable", "role": "super_admin", "status": 200},
+    {"step": 9, "method": "GET", "path": "/v1/tenant/me/categories", "role": "tenant_owner_t1", "status": 200, "result": "reappeared immediately"},
+    {"step": 10, "method": "GET", "path": "/v1/admin/tenants/{tenant_id}/entitlements/history", "role": "super_admin", "status": 200, "result": "full ASSIGNED->DISABLED->REENABLED chain"}
+  ],
+  "additional_checks": [
+    {"check": "duplicate active row via raw SQL", "result": "rejected by uq_tme_tenant_module_active"},
+    {"check": "nonexistent category assign", "status": 404},
+    {"check": "cross-tenant admin read", "status": 403},
+    {"check": "cross-tenant admin mutate", "status": 403},
+    {"check": "anonymous access", "status": 401},
+    {"check": "entitled service enable", "status": 201},
+    {"check": "non-entitled service enable", "status": 403}
+  ],
+  "real_bug_found_and_fixed": "StringDataRightTruncationError on entitlement_audit_log.new_status VARCHAR(20) during module-disable cascade audit"
+}

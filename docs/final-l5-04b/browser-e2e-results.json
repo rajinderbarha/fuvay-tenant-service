@@ -1,0 +1,17 @@
+{
+  "sprint": "FINAL-L5-04B",
+  "spec": "e2e/tenant-portal/final-l5-04b-entitlement.spec.ts",
+  "project": "tenant-portal-chromium",
+  "result": {"passed": 3, "failed": 0, "workers": 1},
+  "tests": [
+    {"name": "Admin entitlement management: disable/re-enable with live UI + audit history", "status": "PASS"},
+    {"name": "Tenant navigation module-level entitlement gating: hide/restore nav", "status": "PASS"},
+    {"name": "Tenant isolation: distinct entitlement sets via real API", "status": "PASS"}
+  ],
+  "real_bugs_found_via_e2e_process": [
+    "StringDataRightTruncationError on entitlement_audit_log.new_status (VARCHAR(20) overflow)",
+    "Admin GET entitlements endpoint hid disabled/inactive rows (effective_only always true)",
+    "has_category_entitlement did not cross-reference parent module status"
+  ],
+  "not_covered_this_sprint": ["customer matching entitlement", "staff category scope", "historical job/booking access via entitlement"]
+}

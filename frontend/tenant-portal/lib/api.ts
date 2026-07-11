@@ -4148,3 +4148,19 @@ export const tenantAutoPriceOptionsApi = {
   getMatchingReadiness: (masterServiceId: string) =>
     apiFetch<TenantMatchingReadiness>(`/v1/tenant/home-services/matching-readiness?master_service_id=${masterServiceId}`),
 };
+
+// ── FINAL-L5-04B — Tenant Entitlement Self-Read ───────────────────────────────
+export interface TenantModuleEntitlement {
+  id: string; tenant_id: string; module_id: string; module_key: string; module_label: string;
+  status: string; source: string; enabled_at: string | null; disabled_at: string | null;
+}
+export interface TenantCategoryEntitlement {
+  id: string; tenant_id: string; category_id: string; category_slug: string | null; category_label: string | null;
+  module_entitlement_id: string; status: string; source: string; enabled_at: string | null; disabled_at: string | null;
+}
+export const entitlementApi = {
+  getMyModules: () => apiFetch<{ modules: TenantModuleEntitlement[] }>("/v1/tenant/me/modules"),
+  getMyCategories: () => apiFetch<{ categories: TenantCategoryEntitlement[] }>("/v1/tenant/me/categories"),
+  getMyEntitlements: () =>
+    apiFetch<{ modules: TenantModuleEntitlement[]; categories: TenantCategoryEntitlement[] }>("/v1/tenant/me/entitlements"),
+};

@@ -93,6 +93,11 @@ def make_service(**kw) -> MasterService:
     s = MagicMock(spec=MasterService)
     s.id = uuid.uuid4()
     s.category_id = kw.get("category_id", uuid.uuid4())
+    # FINAL-L5-04B: enable_service() now checks tenant category entitlement
+    # only when a service belongs to a service_group. These fixtures predate
+    # that concept and aren't testing entitlement, so default to None (no
+    # group) -- a real, legitimate case, not a workaround.
+    s.service_group_id = kw.get("service_group_id", None)
     s.service_name = kw.get("service_name", "AC Repair")
     s.slug = kw.get("slug", "ac-repair")
     s.description = kw.get("description", None)
