@@ -65,6 +65,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <Users size={16}/>                     },
       { id: "reviews",    href: "/admin/reviews",    label: "Reviews",    icon: <Star size={16}/>          },
       { id: "complaints", href: "/admin/complaints", label: "Complaints", icon: <AlertOctagon size={16}/> },
+      { id: "complaint-policies", href: "/admin/complaint-policies", label: "Complaint Policies", icon: <AlertOctagon size={16}/> },
     ],
   },
   {
