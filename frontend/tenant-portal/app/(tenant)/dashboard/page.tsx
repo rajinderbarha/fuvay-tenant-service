@@ -179,7 +179,11 @@ export default function DashboardPage() {
                 display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{k.icon}</div>
               <div>
                 <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 3px" }}>{k.label}</p>
-                <p style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 3px" }}>{loading ? <Skeleton width={50} height={22} /> : k.value}</p>
+                {/* FINAL-L5-03: was a <p>, but Skeleton renders a <div> -- a
+                    <div> inside a <p> is invalid HTML and caused a real
+                    SSR/client hydration mismatch (React had to discard and
+                    re-render this whole subtree on every load). */}
+                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 3px" }}>{loading ? <Skeleton width={50} height={22} /> : k.value}</div>
                 <Badge variant={k.tone} size="sm">{k.sub}</Badge>
               </div>
             </div>
@@ -268,9 +272,11 @@ export default function DashboardPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px" }}>Usage Credit Balance</p>
-                <p style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 2px" }}>
+                {/* FINAL-L5-03: <div> not <p> -- Skeleton renders a <div>,
+                    invalid inside a <p> and caused a real hydration mismatch. */}
+                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 2px" }}>
                   {walletApi.loading ? <Skeleton width={40} height={22} /> : safeNum(wallet?.balance)}
-                </p>
+                </div>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
                   {wallet ? `${safeNum(wallet.lifetime_consumed)} consumed lifetime` : ""}
                 </p>
@@ -278,16 +284,16 @@ export default function DashboardPage() {
               </div>
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px" }}>Package</p>
-                <p style={{ fontSize: 15, fontWeight: 700, color: pkg?.has_package ? "var(--success-text)" : "var(--warning-text)", margin: "0 0 4px" }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: pkg?.has_package ? "var(--success-text)" : "var(--warning-text)", margin: "0 0 4px" }}>
                   {pkgApi.loading ? <Skeleton width={100} height={18} /> : safeStr(pkg?.package_name, "No active package")}
-                </p>
+                </div>
                 <a href="/finance/package" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>Manage Package <ChevronRight size={12} /></a>
               </div>
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px" }}>Security Deposit</p>
-                <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
                   {depositApi.loading ? <Skeleton width={60} height={18} /> : `₹${safeNum(deposit?.paid_amount ?? deposit?.required_amount)}`}
-                </p>
+                </div>
                 <a href="/finance/security-deposit" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>View Details <ChevronRight size={12} /></a>
               </div>
             </div>

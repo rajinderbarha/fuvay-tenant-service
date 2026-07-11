@@ -5,11 +5,9 @@
  */
 import { useCallback } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import EnterpriseDataGrid, { GridColumn } from "../../../../components/enterprise/EnterpriseDataGrid";
+import EnterpriseDataGrid, { GridColumn, GridData } from "../../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../../components/enterprise/EnterpriseFilterBar";
-import { enterpriseApi } from "../../../../lib/api";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { enterpriseApi, apiFetchPaginatedRaw } from "../../../../lib/api";
 
 const COLUMNS: GridColumn[] = [
   { key: "job_number",        label: "Job #",       width: 140 },
@@ -44,29 +42,21 @@ const FILTERS: FilterDef[] = [
 
 export default function AdminServiceJobsPage() {
   const fetchJobs = useCallback(async (params: Record<string, unknown>) => {
-    const qs = new URLSearchParams();
-    Object.entries(params).forEach(([k, v]) => { if (v != null && v !== "") qs.set(k, String(v)); });
-    const token = typeof window !== "undefined" ? localStorage.getItem("serviceos_admin_token") ?? "" : "";
-    const res  = await fetch(`${API}/v1/admin/final-records/jobs?${qs}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json?.error?.message ?? "Request failed");
-    const d = json.data ?? json;
-    if (d.pagination) return d;
+    const d = await apiFetchPaginatedRaw("/v1/admin/final-records/jobs", params);
+    if (d.pagination) return d as unknown as GridData;
     // wrap legacy shape
     const page     = Number(params.page ?? 1);
     const pageSize = Number(params.page_size ?? 25);
-    const total    = d.total ?? 0;
+    const total    = Number(d.total ?? 0);
     return {
-      items:            d.items ?? [],
+      items:            (d.items ?? []) as Record<string, unknown>[],
       pagination:       { page, page_size: pageSize, total_items: total,
                           total_pages: Math.ceil(total / pageSize) || 1,
                           has_next: page * pageSize < total, has_previous: page > 1 },
       sort:             { sort_by: String(params.sort_by), sort_direction: String(params.sort_direction) },
       filters_applied:  params as Record<string, unknown>,
-      available_filters: [], available_columns: [],
-    };
+      available_columns: [],
+    } as GridData;
   }, []);
 
   const handleExport = useCallback(async (params: Record<string, unknown>) => {

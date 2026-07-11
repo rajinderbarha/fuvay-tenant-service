@@ -1,10 +1,9 @@
 ﻿"use client";
 import { useCallback, useState } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import EnterpriseDataGrid, { GridColumn } from "../../../components/enterprise/EnterpriseDataGrid";
+import EnterpriseDataGrid, { GridColumn, GridData } from "../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../components/enterprise/EnterpriseFilterBar";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { apiFetchPaginatedRaw } from "../../../lib/api";
 
 type LogSource = "engine" | "security" | "auth";
 
@@ -123,16 +122,8 @@ export default function AuditLogsPage() {
   const cfg = TAB_CONFIG[tab];
 
   const fetchFn = useCallback(async (params: Record<string, unknown>) => {
-    const qs = new URLSearchParams();
-    Object.entries(params).forEach(([k, v]) => { if (v != null && v !== "") qs.set(k, String(v)); });
-    const token = typeof window !== "undefined" ? localStorage.getItem("serviceos_admin_token") ?? "" : "";
-    const res   = await fetch(`${API}${TAB_CONFIG[tab].endpoint}?${qs}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json?.error?.message ?? "Request failed");
-    const d = json.data ?? json;
-    if (d?.pagination) return d;
+    const d = await apiFetchPaginatedRaw(TAB_CONFIG[tab].endpoint, params);
+    if (d?.pagination) return d as unknown as GridData;
     return wrapLegacy(d, params);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);

@@ -7,7 +7,7 @@ import {
   Activity, Gauge, Calendar, AlertCircle, Copy,
 } from "lucide-react";
 import {
-  myStatusApi, authApi,
+  myStatusApi, authApi, isTenantOwnerRole,
   type ProviderStatusResult, type OfferingBookableStatus, type EnabledOffering,
   type PackageAssignmentSummary, type TenantSecurityDepositStatus, type TenantCreditWalletDetail,
   type ProviderServiceArea, type ProviderTeamMember, type ProviderAvailabilityRule,
@@ -82,7 +82,7 @@ export default function ProviderStatusPage() {
 
   const refreshAction = useAction(useCallback(() => myStatusApi.refreshStatus(), []), { onSuccess: refreshAll });
 
-  const isTenantOwner = meApi.data?.role === "tenant_owner" || meApi.data?.role === undefined;
+  const isTenantOwner = isTenantOwnerRole(meApi.data?.role);
 
   const s: ProviderStatusResult | null = statusApi.data ?? null;
   const offeringStatuses: OfferingBookableStatus[] = safeArray(offeringStatusApi.data?.statuses);

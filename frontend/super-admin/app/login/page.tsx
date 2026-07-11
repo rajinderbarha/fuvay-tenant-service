@@ -5,7 +5,7 @@
  * Form validation before submit. Token stored in localStorage.
  */
 import React, { useState } from "react";
-import { authApi, MOCK_MODE } from "../../lib/api";
+import { authApi } from "../../lib/api";
 
 export default function LoginPage() {
   const [email,    setEmail]    = useState("admin@serviceos.in");
@@ -18,11 +18,6 @@ export default function LoginPage() {
     if (!email || !password) { setError("Both fields are required."); return; }
     setLoading(true); setError("");
     try {
-      if (MOCK_MODE) {
-        localStorage.setItem("serviceos_admin_token", "mock_admin_token_dev");
-        window.location.href = "/admin/dashboard";
-        return;
-      }
       const res = await authApi.login(email, password);
       localStorage.setItem("serviceos_admin_token", res.access_token);
       if (res.refresh_token) localStorage.setItem("serviceos_admin_refresh", res.refresh_token);

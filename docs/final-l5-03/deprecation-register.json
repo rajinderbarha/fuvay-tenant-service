@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {"system":"tenant_wallets table + /v1/provider/wallet*","canonical_replacement":"usage_credit_ledger via usageCreditsApi","remaining_consumers":["finance/package/page.tsx","finance/security-deposit/page.tsx","provider/wallet/page.tsx"],"risk":"low","target_sprint":"L5-04 or dedicated backend cleanup"},
+    {"system":"legacy /v1/jobs (field_ops)","canonical_replacement":"/v1/provider/my-records/jobs (tenant-scoped only)","remaining_consumers":["super-admin admin/operations/*"],"risk":"low","target_sprint":"not scheduled -- needs new cross-tenant endpoint first"},
+    {"system":"duplicate 0-consumer ui.tsx symbols","canonical_replacement":"N/A","remaining_consumers":[],"risk":"very low","target_sprint":"not scheduled"},
+    {"system":"3 independent shared/ui.tsx files","canonical_replacement":"shared @serviceos/ui package (does not exist)","remaining_consumers":["super-admin","tenant-portal","customer-app"],"risk":"medium","target_sprint":"not scheduled"},
+    {"system":"3 independent apiFetch clients","canonical_replacement":"N/A -- justified duplication","remaining_consumers":["super-admin","tenant-portal","customer-app"],"risk":"medium","target_sprint":"not scheduled"},
+    {"system":"backend 500 responses missing CORS headers","canonical_replacement":"correct CORSMiddleware ordering","remaining_consumers":"all endpoints (latent)","risk":"medium-high","target_sprint":"not scheduled -- needs dedicated regression sprint"},
+    {"system":"usePermissions() under-adoption","canonical_replacement":"wider adoption across super-admin","remaining_consumers":"most super-admin pages","risk":"low","target_sprint":"not scheduled"},
+    {"system":"Bargain Rules feature","canonical_replacement":"automatic Low/Mid/High price options","remaining_consumers":"unknown active record count","risk":"low","target_sprint":"not scheduled"},
+    {"system":"python-json-logger dependency","canonical_replacement":"structlog JSON renderer","remaining_consumers":"unverified","risk":"very low","target_sprint":"not scheduled"}
+  ]
+}

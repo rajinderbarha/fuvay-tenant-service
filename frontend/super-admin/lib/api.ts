@@ -115,6 +115,21 @@ async function apiFetch<T>(
   return json.data;
 }
 
+// FINAL-L5-03: shared generic paginated-list fetch for EnterpriseDataGrid-style
+// pages, so page components don't each hand-roll their own token read + raw
+// fetch() + error unwrap (which also meant they silently lost 401->refresh
+// handling and request_id on errors that every other call gets for free via
+// apiFetch). Page-specific response reshaping (legacy pagination wrapping)
+// stays in the page -- this only replaces the duplicated transport plumbing.
+export async function apiFetchPaginatedRaw(
+  endpoint: string,
+  params: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => { if (v != null && v !== "") qs.set(k, String(v)); });
+  return apiFetch<Record<string, unknown>>(`${endpoint}?${qs}`);
+}
+
 // ── Auth endpoints ─────────────────────────────────────────────────────────────
 export const authApi = {
   // Session
@@ -2737,8 +2752,6 @@ export interface MatchedTenant {
   rating?:number; health_score?:number;
   estimated_sla_minutes?:number; base_price?:number; distance_km?:number;
 }
-
-export const MOCK_MODE = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface AdminUser { id: string; email: string; full_name: string; role: string; permissions?: string[]; }

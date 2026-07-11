@@ -1,11 +1,9 @@
 ﻿"use client";
 import { useCallback } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import EnterpriseDataGrid, { GridColumn } from "../../../components/enterprise/EnterpriseDataGrid";
+import EnterpriseDataGrid, { GridColumn, GridData } from "../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../components/enterprise/EnterpriseFilterBar";
-import { enterpriseApi } from "../../../lib/api";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { enterpriseApi, apiFetchPaginatedRaw } from "../../../lib/api";
 
 const COLUMNS: GridColumn[] = [
   { key: "commission_number",  label: "Commission #",  width: 160 },
@@ -56,16 +54,8 @@ function wrapLegacy(d: unknown, params: Record<string, unknown>) {
 
 export default function AdminCommissionRecordsPage() {
   const fetchFn = useCallback(async (params: Record<string, unknown>) => {
-    const qs = new URLSearchParams();
-    Object.entries(params).forEach(([k, v]) => { if (v != null && v !== "") qs.set(k, String(v)); });
-    const token = typeof window !== "undefined" ? localStorage.getItem("serviceos_admin_token") ?? "" : "";
-    const res   = await fetch(`${API}/v1/admin/commission-records?${qs}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json?.error?.message ?? "Request failed");
-    const d = json.data ?? json;
-    if (d?.pagination) return d;
+    const d = await apiFetchPaginatedRaw("/v1/admin/commission-records", params);
+    if (d?.pagination) return d as unknown as GridData;
     return wrapLegacy(d, params);
   }, []);
 

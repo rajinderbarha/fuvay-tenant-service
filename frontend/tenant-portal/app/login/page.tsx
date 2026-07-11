@@ -5,7 +5,7 @@
  * Stores token + full tenant context in localStorage on success.
  */
 import React, { useState } from "react";
-import { authApi, MOCK_MODE } from "../../lib/api";
+import { authApi, categoryDashboardApi } from "../../lib/api";
 
 export default function LoginPage() {
   const [email,    setEmail]    = useState("provider@serviceos.in");
@@ -18,17 +18,6 @@ export default function LoginPage() {
     if (!email || !password) { setError("Both fields required."); return; }
     setLoading(true); setError("");
     try {
-      if (MOCK_MODE) {
-        localStorage.setItem("serviceos_tenant_token",   "mock_tenant_token");
-        localStorage.setItem("serviceos_tenant_id",      "t1");
-        localStorage.setItem("serviceos_tenant_name",    "Rahul AC Services");
-        localStorage.setItem("serviceos_tenant_vertical","home_services");
-        localStorage.setItem("serviceos_tenant_plan",    "growth");
-        localStorage.setItem("serviceos_tenant_health",  "74");
-        localStorage.setItem("serviceos_user_id",        "u1");
-        window.location.href = "/dashboard";
-        return;
-      }
       const res = await authApi.login(email, password);
       // Store token immediately so follow-up API calls are authenticated
       localStorage.setItem("serviceos_tenant_token",    res.access_token);
@@ -48,17 +37,21 @@ export default function LoginPage() {
       localStorage.setItem("serviceos_tenant_plan",     "");
       localStorage.setItem("serviceos_tenant_health",   "0");
 
-      // Fetch runtime for vertical/category so sidebar knows which nav to show
+      // Fetch runtime for vertical/category so sidebar knows which nav to show.
+      // FINAL-L5-03: routed through the canonical categoryDashboardApi client
+      // (auth header + 401/refresh handling) instead of a hand-rolled fetch()
+      // that duplicated token-header logic already centralized in apiFetch.
+      // Cast to a loose record for the two extra fields (tenant_plan/health)
+      // that this call has always read defensively but aren't part of the
+      // documented ProviderDashboardRuntime type -- unchanged behavior.
       try {
-        const rt = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/v1/tenant/dashboard/runtime`, {
-          headers: { Authorization: `Bearer ${res.access_token}` },
-        }).then(r2 => r2.json());
-        const rdata = rt?.data ?? rt?.runtime ?? {};
-        const tenantName = rdata.tenant?.business_name ?? rdata.tenant_name;
-        if (rdata.category_type) localStorage.setItem("serviceos_tenant_vertical", rdata.category_type);
-        if (tenantName)          localStorage.setItem("serviceos_tenant_name",     tenantName);
-        if (rdata.tenant_plan)   localStorage.setItem("serviceos_tenant_plan",     rdata.tenant_plan);
-        if (rdata.tenant_health != null) localStorage.setItem("serviceos_tenant_health", String(rdata.tenant_health));
+        const rt = await categoryDashboardApi.getRuntime() as unknown as Record<string, unknown>;
+        const tenant = rt?.tenant as Record<string, unknown> | undefined;
+        const tenantName = tenant?.business_name ?? rt?.tenant_name;
+        if (rt?.category_type) localStorage.setItem("serviceos_tenant_vertical", String(rt.category_type));
+        if (tenantName)         localStorage.setItem("serviceos_tenant_name",     String(tenantName));
+        if (rt?.tenant_plan)    localStorage.setItem("serviceos_tenant_plan",     String(rt.tenant_plan));
+        if (rt?.tenant_health != null) localStorage.setItem("serviceos_tenant_health", String(rt.tenant_health));
       } catch { /* non-critical */ }
 
       if (res.requires_password_change || u?.force_password_change) {

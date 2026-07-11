@@ -5,7 +5,7 @@ import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { Card, Badge, Btn, Modal, Input, Skeleton, StatCard, EmptyState } from "../../../../components/shared/ui";
 import {
   providerOfferingsApi, providerOnboardingApi, categoryDashboardApi, providerBrandApi,
-  offeringCoverageApi, offeringPricingApi, myStatusApi, authApi,
+  offeringCoverageApi, offeringPricingApi, myStatusApi, authApi, isTenantOwnerRole,
   type AvailableOffering, type EnabledOffering, type EnableOfferingPayload, type ProviderAvailableBrand,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
@@ -475,7 +475,7 @@ export default function OfferingsPage() {
   const activityApi = useApi(useCallback(() => myStatusApi.getAuditLog(10), []));
 
   const categoryType: string | null = runtime.data?.tenant?.category?.category_type ?? null;
-  const isTenantOwner = meApi.data?.role === "tenant_owner" || meApi.data?.role === undefined;
+  const isTenantOwner = isTenantOwnerRole(meApi.data?.role);
 
   function flash(msg: string, err = false) {
     if (err) { setToastErr(msg); setTimeout(() => setToastErr(null), 4000); }

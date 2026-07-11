@@ -1,14 +1,26 @@
 "use client";
-import { useCallback, useState } from "react";
+import { Suspense, useCallback, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader, Input } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, SectionHeader, Input, Skeleton } from "../../../../components/shared/ui";
 import { usageCreditsAdminApi } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 
 const DEMO_TENANT_ID = "34b427a7-b2be-496c-b826-6d51bb181248";
 
+// FINAL-L5-03: useSearchParams() requires a Suspense boundary in the App
+// Router for static export to succeed -- this page previously failed
+// `next build` outright ("useSearchParams() should be wrapped in a suspense
+// boundary"). Real, pre-existing build failure, not introduced this sprint.
 export default function AdminUsageCreditsPage() {
+  return (
+    <Suspense fallback={<AdminLayout activeNav="finance-usage-credits"><Skeleton height={400}/></AdminLayout>}>
+      <AdminUsageCreditsPageInner/>
+    </Suspense>
+  );
+}
+
+function AdminUsageCreditsPageInner() {
   const searchParams = useSearchParams();
   const jobIdFilter = searchParams.get("job_id") ?? "";
   const [tenantId, setTenantId] = useState(searchParams.get("tenant_id") || DEMO_TENANT_ID);

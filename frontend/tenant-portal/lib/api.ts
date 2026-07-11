@@ -47,6 +47,13 @@ export function getAccessScope(): string | null {
 export function isTenantReadOnly(): boolean {
   return getAccessScope() === "customer_support_limited";
 }
+/** FINAL-L5-03: shared version of a check duplicated identically across
+ * provider/status and provider/offerings pages. Preserves the exact prior
+ * semantics (role undefined -- e.g. still loading -- is treated as owner so
+ * mutation controls aren't spuriously disabled while /auth/me is in flight). */
+export function isTenantOwnerRole(role: string | null | undefined): boolean {
+  return role === "tenant_owner" || role === undefined;
+}
 function clearSession() {
   ["serviceos_tenant_token","serviceos_tenant_refresh","serviceos_tenant_id","serviceos_tenant_name",
    "serviceos_tenant_vertical","serviceos_tenant_plan","serviceos_tenant_health","serviceos_user_id",
@@ -1447,9 +1454,6 @@ export const aiChatApi = {
   chat: (message:string, history:AIChatMessage[] = []) =>
     apiFetch<AIChatResponse>("/v1/ai/chat", { method:"POST", body:JSON.stringify({ message, history }) }),
 };
-
-// ── Mock flag ─────────────────────────────────────────────────────────────────
-export const MOCK_MODE = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface TenantUser  { id:string; user_id?:string; email:string; full_name:string; role:string; tenant_id:string; force_password_change?:boolean; }

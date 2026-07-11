@@ -18,7 +18,7 @@ import { useTenant } from "../../hooks/useTenant";
 import { Toaster, type ToastItem } from "../shared/ui";
 import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
-import { authApi, providerStatusApi, tenantSetupApi, staffApi, providerServiceAreasApi } from "../../lib/api";
+import { authApi, providerStatusApi, tenantSetupApi, staffApi, providerServiceAreasApi, usageCreditsApi } from "../../lib/api";
 import { useApi } from "../../hooks/useApi";
 
 type NavItem = { id: string; href: string; label: string; icon: React.ReactNode; badge?: number };
@@ -110,19 +110,22 @@ const NAV_GROUPS: NavGroup[] = [
 function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const statusApi = useApi(useCallback(() => providerStatusApi.get(), []), []);
   const pkgApi    = useApi(useCallback(() => tenantSetupApi.getPackage(), []), []);
-  const walletApi = useApi(useCallback(() => tenantSetupApi.getWallet(), []), []);
+  // FINAL-L5-03: was tenantSetupApi.getWallet() -> /v1/provider/wallet, which
+  // reads the dormant `tenant_wallets` table (never populated by the
+  // canonical seed) and always 500s. Usage Credit Balance is the real,
+  // canonical source (tenant_billing.credit_balance via usage_credit_ledger),
+  // already used elsewhere in this app -- see project memory on
+  // tenant_wallets being legacy/dormant.
+  const creditApi = useApi(useCallback(() => usageCreditsApi.getBalance(), []), []);
   const staffApi2 = useApi(useCallback(() => staffApi.list(), []), []);
   const areasApi  = useApi(useCallback(() => providerServiceAreasApi.list(), []), []);
 
   const s       = statusApi.data;
   const blockers = [...(s?.visibility_blockers ?? []), ...(s?.bookability_blockers ?? [])];
   const pkg     = pkgApi.data as Record<string, unknown> | null;
-  const wallet  = walletApi.data as Record<string, unknown> | null;
   const staffCount = staffApi2.data?.users?.length ?? 0;
   const areasCount = areasApi.data?.total ?? areasApi.data?.areas?.length ?? 0;
-  const creditBal  = typeof wallet?.credit_balance === "number" ? wallet.credit_balance
-    : typeof wallet?.current_balance === "number" ? wallet.current_balance
-    : typeof wallet?.balance === "number" ? wallet.balance : 0;
+  const creditBal  = creditApi.data?.usage_credit_balance ?? 0;
   const pkgStatus  = String(pkg?.status ?? "inactive");
   const depositSt  = String(pkg?.security_deposit_status ?? "pending");
 
@@ -146,7 +149,7 @@ function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   const total      = SETUP_STEPS.length;
   const pct        = Math.round((doneCount / total) * 100);
   const isBookable = s?.is_bookable ?? false;
-  const loading    = statusApi.loading || pkgApi.loading || walletApi.loading;
+  const loading    = statusApi.loading || pkgApi.loading || creditApi.loading;
 
   if (!open) return null;
 
@@ -194,7 +197,7 @@ function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => vo
                 {isBookable ? <><CheckCircle2 size={11}/> Bookable</> : <><XCircle size={11}/> Not Bookable</>}
               </span>
               {!loading && (
-                <button onClick={() => { statusApi.refetch(); pkgApi.refetch(); walletApi.refetch(); staffApi2.refetch(); areasApi.refetch(); }}
+                <button onClick={() => { statusApi.refetch(); pkgApi.refetch(); creditApi.refetch(); staffApi2.refetch(); areasApi.refetch(); }}
                   style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4, display: "flex", alignItems: "center" }}>
                   <RefreshCw size={12}/>
                 </button>

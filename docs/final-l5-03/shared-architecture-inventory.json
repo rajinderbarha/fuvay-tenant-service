@@ -1,0 +1,18 @@
+{
+  "items": [
+    {"id":"api_client","apps":["super-admin","tenant-portal","customer-app"],"pattern":"per-app apiFetch wrapper","duplicate_justified":true,"issues_found":0,"canonical_candidate":"per-app, not shared package"},
+    {"id":"auth_session","apps":["super-admin","tenant-portal"],"pattern":"login page -> authApi.login -> localStorage -> redirect","issues_found":1,"issue":"MOCK_MODE auth bypass, disabled but reachable","status":"FIXED"},
+    {"id":"token_storage","apps":["super-admin","tenant-portal","customer-app"],"pattern":"distinct localStorage keys per principal","duplicate_justified":true,"issues_found":0},
+    {"id":"permission_helpers","apps":["tenant-portal"],"pattern":"isTenantReadOnly() central; 2 pages duplicated isTenantOwner inline","issues_found":1,"status":"FIXED","fix":"isTenantOwnerRole() extracted"},
+    {"id":"tenant_context","apps":["super-admin"],"pattern":"getTenantId() central; 1 page has hardcoded DEMO_TENANT_ID fallback","issues_found":1,"status":"DOCUMENTED_NOT_CHANGED","reason":"admin cross-tenant tool, dev convenience default only"},
+    {"id":"query_cache","apps":["super-admin","tenant-portal","customer-app"],"pattern":"useApi/useAction hand-rolled hooks, no query library","issues_found":0,"status":"AUDITED"},
+    {"id":"route_config","apps":["super-admin","tenant-portal"],"pattern":"lib/page-registry.ts + lib/nav-config.ts per app","issues_found":0,"status":"AUDITED_DEFERRED_TO_L5_04_05"},
+    {"id":"status_maps","apps":["super-admin","tenant-portal"],"pattern":"lib/status-labels.ts per app","issues_found":0,"status":"AUDITED"},
+    {"id":"data_grid","apps":["super-admin","tenant-portal"],"pattern":"EnterpriseDataGrid canonical; unused DataTable in ui.tsx (0 consumers tenant-portal, 31 super-admin)","issues_found":1,"status":"DOCUMENTED"},
+    {"id":"loading_states","apps":["tenant-portal"],"pattern":"Skeleton component nested inside <p> tags (3 instances)","issues_found":3,"status":"FIXED","fix":"changed wrapping <p> to <div>"},
+    {"id":"request_id_handling","apps":["super-admin"],"pattern":"5 pages discarded request_id via raw fetch + new Error()","issues_found":5,"status":"FIXED","fix":"apiFetchPaginatedRaw shared helper"},
+    {"id":"e2e_helpers","apps":["all"],"pattern":"no shared login helper module, re-implemented per spec file","issues_found":1,"status":"DOCUMENTED_NOT_EXTRACTED"},
+    {"id":"backend_cors_error_masking","apps":["backend"],"pattern":"500 responses missing CORS headers, browser reports as CORS block not real error","issues_found":1,"status":"DOCUMENTED_NOT_CHANGED","reason":"security-sensitive middleware ordering, needs dedicated testing"},
+    {"id":"dormant_wallet_endpoint","apps":["tenant-portal","backend"],"pattern":"TenantLayout called /v1/provider/wallet (dormant tenant_wallets table), always 500'd on every page load","issues_found":1,"status":"FIXED","fix":"migrated to usageCreditsApi.getBalance() (canonical tenant_billing/usage_credit_ledger)"}
+  ]
+}

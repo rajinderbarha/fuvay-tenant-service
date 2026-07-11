@@ -23,7 +23,7 @@ export interface RowAction {
   divider?:  boolean;
 }
 
-interface GridParams {
+export interface GridParams {
   page:           number;
   page_size:      number;
   sort_by:        string;
@@ -32,7 +32,7 @@ interface GridParams {
   [key: string]:  unknown;
 }
 
-interface GridData {
+export interface GridData {
   items:      Record<string, unknown>[];
   pagination: {
     page: number; page_size: number;
