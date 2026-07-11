@@ -26,13 +26,45 @@ def _read(path: Path) -> str:
 
 class TestJobsNavigationGuard:
     def test_operations_page_still_carries_the_legacy_field_ops_disclosure_banner(self):
-        """The legacy /admin/operations page must keep self-identifying as a
-        separate, legacy lifecycle until it is either migrated or retired --
-        removing this banner without a real migration would be a silent
-        regression back toward treating /v1/jobs as canonical."""
+        """FINAL-L5-05E: /admin/operations is now a real compatibility
+        redirect to the canonical service_jobs page (parity proven, all 4
+        mutations + SLA + summary built) -- stronger than a disclosure
+        banner. Must still self-identify as legacy and point at canonical."""
         src = _read(SA / "app" / "admin" / "operations" / "page.tsx")
         assert "legacy" in src.lower()
         assert "/admin/home-services/service-jobs" in src
+
+    def test_operations_pages_no_longer_use_jobs_api(self):
+        """FINAL-L5-05E regression guard: both legacy operations pages must
+        no longer import jobsApi/staffApi or fetch legacy /v1/jobs data --
+        they are pure redirects now."""
+        list_src = _read(SA / "app" / "admin" / "operations" / "page.tsx")
+        detail_src = _read(SA / "app" / "admin" / "operations" / "[jobId]" / "page.tsx")
+        assert "import { jobsApi" not in list_src
+        assert "import { jobsApi" not in detail_src
+        assert "redirect(" in list_src
+        assert "redirect(" in detail_src
+
+    def test_admin_layout_jobs_nav_points_to_canonical_route(self):
+        """FINAL-L5-05E: primary Jobs sidebar item must point at the
+        canonical service_jobs page, not the legacy /admin/operations."""
+        src = _read(SA / "components" / "layout" / "AdminLayout.tsx")
+        assert '"/admin/home-services/service-jobs"' in src
+
+    def test_zero_active_jobs_api_imports_anywhere_in_super_admin(self):
+        """FINAL-L5-05E: no Super Admin page/component may import jobsApi --
+        the legacy client definition may remain in lib/api.ts (dead export)
+        but must have zero import sites in app/ or components/."""
+        import re
+        hits = []
+        for base in (SA / "app", SA / "components"):
+            for path in base.rglob("*.ts*"):
+                if "node_modules" in path.parts or ".next" in path.parts:
+                    continue
+                text = _read(path)
+                for m in re.finditer(r"^import\s.*\bjobsApi\b.*$", text, re.MULTILINE):
+                    hits.append(f"{path.relative_to(ROOT)}: {m.group(0).strip()}")
+        assert not hits, f"active jobsApi imports found: {hits}"
 
     def test_canonical_service_jobs_page_exists_and_is_not_a_stub(self):
         list_page = SA / "app" / "admin" / "home-services" / "service-jobs" / "page.tsx"

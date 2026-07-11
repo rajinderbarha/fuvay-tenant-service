@@ -60,7 +60,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Operations",
     items: [
       { id: "bookings",   href: "/admin/bookings",   label: "Bookings",  icon: <CalendarDays size={16}/>              },
-      { id: "operations", href: "/admin/operations", label: "Jobs",      icon: <Wrench size={16}/>,       badge: null },
+      { id: "operations", href: "/admin/home-services/service-jobs", label: "Jobs", icon: <Wrench size={16}/>, badge: null },
       { id: "customers",  href: "/admin/customers",  label: "Customers", icon: <UserCheck size={16}/>                 },
       { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <Users size={16}/>                     },
       { id: "reviews",    href: "/admin/reviews",    label: "Reviews",    icon: <Star size={16}/>          },

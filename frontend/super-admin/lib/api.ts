@@ -8247,9 +8247,39 @@ export interface AdminServiceJobDetail {
   } | null;
   usage_credit_deduction: UsageCreditLedgerEntryAdmin | null;
   usage_credit_deduction_duplicate_count: number;
+  sla: {
+    sla_status: "ON_TRACK" | "AT_RISK" | "BREACHED" | "NOT_APPLICABLE";
+    next_deadline: string | null; minutes_remaining: number | null;
+    minutes_overdue: number | null; breach_stage: string | null; source_policy: string | null;
+  } | null;
 }
 export const finalRecordsAdminApi = {
   getJob: (jobId: string) => apiFetch<AdminServiceJobDetail>(`/v1/admin/final-records/jobs/${jobId}`),
+  // FINAL-L5-05E: canonical tenant-scoped job list, replaces legacy jobsApi.list
+  // usage on the tenant-detail page's Jobs tab/Recent Jobs card. Only fields
+  // service_jobs actually has -- no service_type/customer_name/assigned_staff
+  // display name/commission_amount, which require joins the canonical list
+  // endpoint doesn't perform (documented parity gap, not fabricated).
+  listForTenant: (tenantId: string, limit = 50) =>
+    apiFetch<{
+      items: {
+        id: string; job_number: string; status: string; assignment_status: string;
+        city: string | null; zipcode: string | null; assigned_staff_id: string | null;
+        created_at: string | null; collected_amount: number | null;
+        completed_job_deduction_credits: number | null;
+      }[]; total: number;
+    }>(`/v1/admin/final-records/jobs?tenant_id=${tenantId}&limit=${limit}`),
+  // FINAL-L5-05E: canonical operational summary against service_jobs
+  getJobsSummary: (params?: { tenant_id?: string; status?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.tenant_id) q.set("tenant_id", params.tenant_id);
+    if (params?.status) q.set("status", params.status);
+    return apiFetch<{
+      total: number; unassigned: number; assigned: number; in_progress: number;
+      completed: number; force_closed: number; voided: number;
+      at_risk: number; breached: number; delayed: number; completion_exceptions: number;
+    }>(`/v1/admin/final-records/jobs/summary?${q}`);
+  },
 };
 
 export const financeApi = {

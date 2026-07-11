@@ -297,7 +297,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
   const deduction = d?.usage_credit_deduction;
 
   return (
-    <AdminLayout activeNav="hs-bookings">
+    <AdminLayout activeNav="operations">
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, fontSize: 12, color: "var(--text-tertiary)" }}>
         <span>Admin</span><ChevronRight size={12}/><span>Home Services</span><ChevronRight size={12}/>
         <a href="/admin/home-services/service-jobs" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Service Jobs</a>
@@ -399,6 +399,25 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                 <Field label="City / Zipcode" value={`${d.city ?? "—"} / ${d.zipcode ?? "—"}`} />
                 <Field label="Created At" value={d.created_at ? new Date(d.created_at).toLocaleString() : "—"} />
                 <Field label="Updated At" value={d.updated_at ? new Date(d.updated_at).toLocaleString() : "—"} />
+                <Field label="SLA Status" value={
+                  d.sla ? (
+                    <span style={{
+                      fontWeight: 700,
+                      color: d.sla.sla_status === "BREACHED" ? "var(--danger-text, #dc2626)"
+                        : d.sla.sla_status === "AT_RISK" ? "var(--warning-text, #d97706)"
+                        : d.sla.sla_status === "ON_TRACK" ? "var(--success-text, #059669)"
+                        : "var(--text-tertiary)",
+                    }}>
+                      {d.sla.sla_status === "NOT_APPLICABLE" ? "—" : d.sla.sla_status.replace("_", " ")}
+                    </span>
+                  ) : "—"
+                } />
+                {d.sla?.next_deadline && (
+                  <Field label="Next Deadline" value={new Date(d.sla.next_deadline).toLocaleString()} />
+                )}
+                {d.sla?.minutes_overdue != null && (
+                  <Field label="Overdue By" value={`${d.sla.minutes_overdue} min`} />
+                )}
               </div>
             </Section>
 

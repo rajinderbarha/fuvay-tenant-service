@@ -7,7 +7,7 @@ import {
   Modal, Input, Skeleton, StatCard, Select,
 } from "../../../../components/shared/ui";
 import {
-  tenantApi, adminTenantsApi, commerceApi, jobsApi, reviewApi, staffApi, bookingsApi,
+  tenantApi, adminTenantsApi, commerceApi, finalRecordsAdminApi, reviewApi, staffApi, bookingsApi,
   serviceAreaAdminApi, serviceabilityApi, mediaApi, authApi, financeApi, usageCreditsAdminApi,
   catalogApi as adminCatalogApi, engineMgmtApi, adminTenantApi,
   adminProviderOnboardingApi, adminOnboardingProvidersApi, adminProviderEnablementApi, adminBookabilityApi,
@@ -1075,7 +1075,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
   const billing     = useApi(useCallback(() => tenantApi.getBillingInfo(id),                [id]));
   const flags       = useApi(useCallback(() => tenantApi.getFeatureFlags(id),               [id]));
   const invoices    = useApi(useCallback(() => tenantApi.getBillingInvoices(id, 5),         [id]));
-  const recentJobs  = useApi(useCallback(() => jobsApi.list({ tenant_id: id, limit: "5" }),[id]));
+  const recentJobs  = useApi(useCallback(() => finalRecordsAdminApi.listForTenant(id, 5),[id]));
   const recentBkgs  = useApi(useCallback(() => bookingsApi.list(id, { limit: "5" }),        [id]));
 
   const staff       = useApi(useCallback(() => staffApi.adminList(id),                      [id]));
@@ -1093,7 +1093,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
   const penalties   = useApi(useCallback(() => financeApi.listPenalties({ tenantId: id, limit: 50 }),   [id]), [id]);
   const media       = useApi(useCallback(() => mediaApi.listFiles(id, { limit: 50 }),       [id]));
   const mediaQuota  = useApi(useCallback(() => mediaApi.getQuota(id),                       [id]));
-  const allJobs     = useApi(useCallback(() => jobsApi.list({ tenant_id: id, limit: "30" }),[id]));
+  const allJobs     = useApi(useCallback(() => finalRecordsAdminApi.listForTenant(id, 30),[id]));
   const allBookings = useApi(useCallback(() => bookingsApi.list(id, { limit: "30" }),       [id]));
   const allReviews  = useApi(useCallback(() => reviewApi.listByTenant(id, 30),              [id]));
   const audit       = useApi(useCallback(() => tenantApi.getAuditLog(id, { limit: 20 }),   [id]));
@@ -1469,7 +1469,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
           <StatCard label="Average Rating" value={r?.avg_composite?.toFixed(1) ?? "—"} icon={<Star/>} trend="neutral"/>
           <StatCard label="Open Complaints" value={(penalties.data?.penalties ?? []).filter(p => !["resolved","closed","settled","reversed"].includes(p.status ?? "")).length}
             icon={<AlertCircle/>} trend="neutral" alert={(penalties.data?.penalties ?? []).length > 0}/>
-          <StatCard label="Active Jobs" value={(allJobs.data?.jobs ?? []).filter(j => !["completed","cancelled"].includes(j.status)).length}
+          <StatCard label="Active Jobs" value={(allJobs.data?.items ?? []).filter(j => !["completed","cancelled"].includes(j.status)).length}
             icon={<Briefcase/>} trend="neutral"/>
         </>}
       </div>
@@ -1620,27 +1620,22 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                   <div style={{ padding:"12px 18px", display:"flex", flexDirection:"column", gap:8 }}>
                     {[...Array(3)].map((_,i) => <Skeleton key={i} height={36}/>)}
                   </div>
-                ) : (recentJobs.data?.jobs ?? []).length === 0 ? (
+                ) : (recentJobs.data?.items ?? []).length === 0 ? (
                   <p style={{ padding:"28px 18px", textAlign:"center", color:"var(--text-tertiary)", fontSize:13, margin:0 }}>
                     No recent jobs
                   </p>
-                ) : (recentJobs.data?.jobs ?? []).map((j, i, arr) => (
+                ) : (recentJobs.data?.items ?? []).map((j, i, arr) => (
                   <div key={j.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 18px",
                     borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
                     <div style={{ flex:1, minWidth:0 }}>
                       <p style={{ fontSize:12, fontWeight:600, color:"var(--text-primary)", margin:0 }}>
-                        {j.job_number} · {j.service_type ?? "—"}
+                        {j.job_number} · {j.city ?? "—"}
                       </p>
                       <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"2px 0 0" }}>
-                        {j.customer_name ?? "Customer"} · {j.assigned_staff ?? "Unassigned"}
+                        {j.assigned_staff_id ? "Assigned" : "Unassigned"}
                       </p>
                     </div>
                     <JobStatusBadge status={j.status}/>
-                    {j.commission_amount != null && (
-                      <span style={{ fontSize:12, fontWeight:600, color:"var(--success-text)", minWidth:55, textAlign:"right" }}>
-                        {fmt(j.commission_amount)}
-                      </span>
-                    )}
                   </div>
                 ))}
               </Card>
@@ -2573,7 +2568,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             <div style={{ padding:16, display:"flex", flexDirection:"column", gap:8 }}>
               {[...Array(8)].map((_,i) => <Skeleton key={i} height={48}/>)}
             </div>
-          ) : (allJobs.data?.jobs ?? []).length === 0 ? (
+          ) : (allJobs.data?.items ?? []).length === 0 ? (
             <div style={{ padding:"48px 20px", textAlign:"center" }}>
               <div style={{ marginBottom:12 }}><Briefcase size={32} style={{ color:"var(--text-tertiary)" }}/></div>
               <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No jobs yet</p>
@@ -2582,27 +2577,30 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             <table style={{ width:"100%", borderCollapse:"collapse" }}>
               <thead>
                 <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
-                  {["Job #","Service","Customer","Staff","Status","Payable To Provider","Completed Job Deduction","Date"].map(h => (
+                  {["Job #","City","Staff","Status","Collected Amount","Completed Job Deduction","Date"].map(h => (
                     <th key={h} style={{ padding:"10px 16px", textAlign:"left", fontSize:11, fontWeight:700,
                       color:"var(--text-tertiary)", textTransform:"uppercase", letterSpacing:"0.06em" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {(allJobs.data?.jobs ?? []).map((j, i, arr) => (
+                {(allJobs.data?.items ?? []).map((j, i, arr) => (
                   <tr key={j.id} style={{ borderBottom: i < arr.length-1 ? "1px solid var(--border)" : "none" }}>
                     <td style={{ padding:"11px 16px", fontWeight:600, fontSize:12, fontFamily:"monospace", color:"var(--text-primary)" }}>
-                      {j.job_number}
+                      <a href={`/admin/home-services/service-jobs/${j.id}`} style={{ color:"inherit", textDecoration:"none" }}>
+                        {j.job_number}
+                      </a>
                     </td>
-                    <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-secondary)" }}>{j.service_type}</td>
-                    <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-secondary)" }}>{j.customer_name ?? "—"}</td>
-                    <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-secondary)" }}>{j.assigned_staff ?? "Unassigned"}</td>
+                    <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-secondary)" }}>
+                      {j.city ?? "—"}{j.zipcode ? ` / ${j.zipcode}` : ""}
+                    </td>
+                    <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-secondary)" }}>{j.assigned_staff_id ? "Assigned" : "Unassigned"}</td>
                     <td style={{ padding:"11px 16px" }}><JobStatusBadge status={j.status}/></td>
                     <td style={{ padding:"11px 16px", fontSize:12, fontWeight:600, color:"var(--success-text)" }}>
-                      {(j.payable_to_provider ?? j.quoted_price) != null ? fmt((j.payable_to_provider ?? j.quoted_price)!) : "—"}
+                      {j.collected_amount != null ? fmt(j.collected_amount) : "—"}
                     </td>
                     <td style={{ padding:"11px 16px", fontSize:12, fontWeight:600, color:"var(--text-primary)" }}>
-                      {j.commission_amount != null ? fmt(j.commission_amount) : "—"}
+                      {j.completed_job_deduction_credits != null ? `${j.completed_job_deduction_credits} credits` : "—"}
                     </td>
                     <td style={{ padding:"11px 16px", fontSize:11, color:"var(--text-tertiary)" }}>
                       {j.created_at ? new Date(j.created_at).toLocaleDateString("en-IN") : "—"}

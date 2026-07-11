@@ -99,6 +99,20 @@ async def admin_get_booking(booking_id: uuid.UUID, r: Request,
 
 # ── Jobs ──────────────────────────────────────────────────────────────────────
 
+@router.get("/jobs/summary", summary="Canonical operational summary for service_jobs (admin)",
+            response_model=ApiResponse)
+async def admin_jobs_summary(
+    r:         Request,
+    tenant_id: uuid.UUID | None = Query(None),
+    status:    str | None       = Query(None),
+    user:      UserContext      = Depends(get_current_user),
+):
+    from app.engines.final_records.sla_summary import compute_summary
+    db = await anext(get_db())
+    result = await compute_summary(db, tenant_id=tenant_id, status=status)
+    return ok(result, _RID(r), "final_records")
+
+
 @router.get("/jobs", summary="List all service jobs (admin)", response_model=ApiResponse)
 async def admin_list_jobs(
     r:         Request,
@@ -108,6 +122,7 @@ async def admin_list_jobs(
     offset:    int              = Query(0, ge=0),
     user:      UserContext      = Depends(get_current_user),
 ):
+    from app.engines.final_records.sla_summary import attach_sla
     db = await anext(get_db())
     filters = []
     if status:    filters.append(ServiceJob.status == status)
@@ -122,20 +137,49 @@ async def admin_list_jobs(
     for f in filters: cq = cq.where(f)
     total = await db.scalar(cq)
 
-    return ok({"items": [j.to_dict() for j in rows], "total": total or 0,
+    sla_map = await attach_sla(db, rows)
+
+    # Batch-fetch Completed Job Deduction ledger rows for this page of jobs
+    # (one query, not per-row) -- real approved-terminology data, not a
+    # fabricated financial column.
+    from app.engines.tenant_engine.models import UsageCreditLedger
+    job_ids = [j.id for j in rows]
+    deduction_map: dict[str, float] = {}
+    if job_ids:
+        ded_rows = (await db.execute(
+            select(UsageCreditLedger).where(
+                UsageCreditLedger.job_id.in_(job_ids),
+                UsageCreditLedger.event_type == "completed_job_deduction",
+            )
+        )).scalars().all()
+        for dr in ded_rows:
+            deduction_map[str(dr.job_id)] = abs(float(dr.credit_delta))
+
+    items = []
+    for j in rows:
+        d = j.to_dict()
+        d["sla"] = sla_map.get(str(j.id))
+        d["collected_amount"] = (j.completion_data or {}).get("collected_amount")
+        d["completed_job_deduction_credits"] = deduction_map.get(str(j.id))
+        items.append(d)
+
+    return ok({"items": items, "total": total or 0,
                "limit": limit, "offset": offset}, _RID(r), "final_records")
 
 
 @router.get("/jobs/{job_id}", summary="Get a service job (admin)", response_model=ApiResponse)
 async def admin_get_job(job_id: uuid.UUID, r: Request,
                          user: UserContext = Depends(get_current_user)):
+    from app.engines.final_records.sla_summary import attach_sla
     db = await anext(get_db())
     result = await db.execute(select(ServiceJob).where(ServiceJob.id == job_id))
     job = result.scalars().first()
     if not job:
         return ok({"error": "FINAL_JOB_NOT_FOUND"}, _RID(r), "final_records")
 
+    sla_map = await attach_sla(db, [job])
     data = job.to_dict()
+    data["sla"] = sla_map.get(str(job.id))
 
     # Enrich with booking's price/payment/provider snapshot — the job row
     # itself has no price/payment fields (see class docstrings), those

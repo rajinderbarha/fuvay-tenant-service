@@ -7,12 +7,31 @@ import { useCallback } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import EnterpriseDataGrid, { GridColumn, GridData } from "../../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../../components/enterprise/EnterpriseFilterBar";
-import { enterpriseApi, apiFetchPaginatedRaw } from "../../../../lib/api";
+import { enterpriseApi, apiFetchPaginatedRaw, finalRecordsAdminApi } from "../../../../lib/api";
+import { useApi } from "../../../../hooks/useApi";
+
+const SLA_LABEL: Record<string, string> = {
+  ON_TRACK: "On Track", AT_RISK: "At Risk", BREACHED: "Breached", NOT_APPLICABLE: "—",
+};
+const SLA_COLOR: Record<string, string> = {
+  ON_TRACK: "var(--success-text, #059669)", AT_RISK: "var(--warning-text, #d97706)",
+  BREACHED: "var(--danger-text, #dc2626)", NOT_APPLICABLE: "var(--text-tertiary)",
+};
 
 const COLUMNS: GridColumn[] = [
   { key: "job_number",        label: "Job #",       width: 140 },
   { key: "status",            label: "Status",      width: 120 },
   { key: "assignment_status", label: "Assignment",  width: 140 },
+  { key: "sla",                label: "SLA",         width: 110,
+    render: (v: unknown) => {
+      const sla = v as { sla_status: string } | null;
+      const status = sla?.sla_status ?? "NOT_APPLICABLE";
+      return <span style={{ color: SLA_COLOR[status], fontWeight: 600, fontSize: 12 }}>{SLA_LABEL[status] ?? "—"}</span>;
+    } },
+  { key: "assigned_staff_id", label: "Technician",  width: 140,
+    render: v => v ? String(v).slice(0, 8) : "Unassigned" },
+  { key: "city",               label: "City",        width: 120 },
+  { key: "zipcode",            label: "Zipcode",     width: 100 },
   { key: "tenant_id",         label: "Tenant",      visible: false },
   { key: "created_at",        label: "Created",     width: 140,
     render: v => v ? String(v).slice(0, 10) : "—" },
@@ -39,6 +58,33 @@ const FILTERS: FilterDef[] = [
   },
   { key: "created", label: "Date Range", type: "date_range" },
 ];
+
+function SummaryCards() {
+  const summary = useApi(useCallback(() => finalRecordsAdminApi.getJobsSummary(), []));
+  const d = summary.data;
+  const cards = [
+    { label: "Total", value: d?.total },
+    { label: "Unassigned", value: d?.unassigned },
+    { label: "In Progress", value: d?.in_progress },
+    { label: "Completed", value: d?.completed },
+    { label: "At Risk", value: d?.at_risk, color: "var(--warning-text, #d97706)" },
+    { label: "Breached", value: d?.breached, color: "var(--danger-text, #dc2626)" },
+    { label: "Completion Exceptions", value: d?.completion_exceptions },
+  ];
+  return (
+    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+      {cards.map(c => (
+        <div key={c.label} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid var(--border)",
+          background: "var(--surface)", minWidth: 110 }}>
+          <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px" }}>{c.label}</p>
+          <p style={{ fontSize: 20, fontWeight: 700, margin: 0, color: c.color ?? "var(--text-primary)" }}>
+            {summary.loading ? "…" : c.value ?? 0}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function AdminServiceJobsPage() {
   const fetchJobs = useCallback(async (params: Record<string, unknown>) => {
@@ -75,6 +121,7 @@ export default function AdminServiceJobsPage() {
   return (
     <AdminLayout>
       <div style={{ padding: "24px 32px", maxWidth: 1280, margin: "0 auto" }}>
+      <SummaryCards />
       <EnterpriseDataGrid
         resourceKey="admin_service_jobs"
         fetchFn={fetchJobs}

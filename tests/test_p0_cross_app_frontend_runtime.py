@@ -91,10 +91,13 @@ def test_admin_booking_detail_shows_payment_breakdown():
 
 
 def test_admin_job_detail_shows_credit_and_deduction_record():
-    src = _read("frontend/super-admin/app/admin/operations/[jobId]/page.tsx")
-    assert "Payment / Credit / Deduction Record" in src
+    # FINAL-L5-05E: /admin/operations/[jobId] is now a redirect to the
+    # canonical service_jobs detail page, which already has a real
+    # "Completed Job Deduction" section (built in FINAL-L5-05B) linking to
+    # the exact Usage Credit Ledger entry.
+    src = _read("frontend/super-admin/app/admin/home-services/service-jobs/[jobId]/page.tsx")
     assert "Completed Job Deduction" in src
-    assert "usage credit deduction" in src
+    assert "Usage Credit Ledger" in src
 
 
 def test_admin_api_types_have_payment_breakdown_fields():

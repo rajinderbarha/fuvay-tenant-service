@@ -364,7 +364,9 @@ def test_admin_operations_group_order():
     block = _extract_group_block(src, "Operations")
     assert block, "Operations group not found"
     assert "/admin/bookings" in block,   "Bookings missing from Operations"
-    assert "/admin/operations" in block, "Jobs missing from Operations"
+    # FINAL-L5-05E: primary Jobs nav item migrated to the canonical
+    # service_jobs page; /admin/operations is now a redirect only.
+    assert "/admin/home-services/service-jobs" in block, "Jobs missing from Operations"
     assert "/admin/customers" in block,  "Customers missing from Operations"
     assert "/admin/staff" in block,      "Staff missing from Operations"
     assert "/admin/reviews" in block,    "Reviews missing from Operations"

@@ -47,9 +47,14 @@ def test_tenant_detail_bookings_table_has_credit_and_payable_columns():
 
 
 def test_tenant_detail_jobs_table_has_payable_and_deduction_columns():
+    # FINAL-L5-05E: the Jobs tab was migrated off legacy jobsApi onto the
+    # canonical service_jobs list (finalRecordsAdminApi.listForTenant), which
+    # returns real collected_amount + completed_job_deduction_credits fields
+    # (batch-joined from usage_credit_ledger, not the old payable_to_provider/
+    # quoted_price legacy-jobs-table fields).
     src = _read(TENANT_DETAIL)
     assert "Completed Job Deduction" in src
-    assert "j.payable_to_provider ?? j.quoted_price" in src
+    assert "j.completed_job_deduction_credits" in src
 
 
 def test_tenant_detail_payment_fields_use_nullable_safe_access():
@@ -59,7 +64,8 @@ def test_tenant_detail_payment_fields_use_nullable_safe_access():
     # that would throw/NaN-render on a missing field.
     assert "bk.credit_applied != null" in src
     assert "(bk.payable_amount ?? bk.quoted_price) != null" in src
-    assert "(j.payable_to_provider ?? j.quoted_price) != null" in src
+    assert "j.collected_amount != null" in src
+    assert "j.completed_job_deduction_credits != null" in src
 
 
 def test_booking_type_has_credit_and_payable_fields():
