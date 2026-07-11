@@ -329,7 +329,8 @@ async def run():
 
         # ── 12. Deterministic job lifecycle scenarios (5 jobs) ───────────────
         async def upsert_job(job_number, status, assignment_status, assigned=None, completion=None,
-                              booking_status="converted"):
+                              booking_status="converted", customer=None):
+            customer = customer or cust1
             existing = (await db.execute(text(
                 "SELECT id FROM service_jobs WHERE job_number=:jn"), {"jn": job_number})).scalar_one_or_none()
             if existing:
@@ -353,7 +354,7 @@ async def run():
                      city, zipcode, address_snapshot, created_at, updated_at)
                 VALUES
                     (:id, :cust, :cat, :off, :t, 'converted', 'Ludhiana', '141001', CAST(:addr AS jsonb), now(), now())
-            """), {"id": str(draft_id), "cust": str(cust1), "cat": str(category_id),
+            """), {"id": str(draft_id), "cust": str(customer), "cat": str(category_id),
                     "off": str(offering) if offering else None, "t": str(tenant_id), "addr": addr_json})
 
             booking_id = uuid.uuid4()
@@ -365,7 +366,7 @@ async def run():
                     (:id, :bnum, :did, :cust, :t, :cat, :off, 'Ludhiana', '141001', CAST(:addr AS jsonb),
                      :bstatus, :astatus, now(), now())
             """), {"id": str(booking_id), "bnum": f"L501-BK-{job_number[-4:]}", "did": str(draft_id),
-                    "cust": str(cust1), "t": str(tenant_id), "cat": str(category_id),
+                    "cust": str(customer), "t": str(tenant_id), "cat": str(category_id),
                     "off": str(offering) if offering else None, "addr": addr_json,
                     "bstatus": booking_status, "astatus": assignment_status})
 
@@ -378,7 +379,7 @@ async def run():
                 VALUES
                     (:id, :jn, :bid, :cust, :t, :cat, :off, :staff, current_date, '10:00-12:00', 'Ludhiana', '141001',
                      :addr, :status, :astatus, :completion, now(), now())
-            """), {"id": str(jid), "jn": job_number, "bid": str(booking_id), "cust": str(cust1), "t": str(tenant_id),
+            """), {"id": str(jid), "jn": job_number, "bid": str(booking_id), "cust": str(customer), "t": str(tenant_id),
                     "cat": str(category_id), "off": str(offering) if offering else None,
                     "staff": str(assigned) if assigned else None,
                     "addr": addr_json,
@@ -397,6 +398,13 @@ async def run():
                        '"technician": "Technician Two", "completed_at": "' +
                        datetime.now(timezone.utc).isoformat() + '"}')
         job_cancelled = await upsert_job("L501-JOB-0005", "cancelled", "unassigned", booking_status="cancelled")
+        # FINAL-L5-02B: a separate booking for Customer Two, distinct from
+        # Customer One's 5 jobs above -- needed for genuine bidirectional
+        # customer-isolation proof (Customer One must not see this one,
+        # Customer Two must not see Customer One's), not just "Customer Two
+        # sees nothing" which only proves one direction.
+        job_customer2 = await upsert_job(
+            "L501-JOB-0006", "new", "unassigned", customer=cust2)
 
         await db.commit()
 

@@ -1,7 +1,8 @@
 "use client";
 import React, { useCallback } from "react";
 import { StatCard, Card, Skeleton, Badge, JobStatusBadge, HealthMeter } from "../shared/ui";
-import { analyticsApi, jobsApi, financeApi, reviewsApi, bookingsApi, staffApi } from "../../lib/api";
+import { analyticsApi, serviceJobsApi, financeApi, reviewsApi, bookingsApi, staffApi } from "../../lib/api";
+import type { ServiceJobRecord } from "../../lib/api";
 import { MonetizationStatusWidget } from "./MonetizationStatusWidget";
 import { OnboardingWidget } from "./OnboardingWidget";
 import { MarketingLaunchWidget } from "./MarketingLaunchWidget";
@@ -10,10 +11,17 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Wrench, CalendarDays, Wallet, BarChart3, Users2, Star } from "lucide-react";
 
 const fmt = (n: number | null | undefined) => `₹${(n ?? 0).toLocaleString("en-IN")}`;
+const shortId = (id?: string | null) => (id ? `${id.slice(0, 8)}…` : "—");
 
 export function HomeServiceDashboard() {
-  const jobs     = useApi(useCallback(() => jobsApi.list({ limit:"8" }), []));
-  const sla      = useApi(useCallback(() => jobsApi.slaAlerts(), []));
+  // FINAL-L5-02B: migrated off legacy jobsApi (/v1/jobs, always-empty field_ops
+  // table) onto serviceJobsApi (/v1/provider/my-records/jobs, canonical
+  // service_jobs table). The legacy "SLA Alerts" KPI had no canonical
+  // equivalent (no SLA tracking exists for service_jobs) and the source
+  // table is permanently empty, so it was replaced with "Unassigned Jobs"
+  // (a real, actionable count derived from the same canonical fetch) rather
+  // than kept as a dead widget or fabricated.
+  const jobs     = useApi(useCallback(() => serviceJobsApi.list({ limit: 8 }), []));
   const wallet   = useApi(useCallback(() => financeApi.wallet(), []));
   const reviews  = useApi(useCallback(() => reviewsApi.getAggregate(), []));
   const bookings = useApi(useCallback(() => bookingsApi.list({ status:"pending_confirmation", limit:"5" }), []));
@@ -42,7 +50,7 @@ export function HomeServiceDashboard() {
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px,1fr))", gap:14 }}>
         {kpis ? [...Array(6)].map((_,i) => <Skeleton key={i} height={100} style={{ borderRadius:14 }}/>) : (<>
           <StatCard icon={<Wrench/>} label="Active Jobs"
-            value={(jobs.data?.jobs ?? []).filter((j: { status: string }) => j.status === "in_progress").length}
+            value={(jobs.data?.items ?? []).filter((j) => j.status === "in_progress").length}
             trend="up" accent="var(--brand)"/>
           <StatCard icon={<CalendarDays/>} label="Pending Bookings"
             value={(bookings.data?.bookings ?? []).length} accent="#7c3aed"/>
@@ -53,8 +61,9 @@ export function HomeServiceDashboard() {
             alert={lowBalance}/>
           <StatCard icon={<Star/>} label="Avg Rating"
             value={r?.avg_composite ? r.avg_composite.toFixed(1) : "—"} accent="#d97706"/>
-          <StatCard icon={<BarChart3/>} label="SLA Alerts"
-            value={(sla.data ?? []).length} accent="#dc2626"/>
+          <StatCard icon={<BarChart3/>} label="Unassigned Jobs"
+            value={(jobs.data?.items ?? []).filter((j) => j.assignment_status === "unassigned").length}
+            accent="#dc2626"/>
         </>)}
       </div>
 
@@ -91,21 +100,21 @@ export function HomeServiceDashboard() {
           <div style={{ padding:16, display:"flex", flexDirection:"column", gap:8 }}>
             {[...Array(5)].map((_,i) => <Skeleton key={i} height={44}/>)}
           </div>
-        ) : (jobs.data?.jobs ?? []).slice(0, 8).map((job: { id: string; job_number: string; status: string; customer_name?: string; service_type?: string; assigned_staff?: string; job_value?: number }) => (
+        ) : (jobs.data?.items ?? []).slice(0, 8).map((job: ServiceJobRecord) => (
           <div key={job.id} style={{ display:"flex", alignItems:"center", gap:12,
             padding:"11px 18px", borderBottom:"1px solid var(--border)" }}>
             <JobStatusBadge status={job.status}/>
             <div style={{ flex:1, minWidth:0 }}>
               <p style={{ fontSize:13, fontWeight:500, color:"var(--text-primary)", margin:0,
                 whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                {job.job_number} — {job.customer_name ?? "Customer"}
+                {job.job_number}
               </p>
               <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:0 }}>
-                {job.service_type} · {job.assigned_staff ?? "Unassigned"}
+                {job.zipcode ?? job.city ?? "—"} · {job.assigned_staff_id ? shortId(job.assigned_staff_id) : "Unassigned"}
               </p>
             </div>
-            {job.job_value != null && (
-              <span style={{ fontSize:12, color:"var(--text-secondary)" }}>{fmt(job.job_value)}</span>
+            {job.completion_data?.collected_amount != null && (
+              <span style={{ fontSize:12, color:"var(--text-secondary)" }}>{fmt(job.completion_data.collected_amount)}</span>
             )}
           </div>
         ))}

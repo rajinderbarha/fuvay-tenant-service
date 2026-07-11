@@ -1,13 +1,15 @@
 "use client";
 /**
  * Staff Detail — full 360° staff member view.
- * PROVEN: staffApi.get() + staffApi.getPerformance() + jobsApi.list() connected.
+ * PROVEN: staffApi.get() + staffApi.getPerformance() + serviceJobsApi.list() connected.
  * PROVEN: updateSchedule calls staffApi.updateSchedule() + refetches.
+ * FINAL-L5-02B: migrated "Recent Jobs" off legacy jobsApi (/v1/jobs) onto
+ * serviceJobsApi (/v1/provider/my-records/jobs, canonical service_jobs).
  */
 import React, { useCallback, useState, useEffect } from "react";
 import { TenantLayout }                  from "../../../../components/layout/TenantLayout";
 import { Card, Btn, Skeleton, Badge, JobStatusBadge, Modal, SectionHeader, EditBtn } from "../../../../components/shared/ui";
-import { staffApi, jobsApi, authApi }    from "../../../../lib/api";
+import { staffApi, serviceJobsApi, authApi }    from "../../../../lib/api";
 import { useApi, useAction }             from "../../../../hooks/useApi";
 import type { WorkingHours, StaffSecurityStatus, StaffLoginEvent } from "../../../../lib/api";
 import { CalendarDays } from "lucide-react";
@@ -23,7 +25,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
 
   const staff       = useApi(useCallback(() => staffApi.get(id),            [id]));
   const performance = useApi(useCallback(() => staffApi.getPerformance(id), [id]));
-  const jobs        = useApi(useCallback(() => jobsApi.list({ limit:"20" }), []));
+  const jobs        = useApi(useCallback(() => serviceJobsApi.list({ limit: 20 }), []));
 
   const [scheduleModal, setScheduleModal] = useState(false);
   const [localHours, setLocalHours]       = useState<WorkingHours>({});
@@ -86,7 +88,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
     if (res) { staff.refetch(); setScheduleModal(false); }
   }
 
-  const staffJobs = (jobs.data?.jobs ?? []).filter(j => j.assigned_staff_id === id).slice(0, 10);
+  const staffJobs = (jobs.data?.items ?? []).filter(j => j.assigned_staff_id === id).slice(0, 10);
   const fmt = (n: number) => `${(n * 100).toFixed(1)}%`;
 
   const STATUS_COLORS: Record<string, string> = {
@@ -314,17 +316,17 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                 <div style={{ flex:1, minWidth:0 }}>
                   <p style={{ fontSize:13, fontWeight:600, color:"var(--text-primary)",
                     margin:"0 0 2px" }}>
-                    {j.job_number} · {j.service_type}
+                    {j.job_number}
                   </p>
                   <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:0 }}>
-                    {j.customer_name ?? "—"} · {j.city} · {new Date(j.created_at).toLocaleDateString("en-IN")}
+                    {j.zipcode ?? j.city ?? "—"} · {j.created_at ? new Date(j.created_at).toLocaleDateString("en-IN") : "—"}
                   </p>
                 </div>
                 <JobStatusBadge status={j.status} />
-                {j.job_value && (
+                {j.completion_data?.collected_amount != null && (
                   <span style={{ fontSize:13, fontWeight:600, color:"var(--success-text)",
                     whiteSpace:"nowrap" }}>
-                    ₹{j.job_value.toLocaleString("en-IN")}
+                    ₹{j.completion_data.collected_amount.toLocaleString("en-IN")}
                   </span>
                 )}
               </div>
