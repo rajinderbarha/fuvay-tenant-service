@@ -180,15 +180,19 @@ def test_tenant_provider_profile_page_exists():
     assert (TENANT / "app/(tenant)/profile/page.tsx").exists()
 
 
+# NOTE: logo/shop-photo upload moved from a generic media_context string +
+# ProfilePhotoUploader to dedicated uploadBusinessLogo/uploadShopPhoto calls
+# (backed by dedicated /v1/provider/profile/logo and .../shop-photo
+# endpoints) inside the inline HeroCard component. Real, working upload
+# functionality either way -- ProfilePhotoUploader is now an unused import.
 def test_tenant_provider_profile_page_has_business_logo_uploader():
     content = (TENANT / "app/(tenant)/profile/page.tsx").read_text(encoding="utf-8")
-    assert "provider_business" in content
-    assert "ProfilePhotoUploader" in content
+    assert "uploadBusinessLogo" in content
 
 
 def test_tenant_provider_profile_page_has_shop_photo():
     content = (TENANT / "app/(tenant)/profile/page.tsx").read_text(encoding="utf-8")
-    assert "provider_shop" in content
+    assert "uploadShopPhoto" in content
 
 
 # ── 9. Topbar / layout updates ────────────────────────────────────────────────

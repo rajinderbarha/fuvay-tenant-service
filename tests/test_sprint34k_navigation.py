@@ -140,7 +140,10 @@ class TestTenantNavConfig(unittest.TestCase):
         self.assertIn("export function resolveTenantNavId", self.src)
 
     def test_has_core_group(self):
-        self.assertIn('"core"', self.src)
+        # Tenant-portal's group taxonomy differs from super-admin's: it uses
+        # "overview" as its first/top group rather than "core" -- a real,
+        # internally-consistent difference, not a missing group.
+        self.assertIn('"overview"', self.src)
 
     def test_has_operations_group(self):
         self.assertIn('"operations"', self.src)
@@ -158,9 +161,13 @@ class TestTenantNavConfig(unittest.TestCase):
         self.assertIn("/dashboard", self.src)
 
     def test_provider_items(self):
+        # Real ids differ from what this test originally assumed: marketing
+        # lives under a plain "marketing" id (group "engagement"), and team
+        # members under "provider-staff" (group "team") -- both correctly
+        # wired via TENANT_PROVIDER_PATH_TO_NAV_ID, just different names.
         self.assertIn("provider-status", self.src)
-        self.assertIn("provider-marketing", self.src)
-        self.assertIn("provider-team-members", self.src)
+        self.assertIn('"marketing"', self.src)
+        self.assertIn("provider-staff", self.src)
         self.assertIn("provider-availability", self.src)
 
     def test_jobs_item(self):
@@ -367,7 +374,12 @@ class TestAdminLayoutUsesNavConfig(unittest.TestCase):
         self.assertIn("nav-config", self.src)
 
     def test_path_to_active_nav_uses_resolver(self):
-        self.assertIn("resolveAdminNavId(pathname)", self.src)
+        # ADMIN-TENANT-E2E-02 Part 3 replaced nav-config.ts's hand-maintained
+        # resolveAdminNavId() with resolveActiveNavId() -- longest-href-prefix
+        # matching directly against the real sidebar hrefs, fixing drift bugs
+        # the old map had. Still delegates to a single resolver, just a
+        # different (newer, more correct) one.
+        self.assertIn("resolveActiveNavId(pathname)", self.src)
 
     def test_sprint34k_comment(self):
         self.assertIn("34K", self.src)

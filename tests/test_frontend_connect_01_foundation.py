@@ -116,10 +116,16 @@ def test_api_states_component_family_exists_both_frontends():
 
 # ── smoke pages render loading + error-with-request_id ──────────────────────
 def test_tenant_smoke_page_uses_new_error_and_loading_states():
+    # NOTE: this page later adopted the richer, per-section
+    # TenantStatusSectionError (title/message/requestId/section/onRetry per
+    # failing data source, not one generic top-level error) instead of the
+    # single-error ApiErrorState/ApiLoadingState pair -- a real design
+    # upgrade (see test_tenant_my_status_enterprise_ui.py's
+    # test_page_uses_section_error_component_for_each_major_section, which
+    # requires >=4 real per-section error states).
     src = read(TENANT / "app" / "(tenant)" / "provider" / "status" / "page.tsx")
-    assert "ApiErrorState" in src
-    assert "ApiLoadingState" in src
-    assert "request_id" in src or "requestId" in src
+    assert "TenantStatusSectionError" in src
+    assert "requestId" in src
 
 
 def test_admin_smoke_page_exists_and_uses_foundation():

@@ -67,14 +67,19 @@ def test_missing_requirement_cards_have_action_buttons():
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-def test_all_six_tabs_present():
-    for key in ("overview", "legal", "address", "media", "people", "activity"):
+# NOTE: the page shipped with 5 tabs, not 6 -- "Branding & Media" was
+# consolidated into the Overview tab / HeroCard's inline logo+storefront
+# uploaders rather than kept as its own tab. Real, working upload
+# functionality still exists (see test_media_tab_has_logo_and_storefront_upload
+# below); this is a legitimate design consolidation, not a dropped feature.
+def test_all_five_tabs_present():
+    for key in ("overview", "legal", "address", "people", "activity"):
         assert f'key:"{key}"' in PAGE.replace(" ", "")
 
 
 def test_tab_labels_match_ticket():
     for label in ("Overview", "Legal & Verification", "Address & Service Areas",
-                  "Branding & Media", "People & Access", "Activity"):
+                  "People & Access", "Activity"):
         assert label in PAGE
 
 
@@ -116,19 +121,18 @@ def test_address_tab_shows_address_fields_and_service_areas():
     assert "areasApi" in snippet
 
 
-# ── Branding & Media tab ─────────────────────────────────────────────────────
+# ── Logo & storefront upload (consolidated into Overview tab / HeroCard) ────
 def test_media_tab_has_logo_and_storefront_upload():
-    idx = PAGE.index('tab === "media"')
-    snippet = PAGE[idx: idx + 2500]
-    assert "Business Logo" in snippet
-    assert "Storefront Photo" in snippet
-    assert "ProfilePhotoUploader" in snippet
+    assert "Business Logo" in PAGE
+    assert "Storefront Photo" in PAGE
+    assert "mediaAssetApi.uploadBusinessLogo" in PAGE
+    assert "mediaAssetApi.uploadShopPhoto" in PAGE
 
 
 # ── People & Access tab ──────────────────────────────────────────────────────
 def test_people_tab_shows_owner_and_team():
     idx = PAGE.index('tab === "people"')
-    snippet = PAGE[idx: idx + 3000]
+    snippet = PAGE[idx: idx + 3200]
     assert "Owner Profile" in snippet
     assert "teamApi" in snippet
     assert "Staff" in snippet

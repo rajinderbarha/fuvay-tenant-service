@@ -117,6 +117,8 @@ const NAV_GROUPS: NavGroup[] = [
     label: "More",
     items: [
       { id: "documents",     href: "/documents",     label: "Documents",     icon: <FileText size={16}/> },
+      { id: "provider-compliance", href: "/provider/compliance", label: "Compliance", icon: <Shield size={16}/> },
+      { id: "privacy",       href: "/account/privacy", label: "Privacy & Data", icon: <Shield size={16}/> },
       { id: "notifications", href: "/notifications", label: "Notifications", icon: <Bell size={16}/> },
       { id: "activity",      href: "/activity",      label: "Activity",      icon: <Activity size={16}/> },
       { id: "settings",      href: "/settings",      label: "Settings",      icon: <Settings size={16}/> },

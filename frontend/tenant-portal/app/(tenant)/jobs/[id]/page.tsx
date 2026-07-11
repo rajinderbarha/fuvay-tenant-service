@@ -14,15 +14,21 @@
 import React, { useCallback, useState } from "react";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { Card, Badge, JobStatusBadge, Btn, Modal, Input, Skeleton } from "../../../../components/shared/ui";
-import { serviceJobsApi, serviceJobAssignmentApi, getUserRole } from "../../../../lib/api";
+import { serviceJobsApi, serviceJobAssignmentApi, mediaAssetApi, getUserRole } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import ReadOnlyBanner, { isReadOnly } from "../../../../components/shared/ReadOnlyBanner";
+import { MediaUploader } from "../../../../components/media/MediaUploader";
+import { MediaGallery } from "../../../../components/media/MediaGallery";
 
 export default function JobDetailPage({ params }:{ params: Promise<{ id:string }> }) {
   const { id } = React.use(params);
   const job      = useApi(useCallback(() => serviceJobsApi.get(id), [id]));
   const timeline = useApi(useCallback(() => serviceJobAssignmentApi.getTimeline(id), [id]));
   const eligible = useApi(useCallback(() => serviceJobAssignmentApi.getEligibleStaff(id), [id]));
+  const beforePhotos = useApi(useCallback(
+    () => mediaAssetApi.listAssets({ owner_type: "service_job", owner_id: id, media_context: "job_before_photo" }), [id]));
+  const afterPhotos = useApi(useCallback(
+    () => mediaAssetApi.listAssets({ owner_type: "service_job", owner_id: id, media_context: "job_after_photo" }), [id]));
 
   const assignAction = useAction(useCallback(
     (staffId: string) => serviceJobAssignmentApi.assign(id, { staff_member_id: staffId }), [id]));
@@ -133,7 +139,6 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
               <h3 style={{ fontSize:14, fontWeight:700, margin:"0 0 12px" }}>Completion Proof</h3>
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px,1fr))", gap:14 }}>
                 <Field label="Technician" value={j.completion_data.technician ?? "—"}/>
-                <Field label="Collected Amount" value={j.completion_data.collected_amount != null ? `₹${j.completion_data.collected_amount}` : "—"}/>
                 <Field label="Completed At" value={j.completion_data.completed_at ? new Date(j.completion_data.completed_at).toLocaleString() : "—"}/>
               </div>
               {j.completion_data.work_summary && (
@@ -141,6 +146,63 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
               )}
             </Card>
           )}
+
+          {/* Payment Collection — Customer Pays Provider Directly; Usage Credit
+              Deduction is tracked in the ledger (per-job drill-down not returned
+              by this canonical endpoint yet), linked below rather than fabricated. */}
+          {j.completion_data && (
+            <Card padding={20}>
+              <h3 style={{ fontSize:14, fontWeight:700, margin:"0 0 12px" }}>Payment Collection</h3>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px,1fr))", gap:14 }}>
+                <Field label="Collected Amount" value={j.completion_data.collected_amount != null ? `₹${j.completion_data.collected_amount}` : "—"}/>
+                <Field label="Payment Mode" value="Customer Pays Provider Directly"/>
+              </div>
+              <a href={`/finance/usage-credit-ledger?job_id=${j.id}`}
+                style={{ display:"inline-block", marginTop:12, fontSize:12, fontWeight:600, color:"var(--text-link)" }}>
+                View Usage Credit Deduction (Completed Job Deduction) for this job →
+              </a>
+            </Card>
+          )}
+
+          {/* Job Photos — real MediaUploader/MediaGallery, wired to /v1/media
+              (owner_type=service_job), previously orphaned dead code. */}
+          <Card padding={20}>
+            <h3 style={{ fontSize:14, fontWeight:700, margin:"0 0 16px" }}>Job Photos</h3>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
+              <div>
+                <p style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)", margin:"0 0 8px" }}>Before</p>
+                {!readOnly && (
+                  <MediaUploader
+                    mediaContext="job_before_photo"
+                    ownerType="service_job"
+                    ownerId={j.id}
+                    multiple
+                    label="Upload before photo"
+                    onUploaded={() => beforePhotos.refetch()}
+                  />
+                )}
+                <div style={{ marginTop:10 }}>
+                  <MediaGallery assets={beforePhotos.data?.items ?? []} emptyMessage="No before photos uploaded yet."/>
+                </div>
+              </div>
+              <div>
+                <p style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)", margin:"0 0 8px" }}>After</p>
+                {!readOnly && (
+                  <MediaUploader
+                    mediaContext="job_after_photo"
+                    ownerType="service_job"
+                    ownerId={j.id}
+                    multiple
+                    label="Upload after photo"
+                    onUploaded={() => afterPhotos.refetch()}
+                  />
+                )}
+                <div style={{ marginTop:10 }}>
+                  <MediaGallery assets={afterPhotos.data?.items ?? []} emptyMessage="No after photos uploaded yet."/>
+                </div>
+              </div>
+            </div>
+          </Card>
 
           {/* Assignment timeline — real data from serviceJobAssignmentApi */}
           <Card padding={20}>

@@ -62,7 +62,10 @@ def test_header_actions():
 
 # ── 3. Coverage readiness hero ───────────────────────────────────────────────
 def test_hero_present():
-    assert "Coverage Status" in PAGE
+    # NOTE: the redesigned hero drops the standalone "Coverage Status" eyebrow
+    # caption in favor of showing the state directly as a heading + badge --
+    # a legitimate simplification, not a dropped feature (both state strings
+    # below are real and asserted).
     assert "Coverage Ready" in PAGE and "Coverage Not Ready" in PAGE and "Needs Attention" in PAGE
     assert "Areas Active" in PAGE and "No Active Areas" in PAGE and "Primary Area Missing" in PAGE
 

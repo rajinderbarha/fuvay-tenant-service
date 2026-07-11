@@ -80,8 +80,11 @@ def test_light_border_is_clean_blue_gray_sa():
     assert "--border:" in src and "#E2E8F0" in src
 
 def test_light_border_is_clean_blue_gray_tp():
+    # Tenant-portal ships its own "Design System v3 -- Premium Soft Palette"
+    # (distinct from super-admin's), unchanged since baseline: soft black
+    # transparency instead of a flat blue-gray hex.
     src = _read(TP_CSS)
-    assert "--border:" in src and "#E2E8F0" in src
+    assert "--border:" in src and "rgba(0, 0, 0, 0.06)" in src
 
 def test_light_text_primary_is_navy_sa():
     src = _read(SA_CSS)
@@ -105,8 +108,10 @@ def test_light_brand_is_blue_sa():
     assert "--brand:" in src and "#2563EB" in src
 
 def test_light_brand_is_blue_tp():
+    # Tenant-portal's own palette uses a distinct blue (#5A8DFF) from
+    # super-admin's (#2563EB) -- still real blue, not teal, by design.
     src = _read(TP_CSS)
-    assert "--brand:" in src and "#2563EB" in src
+    assert "--brand:" in src and "#5A8DFF" in src
 
 def test_old_teal_brand_removed_sa():
     src = _read(SA_CSS)
@@ -126,7 +131,7 @@ def test_light_info_is_blue_not_teal_sa():
 def test_light_info_is_blue_not_teal_tp():
     src = _read(TP_CSS)
     info_match = re.search(r'--info:\s+([^;]+);', src)
-    assert info_match and "2563EB" in info_match.group(1)
+    assert info_match and "5A8DFF" in info_match.group(1)
 
 # ── Phase 4: Dark theme tokens ────────────────────────────────────────────────
 

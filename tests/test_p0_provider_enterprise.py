@@ -228,16 +228,23 @@ class TestFrontendPages:
         assert "sendReminder" in src or "send-reminder" in src or "Bell" in src
 
     def test_new_requests_page_links_to_onboarding(self):
+        # NOTE: provider onboarding review was consolidated from a standalone
+        # /admin/onboarding/providers/{id} route into an "onboarding" tab on
+        # the tenant-detail page.
         src = _read(NEW_REQUESTS_PAGE)
-        assert "/admin/onboarding/providers/" in src
+        assert "tab=onboarding" in src and "/admin/tenants/" in src
 
     def test_new_requests_page_has_pagination(self):
         src = _read(NEW_REQUESTS_PAGE)
         assert "totalPages" in src or "page" in src.lower()
 
     def test_providers_page_has_summary_cards(self):
+        # NOTE: "Provider" terminology evolved to "Tenant" app-wide (this
+        # page itself lives at admin/tenants/page.tsx); summary cards are
+        # real, just fed by adminTenantsApi/TenantsSummary + a KpiCards
+        # component instead of the originally-named types.
         src = _read(PROVIDERS_PAGE)
-        assert "ProviderDirectorySummary" in src or "providersAdminApi" in src
+        assert "adminTenantsApi" in src and "KpiCards" in src
 
     def test_onboarding_page_has_profile_completion_guard(self):
         src = _read(ONBOARDING_PAGE)

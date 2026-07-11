@@ -310,17 +310,22 @@ def test_service_options_page_exists():
 def test_workflow_templates_page_exists():
     assert os.path.exists(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
 
+# NOTE: issue-types was later migrated (alongside service-options, see
+# test_service_options_page_uses_service_option_api) from the Sprint34A
+# PageShell/PageHeader/SearchBar primitives + masterDataApi to the
+# Sprint34E serviceOptionApi/catalogApi model, using SectionHeader/DataTable
+# from shared/ui instead. Real, working functionality either way.
 def test_issue_types_page_uses_page_shell():
     src = _read(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
-    assert "PageShell" in src
+    assert "SectionHeader" in src
 
 def test_issue_types_page_uses_page_header():
     src = _read(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
-    assert "PageHeader" in src
+    assert "DataTable" in src
 
 def test_issue_types_page_uses_search_bar():
     src = _read(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
-    assert "SearchBar" in src
+    assert "Input" in src
 
 def test_service_options_page_uses_page_shell():
     src = _read(os.path.join(SA_PAGES, "service-options", "page.tsx"))
@@ -331,8 +336,9 @@ def test_workflow_templates_page_uses_page_shell():
     assert "PageShell" in src
 
 def test_issue_types_page_uses_master_data_api():
+    # See migration note above test_issue_types_page_uses_page_shell.
     src = _read(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
-    assert "masterDataApi" in src
+    assert "serviceOptionApi" in src
 
 def test_service_options_page_uses_service_option_api():
     # Page was migrated from masterDataApi → serviceOptionApi for correct response shape
@@ -370,13 +376,22 @@ def test_workflow_templates_page_no_tailwind():
 
 # ── Admin Navigation ──────────────────────────────────────────────────────────
 
+# NOTE: migration 089 (Sprint 38) moved these into DB-driven
+# catalog_module_definitions, rendered dynamically per-vertical by
+# VerticalCatalogSection (using each module's real admin_path) rather than
+# as static AdminLayout.tsx strings. See test_admin_service_catalog_group_order
+# in test_admin_tenant_stabilization.py for the same pattern.
 def test_admin_layout_has_issue_types_nav():
     src = _read(SA_LAYOUT)
-    assert "issue-types" in src
+    assert "VerticalCatalogSection" in src
+    seed = _read(os.path.join(ROOT, "alembic", "versions", "089_multi_vertical_catalog_architecture.py"))
+    assert '"/admin/issue-types"' in seed
 
 def test_admin_layout_has_service_options_nav():
     src = _read(SA_LAYOUT)
-    assert "service-options" in src
+    assert "VerticalCatalogSection" in src
+    seed = _read(os.path.join(ROOT, "alembic", "versions", "089_multi_vertical_catalog_architecture.py"))
+    assert '"/admin/service-options"' in seed
 
 def test_admin_layout_has_workflow_templates_nav():
     src = _read(SA_LAYOUT)

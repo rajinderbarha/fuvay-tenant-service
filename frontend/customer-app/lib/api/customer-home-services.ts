@@ -116,7 +116,7 @@ export async function checkServiceability(draftId: string): Promise<any> {
 }
 
 /** Provider-First Matching + Low/Mid/High price options — the REAL matching
- *  call (not the spec's illustrative /matching/select-provider). Backend
+ *  call (not the spec's illustrative select-provider list endpoint). Backend
  *  selects exactly one provider server-side; no list is ever returned. */
 export async function selectProviderForHomeService(draftId: string): Promise<any> {
   return apiFetch(`/v1/customer/home-services/booking-drafts/${draftId}/match-and-price`, { method: "POST" });

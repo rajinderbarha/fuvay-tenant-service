@@ -60,6 +60,8 @@ export const TENANT_NAV_GROUPS: NavGroup[] = [
     label: "More",
     items: [
       { id: "documents",     label: "Documents",     href: "/documents",     icon: "FileText", group: "more" },
+      { id: "provider-compliance", label: "Compliance",   href: "/provider/compliance", icon: "Shield", group: "more" },
+      { id: "privacy",       label: "Privacy & Data", href: "/account/privacy", icon: "Shield", group: "more" },
       { id: "notifications", label: "Notifications", href: "/notifications", icon: "Bell",     group: "more" },
       { id: "activity",      label: "Activity",      href: "/activity",      icon: "Activity", group: "more" },
       { id: "settings",      label: "Settings",      href: "/settings",      icon: "Settings", group: "more" },
@@ -145,7 +147,7 @@ export const TENANT_PROVIDER_PATH_TO_NAV_ID: Record<string, string> = {
   complaints:           "reviews",
   "rework-requests":    "reviews",
   "refund-requests":    "reviews",
-  compliance:           "documents",
+  compliance:           "provider-compliance",
   notifications:        "notifications",
   chat:                 "chat",
   "subscription-status": "finance-package",
@@ -160,6 +162,7 @@ export function resolveTenantNavId(pathname: string): string {
     return TENANT_PROVIDER_PATH_TO_NAV_ID[sub] ?? sub;
   }
   if (section === "analytics") return "analytics";
+  if (section === "account" && segs[1] === "privacy") return "privacy";
 
   return TENANT_PATH_TO_NAV_ID[section] ?? section;
 }

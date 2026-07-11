@@ -87,7 +87,11 @@ def test_no_forbidden_finance_labels_in_any_source_file():
         "Commission", "Security Deposit",
     ]
     for dirpath, _, files in os.walk(APP):
-        if "node_modules" in dirpath or ".next" in dirpath:
+        # e2e/ contains real Playwright runtime guards that legitimately
+        # define these exact forbidden strings/fields (as a FORBIDDEN_TEXT
+        # array) in order to assert they never render at runtime -- not a
+        # violation, the opposite.
+        if "node_modules" in dirpath or ".next" in dirpath or f"{os.sep}e2e" in dirpath:
             continue
         for f in files:
             if f.endswith((".ts", ".tsx", ".css")):
@@ -103,7 +107,11 @@ def test_no_internal_finance_fields_referenced():
         "completed_job_deduction", "excluded_providers", "source_table",
     ]
     for dirpath, _, files in os.walk(APP):
-        if "node_modules" in dirpath or ".next" in dirpath:
+        # e2e/ contains real Playwright runtime guards that legitimately
+        # define these exact forbidden strings/fields (as a FORBIDDEN_TEXT
+        # array) in order to assert they never render at runtime -- not a
+        # violation, the opposite.
+        if "node_modules" in dirpath or ".next" in dirpath or f"{os.sep}e2e" in dirpath:
             continue
         for f in files:
             if f.endswith((".ts", ".tsx")):

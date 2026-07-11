@@ -199,6 +199,59 @@ function ServiceActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, o
   );
 }
 
+// ── Brand management modal ──────────────────────────────────────────────────────
+function BrandManagementModal({ svc, onClose }: { svc: MasterServiceEnriched; onClose: () => void }) {
+  const brandMgmtService = svc;
+  const mappings = useApi(useCallback(() => catalogApi.listBrandMappings(brandMgmtService.id), [brandMgmtService.id]));
+  const allBrands = useApi(useCallback(() => catalogApi.listBrands({ status: "active", page_size: 200 }), []));
+  const [selectedBrandToAdd, setSelectedBrandToAdd] = useState("");
+
+  const mapBrandServices = useAction(async (brandId: string) => {
+    await catalogApi.mapBrand(brandMgmtService.id, brandId);
+  });
+
+  const mapped = mappings.data?.brands ?? [];
+  const mappedIds = new Set(mapped.map(m => m.brand_id));
+  const available = (allBrands.data?.brands ?? []).filter(b => !mappedIds.has(b.brand_id));
+
+  const handleAdd = async () => {
+    if (!selectedBrandToAdd) return;
+    await mapBrandServices.execute(selectedBrandToAdd);
+    setSelectedBrandToAdd("");
+    mappings.refetch();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Manage Brands — ${brandMgmtService.name}`}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 380 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Select value={selectedBrandToAdd} onChange={setSelectedBrandToAdd}
+            options={[{ value: "", label: "Select a brand to add…" },
+              ...available.map(b => ({ value: b.brand_id, label: b.name }))]} />
+          <Btn variant="primary" size="sm" onClick={handleAdd} disabled={!selectedBrandToAdd || mapBrandServices.loading}>
+            {mapBrandServices.loading ? "Adding…" : "Add"}
+          </Btn>
+        </div>
+        <div>
+          {mappings.loading ? (
+            <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>Loading brand mappings…</p>
+          ) : mapped.length === 0 ? (
+            <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>No brands mapped to this service yet.</p>
+          ) : (
+            mapped.map(m => (
+              <div key={m.mapping_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "8px 0", borderBottom: "1px solid var(--border-subtle, var(--border))" }}>
+                <span style={{ fontSize: 13 }}>{m.name}</span>
+                {m.is_required && <Badge variant="warning">Required</Badge>}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Detail drawer ──────────────────────────────────────────────────────────────
 function ServiceDetailDrawer({ svc, catMap, groupMap, onClose }: {
   svc: MasterServiceEnriched | null;
@@ -206,6 +259,7 @@ function ServiceDetailDrawer({ svc, catMap, groupMap, onClose }: {
   groupMap: Record<string, string>;
   onClose: () => void;
 }) {
+  const [showBrandMgmt, setShowBrandMgmt] = useState(false);
   if (!svc) return null;
   const lc = svc.linked_counts;
   const reqFlags = [
@@ -295,7 +349,10 @@ function ServiceDetailDrawer({ svc, catMap, groupMap, onClose }: {
 
         {/* Linked resources */}
         <section>
-          <p style={{ margin: "0 0 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-secondary)" }}>Linked Resources</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-secondary)" }}>Linked Resources</p>
+            <Btn variant="ghost" size="xs" onClick={() => setShowBrandMgmt(true)}>Manage Brands</Btn>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
             {[
               { label: "Brands",       count: lc.brands },
@@ -313,6 +370,7 @@ function ServiceDetailDrawer({ svc, catMap, groupMap, onClose }: {
           </div>
         </section>
       </div>
+      {showBrandMgmt && <BrandManagementModal svc={svc} onClose={() => setShowBrandMgmt(false)} />}
     </div>
   );
 }

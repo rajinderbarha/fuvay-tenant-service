@@ -847,10 +847,16 @@ class TestNavConfig:
         assert '"Compliance"' in src or "'Compliance'" in src
 
     def test_compliance_in_provider_group(self):
+        # NOTE: this taxonomy has no literal "provider" group (groups are
+        # overview/setup/team/finance/more/operations/engagement/insights);
+        # the original assertion coincidentally matched resolveTenantNavId's
+        # `section === "provider"` branch, not a real group. The compliance
+        # item lives in the "more" group -- verify it's actually there.
         src = _read(NAV_FILE)
-        prov_group_pos = src.find('"provider"')
-        compliance_pos = src.find("provider-compliance")
-        assert prov_group_pos < compliance_pos
+        more_group_pos = src.find('id: "more"')
+        compliance_pos = src.find('id: "provider-compliance"')
+        assert more_group_pos != -1 and compliance_pos != -1
+        assert more_group_pos < compliance_pos
 
     def test_path_mapping_compliance(self):
         assert "compliance" in _read(NAV_FILE)

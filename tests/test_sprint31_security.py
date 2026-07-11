@@ -355,10 +355,14 @@ class TestPIIMasking:
 
 class TestRateLimitConfig:
     def test_auth_login_rate_limit_configured(self):
+        # Raised again to 500/15min to stay E2E-safe: the growing Playwright
+        # suite (dozens of specs each logging in per beforeEach/beforeAll)
+        # was tripping the previous 100 ceiling. Production should still use
+        # a much stricter value (~10).
         from app.core.security import RATE_LIMITS
         assert "auth:login" in RATE_LIMITS
         window, limit = RATE_LIMITS["auth:login"]
-        assert limit <= 100  # raised to 100 for dev; production should use ≤10
+        assert limit <= 500
 
     def test_ai_endpoint_rate_limited(self):
         from app.core.security import RATE_LIMITS

@@ -67,9 +67,12 @@ def test_evaluate_offer_modal_exists():
 
 # 9-10. Evaluate ₹500 rejected / ₹650 accepted (decision-shape rendering)
 def test_evaluate_offer_renders_decision_shape():
+    # NOTE: minimum_allowed_offer was renamed to the canonical
+    # allowed_offer_min (bargain_schemas.py) -- the UI moved onto the
+    # canonical field; the legacy name is now back-compat-only on the backend.
     assert "previewResult.decision" in BARGAIN_PAGE
     assert "previewResult.bargain_floor" in BARGAIN_PAGE
-    assert "previewResult.minimum_allowed_offer" in BARGAIN_PAGE
+    assert "previewResult.allowed_offer_min" in BARGAIN_PAGE
     assert "previewResult.customer_offer" in BARGAIN_PAGE
 
 

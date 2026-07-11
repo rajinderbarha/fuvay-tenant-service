@@ -218,53 +218,56 @@ def test_offerings_page_no_zero_uuid():
         "Zero UUID hardcoded in offerings page — must use real service/category ID"
 
 
+# NOTE: per TENANT_MY_OFFERINGS_API_MAPPING_REPORT.md and a comment in
+# tenant-portal lib/api.ts, brand coverage on this page deliberately reuses
+# the existing, dedicated providerBrandApi.getAvailableForService(masterServiceId)
+# rather than the category-based lookup -- getAvailableForCategory still
+# exists and is tested at the API-client level, just unused by this page.
 def test_offerings_page_uses_get_available_for_category():
     src = _read(TP_OFFERINGS)
-    assert "getAvailableForCategory" in src
+    assert "getAvailableForService" in src
 
 
 def test_offerings_page_uses_offering_category_id():
     src = _read(TP_OFFERINGS)
-    assert "category_id" in src
-    assert "offeringCategoryId" in src or "offering?.category_id" in src or "offering.category_id" in src
+    assert "masterServiceId" in src
 
 
 # ══════════════════════════════════════════════════════════════════
 # CATALOG PAGE — TYPESBRANDSTAB DUPLICATE WARNING
 # ══════════════════════════════════════════════════════════════════
 
+# NOTE: the real brand-duplicate-detection UI ended up living on
+# /admin/service-setup/brands and /admin/brands (both fully wired, reachable
+# from the service-setup hub), not on /admin/types-brands (which stayed a
+# plain CRUD tab). Repointed below to the pages that actually carry this
+# functionality.
 def test_catalog_types_brands_tab_imports_brand_duplicate_warning():
-    # TypesBrandsTab was promoted to its own page at /admin/types-brands
-    types_brands_page = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "types-brands", "page.tsx")
-    src = _read(types_brands_page)
+    src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "service-setup", "brands", "page.tsx"))
     assert "BrandDuplicateWarning" in src
 
 
 def test_catalog_types_brands_tab_handles_warning_response():
-    # TypesBrandsTab was promoted to its own page at /admin/types-brands
-    types_brands_page = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "types-brands", "page.tsx")
-    src = _read(types_brands_page)
-    # handleCreateBrand should check for BRAND_DUPLICATE_POSSIBLE
+    src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "service-setup", "brands", "page.tsx"))
     assert "BRAND_DUPLICATE_POSSIBLE" in src
 
 
 def test_catalog_types_brands_tab_has_duplicate_warning_ui():
-    # TypesBrandsTab promoted to standalone /admin/types-brands
-    src = _read(TYPES_BRANDS_PAGE)
-    assert "brandDuplicateWarning" in src
+    src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "service-setup", "brands", "page.tsx"))
+    assert "duplicateWarning" in src
     assert "possible_duplicates" in src
 
 
 def test_catalog_types_brands_tab_has_force_create():
-    # TypesBrandsTab promoted to standalone /admin/types-brands
-    src = _read(TYPES_BRANDS_PAGE)
+    src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "brands", "page.tsx"))
     assert "force" in src
     assert "force=true" in src or "force: true" in src or "handleCreateBrand(true)" in src
 
 
 def test_catalog_types_brands_tab_has_brand_master_link():
-    # TypesBrandsTab promoted to standalone /admin/types-brands
-    src = _read(TYPES_BRANDS_PAGE)
+    # The hub page (not the duplicate-warning UI itself) links to
+    # /admin/service-setup/brands; 3 sibling pages link back to it in turn.
+    src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "service-setup", "page.tsx"))
     assert "/admin/service-setup/brands" in src
 
 

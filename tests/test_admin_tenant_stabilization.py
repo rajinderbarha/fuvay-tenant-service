@@ -15,6 +15,12 @@ import pytest
 
 ADMIN_LAYOUT = os.path.join(os.path.dirname(__file__),
     "../frontend/super-admin/components/layout/AdminLayout.tsx")
+# Sprint 38 (migration 089) moved per-vertical Service Catalog items out of a
+# static AdminLayout NAV_GROUPS block into DB-driven catalog_module_definitions,
+# rendered dynamically by VerticalCatalogSection. These hrefs now live in the
+# migration's seed data, not as literal strings in AdminLayout.tsx.
+CATALOG_MODULES_SEED = os.path.join(os.path.dirname(__file__),
+    "../alembic/versions/089_multi_vertical_catalog_architecture.py")
 TENANT_LAYOUT = os.path.join(os.path.dirname(__file__),
     "../frontend/tenant-portal/components/layout/TenantLayout.tsx")
 ADMIN_APP = os.path.join(os.path.dirname(__file__),
@@ -75,10 +81,13 @@ def test_admin_nav_complaints_present():
 
 
 def test_admin_nav_service_groups_present():
-    """Service Groups must appear in admin nav under Service Catalog."""
-    src = admin_layout_src()
-    assert '"/admin/service-groups"' in src, \
-        "Service Groups href missing from AdminLayout NAV_GROUPS"
+    """Service Groups must appear in admin nav -- dynamically, via the
+    catalog_module_definitions seed rendered by VerticalCatalogSection
+    (migration 089), not as a static AdminLayout NAV_GROUPS entry."""
+    assert "VerticalCatalogSection" in admin_layout_src(), \
+        "AdminLayout no longer renders dynamic per-vertical catalog modules"
+    assert '"/admin/service-groups"' in read(CATALOG_MODULES_SEED), \
+        "Service Groups href missing from catalog_module_definitions seed"
 
 
 def test_admin_nav_categories_present():
@@ -87,18 +96,18 @@ def test_admin_nav_categories_present():
 
 
 def test_admin_nav_master_services_present():
-    src = admin_layout_src()
-    assert '"/admin/master-services"' in src
+    """See test_admin_nav_service_groups_present -- dynamic per-vertical nav."""
+    assert '"/admin/master-services"' in read(CATALOG_MODULES_SEED)
 
 
 def test_admin_nav_issue_types_present():
-    src = admin_layout_src()
-    assert '"/admin/issue-types"' in src
+    """See test_admin_nav_service_groups_present -- dynamic per-vertical nav."""
+    assert '"/admin/issue-types"' in read(CATALOG_MODULES_SEED)
 
 
 def test_admin_nav_service_options_present():
-    src = admin_layout_src()
-    assert '"/admin/service-options"' in src
+    """See test_admin_nav_service_groups_present -- dynamic per-vertical nav."""
+    assert '"/admin/service-options"' in read(CATALOG_MODULES_SEED)
 
 
 def test_admin_nav_bookings_present():
@@ -266,21 +275,25 @@ def test_tenant_fallback_nav_page_exists(href):
         f"Missing tenant page.tsx for nav href {href} (expected at {page})"
 
 
-# ── Tenant layout: dynamic nav builds properly ───────────────────────────────
+# ── Tenant layout: nav visibility is entitlement-driven ──────────────────────
+# NOTE (FINAL-L5-04B): the dynamic-nav-building approach these tests describe
+# (buildApiNavGroups/NAV_GROUPS_FALLBACK/iconForRoute) was replaced by a
+# static NAV_GROUPS list filtered per-tenant by a module/category entitlement
+# system (EntitlementCtx/entitlementApi.getMyModules()/visibleNavGroups) --
+# a deliberate, documented architecture change, not a regression.
 def test_tenant_layout_has_api_nav_load():
     src = tenant_layout_src()
-    assert "categoryDashboardApi" in src, "Tenant nav does not load from API"
-    assert "buildApiNavGroups" in src, "buildApiNavGroups function missing"
-    assert "NAV_GROUPS_FALLBACK" in src, "Static fallback nav missing"
+    assert "entitlementApi" in src, "Tenant nav does not load entitlements from API"
+    assert "getMyModules" in src, "getMyModules call missing"
+    assert "visibleNavGroups" in src, "Entitlement-filtered nav groups missing"
 
 
 def test_tenant_layout_icon_map_has_common_routes():
     src = tenant_layout_src()
-    assert "iconForRoute" in src, "iconForRoute mapping function missing"
     assert '"/dashboard"' in src
     assert '"/bookings"' in src
     assert '"/jobs"' in src
-    assert '"/finance"' in src
+    assert '"/finance/package"' in src
     assert '"/reviews"' in src
 
 
@@ -359,13 +372,13 @@ def test_admin_operations_group_order():
 
 
 def test_admin_service_catalog_group_order():
-    """Service Catalog group should include the full hierarchy."""
-    src = admin_layout_src()
-    block = _extract_group_block(src, "Service Catalog")
-    assert block, "Service Catalog group not found"
-    assert "/admin/categories" in block
-    assert "/admin/service-groups" in block
-    assert "/admin/master-services" in block
-    assert "/admin/types-brands" in block
-    assert "/admin/service-options" in block
-    assert "/admin/issue-types" in block
+    """Service Catalog is no longer a static AdminLayout group -- migration
+    089 replaced it with DB-driven catalog_module_definitions, rendered
+    dynamically per-vertical by VerticalCatalogSection. Verify the seed
+    still contains the full hierarchy, and AdminLayout still renders it."""
+    assert "VerticalCatalogSection" in admin_layout_src(), \
+        "AdminLayout no longer renders dynamic per-vertical catalog modules"
+    seed = read(CATALOG_MODULES_SEED)
+    for href in ("/admin/categories", "/admin/service-groups", "/admin/master-services",
+                 "/admin/types-brands", "/admin/service-options", "/admin/issue-types"):
+        assert f'"{href}"' in seed, f"{href} missing from catalog_module_definitions seed"

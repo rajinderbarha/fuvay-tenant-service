@@ -7,7 +7,10 @@ versions UI backed by the real admin API (no mock data).
 """
 import os
 
-PAGE = os.path.join(os.path.dirname(__file__), "..", "frontend", "super-admin", "app", "admin", "notifications", "page.tsx")
+# NOTE: /admin/notifications is now a separate notification feed/inbox page
+# (mark-read/mark-all-read UI, sprint27AdminApi). The Enterprise Template
+# Center this suite verifies lives at the templates/ subpage.
+PAGE = os.path.join(os.path.dirname(__file__), "..", "frontend", "super-admin", "app", "admin", "notifications", "templates", "page.tsx")
 API_TS = os.path.join(os.path.dirname(__file__), "..", "frontend", "super-admin", "lib", "api.ts")
 
 

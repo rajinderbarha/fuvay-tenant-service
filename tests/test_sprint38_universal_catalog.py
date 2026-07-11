@@ -404,9 +404,15 @@ def test_service_options_page_has_category_filter():
 
 # ── Admin Nav ──────────────────────────────────────────────────────────────────
 
+# NOTE: migration 089 (Sprint 38 follow-up) moved this into DB-driven
+# catalog_module_definitions, rendered dynamically per-vertical by
+# VerticalCatalogSection using each module's real admin_path, rather than a
+# static AdminLayout.tsx string.
 def test_admin_layout_has_service_groups_link():
     src = _read(SA_LAYOUT)
-    assert "service-groups" in src
+    assert "VerticalCatalogSection" in src
+    seed = _read(os.path.join(ROOT, "alembic", "versions", "089_multi_vertical_catalog_architecture.py"))
+    assert '"/admin/service-groups"' in seed
 
 def test_admin_layout_has_catalog_section():
     src = _read(SA_LAYOUT)
