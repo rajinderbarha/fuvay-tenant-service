@@ -128,6 +128,13 @@ class P:
     # ── Customer Users Enterprise Upgrade ────────────────────────────────────
     CUSTOMERS_VIEW_DETAIL           = "customers:view_detail"
     CUSTOMERS_EXPORT                = "customers:export"
+    # FINAL-L5-05R — Enterprise Export resource mapping completion. Two new
+    # export-shaped permission keys covering the Operations and Catalog/
+    # Pricing/System-Configuration domains, which had no existing export
+    # permission to reuse (unlike Finance/Security/Jobs, which already had
+    # FINANCE_EXPORT/SECURITY_AUDIT_EXPORT/FIELD_OPS_JOBS_EXPORT).
+    OPERATIONS_EXPORT              = "operations:export"
+    CATALOG_EXPORT                 = "catalog:export"
     CUSTOMERS_BLOCK                 = "customers:block"
     CUSTOMERS_SUSPEND               = "customers:suspend"
     CUSTOMERS_REACTIVATE            = "customers:reactivate"
@@ -622,6 +629,14 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.REVIEW_READ, P.REVIEW_MODERATE,
         P.NOTIFICATION_LOGS_READ, P.NOTIFICATION_SEND,
         P.ANALYTICS_READ,
+        # FINAL-L5-05R: Operations Admin export of operational
+        # customer-service content (Reviews/Complaints/Refund-Rework
+        # Requests/Bookings/Coaching Appointments/Real Estate Leads) --
+        # explicitly named as Operations-approved in this mission's own
+        # Part 9 policy text ("Reviews... Complaints... operational
+        # reports"), and Operations Admin already holds REVIEW_MODERATE
+        # for this same domain.
+        P.OPERATIONS_EXPORT,
         # FINAL-L5-05O: dashboard-widget read permissions, distinct from the
         # underlying domain read permissions above (Part 3/4's separation of
         # concerns) — Operations Admin sees the base + operations-domain

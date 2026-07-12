@@ -57,8 +57,14 @@ class TestEnterpriseExportPermissionGate:
     def test_jobs_export_resource_requires_field_ops_jobs_export_permission(self):
         assert RESOURCE_EXPORT_PERMISSIONS["admin_service_jobs"] == P.FIELD_OPS_JOBS_EXPORT
 
-    def test_required_export_permission_returns_none_for_unmapped_resource(self):
-        assert EnterpriseFilterRegistry.required_export_permission("admin_categories") is None
+    def test_required_export_permission_returns_none_for_a_resource_key_not_in_the_registry(self):
+        # FINAL-L5-05R: "admin_categories" was the representative unmapped
+        # resource when this test was written (05O only mapped the 12 most
+        # sensitive resources); it is now mapped (05R completed all 39) --
+        # see TestFinalL5_05RExhaustiveResourceMapping for that coverage.
+        # This test now asserts the real remaining None-case: a resource_key
+        # that isn't registered in the filter registry at all.
+        assert EnterpriseFilterRegistry.required_export_permission("totally_fake_resource_key") is None
 
     def test_create_export_router_enforces_the_mapping(self):
         src = _read("app/engines/enterprise_grid/router.py")

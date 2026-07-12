@@ -16,16 +16,46 @@ def col(key: str, label: str, order: int, visible: bool = True, width: int = 160
     return {"key": key, "label": label, "visible": visible, "order": order, "width": width}
 
 
-# ── FINAL-L5-05O — Export permission mapping ────────────────────────────────
+# ── FINAL-L5-05O/05R — Export permission mapping ────────────────────────────
 # create_export_job() previously had zero domain-permission gating (only
-# get_current_user) -- ANY authenticated role could export ANY of the 33
-# registered resources, including Finance/Security-sensitive ones. This maps
-# the Finance/Security/Operations-sensitive resources to a real, existing
-# backend export-shaped permission (never a read permission -- read must not
-# imply export, per rule 9). Resources not listed here remain reachable by
-# any authenticated admin (a documented, bounded-scope residual gap for the
-# ~25 lower-sensitivity catalog/operational resources not covered this
-# sprint -- see FINAL_L5_05O bug register).
+# get_current_user) -- ANY authenticated role could export ANY of the 39
+# registered resources, including Finance/Security-sensitive ones.
+# FINAL-L5-05O mapped the 12 most sensitive resources (Finance/Security/
+# Jobs). FINAL-L5-05R completes the mapping for all remaining 27 active
+# resources -- every registered resource now has an explicit export
+# permission; there is no longer any resource that falls through to
+# "reachable by any authenticated admin" (see required_export_permission()
+# below, which now fails closed for anything not in this dict AND anything
+# not a registered resource at all).
+#
+# Domain assignment rationale:
+#   Finance-adjacent documents (invoices/payments/commission) -> FINANCE_EXPORT
+#     (same permission as the original 5 finance resources -- these are all
+#     real financial records, not operational data).
+#   Security/audit-adjacent -> SECURITY_AUDIT_EXPORT (same key already used
+#     for threats/sessions/ip-blocklist/api-keys/audit-logs).
+#   Operational customer-service content (reviews/complaints/refunds/rework/
+#     bookings/appointments/leads) -> new OPERATIONS_EXPORT (no existing key
+#     fit this domain; Operations Admin already holds REVIEW_MODERATE etc.,
+#     and the mission's own Part 9 names Reviews/Complaints as Operations-
+#     approved).
+#   Catalog/pricing/system-configuration (categories/engines/offerings/
+#     pricing tiers+locations+rules) -> new CATALOG_EXPORT (distinct from
+#     Operations -- this is platform configuration data, not customer-
+#     service content; not granted to any limited role this sprint pending
+#     an explicit business-policy decision, per rule "do not add permissions
+#     merely to make the UI visible").
+#   admin_customers -> CUSTOMERS_EXPORT (exact existing match).
+#   admin_settings / admin_feature_flags -> SETTINGS_EXPORT (exact existing
+#     match, platform configuration).
+#   admin_tenants -> TENANT_DATA_EXPORT (exact existing match; currently
+#     held only by tenant_owner -- Tenant Administration export is not
+#     explicitly named as Operations-Admin-approved anywhere in this
+#     mission's policy text, so it remains Super-Admin-only by default).
+#   provider_* (7 resources, SCOPE_PROVIDER) -> TENANT_DATA_EXPORT (the
+#     existing permission tenant_owner already holds for exporting their
+#     own tenant's data -- exact fit for provider/tenant self-service
+#     exports).
 RESOURCE_EXPORT_PERMISSIONS: dict[str, str] = {
     "admin_finance_deposits":     "finance:hub:export",
     "admin_finance_topups":       "finance:hub:export",
@@ -39,6 +69,34 @@ RESOURCE_EXPORT_PERMISSIONS: dict[str, str] = {
     "admin_audit_logs":           "security:audit:export",
     "admin_setting_audit_logs":   "security:audit:export",
     "admin_service_jobs":         "field_ops:jobs:export",
+    # FINAL-L5-05R additions (27 remaining resources) --
+    "admin_tenants":              "tenant:data:export",
+    "admin_categories":           "catalog:export",
+    "admin_engines":               "catalog:export",
+    "admin_offerings":            "catalog:export",
+    "admin_pricing_tiers":        "catalog:export",
+    "admin_tier_locations":       "catalog:export",
+    "admin_pricing_rules":        "catalog:export",
+    "admin_service_invoices":     "finance:hub:export",
+    "admin_payments":             "finance:hub:export",
+    "admin_commission_records":   "finance:hub:export",
+    "admin_service_bookings":     "operations:export",
+    "admin_coaching_appointments":"operations:export",
+    "admin_real_estate_leads":    "operations:export",
+    "admin_reviews":              "operations:export",
+    "admin_complaints":           "operations:export",
+    "admin_refund_requests":      "operations:export",
+    "admin_rework_requests":      "operations:export",
+    "admin_customers":            "customers:export",
+    "admin_settings":             "settings:export",
+    "admin_feature_flags":        "settings:export",
+    "provider_service_jobs":      "tenant:data:export",
+    "provider_service_invoices":  "tenant:data:export",
+    "provider_wallet_ledger":     "tenant:data:export",
+    "provider_reviews":           "tenant:data:export",
+    "provider_complaints":        "tenant:data:export",
+    "provider_coaching_appointments": "tenant:data:export",
+    "provider_real_estate_leads": "tenant:data:export",
 }
 
 

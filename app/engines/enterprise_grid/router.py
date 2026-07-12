@@ -39,7 +39,10 @@ from app.schemas.base import ok
 from app.engines.enterprise_grid.filter_registry import EnterpriseFilterRegistry
 from app.engines.enterprise_grid.query_service import EnterpriseListQueryService
 from app.engines.enterprise_grid.services import SavedViewService, ColumnPreferenceService, ExportService
-from app.engines.enterprise_grid.constants import ENTERPRISE_SYNC_EXPORT_ROW_LIMIT
+from app.engines.enterprise_grid.constants import (
+    ENTERPRISE_SYNC_EXPORT_ROW_LIMIT, SCOPE_PROVIDER,
+    ERR_EXPORT_FIELD_NOT_ALLOWED, ERR_EXPORT_JOB_NOT_FOUND, ERR_EXPORT_JOB_ACCESS_DENIED,
+)
 from app.core.permissions import permission_checker
 from app.exceptions import ServiceOSException
 
@@ -53,6 +56,33 @@ _query_svc  = EnterpriseListQueryService()
 
 def _rid(r: Request | None) -> str:
     return getattr(r.state, "request_id", "—") if r else "—"
+
+
+# FINAL-L5-05R Part 31: the export service raises plain ValueError for
+# domain errors (a pre-existing, pervasive pattern across this whole
+# router, shared with saved-views/column-preferences -- not something
+# introduced this sprint). Left uncaught, these produced an unhandled 500
+# instead of a controlled 422/404/403, discovered live while verifying the
+# newly-completed resource mapping. Scoped narrowly to the 3 export
+# endpoints (list/get/retry/create) -- saved-views and column-preferences
+# error handling is unrelated to this sprint's Export Authorization scope
+# and is not touched.
+_EXPORT_ERROR_STATUS = {
+    ERR_EXPORT_FIELD_NOT_ALLOWED: 422,
+    ERR_EXPORT_JOB_NOT_FOUND:     404,
+    ERR_EXPORT_JOB_ACCESS_DENIED: 403,
+}
+
+
+def _raise_controlled_export_error(e: ValueError) -> None:
+    msg = str(e)
+    code = msg.split(":", 1)[0]
+    status = _EXPORT_ERROR_STATUS.get(code, 422)
+    raise ServiceOSException(
+        error_code=code if code in _EXPORT_ERROR_STATUS else "EXPORT_FILTER_INVALID",
+        detail=msg,
+        status_code=status,
+    ) from e
 
 
 # ── Request bodies ─────────────────────────────────────────────────────────────
@@ -399,10 +429,21 @@ async def create_export(
     u: UserContext   = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # FINAL-L5-05O: create_export_job previously had zero domain-permission
-    # gating -- any authenticated role could export any of the 33 registered
-    # resources. Finance/Security/Operations-sensitive resources now require
-    # an explicit export-shaped permission (never a read permission alone).
+    # FINAL-L5-05O/05R: create_export_job previously had zero domain-
+    # permission gating -- any authenticated role could export any of the
+    # 39 registered resources. Every registered resource now has an
+    # explicit export-shaped permission (never a read permission alone),
+    # and an unknown/unregistered resource_key fails closed with a
+    # controlled error rather than silently skipping the permission check
+    # (dict.get on an unknown key would otherwise return None, which is
+    # falsy and would have bypassed authorization entirely).
+    if not EnterpriseFilterRegistry.resource_exists(body.resource_key):
+        raise ServiceOSException(
+            error_code="EXPORT_RESOURCE_UNSUPPORTED",
+            detail=f"Export resource '{body.resource_key}' is not a recognized export resource.",
+            status_code=422,
+            context={"resource_key": body.resource_key},
+        )
     required = EnterpriseFilterRegistry.required_export_permission(body.resource_key)
     if required and not permission_checker.has(
         role=u.role, permission=required, overrides=getattr(u, "permission_overrides", None),
@@ -414,14 +455,38 @@ async def create_export(
             resolution="Contact your administrator to grant this permission.",
             context={"required": required, "role": u.role},
         )
-    job = await _export.create_export_job(
-        db, u.user_id, u.tenant_id,
-        resource_key         = body.resource_key,
-        filters              = body.filters,
-        columns              = body.columns,
-        export_format        = body.export_format,
-        estimated_row_count  = body.estimated_row_count,
-    )
+    # FINAL-L5-05R Part 10/11/23: SCOPE_PROVIDER resources must always be
+    # exported using the caller's own tenant_id -- a payload filter cannot
+    # override authorized scope. This mirrors EnterpriseListQueryService.
+    # validate_scope() (used by the list/query path) but was never wired
+    # into export creation, so a provider/tenant-side caller could
+    # previously request an export with a filters.tenant_id belonging to a
+    # different tenant with no rejection at job-creation time.
+    scope_type = EnterpriseFilterRegistry.get_scope_type(body.resource_key)
+    if scope_type == SCOPE_PROVIDER and u.role != "super_admin":
+        # super_admin is platform-wide and legitimately exports any
+        # tenant's provider-scoped data (matches the established pattern
+        # elsewhere in this codebase, e.g. ServiceabilityService.
+        # _assert_owns_tenant(), which exempts super_admin identically).
+        requested_tenant_id = body.filters.get("tenant_id") if body.filters else None
+        if requested_tenant_id and str(requested_tenant_id) != str(u.tenant_id):
+            raise ServiceOSException(
+                error_code="EXPORT_CROSS_TENANT_FORBIDDEN",
+                detail="Cannot export another tenant's data.",
+                status_code=403,
+                context={"resource_key": body.resource_key},
+            )
+    try:
+        job = await _export.create_export_job(
+            db, u.user_id, u.tenant_id,
+            resource_key         = body.resource_key,
+            filters              = body.filters,
+            columns              = body.columns,
+            export_format        = body.export_format,
+            estimated_row_count  = body.estimated_row_count,
+        )
+    except ValueError as e:
+        _raise_controlled_export_error(e)
     return ok(job.to_dict(), _rid(r), "enterprise.export.created")
 
 
@@ -456,7 +521,10 @@ async def get_export(
     u: UserContext   = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    job = await _export.get_export_job(db, export_id, u.user_id)
+    try:
+        job = await _export.get_export_job(db, export_id, u.user_id)
+    except ValueError as e:
+        _raise_controlled_export_error(e)
     return ok(job.to_dict(), _rid(r), "enterprise.export.get")
 
 
@@ -476,7 +544,10 @@ async def retry_export(
     u: UserContext   = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    job = await _export.get_export_job(db, export_id, u.user_id)
+    try:
+        job = await _export.get_export_job(db, export_id, u.user_id)
+    except ValueError as e:
+        _raise_controlled_export_error(e)
     from app.engines.enterprise_grid.constants import EXPORT_PENDING
     job.status         = EXPORT_PENDING
     job.failure_reason = None

@@ -328,6 +328,18 @@ class ExportService:
         await db.commit()
         return job
 
+    # FINAL-L5-05R Part 14: CSV formula injection mitigation. A cell value
+    # beginning with =, +, -, @, tab, or CR opens a formula context in
+    # Excel/Sheets when the file is opened -- prefixing with a single quote
+    # neutralizes it (standard OWASP CSV-injection mitigation) without
+    # altering the visible value for any legitimate data.
+    _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+    def _sanitize_csv_cell(self, value: object) -> object:
+        if isinstance(value, str) and value.startswith(self._FORMULA_PREFIXES):
+            return "'" + value
+        return value
+
     def generate_csv(
         self,
         resource_key: str,
@@ -340,7 +352,7 @@ class ExportService:
         writer         = csv.DictWriter(buf, fieldnames=safe_cols, extrasaction="ignore")
         writer.writeheader()
         for row in rows:
-            writer.writerow({k: row.get(k, "") for k in safe_cols})
+            writer.writerow({k: self._sanitize_csv_cell(row.get(k, "")) for k in safe_cols})
         return buf.getvalue()
 
     async def mark_completed(
