@@ -571,8 +571,8 @@ function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
 }
 
 // ── Admin Provider Coverage Areas Tab (read-only) ─────────────────────────────
-function ProviderAreasTab({ tenantId }: { tenantId: string }) {
-  const areas = useApi(useCallback(() => adminProviderEnablementApi.listServiceAreas(tenantId), [tenantId]));
+function ProviderAreasTab({ tenantId, refreshToken }: { tenantId: string; refreshToken?: number }) {
+  const areas = useApi(useCallback(() => adminProviderEnablementApi.listServiceAreas(tenantId), [tenantId, refreshToken]));
   const list: AdminTenantServiceArea[] = areas.data?.areas ?? [];
 
   if (areas.loading) return <Skeleton height={200}/>;
@@ -605,10 +605,10 @@ function ProviderAreasTab({ tenantId }: { tenantId: string }) {
           </thead>
           <tbody>
             {list.map((a, i) => (
-              <tr key={a.area_id}
+              <tr key={a.id}
                 style={{ borderBottom: i < list.length-1 ? "1px solid var(--border)" : "none" }}>
                 <td style={{ padding:"10px 12px" }}>
-                  <Badge variant="muted" size="sm">{a.area_type}</Badge>
+                  <Badge variant="muted" size="sm">{a.coverage_type}</Badge>
                 </td>
                 <td style={{ padding:"10px 12px", fontSize:12, color:"var(--text-secondary)" }}>{a.state ?? "—"}</td>
                 <td style={{ padding:"10px 12px", fontSize:12, color:"var(--text-secondary)" }}>{a.district ?? "—"}</td>
@@ -1182,6 +1182,11 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
   const [notifySubject,   setNotifySubject]   = useState("");
   const [notifyMsg,       setNotifyMsg]       = useState("");
   const [copiedId,        setCopiedId]        = useState(false);
+  // FINAL-L5-05T: after creating a service area, ProviderAreasTab must
+  // refetch its own list (previously the modal called `zones.refetch()`,
+  // which is the unrelated Geo Zones data source at /v1/geo/... -- newly
+  // created service areas never appeared without a full page reload).
+  const [areasRefreshToken, setAreasRefreshToken] = useState(0);
 
   const requestChangesAction = useAction(useCallback((reason: string) =>
     adminTenantsApi.requestChanges(id, reason), [id]));
@@ -2829,7 +2834,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
       {tab === "provider-offerings" && <ProviderOfferingsTab tenantId={id}/>}
 
       {/* ════════════════════ PROVIDER COVERAGE AREAS ════════════════════ */}
-      {tab === "provider-areas" && <ProviderAreasTab tenantId={id}/>}
+      {tab === "provider-areas" && <ProviderAreasTab tenantId={id} refreshToken={areasRefreshToken}/>}
 
       {/* ════════════════════ PROVIDER TEAM ════════════════════ */}
       {tab === "provider-team" && <ProviderTeamTab tenantId={id}/>}
@@ -3126,7 +3131,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                 coverage_type:areaCoverage,
               });
               if (res !== null) {
-                zones.refetch();
+                setAreasRefreshToken(t => t + 1);
                 setAddAreaOpen(false);
                 setAreaCity(""); setAreaState(""); setAreaZipcode(""); setAreaCoverage("city");
                 notify(`Service area for ${areaCity} added.`);

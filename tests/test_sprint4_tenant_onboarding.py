@@ -165,25 +165,9 @@ def _make_user(**kwargs):
     return u
 
 
-def _make_area(**kwargs):
-    a = MagicMock()
-    a.id = uuid.uuid4()
-    a.tenant_id = kwargs.get("tenant_id", uuid.uuid4())
-    a.coverage_type = kwargs.get("coverage_type", "city")
-    a.country = "India"
-    a.state = kwargs.get("state", "Punjab")
-    a.district = None
-    a.city = kwargs.get("city", "Ludhiana")
-    a.zipcode = None
-    a.zone_name = None
-    a.radius_km = None
-    a.priority = 100
-    a.is_active = True
-    a.created_at = MagicMock(isoformat=MagicMock(return_value="2026-01-01T00:00:00+00:00"))
-    for k, v in kwargs.items():
-        setattr(a, k, v)
-    return a
-
+# FINAL-L5-05T: _make_area() removed -- it only ever backed the now-
+# removed AdminTenantService service-area tests (see the "SERVICE AREAS"
+# block further down, also removed this sprint).
 
 # ═══════════════════════════════════════════════════════════════
 # ADMIN TENANT SERVICE — import + instantiation
@@ -562,68 +546,18 @@ async def test_staff_not_found():
         await svc.deactivate_staff(uuid.uuid4(), uuid.uuid4())
 
 
-# ═══════════════════════════════════════════════════════════════
-# SERVICE AREAS
-# ═══════════════════════════════════════════════════════════════
-
-@pytest.mark.asyncio
-async def test_list_service_areas_empty():
-    db = _make_db()
-    tenant = _make_tenant()
-    area_result = MagicMock()
-    area_result.scalars.return_value.all.return_value = []
-    db.execute.side_effect = [_scalar_result(tenant), area_result]
-    svc = await _make_svc(db)
-    result = await svc.list_service_areas(tenant.id)
-    assert result["total"] == 0
-
-
-@pytest.mark.asyncio
-async def test_create_service_area_missing_city():
-    from app.exceptions import ServiceOSException
-    db = _make_db()
-    tenant = _make_tenant()
-    db.execute.return_value = _scalar_result(tenant)
-    svc = await _make_svc(db)
-    with pytest.raises(ServiceOSException) as exc:
-        await svc.create_service_area(tenant.id, {"coverage_type": "city", "state": "Punjab"})
-    assert "TENANT_SERVICE_AREA_INVALID" == exc.value.error_code
-
-
-@pytest.mark.asyncio
-async def test_create_service_area_invalid_type():
-    from app.exceptions import ServiceOSException
-    db = _make_db()
-    tenant = _make_tenant()
-    db.execute.return_value = _scalar_result(tenant)
-    svc = await _make_svc(db)
-    with pytest.raises(ServiceOSException) as exc:
-        await svc.create_service_area(tenant.id, {
-            "coverage_type": "country", "city": "Ludhiana", "state": "Punjab"
-        })
-    assert "TENANT_SERVICE_AREA_INVALID" == exc.value.error_code
-
-
-@pytest.mark.asyncio
-async def test_delete_service_area():
-    db = _make_db()
-    area = _make_area(is_active=True)
-    db.execute.return_value = _scalar_result(area)
-    svc = await _make_svc(db)
-    result = await svc.delete_service_area(uuid.uuid4(), area.id)
-    assert result["deleted"] is True
-    assert area.is_active is False
-
-
-@pytest.mark.asyncio
-async def test_service_area_not_found():
-    from app.exceptions import NotFoundException
-    db = _make_db()
-    db.execute.return_value = _scalar_result(None)
-    svc = await _make_svc(db)
-    with pytest.raises(NotFoundException):
-        await svc.delete_service_area(uuid.uuid4(), uuid.uuid4())
-
+# FINAL-L5-05T: the "SERVICE AREAS" test block that lived here exercised
+# AdminTenantService.list_service_areas/create_service_area/
+# delete_service_area directly -- methods that only ever backed dead,
+# HTTP-unreachable routes (shadowed by app.engines.serviceability.router,
+# confirmed in FINAL-L5-05Q) and have since been removed entirely (the
+# certified canonical owner is now ServiceabilityService; see
+# docs/final-l5-05/FINAL_L5_05T_ADR_SERVICE_AREA_CANONICAL_OWNER.md).
+# Removed rather than kept passing against dead code (mission rule 15:
+# "do not keep tests that exercise only dead handlers"). Equivalent
+# coverage for the real, live implementation lives in
+# tests/test_serviceability_hardening.py and
+# tests/test_final_l5_05t_service_area_route_canonicalization.py.
 
 # ═══════════════════════════════════════════════════════════════
 # SECURITY DEPOSIT
@@ -915,7 +849,9 @@ def test_portal_router_has_profile_route():
     assert any("profile" in p for p in paths)
 
 
-def test_portal_router_has_service_areas_route():
+def test_portal_router_no_longer_has_a_service_areas_route():
+    # FINAL-L5-05T: removed entirely -- app.engines.serviceability.router
+    # is the certified canonical owner of /v1/tenant/service-areas.
     from app.engines.tenant_engine.portal_router import router
     paths = [r.path for r in router.routes]
-    assert any("service-areas" in p for p in paths)
+    assert not any("service-areas" in p for p in paths)

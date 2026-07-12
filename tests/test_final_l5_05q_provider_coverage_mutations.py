@@ -61,6 +61,17 @@ defense-in-depth (correct in themselves, and would matter if a future
 change reorders router registration or a new caller invokes the service
 directly) but are NOT the live-path fix -- documented honestly, not
 conflated with the real fix above.
+
+FINAL-L5-05T UPDATE: the duplicate-route architecture flagged here as
+unresolved has since been closed. `ServiceabilityService` is now the
+single certified canonical owner of Tenant Service Areas (see
+`FINAL_L5_05T_ADR_SERVICE_AREA_CANONICAL_OWNER.md`); the shadowed
+`AdminTenantService` methods and both duplicate route families (admin
+AND, previously-undiscovered here, tenant-portal) were removed entirely
+rather than left registered-but-dead. `TestDuplicateRouteRegistrationFinding`
+and `TestAdminTenantServiceDefenseInDepthFixesStillCorrect` below are
+updated accordingly -- see `tests/test_final_l5_05t_service_area_route_canonicalization.py`
+for the full 05T guard suite.
 """
 from __future__ import annotations
 
@@ -244,7 +255,14 @@ class TestLiveServiceabilityDuplicatePreventionRealDB:
 
 class TestDuplicateRouteRegistrationFinding:
     """Static guard pinning the router-shadowing discovery so it isn't
-    silently reintroduced or worsened."""
+    silently reintroduced or worsened.
+
+    FINAL-L5-05T closed this: the shadow routes were removed entirely
+    rather than left dead, so the duplicate-path assertion below is
+    inverted from its original 05Q form -- it now pins the ABSENCE of the
+    duplicate, not its presence. See
+    tests/test_final_l5_05t_service_area_route_canonicalization.py for the
+    full route-uniqueness guard suite."""
 
     def test_serviceability_router_registered_before_tenant_engine_admin_router(self):
         src = _read("app/main.py")
@@ -255,11 +273,15 @@ class TestDuplicateRouteRegistrationFinding:
             "implementation is actually live before trusting either one's fixes."
         )
 
-    def test_both_routers_still_define_the_same_service_areas_path(self):
-        serviceability_src = _read("app/engines/serviceability/router.py")
+    def test_tenant_engine_admin_router_no_longer_defines_a_service_areas_path(self):
         admin_router_src = _read("app/engines/tenant_engine/admin_router.py")
-        assert '"/v1/admin/tenants/{tenant_id}/service-areas"' in serviceability_src
-        assert '"/{tenant_id}/service-areas"' in admin_router_src
+        assert '"/{tenant_id}/service-areas"' not in admin_router_src
+        assert 'service-areas' not in admin_router_src or 'FINAL-L5-05T' in admin_router_src
+
+    def test_tenant_engine_portal_router_no_longer_defines_a_service_areas_path(self):
+        portal_router_src = _read("app/engines/tenant_engine/portal_router.py")
+        assert '"/service-areas"' not in portal_router_src
+        assert '@router.get("/service-areas")' not in portal_router_src
 
 
 class TestServiceabilityAdminRouterPassesTenantId:
@@ -305,26 +327,21 @@ class TestOfferingsAuditNowWritten:
         assert "peo.tenant_id = :tid AND peo.id = :oid" in block
 
 
-class TestAdminTenantServiceDefenseInDepthFixesStillCorrect:
-    """The AdminTenantService fixes made earlier are dead code for HTTP
-    traffic (see TestDuplicateRouteRegistrationFinding) but are still
-    correct in themselves and are pinned here as defense-in-depth."""
+class TestAdminTenantServiceServiceAreaMethodsRemoved:
+    """FINAL-L5-05T: the AdminTenantService service-area methods pinned as
+    'defense-in-depth' in FINAL-L5-05Q were dead code for HTTP traffic
+    (confirmed here in 05Q) and have since been removed entirely (mission
+    rule: 'do not leave unreachable mutation code presented as active').
+    This class now pins their ABSENCE, replacing the old
+    TestAdminTenantServiceDefenseInDepthFixesStillCorrect."""
 
-    def test_load_area_scopes_by_both_tenant_and_area_id(self):
+    def test_admin_tenant_service_no_longer_defines_service_area_methods(self):
         src = _read("app/engines/tenant_engine/admin_service.py")
-        start = src.index("async def _load_area(")
-        end = src.index("return a", start)
-        block = src[start:end]
-        assert "TenantServiceArea.id == area_id" in block
-        assert "TenantServiceArea.tenant_id == tenant_id" in block
-
-    def test_create_service_area_uses_advisory_lock_and_duplicate_check(self):
-        src = _read("app/engines/tenant_engine/admin_service.py")
-        start = src.index("async def create_service_area(")
-        end = src.index("async def update_service_area(", start)
-        block = src[start:end]
-        assert "pg_advisory_xact_lock" in block
-        assert "DUPLICATE_PROVIDER_ASSIGNMENT" in block
+        for method in ("async def list_service_areas(", "async def create_service_area(",
+                       "async def update_service_area(", "async def delete_service_area(",
+                       "async def _load_area(", "def _area_dict("):
+            assert method not in src, f"{method} should have been removed in FINAL-L5-05T"
+        assert "FINAL-L5-05T" in src
 
 
 class TestNoUndiscoveredProviderMutationSurface:

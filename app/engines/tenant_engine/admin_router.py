@@ -619,57 +619,18 @@ async def update_staff_photo(
     return await svc.update_staff_photo(tenant_id, staff_id, photo_url)
 
 
-# ═══════════════════════════════════════════════════════════════
-# PHASE 8 — SERVICE AREAS
-# ═══════════════════════════════════════════════════════════════
-
-@router.get("/{tenant_id}/service-areas")
-async def list_service_areas(
-    tenant_id: uuid.UUID,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_super_admin),
-) -> dict:
-    svc = _svc(db, request, user)
-    return await svc.list_service_areas(tenant_id)
-
-
-@router.post("/{tenant_id}/service-areas", status_code=201)
-async def create_service_area(
-    tenant_id: uuid.UUID,
-    payload: dict,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_super_admin),
-) -> dict:
-    svc = _svc(db, request, user)
-    return await svc.create_service_area(tenant_id, payload)
-
-
-@router.patch("/{tenant_id}/service-areas/{area_id}")
-async def update_service_area(
-    tenant_id: uuid.UUID,
-    area_id: uuid.UUID,
-    payload: dict,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_super_admin),
-) -> dict:
-    svc = _svc(db, request, user)
-    return await svc.update_service_area(tenant_id, area_id, payload)
-
-
-@router.delete("/{tenant_id}/service-areas/{area_id}")
-async def delete_service_area(
-    tenant_id: uuid.UUID,
-    area_id: uuid.UUID,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_super_admin),
-) -> dict:
-    svc = _svc(db, request, user)
-    return await svc.delete_service_area(tenant_id, area_id)
-
+# FINAL-L5-05T: Service Area routes removed from this router entirely.
+# GET/POST/DELETE were exact (method, path) duplicates of
+# app.engines.serviceability.router's admin_list/create/delete_service_area
+# (unreachable dead code -- serviceability.router is registered first in
+# app/main.py). PATCH was a second, undiscovered LIVE mutation path on a
+# different HTTP verb from the canonical PUT -- not shadowed, genuinely
+# reachable, and bypassed serviceability's coverage validation and
+# duplicate-on-update check. See
+# docs/final-l5-05/FINAL_L5_05T_ADR_SERVICE_AREA_CANONICAL_OWNER.md.
+# Canonical: GET/POST /v1/admin/tenants/{tenant_id}/service-areas,
+# PUT/DELETE /v1/admin/tenants/{tenant_id}/service-areas/{area_id}
+# (app/engines/serviceability/router.py).
 
 # ═══════════════════════════════════════════════════════════════
 # PHASE 11 — SECURITY DEPOSIT + CREDIT WALLET

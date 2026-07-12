@@ -40,6 +40,7 @@ def make_db() -> MagicMock:
     db.refresh = AsyncMock()
     db.get = AsyncMock()
     db.execute = AsyncMock()
+    db.flush = AsyncMock()
     return db
 
 

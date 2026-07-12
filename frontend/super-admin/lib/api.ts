@@ -4488,12 +4488,15 @@ export const adminTenantApi = {
   deactivateStaff:(tenantId: string, staffId: string) =>
     apiFetch<AdminTenantUser>(`/v1/admin/tenants/${tenantId}/staff/${staffId}/deactivate`, { method:"POST" }),
 
-  // Service Areas
-  listServiceAreas:  (tenantId: string) => apiFetch<{ service_areas: AdminServiceArea[]; total: number }>(`/v1/admin/tenants/${tenantId}/service-areas`),
+  // Service Areas (FINAL-L5-05T: canonical backend is ServiceabilityService;
+  // response shape is `{id, coverage_type, ...}` via TenantServiceArea.to_dict(),
+  // not the previously-typed `{area_id, ...}` shape that matched the
+  // now-removed shadow tenant_engine implementation. listServiceAreas/
+  // deleteServiceArea were dead client code (no caller anywhere in this
+  // app) and have been removed; createServiceArea's response type is
+  // fixed to match the real, live contract.)
   createServiceArea: (tenantId: string, data: AdminServiceAreaCreate) =>
-    apiFetch<AdminServiceArea>(`/v1/admin/tenants/${tenantId}/service-areas`, { method:"POST", body:JSON.stringify(data) }),
-  deleteServiceArea: (tenantId: string, areaId: string) =>
-    apiFetch<{ deleted: boolean; area_id: string }>(`/v1/admin/tenants/${tenantId}/service-areas/${areaId}`, { method:"DELETE" }),
+    apiFetch<AdminTenantServiceArea>(`/v1/admin/tenants/${tenantId}/service-areas`, { method:"POST", body:JSON.stringify(data) }),
 
   // Finance
   getSecurityDeposit: (tenantId: string) => apiFetch<AdminDepositDetail>(`/v1/admin/tenants/${tenantId}/security-deposit`),
@@ -4527,11 +4530,10 @@ export interface AdminTenantUser {
   is_active:boolean; is_verified:boolean; last_login_at?:string; created_at:string;
 }
 export interface AdminTenantUserCreate { name:string; email:string; phone?:string; role?:string; }
-export interface AdminServiceArea {
-  area_id:string; tenant_id:string; coverage_type:string; country:string;
-  state:string; district?:string; city:string; zipcode?:string;
-  zone_name?:string; radius_km?:number; priority:number; is_active:boolean; created_at:string;
-}
+// FINAL-L5-05T: AdminServiceArea (area_id-keyed) removed -- it matched the
+// shape of the now-removed shadow tenant_engine implementation, not the
+// canonical serviceability response. Use AdminTenantServiceArea instead
+// (id-keyed, matches TenantServiceArea.to_dict() exactly).
 export interface AdminServiceAreaCreate {
   coverage_type?:string; city:string; state:string; zipcode?:string;
   district?:string; zone_name?:string; country?:string; priority?:number;
@@ -5173,9 +5175,15 @@ export interface AdminTenantEnabledOffering {
   suspension_reason: string | null;
 }
 
+// FINAL-L5-05T: field names corrected to match the real, live response
+// from ServiceabilityService (TenantServiceArea.to_dict()) -- `area_id`/
+// `area_type` never existed on the canonical response (only on the now-
+// removed shadow tenant_engine implementation); every row previously
+// rendered a blank "Type" badge and an undefined React list key.
 export interface AdminTenantServiceArea {
-  area_id: string;
-  area_type: string;
+  id: string;
+  coverage_type: string;
+  tenant_id: string;
   state: string | null;
   district: string | null;
   city: string | null;
@@ -5184,6 +5192,7 @@ export interface AdminTenantServiceArea {
   radius_km: number | null;
   is_primary: boolean;
   is_active: boolean;
+  service_count?: number;
   created_at: string | null;
 }
 
@@ -5235,7 +5244,9 @@ export const adminProviderEnablementApi = {
       { method: "POST" }
     ),
   listServiceAreas: (tenantId: string) =>
-    apiFetch<{ areas: AdminTenantServiceArea[]; count: number }>(
+    // FINAL-L5-05T: the real wrapper key is `total`, not `count` (matches
+    // every other Service Area list response -- admin and tenant-portal).
+    apiFetch<{ areas: AdminTenantServiceArea[]; total: number }>(
       `/v1/admin/tenants/${tenantId}/service-areas`
     ),
   listTeamMembers: (tenantId: string) =>

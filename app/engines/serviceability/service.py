@@ -33,6 +33,7 @@ from app.engines.tenant_engine.models import Tenant, TenantLimits
 from app.engines.service_catalog.models import ServiceCatalogItem
 from app.engines.auth.models import User
 from app.exceptions import ServiceOSException, NotFoundException
+from app.core.audit import record_platform_audit
 
 logger = structlog.get_logger("serviceability.service")
 utcnow = lambda: datetime.now(timezone.utc)
@@ -244,6 +245,24 @@ class ServiceabilityService:
         ):
             raise NotFoundException("TenantServiceArea", str(tenant_id))
 
+    # FINAL-L5-05T: this service is the certified canonical owner of Tenant
+    # Service Areas (see docs/final-l5-05/FINAL_L5_05T_ADR_SERVICE_AREA_CANONICAL_OWNER.md).
+    # Before this sprint it wrote zero audit events for create/update/
+    # deactivate -- the only audit trail for these mutations lived in the
+    # shadowed, HTTP-unreachable app.engines.tenant_engine.admin_service
+    # implementation. Ported here so the canonical, live path has the audit
+    # coverage the mission requires (Part 14) rather than relying on dead
+    # code that happened to be correct.
+    async def _audit_service_area(self, *, operation: str, tenant_id: uuid.UUID,
+                                   area_id: uuid.UUID, before: dict | None,
+                                   after: dict | None) -> None:
+        await record_platform_audit(
+            self.db, operation=operation, engine_id="serviceability",
+            tenant_id=tenant_id, entity_type="service_area", entity_id=str(area_id),
+            actor_id=self.actor_id, actor_role=self.actor_role,
+            request_id=self.request_id, before=before, after=after,
+        )
+
     async def list_service_areas(self, tenant_id: uuid.UUID) -> dict:
         self._assert_owns_tenant(tenant_id)
         rows = (await self.db.execute(
@@ -348,6 +367,11 @@ class ServiceabilityService:
             is_active=payload.get("is_active", True), is_primary=make_primary,
         )
         self.db.add(area)
+        await self.db.flush()
+        await self._audit_service_area(
+            operation="SERVICE_AREA_CREATED", tenant_id=tenant_id, area_id=area.id,
+            before=None, after=area.to_dict(),
+        )
         await self.db.commit()
         await self.db.refresh(area)
         logger.info("service_area.created", tenant_id=str(tenant_id), area_id=str(area.id))
@@ -377,6 +401,7 @@ class ServiceabilityService:
         # cross-tenant substitution, not just a unit test.
         if admin_tenant_id is not None and area.tenant_id != admin_tenant_id:
             raise NotFoundException("TenantServiceArea", str(area_id))
+        before = area.to_dict()
         coverage_type = payload.get("coverage_type", area.coverage_type)
         city = payload.get("city", area.city)
         state = payload.get("state", area.state)
@@ -413,6 +438,11 @@ class ServiceabilityService:
         for k, v in payload.items():
             if v is not None and hasattr(area, k):
                 setattr(area, k, v)
+        await self.db.flush()
+        await self._audit_service_area(
+            operation="SERVICE_AREA_UPDATED", tenant_id=area.tenant_id, area_id=area.id,
+            before=before, after=area.to_dict(),
+        )
         await self.db.commit()
         await self.db.refresh(area)
         return area.to_dict()
@@ -424,6 +454,7 @@ class ServiceabilityService:
         # same missing cross-tenant check applied here.
         if admin_tenant_id is not None and area.tenant_id != admin_tenant_id:
             raise NotFoundException("TenantServiceArea", str(area_id))
+        before = area.to_dict()
         area.is_active = False
         mappings = (await self.db.execute(
             select(TenantServiceAreaService).where(
@@ -433,6 +464,11 @@ class ServiceabilityService:
         )).scalars().all()
         for m in mappings:
             m.is_available = False
+        await self.db.flush()
+        await self._audit_service_area(
+            operation="SERVICE_AREA_DEACTIVATED", tenant_id=area.tenant_id, area_id=area.id,
+            before=before, after=area.to_dict(),
+        )
         await self.db.commit()
         return {"area_id": str(area_id), "deactivated": True}
 

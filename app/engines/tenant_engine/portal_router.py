@@ -181,51 +181,19 @@ async def update_staff_photo(
     return await _svc(db, request, user).update_staff_photo(tid, staff_id, photo_url)
 
 
-# ── Service Areas ──────────────────────────────────────────────
-
-@router.get("/service-areas")
-async def list_service_areas(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
-) -> dict:
-    tid = _tenant_id(user)
-    return await _svc(db, request, user).list_service_areas(tid)
-
-
-@router.post("/service-areas", status_code=201)
-async def create_service_area(
-    payload: dict,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
-) -> dict:
-    tid = _tenant_id(user)
-    return await _svc(db, request, user).create_service_area(tid, payload)
-
-
-@router.patch("/service-areas/{area_id}")
-async def update_service_area(
-    area_id: uuid.UUID,
-    payload: dict,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
-) -> dict:
-    tid = _tenant_id(user)
-    return await _svc(db, request, user).update_service_area(tid, area_id, payload)
-
-
-@router.delete("/service-areas/{area_id}")
-async def delete_service_area(
-    area_id: uuid.UUID,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
-) -> dict:
-    tid = _tenant_id(user)
-    return await _svc(db, request, user).delete_service_area(tid, area_id)
-
+# FINAL-L5-05T: Service Area routes removed from this router entirely.
+# GET/POST/DELETE were exact (method, path) duplicates of
+# app.engines.serviceability.router's list/create/delete_tenant_service_area
+# (unreachable dead code -- serviceability.router registers first).
+# PATCH /service-areas/{area_id} was a second live mutation path on a
+# different verb from the canonical PUT, but had zero real caller --
+# the tenant-portal frontend (frontend/tenant-portal/lib/api.ts,
+# `serviceAreaApi.update`) already calls PUT, matching serviceability's
+# real contract. See
+# docs/final-l5-05/FINAL_L5_05T_ADR_SERVICE_AREA_CANONICAL_OWNER.md.
+# Canonical: GET/POST /v1/tenant/service-areas,
+# GET/PUT/DELETE /v1/tenant/service-areas/{area_id}, plus limits/validate/
+# set-primary/services (app/engines/serviceability/router.py).
 
 # ── Wallet (read-only for tenant) ──────────────────────────────
 

@@ -804,3 +804,81 @@ FINAL-L5-05R adds 12 more (L5-05R-001 through 012): completed the mission's own 
 
 ## Result
 FINAL-L5-05S adds 13 more (L5-05S-001 through 013): built and live-verified a real export execution pipeline -- database-backed worker with `FOR UPDATE SKIP LOCKED` concurrency safety, 5 real resource query adapters spanning every required domain, private local file storage, download/cancel/retry endpoints with independent re-authorization, and retention cleanup. Every major claim is backed by real evidence: a real Postgres concurrency test (6 simultaneous claimers, 0 duplicates), a real end-to-end file generation + download whose SHA-256 checksum matches the API-reported value, a real 5-role live API matrix (all 15 create/deny combinations correct), and real cross-user download-denial proof. A genuine, previously-silent bug was found and fixed in this sprint's own new code (a nonexistent `AsyncSessionLocal` import), and while fixing it, an unrelated, more severe, pre-existing production bug was discovered in `compliance_sla.py` (the same nonexistent import, meaning the SLA-compliance background job has apparently silently no-op'd on every tick since its introduction) -- logged as a new P0 blocker rather than fixed, since it is outside this mission's Enterprise Export scope. The full 39-resource / XLSX+PDF / S3-signed-URL / rate-limiting / idempotency / Chromium-and-accessibility scope remains open, honestly documented rather than claimed complete.
+
+## L5-05T-001: Duplicate Service Area route registration (admin AND, newly discovered, tenant-portal side)
+- **Severity**: P0 (this mission's own literal purpose).
+- **Evidence**: `serviceability.router` and `tenant_engine.admin_router` both registered `/v1/admin/tenants/{tenant_id}/service-areas*` (established in FINAL-L5-05Q). This sprint's own runtime inventory found a SECOND, parallel duplicate family FINAL-L5-05Q never inventoried: `serviceability.router` and `tenant_engine.portal_router` both registered `/v1/tenant/service-areas*`.
+- **Fix**: All 8 duplicate routes (4 admin + 4 tenant-portal) removed from `tenant_engine`. `serviceability.router` is now the sole owner of both path families, confirmed via the live runtime route table.
+- **Status**: **FIXED**.
+
+## L5-05T-002: `tenant_engine` Service Area handlers were shadowed dead code -- except one wasn't
+- **Severity**: P0 (a live, undiscovered second mutation path with weaker validation).
+- **Evidence**: GET/POST/DELETE were exact `(method, path)` duplicates, confirmed unreachable (05Q). The "update" operation was NOT shadowed on either side: `serviceability.router` registers `PUT`, `tenant_engine.admin_router`/`portal_router` both registered `PATCH` for the identical path -- different verbs don't collide, so `PATCH` was live and independently reachable this whole time, bypassing `serviceability`'s coverage validation, update-time duplicate check, and `is_primary` reassignment. Tenant-safe (proper `WHERE` scoping) but a real validation-coverage gap.
+- **Fix**: All 4 `PATCH`/GET/POST/DELETE routes removed from both `tenant_engine` routers. Confirmed via live OpenAPI: zero `PATCH` on either Service Area item path.
+- **Status**: **FIXED**.
+
+## L5-05T-003: Service Area canonical ownership undefined
+- **Severity**: P0.
+- **Fix**: `ServiceabilityService` selected as canonical owner based on live reachability, strictly larger/more-correct feature set (coverage/geo validation, zone support, primary-area reassignment, update-time duplicate checking, plan limits, candidate validation, nested service mappings), and a real domain dependency from the booking/matching preflight engine. Full ADR with rejected alternatives in `FINAL_L5_05T_ADR_SERVICE_AREA_CANONICAL_OWNER.md`.
+- **Status**: **FIXED**.
+
+## L5-05T-004: Endpoint schema parity -- one real gap found (audit trail), migrated
+- **Severity**: P1.
+- **Evidence**: The canonical `ServiceabilityService` wrote ZERO audit events for create/update/deactivate (confirmed via source read) -- the shadow `AdminTenantService` had a real audit trail. Every other capability comparison favored the canonical implementation (see ADR table).
+- **Fix**: Ported into `ServiceabilityService._audit_service_area()`, writing `SERVICE_AREA_CREATED`/`UPDATED`/`DEACTIVATED` via `record_platform_audit`. Live-verified: a real create/update/deactivate sequence produced 3 real `platform_audit_logs` rows.
+- **Status**: **FIXED**.
+
+## L5-05T-005: Permission namespace parity
+- **Severity**: P2 (no conflict found).
+- **Evidence**: Both implementations used the same permission gate on the admin side (`P.PLATFORM_ADMIN`, super_admin-only via `P.ALL`). No dual-namespace conflict existed to reconcile.
+- **Decision**: Policy preserved unchanged -- introducing a new permission grant for Service Area administration (e.g. to Operations Admin) is a genuine RBAC product decision outside this route-canonicalization mission's bounded scope, not a defect this sprint should silently decide.
+- **Status**: **CONFIRMED NO CONFLICT, POLICY UNCHANGED**.
+
+## L5-05T-006: Tests exercising dead handlers
+- **Severity**: P1 (mission rule 15).
+- **Evidence**: `tests/test_sprint4_tenant_onboarding.py` had 5 tests calling the now-removed `AdminTenantService` service-area methods directly, plus 1 test asserting the now-removed portal route existed. `tests/test_final_l5_05q_provider_coverage_mutations.py` had 1 test asserting both routers still defined the duplicate path, and a "defense-in-depth" test class pinning the now-removed dead-code source text.
+- **Fix**: The 5 dead-handler tests removed (plus the now-orphaned `_make_area()` helper); the stale route-existence test inverted to assert absence; the defense-in-depth class replaced with one asserting the methods are gone. All confirmed via `git grep` that zero remaining references to the removed methods exist anywhere in the test suite.
+- **Status**: **FIXED**.
+
+## L5-05T-007: Router behavior depended on include order
+- **Severity**: P1 (mission rule 13/21).
+- **Evidence**: Before this sprint, which implementation actually served a request depended entirely on `main.py`'s router registration order (`serviceability_router` before `admin_tenant_router`) -- a fragile, easy-to-silently-break invariant.
+- **Fix**: Since exactly one module now owns every Service Area path, there is nothing left for include order to arbitrate. `TestIncludeOrderSafety` makes this explicit and would catch any future reintroduction of a second implementation regardless of where it's registered.
+- **Status**: **FIXED**.
+
+## L5-05T-008: Duplicate route detection absent
+- **Severity**: P0 (mission rule 24).
+- **Fix**: `TestGlobalDuplicateRouteDetector` added, walking the real, live FastAPI route table (a recursive flattener was required -- `app.routes` contains `_IncludedRouter` wrapper objects in this FastAPI version, not a flat `APIRoute` list; a naive filter silently sees 0 routes and produces false negatives). Zero tolerance for Service Area duplicates (never allowlisted); a minimal, justified, pinned allowlist exists for pre-existing unrelated debt (see L5-05T-013).
+- **Status**: **FIXED**.
+
+## L5-05T-009: OpenAPI ownership ambiguous
+- **Severity**: P1.
+- **Fix**: `TestRouteOwnershipRegistry` + `TestOpenAPIUniqueness` prove, against the live runtime route table and the live-generated OpenAPI schema, that `serviceability.router` exclusively owns every Service Area path with exactly one operation per method/path and unique operation IDs. Live-verified against the running server's real `/openapi.json`.
+- **Status**: **FIXED**.
+
+## L5-05T-010: Backward compatibility unverified
+- **Severity**: P1.
+- **Evidence**: Verified before removal: no test, no frontend caller (super-admin or tenant-portal) depended on the shadow `tenant_engine` contract's specific verb (`PATCH`) or field names in a way that would break on removal. The tenant-portal frontend already called the canonical `PUT` verb.
+- **Fix**: `REMOVE` disposition chosen over a compatibility adapter (mission rule 19 -- an adapter exists to protect a real caller; none existed here).
+- **Status**: **FIXED / CONFIRMED NOT NEEDED**.
+
+## L5-05T-011: Full five-role Chromium incomplete
+- **Severity**: P1.
+- **Evidence**: No browser-automation tool was available in this session (same limitation as FINAL-L5-05S). All verification is real, live HTTP/API evidence instead (5-role matrix, cross-tenant matrix, real audit-row confirmation via direct database query).
+- **Status**: **NOT FIXED (no tool available)** -- documented honestly, not claimed as run.
+
+## L5-05T-012: Performance/concurrency evidence
+- **Severity**: P2 (concurrency correctness proven; formal timing benchmarks not run).
+- **Evidence**: 2 new real-Postgres concurrency tests added (update-vs-deactivate racing on the same row with no lost update; two distinct tenants creating identical geography concurrently, proving the tenant-scoped advisory lock key doesn't falsely serialize unrelated tenants) -- both pass, extending FINAL-L5-05Q's create-vs-create coverage. No dedicated query-count/latency/lock-wait-time benchmark pass was run.
+- **Status**: **PARTIALLY FIXED** -- correctness proven live; formal performance numbers not captured.
+
+## L5-05T-013: 18 pre-existing, unrelated app-wide duplicate-route registrations + 13 duplicate operation IDs discovered as a byproduct
+- **Severity**: P0/P1 (new finding, unrelated to Service Areas, discovered while building the global duplicate-route detector).
+- **Evidence**: Once the route-flattening bug (`_IncludedRouter` vs. flat `APIRoute`) was fixed, the detector found 18 real `(method, path)` duplicates spanning: `GET /v1/admin/customers/{customer_id}/addresses` (serviceability vs. auth.admin_customers_router), `GET /v1/admin/engines` and `/v1/admin/engines/health` (engine_mgmt vs. provider_portal), `GET /v1/admin/finance/summary` (finance_hub vs. field_ops), `GET /v1/tenant/wallet` and `/wallet/ledger` (field_ops vs. tenant_engine), `GET /v1/admin/tenants/{tenant_id}/wallet` and `/wallet/ledger` and `POST .../wallet/adjust` (field_ops vs. tenant_engine), `GET`/`POST`/`PUT` on `/v1/admin/service-options*` (admin_catalog.admin_router vs. admin_catalog.service_option_admin_router), `POST /v1/staff/service-jobs/{job_id}/accept` and `/reject` (home_service_assignment vs. execution), and `GET /v1/admin/analytics/operational-alerts` (analytics.admin_router vs. analytics.platform_router). Plus 13 duplicate operation IDs in `admin_catalog.service_option_admin_router` and `service_setup.templates_router`.
+- **Root cause**: Not investigated (out of this sprint's bounded scope) -- each pair means one handler is silently shadowed dead code, the exact same defect class this sprint fixed for Service Areas.
+- **Why not fixed this sprint**: Explicitly outside this mission's bounded scope ("Do not alter broader Provider branding, pricing, Jobs, Finance, Export or booking architecture unless a real Service Area dependency requires a bounded compatibility change" -- none of these 18 touch Service Areas).
+- **Fix applied this sprint**: Documented, allowlisted by exact `(method, path)` tuple / module with an explanatory comment, and pinned with a guard (`test_pre_existing_allowlist_still_matches_reality_exactly`) so the allowlist can neither hide a new duplicate nor silently go stale in either direction. Service Area routes are explicitly confirmed to never appear in either allowlist.
+- **Status**: **FOUND, NOT FIXED** -- new P0/P1 blocker for a dedicated future sprint (same remediation pattern as this sprint: runtime inventory, parity comparison, canonical-owner decision, removal).
+
+## Result
+FINAL-L5-05T adds 13 more (L5-05T-001 through 013): closed the duplicate Service Area route architecture FINAL-L5-05Q left open, and found it was worse than 05Q's own framing -- a second, un-inventoried duplicate family on the tenant-portal side, and a live, undiscovered second mutation path (`PATCH` vs. the canonical `PUT`) on both sides. `ServiceabilityService` is now the sole, certified canonical owner with a full ADR; the shadow implementation (8 routes + 6 backing service methods) is removed entirely, not deprecated or adapted, since no real caller depended on it. The one real missing-behavior gap (zero audit trail in the canonical path) was migrated and live-verified. A global duplicate-route/operation-ID detector now exists with zero tolerance for Service Area duplication specifically. Three real, previously-unknown frontend contract bugs were found and fixed (2 silently-broken table columns, 1 wrong-endpoint refetch preventing newly created areas from appearing). Tenant isolation and concurrency protections from FINAL-L5-05Q are fully preserved and extended with 2 new real-Postgres tests. The most significant new finding is architectural and explicitly out of scope: 18 more pre-existing, unrelated app-wide route duplications and 13 more duplicate operation IDs exist in this codebase, following the exact same defect pattern -- honestly documented as a new blocker rather than expanded into.

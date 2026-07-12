@@ -854,120 +854,17 @@ class AdminTenantService:
             raise NotFoundException("Staff", str(staff_id))
         return s
 
-    # ═══════════════════════════════════════════════════════════════
-    # PHASE 8 — SERVICE AREAS
-    # ═══════════════════════════════════════════════════════════════
-
-    async def list_service_areas(self, tenant_id: uuid.UUID) -> dict:
-        await self._get_tenant(tenant_id)
-        r = await self.db.execute(
-            select(TenantServiceArea).where(TenantServiceArea.tenant_id == tenant_id)
-            .order_by(TenantServiceArea.created_at.desc())
-        )
-        areas = r.scalars().all()
-        return {"service_areas": [self._area_dict(a) for a in areas], "total": len(areas)}
-
-    async def create_service_area(self, tenant_id: uuid.UUID, data: dict) -> dict:
-        await self._get_tenant(tenant_id)
-        coverage_type = data.get("coverage_type", "city")
-        if coverage_type not in ("city", "zipcode", "zone", "radius"):
-            raise ServiceOSException("TENANT_SERVICE_AREA_INVALID",
-                                     f"coverage_type must be city|zipcode|zone|radius.")
-        if not data.get("city") or not data.get("state"):
-            raise ServiceOSException("TENANT_SERVICE_AREA_INVALID",
-                                     "city and state are required for service area.")
-        # FINAL-L5-05Q Part 25/26: prevent duplicate active coverage
-        # assignments (same tenant + coverage_type + city + zipcode).
-        # A DB-level UniqueConstraint (uq_tsa_tenant_coverage) exists on
-        # this table, but Postgres treats NULL <> NULL for uniqueness
-        # purposes -- since zipcode is commonly NULL for "city" coverage,
-        # that constraint does NOT actually prevent duplicates in the most
-        # common case (confirmed via a real concurrent-request test, not
-        # just a unit test -- two simultaneous creates with identical
-        # payload both silently succeeded before this fix). A Postgres
-        # transaction-scoped advisory lock, keyed on the exact tuple,
-        # serializes concurrent creates for the same tenant+coverage combo
-        # without changing the table's stored NULL/empty-string semantics.
-        await self.db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
-            {"lock_key": f"tsa:{tenant_id}:{coverage_type}:{data.get('city')}:{data.get('zipcode')}"},
-        )
-        dup = await self.db.execute(
-            select(TenantServiceArea).where(
-                TenantServiceArea.tenant_id == tenant_id,
-                TenantServiceArea.coverage_type == coverage_type,
-                TenantServiceArea.city == data.get("city"),
-                TenantServiceArea.zipcode == data.get("zipcode"),
-                TenantServiceArea.is_active.is_(True),
-            )
-        )
-        if dup.scalar_one_or_none() is not None:
-            raise ServiceOSException(
-                "DUPLICATE_PROVIDER_ASSIGNMENT",
-                "An active service area with this coverage_type/city/zipcode already exists for this provider.",
-                status_code=409,
-            )
-        area = TenantServiceArea(
-            tenant_id=tenant_id,
-            coverage_type=coverage_type,
-            country=data.get("country", "India"),
-            state=data.get("state"),
-            district=data.get("district"),
-            city=data.get("city"),
-            zipcode=data.get("zipcode"),
-            zone_name=data.get("zone_name"),
-            radius_km=data.get("radius_km"),
-            priority=data.get("priority", 100),
-            is_active=True,
-        )
-        self.db.add(area)
-        await self.db.flush()
-        await self._audit(tenant_id, "admin_create_service_area",
-                          entity_type="service_area", entity_id=str(area.id),
-                          after=self._area_dict(area))
-        return self._area_dict(area)
-
-    async def update_service_area(self, tenant_id: uuid.UUID, area_id: uuid.UUID, data: dict) -> dict:
-        area = await self._load_area(tenant_id, area_id)
-        before = self._area_dict(area)
-        for field in ("city", "zipcode", "state", "district", "priority", "is_active"):
-            if field in data:
-                setattr(area, field, data[field])
-        await self._audit(tenant_id, "admin_update_service_area",
-                          entity_type="service_area", entity_id=str(area_id),
-                          before=before, after=self._area_dict(area))
-        return self._area_dict(area)
-
-    async def delete_service_area(self, tenant_id: uuid.UUID, area_id: uuid.UUID) -> dict:
-        area = await self._load_area(tenant_id, area_id)
-        before = self._area_dict(area)
-        area.is_active = False
-        await self._audit(tenant_id, "admin_delete_service_area",
-                          entity_type="service_area", entity_id=str(area_id),
-                          before=before, after=self._area_dict(area))
-        return {"deleted": True, "area_id": str(area_id)}
-
-    async def _load_area(self, tenant_id: uuid.UUID, area_id: uuid.UUID) -> TenantServiceArea:
-        r = await self.db.execute(
-            select(TenantServiceArea).where(
-                TenantServiceArea.id == area_id, TenantServiceArea.tenant_id == tenant_id
-            )
-        )
-        a = r.scalar_one_or_none()
-        if not a:
-            raise NotFoundException("ServiceArea", str(area_id))
-        return a
-
-    def _area_dict(self, a: TenantServiceArea) -> dict:
-        return {
-            "area_id": str(a.id), "tenant_id": str(a.tenant_id),
-            "coverage_type": a.coverage_type,
-            "country": a.country, "state": a.state, "district": a.district,
-            "city": a.city, "zipcode": a.zipcode,
-            "zone_name": a.zone_name, "radius_km": float(a.radius_km) if a.radius_km else None,
-            "priority": a.priority, "is_active": a.is_active,
-            "created_at": a.created_at.isoformat(),
-        }
+    # FINAL-L5-05T: Service Areas were removed from this service entirely.
+    # `app.engines.serviceability.service.ServiceabilityService` is the
+    # certified canonical owner (see
+    # docs/final-l5-05/FINAL_L5_05T_ADR_SERVICE_AREA_CANONICAL_OWNER.md).
+    # This class previously duplicated list/create/update/delete
+    # service-area methods behind routes that were either fully shadowed
+    # (identical method+path, unreachable because serviceability.router is
+    # registered first in app/main.py) or a second, undiscovered live
+    # mutation path on a different HTTP verb (PATCH vs. the canonical PUT).
+    # Removed rather than retained as dead code (mission rule: "do not
+    # leave unreachable mutation code presented as active").
 
     # ═══════════════════════════════════════════════════════════════
     # PHASE 11 — SECURITY DEPOSIT + CREDIT WALLET
