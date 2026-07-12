@@ -18,6 +18,8 @@ import {
   securityAdminApi, SecurityThreat, SecuritySession, IPBlockEntry, SecurityApiKey, SecurityAuditEntry,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
+import { usePermissions } from "../../../hooks/usePermissions";
+import { RequirePermission } from "../../../components/shared/PermissionGate";
 
 type Tab = "overview" | "threats" | "sessions" | "ip_blocklist" | "api_keys" | "audit_logs" | "policies";
 
@@ -52,6 +54,7 @@ export default function SecurityPage() {
 
   return (
     <AdminLayout activeNav="security">
+      <RequirePermission requiredPermission="security:read" parentLabel="Dashboard">
       <SectionHeader
         title="Security & Threats"
         subtitle="Threats, active sessions, IP blocklist, API keys, audit trail, and security policies."
@@ -79,6 +82,7 @@ export default function SecurityPage() {
         {tab === "audit_logs" && <AuditLogsTab />}
         {tab === "policies" && <PoliciesTab />}
       </div>
+      </RequirePermission>
     </AdminLayout>
   );
 }
@@ -213,6 +217,7 @@ function ThreatsTab({ router }: { router: ReturnType<typeof useRouter> }) {
 // ═══════════════════════════════════════════════════════════════
 
 function SessionsTab() {
+  const perm = usePermissions();
   const [q, setQ] = useState("");
   const sessions = useApi(useCallback(() => securityAdminApi.listSessions({ q: q || undefined, limit: 100 }), [q]));
   const revokeAction = useAction(useCallback((id: string, reason: string) => securityAdminApi.revokeSession(id, reason), []));
@@ -246,10 +251,12 @@ function SessionsTab() {
                   <Td><Badge variant={s.status === "active" ? "success" : "muted"} size="sm">{s.status}</Badge></Td>
                   <Td>{s.last_active_at ? new Date(s.last_active_at).toLocaleString("en-IN") : "—"}</Td>
                   <Td>
-                    <ActionMenu items={[
-                      { label: "Revoke Session", onClick: () => revoke(s), disabled: s.status !== "active", destructive: true },
-                      { label: "Revoke All Sessions", onClick: () => revokeAll(s), destructive: true },
-                    ]} />
+                    {perm.has("security:sessions:revoke") && (
+                      <ActionMenu items={[
+                        { label: "Revoke Session", onClick: () => revoke(s), disabled: s.status !== "active", destructive: true },
+                        { label: "Revoke All Sessions", onClick: () => revokeAll(s), destructive: true },
+                      ]} />
+                    )}
                   </Td>
                 </tr>
               ))}

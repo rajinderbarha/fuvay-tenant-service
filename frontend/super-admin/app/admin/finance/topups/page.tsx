@@ -8,6 +8,8 @@ import { SummaryCardsRow } from "../../../../components/pricing/SummaryCard";
 import { ActionMenu } from "../../../../components/pricing/ActionMenu";
 import { financeApi } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
+import { RequirePermission } from "../../../../components/shared/PermissionGate";
+import { usePermissions } from "../../../../hooks/usePermissions";
 import type { FinanceTopup } from "../../../../lib/api";
 
 const STATUS_OPTIONS = [
@@ -28,6 +30,7 @@ const STATUS_BADGE: Record<string, "success" | "warning" | "danger" | "muted" | 
 
 export default function CreditTopupsPage() {
   const router = useRouter();
+  const perm = usePermissions();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [refundModal, setRefundModal] = useState<FinanceTopup | null>(null);
@@ -84,8 +87,10 @@ export default function CreditTopupsPage() {
     { key: "topup_id", label: "", width: 110, render: (_: unknown, row: FinanceTopup) => (
       <ActionMenu items={[
         { label: "View Top-up Detail", onClick: () => router.push(`/admin/finance/topups/${row.topup_id}`) },
-        row.payment_status === "paid_pending_credit" && { label: "Retry Credit Posting", onClick: () => handleRetry(row) },
-        { label: "Refund", onClick: () => { setRefundModal(row); setAmount(""); setReason(""); } },
+        row.payment_status === "paid_pending_credit" && perm.has("finance:topups:update") &&
+          { label: "Retry Credit Posting", onClick: () => handleRetry(row) },
+        perm.has("finance:topups:refund") &&
+          { label: "Refund", onClick: () => { setRefundModal(row); setAmount(""); setReason(""); } },
         { label: "View Ledger", onClick: () => router.push(`/admin/finance/topups/${row.topup_id}`) },
         { label: "View Audit Logs", onClick: () => router.push(`/admin/finance/topups/${row.topup_id}#audit`) },
       ]}/>
@@ -94,6 +99,7 @@ export default function CreditTopupsPage() {
 
   return (
     <AdminLayout activeNav="finance-topups">
+      <RequirePermission requiredPermission="finance:topups:read" parentLabel="Dashboard">
       <SectionHeader title="Credit Top-ups" subtitle="Monitor credit purchases, wallet funding, top-up approvals, and failures."/>
       <div style={{ padding: "0 28px 32px" }}>
         {s && (
@@ -146,6 +152,7 @@ export default function CreditTopupsPage() {
           </div>
         </div>
       </Modal>
+      </RequirePermission>
     </AdminLayout>
   );
 }

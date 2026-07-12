@@ -319,5 +319,54 @@
 - **Real, honestly-documented gap**: `AdminLayout.tsx` has 0 `usePermissions()` call sites — the sidebar/dashboard is not permission-filtered, so non-super-admin roles see the same full navigation and the dashboard fetches widgets backed by endpoints not yet converted off `require_super_admin`, producing expected (correct) 403 network responses that are not yet gracefully hidden in the UI. This is a real frontend-completeness gap, not a security defect (backend denial is proven authoritative regardless). Not fixed this sprint — explicitly out of scope per the mission's own "do not redesign the entire Admin UI" framing. The full Part 25/32 page-by-page, action-by-action five-role Chromium matrix (menu visibility, action visibility, read-only UX, responsive checks) was not run in full — only login/dashboard-smoke/direct-API-denial were run for all 5 roles.
 - **Final status**: **PARTIALLY FIXED** — backend-authoritative denial is proven live via the browser for the representative cases tested; full UI-visibility-matrix coverage remains open.
 
+## L5-05M-001: AdminLayout does not consume effective permissions
+- **Severity**: P0 (the direct carry-forward of L5-05L-010).
+- **Evidence**: 0 `usePermissions()` call sites in `AdminLayout.tsx`, confirmed at the start of this sprint.
+- **Fix**: `AdminLayout.tsx` now calls `usePermissions()` and applies `isNavItemPermitted()` to every one of the ~44 `NAV_GROUPS` items, each with an explicit `requiredPermission` (a real backend key or the honest `SUPER_ADMIN_ONLY` sentinel for not-yet-converted routes).
+- **Tests**: `tests/test_final_l5_05m_frontend_permission_guards.py` (17 tests); real Chromium (10/10, `final-l5-05m-permission-visibility.spec.ts`).
+- **Final status**: **FIXED**.
+
+## L5-05M-002/003: Desktop/mobile sidebar exposes unauthorized items
+- **Severity**: P0.
+- **Evidence**: Live Chromium proof — Operations Admin's sidebar contains "Jobs"/"Staff" but not "Usage Credits"/"Credit Top-ups"/"Roles"/"Permissions"; Finance Admin's contains Finance items but not "Roles"/"Permissions"; Security Admin's contains "Security"/"Roles"/"Permissions" but not "Usage Credits"/"Security Deposits". Empty groups (0 permitted items) render nothing, header included.
+- **Root cause (mobile half)**: No separate mobile drawer component exists in this codebase at all (pre-existing gap, documented since FINAL-L5-04 as Blocker 6) — there is exactly one nav renderer, so desktop/mobile cannot diverge by construction. Not a new gap, not fixed or worsened this sprint.
+- **Final status**: **FIXED** (desktop); mobile has no separate implementation to diverge (structurally satisfies "same registry", but the underlying "no real mobile nav" gap remains, tracked separately).
+
+## L5-05M-004/005: Primary routes/mutation actions lack permission guards
+- **Severity**: P0/P1.
+- **Evidence**: New `RequirePermission` route guard applied to the 7 highest-risk pages named in the mission's own Chromium matrix (Usage Credits, Credit Top-ups, Security Deposits, Security, Users, Roles, Permissions). 8 mutation actions gated (Job reassign/status-override/force-close/void, Usage Credit adjust, Top-up retry/refund, Session revoke).
+- **Real gap found live during verification**: initial `"analytics:read"` key (catalog + AdminLayout) did not match the real backend key `"analytics:dashboard:read"` — caught by the new automated guard test, fixed before commit.
+- **Not covered**: the remaining ~37 nav items whose backing routes are `SUPER_ADMIN_ONLY` were not individually wrapped with `RequirePermission` (the sidebar already hides them, and backend independently 403s them per FINAL-L5-05L) — exhaustive per-route guard wrapping across the full admin surface is out of this sprint's bounded scope.
+- **Final status**: **FIXED** for the representative set; **PARTIALLY FIXED** for full exhaustive coverage (documented, not hidden).
+
+## L5-05M-006: Admin Read Only lacks consistent frontend read-only presentation
+- **Severity**: P1.
+- **Evidence**: `ReadOnlyNotice` component added; wired into the Usage Credits page's mutation card. Live-verified: Admin Read Only sees real ledger data + "View-only access" notice + no "Add Usage Credits" form.
+- **Not covered**: only 1 page received the read-only notice treatment (Usage Credits); the other 6 guarded pages don't yet have an explicit read-only notice (their mutation controls are permission-gated correctly, just without the friendly notice copy).
+- **Final status**: **PARTIALLY FIXED**.
+
+## L5-05M-007: Unauthorized content/action flash risk
+- **Severity**: P0 (explicit acceptance-criteria blocker).
+- **Evidence**: `isNavItemPermitted`/`RequirePermission` both fail closed (`permissions === null` → not permitted) during loading — proven live: a too-short Chromium test wait initially caught the sidebar mid-load showing only the always-visible Dashboard item, never unauthorized content, before the correct final set appeared. `RequirePermission` shows a `Skeleton`, never the protected content, while loading.
+- **Final status**: **FIXED**.
+
+## L5-05M-008/009: Contextual links / dashboard widgets lack permission filtering
+- **Severity**: P2.
+- **Evidence**: Not attempted this sprint — genuinely out of bounded scope. Dashboard widgets were observed (live, during Chromium debugging) to already degrade gracefully server-side (real, pre-existing "Permission 'dashboard.finance.read' required..." inline error states with Retry + request_id, not a crash or data leak) rather than exposing restricted data — an acceptable interim state.
+- **Final status**: **NOT FIXED** — documented, not hidden.
+
+## L5-05M-010: Five-role frontend visibility matrix incomplete
+- **Severity**: P1 (partially closed).
+- **Evidence**: 10/10 real Chromium tests covering sidebar visibility for all 5 roles + direct-route Permission Denied + read-only presentation, run standalone (20/20 total across the 3 most recent Chromium suites when run individually, avoiding a dev-server cache-corruption issue found and fixed mid-sprint — see Part "Environment note" in `FINAL_L5_05M_FRONTEND_PERMISSION_VISIBILITY.md`).
+- **Not covered**: the full Part 31/32 exhaustive per-page, per-action, mobile-viewport, accessibility, and performance matrices were not run — only the representative subset.
+- **Final status**: **PARTIALLY FIXED**.
+
+## L5-05M-011 (new finding this sprint): Platform Users page role dropdown writes to a dead metadata field
+- **Severity**: P1 (real architecture mismatch, not a security hole — the field it writes to was never enforced).
+- **Evidence**: `app/admin/users/page.tsx`'s `PLATFORM_ROLES` constant lists `operations_admin`/`finance_admin`/`security_admin`/`read_only_admin` — none of which match the real, enforced `ROLE_PERMISSIONS` keys (`admin_operations`/`admin_finance`/`admin_security`/`admin_readonly`). The page's role-change action calls `PUT /v1/admin/platform-users/{id}/role`, which writes `users.platform_role` — the same dead, unenforced metadata column FINAL-L5-05L found and fixed for the 4 seeded test accounts' real `role` column.
+- **Root cause**: "Platform Users Governance" (migration 083) is a separate, larger subsystem than the `users.role` field this engagement's role work has targeted — it was never wired to real enforcement.
+- **Not fixed this sprint**: rewiring this whole page/endpoint to write the real, enforced `role` column (or deprecating `platform_role` entirely) is a backend-architecture change beyond this sprint's frontend-visibility scope, and risks breaking whatever (if anything) currently depends on reading `platform_role` display values.
+- **Final status**: **DOCUMENTED, NOT FIXED** — flagged for a dedicated follow-up sprint.
+
 ## Result
-18 of 21 real bugs/gaps found across FINAL-L5-05 through FINAL-L5-05H were fixed and live-verified; FINAL-L5-05I added 10 classification-level findings; FINAL-L5-05J added 10 more implementing the Usage Credit/Package Credit/tenant-health core; FINAL-L5-05K added 10 more migrating Finance Hub top-ups and proving true concurrency; FINAL-L5-05L adds 10 more (L5-05L-001 through 010): 4 real, distinct, least-privilege Admin roles now exist as genuine backend principals (fixing a real pre-existing bug where 3 "role-differentiated" demo accounts were secretly all `super_admin`), cross-domain denial is proven live across all mandatory role/domain pairs, and a real permission-bundle gap was found and fixed live during testing. One finding (L5-05L-010) remains partially open: backend authorization is proven authoritative via real Chromium, but full frontend navigation/action-visibility filtering was not implemented, consistent with the mission's own explicit "do not redesign the entire Admin UI" scope limit — documented with direct source evidence (0 `usePermissions()` call sites in `AdminLayout.tsx`), not hidden or downgraded.
+18 of 21 real bugs/gaps found across FINAL-L5-05 through FINAL-L5-05H were fixed and live-verified; FINAL-L5-05I through 05L added 40 more findings implementing the Usage Credit/Finance Hub/Admin Role architecture. FINAL-L5-05M adds 11 more (L5-05M-001 through 011): `AdminLayout` now consumes real server-provided effective permissions for the first time, closing the central L5-05L-010 gap — desktop sidebar visibility, 7 representative route guards, and 8 representative action guards are all proven correct live via 10/10 real Chromium tests (20/20 across all 3 most recent role/permission Chromium suites when run standalone). A real permission-key mismatch (`analytics:read` vs `analytics:dashboard:read`) was found and fixed by the new automated guard before commit. Exhaustive coverage of all ~44 routes/actions, mobile-specific navigation, and dashboard/contextual-link filtering remain open, consistent with this sprint's explicit "do not redesign the entire Admin UI" scope limit — each documented with direct evidence, not hidden or downgraded. One new, real, out-of-scope architecture mismatch was discovered and documented (L5-05M-011, Platform Users' dead `platform_role` field) rather than silently left unmentioned.

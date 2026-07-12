@@ -157,7 +157,10 @@ def test_permission_guards_present():
 
 def test_use_permissions_hook_reads_real_backend():
     assert "authApi.me()" in USE_PERM
-    assert 'perms.includes("*")' in USE_PERM
+    # FINAL-L5-05M: variable renamed perms -> permissions (now exposed as a
+    # public `permissions: string[] | null` return value, distinct null
+    # loading state vs a real empty-array result) -- same wildcard check.
+    assert 'permissions.includes("*")' in USE_PERM
 
 
 # 24. Empty states render

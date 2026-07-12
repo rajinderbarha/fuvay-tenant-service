@@ -10,6 +10,7 @@ import { Card, Badge, Btn, StatCard, SectionHeader, Skeleton, EmptyState, Input,
 import { Key, Shield, Users, AlertTriangle } from "lucide-react";
 import { rolesPermissionsApi, PermissionListItem } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
+import { RequirePermission } from "../../../../components/shared/PermissionGate";
 
 const RISK_BADGE: Record<string, "danger" | "warning" | "muted"> = {
   high: "danger", medium: "warning", low: "muted",
@@ -40,6 +41,7 @@ export default function PermissionsPage() {
 
   return (
     <AdminLayout activeNav="users">
+      <RequirePermission requiredPermission="platform:permissions:read" parentLabel="Dashboard">
       {detailKey && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200,
           display: "flex", justifyContent: "flex-end" }} onClick={() => setDetailKey(null)}>
@@ -137,6 +139,7 @@ export default function PermissionsPage() {
           </table>
         </Card>
       )}
+      </RequirePermission>
     </AdminLayout>
   );
 }

@@ -8,6 +8,7 @@ import { SummaryCardsRow } from "../../../../components/pricing/SummaryCard";
 import { ActionMenu } from "../../../../components/pricing/ActionMenu";
 import { financeApi } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
+import { RequirePermission } from "../../../../components/shared/PermissionGate";
 import type { FinanceDeposit } from "../../../../lib/api";
 
 const STATUS_OPTIONS = [
@@ -116,6 +117,7 @@ export default function SecurityDepositsPage() {
 
   return (
     <AdminLayout activeNav="finance-deposits">
+      <RequirePermission requiredPermission="finance.security_deposits.read" parentLabel="Dashboard">
       <SectionHeader title="Security Deposits" subtitle="Manage provider security deposits, hold status, approvals, refunds, and adjustments." />
       <div style={{ padding: "0 28px 32px" }}>
         {s && (
@@ -181,6 +183,7 @@ export default function SecurityDepositsPage() {
           </div>
         </div>
       </Modal>
+      </RequirePermission>
     </AdminLayout>
   );
 }

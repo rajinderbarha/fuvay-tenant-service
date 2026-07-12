@@ -3,6 +3,8 @@ import { Suspense, useCallback, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, SectionHeader, Input, Skeleton } from "../../../../components/shared/ui";
+import { RequirePermission, ReadOnlyNotice } from "../../../../components/shared/PermissionGate";
+import { usePermissions } from "../../../../hooks/usePermissions";
 import { usageCreditsAdminApi } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 
@@ -22,6 +24,7 @@ export default function AdminUsageCreditsPage() {
 
 function AdminUsageCreditsPageInner() {
   const searchParams = useSearchParams();
+  const perm = usePermissions();
   const jobIdFilter = searchParams.get("job_id") ?? "";
   const [tenantId, setTenantId] = useState(searchParams.get("tenant_id") || DEMO_TENANT_ID);
   const [amount, setAmount] = useState("");
@@ -48,6 +51,7 @@ function AdminUsageCreditsPageInner() {
 
   return (
     <AdminLayout activeNav="finance-usage-credits">
+      <RequirePermission requiredPermission="finance.usage_credits.read" parentLabel="Dashboard">
       <SectionHeader
         title="Usage Credits"
         subtitle={jobIdFilter
@@ -88,6 +92,7 @@ function AdminUsageCreditsPageInner() {
         <MiniStat label="Current Balance (from ledger)" value={currentBalance ?? "—"} />
       </div>
 
+      {perm.has("finance.usage_credits.adjust") ? (
       <Card style={{ marginBottom: 20 }}>
         <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Add Usage Credits</p>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
@@ -105,6 +110,9 @@ function AdminUsageCreditsPageInner() {
           </p>
         )}
       </Card>
+      ) : (
+        <ReadOnlyNotice/>
+      )}
 
       <Card padding={0}>
         <p style={{ fontSize: 13, fontWeight: 700, padding: "14px 16px 0" }}>Completed Job Deductions / Ledger</p>
@@ -146,6 +154,7 @@ function AdminUsageCreditsPageInner() {
           </table>
         )}
       </Card>
+      </RequirePermission>
     </AdminLayout>
   );
 }

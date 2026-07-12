@@ -11,6 +11,7 @@ import { Card, Badge, Btn, StatCard, SectionHeader, Skeleton, EmptyState } from 
 import { Shield, Users, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { rolesPermissionsApi, RoleListItem } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
+import { RequirePermission } from "../../../../components/shared/PermissionGate";
 
 const SCOPE_BADGE: Record<string, "info" | "success" | "muted"> = {
   platform: "info", tenant: "success", customer: "muted", public: "muted",
@@ -27,6 +28,7 @@ export default function RolesPage() {
 
   return (
     <AdminLayout activeNav="users">
+      <RequirePermission requiredPermission="platform:roles:read" parentLabel="Dashboard">
       {detailRole && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200,
           display: "flex", justifyContent: "flex-end" }} onClick={() => setDetailRole(null)}>
@@ -155,6 +157,7 @@ export default function RolesPage() {
           </table>
         </Card>
       )}
+      </RequirePermission>
     </AdminLayout>
   );
 }

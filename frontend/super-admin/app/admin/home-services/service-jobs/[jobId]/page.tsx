@@ -10,6 +10,7 @@ import { Card, Badge, SectionHeader, Skeleton } from "../../../../../components/
 import { ChevronRight, Copy, ExternalLink } from "lucide-react";
 import { finalRecordsAdminApi, adminServiceJobAssignmentApi, adminExecutionApi } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
+import { usePermissions } from "../../../../../hooks/usePermissions";
 
 function copyText(t: string) { if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {}); }
 
@@ -286,6 +287,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
   const assignmentTimeline = useApi(useCallback(() => adminServiceJobAssignmentApi.getJobTimeline(jobId), [jobId]));
   const executionTimeline = useApi(useCallback(() => adminExecutionApi.getJobTimeline(jobId), [jobId]));
   const jobNotes = useApi(useCallback(() => adminExecutionApi.getJobNotes(jobId), [jobId]));
+  const perm = usePermissions();
   const [showReassign, setShowReassign] = useState(false);
   const [showOverride, setShowOverride] = useState(false);
   const [showForceClose, setShowForceClose] = useState(false);
@@ -314,27 +316,33 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
             {!["completed", "cancelled", "failed", "force_closed", "voided"].includes(d.status) && (
               <>
+                {perm.has("admin:jobs:reassign") && (
                 <button onClick={() => setShowReassign(true)}
                   style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
                     border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer",
                     whiteSpace: "nowrap" }}>
                   Reassign Technician
                 </button>
+                )}
+                {perm.has("admin:jobs:status_override") && (
                 <button onClick={() => setShowOverride(true)}
                   style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
                     border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer",
                     whiteSpace: "nowrap" }}>
                   Override Status
                 </button>
+                )}
+                {perm.has("admin:jobs:force_close") && (
                 <button onClick={() => setShowForceClose(true)}
                   style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
                     border: "1px solid var(--danger-text, #dc2626)", color: "var(--danger-text, #dc2626)",
                     background: "transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
                   Force-Close
                 </button>
+                )}
               </>
             )}
-            {d.status !== "voided" && (
+            {d.status !== "voided" && perm.has("admin:jobs:void") && (
               <button onClick={() => setShowVoid(true)}
                 style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
                   border: "1px solid var(--danger-text, #dc2626)", color: "var(--danger-text, #dc2626)",

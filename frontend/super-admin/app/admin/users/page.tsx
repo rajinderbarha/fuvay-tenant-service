@@ -11,6 +11,7 @@ import {
   type PlatformUserInvite, type PlatformUserAuditEntry,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
+import { RequirePermission } from "../../../components/shared/PermissionGate";
 
 const TH: React.CSSProperties = {
   padding: "9px 10px", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)",
@@ -502,6 +503,7 @@ export default function PlatformUsersPage() {
 
   return (
     <AdminLayout activeNav="users">
+      <RequirePermission requiredPermission="auth:users:read" parentLabel="Dashboard">
       <PageShell>
         <PageHeader
           title="Platform Users"
@@ -733,6 +735,7 @@ export default function PlatformUsersPage() {
         onConfirm={bulkRunning.execute}
         loading={bulkRunning.loading}
       />
+      </RequirePermission>
     </AdminLayout>
   );
 }

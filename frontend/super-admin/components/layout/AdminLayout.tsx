@@ -34,38 +34,50 @@ import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { authApi, sprint27AdminApi } from "../../lib/api";
+import { usePermissions } from "../../hooks/usePermissions";
+import { SUPER_ADMIN_ONLY } from "../../lib/permission-catalog";
 
-type NavItem = { id: string; href: string; label: string; icon: React.ReactNode; badge?: number | null };
+// FINAL-L5-05M: requiredPermission is the one source of nav-visibility
+// gating alongside isNavItemVisible's module/category gating below. A
+// real backend permission key filters the item via usePermissions().has();
+// SUPER_ADMIN_ONLY marks items whose backing route is still gated by the
+// coarse require_super_admin check (not yet converted — see
+// FINAL_L5_05L_ADMIN_ROLE_RUNTIME.md), matching real backend behavior
+// rather than inventing a permission the backend doesn't enforce.
+type NavItem = {
+  id: string; href: string; label: string; icon: React.ReactNode; badge?: number | null;
+  requiredPermission: string;
+};
 type NavGroup = { label: string; items: NavItem[] };
 
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "Overview",
     items: [
-      { id: "dashboard", href: "/admin/dashboard", label: "Dashboard", icon: <LayoutDashboard size={16}/> },
+      { id: "dashboard", href: "/admin/dashboard", label: "Dashboard", icon: <LayoutDashboard size={16}/>, requiredPermission: "" },
     ],
   },
   {
     // Provider lifecycle: discover → request → verify → subscribe
     label: "Providers",
     items: [
-      { id: "tenants",              href: "/admin/tenants",              label: "All Providers",    icon: <Building2 size={16}/>  },
-      { id: "onboarding",           href: "/admin/tenants/onboarding",   label: "New Requests",     icon: <Inbox size={16}/>      },
-      { id: "onboarding-providers", href: "/admin/onboarding/providers", label: "Verify & Approve", icon: <ListChecks size={16}/> },
-      { id: "packages",             href: "/admin/packages",             label: "Packages",         icon: <Package size={16}/>    },
+      { id: "tenants",              href: "/admin/tenants",              label: "All Providers",    icon: <Building2 size={16}/>,  requiredPermission: "tenant:read" },
+      { id: "onboarding",           href: "/admin/tenants/onboarding",   label: "New Requests",     icon: <Inbox size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "onboarding-providers", href: "/admin/onboarding/providers", label: "Verify & Approve", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "packages",             href: "/admin/packages",             label: "Packages",         icon: <Package size={16}/>,    requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
     // Day-to-day operational monitoring
     label: "Operations",
     items: [
-      { id: "bookings",   href: "/admin/bookings",   label: "Bookings",  icon: <CalendarDays size={16}/>              },
-      { id: "operations", href: "/admin/home-services/service-jobs", label: "Jobs", icon: <Wrench size={16}/>, badge: null },
-      { id: "customers",  href: "/admin/customers",  label: "Customers", icon: <UserCheck size={16}/>                 },
-      { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <Users size={16}/>                     },
-      { id: "reviews",    href: "/admin/reviews",    label: "Reviews",    icon: <Star size={16}/>          },
-      { id: "complaints", href: "/admin/complaints", label: "Complaints", icon: <AlertOctagon size={16}/> },
-      { id: "complaint-policies", href: "/admin/complaint-policies", label: "Complaint Policies", icon: <AlertOctagon size={16}/> },
+      { id: "bookings",   href: "/admin/bookings",   label: "Bookings",  icon: <CalendarDays size={16}/>, requiredPermission: SUPER_ADMIN_ONLY               },
+      { id: "operations", href: "/admin/home-services/service-jobs", label: "Jobs", icon: <Wrench size={16}/>, badge: null, requiredPermission: "admin:jobs:read" },
+      { id: "customers",  href: "/admin/customers",  label: "Customers", icon: <UserCheck size={16}/>,    requiredPermission: SUPER_ADMIN_ONLY                },
+      { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <Users size={16}/>,        requiredPermission: "staff:read"                    },
+      { id: "reviews",    href: "/admin/reviews",    label: "Reviews",    icon: <Star size={16}/>,        requiredPermission: SUPER_ADMIN_ONLY                },
+      { id: "complaints", href: "/admin/complaints", label: "Complaints", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY               },
+      { id: "complaint-policies", href: "/admin/complaint-policies", label: "Complaint Policies", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
@@ -74,8 +86,8 @@ const NAV_GROUPS: NavGroup[] = [
     // Types & Brands) to avoid the same route appearing twice in the sidebar.
     label: "Catalog",
     items: [
-      { id: "verticals",       href: "/admin/verticals",       label: "Verticals",      icon: <Globe size={16}/>      },
-      { id: "categories",      href: "/admin/categories",      label: "Categories",     icon: <Layers size={16}/>     },
+      { id: "verticals",       href: "/admin/verticals",       label: "Verticals",      icon: <Globe size={16}/>,  requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "categories",      href: "/admin/categories",      label: "Categories",     icon: <Layers size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
@@ -86,9 +98,9 @@ const NAV_GROUPS: NavGroup[] = [
     // see HOME_SERVICES_MENU_ORGANIZATION_REPORT.md.
     label: "Pricing & Rules",
     items: [
-      { id: "pricing-tiers",       href: "/admin/pricing-tiers",              label: "Pricing Tiers",    icon: <LayoutGrid size={16}/> },
-      { id: "location-mapping",    href: "/admin/location-mapping",           label: "City/Zip Mapping", icon: <MapPin size={16}/>     },
-      { id: "provider-overrides",  href: "/admin/pricing/provider-overrides", label: "Provider Pricing Overrides", icon: <PercentSquare size={16}/> },
+      { id: "pricing-tiers",       href: "/admin/pricing-tiers",              label: "Pricing Tiers",    icon: <LayoutGrid size={16}/>,     requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "location-mapping",    href: "/admin/location-mapping",           label: "City/Zip Mapping", icon: <MapPin size={16}/>,         requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "provider-overrides",  href: "/admin/pricing/provider-overrides", label: "Provider Pricing Overrides", icon: <PercentSquare size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
@@ -97,52 +109,52 @@ const NAV_GROUPS: NavGroup[] = [
     // matching_engine.assert_home_services_vertical / get_home_services_category_id).
     label: "Home Services",
     items: [
-      { id: "hs-overview", href: "/admin/home-services/overview", label: "Overview", icon: <LayoutGrid size={16}/> },
-      { id: "hs-service-catalog", href: "/admin/home-services/service-catalog", label: "Service Catalog", icon: <ListChecks size={16}/> },
-      { id: "hs-pricing-rules", href: "/admin/home-services/pricing-rules", label: "Pricing Rules", icon: <Sliders size={16}/> },
-      { id: "hs-price-experience", href: "/admin/home-services/price-experience", label: "Customer Price Experience", icon: <FlaskConical size={16}/> },
-      { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Zap size={16}/> },
-      { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Wrench size={16}/> },
-      { id: "hs-service-areas", href: "/admin/home-services/service-areas", label: "Service Areas / Zones", icon: <MapPin size={16}/> },
-      { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/> },
-      { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/> },
+      { id: "hs-overview", href: "/admin/home-services/overview", label: "Overview", icon: <LayoutGrid size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-service-catalog", href: "/admin/home-services/service-catalog", label: "Service Catalog", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-pricing-rules", href: "/admin/home-services/pricing-rules", label: "Pricing Rules", icon: <Sliders size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-price-experience", href: "/admin/home-services/price-experience", label: "Customer Price Experience", icon: <FlaskConical size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Wrench size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-service-areas", href: "/admin/home-services/service-areas", label: "Service Areas / Zones", icon: <MapPin size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/>, requiredPermission: "finance.completed_job_deduction_rules.read" },
+      { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
     // Finance Hub: overview → deposits → top-ups → warranty claims → payouts
     label: "Finance",
     items: [
-      { id: "finance",          href: "/admin/finance",          label: "Finance Hub",    icon: <Banknote size={16}/>      },
-      { id: "finance-usage-credits", href: "/admin/finance/usage-credits", label: "Usage Credits", icon: <Banknote size={16}/> },
-      { id: "finance-deposits", href: "/admin/finance/deposits",  label: "Security Deposits", icon: <Shield size={16}/>     },
-      { id: "finance-topups",   href: "/admin/finance/topups",    label: "Credit Top-ups",  icon: <Tag size={16}/>          },
-      { id: "finance-claims",   href: "/admin/finance/claims",    label: "Warranty Claims", icon: <AlertOctagon size={16}/> },
-      { id: "finance-payouts",  href: "/admin/finance/payouts",   label: "Payouts",         icon: <ScrollText size={16}/>   },
-      { id: "compliance",       href: "/admin/compliance",        label: "Compliance",      icon: <ClipboardCheck size={16}/> },
+      { id: "finance",          href: "/admin/finance",          label: "Finance Hub",    icon: <Banknote size={16}/>,      requiredPermission: "finance:hub:read" },
+      { id: "finance-usage-credits", href: "/admin/finance/usage-credits", label: "Usage Credits", icon: <Banknote size={16}/>, requiredPermission: "finance.usage_credits.read" },
+      { id: "finance-deposits", href: "/admin/finance/deposits",  label: "Security Deposits", icon: <Shield size={16}/>,     requiredPermission: "finance.security_deposits.read" },
+      { id: "finance-topups",   href: "/admin/finance/topups",    label: "Credit Top-ups",  icon: <Tag size={16}/>,          requiredPermission: "finance:topups:read" },
+      { id: "finance-claims",   href: "/admin/finance/claims",    label: "Warranty Claims", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "finance-payouts",  href: "/admin/finance/payouts",   label: "Payouts",         icon: <ScrollText size={16}/>,   requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "compliance",       href: "/admin/compliance",        label: "Compliance",      icon: <ClipboardCheck size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
     label: "Marketing & Growth",
     items: [
-      { id: "marketing",     href: "/admin/marketing",     label: "Campaigns",       icon: <Megaphone size={16}/> },
-      { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>      },
-      { id: "analytics",     href: "/admin/analytics",     label: "Analytics",       icon: <BarChart3 size={16}/> },
-      { id: "reports",       href: "/admin/reports",       label: "Reports",         icon: <ScrollText size={16}/> },
-      { id: "intelligence",  href: "/admin/intelligence",  label: "AI Intelligence", icon: <Brain size={16}/>     },
+      { id: "marketing",     href: "/admin/marketing",     label: "Campaigns",       icon: <Megaphone size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "analytics",     href: "/admin/analytics",     label: "Analytics",       icon: <BarChart3 size={16}/>, requiredPermission: "analytics:dashboard:read" },
+      { id: "reports",       href: "/admin/reports",       label: "Reports",         icon: <ScrollText size={16}/>, requiredPermission: "analytics:dashboard:read" },
+      { id: "intelligence",  href: "/admin/intelligence",  label: "AI Intelligence", icon: <Brain size={16}/>,     requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
     label: "Platform",
     items: [
-      { id: "engines",            href: "/admin/engines",            label: "Engines",    icon: <Cpu size={16}/>        },
-      { id: "security",           href: "/admin/security",           label: "Security",   icon: <Shield size={16}/>     },
-      { id: "workflow-templates", href: "/admin/workflow-templates", label: "Workflows",  icon: <GitBranch size={16}/>  },
-      { id: "audit-logs",         href: "/admin/audit-logs",        label: "Audit Logs", icon: <ScrollText size={16}/> },
-      { id: "users",              href: "/admin/users",              label: "Users",      icon: <Users size={16}/>      },
-      { id: "roles",              href: "/admin/users/roles",        label: "Roles",       icon: <Shield size={16}/>     },
-      { id: "permissions",        href: "/admin/users/permissions",  label: "Permissions", icon: <ClipboardCheck size={16}/> },
-      { id: "media",              href: "/admin/media",              label: "Media",      icon: <Image size={16}/>      },
-      { id: "settings",           href: "/admin/settings",           label: "Settings",   icon: <Settings size={16}/>   },
+      { id: "engines",            href: "/admin/engines",            label: "Engines",    icon: <Cpu size={16}/>,        requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "security",           href: "/admin/security",           label: "Security",   icon: <Shield size={16}/>,     requiredPermission: "security:read" },
+      { id: "workflow-templates", href: "/admin/workflow-templates", label: "Workflows",  icon: <GitBranch size={16}/>,  requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "audit-logs",         href: "/admin/audit-logs",        label: "Audit Logs", icon: <ScrollText size={16}/>, requiredPermission: "auth:audit:read" },
+      { id: "users",              href: "/admin/users",              label: "Users",      icon: <Users size={16}/>,      requiredPermission: "auth:users:read" },
+      { id: "roles",              href: "/admin/users/roles",        label: "Roles",       icon: <Shield size={16}/>,    requiredPermission: "platform:roles:read" },
+      { id: "permissions",        href: "/admin/users/permissions",  label: "Permissions", icon: <ClipboardCheck size={16}/>, requiredPermission: "platform:permissions:read" },
+      { id: "media",              href: "/admin/media",              label: "Media",      icon: <Image size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "settings",           href: "/admin/settings",           label: "Settings",   icon: <Settings size={16}/>,   requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
 ];
@@ -194,6 +206,21 @@ function isNavItemVisible(itemId: string, effectiveMenu: EffectiveMenu | null): 
   }
 }
 
+// FINAL-L5-05M: permission gating, orthogonal to the module/category gating
+// above. `perms === null` means the effective-permission fetch has not
+// resolved yet — items are hidden (fail closed), not shown, to avoid
+// flashing unauthorized content before the real server payload arrives.
+function isNavItemPermitted(
+  item: { requiredPermission: string },
+  perms: string[] | null,
+  role: string | null,
+): boolean {
+  if (item.requiredPermission === "") return true; // Dashboard — visible to any authenticated admin role
+  if (perms === null) return false; // still loading — fail closed
+  if (item.requiredPermission === SUPER_ADMIN_ONLY) return role === "super_admin";
+  return perms.includes("*") || perms.includes(item.requiredPermission);
+}
+
 export function AdminLayout({ children, activeNav }: { children: React.ReactNode; activeNav?: string }) {
   const alreadyMounted = useContext(AdminShellCtx);
   // If already inside an AdminLayout (route-level wraps page-level), skip shell render.
@@ -208,6 +235,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
   const [collapsed, setCollapsed] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [effectiveMenu, setEffectiveMenu] = useState<EffectiveMenu | null>(null);
+  const { permissions: effectivePermissions, role: effectiveRole } = usePermissions();
 
   const loadEffectiveMenu = useCallback(() => {
     const token = typeof window !== "undefined" && localStorage.getItem("serviceos_admin_token");
@@ -278,7 +306,21 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: "12px 8px", display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
-          {NAV_GROUPS.map((group, gi) => (
+          {NAV_GROUPS.map((group, gi) => {
+            // FINAL-L5-05M: two independent gates, both must pass — module/
+            // category entitlement (isNavItemVisible, pre-existing) AND
+            // effective-permission (isNavItemPermitted, this sprint). An
+            // empty group (0 permitted items, and no enabled-verticals
+            // sub-menu for Catalog) renders nothing at all, per Part 6
+            // requirement #2.
+            const visibleItems = group.items
+              .filter(item => isNavItemVisible(item.id, effectiveMenu))
+              .filter(item => isNavItemPermitted(item, effectivePermissions, effectiveRole));
+            const hasVerticalsSubmenu = group.label === "Catalog" && effectiveMenu &&
+              effectiveMenu.verticals.some(v => v.is_enabled) &&
+              effectiveRole === "super_admin"; // verticals management is SUPER_ADMIN_ONLY, matching "categories"/"verticals" items above
+            if (visibleItems.length === 0 && !hasVerticalsSubmenu) return null;
+            return (
             <div key={group.label} style={{ marginBottom: 8 }}>
               {!collapsed && (
                 <p style={{
@@ -290,13 +332,11 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
               {collapsed && gi > 0 && (
                 <div style={{ height: 1, background: "var(--sidebar-border)", margin: "6px 10px 6px" }}/>
               )}
-              {group.items
-                .filter(item => isNavItemVisible(item.id, effectiveMenu))
-                .map(item => (
+              {visibleItems.map(item => (
                   <SidebarItem key={item.id} item={item} active={activeNav === item.id} collapsed={collapsed}/>
                 ))}
               {/* After the Catalog group, inject per-vertical sub-menus */}
-              {group.label === "Catalog" && effectiveMenu && effectiveMenu.verticals
+              {hasVerticalsSubmenu && effectiveMenu!.verticals
                 .filter(v => v.is_enabled)
                 .map(v => (
                   <VerticalCatalogSection
@@ -308,7 +348,8 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
                 ))
               }
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Footer */}
@@ -429,7 +470,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed }: {
             return (
               <SidebarItem
                 key={m.key}
-                item={{ id: navId, href: path, label: m.label, icon: <Settings2 size={14}/> }}
+                item={{ id: navId, href: path, label: m.label, icon: <Settings2 size={14}/>, requiredPermission: SUPER_ADMIN_ONLY }}
                 active={activeNav === navId}
                 collapsed={false}
               />
