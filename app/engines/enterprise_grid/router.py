@@ -29,7 +29,7 @@ import uuid
 from typing import Optional, Any
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -549,7 +549,141 @@ async def retry_export(
     except ValueError as e:
         _raise_controlled_export_error(e)
     from app.engines.enterprise_grid.constants import EXPORT_PENDING
+    if job.status not in ("failed", "expired"):
+        raise ServiceOSException(
+            error_code="EXPORT_JOB_NOT_READY",
+            detail=f"Only failed or expired jobs can be retried (current status: {job.status}).",
+            status_code=409,
+        )
     job.status         = EXPORT_PENDING
     job.failure_reason = None
+    job.error_code      = None
+    job.error_message   = None
+    job.worker_id        = None
+    job.claimed_at       = None
+    job.started_at        = None
+    job.storage_key       = None
+    job.progress           = 0
     await db.commit()
     return ok(job.to_dict(), _rid(r), "enterprise.export.retry")
+
+
+@enterprise_router.post(
+    "/exports/{export_id}/cancel",
+    tags=["Enterprise Exports"],
+    summary="Cancel a queued or in-progress export job",
+    description=(
+        "Cancels a pending or processing export job. Cancelled jobs are "
+        "never downloadable, and any partial storage object is cleaned up "
+        "by the cleanup worker. Completed/failed/expired jobs cannot be "
+        "cancelled (409)."
+    ),
+)
+async def cancel_export(
+    export_id: uuid.UUID,
+    r: Request       = None,
+    u: UserContext   = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        job = await _export.get_export_job(db, export_id, u.user_id)
+    except ValueError as e:
+        _raise_controlled_export_error(e)
+    if job.status not in ("pending", "processing"):
+        raise ServiceOSException(
+            error_code="EXPORT_JOB_NOT_READY",
+            detail=f"Only pending or processing jobs can be cancelled (current status: {job.status}).",
+            status_code=409,
+        )
+    from datetime import datetime, timezone
+    job.status = "cancelled"
+    job.cancelled_at = datetime.now(timezone.utc)
+    await db.commit()
+    return ok(job.to_dict(), _rid(r), "enterprise.export.cancel")
+
+
+@enterprise_router.get(
+    "/exports/{export_id}/download",
+    tags=["Enterprise Exports"],
+    summary="Download a completed export file",
+    description=(
+        "Independently re-authorizes (resource export permission + own-job "
+        "ownership + COMPLETED status + not-expired + file-exists) before "
+        "streaming the private file. Knowing the job ID alone is never "
+        "sufficient (rule 15)."
+    ),
+)
+async def download_export(
+    export_id: uuid.UUID,
+    r: Request       = None,
+    u: UserContext   = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        job = await _export.get_export_job(db, export_id, u.user_id)
+    except ValueError as e:
+        _raise_controlled_export_error(e)
+
+    # Re-check the resource export permission at download time, not just at
+    # creation time -- a permission revoked between job creation and
+    # download must take effect (rule: "Permission removal takes effect
+    # according to session policy").
+    required = EnterpriseFilterRegistry.required_export_permission(job.resource_key)
+    if required and not permission_checker.has(
+        role=u.role, permission=required, overrides=getattr(u, "permission_overrides", None),
+    ):
+        raise ServiceOSException(
+            error_code="EXPORT_DOWNLOAD_FORBIDDEN",
+            detail="You no longer have permission to download this export.",
+            status_code=403,
+        )
+
+    if job.status != "completed":
+        raise ServiceOSException(
+            error_code="EXPORT_JOB_NOT_READY",
+            detail=f"Export is not ready for download (status: {job.status}).",
+            status_code=409,
+        )
+    from datetime import datetime, timezone
+    if job.expires_at and job.expires_at < datetime.now(timezone.utc):
+        raise ServiceOSException(
+            error_code="EXPORT_JOB_EXPIRED",
+            detail="This export has expired. Please retry to generate a new one.",
+            status_code=410,
+        )
+    if not job.storage_key:
+        raise ServiceOSException(
+            error_code="EXPORT_JOB_NOT_FOUND",
+            detail="Export file is missing.",
+            status_code=404,
+        )
+
+    from app.engines.enterprise_grid.export_storage import ExportStorageService
+    storage = ExportStorageService()
+    if not storage.exists(job.storage_key):
+        raise ServiceOSException(
+            error_code="EXPORT_JOB_NOT_FOUND",
+            detail="Export file is missing.",
+            status_code=404,
+        )
+    content = storage.read_bytes(job.storage_key)
+
+    from app.core.audit import record_platform_audit
+    await record_platform_audit(
+        db, operation="export.downloaded", engine_id="enterprise_grid",
+        tenant_id=job.tenant_id, entity_type="export_job", entity_id=str(job.id),
+        actor_id=uuid.UUID(u.user_id) if getattr(u, "user_id", None) else None, actor_role=u.role,
+        request_id=_rid(r),
+    )
+    await db.commit()
+
+    safe_filename = job.filename or f"export-{job.id}.csv"
+    return Response(
+        content=content,
+        media_type=job.content_type or "text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

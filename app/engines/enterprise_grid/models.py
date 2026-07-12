@@ -90,6 +90,22 @@ class EnterpriseExportJob(Base):
     created_at:           Mapped[datetime]        = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at:           Mapped[datetime]        = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
+    # FINAL-L5-05S — real export execution lifecycle (migration 135).
+    worker_id:            Mapped[str | None]      = mapped_column(String(64), nullable=True)
+    claimed_at:           Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at:           Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at:         Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at:         Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retry_count:          Mapped[int]             = mapped_column(Integer, default=0, nullable=False)
+    storage_key:          Mapped[str | None]      = mapped_column(Text, nullable=True)
+    filename:             Mapped[str | None]      = mapped_column(String(255), nullable=True)
+    content_type:         Mapped[str | None]      = mapped_column(String(128), nullable=True)
+    file_size:            Mapped[int | None]      = mapped_column(Integer, nullable=True)
+    checksum:             Mapped[str | None]      = mapped_column(String(128), nullable=True)
+    error_code:           Mapped[str | None]      = mapped_column(String(64), nullable=True)
+    error_message:        Mapped[str | None]      = mapped_column(Text, nullable=True)
+    progress:             Mapped[int]             = mapped_column(Integer, default=0, nullable=False)
+
     def to_dict(self) -> dict:
         return {
             "id":                   str(self.id),
@@ -101,9 +117,25 @@ class EnterpriseExportJob(Base):
             "filters":              self.filters,
             "columns":              self.columns,
             "row_count":            self.row_count,
-            "file_url":             self.file_url,
+            # file_url is deliberately NOT populated with a raw storage
+            # path -- download is only ever available via the authorized
+            # /exports/{id}/download endpoint (rule: storage paths must
+            # never be returned directly in an API response).
+            "file_url":             None,
             "failure_reason":       self.failure_reason,
             "expires_at":           str(self.expires_at) if self.expires_at else None,
             "created_at":           str(self.created_at) if self.created_at else None,
             "updated_at":           str(self.updated_at) if self.updated_at else None,
+            "started_at":           str(self.started_at) if self.started_at else None,
+            "completed_at":         str(self.completed_at) if self.completed_at else None,
+            "cancelled_at":         str(self.cancelled_at) if self.cancelled_at else None,
+            "retry_count":          self.retry_count,
+            "filename":             self.filename,
+            "content_type":         self.content_type,
+            "file_size":            self.file_size,
+            "checksum":             self.checksum,
+            "error_code":           self.error_code,
+            "progress":             self.progress,
+            "downloadable":         self.status == "completed" and bool(self.storage_key)
+                                     and (self.expires_at is None or self.expires_at > datetime.now(timezone.utc)),
         }

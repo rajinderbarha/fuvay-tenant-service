@@ -39,6 +39,9 @@ Thumbs.db
 # Uploads (runtime data, not source)
 uploads/
 
+# Private export files (runtime data, not source — FINAL-L5-05S)
+var/exports/
+
 # Local database backups (may contain data, never commit)
 .backups/
 

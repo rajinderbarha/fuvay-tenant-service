@@ -45,6 +45,7 @@ EXPORT_PROCESSING = "processing"
 EXPORT_COMPLETED  = "completed"
 EXPORT_FAILED     = "failed"
 EXPORT_EXPIRED    = "expired"
+EXPORT_CANCELLED  = "cancelled"  # FINAL-L5-05S
 
 # ── Density options ───────────────────────────────────────────────────────────
 DENSITY_COMPACT     = "compact"

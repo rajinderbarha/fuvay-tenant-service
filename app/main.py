@@ -58,13 +58,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _sla_task = asyncio.create_task(_compliance_sla_loop())
     logger.info("compliance_sla_loop.started")
 
+    # 6. Export worker background loop (FINAL-L5-05S) — claims and
+    # processes enterprise_export_jobs, plus periodic expiry/orphan cleanup.
+    from app.jobs.export_worker import background_loop as _export_worker_loop
+    _export_worker_task = asyncio.create_task(_export_worker_loop())
+    logger.info("export_worker_loop.started")
+
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
     logger.info("serviceos.shutting_down")
     _sla_task.cancel()
+    _export_worker_task.cancel()
     try:
         await _sla_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await _export_worker_task
     except asyncio.CancelledError:
         pass
     await close_redis()
