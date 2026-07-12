@@ -14,6 +14,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_platform_audit
+from app.core.permissions import P, require_permission
 from app.dependencies.auth import get_current_user, require_super_admin, UserContext
 from app.dependencies.db import get_db
 from app.exceptions import ServiceOSException
@@ -174,7 +175,7 @@ _REASSIGN_ERROR_MAP: dict[str, tuple[int, str]] = {
 async def admin_list_eligible_technicians(
     job_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(require_super_admin),
+    user: UserContext  = Depends(require_permission(P.ADMIN_JOBS_READ)),
     db:   AsyncSession = Depends(get_db),
 ):
     """Reads real technician users (role='technician'/'staff', is_active) scoped
@@ -204,7 +205,7 @@ async def admin_reassign_job(
     job_id: uuid.UUID,
     body: AdminReassignJobRequest,
     r:    Request      = ...,
-    user: UserContext  = Depends(require_super_admin),
+    user: UserContext  = Depends(require_permission(P.ADMIN_JOBS_REASSIGN)),
     db:   AsyncSession = Depends(get_db),
 ):
     from app.engines.final_records.models import ServiceJob

@@ -45,8 +45,19 @@ def test_permissions_list_and_grouped_endpoints_exist():
     assert "def list_permissions_grouped" in SERVICE
 
 
-def test_all_endpoints_require_super_admin():
-    assert ROUTER.count("require_super_admin") >= 8
+def test_all_endpoints_require_super_admin_or_permission():
+    """FINAL-L5-05L: the 5 read endpoints (list/get roles, list/grouped/get
+    permissions) were converted from the coarse require_super_admin
+    role-string check to require_permission(P.PLATFORM_ROLES_READ /
+    P.PLATFORM_PERMISSIONS_READ) so the new admin_security/admin_readonly
+    roles can genuinely read the catalog. The 5 mutation endpoints (all
+    501-not-implemented — roles are code-defined, not DB rows) remain on
+    require_super_admin. Every endpoint is still authorization-gated by
+    one mechanism or the other -- 0 endpoints are open to any authenticated
+    user."""
+    assert ROUTER.count("require_super_admin") == 5
+    assert ROUTER.count("require_permission(P.PLATFORM_ROLES_READ)") == 2
+    assert ROUTER.count("require_permission(P.PLATFORM_PERMISSIONS_READ)") == 3
 
 
 def test_permission_count_consistent_between_list_and_detail():

@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import P, require_permission
 from app.dependencies.auth import UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.exceptions import NotFoundException, ServiceOSException
@@ -26,14 +27,14 @@ def _rid(r: Request) -> str:
 @router.get("/roles", summary="List all roles (code-defined + gap-flagged)",
             response_model=ApiResponse[dict])
 async def list_roles(r: Request, db: AsyncSession = Depends(get_db),
-                      u: UserContext = Depends(require_super_admin)) -> ApiResponse[dict]:
+                      u: UserContext = Depends(require_permission(P.PLATFORM_ROLES_READ))) -> ApiResponse[dict]:
     return ok(await svc.list_roles(db), _rid(r), "roles_permissions")
 
 
 @router.get("/roles/{role_id}", summary="Role detail — permissions + assigned users",
             response_model=ApiResponse[dict])
 async def get_role(role_id: str, r: Request, db: AsyncSession = Depends(get_db),
-                    u: UserContext = Depends(require_super_admin)) -> ApiResponse[dict]:
+                    u: UserContext = Depends(require_permission(P.PLATFORM_ROLES_READ))) -> ApiResponse[dict]:
     detail = await svc.get_role_detail(db, role_id)
     if not detail["is_implemented"] and detail["assigned_user_count"] == 0 and role_id not in svc.REQUIRED_ROLE_ORDER:
         raise NotFoundException("Role", role_id)
@@ -85,7 +86,7 @@ async def list_permissions(r: Request,
                             app_scope: str | None = Query(None),
                             risk_level: str | None = Query(None),
                             search: str | None = Query(None),
-                            u: UserContext = Depends(require_super_admin)) -> ApiResponse[dict]:
+                            u: UserContext = Depends(require_permission(P.PLATFORM_PERMISSIONS_READ))) -> ApiResponse[dict]:
     return ok(svc.list_permissions(module=module, app_scope=app_scope,
                                     risk_level=risk_level, search=search),
               _rid(r), "roles_permissions")
@@ -96,7 +97,7 @@ async def list_permissions(r: Request,
 async def list_permissions_grouped(r: Request,
                                     app_scope: str | None = Query(None),
                                     risk_level: str | None = Query(None),
-                                    u: UserContext = Depends(require_super_admin)) -> ApiResponse[dict]:
+                                    u: UserContext = Depends(require_permission(P.PLATFORM_PERMISSIONS_READ))) -> ApiResponse[dict]:
     return ok(svc.list_permissions_grouped(app_scope=app_scope, risk_level=risk_level),
               _rid(r), "roles_permissions")
 
@@ -104,7 +105,7 @@ async def list_permissions_grouped(r: Request,
 @router.get("/permissions/{permission_key}", summary="Permission detail",
             response_model=ApiResponse[dict])
 async def get_permission(permission_key: str, r: Request,
-                          u: UserContext = Depends(require_super_admin)) -> ApiResponse[dict]:
+                          u: UserContext = Depends(require_permission(P.PLATFORM_PERMISSIONS_READ))) -> ApiResponse[dict]:
     result = svc.list_permissions(search=None)
     match = next((i for i in result["items"] if i["permission_key"] == permission_key), None)
     if not match:

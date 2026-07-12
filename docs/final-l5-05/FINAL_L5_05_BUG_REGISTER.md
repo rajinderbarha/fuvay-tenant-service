@@ -278,5 +278,46 @@
 - **Evidence**: Real Chromium run (`e2e/super-admin/final-l5-05k-usage-credit-runtime.spec.ts`, no network mocks, against the real running frontend + backend): 3/3 tests passed — Usage Credits page shows real balance/ledger data with no forbidden terminology and no wallet-API network calls; Finance Hub Top-ups list loads with no serious console errors; old wallet pages (`/admin/finance/wallets`, `/admin/provider-wallets`) confirmed absent from primary navigation. Screenshots captured under `docs/final-l5-05/evidence/`.
 - **Final status**: **FIXED** for the scope actually run (Super Admin role). Finance-capable-Admin and Admin-Read-Only role-specific Chromium scenarios were not run — same root-cause limitation as L5-05K-006 (those roles don't exist as distinct backend accounts to log in as).
 
+## L5-05L-001/002/003/004: Distinct Operations/Finance/Security/Read-Only Admin roles missing
+- **Severity**: P0 (the root cause blocking every FINAL-L5-05K-carried-forward RBAC/Chromium finding).
+- **Evidence**: `admin.ops@serviceos.local`, `admin.finance@serviceos.local`, `admin.readonly@serviceos.local` all had `role="super_admin"` in the real database — a previously-undiscovered bug in `scripts/canonical_seed_final_l5_01.py`, which only set the free-text, functionally-dead `platform_role` label to distinguish intended purpose. `admin.security@serviceos.local` did not exist at all.
+- **Fix**: Added 4 real, enforced role bundles to `app/core/permissions.py::ROLE_PERMISSIONS` (`admin_operations`, `admin_finance`, `admin_security`, `admin_readonly`, none with the `P.ALL` wildcard). New idempotent, environment-gated seed script (`scripts/seed_admin_roles_final_l5_05l.py`) repoints the 3 existing accounts' `role` column (password hashes untouched) and creates the 1 net-new account.
+- **Tests**: `tests/test_final_l5_05l_admin_roles.py` (40 tests). Live-verified: all 5 principals authenticate, `/v1/auth/me` returns the correct role and a real computed `permissions` array.
+- **Final status**: **FIXED**.
+
+## L5-05L-005: Role permission bundles undefined
+- **Severity**: P0.
+- **Evidence**: No prior definition existed for what any of the 4 new roles should be allowed/denied.
+- **Fix**: Explicit bundles defined with inline deny-list rationale comments (see `FINAL_L5_05L_ADMIN_ROLE_RUNTIME.md` Part 5). A real gap was found and fixed live during API testing: `admin_readonly` was initially missing `P.FINANCE_READ` (the base permission `finance_hub`'s shared `_svc` dependency requires in addition to the specific `FINANCE_TOPUPS_READ` key) — caught by an actual failing live API call, fixed, backend restarted, re-verified 200.
+- **Final status**: **FIXED**.
+
+## L5-05L-006: Deterministic role test principals missing
+- **Severity**: P0.
+- **Evidence**: See L5-05L-001-004.
+- **Fix**: 5 real, unique backend accounts (1 pre-existing Super Admin + 4 role-fixed/created this sprint), each with a real, independent login and session.
+- **Final status**: **FIXED**.
+
+## L5-05L-007: Cross-domain denial unverified
+- **Severity**: P0 (explicit acceptance-criteria blocker).
+- **Evidence**: Real live HTTP matrix executed for all 4 mandatory cross-domain pairs: Operations Admin → Usage Credit adjustment/Top-up approval/Security Deposit adjustment (403×3); Finance Admin → Force-close/Void (403×2); Security Admin → Usage Credit adjustment/Force-close (403×2); Admin Read Only → every representative mutation (403×4). Also verified the inverse (allowed actions actually succeed/reach real business logic) for each role. Full evidence in `FINAL_L5_05L_ADMIN_ROLE_RUNTIME.md` Part 17/18.
+- **Root cause requiring backend changes**: The canonical Jobs-mutation endpoints (force-close/void/status-override/reassign) and Roles/Permissions catalog reads were gated by the coarse `require_super_admin` role-string check, which cannot differentiate any non-super_admin role. Converted the specific endpoints named in the mission's test matrix to `require_permission()` — a bounded, individually-tested change, not a blanket refactor of the many other `require_super_admin` call sites elsewhere in the codebase (explicitly out of scope, documented).
+- **Final status**: **FIXED** for the representative matrix the mission specifies.
+
+## L5-05L-008: Read-only mutation denial unverified
+- **Severity**: P0 (explicit acceptance-criteria blocker — "Admin Read Only mutation permission count: 0").
+- **Evidence**: `admin_readonly`'s bundle contains 0 mutation-shaped permission keys (verified by an automated architecture guard using a keyword heuristic, `test_admin_readonly_has_zero_mutation_permissions`). Live-verified: adjustment/force-close/session-revoke all return 403; balance/top-up/roles-catalog/security-deposit reads all return 200 with real data. Also verified via real Chromium: a direct `fetch()` mutation call made from within the authenticated Read Only browser session (using the real stored session token) returns 403.
+- **Final status**: **FIXED**.
+
+## L5-05L-009: Five-role API matrix missing
+- **Severity**: P0 (explicit acceptance-criteria blocker).
+- **Evidence**: Real backend started (migrations at 134), real HTTP calls for all 5 principals covering login, `/v1/auth/me`, allowed actions, denied actions, and the one real bug found-and-fixed live (`admin_readonly`'s missing `P.FINANCE_READ`). Full matrix in `FINAL_L5_05L_ADMIN_ROLE_RUNTIME.md` Part 17/18.
+- **Final status**: **FIXED**.
+
+## L5-05L-010: Five-role Chromium matrix missing
+- **Severity**: P1 (partially closed — see honest scope note below).
+- **Evidence**: Real Chromium (no mocks) against the real running frontend+backend: all 5 roles log in and load the dashboard without a JS crash (`e2e/super-admin/final-l5-05l-admin-role-runtime.spec.ts`, 7/7 passed); 2 additional tests prove direct browser-context API mutation calls are denied by the backend regardless of frontend UI state (Admin Read Only and Operations Admin, both real 403s).
+- **Real, honestly-documented gap**: `AdminLayout.tsx` has 0 `usePermissions()` call sites — the sidebar/dashboard is not permission-filtered, so non-super-admin roles see the same full navigation and the dashboard fetches widgets backed by endpoints not yet converted off `require_super_admin`, producing expected (correct) 403 network responses that are not yet gracefully hidden in the UI. This is a real frontend-completeness gap, not a security defect (backend denial is proven authoritative regardless). Not fixed this sprint — explicitly out of scope per the mission's own "do not redesign the entire Admin UI" framing. The full Part 25/32 page-by-page, action-by-action five-role Chromium matrix (menu visibility, action visibility, read-only UX, responsive checks) was not run in full — only login/dashboard-smoke/direct-API-denial were run for all 5 roles.
+- **Final status**: **PARTIALLY FIXED** — backend-authoritative denial is proven live via the browser for the representative cases tested; full UI-visibility-matrix coverage remains open.
+
 ## Result
-18 of 21 real bugs/gaps found across FINAL-L5-05 through FINAL-L5-05H were fixed and live-verified; FINAL-L5-05I added 10 classification-level findings; FINAL-L5-05J added 10 more implementing the Usage Credit/Package Credit/tenant-health core; FINAL-L5-05K adds 10 more (L5-05K-001 through 010): the sixth credit-grant path (Finance Hub top-ups) is migrated to the canonical service, a real race-condition bug was found and fixed via true concurrent-request testing against live Postgres, and full live database/API/Chromium evidence was captured for the first time in this sub-engagement. 3 findings remain partially open, all for the same underlying, previously-established reason: distinct low-privilege admin roles (Finance-capable Admin, Admin Read Only, Operations Admin) do not exist as backend concepts yet, so their specific RBAC/audit/Chromium scenarios cannot be genuinely tested — not hidden, not downgraded, documented with direct DB evidence each time it recurs.
+18 of 21 real bugs/gaps found across FINAL-L5-05 through FINAL-L5-05H were fixed and live-verified; FINAL-L5-05I added 10 classification-level findings; FINAL-L5-05J added 10 more implementing the Usage Credit/Package Credit/tenant-health core; FINAL-L5-05K added 10 more migrating Finance Hub top-ups and proving true concurrency; FINAL-L5-05L adds 10 more (L5-05L-001 through 010): 4 real, distinct, least-privilege Admin roles now exist as genuine backend principals (fixing a real pre-existing bug where 3 "role-differentiated" demo accounts were secretly all `super_admin`), cross-domain denial is proven live across all mandatory role/domain pairs, and a real permission-bundle gap was found and fixed live during testing. One finding (L5-05L-010) remains partially open: backend authorization is proven authoritative via real Chromium, but full frontend navigation/action-visibility filtering was not implemented, consistent with the mission's own explicit "do not redesign the entire Admin UI" scope limit — documented with direct source evidence (0 `usePermissions()` call sites in `AdminLayout.tsx`), not hidden or downgraded.

@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.dependencies.auth import get_current_user, require_super_admin
 from app.dependencies.db import get_db
+from app.core.permissions import P, require_permission
 from app.schemas.base import ApiResponse, ok
 from app.engines.execution.home_service_service import HomeServiceJobExecutionService
 from app.engines.execution.admin_job_actions import AdminJobActionsService
@@ -410,7 +411,7 @@ class VoidRequest(BaseModel):
 @admin_router.get("/{job_id}/allowed-override-targets", response_model=ApiResponse,
                    summary="Admin: list the status-override targets currently allowed for this job")
 async def admin_get_allowed_override_targets(
-    job_id: uuid.UUID, r: Request, user=Depends(require_super_admin), db=Depends(get_db),
+    job_id: uuid.UUID, r: Request, user=Depends(require_permission(P.ADMIN_JOBS_READ)), db=Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—")
     from app.engines.final_records.models import ServiceJob
@@ -426,7 +427,7 @@ async def admin_get_allowed_override_targets(
                     summary="Admin: override a service job's status to a curated allowed target")
 async def admin_override_status(
     job_id: uuid.UUID, body: StatusOverrideRequest, r: Request,
-    user=Depends(require_super_admin), db=Depends(get_db),
+    user=Depends(require_permission(P.ADMIN_JOBS_STATUS_OVERRIDE)), db=Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—")
     svc = AdminJobActionsService(db)
@@ -442,7 +443,7 @@ async def admin_override_status(
                     summary="Admin: force-close a service job (never creates an automatic deduction)")
 async def admin_force_close(
     job_id: uuid.UUID, body: ForceCloseRequest, r: Request,
-    user=Depends(require_super_admin), db=Depends(get_db),
+    user=Depends(require_permission(P.ADMIN_JOBS_FORCE_CLOSE)), db=Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—")
     svc = AdminJobActionsService(db)
@@ -458,7 +459,7 @@ async def admin_force_close(
                     summary="Admin: void a service job (blocked if a Completed Job Deduction already exists)")
 async def admin_void(
     job_id: uuid.UUID, body: VoidRequest, r: Request,
-    user=Depends(require_super_admin), db=Depends(get_db),
+    user=Depends(require_permission(P.ADMIN_JOBS_VOID)), db=Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—")
     svc = AdminJobActionsService(db)

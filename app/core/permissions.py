@@ -382,6 +382,17 @@ class P:
     FINANCE_SETTINGS_READ    = "finance.settings.read"
     FINANCE_SETTINGS_UPDATE  = "finance.settings.update"
 
+    # ── FINAL-L5-05L: canonical Admin-exec Jobs mutations (super-admin
+    # service_jobs domain — distinct from the tenant-portal field_ops.* keys
+    # above) and platform Roles/Permissions catalog reads ───────────────────
+    ADMIN_JOBS_READ            = "admin:jobs:read"
+    ADMIN_JOBS_REASSIGN        = "admin:jobs:reassign"
+    ADMIN_JOBS_STATUS_OVERRIDE = "admin:jobs:status_override"
+    ADMIN_JOBS_FORCE_CLOSE     = "admin:jobs:force_close"
+    ADMIN_JOBS_VOID            = "admin:jobs:void"
+    PLATFORM_ROLES_READ        = "platform:roles:read"
+    PLATFORM_PERMISSIONS_READ  = "platform:permissions:read"
+
     # ── User Account Security (Phase 0E) ─────────────────────────────────────
     USERS_SECURITY_READ            = "users:security:read"
     USERS_SECURITY_LOCK            = "users:security:lock"
@@ -592,6 +603,81 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     "guest": [
         P.BOOKING_READ,            # Public service catalog
         P.SETTINGS_READ,           # Business info for menu/booking
+    ],
+
+    # ── FINAL-L5-05L — canonical least-privilege platform Admin roles ──────────
+    # None of these get P.ALL; super_admin remains the sole wildcard role.
+    "admin_operations": [
+        P.ADMIN_JOBS_READ, P.ADMIN_JOBS_REASSIGN, P.ADMIN_JOBS_STATUS_OVERRIDE,
+        P.ADMIN_JOBS_FORCE_CLOSE, P.ADMIN_JOBS_VOID,
+        P.FIELD_OPS_JOBS_READ, P.FIELD_OPS_REPORTS_READ,
+        P.TENANT_READ, P.TENANT_HEALTH_READ,
+        P.STAFF_READ, P.STAFF_PERFORMANCE_READ,
+        P.REVIEW_READ, P.REVIEW_MODERATE,
+        P.NOTIFICATION_LOGS_READ, P.NOTIFICATION_SEND,
+        P.ANALYTICS_READ,
+        # Explicitly NOT granted: any FINANCE_*, ADMIN_JOBS is granted above
+        # (operational, not financial) but Usage Credit / Top-up / Security
+        # Deposit mutation and read permissions are deliberately absent —
+        # Operations Admin has no financial domain access at all.
+    ],
+
+    "admin_finance": [
+        P.FINANCE_READ, P.FINANCE_USAGE_CREDITS_READ, P.FINANCE_USAGE_CREDITS_TOP_UP,
+        P.FINANCE_USAGE_CREDITS_ADJUST, P.FINANCE_USAGE_CREDITS_LEDGER_READ,
+        P.FINANCE_COMPLETED_JOB_DEDUCTION_RULES_READ,
+        P.FINANCE_TOPUPS_READ, P.FINANCE_TOPUPS_UPDATE, P.FINANCE_TOPUPS_REFUND,
+        P.FINANCE_SECURITY_DEPOSITS_READ, P.FINANCE_SECURITY_DEPOSITS_MARK_RECEIVED,
+        P.FINANCE_SECURITY_DEPOSITS_RELEASE, P.FINANCE_SECURITY_DEPOSITS_ADJUST,
+        P.FINANCE_SECURITY_DEPOSITS_AUDIT_READ,
+        P.FINANCE_SETTINGS_READ, P.PACKAGES_AUDIT_READ,
+        P.TENANT_READ, P.TENANT_BILLING_READ, P.TENANT_HEALTH_READ,
+        P.DASHBOARD_FINANCE_READ,
+        # Explicitly NOT granted: ADMIN_JOBS_* (reassign/status-override/
+        # force-close/void), STAFF mutation, PLATFORM_ROLES/PERMISSIONS,
+        # SECURITY_* (sessions/devices/audit) — Finance Admin cannot perform
+        # any operational job mutation or security administration.
+    ],
+
+    "admin_security": [
+        P.SECURITY_READ, P.SECURITY_THREATS_READ, P.SECURITY_THREATS_UPDATE,
+        P.SECURITY_THREATS_RESOLVE, P.SECURITY_THREATS_BLOCK_IP,
+        P.SECURITY_SESSIONS_READ, P.SECURITY_SESSIONS_REVOKE,
+        P.SECURITY_IP_BLOCKLIST_READ, P.SECURITY_IP_BLOCKLIST_CREATE,
+        P.SECURITY_IP_BLOCKLIST_UPDATE, P.SECURITY_IP_BLOCKLIST_REVOKE,
+        P.SECURITY_API_KEYS_READ, P.SECURITY_API_KEYS_CREATE,
+        P.SECURITY_API_KEYS_ROTATE, P.SECURITY_API_KEYS_REVOKE,
+        P.SECURITY_AUDIT_READ, P.SECURITY_AUDIT_EXPORT,
+        P.SECURITY_POLICIES_READ,
+        P.PLATFORM_ROLES_READ, P.PLATFORM_PERMISSIONS_READ,
+        P.AUTH_USERS_READ, P.AUTH_AUDIT_READ,
+        P.USERS_SECURITY_READ, P.USERS_SECURITY_VIEW_SESSIONS, P.USERS_SECURITY_VIEW_HISTORY,
+        # Decision (Part 9): Security Admin gets read-only on the Roles/
+        # Permissions catalog, not create/edit — the catalog is code-defined
+        # RBAC (see roles_permissions/admin_router.py) with no real mutation
+        # capability yet for ANY role including super_admin, so "manage" is
+        # not a meaningful grant to withhold or extend at this time.
+        # Explicitly NOT granted: any FINANCE_* key, ADMIN_JOBS_* key,
+        # STAFF mutation — Security Admin cannot touch financial or
+        # operational-job mutations.
+    ],
+
+    "admin_readonly": [
+        P.ADMIN_JOBS_READ, P.FIELD_OPS_JOBS_READ,
+        P.TENANT_READ, P.TENANT_HEALTH_READ,
+        P.STAFF_READ,
+        P.FINANCE_READ,  # base gate required by finance_hub's shared _svc dependency
+        P.FINANCE_USAGE_CREDITS_READ, P.FINANCE_USAGE_CREDITS_LEDGER_READ,
+        P.FINANCE_TOPUPS_READ, P.FINANCE_SECURITY_DEPOSITS_READ,
+        P.FINANCE_COMPLETED_JOB_DEDUCTION_RULES_READ,
+        P.SECURITY_READ, P.SECURITY_SESSIONS_READ, P.SECURITY_AUDIT_READ,
+        P.PLATFORM_ROLES_READ, P.PLATFORM_PERMISSIONS_READ,
+        P.AUTH_USERS_READ,
+        P.ANALYTICS_READ,
+        # Zero mutation/adjust/approve/revoke/create/update/delete/export
+        # permissions of any kind. Required invariant (Part 10): mutation
+        # permission count == 0 for this role, enforced by an architecture
+        # guard test.
     ],
 }
 
