@@ -398,29 +398,49 @@ class FinanceHubService:
             p = pr.scalar_one_or_none()
             pkg = {"package_id": str(p.id), "name": p.name} if p else None
         ledger_entry = None
-        if t.wallet_transaction_id:
+        if t.usage_credit_ledger_event_id:
+            from app.engines.tenant_engine.models import UsageCreditLedger
+            lr = await self.db.execute(select(UsageCreditLedger).where(
+                UsageCreditLedger.id == t.usage_credit_ledger_event_id))
+            led = lr.scalar_one_or_none()
+            if led:
+                ledger_entry = {"ledger_id": str(led.id), "amount": float(led.credit_delta),
+                                 "balance_after": float(led.balance_after),
+                                 "created_at": led.created_at.isoformat()}
+        elif t.wallet_transaction_id:
+            # Legacy top-ups granted before FINAL-L5-05K -- historical
+            # reference only, no new rows are ever created here.
             wr = await self.db.execute(select(WalletTransaction).where(WalletTransaction.id == t.wallet_transaction_id))
             w = wr.scalar_one_or_none()
             if w:
                 ledger_entry = {"txn_id": str(w.id), "amount": float(w.amount),
-                                 "balance_after": float(w.balance_after), "created_at": w.created_at.isoformat()}
+                                 "balance_after": float(w.balance_after), "created_at": w.created_at.isoformat(),
+                                 "legacy": True}
         audit = await self.list_audit_logs("credit_topup_order", str(topup_id))
         d = t.to_dict(); d["tenant_name"] = tenant.tenant_name if tenant else None
         return {"topup": d, "package": pkg, "ledger_entry": ledger_entry, "audit_log": audit["audit_log"]}
 
     async def retry_credit_posting(self, topup_id: uuid.UUID) -> dict:
-        from app.engines.platform_commerce.constants import TxnType
-        from app.engines.platform_commerce.ledger import credit_wallet
+        """FINAL-L5-05K: grants through the same canonical
+        UsageCreditService.grant_topup_credit identity
+        (topup_credit_grant:{topup_id}:1) that confirm_purchase uses --
+        if confirm_purchase already granted (e.g. this retry fires after a
+        transient failure that happened *after* the grant but *before* the
+        topup row was updated), this becomes a safe idempotent no-op
+        instead of a second, TenantWallet-targeted credit."""
+        from app.engines.usage_credits.service import UsageCreditService
         t = await self._load_topup(topup_id)
         if t.wallet_credit_status == "credited":
             raise ServiceOSException("CONFLICT", "Credits have already been posted for this top-up.")
         before = t.to_dict()
         total = t.credits_purchased + t.bonus_credits
-        txn = await credit_wallet(self.db, t.tenant_id, total, TxnType.PURCHASE,
-            t.gateway_payment_id or str(t.id), "credit_topup_retry",
-            "Retried credit posting from Finance Hub", self.actor_id,
-            idempotency_key=f"retry:{t.id}")
-        t.wallet_transaction_id = txn.id
+        uc_svc = UsageCreditService(self.db, actor_id=self.actor_id, actor_role=self.actor_role,
+                                     request_id=self.request_id)
+        grant = await uc_svc.grant_topup_credit(
+            tenant_id=t.tenant_id, topup_order_id=str(t.id), amount=total,
+            reason="Retried credit posting from Finance Hub",
+        )
+        t.usage_credit_ledger_event_id = uuid.UUID(grant["ledger_id"])
         t.wallet_credit_status = "credited"
         t.payment_status = "credited"
         await self._audit("topup.retry_credit", "credit_topup_order", str(topup_id), t.tenant_id, before, t.to_dict())

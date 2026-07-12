@@ -45,6 +45,10 @@ class CreditTopupOrder(ServiceOSBase):
     gateway_payment_id:   Mapped[str | None]      = mapped_column(String(100), nullable=True)
     failure_reason:       Mapped[str | None]      = mapped_column(String(500), nullable=True)
     refunded_amount:      Mapped[Decimal | None]  = mapped_column(Numeric(12, 2), nullable=True)
+    # FINAL-L5-05K: the canonical Usage Credit Ledger event this top-up's
+    # grant is recorded under (app.engines.usage_credits). wallet_transaction_id
+    # above is legacy/historical only -- new grants no longer populate it.
+    usage_credit_ledger_event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +64,7 @@ class CreditTopupOrder(ServiceOSBase):
             "payment_status":       self.payment_status,
             "wallet_credit_status": self.wallet_credit_status,
             "wallet_transaction_id":str(self.wallet_transaction_id) if self.wallet_transaction_id else None,
+            "usage_credit_ledger_event_id": str(self.usage_credit_ledger_event_id) if self.usage_credit_ledger_event_id else None,
             "gateway_order_id":     self.gateway_order_id,
             "gateway_payment_id":   self.gateway_payment_id,
             "failure_reason":       self.failure_reason,

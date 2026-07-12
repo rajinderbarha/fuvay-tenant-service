@@ -223,5 +223,60 @@
 - **Evidence**: No backend server was started this session; no live HTTP calls or Chromium runs were performed. All verification is unit-test-level (mocked DB) plus direct-SQL row-count checks (live Postgres, via asyncpg) and static architecture guards.
 - **Final status**: **NOT FIXED** — this alone prevents a `READY` recommendation per the mission's own explicit rule ("Do not return READY without live API/Chromium verification").
 
+## L5-05K-001: Finance Hub top-up path bypasses canonical Usage Credit service
+- **Severity**: P0.
+- **Evidence**: `CommerceService.confirm_purchase` and `FinanceHubService.retry_credit_posting` both called `ledger.credit_wallet` (→ `TenantWallet`) — the sixth credit-grant path found in FINAL-L5-05J, undiscovered until that sprint.
+- **Fix**: Both now call `UsageCreditService.grant_topup_credit` (→ `tenant_billing`/`usage_credit_ledger`). Security Deposit replenishment (`credit_deposit`, inside `confirm_purchase`) is untouched — separate domain, correctly preserved.
+- **Tests**: `tests/test_final_l5_05k_topup_migration.py` (15 tests, unit + true concurrency + architecture guards); live-verified end-to-end via the real `retry-credit` HTTP endpoint against the real database.
+- **Final status**: **FIXED**.
+
+## L5-05K-002: Top-up grant source identity undefined
+- **Severity**: P1.
+- **Evidence**: No `source_type`/`source_id` typing existed for top-up credits before this sprint (the old `credit_wallet` call used generic `TxnType.PURCHASE`).
+- **Fix**: `source_type="FINANCE_HUB_CREDIT_TOPUP"`, `source_id=<credit_topup_orders.id>`, `event_type=TOPUP_CREDIT_GRANTED` — all typed and enforced in `UsageCreditService.grant_topup_credit`.
+- **Final status**: **FIXED**.
+
+## L5-05K-003: Top-up grant idempotency incomplete
+- **Severity**: P0.
+- **Evidence**: Before this sprint, `confirm_purchase` used idempotency key `f"purchase:{payment_id}"` while `retry_credit_posting` used a *different* key `f"retry:{t.id}"` — a real duplicate-grant risk if both paths ever fired for the same order (e.g. a crash between signature verification and the topup-row update).
+- **Fix**: Both now use the single, stable identity `topup_credit_grant:{topup_order_id}:1`, enforced unique at the DB level (`usage_credit_ledger.idempotency_key`, migration 133). Verified with a true concurrent-request test (real Postgres, not mocks) — exactly 1 ledger row for 2 simultaneous grant calls with the same key.
+- **Final status**: **FIXED**.
+
+## L5-05K-004: Duplicate approval/grant risk
+- **Severity**: P0.
+- **Evidence**: Same root cause as L5-05K-003, plus a *newly discovered* race: `UsageCreditService._post()`'s "create `tenant_billing` row if missing" logic had a TOCTOU race for brand-new tenants — two concurrent mutations could both attempt to INSERT the first row and the loser would crash with `IntegrityError`, found only by the true-concurrency test (`test_topup_grant_concurrent_with_manual_adjustment_no_lost_update`), not by any unit test.
+- **Fix**: `INSERT ... ON CONFLICT (tenant_id) DO NOTHING` + unconditional locked re-select, in `usage_credits/service.py::_post()`. Re-run after the fix: both concurrent mutations applied correctly, final balance exact, no lost update.
+- **Final status**: **FIXED**.
+
+## L5-05K-005: Existing top-up records unreconciled
+- **Severity**: P1 (as scoped) → **N/A** (as discovered).
+- **Evidence**: `credit_topup_orders` has 0 rows in this environment, verified live via direct SQL both before and after this sprint's changes.
+- **Final status**: **FIXED / NOT APPLICABLE** — there is nothing to reconcile; 0 records were silently corrected because 0 records existed.
+
+## L5-05K-006: Top-up RBAC incomplete
+- **Severity**: P2.
+- **Evidence**: Real, distinct permissions already existed and are unchanged (`P.FINANCE_TOPUPS_READ/UPDATE/REFUND`). Live-verified: unauthenticated → `401`; non-existent tenant → `404`. Distinct low-privilege admin roles (Finance-capable Admin / Admin Read Only) still do not exist as backend concepts — re-confirmed by directly querying the `admin.readonly@serviceos.local` account's real DB role (`super_admin`, identical to every other admin account).
+- **Final status**: **PARTIALLY FIXED** — real permission gates exist and are proven live; the full expected-roles matrix cannot be tested until those roles exist.
+
+## L5-05K-007: Top-up audit incomplete
+- **Severity**: P2.
+- **Evidence**: `TOPUP_CREDIT_GRANTED` events are fully audited (`topup_credit.granted` via `record_platform_audit`, verified live with real before/after balances). `retry_credit_posting`/`refund_topup`'s pre-existing `_audit()` calls are unchanged. `confirm_purchase` does not audit order creation/payment-verification steps — a pre-existing gap, not newly introduced.
+- **Final status**: **PARTIALLY FIXED** — the credit-grant event itself is fully audited; order-lifecycle audit events (creation, payment verification) remain a pre-existing, documented gap.
+
+## L5-05K-008: True concurrent-request verification missing
+- **Severity**: P0 (explicit acceptance-criteria blocker).
+- **Evidence**: `tests/test_final_l5_05k_topup_migration.py::TestTrueConcurrency` opens a real `AsyncEngine` against live Postgres and runs genuinely concurrent `asyncio.gather()` calls — not unit tests. Found and fixed a real race condition (L5-05K-004).
+- **Final status**: **FIXED**.
+
+## L5-05K-009: Live API verification missing
+- **Severity**: P0 (explicit acceptance-criteria blocker).
+- **Evidence**: Real backend started (`uvicorn`, port 8000, real Postgres, migrations current at 134). Live HTTP matrix executed: login, balance/ledger reads, manual adjustment + idempotent retry (verified single balance increase), insufficient-debit `402`, `engine_deduct_wallet` `410`, `tenant_engine` legacy wallet endpoint `410`, unauthenticated `401`, non-existent-tenant `404`, `package_commerce` canonical adapter `200` with real data, and a full top-up grant end-to-end via the real `retry-credit` endpoint (balance 3979→4579, `usage_credit_ledger_event_id` correctly linked, `tenant_wallets`/`wallet_transactions` confirmed still 0 rows after the grant, duplicate retry correctly `409`). All test data cleaned up afterward; DB restored to its original state.
+- **Final status**: **FIXED**.
+
+## L5-05K-010: Chromium Finance verification missing
+- **Severity**: P0 (explicit acceptance-criteria blocker).
+- **Evidence**: Real Chromium run (`e2e/super-admin/final-l5-05k-usage-credit-runtime.spec.ts`, no network mocks, against the real running frontend + backend): 3/3 tests passed — Usage Credits page shows real balance/ledger data with no forbidden terminology and no wallet-API network calls; Finance Hub Top-ups list loads with no serious console errors; old wallet pages (`/admin/finance/wallets`, `/admin/provider-wallets`) confirmed absent from primary navigation. Screenshots captured under `docs/final-l5-05/evidence/`.
+- **Final status**: **FIXED** for the scope actually run (Super Admin role). Finance-capable-Admin and Admin-Read-Only role-specific Chromium scenarios were not run — same root-cause limitation as L5-05K-006 (those roles don't exist as distinct backend accounts to log in as).
+
 ## Result
-18 of 21 real bugs/gaps found across FINAL-L5-05 through FINAL-L5-05H were fixed and live-verified; FINAL-L5-05I added 10 classification-level findings; FINAL-L5-05J adds 10 more (L5-05J-001 through 010) implementing real, tested code changes for the in-scope Usage Credit/Package Credit/tenant-health findings: a new canonical `UsageCreditService` + endpoint family, 2 of 5 duplicate admin-adjustment paths fixed, the primary package-purchase credit-grant path migrated, and the dead tenant-health signal repaired with a real formula. 4 findings remain partially or fully open (a schema-coupled 6th credit-grant path, package cancellation/expiry reversal, full RBAC role matrix, live API/Chromium evidence) — each is a genuine, evidenced gap, not a hidden or downgraded blocker.
+18 of 21 real bugs/gaps found across FINAL-L5-05 through FINAL-L5-05H were fixed and live-verified; FINAL-L5-05I added 10 classification-level findings; FINAL-L5-05J added 10 more implementing the Usage Credit/Package Credit/tenant-health core; FINAL-L5-05K adds 10 more (L5-05K-001 through 010): the sixth credit-grant path (Finance Hub top-ups) is migrated to the canonical service, a real race-condition bug was found and fixed via true concurrent-request testing against live Postgres, and full live database/API/Chromium evidence was captured for the first time in this sub-engagement. 3 findings remain partially open, all for the same underlying, previously-established reason: distinct low-privilege admin roles (Finance-capable Admin, Admin Read Only, Operations Admin) do not exist as backend concepts yet, so their specific RBAC/audit/Chromium scenarios cannot be genuinely tested — not hidden, not downgraded, documented with direct DB evidence each time it recurs.

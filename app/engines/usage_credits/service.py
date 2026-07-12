@@ -28,18 +28,21 @@ EVENT_PACKAGE_CREDIT_GRANTED = "package_credit_granted"
 EVENT_COMPLETED_JOB_DEDUCTION = "completed_job_deduction"
 EVENT_CREDIT_REVERSAL = "credit_reversal"
 EVENT_MIGRATION_ADJUSTMENT = "migration_adjustment"
+EVENT_TOPUP_CREDIT_GRANTED = "topup_credit_granted"
 
 VALID_EVENT_TYPES = {
     EVENT_MANUAL_CREDIT_ADDED, EVENT_MANUAL_CREDIT_REMOVED,
     EVENT_PACKAGE_CREDIT_GRANTED, EVENT_COMPLETED_JOB_DEDUCTION,
-    EVENT_CREDIT_REVERSAL, EVENT_MIGRATION_ADJUSTMENT,
+    EVENT_CREDIT_REVERSAL, EVENT_MIGRATION_ADJUSTMENT, EVENT_TOPUP_CREDIT_GRANTED,
 }
 
 VALID_REASON_CODES = {
     "manual_operational_adjustment", "goodwill_credit", "correction",
     "package_purchase", "package_reactivation", "billing_dispute_resolution",
-    "migration_backfill",
+    "migration_backfill", "credit_topup_purchase",
 }
+
+SOURCE_TYPE_FINANCE_HUB_CREDIT_TOPUP = "FINANCE_HUB_CREDIT_TOPUP"
 
 VALID_DIRECTIONS = {"credit", "debit"}
 
@@ -128,10 +131,19 @@ class UsageCreditService:
             .with_for_update()
         )).scalars().first()
         if not billing:
-            billing = TenantBilling(tenant_id=tenant_id, credit_balance=Decimal("0"))
-            self.db.add(billing)
-            await self.db.flush()
-            # Re-select with lock now that the row exists.
+            # Race-safe first-row creation: two concurrent mutations against
+            # a brand-new tenant can both see "no row" before either
+            # commits. A plain INSERT would raise IntegrityError on the
+            # loser (found via a real concurrent-request test, not just
+            # unit tests). INSERT ... ON CONFLICT DO NOTHING makes the
+            # loser's insert a safe no-op; the unconditional re-select
+            # with FOR UPDATE below then blocks until the winner commits
+            # and reads its row.
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            stmt = pg_insert(TenantBilling).values(
+                tenant_id=tenant_id, credit_balance=Decimal("0"),
+            ).on_conflict_do_nothing(index_elements=["tenant_id"])
+            await self.db.execute(stmt)
             billing = (await self.db.execute(
                 select(TenantBilling).where(TenantBilling.tenant_id == tenant_id)
                 .with_for_update()
@@ -164,6 +176,7 @@ class UsageCreditService:
             EVENT_PACKAGE_CREDIT_GRANTED: "package_credit.granted",
             EVENT_CREDIT_REVERSAL: "usage_credit.reversal_created",
             EVENT_MIGRATION_ADJUSTMENT: "usage_credit.migration_adjustment",
+            EVENT_TOPUP_CREDIT_GRANTED: "topup_credit.granted",
         }.get(event_type, "usage_credit.mutated")
         await record_platform_audit(
             self.db, operation=audit_op, engine_id="usage_credits",
@@ -221,6 +234,29 @@ class UsageCreditService:
             tenant_id=tenant_id, amount=amount, event_type=EVENT_PACKAGE_CREDIT_GRANTED,
             source_type="package_assignment", source_id=str(package_assignment_id),
             reason_code="package_purchase", reason=reason, idempotency_key=idem_key,
+        )
+
+    # ── Finance Hub Credit Top-up Grant ────────────────────────────────────
+
+    async def grant_topup_credit(
+        self, *, tenant_id: uuid.UUID, topup_order_id: str, amount: Decimal,
+        reason: str = "Credit top-up purchase", grant_version: int | str = 1,
+    ) -> dict:
+        """FINAL-L5-05K. Idempotency identity:
+        topup_credit_grant:{topup_order_id}:{grant_version} — a single
+        CreditTopupOrder can only ever produce one successful grant
+        (Part 6: the current real product has no multi-approval-version
+        concept, so grant_version is always 1); both the gateway-signature
+        confirmation path and the admin retry-credit-posting path call this
+        with the same identity, so whichever fires first wins and the
+        other becomes a safe idempotent no-op."""
+        if amount <= 0:
+            raise ServiceOSException("TOPUP_INVALID_AMOUNT", "amount must be positive.", status_code=422)
+        idem_key = f"topup_credit_grant:{topup_order_id}:{grant_version}"
+        return await self._post(
+            tenant_id=tenant_id, amount=amount, event_type=EVENT_TOPUP_CREDIT_GRANTED,
+            source_type=SOURCE_TYPE_FINANCE_HUB_CREDIT_TOPUP, source_id=str(topup_order_id),
+            reason_code="credit_topup_purchase", reason=reason, idempotency_key=idem_key,
         )
 
     # ── Completed Job Deduction (delegates to the certified service) ──────

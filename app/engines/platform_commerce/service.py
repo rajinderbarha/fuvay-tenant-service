@@ -311,7 +311,6 @@ class CommerceService:
                 "deposit_replenishment": float(p.price_inr * DEPOSIT_REPLENISHMENT_PCT)}
 
     async def confirm_purchase(self, tid, pkg_id, order_id, payment_id, signature):
-        idem = f"purchase:{payment_id}"
         r = await self.db.execute(select(CreditPackage).where(CreditPackage.id == pkg_id))
         p = r.scalar_one_or_none()
         if not p: raise NotFoundException("CreditPackage", str(pkg_id))
@@ -330,8 +329,20 @@ class CommerceService:
                 "Razorpay payment signature verification failed.")
         total = p.credits_amount * (1 + p.bonus_pct / Decimal("100"))
         replen = (p.price_inr * DEPOSIT_REPLENISHMENT_PCT).quantize(Decimal("0.01"))
-        txn = await credit_wallet(self.db, tid, total, TxnType.PURCHASE,
-            payment_id, "credit_package", f"Purchase: {p.name}", self.actor_id, idempotency_key=idem)
+
+        # FINAL-L5-05K: credit grant moved off ledger.credit_wallet
+        # (TenantWallet) onto the canonical UsageCreditService
+        # (tenant_billing/usage_credit_ledger). Security Deposit
+        # replenishment below is untouched -- separate domain, unaffected.
+        from app.engines.usage_credits.service import UsageCreditService
+        uc_svc = UsageCreditService(self.db, actor_id=self.actor_id, actor_role=self.actor_role,
+                                     request_id=self.request_id)
+        grant_source_id = str(topup.id) if topup else f"payment:{payment_id}"
+        grant = await uc_svc.grant_topup_credit(
+            tenant_id=tid, topup_order_id=grant_source_id, amount=total,
+            reason=f"Credit top-up purchase: {p.name}",
+        )
+
         d = await self._get_or_create_deposit(tid)
         await credit_deposit(self.db, d, replen, DepositTxnType.REPLENISHMENT,
                               payment_id, f"5% from {p.name}", self.actor_id)
@@ -340,8 +351,8 @@ class CommerceService:
             topup.payment_status = "credited"
             topup.wallet_credit_status = "credited"
             topup.gateway_payment_id = payment_id
-            topup.wallet_transaction_id = txn.id
-        await self._publish("wallet.credited", str(tid), str(txn.id),
+            topup.usage_credit_ledger_event_id = uuid.UUID(grant["ledger_id"])
+        await self._publish("usage_credit.topup_granted", str(tid), grant["ledger_id"],
                             {"amount": float(total), "package": p.name})
         return {"credits_added": float(total), "base_credits": float(p.credits_amount),
                 "bonus_credits": float(total - p.credits_amount),
