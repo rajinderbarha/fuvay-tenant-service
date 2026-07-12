@@ -498,3 +498,79 @@ FINAL-L5-05N adds 8 more (L5-05N-001 through 008): closes L5-05M-011 by fixing t
 
 ## Result
 FINAL-L5-05O adds 12 more (L5-05O-001 through 012): 4 real, high-leverage, live-verified fixes closed genuine P0/P1 gaps (Enterprise Export system had zero domain-permission gating across 33 resources — a serious, previously-unknown finding; finance_hub export/read separation; dashboard widgets were 100% unreachable by every non-super-admin role, now fixed with real per-widget grants and request suppression; Security Deposits' ungated mutation menu plus the underlying two-permission-domain architecture mismatch). All 4 fixes are proven correct via live API (8 mandatory cross-domain denial checks from the mission's own Part 41, all passing) and live Chromium (8 new + 22 re-verified, zero regression). The much larger remainder — exhaustive contextual-link/action cataloging across ~150 pages, ~25 remaining export resources, Tenant/Provider/Staff/Notification action matrices, mobile/accessibility/responsive/performance — is honestly carried forward as documented, evidenced remaining scope.
+
+## L5-05P-001: 6 provider_portal mutation endpoints accepted ANY authenticated principal of ANY role
+- **Severity**: P0 (real, exploitable today — a logged-in customer, technician, or staff account, not just an admin, could invoke these).
+- **Evidence**: Full audit of every `POST`/`PUT`/`DELETE` route in `app/engines/provider_portal/admin_router.py` mapped against its real auth dependency found 6 endpoints gated by only `get_current_user`: onboarding send-reminder/refresh/checklist-item-override, and bookability refresh/override-visibility/remove-visibility/override-bookability/remove-bookability. The 4 override/remove endpoints are the most severe — any authenticated principal could override a provider's public visibility/bookability platform-wide.
+- **Fix**: Checklist-item override reuses `P.TENANT_APPROVE`; the remaining 5 require `require_super_admin` (no granular coverage/bookability permission exists yet — inventing one without real policy evidence was deliberately avoided).
+- **Live API evidence**: `POST .../override-visibility` — Super Admin 200 (reaches handler), Operations/Finance/Security/Read-Only all 403.
+- **Tests**: `tests/test_final_l5_05p_tenant_provider_staff_permissions.py::TestProviderPortalMutationEndpointsAreGated` (5 tests).
+- **Status**: **FIXED**. One sibling endpoint with the identical defect (`POST /monetization/providers/{tenant_id}/sync`) was found in the same audit and deliberately NOT fixed — Monetization is a Finance-adjacent domain outside this sprint's bounded scope; documented, not hidden.
+
+## L5-05P-002: Tenant onboarding approve/reject/request-more-info granted to zero non-super-admin roles
+- **Severity**: P0 (direct contradiction of the mission's own stated policy: Operations Admin's "Tenant verify"/"Provider verify" = ALLOW).
+- **Evidence**: `TENANT_APPROVE`/`TENANT_REJECT`/`TENANT_REQUEST_MORE_INFO`/`TENANT_ONBOARDING_READ` are real, pre-existing, distinct backend permissions already enforced on their endpoints, but 0 non-super-admin roles held any of them before this sprint.
+- **Fix**: `admin_operations` granted all 4 (additive, safe, matches the mission's own explicit expected policy). No other non-super-admin role received them.
+- **Live API evidence**: `POST .../approve`/`.../reject` — Super Admin/Operations Admin reach the handler (404 on fake tenant ID), Finance/Security/Read-Only 403. `GET .../onboarding/providers/{id}` — Super Admin/Operations Admin 200, others 403.
+- **Tests**: `TestTenantOnboardingLifecyclePermissions` (5 tests).
+- **Status**: **FIXED**.
+
+## L5-05P-003: `tenants/[id]/page.tsx` (the mission's own named highest-risk example) had zero frontend permission checks across ~24 mutation actions
+- **Severity**: P0.
+- **Evidence**: A 3095-line file with zero `usePermissions` import; every mutation action (Onboarding approve/reject/refresh, Offerings suspend/reactivate/refresh, Bookability override/remove ×2, Tenant suspend/reinstate/change-plan/request-changes/send-notification/export, Staff deactivate, User suspend, Add-Staff/Add-User/Add-Area triggers) rendered for any role that could reach the page at all (`tenant:read`, held by 3 of 4 non-super-admin roles).
+- **Fix**: `usePermissions()` wired into the main component and 3 sub-tab components; each action individually gated by its real backend-matching permission (`tenants.approve`/`tenants.reject` for Onboarding) or `perm.role === "super_admin"` for the `require_super_admin`-gated actions (matching L5-05P-001/L5-05P-002's backend reality).
+- **Deliberately not touched**: Add Usage Credits / Adjust Security Deposit (Finance/wallet domain, out of this sprint's bounded scope per the mission's own "do not reopen Finance Hub" instruction).
+- **Live API evidence**: `POST /v1/admin/tenants/{id}/suspend` and `.../staff` — only Super Admin reaches the handler, all 4 other roles 403.
+- **Live Chromium evidence**: 5/6 new tests directly cover this page — Super Admin sees Change Plan; Operations Admin reaches the page with zero super_admin-only header mutations; Admin Read Only sees zero mutation controls in the header AND the opened overflow menu; Operations Admin's Onboarding tab loads without Permission Denied (real grant from L5-05P-002); Admin Read Only's Onboarding tab shows no raw mutation output.
+- **Tests**: `TestTenantDetailPageActionGating` (5 tests).
+- **Status**: **FIXED** for the mutation actions found; Finance/wallet-domain actions on the same page remain intentionally out of scope (documented).
+
+## L5-05P-004: Bookability Providers list "Bulk Re-evaluate" calls a non-existent backend route
+- **Severity**: P2 (dead/broken functionality, not an active security exposure — always 404s for every role today).
+- **Evidence**: `POST /v1/admin/bookability/bulk-refresh` does not correspond to any registered backend route (confirmed via full-router grep).
+- **Fix**: Gated defensively with `perm.role === "super_admin"` for consistency and forward-safety, not because it's currently exploitable.
+- **Tests**: `TestBookabilityProvidersListPageGating` (1 test).
+- **Status**: **FIXED** (defense-in-depth); the underlying dead endpoint itself was not implemented or removed this sprint.
+
+## L5-05P-005: Staff pages confirmed genuinely read-only (positive finding, pinned)
+- **Severity**: informational.
+- **Evidence**: `/admin/staff` and `/admin/staff/[id]` have zero `useAction` mutation hooks — confirmed via full source read, not assumption. `staffApi.invite`/`.resendInvite` exist in the API client but are unused by any component (dead code).
+- **Fix**: No fix needed — added a regression-pinning test so a future ungated mutation addition to these pages is caught.
+- **Tests**: `TestStaffPagesAreReadOnly` (2 tests).
+- **Status**: **CONFIRMED SAFE, PINNED**.
+
+## L5-05P-006: Team/Membership mutation surface does not exist in this codebase
+- **Severity**: informational.
+- **Evidence**: No dedicated Team management route exists; the tenant detail page's `ProviderTeamTab` is explicitly labeled read-only in its own source comment and has zero `useAction` hooks. `provider_team_members` was confirmed empty/superseded by `users`-based staff as far back as Sprint 20/FINAL-L5-05C (prior engagement finding, re-confirmed here).
+- **Status**: **NOT APPLICABLE** — there is no Team/Membership mutation surface to gate. Documented rather than silently omitted from the mission's required inventory.
+
+## L5-05P-007: Provider coverage/brand/zone mutations beyond Bookability not exhaustively inventoried
+- **Severity**: P2.
+- **Evidence**: Only the Bookability override/remove actions (L5-05P-001) were found and fixed as coverage-shaped mutations. A dedicated pass across brand/zone/zipcode/SLA/availability mutation surfaces (mission Part 9) was not performed.
+- **Status**: **NOT FIXED** — documented, not hidden.
+
+## L5-05P-008: Bulk actions across the Tenant/Provider/Staff domain not exhaustively inventoried
+- **Severity**: P2.
+- **Evidence**: Only the single dead "Bulk Re-evaluate" button (L5-05P-004) was found. A dedicated bulk-action inventory (mission Part 22) was not performed.
+- **Status**: **NOT FIXED** — documented, not hidden.
+
+## L5-05P-009: Cross-tenant isolation not tested with direct identifier substitution
+- **Severity**: P1 (explicit mission Part 30 expectation).
+- **Evidence**: Live verification this sprint used fake/nonexistent UUIDs to prove permission gates (403 vs. 404-after-gate-passed), not real cross-tenant identifier substitution attacks.
+- **Status**: **NOT FIXED** — documented, not hidden.
+
+## L5-05P-010: Concurrency/conflict handling not tested
+- **Severity**: P2 (mission Part 33).
+- **Status**: **NOT FIXED** — not attempted this sprint.
+
+## L5-05P-011: Full five-role Provider/Staff/Team Chromium matrix incomplete
+- **Severity**: P1.
+- **Evidence**: 6 representative Chromium tests this sprint (Tenant detail header ×3 roles, Onboarding tab ×2 roles, Bookability list ×1 role) plus 30 re-verified prior-sprint tests, all passing. The full mission-specified per-page, per-role, per-action matrix (Parts 43-45) was not run in full.
+- **Status**: **PARTIALLY FIXED** — the fixes actually made are proven live; the broader matrix remains open.
+
+## L5-05P-012: Throttled-network, responsive, and accessibility verification not attempted
+- **Severity**: P2/P3 (unchanged, pre-existing gaps tracked since FINAL-L5-04/05M/05N/05O).
+- **Status**: **NOT FIXED** — same carried-forward scope, not worsened or improved this sprint.
+
+## Result
+FINAL-L5-05P adds 12 more (L5-05P-001 through 012): 4 real, deeply-investigated, live-verified fixes closed the mission's own explicitly-named highest-risk gap. A serious P0 finding (6 provider mutation endpoints, including provider-visibility/bookability overrides, accepted ANY authenticated principal of any role) is closed. The real onboarding-lifecycle permissions existed but were granted to zero non-super-admin roles despite the mission's own stated policy — fixed. The mission's own named highest-risk file (`tenants/[id]/page.tsx`, 3095 lines, ~24 mutation actions, zero frontend permission checks) is now individually gated. A defensive fix closed a dead bulk-action button. Two domains (Team/Membership, Staff pages) were investigated and confirmed to have no active gap — a genuine, evidenced finding, not an assumption. All fixes are proven correct via live API (real 403/200/404s across all 5 roles) and live Chromium (6 new + 30 re-verified, zero regression). The much larger remainder — exhaustive Provider coverage/brand mutation inventory, bulk-action inventory, cross-tenant isolation testing, concurrency testing, throttled-network/responsive/accessibility — is honestly carried forward as documented, evidenced remaining scope.

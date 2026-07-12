@@ -46,7 +46,12 @@ export const PERMISSION_CATALOG: Record<string, PermissionMeta> = {
   "dashboard.activity.read":              { key: "dashboard.activity.read", label: "Read Activity Feed Widget", domain: "dashboard", shape: "read" },
   "finance:hub:export":                   { key: "finance:hub:export", label: "Export Finance Hub Data", domain: "finance", shape: "export" },
   "field_ops:jobs:export":                { key: "field_ops:jobs:export", label: "Export Jobs Data", domain: "operations", shape: "export" },
+  // FINAL-L5-05P — Tenant/Provider onboarding lifecycle permissions.
   "tenant:read":                          { key: "tenant:read", label: "Read Tenants", domain: "tenants", shape: "read" },
+  "tenants.onboarding.read":              { key: "tenants.onboarding.read", label: "Read Provider Onboarding", domain: "tenants", shape: "read" },
+  "tenants.approve":                      { key: "tenants.approve", label: "Approve Provider Onboarding", domain: "tenants", shape: "mutation" },
+  "tenants.reject":                       { key: "tenants.reject", label: "Reject Provider Onboarding", domain: "tenants", shape: "mutation" },
+  "tenants.request_more_info":            { key: "tenants.request_more_info", label: "Request More Info (Onboarding)", domain: "tenants", shape: "mutation" },
   "field_ops:jobs:read":                  { key: "field_ops:jobs:read", label: "Read Jobs (tenant-portal)", domain: "operations", shape: "read" },
   "admin:jobs:read":                      { key: "admin:jobs:read", label: "Read Jobs (admin)", domain: "operations", shape: "read" },
   "admin:jobs:reassign":                  { key: "admin:jobs:reassign", label: "Reassign Job", domain: "operations", shape: "mutation" },

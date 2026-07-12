@@ -9,6 +9,7 @@ import {
 } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 import { useAction } from "../../../../hooks/useApi";
+import { usePermissions } from "../../../../hooks/usePermissions";
 import Link from "next/link";
 
 const PAGE_SIZE = 25;
@@ -35,6 +36,7 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
 }
 
 export default function BookabilityProvidersPage() {
+  const perm = usePermissions();
   const [isBookable, setIsBookable] = useState("");
   const [isVisible,  setIsVisible]  = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -96,15 +98,19 @@ export default function BookabilityProvidersPage() {
             <Btn size="sm" variant="secondary" onClick={() => providers.refetch()}>
               <RefreshCw size={13} /> Refresh
             </Btn>
-            <Btn
-              size="sm"
-              variant="primary"
-              onClick={() => bulkRefreshAction.execute().then(() => { providers.refetch(); summary.refetch(); })}
-              disabled={bulkRefreshAction.loading}
-            >
-              <Zap size={13} />
-              {bulkRefreshAction.loading ? "Re-evaluating…" : "Bulk Re-evaluate"}
-            </Btn>
+            {/* FINAL-L5-05P: bulk-refresh is a platform-wide bookability
+                mutation -- gated by role, not page-read permission alone. */}
+            {perm.role === "super_admin" && (
+              <Btn
+                size="sm"
+                variant="primary"
+                onClick={() => bulkRefreshAction.execute().then(() => { providers.refetch(); summary.refetch(); })}
+                disabled={bulkRefreshAction.loading}
+              >
+                <Zap size={13} />
+                {bulkRefreshAction.loading ? "Re-evaluating…" : "Bulk Re-evaluate"}
+              </Btn>
+            )}
           </div>
         </div>
 

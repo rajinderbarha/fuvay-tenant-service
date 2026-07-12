@@ -22,6 +22,8 @@ import {
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { useViewport } from "../../../../hooks/useViewport";
+import { usePermissions } from "../../../../hooks/usePermissions";
+import { SUPER_ADMIN_ONLY } from "../../../../lib/permission-catalog";
 import { EntitlementsTab } from "../../../../components/enterprise/EntitlementsTab";
 import {
   Building, CreditCard, Banknote, ClipboardCheck,
@@ -167,6 +169,7 @@ const BOOKING_VARIANT: Record<string, "default"|"success"|"warning"|"danger"|"in
 
 // ── Onboarding Admin Tab ──────────────────────────────────────────────────────
 function OnboardingAdminTab({ tenantId }: { tenantId: string }) {
+  const perm = usePermissions();
   const onboarding = useApi(useCallback(() => adminProviderOnboardingApi.get(tenantId), [tenantId]), [tenantId]);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -243,18 +246,29 @@ function OnboardingAdminTab({ tenantId }: { tenantId: string }) {
               <Badge variant={REVIEW_VARIANT[d.review_status] ?? "muted"}>
                 {d.review_status.replace(/_/g, " ")}
               </Badge>
-              <Btn size="sm" variant="secondary" loading={refreshAction.loading}
-                onClick={() => refreshAction.execute()}>
-                <RefreshCw size={12}/> Refresh
-              </Btn>
+              {/* FINAL-L5-05P: Refresh's backend endpoint requires
+                  super_admin (not yet granular); Approve/Reject require
+                  the real, distinct tenants.approve/tenants.reject
+                  permissions -- gated individually, not by page-read
+                  permission alone. */}
+              {perm.role === "super_admin" && (
+                <Btn size="sm" variant="secondary" loading={refreshAction.loading}
+                  onClick={() => refreshAction.execute()}>
+                  <RefreshCw size={12}/> Refresh
+                </Btn>
+              )}
               {d.review_status !== "approved" && (
                 <>
-                  <Btn size="sm" variant="primary" loading={approveAction.loading}
-                    disabled={d.profile_completion_percentage < 100}
-                    onClick={() => approveAction.execute()}>
-                    Approve
-                  </Btn>
-                  <Btn size="sm" variant="danger" onClick={() => setRejectOpen(true)}>Reject</Btn>
+                  {perm.has("tenants.approve") && (
+                    <Btn size="sm" variant="primary" loading={approveAction.loading}
+                      disabled={d.profile_completion_percentage < 100}
+                      onClick={() => approveAction.execute()}>
+                      Approve
+                    </Btn>
+                  )}
+                  {perm.has("tenants.reject") && (
+                    <Btn size="sm" variant="danger" onClick={() => setRejectOpen(true)}>Reject</Btn>
+                  )}
                 </>
               )}
             </div>
@@ -363,6 +377,7 @@ function OnboardingAdminTab({ tenantId }: { tenantId: string }) {
 
 // ── Admin Provider Offerings Tab ─────────────────────────────────────────────
 function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
+  const perm = usePermissions();
   const offerings = useApi(useCallback(() => adminProviderEnablementApi.listOfferings(tenantId), [tenantId]));
   const [suspendId,     setSuspendId]     = useState<string | null>(null);
   const [suspendReason, setSuspendReason] = useState("");
@@ -424,12 +439,17 @@ function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
       {toastErr && <div style={{ padding:"10px 16px", borderRadius:10, background:"rgba(220,38,38,0.08)",
         border:"1px solid rgba(220,38,38,0.25)", fontSize:13, color:"#dc2626" }}>✕ {toastErr}</div>}
 
-      <div style={{ display:"flex", justifyContent:"flex-end" }}>
-        <Btn size="sm" variant="secondary" loading={refreshAllAction.loading}
-          onClick={() => refreshAllAction.execute()}>
-          <RefreshCw size={12}/> Refresh All Readiness
-        </Btn>
-      </div>
+      {/* FINAL-L5-05P: refresh-readiness/suspend/reactivate all require
+          super_admin on the backend (not yet granular) -- gated by role,
+          not page-read permission alone. */}
+      {perm.role === "super_admin" && (
+        <div style={{ display:"flex", justifyContent:"flex-end" }}>
+          <Btn size="sm" variant="secondary" loading={refreshAllAction.loading}
+            onClick={() => refreshAllAction.execute()}>
+            <RefreshCw size={12}/> Refresh All Readiness
+          </Btn>
+        </div>
+      )}
 
       {list.length === 0 ? (
         <Card><div style={{ textAlign:"center", padding:"32px 0", color:"var(--text-tertiary)" }}>
@@ -496,7 +516,7 @@ function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
                     </td>
                     <td style={{ padding:"10px 12px" }}>
                       <div style={{ display:"flex", gap:4 }}>
-                        {o.status !== "suspended" ? (
+                        {perm.role === "super_admin" && (o.status !== "suspended" ? (
                           <Btn size="xs" variant="ghost"
                             onClick={() => { setSuspendId(o.provider_enabled_offering_id); setSuspendReason(""); }}>
                             <ShieldOff size={11}/> Suspend
@@ -506,7 +526,7 @@ function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
                             onClick={() => reactivateAction.execute(o.provider_enabled_offering_id)}>
                             <Play size={11}/> Reactivate
                           </Btn>
-                        )}
+                        ))}
                       </div>
                     </td>
                   </tr>
@@ -761,6 +781,7 @@ function ProviderAvailabilityTab({ tenantId }: { tenantId: string }) {
 
 // ── Admin Bookability Tab ─────────────────────────────────────────────────────
 function BookabilityTab({ tenantId }: { tenantId: string }) {
+  const perm = usePermissions();
   const status    = useApi(useCallback(() => adminBookabilityApi.getProvider(tenantId), [tenantId]));
   const auditLogs = useApi(useCallback(() => adminBookabilityApi.getAuditLogs(tenantId, 20), [tenantId]));
 
@@ -818,8 +839,14 @@ function BookabilityTab({ tenantId }: { tenantId: string }) {
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <Btn size="sm" variant="secondary" onClick={() => { setOverrideModal("visible"); setOverrideReason(""); }}>Override</Btn>
-              {s?.override_is_visible !== null && s?.override_is_visible !== undefined && (
+              {/* FINAL-L5-05P: override-visibility/override-bookability
+                  previously accepted ANY authenticated principal on the
+                  backend (a real P0 fix, now require_super_admin) --
+                  frontend gated to match, not left to page-read permission. */}
+              {perm.role === "super_admin" && (
+                <Btn size="sm" variant="secondary" onClick={() => { setOverrideModal("visible"); setOverrideReason(""); }}>Override</Btn>
+              )}
+              {perm.role === "super_admin" && s?.override_is_visible !== null && s?.override_is_visible !== undefined && (
                 <Btn size="sm" variant="secondary" onClick={() => removeVisAction.execute().then(() => status.refetch())} disabled={removeVisAction.loading}>Remove Override</Btn>
               )}
             </div>
@@ -846,8 +873,10 @@ function BookabilityTab({ tenantId }: { tenantId: string }) {
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <Btn size="sm" variant="secondary" onClick={() => { setOverrideModal("bookable"); setOverrideReason(""); }}>Override</Btn>
-              {s?.override_is_bookable !== null && s?.override_is_bookable !== undefined && (
+              {perm.role === "super_admin" && (
+                <Btn size="sm" variant="secondary" onClick={() => { setOverrideModal("bookable"); setOverrideReason(""); }}>Override</Btn>
+              )}
+              {perm.role === "super_admin" && s?.override_is_bookable !== null && s?.override_is_bookable !== undefined && (
                 <Btn size="sm" variant="secondary" onClick={() => removeBkAction.execute().then(() => status.refetch())} disabled={removeBkAction.loading}>Remove Override</Btn>
               )}
             </div>
@@ -865,9 +894,11 @@ function BookabilityTab({ tenantId }: { tenantId: string }) {
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 8 }}>
-        <Btn size="sm" variant="secondary" onClick={() => refreshAction.execute().then(() => status.refetch())} disabled={refreshAction.loading}>
-          <RefreshCw size={13} /> {refreshAction.loading ? "Re-evaluating…" : "Re-evaluate Now"}
-        </Btn>
+        {perm.role === "super_admin" && (
+          <Btn size="sm" variant="secondary" onClick={() => refreshAction.execute().then(() => status.refetch())} disabled={refreshAction.loading}>
+            <RefreshCw size={13} /> {refreshAction.loading ? "Re-evaluating…" : "Re-evaluate Now"}
+          </Btn>
+        )}
         <span style={{ fontSize: 12, color: "var(--text-tertiary)", alignSelf: "center" }}>
           Last evaluated: {s?.last_evaluated_at ? new Date(s.last_evaluated_at).toLocaleString() : "Never"}
         </span>
@@ -1052,6 +1083,7 @@ function resolveInitialTab(raw: string | null): Tab {
 
 function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
+  const perm = usePermissions();
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>(() => resolveInitialTab(searchParams.get("tab")));
   const viewport = useViewport();
@@ -1386,17 +1418,24 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
               {/* Actions */}
               <div style={{ display:"flex", flexDirection:"column", gap:8, alignItems:"flex-end" }}>
                 <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end", position:"relative" }}>
+                  {/* FINAL-L5-05P: Change Plan/Suspend/Reinstate all call
+                      backend endpoints gated by require_super_admin (not
+                      yet granular) -- gated by role, not page-read
+                      permission alone. Add Usage Credits is Finance-domain,
+                      out of this sprint's bounded scope, left unchanged. */}
                   {!isMobile && <>
                     <Btn size="sm" icon={<CreditCard size={13}/>} onClick={() => setCreditOpen(true)}>
                       Add Usage Credits
                     </Btn>
-                    <Btn variant="secondary" size="sm" onClick={() => setPlanModal(true)}>Change Plan</Btn>
-                    {t?.status && !["suspended","terminated","archived"].includes(t.status) && (
+                    {perm.role === "super_admin" && (
+                      <Btn variant="secondary" size="sm" onClick={() => setPlanModal(true)}>Change Plan</Btn>
+                    )}
+                    {perm.role === "super_admin" && t?.status && !["suspended","terminated","archived"].includes(t.status) && (
                       <Btn variant="danger" size="sm" loading={suspendAction.loading} onClick={() => setSuspendOpen(true)}>
                         Suspend
                       </Btn>
                     )}
-                    {t?.status === "suspended" && (
+                    {perm.role === "super_admin" && t?.status === "suspended" && (
                       <Btn variant="success" size="sm" loading={reinstateAction.loading} onClick={() => setReinstateOpen(true)}>
                         Reinstate
                       </Btn>
@@ -1410,23 +1449,31 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                         boxShadow:"0 12px 40px rgba(0,0,0,0.18)", minWidth:210, overflow:"hidden" }}>
                         {isMobile && <>
                           <button onClick={() => { setMoreOpen(false); setCreditOpen(true); }} style={menuItemStyle}>Add Usage Credits</button>
-                          <button onClick={() => { setMoreOpen(false); setPlanModal(true); }} style={menuItemStyle}>Change Plan</button>
-                          {t?.status && !["suspended","terminated","archived"].includes(t.status) && (
+                          {perm.role === "super_admin" && (
+                            <button onClick={() => { setMoreOpen(false); setPlanModal(true); }} style={menuItemStyle}>Change Plan</button>
+                          )}
+                          {perm.role === "super_admin" && t?.status && !["suspended","terminated","archived"].includes(t.status) && (
                             <button onClick={() => { setMoreOpen(false); setSuspendOpen(true); }} style={menuItemStyle}>Suspend</button>
                           )}
-                          {t?.status === "suspended" && (
+                          {perm.role === "super_admin" && t?.status === "suspended" && (
                             <button onClick={() => { setMoreOpen(false); setReinstateOpen(true); }} style={menuItemStyle}>Reinstate</button>
                           )}
                           <hr style={{ margin:"4px 0", border:"none", borderTop:"1px solid var(--border)" }}/>
                         </>}
                         <button onClick={() => { setMoreOpen(false); setTab("onboarding"); }} style={menuItemStyle}>Approve / Review Tenant</button>
                         <button onClick={() => { setMoreOpen(false); setAdjDepositOpen(true); }} style={menuItemStyle}>Adjust Security Deposit</button>
-                        <button onClick={() => { setMoreOpen(false); setReqChangesOpen(true); }} style={menuItemStyle}>Request Changes</button>
-                        <button onClick={() => { setMoreOpen(false); setNotifyOpen(true); }} style={menuItemStyle}>Send Notification</button>
+                        {perm.role === "super_admin" && (
+                          <button onClick={() => { setMoreOpen(false); setReqChangesOpen(true); }} style={menuItemStyle}>Request Changes</button>
+                        )}
+                        {perm.role === "super_admin" && (
+                          <button onClick={() => { setMoreOpen(false); setNotifyOpen(true); }} style={menuItemStyle}>Send Notification</button>
+                        )}
                         <hr style={{ margin:"4px 0", border:"none", borderTop:"1px solid var(--border)" }}/>
-                        <button onClick={() => { setMoreOpen(false); handleExportReport(); }} style={menuItemStyle}>
-                          {exportAction.loading ? "Exporting…" : "Export Tenant Report"}
-                        </button>
+                        {perm.role === "super_admin" && (
+                          <button onClick={() => { setMoreOpen(false); handleExportReport(); }} style={menuItemStyle}>
+                            {exportAction.loading ? "Exporting…" : "Export Tenant Report"}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1791,7 +1838,9 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
               {staff.data ? `${(staff.data.users ?? []).length} staff member${(staff.data.users ?? []).length !== 1 ? "s" : ""}` : "Loading…"}
             </p>
             <div style={{ display:"flex", gap:8 }}>
-              <Btn size="sm" onClick={() => setAddStaffOpen(true)}>+ Add Staff</Btn>
+              {perm.role === "super_admin" && (
+                <Btn size="sm" onClick={() => setAddStaffOpen(true)}>+ Add Staff</Btn>
+              )}
               <Btn size="sm" variant="ghost" icon={<RefreshCw size={13}/>} onClick={() => staff.refetch()}>Refresh</Btn>
             </div>
           </div>
@@ -1848,7 +1897,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                         {s.last_login_at ? new Date(s.last_login_at).toLocaleDateString("en-IN") : "Never"}
                       </td>
                       <td style={{ padding:"12px 16px" }}>
-                        {s.is_active && (
+                        {perm.role === "super_admin" && s.is_active && (
                           <Btn size="xs" variant="danger"
                             loading={deactivateStaffAction.loading}
                             onClick={async () => {
@@ -1876,7 +1925,9 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
               {users.data ? `${(users.data.users ?? []).length} user${(users.data.users ?? []).length !== 1 ? "s" : ""}` : "Loading…"}
             </p>
             <div style={{ display:"flex", gap:8 }}>
-              <Btn size="sm" onClick={() => setAddUserOpen(true)}>+ Add User</Btn>
+              {perm.role === "super_admin" && (
+                <Btn size="sm" onClick={() => setAddUserOpen(true)}>+ Add User</Btn>
+              )}
               <Btn size="sm" variant="ghost" icon={<RefreshCw size={13}/>} onClick={() => users.refetch()}>Refresh</Btn>
             </div>
           </div>
@@ -1923,7 +1974,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                         {u.last_login_at ? new Date(String(u.last_login_at)).toLocaleDateString("en-IN") : "Never"}
                       </td>
                       <td style={{ padding:"11px 16px" }}>
-                        {u.is_active && (
+                        {perm.role === "super_admin" && u.is_active && (
                           <Btn size="xs" variant="danger"
                             loading={suspendUserAction.loading}
                             onClick={async () => {
@@ -1952,7 +2003,9 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                 {zones.data ? `${(zones.data.zones ?? []).length} service zone${(zones.data.zones ?? []).length !== 1 ? "s" : ""}` : "Loading…"}
               </p>
               <div style={{ display:"flex", gap:8 }}>
-                <Btn size="sm" onClick={() => setAddAreaOpen(true)}>+ Add Area</Btn>
+                {perm.role === "super_admin" && (
+                  <Btn size="sm" onClick={() => setAddAreaOpen(true)}>+ Add Area</Btn>
+                )}
                 <Btn size="sm" variant="ghost" icon={<RefreshCw size={13}/>} onClick={() => zones.refetch()}>Refresh</Btn>
               </div>
             </div>

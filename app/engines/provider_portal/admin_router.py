@@ -226,7 +226,11 @@ async def list_new_requests(
 async def send_provider_reminder(
     tenant_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    # FINAL-L5-05P: was get_current_user (any authenticated principal of any
+    # role, including customer/technician, could trigger this) -- gated to
+    # super_admin as the minimal safe fix; no granular permission exists yet
+    # for provider-nudge actions.
+    user: UserContext = Depends(require_super_admin),
 ):
     """Send a setup reminder to a provider who hasn't completed onboarding."""
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
@@ -544,7 +548,9 @@ async def request_changes_provider_onboarding(
 async def refresh_provider_onboarding(
     tenant_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    # FINAL-L5-05P: was get_current_user -- gated to super_admin (same
+    # minimal fix as the sibling /bookability/.../refresh endpoint below).
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     return ok({"tenant_id": str(tenant_id), "refreshed": True}, request_id=rid)
@@ -555,7 +561,10 @@ async def override_onboarding_item(
     tenant_id: uuid.UUID, checklist_key: str,
     payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    # FINAL-L5-05P: was get_current_user -- reuses TENANT_APPROVE (the
+    # natural pairing: whoever can approve a provider's onboarding can also
+    # override a specific checklist item blocking that approval).
+    user: UserContext = Depends(require_permission(P.TENANT_APPROVE)),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     await db.execute(text("""
@@ -670,7 +679,8 @@ async def _log_bookability_event(
 async def refresh_bookability(
     tenant_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    # FINAL-L5-05P: was get_current_user -- gated to super_admin.
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     before = await _get_or_create_visibility_row(db, tenant_id)
@@ -694,7 +704,11 @@ async def override_visibility(
     tenant_id: uuid.UUID, request: Request,
     payload: dict[str, Any],
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    # FINAL-L5-05P: was get_current_user (any authenticated principal of any
+    # role could override a provider's public visibility platform-wide) --
+    # gated to super_admin as the minimal safe fix; no granular coverage/
+    # bookability permission exists yet in this codebase.
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     override = bool((payload or {}).get("override"))
@@ -720,7 +734,8 @@ async def override_visibility(
 async def remove_visibility_override(
     tenant_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    # FINAL-L5-05P: was get_current_user -- gated to super_admin.
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     before = await _get_or_create_visibility_row(db, tenant_id)
@@ -744,7 +759,10 @@ async def override_bookability(
     tenant_id: uuid.UUID, request: Request,
     payload: dict[str, Any],
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    # FINAL-L5-05P: was get_current_user (any authenticated principal of any
+    # role could override a provider's bookability platform-wide) -- gated
+    # to super_admin as the minimal safe fix.
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     override = bool((payload or {}).get("override"))
@@ -770,7 +788,8 @@ async def override_bookability(
 async def remove_bookability_override(
     tenant_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    # FINAL-L5-05P: was get_current_user -- gated to super_admin.
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     before = await _get_or_create_visibility_row(db, tenant_id)

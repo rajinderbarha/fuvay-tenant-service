@@ -612,6 +612,12 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.ADMIN_JOBS_FORCE_CLOSE, P.ADMIN_JOBS_VOID,
         P.FIELD_OPS_JOBS_READ, P.FIELD_OPS_REPORTS_READ, P.FIELD_OPS_JOBS_EXPORT,
         P.TENANT_READ, P.TENANT_HEALTH_READ,
+        # FINAL-L5-05P: Provider onboarding verify/reject/request-more-info
+        # are real operational actions (Part 25's own expected policy lists
+        # "Tenant verify"/"Provider verify" as ALLOW for Operations Admin).
+        # These 4 real, distinct backend permissions existed but were
+        # granted to zero non-super-admin roles before this sprint.
+        P.TENANT_ONBOARDING_READ, P.TENANT_APPROVE, P.TENANT_REJECT, P.TENANT_REQUEST_MORE_INFO,
         P.STAFF_READ, P.STAFF_PERFORMANCE_READ,
         P.REVIEW_READ, P.REVIEW_MODERATE,
         P.NOTIFICATION_LOGS_READ, P.NOTIFICATION_SEND,
