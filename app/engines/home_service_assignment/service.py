@@ -169,7 +169,21 @@ class HomeServiceJobAssignmentService:
     async def list_eligible_staff_for_job(
         self, job_id: uuid.UUID, tenant_id: uuid.UUID,
     ) -> dict:
+        # FINAL-L5-05V: this method only ever queried ProviderTeamMember,
+        # which has 0 rows in this environment (confirmed live) -- every
+        # real technician is a User row (role='technician'/'staff'), per
+        # the same L5-05C-001 finding _load_staff/validate_staff_eligibility
+        # already handle. Since this method never had the User fallback,
+        # the tenant-portal's own job-assignment UI
+        # (GET /v1/provider/service-jobs/{job_id}/eligible-staff) has been
+        # showing ZERO eligible staff for every job, always, even when real
+        # active technicians exist for the tenant -- confirmed live via
+        # direct DB query (5 eligible User rows, 0 ProviderTeamMember rows).
+        # Mirrors the same dual-shape handling validate_staff_eligibility
+        # already uses, rather than duplicating a second staff-listing
+        # implementation.
         from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+        from app.engines.auth.models import User
         job = await self._load_job(job_id)
         if not job:
             raise ValueError(ERR_JOB_NOT_FOUND)
@@ -184,30 +198,51 @@ class HomeServiceJobAssignmentService:
                 )
             )
         )
-        all_staff = res.scalars().all()
+        all_staff = list(res.scalars().all())
+
+        if not all_staff:
+            res2 = await self.db.execute(
+                select(User).where(
+                    and_(
+                        User.tenant_id == tenant_id,
+                        User.role.in_(["technician", "staff"]),
+                    )
+                )
+            )
+            all_staff = list(res2.scalars().all())
 
         eligible, blocked = [], []
         for s in all_staff:
+            is_user = hasattr(s, "role") and not hasattr(s, "designation")
             reasons = []
-            if s.status != "active":
-                reasons.append("staff_inactive")
-            if not getattr(s, "can_receive_assignment", True):
-                reasons.append("cannot_receive_assignment")
-            designation = (s.designation or "").lower()
+            if is_user:
+                if not getattr(s, "is_active", True):
+                    reasons.append("staff_inactive")
+                designation = (s.role or "").lower()
+                status = "active" if getattr(s, "is_active", True) else "inactive"
+                name = s.full_name
+            else:
+                if s.status != "active":
+                    reasons.append("staff_inactive")
+                if not getattr(s, "can_receive_assignment", True):
+                    reasons.append("cannot_receive_assignment")
+                designation = (s.designation or "").lower()
+                status = s.status
+                name = s.full_name
             if designation and designation not in ELIGIBLE_DESIGNATIONS:
                 reasons.append("role_not_allowed")
 
             base = {
                 "staff_member_id": str(s.id),
-                "name":            s.full_name,
-                "role":            s.designation or "unknown",
-                "status":          s.status,
+                "name":            name,
+                "role":            designation or "unknown",
+                "status":          status,
             }
             if not reasons:
                 eligible.append({
                     **base,
                     "eligibility_status": "eligible",
-                    "match_reasons":      ["same_tenant", "active", s.designation or "staff"],
+                    "match_reasons":      ["same_tenant", "active", designation or "staff"],
                 })
             else:
                 blocked.append({

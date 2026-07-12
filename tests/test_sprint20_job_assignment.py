@@ -236,6 +236,67 @@ class TestStaffEligibility:
             await svc.validate_staff_eligibility(job, uuid.uuid4())
 
 
+class TestListEligibleStaffForJob:
+    """FINAL-L5-05V: list_eligible_staff_for_job only ever queried
+    ProviderTeamMember, which has 0 rows in this environment (confirmed
+    live) -- the tenant-portal's own job-assignment UI
+    (/v1/provider/service-jobs/{job_id}/eligible-staff) showed zero
+    eligible staff for every job, always, even with real active
+    technicians. Fixed with the same User-table fallback
+    validate_staff_eligibility already uses."""
+
+    def _user_staff(self, tenant_id: uuid.UUID, role: str = "technician", is_active: bool = True) -> MagicMock:
+        from app.engines.auth.models import User
+        u = MagicMock(spec=User)
+        u.id = uuid.uuid4()
+        u.tenant_id = tenant_id
+        u.full_name = "Real Technician"
+        u.role = role
+        u.is_active = is_active
+        return u
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_user_table_when_provider_team_member_empty(self):
+        from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+        tenant_id = uuid.uuid4()
+        job = _job(tenant_id=tenant_id)
+        user_staff = self._user_staff(tenant_id)
+        # 1st execute: _load_job -> job. 2nd: ProviderTeamMember query -> empty.
+        # 3rd: User fallback query -> [user_staff].
+        db = _db_returning(job, None, user_staff)
+        svc = HomeServiceJobAssignmentService(db)
+        result = await svc.list_eligible_staff_for_job(job.id, tenant_id)
+        assert len(result["eligible_staff"]) == 1
+        assert result["eligible_staff"][0]["staff_member_id"] == str(user_staff.id)
+        assert result["eligible_staff"][0]["role"] == "technician"
+        assert result["blocked_staff"] == []
+
+    @pytest.mark.asyncio
+    async def test_does_not_fall_back_when_provider_team_member_has_rows(self):
+        from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+        tenant_id = uuid.uuid4()
+        job = _job(tenant_id=tenant_id)
+        pt_staff = _staff(tenant_id=tenant_id)
+        db = _db_returning(job, pt_staff)  # only 2 execute() calls expected
+        svc = HomeServiceJobAssignmentService(db)
+        result = await svc.list_eligible_staff_for_job(job.id, tenant_id)
+        assert len(result["eligible_staff"]) == 1
+        assert result["eligible_staff"][0]["staff_member_id"] == str(pt_staff.id)
+
+    @pytest.mark.asyncio
+    async def test_inactive_user_staff_is_blocked_not_eligible(self):
+        from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+        tenant_id = uuid.uuid4()
+        job = _job(tenant_id=tenant_id)
+        inactive_user = self._user_staff(tenant_id, is_active=False)
+        db = _db_returning(job, None, inactive_user)
+        svc = HomeServiceJobAssignmentService(db)
+        result = await svc.list_eligible_staff_for_job(job.id, tenant_id)
+        assert result["eligible_staff"] == []
+        assert len(result["blocked_staff"]) == 1
+        assert "staff_inactive" in result["blocked_staff"][0]["blocked_reasons"]
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Phase 3 — Job Assignment
 # ═══════════════════════════════════════════════════════════════════════════════
