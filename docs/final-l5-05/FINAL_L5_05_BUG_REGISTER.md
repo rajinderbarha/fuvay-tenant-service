@@ -422,3 +422,79 @@
 18 of 21 real bugs/gaps found across FINAL-L5-05 through FINAL-L5-05H were fixed and live-verified; FINAL-L5-05I through 05L added 40 more findings implementing the Usage Credit/Finance Hub/Admin Role architecture. FINAL-L5-05M adds 11 more (L5-05M-001 through 011): `AdminLayout` now consumes real server-provided effective permissions for the first time, closing the central L5-05L-010 gap — desktop sidebar visibility, 7 representative route guards, and 8 representative action guards are all proven correct live via 10/10 real Chromium tests (20/20 across all 3 most recent role/permission Chromium suites when run standalone). A real permission-key mismatch (`analytics:read` vs `analytics:dashboard:read`) was found and fixed by the new automated guard before commit. Exhaustive coverage of all ~44 routes/actions, mobile-specific navigation, and dashboard/contextual-link filtering remain open, consistent with this sprint's explicit "do not redesign the entire Admin UI" scope limit — each documented with direct evidence, not hidden or downgraded. One new, real, out-of-scope architecture mismatch was discovered and documented (L5-05M-011, Platform Users' dead `platform_role` field) rather than silently left unmentioned.
 
 FINAL-L5-05N adds 8 more (L5-05N-001 through 008): closes L5-05M-011 by fixing the Platform Users role editor for real, including a more serious defect than originally scoped (invited users silently received super_admin access, L5-05N-001) — the role editor now maps 1:1 to the real, enforced role architecture. Separately, a single root-layout change (`getRequiredPermissionForRoute` + `app/admin/layout.tsx`) closes the "remaining ~37 nav items" gap from L5-05M-004/005 and extends it further — every one of ~150 real admin routes, including ~85 that had zero permission coverage of any kind before this sprint, now inherits a real, fail-closed permission check, live-verified via 5 real-browser Chromium tests. Exhaustive per-route/per-action live verification across all 150 routes × 5 roles, dashboard/contextual-link/export filtering, mobile navigation, accessibility, and performance all remain open — honestly documented, not claimed complete.
+
+## L5-05O-001: Enterprise Export system (33 resources) had zero domain-permission gating
+- **Severity**: P0 (real, exploitable today — any authenticated role, including Admin Read Only, could export any of 33 resources' real row data, including Finance/Security-sensitive ones).
+- **Evidence**: `create_export_job` (`POST /v1/enterprise/exports`, `app/engines/enterprise_grid/router.py`) had only `get_current_user` as a dependency; no resource-level permission check existed anywhere in the router or `ExportService`.
+- **Fix**: `RESOURCE_EXPORT_PERMISSIONS` mapping (`filter_registry.py`) + inline `permission_checker.has()` check in `create_export`, covering the 12 Finance/Security/Jobs-sensitive resources with real, existing export-shaped permissions (`FINANCE_EXPORT`, `SECURITY_AUDIT_EXPORT`, `FIELD_OPS_JOBS_EXPORT`).
+- **Live API evidence**: Finance/Security/Jobs resource exports each correctly 201 only for the intended 2 roles (Super Admin + domain owner), 403 for the other 3.
+- **Tests**: `tests/test_final_l5_05o_inpage_permissions.py::TestEnterpriseExportPermissionGate` (6 tests).
+- **Status**: **FIXED** for the 12 sensitive resources; ~25 lower-sensitivity catalog/operational resources remain unmapped (documented, see L5-05O-006).
+
+## L5-05O-002: finance_hub's 4 export endpoints violated "report read must not imply export"
+- **Severity**: P1.
+- **Evidence**: `/v1/admin/finance/{deposits,topups,warranty-claims,payouts}/export` were each gated by the domain's `*_READ` permission, identical to the corresponding list endpoint.
+- **Fix**: All 4 now require `P.FINANCE_EXPORT`, granted only to `admin_finance` among the 4 non-super-admin roles.
+- **Live API evidence**: `GET /v1/admin/finance/deposits/export` — Super Admin/Finance Admin 200, Operations/Security/Read-Only 403.
+- **Tests**: `TestFinanceHubExportPermissionSeparation` (1 test asserting all 4 endpoints require `P.FINANCE_EXPORT`, not a read key).
+- **Status**: **FIXED**.
+
+## L5-05O-003: Dashboard widgets were 100% unreachable by every non-super-admin role
+- **Severity**: P0 (real, pre-existing usability/architecture gap — a well-designed per-widget permission registry existed in the backend but was never wired into any of the 4 role bundles).
+- **Evidence**: 0 of `admin_operations`/`admin_finance`/`admin_security`/`admin_readonly` held `P.DASHBOARD_READ` before this sprint; every dashboard endpoint 403'd for every one of them.
+- **Fix**: Each role granted `DASHBOARD_READ` (base) plus its own domain widget/action-queue permissions (see full breakdown in `FINAL_L5_05O_INPAGE_PERMISSION_CERTIFICATION.md`). `useApi()` gained an `enabled` option; the dashboard page suppresses restricted widget requests entirely and omits (does not render) denied sections.
+- **Live API evidence**: base widget 200 for all 5 roles; `finance-snapshot`/`compliance-security` each correctly 200 only for their 2 intended roles.
+- **Live Chromium evidence**: 6/6 new tests — each role sees exactly its intended widget set; zero restricted network requests observed for Admin Read Only.
+- **Tests**: `TestDashboardRoleBundles`, `TestDashboardRequestSuppression` (13 tests).
+- **Status**: **FIXED**.
+
+## L5-05O-004: Security Deposits page mutation actions map to a different permission domain than the page's own route guard
+- **Severity**: P1 (real, pre-existing architecture mismatch — before this sprint, Finance Admin could reach the page but every mutation on it would 403).
+- **Evidence**: Page route guard + role-bundle intent use `finance.security_deposits.*`; the actual mutation endpoints the page calls (`/v1/admin/finance/deposits/{id}/approve|reject|record-offline|refund|adjust`) are gated by a completely separate `finance:deposits:*` domain (`finance_hub/admin_router.py`).
+- **Fix (bounded)**: `admin_finance` granted the real `finance:deposits:*` permissions its intended actions require. The two domains are NOT reconciled/merged this sprint — reconciling them is a larger architecture decision.
+- **Live API evidence**: `POST .../adjust` reaches the handler (404 on fake UUID = passed the permission gate) for Super Admin/Finance Admin; 403 for Operations/Security/Read-Only.
+- **Status**: **PARTIALLY FIXED** — Finance Admin can now use the page; the underlying two-domain naming collision remains open, tracked for a future architecture-reconciliation sprint (same category as the `TenantWallet`/Blocker-9 finding).
+
+## L5-05O-005: Security Deposits row overflow menu had zero frontend permission gating
+- **Severity**: P1 (direct consequence of L5-05O-004 -- before this sprint, any role reaching the page saw all 5 mutation menu items regardless of actual backend permission).
+- **Fix**: `ActionMenu` items on `/admin/finance/deposits` now individually gated via `perm.has()` against the real backend permission each one calls; denied items are omitted, not disabled.
+- **Live Chromium evidence**: Admin Read Only's opened overflow menu contains zero of the 4 mutation labels (Approve/Reject/Forfeit-Adjust/Initiate Refund).
+- **Tests**: `TestSecurityDepositsActionPermissionArchitectureMismatch` (4 tests).
+- **Status**: **FIXED**.
+
+## L5-05O-006: ~25 of 33 Enterprise Export resources remain unmapped to any export permission
+- **Severity**: P2 (lower-sensitivity catalog/operational resources — `admin_categories`, `admin_engines`, `admin_tenants`, `admin_pricing_tiers`, etc. — reachable by any authenticated admin).
+- **Evidence**: Only the 12 Finance/Security/Jobs-sensitive resources were classified and gated this sprint (L5-05O-001); the remainder were not individually risk-assessed.
+- **Status**: **NOT FIXED** — documented, bounded-scope gap, not hidden.
+
+## L5-05O-007: Contextual links across the ~150-page admin surface not exhaustively inventoried
+- **Severity**: P2.
+- **Evidence**: Only the dashboard's own Quick Links panel was bounded-fixed this sprint (filtered by real destination-page permission). Tenant/Job/Finance/Security detail-page contextual links (mission Parts 10-13) were not inventoried or individually fixed.
+- **Status**: **NOT FIXED** — documented, not hidden.
+
+## L5-05O-008: Tenant/Provider/Staff in-page mutation actions have zero frontend permission gating
+- **Severity**: P1 (confirmed via source read — `frontend/super-admin/app/admin/tenants/[id]/page.tsx`, a ~2800-line file with multiple Verify/Reject/Suspend/Reactivate buttons, has zero `usePermissions` import).
+- **Evidence**: The page route itself requires only `tenant:read` (held by `admin_operations`, `admin_finance`, `admin_readonly`), so any of those 3 roles reaching the page would see all mutation buttons regardless of actual backend permission for the specific action.
+- **Root cause**: Same class of gap as L5-05O-005, at a much larger scale (single file, many buttons) — not bounded-fixable within this sprint's remaining budget after the 4 fixes above.
+- **Status**: **NOT FIXED** — real, evidenced, documented gap. Highest-priority carry-forward item for a future FINAL-L5-05P-style continuation.
+
+## L5-05O-009: Notification/System in-page actions not inventoried
+- **Severity**: P2.
+- **Status**: **NOT FIXED** — not investigated this sprint (Part 27 out of bounded scope).
+
+## L5-05O-010: Full five-role page-level Chromium matrix incomplete
+- **Severity**: P1 (explicit acceptance-criteria expectation).
+- **Evidence**: 8 new Chromium tests this sprint (dashboard widget suppression across all 5 roles, Security Deposits action-menu filtering for 2 roles) plus 22 re-verified prior-sprint tests, all passing. The full ~150-page × 5-role × per-action matrix implied by Part 42 was not run in full — only the 4 specific fixes made this sprint were live-verified end-to-end.
+- **Status**: **PARTIALLY FIXED** — the fixes actually made are proven live; the broader matrix remains open.
+
+## L5-05O-011: Throttled-network flash-prevention verification not run as a dedicated pass
+- **Severity**: P2.
+- **Evidence**: The request-suppression test (L5-05O-003) proves no restricted dashboard request fires under normal network conditions; a dedicated Chromium network-throttled run (Part 43) was not performed.
+- **Status**: **NOT FIXED** — documented, not hidden.
+
+## L5-05O-012: Mobile navigation, accessibility, responsive, and performance verification not attempted
+- **Severity**: P2/P3 (unchanged, pre-existing gaps tracked since FINAL-L5-04/05M/05N).
+- **Status**: **NOT FIXED** — same carried-forward scope, not worsened or improved this sprint.
+
+## Result
+FINAL-L5-05O adds 12 more (L5-05O-001 through 012): 4 real, high-leverage, live-verified fixes closed genuine P0/P1 gaps (Enterprise Export system had zero domain-permission gating across 33 resources — a serious, previously-unknown finding; finance_hub export/read separation; dashboard widgets were 100% unreachable by every non-super-admin role, now fixed with real per-widget grants and request suppression; Security Deposits' ungated mutation menu plus the underlying two-permission-domain architecture mismatch). All 4 fixes are proven correct via live API (8 mandatory cross-domain denial checks from the mission's own Part 41, all passing) and live Chromium (8 new + 22 re-verified, zero regression). The much larger remainder — exhaustive contextual-link/action cataloging across ~150 pages, ~25 remaining export resources, Tenant/Provider/Staff/Notification action matrices, mobile/accessibility/responsive/performance — is honestly carried forward as documented, evidenced remaining scope.

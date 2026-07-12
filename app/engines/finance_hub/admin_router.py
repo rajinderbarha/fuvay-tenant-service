@@ -71,7 +71,11 @@ async def deposits_summary(r: Request,
 @router.get("/deposits/export", response_model=ApiResponse[dict], summary="Export security deposits")
 async def export_deposits(r: Request,
                            status: str | None = Query(None), vertical: str | None = Query(None),
-                           u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_READ)),
+                           # FINAL-L5-05O: was gated by the read permission
+                           # (FINANCE_DEPOSITS_READ) -- read must not imply
+                           # export (rule 9). Now requires the distinct
+                           # export-shaped permission.
+                           u: UserContext = Depends(require_permission(P.FINANCE_EXPORT)),
                            s: FinanceHubService = Depends(_svc)):
     rows = await s.export_deposits(status=status, vertical=vertical)
     return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
@@ -152,7 +156,8 @@ async def topups_summary(r: Request,
 
 @router.get("/topups/export", response_model=ApiResponse[dict], summary="Export credit top-ups")
 async def export_topups(r: Request, payment_status: str | None = Query(None),
-                         u: UserContext = Depends(require_permission(P.FINANCE_TOPUPS_READ)),
+                         # FINAL-L5-05O: distinct export permission (was READ).
+                         u: UserContext = Depends(require_permission(P.FINANCE_EXPORT)),
                          s: FinanceHubService = Depends(_svc)):
     rows = await s.export_topups(payment_status=payment_status)
     return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
@@ -207,7 +212,8 @@ async def claims_summary(r: Request,
 
 @router.get("/warranty-claims/export", response_model=ApiResponse[dict], summary="Export warranty claims")
 async def export_claims(r: Request, status: str | None = Query(None),
-                         u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_READ)),
+                         # FINAL-L5-05O: distinct export permission (was READ).
+                         u: UserContext = Depends(require_permission(P.FINANCE_EXPORT)),
                          s: FinanceHubService = Depends(_svc)):
     rows = await s.export_claims(status=status)
     return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
@@ -286,7 +292,8 @@ async def payouts_summary(r: Request,
 
 @router.get("/payouts/export", response_model=ApiResponse[dict], summary="Export payouts")
 async def export_payouts(r: Request, status: str | None = Query(None),
-                          u: UserContext = Depends(require_permission(P.FINANCE_PAYOUTS_READ)),
+                          # FINAL-L5-05O: distinct export permission (was READ).
+                          u: UserContext = Depends(require_permission(P.FINANCE_EXPORT)),
                           s: FinanceHubService = Depends(_svc)):
     rows = await s.export_payouts(status=status)
     return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)

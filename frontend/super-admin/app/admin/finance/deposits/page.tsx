@@ -9,6 +9,7 @@ import { ActionMenu } from "../../../../components/pricing/ActionMenu";
 import { financeApi } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { RequirePermission } from "../../../../components/shared/PermissionGate";
+import { usePermissions } from "../../../../hooks/usePermissions";
 import type { FinanceDeposit } from "../../../../lib/api";
 
 const STATUS_OPTIONS = [
@@ -35,6 +36,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function SecurityDepositsPage() {
   const router = useRouter();
+  const perm = usePermissions();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
 
@@ -102,14 +104,19 @@ export default function SecurityDepositsPage() {
     { key: "adjusted_amount", label: "Adjusted Amount", width: 140, render: (_: unknown, row: FinanceDeposit) => `₹${row.adjusted_amount.toLocaleString("en-IN")}` },
     { key: "created_at", label: "Created", width: 120, render: (_: unknown, row: FinanceDeposit) => row.created_at ? new Date(row.created_at).toLocaleDateString("en-IN") : "—" },
     { key: "deposit_id", label: "", width: 110, render: (_: unknown, row: FinanceDeposit) => (
+      // FINAL-L5-05O Part 22: overflow menu is permission-filtered before
+      // opening -- mutation items are omitted (not disabled) for any role
+      // lacking the real backend permission the action calls, matching
+      // rule 12 (Admin Read Only sees zero mutation controls) and 23
+      // (denied items must not appear even transiently).
       <ActionMenu items={[
         { label: "View Deposit Detail", onClick: () => router.push(`/admin/finance/deposits/${row.deposit_id}`) },
         (row.status === "unpaid" || row.status === "partially_paid" || row.status === "pending_verification") &&
-          { label: "Approve Deposit", onClick: () => handleApprove(row) },
-        { label: "Reject Deposit", onClick: () => openModal("reject", row) },
-        { label: "Record Offline Deposit", onClick: () => openModal("offline", row) },
-        { label: "Initiate Refund", onClick: () => openModal("refund", row) },
-        { label: "Forfeit / Adjust", onClick: () => openModal("adjust", row) },
+          perm.has("finance:deposits:approve") && { label: "Approve Deposit", onClick: () => handleApprove(row) },
+        perm.has("finance:deposits:approve") && { label: "Reject Deposit", onClick: () => openModal("reject", row) },
+        perm.has("finance:deposits:update") && { label: "Record Offline Deposit", onClick: () => openModal("offline", row) },
+        perm.has("finance:deposits:refund") && { label: "Initiate Refund", onClick: () => openModal("refund", row) },
+        perm.has("finance:deposits:update") && { label: "Forfeit / Adjust", onClick: () => openModal("adjust", row) },
         { label: "View Audit Logs", onClick: () => router.push(`/admin/finance/deposits/${row.deposit_id}#audit`) },
       ]}/>
     )},

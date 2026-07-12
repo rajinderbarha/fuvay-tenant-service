@@ -40,6 +40,8 @@ from app.engines.enterprise_grid.filter_registry import EnterpriseFilterRegistry
 from app.engines.enterprise_grid.query_service import EnterpriseListQueryService
 from app.engines.enterprise_grid.services import SavedViewService, ColumnPreferenceService, ExportService
 from app.engines.enterprise_grid.constants import ENTERPRISE_SYNC_EXPORT_ROW_LIMIT
+from app.core.permissions import permission_checker
+from app.exceptions import ServiceOSException
 
 enterprise_router = APIRouter(prefix="/enterprise", tags=["Enterprise Grid"])
 
@@ -397,6 +399,21 @@ async def create_export(
     u: UserContext   = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # FINAL-L5-05O: create_export_job previously had zero domain-permission
+    # gating -- any authenticated role could export any of the 33 registered
+    # resources. Finance/Security/Operations-sensitive resources now require
+    # an explicit export-shaped permission (never a read permission alone).
+    required = EnterpriseFilterRegistry.required_export_permission(body.resource_key)
+    if required and not permission_checker.has(
+        role=u.role, permission=required, overrides=getattr(u, "permission_overrides", None),
+    ):
+        raise ServiceOSException(
+            error_code="PERMISSION_DENIED",
+            detail=f"Permission '{required}' required. Your role '{u.role}' does not have this permission.",
+            blocking_rule=f"required_permission: {required}",
+            resolution="Contact your administrator to grant this permission.",
+            context={"required": required, "role": u.role},
+        )
     job = await _export.create_export_job(
         db, u.user_id, u.tenant_id,
         resource_key         = body.resource_key,

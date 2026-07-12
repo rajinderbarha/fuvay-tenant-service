@@ -16,6 +16,32 @@ def col(key: str, label: str, order: int, visible: bool = True, width: int = 160
     return {"key": key, "label": label, "visible": visible, "order": order, "width": width}
 
 
+# ── FINAL-L5-05O — Export permission mapping ────────────────────────────────
+# create_export_job() previously had zero domain-permission gating (only
+# get_current_user) -- ANY authenticated role could export ANY of the 33
+# registered resources, including Finance/Security-sensitive ones. This maps
+# the Finance/Security/Operations-sensitive resources to a real, existing
+# backend export-shaped permission (never a read permission -- read must not
+# imply export, per rule 9). Resources not listed here remain reachable by
+# any authenticated admin (a documented, bounded-scope residual gap for the
+# ~25 lower-sensitivity catalog/operational resources not covered this
+# sprint -- see FINAL_L5_05O bug register).
+RESOURCE_EXPORT_PERMISSIONS: dict[str, str] = {
+    "admin_finance_deposits":     "finance:hub:export",
+    "admin_finance_topups":       "finance:hub:export",
+    "admin_finance_claims":       "finance:hub:export",
+    "admin_finance_payouts":      "finance:hub:export",
+    "admin_finance_wallets":      "finance:hub:export",
+    "admin_security_threats":     "security:audit:export",
+    "admin_security_sessions":    "security:audit:export",
+    "admin_ip_blocklist":         "security:audit:export",
+    "admin_api_keys":             "security:audit:export",
+    "admin_audit_logs":           "security:audit:export",
+    "admin_setting_audit_logs":   "security:audit:export",
+    "admin_service_jobs":         "field_ops:jobs:export",
+}
+
+
 # ── Resource configurations ───────────────────────────────────────────────────
 _RESOURCE_CONFIGS: dict[str, dict] = {
 
@@ -807,6 +833,13 @@ class EnterpriseFilterRegistry:
     @classmethod
     def all_resource_keys(cls) -> list[str]:
         return list(_RESOURCE_CONFIGS.keys())
+
+    @classmethod
+    def required_export_permission(cls, resource_key: str) -> str | None:
+        """FINAL-L5-05O: returns the export-shaped permission required to
+        export this resource, or None if the resource has no explicit
+        export gate (documented residual scope, not an oversight)."""
+        return RESOURCE_EXPORT_PERMISSIONS.get(resource_key)
 
     @classmethod
     def validate_filter(cls, resource_key: str, filter_key: str) -> bool:

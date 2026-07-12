@@ -19,14 +19,22 @@ export interface ApiState<T> {
 export function useApi<T>(
   fetcher: () => Promise<T>,
   deps: unknown[] = [],
+  options?: { enabled?: boolean },
 ): ApiState<T> {
+  // FINAL-L5-05O Part 5: when enabled=false (permission already known to be
+  // denied), never fire the request -- no restricted request starts before
+  // known denial, and no skeleton/error-box flash for content the caller
+  // will never be allowed to see. Defaults to true so all pre-existing call
+  // sites are unaffected.
+  const enabled = options?.enabled ?? true;
   const [data,      setData]      = useState<T | null>(null);
-  const [loading,   setLoading]   = useState(true);
+  const [loading,   setLoading]   = useState(enabled);
   const [error,     setError]     = useState<string | null>(null);
   const [requestId, setRequestId] = useState<string | null>(null);
   const runRef = useRef(0);
 
   const run = useCallback(async () => {
+    if (!enabled) { setLoading(false); setData(null); setError(null); return; }
     const id = ++runRef.current;
     setLoading(true); setError(null); setRequestId(null);
     try {
@@ -41,7 +49,7 @@ export function useApi<T>(
       if (id === runRef.current) setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [enabled, ...deps]);
 
   useEffect(() => { run(); }, [run]);
   return { data, loading, error, requestId, refetch: run };

@@ -31,6 +31,21 @@ export interface PermissionMeta {
  * app/core/permissions.py exactly. Extend here first if a new nav item,
  * route or action needs a real backend permission. */
 export const PERMISSION_CATALOG: Record<string, PermissionMeta> = {
+  // FINAL-L5-05O — dashboard widget/quick-action permissions. These are
+  // distinct from the underlying domain read permissions (e.g. finance:hub:read)
+  // by design (Part 3/4's separation of concerns): a role can read a domain's
+  // detail pages without necessarily seeing that domain's dashboard widget,
+  // and vice versa.
+  "dashboard.read":                       { key: "dashboard.read", label: "Read Dashboard (base KPIs)", domain: "dashboard", shape: "read" },
+  "dashboard.finance.read":               { key: "dashboard.finance.read", label: "Read Finance Dashboard Widget", domain: "dashboard", shape: "read" },
+  "dashboard.operations.read":            { key: "dashboard.operations.read", label: "Read Operations Dashboard Widget", domain: "dashboard", shape: "read" },
+  "dashboard.security.read":              { key: "dashboard.security.read", label: "Read Security Dashboard Widget", domain: "dashboard", shape: "read" },
+  "dashboard.export":                     { key: "dashboard.export", label: "Export Dashboard Snapshot", domain: "dashboard", shape: "export" },
+  "dashboard.action_queue.manage":        { key: "dashboard.action_queue.manage", label: "Manage Dashboard Action Queue", domain: "dashboard", shape: "mutation" },
+  "dashboard.engine_health.read":         { key: "dashboard.engine_health.read", label: "Read Engine Health Widget", domain: "dashboard", shape: "read" },
+  "dashboard.activity.read":              { key: "dashboard.activity.read", label: "Read Activity Feed Widget", domain: "dashboard", shape: "read" },
+  "finance:hub:export":                   { key: "finance:hub:export", label: "Export Finance Hub Data", domain: "finance", shape: "export" },
+  "field_ops:jobs:export":                { key: "field_ops:jobs:export", label: "Export Jobs Data", domain: "operations", shape: "export" },
   "tenant:read":                          { key: "tenant:read", label: "Read Tenants", domain: "tenants", shape: "read" },
   "field_ops:jobs:read":                  { key: "field_ops:jobs:read", label: "Read Jobs (tenant-portal)", domain: "operations", shape: "read" },
   "admin:jobs:read":                      { key: "admin:jobs:read", label: "Read Jobs (admin)", domain: "operations", shape: "read" },
@@ -53,6 +68,9 @@ export const PERMISSION_CATALOG: Record<string, PermissionMeta> = {
   "finance.security_deposits.mark_received": { key: "finance.security_deposits.mark_received", label: "Mark Security Deposit Paid", domain: "finance", shape: "mutation" },
   "finance.security_deposits.release":    { key: "finance.security_deposits.release", label: "Release Security Deposit", domain: "finance", shape: "mutation" },
   "finance.completed_job_deduction_rules.read": { key: "finance.completed_job_deduction_rules.read", label: "Read Completed Job Deduction Rules", domain: "finance", shape: "read" },
+  "finance:deposits:approve":             { key: "finance:deposits:approve", label: "Approve/Reject Security Deposit", domain: "finance", shape: "mutation" },
+  "finance:deposits:update":              { key: "finance:deposits:update", label: "Record/Adjust Security Deposit", domain: "finance", shape: "mutation" },
+  "finance:deposits:refund":              { key: "finance:deposits:refund", label: "Refund Security Deposit", domain: "finance", shape: "mutation" },
   "security:read":                        { key: "security:read", label: "Read Security Overview", domain: "security", shape: "read" },
   "security:sessions:read":               { key: "security:sessions:read", label: "Read Sessions", domain: "security", shape: "read" },
   "security:sessions:revoke":             { key: "security:sessions:revoke", label: "Revoke Session", domain: "security", shape: "mutation" },

@@ -610,12 +610,19 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     "admin_operations": [
         P.ADMIN_JOBS_READ, P.ADMIN_JOBS_REASSIGN, P.ADMIN_JOBS_STATUS_OVERRIDE,
         P.ADMIN_JOBS_FORCE_CLOSE, P.ADMIN_JOBS_VOID,
-        P.FIELD_OPS_JOBS_READ, P.FIELD_OPS_REPORTS_READ,
+        P.FIELD_OPS_JOBS_READ, P.FIELD_OPS_REPORTS_READ, P.FIELD_OPS_JOBS_EXPORT,
         P.TENANT_READ, P.TENANT_HEALTH_READ,
         P.STAFF_READ, P.STAFF_PERFORMANCE_READ,
         P.REVIEW_READ, P.REVIEW_MODERATE,
         P.NOTIFICATION_LOGS_READ, P.NOTIFICATION_SEND,
         P.ANALYTICS_READ,
+        # FINAL-L5-05O: dashboard-widget read permissions, distinct from the
+        # underlying domain read permissions above (Part 3/4's separation of
+        # concerns) — Operations Admin sees the base + operations-domain
+        # dashboard sections, engine health, and activity feed, plus the
+        # action-queue quick-action permission (operational triage tool).
+        P.DASHBOARD_READ, P.DASHBOARD_OPERATIONS_READ, P.DASHBOARD_ACTIVITY_READ,
+        P.DASHBOARD_ENGINE_HEALTH_READ, P.DASHBOARD_ACTION_QUEUE_MANAGE,
         # Explicitly NOT granted: any FINANCE_*, ADMIN_JOBS is granted above
         # (operational, not financial) but Usage Credit / Top-up / Security
         # Deposit mutation and read permissions are deliberately absent —
@@ -630,13 +637,28 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.FINANCE_SECURITY_DEPOSITS_READ, P.FINANCE_SECURITY_DEPOSITS_MARK_RECEIVED,
         P.FINANCE_SECURITY_DEPOSITS_RELEASE, P.FINANCE_SECURITY_DEPOSITS_ADJUST,
         P.FINANCE_SECURITY_DEPOSITS_AUDIT_READ,
-        P.FINANCE_SETTINGS_READ, P.PACKAGES_AUDIT_READ,
+        # FINAL-L5-05O finding: the live /admin/finance/deposits page (and
+        # its Approve/Reject/Record-Offline/Refund/Adjust actions) is wired
+        # to a DIFFERENT backend permission domain (finance:deposits:*, see
+        # finance_hub/admin_router.py) than FINANCE_SECURITY_DEPOSITS_* above
+        # -- a pre-existing architecture mismatch (documented in the bug
+        # register, not fully reconciled this sprint). Without this grant,
+        # Finance Admin could reach the page but every mutation on it would
+        # 403 despite the role's clear intent to manage Security Deposits.
+        P.FINANCE_DEPOSITS_READ, P.FINANCE_DEPOSITS_APPROVE, P.FINANCE_DEPOSITS_UPDATE,
+        P.FINANCE_DEPOSITS_REFUND,
+        P.FINANCE_SETTINGS_READ, P.PACKAGES_AUDIT_READ, P.FINANCE_EXPORT,
         P.TENANT_READ, P.TENANT_BILLING_READ, P.TENANT_HEALTH_READ,
-        P.DASHBOARD_FINANCE_READ,
+        # FINAL-L5-05O: base dashboard read (Finance Admin already had the
+        # domain-specific DASHBOARD_FINANCE_READ below).
+        P.DASHBOARD_READ, P.DASHBOARD_FINANCE_READ,
         # Explicitly NOT granted: ADMIN_JOBS_* (reassign/status-override/
         # force-close/void), STAFF mutation, PLATFORM_ROLES/PERMISSIONS,
         # SECURITY_* (sessions/devices/audit) — Finance Admin cannot perform
-        # any operational job mutation or security administration.
+        # any operational job mutation or security administration. Also NOT
+        # granted: FIELD_OPS_JOBS_EXPORT, SECURITY_AUDIT_EXPORT — Finance
+        # Admin cannot export Operations or Security data (FINAL-L5-05O
+        # rule 2/3).
     ],
 
     "admin_security": [
@@ -652,6 +674,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.PLATFORM_ROLES_READ, P.PLATFORM_PERMISSIONS_READ,
         P.AUTH_USERS_READ, P.AUTH_AUDIT_READ,
         P.USERS_SECURITY_READ, P.USERS_SECURITY_VIEW_SESSIONS, P.USERS_SECURITY_VIEW_HISTORY,
+        # FINAL-L5-05O: base + security-domain dashboard read.
+        P.DASHBOARD_READ, P.DASHBOARD_SECURITY_READ,
         # Decision (Part 9): Security Admin gets read-only on the Roles/
         # Permissions catalog, not create/edit — the catalog is code-defined
         # RBAC (see roles_permissions/admin_router.py) with no real mutation
@@ -674,6 +698,12 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.PLATFORM_ROLES_READ, P.PLATFORM_PERMISSIONS_READ,
         P.AUTH_USERS_READ,
         P.ANALYTICS_READ,
+        # FINAL-L5-05O: base dashboard read only -- deliberately NOT granted
+        # any of DASHBOARD_FINANCE_READ / DASHBOARD_OPERATIONS_READ /
+        # DASHBOARD_SECURITY_READ / DASHBOARD_ACTION_QUEUE_MANAGE / export,
+        # consistent with the zero-mutation, minimal-exposure design of this
+        # role even though it separately holds broad domain READ access.
+        P.DASHBOARD_READ,
         # Zero mutation/adjust/approve/revoke/create/update/delete/export
         # permissions of any kind. Required invariant (Part 10): mutation
         # permission count == 0 for this role, enforced by an architecture

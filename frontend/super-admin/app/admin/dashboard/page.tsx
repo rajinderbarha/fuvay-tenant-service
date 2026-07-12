@@ -18,10 +18,25 @@ import {
 } from "lucide-react";
 import { dashboardApi } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
+import { usePermissions } from "../../../hooks/usePermissions";
+import { SUPER_ADMIN_ONLY } from "../../../lib/permission-catalog";
 import {
   AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
 } from "recharts";
+
+// FINAL-L5-05O — dashboard widget permission keys (see permission-catalog.ts).
+// Base sections (executive summary, platform health, tenant lifecycle, home
+// services, trends, at-risk tenants, trust & quality, category performance)
+// require only the base dashboard.read permission every dashboard-capable
+// role holds; the domain-sensitive sections below require their own key.
+const P_DASHBOARD_FINANCE   = "dashboard.finance.read";
+const P_DASHBOARD_OPS       = "dashboard.operations.read";
+const P_DASHBOARD_SECURITY  = "dashboard.security.read";
+const P_DASHBOARD_EXPORT    = "dashboard.export";
+const P_DASHBOARD_ACTIONS   = "dashboard.action_queue.manage";
+const P_DASHBOARD_ENGINES   = "dashboard.engine_health.read";
+const P_DASHBOARD_ACTIVITY  = "dashboard.activity.read";
 
 const ENGINE_STATUS_BADGE: Record<string, "success"|"warning"|"danger"|"muted"> = {
   healthy: "success", warning: "warning", degraded: "danger", down: "danger",
@@ -65,20 +80,32 @@ function SectionError({ title, error, requestId, onRetry }: {
 
 export default function PlatformCommandCenterPage() {
   const [dateRange, setDateRange] = useState<"7d"|"30d"|"90d">("7d");
+  const perm = usePermissions();
+
+  // FINAL-L5-05O Part 5: permission resolves before any restricted request
+  // begins. While perm.loading, has() fails closed (false) for every key,
+  // so no restricted widget fetch fires before /v1/auth/me resolves.
+  const financeAllowed  = perm.has(P_DASHBOARD_FINANCE);
+  const opsAllowed      = perm.has(P_DASHBOARD_OPS);
+  const securityAllowed = perm.has(P_DASHBOARD_SECURITY);
+  const exportAllowed   = perm.has(P_DASHBOARD_EXPORT);
+  const actionsAllowed  = perm.has(P_DASHBOARD_ACTIONS);
+  const enginesAllowed  = perm.has(P_DASHBOARD_ENGINES);
+  const activityAllowed = perm.has(P_DASHBOARD_ACTIVITY);
 
   const summary   = useApi(useCallback(() => dashboardApi.getExecutiveSummary(), []));
   const health    = useApi(useCallback(() => dashboardApi.getPlatformHealth(), []));
-  const finance   = useApi(useCallback(() => dashboardApi.getFinanceSnapshot(), []));
+  const finance   = useApi(useCallback(() => dashboardApi.getFinanceSnapshot(), []), [], { enabled: financeAllowed });
   const lifecycle = useApi(useCallback(() => dashboardApi.getTenantLifecycle(), []));
-  const ops       = useApi(useCallback(() => dashboardApi.getOperationsSnapshot(), []));
-  const liveOps   = useApi(useCallback(() => dashboardApi.getLiveOperations(20), []));
+  const ops       = useApi(useCallback(() => dashboardApi.getOperationsSnapshot(), []), [], { enabled: opsAllowed });
+  const liveOps   = useApi(useCallback(() => dashboardApi.getLiveOperations(20), []), [], { enabled: opsAllowed });
   const trends    = useApi(useCallback(() => dashboardApi.getTrends(), []));
-  const actions   = useApi(useCallback(() => dashboardApi.getActionQueue(50), []));
-  const engines   = useApi(useCallback(() => dashboardApi.getEngineHealth(), []));
+  const actions   = useApi(useCallback(() => dashboardApi.getActionQueue(50), []), [], { enabled: actionsAllowed });
+  const engines   = useApi(useCallback(() => dashboardApi.getEngineHealth(), []), [], { enabled: enginesAllowed });
   const atRisk    = useApi(useCallback(() => dashboardApi.getAtRiskTenants(20), []));
-  const compliance= useApi(useCallback(() => dashboardApi.getComplianceSecurity(), []));
+  const compliance= useApi(useCallback(() => dashboardApi.getComplianceSecurity(), []), [], { enabled: securityAllowed });
   const trust     = useApi(useCallback(() => dashboardApi.getTrustQuality(), []));
-  const activity  = useApi(useCallback(() => dashboardApi.getActivityFeed(15), []));
+  const activity  = useApi(useCallback(() => dashboardApi.getActivityFeed(15), []), [], { enabled: activityAllowed });
   const categories= useApi(useCallback(() => dashboardApi.getCategoryPerformance(), []));
   const homeServices = useApi(useCallback(() => dashboardApi.getHomeServicesSummary(), []));
 
@@ -117,7 +144,11 @@ export default function PlatformCommandCenterPage() {
           breadcrumbs={[{ label: "Dashboard" }, { label: "Platform Overview" }]}
           primaryAction={<Btn variant="ghost" size="sm" icon={<RefreshCw size={14}/>} loading={refreshAction.loading} onClick={handleRefresh}>Refresh</Btn>}
           secondaryActions={[
-            { label: "Export Snapshot", icon: <Download size={14}/>, onClick: handleExport },
+            // FINAL-L5-05O Part 6: dashboard quick action requires its own
+            // mutation permission (dashboard.export), distinct from any
+            // widget read permission -- omitted entirely when denied so it
+            // never flashes or renders as a doomed 403 click target.
+            ...(exportAllowed ? [{ label: "Export Snapshot", icon: <Download size={14}/>, onClick: handleExport }] : []),
             { label: "Create Report", icon: <FileText size={14}/> },
             { label: "Open Alerts", icon: <Bell size={14}/>, href: "/admin/dashboard#actions" },
             { label: "Open Operations Board", icon: <ListChecks size={14}/>, href: "/admin/operations" },
@@ -156,20 +187,28 @@ export default function PlatformCommandCenterPage() {
 
         {/* Second row: snapshot cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 20 }}>
-          <Card padding={20}>
-            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase",
-              letterSpacing: "0.06em", margin: "0 0 12px" }}>Finance Snapshot</p>
-            {finance.error ? (
-              <SectionError title="We couldn't load finance data" error={finance.error} requestId={finance.requestId} onRetry={finance.refetch}/>
-            ) : finance.loading ? <Skeleton height={90}/> : f ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <Row label="Platform Revenue" value={fmtCurrency(f.platform_revenue)} strong/>
-                <Row label="Provider Direct Service Value" value={fmtCurrency(f.provider_direct_service_value)}/>
-                <Row label="Completed Job Deductions" value={fmtCurrency(f.completed_job_deductions)}/>
-                <Row label="Security Deposits Held" value={fmtCurrency(f.security_deposits_held)}/>
-              </div>
-            ) : null}
-          </Card>
+          {/* FINAL-L5-05O Part 5/19: perm.loading -> skeleton (never denied
+              content, never the section's absence read as final); resolved
+              + denied -> section does not render at all (no empty card
+              chrome, no doomed-403 flash). */}
+          {perm.loading ? (
+            <Card padding={20}><Skeleton height={90}/></Card>
+          ) : financeAllowed ? (
+            <Card padding={20}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase",
+                letterSpacing: "0.06em", margin: "0 0 12px" }}>Finance Snapshot</p>
+              {finance.error ? (
+                <SectionError title="We couldn't load finance data" error={finance.error} requestId={finance.requestId} onRetry={finance.refetch}/>
+              ) : finance.loading ? <Skeleton height={90}/> : f ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <Row label="Platform Revenue" value={fmtCurrency(f.platform_revenue)} strong/>
+                  <Row label="Provider Direct Service Value" value={fmtCurrency(f.provider_direct_service_value)}/>
+                  <Row label="Completed Job Deductions" value={fmtCurrency(f.completed_job_deductions)}/>
+                  <Row label="Security Deposits Held" value={fmtCurrency(f.security_deposits_held)}/>
+                </div>
+              ) : null}
+            </Card>
+          ) : null}
           <Card padding={20}>
             <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase",
               letterSpacing: "0.06em", margin: "0 0 12px" }}>Tenant Lifecycle</p>
@@ -184,20 +223,24 @@ export default function PlatformCommandCenterPage() {
               </div>
             ) : null}
           </Card>
-          <Card padding={20}>
-            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase",
-              letterSpacing: "0.06em", margin: "0 0 12px" }}>Operations Snapshot</p>
-            {ops.error ? (
-              <SectionError title="We couldn't load operations data" error={ops.error} requestId={ops.requestId} onRetry={ops.refetch}/>
-            ) : ops.loading ? <Skeleton height={90}/> : o ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <Row label="Live Jobs" value={String(o.live_jobs)}/>
-                <Row label="Today's Bookings" value={String(o.today_bookings)}/>
-                <Row label="Pending Provider Acceptance" value={String(o.pending_provider_acceptance)}/>
-                <Row label="SLA Breaches" value={String(o.sla_breaches)} danger={o.sla_breaches > 0}/>
-              </div>
-            ) : null}
-          </Card>
+          {perm.loading ? (
+            <Card padding={20}><Skeleton height={90}/></Card>
+          ) : opsAllowed ? (
+            <Card padding={20}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase",
+                letterSpacing: "0.06em", margin: "0 0 12px" }}>Operations Snapshot</p>
+              {ops.error ? (
+                <SectionError title="We couldn't load operations data" error={ops.error} requestId={ops.requestId} onRetry={ops.refetch}/>
+              ) : ops.loading ? <Skeleton height={90}/> : o ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <Row label="Live Jobs" value={String(o.live_jobs)}/>
+                  <Row label="Today's Bookings" value={String(o.today_bookings)}/>
+                  <Row label="Pending Provider Acceptance" value={String(o.pending_provider_acceptance)}/>
+                  <Row label="SLA Breaches" value={String(o.sla_breaches)} danger={o.sla_breaches > 0}/>
+                </div>
+              ) : null}
+            </Card>
+          ) : null}
           <Card padding={20}>
             <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase",
               letterSpacing: "0.06em", margin: "0 0 12px" }}>Trust & Quality</p>
@@ -326,102 +369,118 @@ export default function PlatformCommandCenterPage() {
             </Card>
 
             {/* Live Operations Board */}
-            <Card padding={0}>
-              <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
-                <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Live Operations Board</p>
-              </div>
-              {liveOps.loading ? (
-                <div style={{ padding: 16 }}><Skeleton height={100}/></div>
-              ) : (liveOps.data?.items ?? []).length === 0 ? (
-                <EmptyState icon={<Activity/>} title="No live jobs right now."
-                  description="Jobs will appear here when providers accept customer bookings."/>
-              ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: "var(--surface-sunken)" }}>
-                      {["Item","Vertical","Tenant","Status","SLA","Updated"].map(hh => (
-                        <th key={hh} style={{ padding: "8px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)" }}>{hh}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(liveOps.data?.items ?? []).map((it, i, arr) => (
-                      <tr key={it.id} style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
-                        <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 12 }}>{it.item}</td>
-                        <td style={{ padding: "10px 16px", fontSize: 12 }}>{it.vertical ?? "—"}</td>
-                        <td style={{ padding: "10px 16px", fontSize: 12 }}>{it.tenant ?? "—"}</td>
-                        <td style={{ padding: "10px 16px" }}><Badge variant="info" size="sm">{it.status.replace(/_/g," ")}</Badge></td>
-                        <td style={{ padding: "10px 16px" }}>{it.sla_breach ? <Badge variant="danger" size="sm">Breach</Badge> : <Badge variant="success" size="sm">OK</Badge>}</td>
-                        <td style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tertiary)" }}>
-                          {it.updated_at ? new Date(it.updated_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
-                        </td>
+            {perm.loading ? (
+              <Card padding={0}><div style={{ padding: 16 }}><Skeleton height={100}/></div></Card>
+            ) : opsAllowed ? (
+              <Card padding={0}>
+                <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Live Operations Board</p>
+                </div>
+                {liveOps.loading ? (
+                  <div style={{ padding: 16 }}><Skeleton height={100}/></div>
+                ) : (liveOps.data?.items ?? []).length === 0 ? (
+                  <EmptyState icon={<Activity/>} title="No live jobs right now."
+                    description="Jobs will appear here when providers accept customer bookings."/>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: "var(--surface-sunken)" }}>
+                        {["Item","Vertical","Tenant","Status","SLA","Updated"].map(hh => (
+                          <th key={hh} style={{ padding: "8px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)" }}>{hh}</th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </Card>
+                    </thead>
+                    <tbody>
+                      {(liveOps.data?.items ?? []).map((it, i, arr) => (
+                        <tr key={it.id} style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
+                          <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 12 }}>{it.item}</td>
+                          <td style={{ padding: "10px 16px", fontSize: 12 }}>{it.vertical ?? "—"}</td>
+                          <td style={{ padding: "10px 16px", fontSize: 12 }}>{it.tenant ?? "—"}</td>
+                          <td style={{ padding: "10px 16px" }}><Badge variant="info" size="sm">{it.status.replace(/_/g," ")}</Badge></td>
+                          <td style={{ padding: "10px 16px" }}>{it.sla_breach ? <Badge variant="danger" size="sm">Breach</Badge> : <Badge variant="success" size="sm">OK</Badge>}</td>
+                          <td style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tertiary)" }}>
+                            {it.updated_at ? new Date(it.updated_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </Card>
+            ) : null}
 
-            {/* Pending Admin Action Queue */}
-            <Card padding={0}>
-              <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }} id="actions">
-                <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Pending Admin Action Queue</p>
-              </div>
-              {actions.loading ? (
-                <div style={{ padding: 16 }}><Skeleton height={100}/></div>
-              ) : (actions.data?.items ?? []).length === 0 ? (
-                <p style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-tertiary)", fontSize: 13, margin: 0 }}>
-                  No pending actions. Everything is on track.
-                </p>
-              ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: "var(--surface-sunken)" }}>
-                      {["Priority","Action","Vertical","Status","Actions"].map(hh => (
-                        <th key={hh} style={{ padding: "8px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)" }}>{hh}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(actions.data?.items ?? []).map((a, i, arr) => (
-                      <tr key={a.action_id} style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
-                        <td style={{ padding: "10px 16px" }}>
-                          <Badge variant={a.priority === "critical" ? "danger" : "warning"} size="sm">{a.priority}</Badge>
-                        </td>
-                        <td style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-primary)" }}>{a.action}</td>
-                        <td style={{ padding: "10px 16px", fontSize: 12 }}>{a.vertical ?? "—"}</td>
-                        <td style={{ padding: "10px 16px" }}><Badge variant="info" size="sm">{a.status}</Badge></td>
-                        <td style={{ padding: "10px 16px" }}>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <Btn size="xs" variant="secondary" loading={resolveAction.loading} onClick={() => handleResolve(a.action_id)}>Resolve</Btn>
-                            <Btn size="xs" variant="ghost" loading={snoozeAction.loading} onClick={() => handleSnooze(a.action_id)}>Snooze</Btn>
-                          </div>
-                        </td>
+            {/* Pending Admin Action Queue -- FINAL-L5-05O Part 6: read
+                permission (actionsAllowed via DASHBOARD_ACTION_QUEUE_MANAGE)
+                gates the whole panel since this queue's only useful action
+                is the mutation itself (resolve/snooze); a read-only variant
+                is not a distinct capability in this system today. */}
+            {perm.loading ? (
+              <Card padding={0}><div style={{ padding: 16 }}><Skeleton height={100}/></div></Card>
+            ) : actionsAllowed ? (
+              <Card padding={0}>
+                <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }} id="actions">
+                  <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Pending Admin Action Queue</p>
+                </div>
+                {actions.loading ? (
+                  <div style={{ padding: 16 }}><Skeleton height={100}/></div>
+                ) : (actions.data?.items ?? []).length === 0 ? (
+                  <p style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-tertiary)", fontSize: 13, margin: 0 }}>
+                    No pending actions. Everything is on track.
+                  </p>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: "var(--surface-sunken)" }}>
+                        {["Priority","Action","Vertical","Status","Actions"].map(hh => (
+                          <th key={hh} style={{ padding: "8px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)" }}>{hh}</th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </Card>
+                    </thead>
+                    <tbody>
+                      {(actions.data?.items ?? []).map((a, i, arr) => (
+                        <tr key={a.action_id} style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
+                          <td style={{ padding: "10px 16px" }}>
+                            <Badge variant={a.priority === "critical" ? "danger" : "warning"} size="sm">{a.priority}</Badge>
+                          </td>
+                          <td style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-primary)" }}>{a.action}</td>
+                          <td style={{ padding: "10px 16px", fontSize: 12 }}>{a.vertical ?? "—"}</td>
+                          <td style={{ padding: "10px 16px" }}><Badge variant="info" size="sm">{a.status}</Badge></td>
+                          <td style={{ padding: "10px 16px" }}>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <Btn size="xs" variant="secondary" loading={resolveAction.loading} onClick={() => handleResolve(a.action_id)}>Resolve</Btn>
+                              <Btn size="xs" variant="ghost" loading={snoozeAction.loading} onClick={() => handleSnooze(a.action_id)}>Snooze</Btn>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </Card>
+            ) : null}
           </div>
 
           {/* Right column */}
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             {/* Engine Health */}
-            <Card padding={20}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>System / Engine Health</p>
-              {engines.loading ? <Skeleton height={120}/> : (
-                <>
-                  {(engines.data?.items ?? []).map(e => (
-                    <div key={e.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                      <span style={{ fontSize: 12, color: "var(--text-primary)" }}>{e.name}</span>
-                      <Badge variant={ENGINE_STATUS_BADGE[e.status] ?? "muted"} size="sm">{e.status.replace(/_/g," ")}</Badge>
-                    </div>
-                  ))}
-                  <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "10px 0 0" }}>{engines.data?.note}</p>
-                </>
-              )}
-            </Card>
+            {perm.loading ? (
+              <Card padding={20}><Skeleton height={120}/></Card>
+            ) : enginesAllowed ? (
+              <Card padding={20}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>System / Engine Health</p>
+                {engines.loading ? <Skeleton height={120}/> : (
+                  <>
+                    {(engines.data?.items ?? []).map(e => (
+                      <div key={e.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+                        <span style={{ fontSize: 12, color: "var(--text-primary)" }}>{e.name}</span>
+                        <Badge variant={ENGINE_STATUS_BADGE[e.status] ?? "muted"} size="sm">{e.status.replace(/_/g," ")}</Badge>
+                      </div>
+                    ))}
+                    <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "10px 0 0" }}>{engines.data?.note}</p>
+                  </>
+                )}
+              </Card>
+            ) : null}
 
             {/* At-Risk Tenants */}
             <Card padding={20}>
@@ -443,37 +502,45 @@ export default function PlatformCommandCenterPage() {
             </Card>
 
             {/* Compliance & Security */}
-            <Card padding={20}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Compliance & Security</p>
-              {compliance.loading ? <Skeleton height={100}/> : compliance.data && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <Row label="DPDP Requests Pending" value={String(compliance.data.dpdp_requests_pending)}/>
-                  <Row label="Data Export Requests" value={String(compliance.data.data_export_requests)}/>
-                  <Row label="Deletion Requests" value={String(compliance.data.deletion_requests)}/>
-                  <Row label="Open Threats" value={String(compliance.data.open_threats)} danger={compliance.data.open_threats > 0}/>
-                  <Row label="Failed Logins (24h)" value={String(compliance.data.failed_logins)}/>
+            {perm.loading ? (
+              <Card padding={20}><Skeleton height={100}/></Card>
+            ) : securityAllowed ? (
+              <Card padding={20}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Compliance & Security</p>
+                {compliance.loading ? <Skeleton height={100}/> : compliance.data && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <Row label="DPDP Requests Pending" value={String(compliance.data.dpdp_requests_pending)}/>
+                    <Row label="Data Export Requests" value={String(compliance.data.data_export_requests)}/>
+                    <Row label="Deletion Requests" value={String(compliance.data.deletion_requests)}/>
+                    <Row label="Open Threats" value={String(compliance.data.open_threats)} danger={compliance.data.open_threats > 0}/>
+                    <Row label="Failed Logins (24h)" value={String(compliance.data.failed_logins)}/>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <Btn size="xs" variant="ghost" onClick={() => { window.location.href = "/admin/compliance"; }}>Open Compliance</Btn>
+                  <Btn size="xs" variant="ghost" onClick={() => { window.location.href = "/admin/security"; }}>Open Security</Btn>
                 </div>
-              )}
-              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <Btn size="xs" variant="ghost" onClick={() => { window.location.href = "/admin/compliance"; }}>Open Compliance</Btn>
-                <Btn size="xs" variant="ghost" onClick={() => { window.location.href = "/admin/security"; }}>Open Security</Btn>
-              </div>
-            </Card>
+              </Card>
+            ) : null}
 
             {/* Recent Activity */}
-            <Card padding={20}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Recent Activity</p>
-              {activity.loading ? <Skeleton height={100}/> : (activity.data?.items ?? []).length === 0 ? (
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>No activity yet.</p>
-              ) : (activity.data?.items ?? []).map(ev => (
-                <div key={ev.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                  <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>{ev.action.replace(/[._]/g," ")}</p>
-                  <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "2px 0 0" }}>
-                    {ev.time ? new Date(ev.time).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
-                  </p>
-                </div>
-              ))}
-            </Card>
+            {perm.loading ? (
+              <Card padding={20}><Skeleton height={100}/></Card>
+            ) : activityAllowed ? (
+              <Card padding={20}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Recent Activity</p>
+                {activity.loading ? <Skeleton height={100}/> : (activity.data?.items ?? []).length === 0 ? (
+                  <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>No activity yet.</p>
+                ) : (activity.data?.items ?? []).map(ev => (
+                  <div key={ev.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+                    <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>{ev.action.replace(/[._]/g," ")}</p>
+                    <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "2px 0 0" }}>
+                      {ev.time ? new Date(ev.time).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
+                    </p>
+                  </div>
+                ))}
+              </Card>
+            ) : null}
           </div>
         </div>
 
@@ -516,16 +583,23 @@ export default function PlatformCommandCenterPage() {
           <Card padding={20}>
             <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 14px" }}>Quick Links</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {[
-                { label: "Tenant Approvals", href: "/admin/tenants?status=pending_review", count: l?.pending_review },
-                { label: "Live Operations", href: "/admin/operations" },
-                { label: "Finance Summary", href: "/admin/finance" },
-                { label: "Completed Job Deductions", href: "/admin/finance/commissions" },
-                { label: "Customer Service Credits", href: "/admin/finance/customer-credits" },
-                { label: "Complaints & Disputes", href: "/admin/complaints" },
-                { label: "Security Center", href: "/admin/security" },
-                { label: "Engine Health", href: "/admin/engines" },
-              ].map(link => (
+              {/* FINAL-L5-05O Part 9: each link appears only if perm.has()
+                  resolves the DESTINATION route's own required permission
+                  (matching NAV_GROUPS -- see AdminLayout.tsx), not this
+                  page's permission. perm.loading -> [] (no flash of a link
+                  the user turns out not to have). */}
+              {(perm.loading ? [] : [
+                { label: "Tenant Approvals", href: "/admin/tenants?status=pending_review", count: l?.pending_review, requires: "tenant:read" },
+                { label: "Live Operations", href: "/admin/operations", requires: "admin:jobs:read" },
+                { label: "Finance Summary", href: "/admin/finance", requires: "finance:hub:read" },
+                { label: "Completed Job Deductions", href: "/admin/finance/commissions", requires: "finance:hub:read" },
+                { label: "Customer Service Credits", href: "/admin/finance/customer-credits", requires: "finance:hub:read" },
+                { label: "Complaints & Disputes", href: "/admin/complaints", requires: SUPER_ADMIN_ONLY },
+                { label: "Security Center", href: "/admin/security", requires: "security:read" },
+                { label: "Engine Health", href: "/admin/engines", requires: SUPER_ADMIN_ONLY },
+              ]).filter(link =>
+                link.requires === SUPER_ADMIN_ONLY ? perm.role === "super_admin" : perm.has(link.requires)
+              ).map(link => (
                 <a key={link.label} href={link.href} style={{ textDecoration: "none" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
                     padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
