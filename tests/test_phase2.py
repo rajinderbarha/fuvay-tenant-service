@@ -267,17 +267,29 @@ async def test_default_engines_by_vertical():
 
 @pytest.mark.asyncio
 async def test_health_score_computation():
-    """Health score computation returns valid score and band."""
+    """Health score computation returns valid score and band.
+
+    FINAL-L5-05J: usage_credit_health is now computed live from
+    tenant_billing.credit_balance (app.engines.usage_credits.service),
+    not read from Redis — db.execute must return a real (sync) Result-like
+    object, not an AsyncMock, since SQLAlchemy's Result.scalars()/.first()
+    are synchronous methods on the object execute() awaits to.
+    """
     from app.engines.tenant_engine.constants import HEALTH_BANDS
     import uuid
     from unittest.mock import AsyncMock, MagicMock
     db = AsyncMock()
+    result = MagicMock()
+    result.scalars.return_value.first.return_value = None
+    db.execute = AsyncMock(return_value=result)
     from app.engines.tenant_engine.service import TenantService
     svc = TenantService(db)
     with patch("app.engines.tenant_engine.service.get_redis", return_value=AsyncMock()):
         health = await svc.get_health_score(uuid.uuid4())
     assert 0 <= health["score"] <= 100
     assert health["band"] in HEALTH_BANDS.keys()
+    assert "usage_credit_health" in health["signals"]
+    assert health["signals"]["usage_credit_health"]["detail"]["has_billing_record"] is False
     assert "commission_adjustment_pct" in health
     assert "signals" in health
 

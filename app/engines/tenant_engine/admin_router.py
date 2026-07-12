@@ -319,14 +319,43 @@ async def add_usage_credits(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_super_admin),
 ) -> ApiResponse[dict]:
-    amount = float(payload.get("amount", 0))
+    """FINAL-L5-05J CANONICAL_ADAPTER: delegates to UsageCreditService
+    instead of AdminTenantService.add_usage_credits, which mutated
+    tenant_billing.credit_balance with zero usage_credit_ledger row
+    (FINAL-L5-05I, L5-05I finding on rule 14 "ledger evidence" gap).
+    idempotency_key is optional for backward compatibility with existing
+    frontend callers that predate this fix; a server-generated key is used
+    when the client does not supply one, so repeated legacy calls without a
+    key are still each individually valid mutations (not deduplicated) —
+    callers that want dedup must pass idempotency_key explicitly."""
+    import uuid as _uuid
+    from decimal import Decimal
+    from app.engines.usage_credits.service import UsageCreditService
+
+    amount = payload.get("amount", 0)
     reason = str(payload.get("reason", "")).strip()
-    if amount <= 0:
-        raise HTTPException(status_code=422, detail="amount must be positive")
     if not reason:
         raise HTTPException(status_code=422, detail="reason is required")
-    svc = _svc(db, request, user)
-    return ok(await svc.add_usage_credits(tenant_id, amount, reason), _rid(request))
+    try:
+        amount = Decimal(str(amount))
+    except Exception:
+        raise HTTPException(status_code=422, detail="amount must be a number")
+    if amount <= 0:
+        raise HTTPException(status_code=422, detail="amount must be positive")
+
+    idem_key = payload.get("idempotency_key") or f"legacy-add-usage-credits:{_uuid.uuid4()}"
+    svc = UsageCreditService(
+        db, actor_id=uuid.UUID(user.user_id) if user.user_id else None,
+        actor_role=user.role, request_id=_rid(request),
+        actor_ip=request.client.host if request.client else None,
+    )
+    result = await svc.adjust_credit(
+        tenant_id=tenant_id, direction="credit", amount=amount,
+        reason_code="manual_operational_adjustment", reason=reason,
+        idempotency_key=idem_key,
+    )
+    await db.commit()
+    return ok({"new_balance": result["balance_after"], **result}, _rid(request))
 
 
 # HS9 — usage credit ledger, real deduction/credit history for a tenant.
@@ -682,12 +711,15 @@ async def credit_topup(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_super_admin),
 ) -> dict:
-    amount = float(payload.get("amount", 0))
-    if amount <= 0:
-        raise HTTPException(status_code=422, detail="amount must be positive")
-    notes = payload.get("notes", "Admin top-up")
-    svc = _svc(db, request, user)
-    return await svc.credit_topup(tenant_id, amount, notes)
+    """FINAL-L5-05J DEPRECATED_410: this wrote TenantWallet directly (no
+    row lock, no idempotency key) and had zero frontend callers (confirmed
+    via FINAL-L5-05I/05J grep of frontend/super-admin). Canonical Usage
+    Credit adjustments now go through POST /v1/admin/usage-credits/{tenant_id}/adjustments
+    (or the pre-existing, now-fixed POST /{tenant_id}/add-usage-credits adapter)."""
+    raise HTTPException(status_code=410, detail=(
+        "This endpoint is deprecated and blocked. Use "
+        "POST /v1/admin/usage-credits/{tenant_id}/adjustments."
+    ))
 
 
 @router.post("/{tenant_id}/wallet/adjust")
@@ -698,10 +730,12 @@ async def credit_adjust(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_super_admin),
 ) -> dict:
-    amount = float(payload.get("amount", 0))
-    reason = payload.get("reason", "")
-    svc = _svc(db, request, user)
-    return await svc.credit_adjust(tenant_id, amount, reason)
+    """FINAL-L5-05J DEPRECATED_410: see credit_topup above — same finding,
+    zero frontend callers, wrote TenantWallet with no lock/idempotency."""
+    raise HTTPException(status_code=410, detail=(
+        "This endpoint is deprecated and blocked. Use "
+        "POST /v1/admin/usage-credits/{tenant_id}/adjustments."
+    ))
 
 
 # ═══════════════════════════════════════════════════════════════

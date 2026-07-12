@@ -163,6 +163,11 @@ class UsageCreditLedger(ServiceOSBase):
     reason:              Mapped[str | None]       = mapped_column(Text(), nullable=True)
     created_by:          Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     request_id:          Mapped[str | None]       = mapped_column(String(100), nullable=True)
+    idempotency_key:     Mapped[str | None]       = mapped_column(String(200), nullable=True)
+    source_type:         Mapped[str | None]       = mapped_column(String(50), nullable=True)
+    source_id:           Mapped[str | None]       = mapped_column(String(100), nullable=True)
+    reason_code:         Mapped[str | None]       = mapped_column(String(50), nullable=True)
+    actor_role:          Mapped[str | None]       = mapped_column(String(30), nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -179,6 +184,10 @@ class UsageCreditLedger(ServiceOSBase):
             "service_type_id":    str(self.service_type_id) if self.service_type_id else None,
             "brand_id":           str(self.brand_id) if self.brand_id else None,
             "reason":             self.reason,
+            "reason_code":        self.reason_code,
+            "source_type":        self.source_type,
+            "source_id":          self.source_id,
+            "idempotency_key":    self.idempotency_key,
             "request_id":         self.request_id,
             "created_at":         self.created_at.isoformat() if self.created_at else None,
         }

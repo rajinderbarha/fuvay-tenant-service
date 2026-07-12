@@ -47,6 +47,17 @@ FINAL-L5-05F's original framing (2 orphaned admin pages) undersold the real scop
 
 **Escalation**: Blocker 9 remains open and is **not downgraded** — the true remediation surface is now known to be 4+ engines and 8 live endpoints, not 2 orphaned pages. This is real evidence that the responsible path continues to be a dedicated, multi-phase migration effort (outlined, not attempted), consistent with FINAL-L5-05G's and FINAL-L5-05H's own conclusions.
 
+**FINAL-L5-05J implemented the bounded, in-scope portion of that plan** (Usage Credit + Package Credit + tenant-health only, per the mission's own explicit scope limit). Real code changes, not just documentation:
+- New canonical `app/engines/usage_credits/service.py` (`UsageCreditService`) + endpoint family (`/v1/admin/usage-credits/{tenant_id}/{balance,ledger,threshold,adjustments}`), transactional (`SELECT ... FOR UPDATE`), idempotent (unique `usage_credit_ledger.idempotency_key`, migration 133), audited (`platform_audit_logs` on every mutation).
+- **2 of the 5 duplicate admin-adjustment paths fixed**: `tenant_engine`'s zero-caller `wallet/topup`/`wallet/adjust` blocked (`410`); `package_commerce`'s mislabeled-but-permission-correct `credit-wallet/*` endpoints repointed at the canonical service (closing the P0 product-risk finding from 05I). The other 3 (platform_commerce, field_ops, invoice_payment) are Commission/field-ops/provider-earning domain and correctly carried forward, per the mission's explicit "do not migrate Commission this sprint" instruction.
+- **`tenant_engine.add_usage_credits`'s missing-ledger-row gap is fixed** — now delegates to `UsageCreditService.adjust_credit`, which always writes a `usage_credit_ledger` row alongside the `tenant_billing.credit_balance` update.
+- **The real, purchase-money-linked Package Credit Grant path is migrated**: `package_commerce.service.py::purchase_package`'s included-credit grant now calls `UsageCreditService.grant_package_credit` instead of `ledger.credit_wallet` — `TenantWallet` is no longer touched by this flow.
+- **Tenant health's dead `credit_wallet_health` signal is repaired**: renamed `usage_credit_health`, computed live from `tenant_billing.credit_balance` with a real, documented, deterministic formula (no more silent 100.0 default for every tenant).
+- **A sixth, previously-undiscovered credit-grant path was found** during this sprint (`finance_hub.service.py::retry_credit_posting`, a schema-coupled "Credit Top-up Order" flow) and is **not** migrated — it requires its own schema change, beyond this sprint's bounded-fix budget.
+- Zero regressions: full backend suite 9034 passed (9010 baseline + 24 new tests), 1 skipped, 0 failed. TypeScript 0 errors. Production build passed. No live API/Chromium verification was run this session (no server started) — this is the one explicit acceptance-criteria gap preventing a `READY` recommendation for FINAL-L5-05J.
+
+See `FINAL_L5_05J_USAGE_CREDIT_CONSOLIDATION.md` for full evidence and the honest list of what remains open (finance_hub's sixth path, package cancellation/expiry reversal — traced and found never implemented, full RBAC role matrix, live API/Chromium evidence).
+
 ## Not a blocker (real, working, re-confirmed this sprint)
 - Breadcrumbs and active-state mechanism (FINAL-L5-04) — unchanged, working, re-verified live.
 - Backend authorization does not rely on frontend hiding anywhere touched this sprint.

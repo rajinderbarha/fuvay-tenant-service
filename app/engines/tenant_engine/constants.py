@@ -77,7 +77,7 @@ HEALTH_SCORE_WEIGHTS = {
     "job_completion_rate": 0.25,
     "customer_satisfaction": 0.20,
     "warranty_claim_rate": 0.15,
-    "credit_wallet_health": 0.15,
+    "usage_credit_health": 0.15,  # FINAL-L5-05J: renamed from credit_wallet_health, now real
     "staff_compliance_rate": 0.10,
     "response_time": 0.10,
     "platform_engagement": 0.05,

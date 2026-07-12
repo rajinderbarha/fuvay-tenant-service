@@ -161,5 +161,67 @@
 - **Bounded fix implemented this sprint**: 3 new architecture regression guard tests (`TestFinalL5_05I_DomainBoundaryGuards` in `tests/test_final_l5_05b_jobs_ia_guard.py`) — Security Deposit isolation guard, generic-wallet-endpoint-count pin, field_ops/service_jobs non-collision guard. No production code paths were changed (per the mission's explicit "classification before extraction" instruction).
 - **Status**: **INVESTIGATED AND CLASSIFIED, MOSTLY NOT FIXED** — this is architecture debt spanning at minimum 4 engines and 8 live endpoints; per this engagement's established pattern, documenting it accurately with a real, evidenced migration plan is the correct outcome for a classification-scoped sprint, not a forced partial implementation.
 
+## L5-05J-001: Five independent Usage Credit adjustment implementations
+- **Severity**: P1 (architecture debt; the highest-risk sub-part — package_commerce's mislabeling — is P0-adjacent).
+- **Evidence**: See `FINAL_L5_05J_USAGE_CREDIT_CONSOLIDATION.md` Part 2 for the full 5-path table.
+- **Root cause**: Each of Sprints 4/5/9/23-era work built its own tenant-credit-adjustment surface independently, none aware of the others.
+- **Affected callers/endpoints**: `platform_commerce.admin_credit_wallet`, `field_ops.BillingService.admin_wallet_topup/adjust`, `tenant_engine.credit_topup/credit_adjust`, `package_commerce.admin_topup_wallet/admin_adjust_wallet`, `invoice_payment.ProviderCreditWalletService.admin_credit`.
+- **Backend changes**: 2 of 5 paths (`tenant_engine`, `package_commerce`) resolved this sprint — see L5-05J-002/003.
+- **Tests**: `tests/test_final_l5_05j_usage_credit_service.py` (24 tests).
+- **Final status**: **PARTIALLY FIXED** — the 2 paths that were genuinely mislabeled/dead within Usage Credit scope are fixed; the 3 that belong to Commission/field-ops/provider-earning domains are correctly carried forward, not claimed resolved.
+
+## L5-05J-002: Usage Credit mutations targeting TenantWallet
+- **Severity**: P0 (product-risk: an admin using the correctly-permissioned "Usage Credits" action was adjusting the wrong balance).
+- **Evidence**: `package_commerce.admin_topup_wallet`/`admin_adjust_wallet` gated by `FINANCE_USAGE_CREDITS_TOP_UP`/`_ADJUST` but wrote `TenantWallet.credit_balance` via `ledger.credit_wallet`/`debit_wallet`.
+- **Root cause**: Permission names were assigned correctly at creation time but the implementation was never pointed at `tenant_billing`.
+- **Fix**: `package_commerce/admin_router.py`'s 4 `credit-wallet` endpoints now delegate to `UsageCreditService` — zero `TenantWallet` writes remain on this path.
+- **Tests**: `test_package_credit_wallet_legacy_endpoints_delegate_to_canonical_service` (architecture guard) + full `TestAdjustCredit` suite.
+- **Final status**: **FIXED**.
+
+## L5-05J-003: Package Credit grants targeting ambiguous balance
+- **Severity**: P0 (the mission's core "Package Credit Grant must flow through canonical Usage Credit service" requirement).
+- **Evidence**: `package_commerce.service.py::purchase_package`'s included-credit grant (the one real, purchase-money-linked path) called `ledger.credit_wallet` (→ `TenantWallet`).
+- **Fix**: Repointed to `UsageCreditService.grant_package_credit` (→ `tenant_billing`/`usage_credit_ledger`), idempotency identity `package_credit_grant:{purchase_id}:1`, enforced unique at the DB level (migration 133).
+- **Remaining gap (not fixed)**: `finance_hub.service.py::retry_credit_posting`, a separate, schema-coupled "Credit Top-up Order" flow (own model with a `wallet_transaction_id` FK), independently credits `TenantWallet` and was not discovered until this sprint. Migrating it requires a schema change (`usage_credit_ledger_id` column) beyond this sprint's bounded-fix budget.
+- **Tests**: `test_13/14/16_*` in `tests/test_sprint5_packages.py` (rewritten to assert the new canonical path), `TestGrantPackageCredit` in the new 05J suite.
+- **Final status**: **PARTIALLY FIXED** — the primary package-purchase path is migrated; the finance_hub topup-order path is documented, not migrated.
+
+## L5-05J-004: Package grant idempotency incomplete
+- **Severity**: P2.
+- **Evidence**: Grant identity `package_credit_grant:{package_assignment_id}:{activation_version}` is enforced unique at the DB level for the migrated path (L5-05J-003). Package cancellation/expiry reversal behavior was traced and found **not implemented anywhere in the codebase**, including the pre-migration path — a pre-existing gap, not introduced this sprint.
+- **Final status**: **PARTIALLY FIXED** — duplicate-grant protection is real and tested; cancellation/expiry reversal remains unimplemented (documented, not a regression).
+
+## L5-05J-005: Usage Credit endpoints remain generic/ambiguous
+- **Severity**: P1.
+- **Evidence**: Of FINAL-L5-05I's 8 `AMBIGUOUS_GENERIC` endpoints, the 4 in Usage Credit/Package Credit scope are resolved this sprint (2 blocked, 2 converted). The other 4 (Commission/field-ops/provider-earning domains) are explicitly out of this sprint's scope per the mission's own instructions.
+- **Final status**: **FIXED within scope** — 0 unresolved ambiguous endpoints remain in the Usage Credit/Package Credit domain; 4 remain in adjacent domains, correctly not claimed as resolved.
+
+## L5-05J-006: Tenant health credit signal always defaults to 100
+- **Severity**: P0 (real, live scoring defect affecting every tenant, 15% of health score weight).
+- **Evidence**: `credit_wallet_health`'s only writer (`CommerceService._update_wallet_signal`) was gated on the legacy field_ops `jobs` table (0 real rows) — never fired in this environment.
+- **Fix**: Replaced with `usage_credit_health`, computed live from `tenant_billing.credit_balance` on every health-score request (no caching, no stale-default fallback for real requests). Formula documented in `FINAL_L5_05J_USAGE_CREDIT_CONSOLIDATION.md` Part 12.
+- **Tests**: `test_health_score_computation` (updated), `test_tenant_health_computes_usage_credit_signal_from_tenant_billing` (guard).
+- **Final status**: **FIXED**.
+
+## L5-05J-007: Tenant health uses wallet terminology
+- **Severity**: P2.
+- **Evidence**: `HEALTH_SCORE_WEIGHTS["credit_wallet_health"]` renamed to `"usage_credit_health"` (same 0.15 weight). `analytics/service.py::get_platform_summary` still references a `credit_wallet_health` Redis key pattern for an `active_tenants` KPI — this was already always-empty (same root cause as L5-05J-006), so no behavior regression, but the terminology/KPI itself is not yet repointed.
+- **Final status**: **PARTIALLY FIXED** — canonical health signal renamed and repaired; one unrelated analytics KPI reference left for a future sprint (documented, non-regressing).
+
+## L5-05J-008: Usage Credit RBAC incomplete
+- **Severity**: P2.
+- **Evidence**: Reused the existing, real `FINANCE_USAGE_CREDITS_READ/TOP_UP/ADJUST/LEDGER_READ` and `TENANT_HEALTH_READ` permissions (already correctly defined in `app/core/permissions.py`) rather than inventing new `usage_credits.*` keys — `super_admin` has `P.ALL`, so canonical endpoints are reachable today. Distinct "Admin Finance"/"Admin Operations"/"Admin Read Only" roles do not exist as backend concepts (pre-existing finding, FINAL-L5-05G) — a full role matrix could not be built or tested this sprint.
+- **Final status**: **NOT FIXED** — RBAC is real and permission-gated, but the mission's full expected-roles matrix (Part 15) requires roles that don't exist yet.
+
+## L5-05J-009: Usage Credit audit matrix incomplete
+- **Severity**: P2.
+- **Evidence**: `UsageCreditService._post()` writes a `platform_audit_logs` row for every mutation (`usage_credit.adjusted`, `package_credit.granted`, `usage_credit.reversal_created`, `usage_credit.migration_adjustment`) via `record_platform_audit`, with actor/tenant/amount/before/after/source/reason/idempotency_key/request_id — matching the mission's Part 16 field list. `LEGACY_USAGE_CREDIT_ENDPOINT_USED`/`_BLOCKED` and `TENANT_USAGE_CREDIT_HEALTH_EVALUATED` event types were not added (health reads are deliberately not audited per-request, per the mission's own "avoid noisy event volume" guidance, but this policy choice was not written up as a formal document).
+- **Final status**: **PARTIALLY FIXED** — mutation audit is real and complete; the full audit-policy document is not written.
+
+## L5-05J-010: Live API and Chromium evidence missing
+- **Severity**: P1 (explicit acceptance-criteria blocker).
+- **Evidence**: No backend server was started this session; no live HTTP calls or Chromium runs were performed. All verification is unit-test-level (mocked DB) plus direct-SQL row-count checks (live Postgres, via asyncpg) and static architecture guards.
+- **Final status**: **NOT FIXED** — this alone prevents a `READY` recommendation per the mission's own explicit rule ("Do not return READY without live API/Chromium verification").
+
 ## Result
-18 of 21 real bugs/gaps found across FINAL-L5-05 through FINAL-L5-05H were fixed and live-verified; FINAL-L5-05I adds 10 more classification-level findings (L5-05I-001 through 010), of which 5 are fully resolved (classification/diagnosis complete) and 5 remain open pending a dedicated multi-phase migration (see `FINAL_L5_05I_DOMAIN_BOUNDARIES.md` Part 17). The `/v1/jobs` architecture violation remains **fully closed** (FINAL-L5-05E). FINAL-L5-05H closed the one sub-part of the wallet-architecture finding with an active, evidence-backed correctness risk (the job-deduction duplication gate). FINAL-L5-05I completed the classification FINAL-L5-05H deferred and found the true scope is larger than originally estimated — at least 5 duplicate admin-wallet-adjustment implementations and 2 duplicate commission implementations, none of which have ever executed against real production data. This is again a case where thorough investigation revealing "this is bigger than assumed" is the correct, honest outcome of a classification-scoped sprint — not a failure to complete the mission's literal instructions.
+18 of 21 real bugs/gaps found across FINAL-L5-05 through FINAL-L5-05H were fixed and live-verified; FINAL-L5-05I added 10 classification-level findings; FINAL-L5-05J adds 10 more (L5-05J-001 through 010) implementing real, tested code changes for the in-scope Usage Credit/Package Credit/tenant-health findings: a new canonical `UsageCreditService` + endpoint family, 2 of 5 duplicate admin-adjustment paths fixed, the primary package-purchase credit-grant path migrated, and the dead tenant-health signal repaired with a real formula. 4 findings remain partially or fully open (a schema-coupled 6th credit-grant path, package cancellation/expiry reversal, full RBAC role matrix, live API/Chromium evidence) — each is a genuine, evidenced gap, not a hidden or downgraded blocker.

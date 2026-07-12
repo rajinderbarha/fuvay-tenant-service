@@ -457,11 +457,13 @@ async def test_12_onboarding_purchase_marks_security_deposit_paid():
 
 @pytest.mark.asyncio
 async def test_13_onboarding_purchase_adds_credit_to_wallet():
+    """FINAL-L5-05J: package credit grants now flow through
+    UsageCreditService.grant_package_credit (tenant_billing/
+    usage_credit_ledger), not ledger.credit_wallet (TenantWallet)."""
     tid = uuid.uuid4()
     pkg = _make_package(package_type="onboarding", is_active=True,
                         included_credit_amount="2000")
     deposit = _make_deposit(status="unpaid", tenant_id=tid)
-    wallet = _make_wallet(credit_balance="0", tenant_id=tid)
 
     call_count = [0]
 
@@ -469,45 +471,33 @@ async def test_13_onboarding_purchase_adds_credit_to_wallet():
         call_count[0] += 1
         if call_count[0] == 1:
             return _scalar_result(pkg)
-        elif call_count[0] == 2:
-            return _scalar_result(deposit)
-        elif call_count[0] == 3:
-            return _scalar_result(None)
-        elif call_count[0] == 4:
-            return _scalar_result(wallet)
-        elif call_count[0] == 5:
-            return _scalar_result(None)
-        elif call_count[0] == 6:
-            return _scalar_result(None)
-        else:
-            wallet.credit_balance = Decimal("2000")
-            return _scalar_result(wallet)
+        return _scalar_result(deposit)
 
     db = _make_db()
     db.execute = mock_execute
     svc = _make_svc(db)
 
-    credit_called = []
+    grant_called = []
 
-    async def fake_credit_wallet(**kwargs):
-        credit_called.append(kwargs["amount"])
-        txn = MagicMock(id=uuid.uuid4(), balance_after=Decimal("2000"))
-        return txn
+    async def fake_grant(self, **kwargs):
+        grant_called.append(kwargs)
+        return {"balance_after": 2000.0}
 
-    with patch("app.engines.package_commerce.service.credit_wallet", new=fake_credit_wallet):
+    with patch("app.engines.usage_credits.service.UsageCreditService.grant_package_credit", new=fake_grant):
         result = await svc.purchase_package(tid, pkg.id, {"mark_paid": True})
 
-    assert any(a == Decimal("2000") for a in credit_called)
+    assert any(g["amount"] == Decimal("2000") for g in grant_called)
+    assert grant_called[0]["tenant_id"] == tid
     assert result["credit_added"] == 2000.0
 
 
 @pytest.mark.asyncio
 async def test_14_ledger_entry_created_after_purchase():
-    # Verifies credit_wallet is called (which creates WalletTransaction)
+    # Verifies grant_package_credit is called exactly once (which writes
+    # both tenant_billing.credit_balance and one usage_credit_ledger row).
     tid = uuid.uuid4()
     pkg = _make_package(package_type="onboarding", is_active=True)
     deposit = _make_deposit(status="unpaid")
-    wallet = _make_wallet()
 
     call_count = [0]
 
@@ -515,29 +505,22 @@ async def test_14_ledger_entry_created_after_purchase():
         call_count[0] += 1
         if call_count[0] == 1:
             return _scalar_result(pkg)
-        elif call_count[0] == 2:
-            return _scalar_result(deposit)
-        elif call_count[0] in (3, 4):
-            return _scalar_result(wallet)
-        elif call_count[0] in (5, 6):
-            return _scalar_result(None)
-        else:
-            return _scalar_result(wallet)
+        return _scalar_result(deposit)
 
     db = _make_db()
     db.execute = mock_execute
     svc = _make_svc(db)
 
-    credit_called = []
+    grant_called = []
 
-    async def fake_credit_wallet(**kwargs):
-        credit_called.append(True)
-        return MagicMock(id=uuid.uuid4(), balance_after=Decimal("2000"))
+    async def fake_grant(self, **kwargs):
+        grant_called.append(True)
+        return {"balance_after": 2000.0}
 
-    with patch("app.engines.package_commerce.service.credit_wallet", new=fake_credit_wallet):
+    with patch("app.engines.usage_credits.service.UsageCreditService.grant_package_credit", new=fake_grant):
         await svc.purchase_package(tid, pkg.id, {"mark_paid": True})
 
-    assert len(credit_called) == 1
+    assert len(grant_called) == 1
 
 
 @pytest.mark.asyncio
@@ -575,11 +558,13 @@ async def test_15_tenant_can_purchase_credit_topup_after_deposit_paid():
 
 @pytest.mark.asyncio
 async def test_16_credit_topup_adds_credit_to_wallet():
+    """FINAL-L5-05J: credit_topup packages grant Usage Credit via
+    UsageCreditService.grant_package_credit, same canonical path as
+    onboarding packages (test_13/14)."""
     tid = uuid.uuid4()
     pkg = _make_package(package_type="credit_topup", is_active=True,
                         included_credit_amount="2000", security_deposit_amount="0")
     deposit = _make_deposit(status="paid")
-    wallet = _make_wallet(credit_balance="500")
 
     call_count = [0]
 
@@ -587,13 +572,7 @@ async def test_16_credit_topup_adds_credit_to_wallet():
         call_count[0] += 1
         if call_count[0] == 1:
             return _scalar_result(pkg)
-        elif call_count[0] == 2:
-            return _scalar_result(deposit)
-        elif call_count[0] in (3, 4):
-            return _scalar_result(wallet)
-        else:
-            wallet.credit_balance = Decimal("2500")
-            return _scalar_result(wallet)
+        return _scalar_result(deposit)
 
     db = _make_db()
     db.execute = mock_execute
@@ -601,11 +580,11 @@ async def test_16_credit_topup_adds_credit_to_wallet():
 
     credits_added = []
 
-    async def fake_credit(**kwargs):
+    async def fake_grant(self, **kwargs):
         credits_added.append(kwargs["amount"])
-        return MagicMock(id=uuid.uuid4(), balance_after=Decimal("2500"))
+        return {"balance_after": 2500.0}
 
-    with patch("app.engines.package_commerce.service.credit_wallet", new=fake_credit):
+    with patch("app.engines.usage_credits.service.UsageCreditService.grant_package_credit", new=fake_grant):
         result = await svc.purchase_package(tid, pkg.id, {"mark_paid": True})
 
     assert any(a == Decimal("2000") for a in credits_added)

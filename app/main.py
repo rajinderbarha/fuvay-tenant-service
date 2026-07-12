@@ -404,6 +404,10 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.platform_commerce.router import router as commerce_router
     app.include_router(commerce_router)
 
+    # FINAL-L5-05J — Canonical Usage Credit Engine
+    from app.engines.usage_credits.router import router as usage_credits_router
+    app.include_router(usage_credits_router)
+
     # Plugin Engines (disabled: only home_services vertical is active)
     # from app.engines.leads.router       import router as leads_router
     # from app.engines.food.router        import router as food_router

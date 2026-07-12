@@ -435,7 +435,7 @@ class TenantService:
     # ── 14-16: Health ────────────────────────────────────────────────────────
     async def get_health_score(self, tenant_id: uuid.UUID) -> dict:
         from app.engines.tenant_engine.health import compute_health_score
-        return await compute_health_score(tenant_id)
+        return await compute_health_score(tenant_id, db=self.db)
 
     async def get_health_history(self, tenant_id: uuid.UUID, days: int = 30) -> dict:
         return {"tenant_id": str(tenant_id), "days": days, "history": [],

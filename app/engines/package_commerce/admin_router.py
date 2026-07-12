@@ -409,21 +409,33 @@ async def admin_forfeit_deposit(
 
 # ══════════════════════════════════════════════════════════════
 # CREDIT WALLET — /v1/admin/tenants/{tenant_id}/credit-wallet
+#
+# FINAL-L5-05J CANONICAL_ADAPTER: FINAL-L5-05I found these four endpoints
+# gated by the FINANCE_USAGE_CREDITS_* permission family but mutating/
+# reading TenantWallet, not tenant_billing.credit_balance -- the
+# highest-product-risk finding in that sprint (an admin using the
+# correctly-permissioned action was adjusting the wrong balance). Zero
+# frontend callers were found (grep of frontend/super-admin), so there is
+# no live-traffic migration risk. Repointed at the canonical
+# UsageCreditService instead of blocking outright, since the permission
+# names already correctly describe what these endpoints should do.
 # ══════════════════════════════════════════════════════════════
 
 @router.get("/v1/admin/tenants/{tenant_id}/credit-wallet",
-            summary="Get tenant credit wallet", tags=["Credit Wallet"])
+            summary="Canonical Usage Credit balance (legacy path)", tags=["Credit Wallet"])
 async def admin_get_wallet(
     tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_permission(P.FINANCE_USAGE_CREDITS_READ)),
 ) -> dict:
-    return _ok(await _svc(db, request, user).get_credit_wallet_detail(tenant_id), request)
+    from app.engines.usage_credits.service import UsageCreditService
+    svc = UsageCreditService(db, actor_id=uuid.UUID(user.user_id) if user.user_id else None, actor_role=user.role)
+    return _ok(await svc.get_balance(tenant_id), request)
 
 
 @router.get("/v1/admin/tenants/{tenant_id}/credit-ledger",
-            summary="Get tenant credit ledger", tags=["Credit Ledger"])
+            summary="Canonical Usage Credit Ledger (legacy path)", tags=["Credit Ledger"])
 async def admin_get_ledger(
     tenant_id: uuid.UUID,
     request: Request,
@@ -432,11 +444,13 @@ async def admin_get_ledger(
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_permission(P.FINANCE_USAGE_CREDITS_LEDGER_READ)),
 ) -> dict:
-    return _ok(await _svc(db, request, user).get_credit_ledger(tenant_id, limit, offset), request)
+    from app.engines.usage_credits.service import UsageCreditService
+    svc = UsageCreditService(db, actor_id=uuid.UUID(user.user_id) if user.user_id else None, actor_role=user.role)
+    return _ok(await svc.get_ledger(tenant_id, limit, offset), request)
 
 
 @router.post("/v1/admin/tenants/{tenant_id}/credit-wallet/top-up",
-             summary="Admin top-up tenant credit wallet", tags=["Credit Wallet"])
+             summary="Canonical Usage Credit adjustment — credit (legacy path)", tags=["Credit Wallet"])
 async def admin_topup_wallet(
     tenant_id: uuid.UUID,
     payload: dict,
@@ -444,11 +458,26 @@ async def admin_topup_wallet(
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_permission(P.FINANCE_USAGE_CREDITS_TOP_UP)),
 ) -> dict:
-    return _ok(await _svc(db, request, user).admin_topup_wallet(tenant_id, payload), request)
+    from decimal import Decimal
+    import uuid as _uuid
+    from app.engines.usage_credits.service import UsageCreditService
+    amount = Decimal(str(payload.get("amount", 0)))
+    reason = str(payload.get("reason") or "Package/legacy credit top-up").strip()
+    idem_key = payload.get("idempotency_key") or f"legacy-credit-wallet-topup:{_uuid.uuid4()}"
+    svc = UsageCreditService(
+        db, actor_id=uuid.UUID(user.user_id) if user.user_id else None, actor_role=user.role,
+        request_id=getattr(request.state, "request_id", None), actor_ip=request.client.host if request.client else None,
+    )
+    result = await svc.adjust_credit(
+        tenant_id=tenant_id, direction="credit", amount=amount,
+        reason_code="manual_operational_adjustment", reason=reason, idempotency_key=idem_key,
+    )
+    await db.commit()
+    return _ok(result, request)
 
 
 @router.post("/v1/admin/tenants/{tenant_id}/credit-wallet/adjust",
-             summary="Admin adjust tenant credit wallet", tags=["Credit Wallet"])
+             summary="Canonical Usage Credit adjustment — signed (legacy path)", tags=["Credit Wallet"])
 async def admin_adjust_wallet(
     tenant_id: uuid.UUID,
     payload: dict,
@@ -456,7 +485,26 @@ async def admin_adjust_wallet(
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_permission(P.FINANCE_USAGE_CREDITS_ADJUST)),
 ) -> dict:
-    return _ok(await _svc(db, request, user).admin_adjust_wallet(tenant_id, payload), request)
+    from decimal import Decimal
+    import uuid as _uuid
+    from app.engines.usage_credits.service import UsageCreditService
+    entry_type = payload.get("entry_type", "credit")
+    direction = "credit" if entry_type == "credit" else "debit"
+    amount = Decimal(str(payload.get("amount", 0)))
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        raise ServiceOSException("INVALID_ADJUSTMENT_REASON", "A reason is required for wallet adjustment.", status_code=422)
+    idem_key = payload.get("idempotency_key") or f"legacy-credit-wallet-adjust:{_uuid.uuid4()}"
+    svc = UsageCreditService(
+        db, actor_id=uuid.UUID(user.user_id) if user.user_id else None, actor_role=user.role,
+        request_id=getattr(request.state, "request_id", None), actor_ip=request.client.host if request.client else None,
+    )
+    result = await svc.adjust_credit(
+        tenant_id=tenant_id, direction=direction, amount=amount,
+        reason_code="manual_operational_adjustment", reason=reason, idempotency_key=idem_key,
+    )
+    await db.commit()
+    return _ok(result, request)
 
 
 # ══════════════════════════════════════════════════════════════

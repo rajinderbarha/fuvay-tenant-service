@@ -447,18 +447,19 @@ class PackageCommerceService:
                 await self.db.flush()
                 deposit_status_after = "paid"
 
-            # Add included credit to wallet
+            # Add included credit — FINAL-L5-05J: routed through the
+            # canonical UsageCreditService (tenant_billing/usage_credit_ledger)
+            # instead of ledger.credit_wallet (TenantWallet/wallet_transactions).
             if pkg.included_credit_amount > 0:
-                await credit_wallet(
-                    db=self.db,
-                    tenant_id=tenant_id,
-                    amount=pkg.included_credit_amount,
-                    txn_type="package_purchase",
-                    reference_id=str(purchase.id),
-                    reference_type="tenant_package_purchase",
-                    description=f"Included credit from {pkg.package_type} package: {pkg.name}",
-                    actor_id=self.actor_id,
-                    idempotency_key=f"pkg-purchase-credit-{purchase.id}",
+                from app.engines.usage_credits.service import UsageCreditService
+                uc_svc = UsageCreditService(
+                    self.db, actor_id=self.actor_id, actor_role=self.actor_role,
+                    request_id=self.request_id,
+                )
+                await uc_svc.grant_package_credit(
+                    tenant_id=tenant_id, package_assignment_id=str(purchase.id),
+                    activation_version=1, amount=pkg.included_credit_amount,
+                    reason=f"Included credit from {pkg.package_type} package: {pkg.name}",
                 )
                 credit_added = pkg.included_credit_amount
 
