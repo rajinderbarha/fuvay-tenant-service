@@ -148,3 +148,53 @@ class TestFinalL5_05H_JobDeductionGate:
         assert "deduct_for_completed_job" in exec_src
         commerce_src = _read(APP / "engines" / "platform_commerce" / "service.py")
         assert "def engine_deduct_wallet" in commerce_src
+
+
+class TestFinalL5_05I_DomainBoundaryGuards:
+    """FINAL-L5-05I: source-of-truth and domain-boundary regression guards.
+    See docs/final-l5-05/FINAL_L5_05I_CONSUMER_CLASSIFICATION.md and
+    FINAL_L5_05I_DOMAIN_BOUNDARIES.md for the full evidence these encode."""
+
+    def test_security_deposit_functions_never_touch_tenant_billing_or_usage_credit_ledger(self):
+        """Part 10 invariant: Security Deposit must stay isolated from Usage
+        Credits at the code level, not just by convention."""
+        src = _read(APP / "engines" / "platform_commerce" / "ledger.py")
+        for fn_name in ("debit_deposit", "credit_deposit"):
+            start = src.index(f"async def {fn_name}(")
+            rest = src[start:]
+            next_def = rest.find("\nasync def ", 1)
+            body = rest[:next_def] if next_def != -1 else rest
+            assert "TenantBilling" not in body, f"{fn_name} must not touch TenantBilling"
+            assert "UsageCreditLedger" not in body, f"{fn_name} must not touch UsageCreditLedger"
+
+    def test_known_generic_wallet_mutation_endpoint_count_does_not_silently_grow(self):
+        """FINAL-L5-05I found 8 real, live, AMBIGUOUS_GENERIC wallet
+        mutation endpoints spread across 4 routers (platform_commerce,
+        field_ops, tenant_engine, package_commerce) -- a duplicate-
+        implementation architecture debt, not a security issue (all are
+        require_super_admin/permission-gated). This guard fails loudly if a
+        NEW one is added without updating this count and the FINAL-L5-05I
+        docs, rather than letting the count silently grow unnoticed."""
+        known_generic_wallet_routes = [
+            (APP / "engines" / "platform_commerce" / "router.py", '"/tenants/{tenant_id}/wallet/credit"'),
+            (APP / "engines" / "field_ops" / "admin_finance_router.py", '"/{tenant_id}/wallet/top-up"'),
+            (APP / "engines" / "field_ops" / "admin_finance_router.py", '"/{tenant_id}/wallet/adjust"'),
+            (APP / "engines" / "tenant_engine" / "admin_router.py", '"/{tenant_id}/wallet/topup"'),
+            (APP / "engines" / "tenant_engine" / "admin_router.py", '"/{tenant_id}/wallet/adjust"'),
+            (APP / "engines" / "package_commerce" / "admin_router.py", '"/v1/admin/tenants/{tenant_id}/credit-wallet/top-up"'),
+            (APP / "engines" / "package_commerce" / "admin_router.py", '"/v1/admin/tenants/{tenant_id}/credit-wallet/adjust"'),
+            (APP / "engines" / "invoice_payment" / "admin_router.py", '"/{tenant_id}/credit"'),
+        ]
+        for path, needle in known_generic_wallet_routes:
+            assert needle in _read(path), f"expected known route {needle!r} in {path}"
+
+    def test_engine_deduct_wallet_pattern_not_duplicated_by_field_ops_commission_flow(self):
+        """Part 9/11: field_ops.BillingService.deduct_commission is a
+        separate, legacy-jobs-table-linked commission path (0 real rows) --
+        it must not be re-pointed at service_jobs without going through the
+        FINAL-L5-05I migration plan (would recreate the exact
+        double-deduction risk FINAL-L5-05H closed for engine_deduct_wallet)."""
+        src = _read(APP / "engines" / "field_ops" / "billing_service.py")
+        assert "from app.engines.field_ops.models import Job" in src
+        # Must not import the canonical service_jobs execution model directly.
+        assert "app.engines.execution.usage_credit_deduction" not in src
