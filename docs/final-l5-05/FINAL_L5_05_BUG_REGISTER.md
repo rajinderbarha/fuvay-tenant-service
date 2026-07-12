@@ -882,3 +882,73 @@ FINAL-L5-05S adds 13 more (L5-05S-001 through 013): built and live-verified a re
 
 ## Result
 FINAL-L5-05T adds 13 more (L5-05T-001 through 013): closed the duplicate Service Area route architecture FINAL-L5-05Q left open, and found it was worse than 05Q's own framing -- a second, un-inventoried duplicate family on the tenant-portal side, and a live, undiscovered second mutation path (`PATCH` vs. the canonical `PUT`) on both sides. `ServiceabilityService` is now the sole, certified canonical owner with a full ADR; the shadow implementation (8 routes + 6 backing service methods) is removed entirely, not deprecated or adapted, since no real caller depended on it. The one real missing-behavior gap (zero audit trail in the canonical path) was migrated and live-verified. A global duplicate-route/operation-ID detector now exists with zero tolerance for Service Area duplication specifically. Three real, previously-unknown frontend contract bugs were found and fixed (2 silently-broken table columns, 1 wrong-endpoint refetch preventing newly created areas from appearing). Tenant isolation and concurrency protections from FINAL-L5-05Q are fully preserved and extended with 2 new real-Postgres tests. The most significant new finding is architectural and explicitly out of scope: 18 more pre-existing, unrelated app-wide route duplications and 13 more duplicate operation IDs exist in this codebase, following the exact same defect pattern -- honestly documented as a new blocker rather than expanded into.
+
+## L5-05U-001: Two active Security Deposit permission namespaces (worse: three implementations, three permission systems)
+- **Severity**: P0 (this mission's own literal purpose).
+- **Evidence**: `finance_hub.admin_router` (`/v1/admin/finance/deposits*`, `finance:deposits:*`) and `package_commerce.admin_router` (`/v1/admin/tenants/{id}/security-deposit*`, `finance.security_deposits.*`) both gate mutations against the same `SecurityDeposit`/`SecurityDepositTransaction` tables. A third family, `platform_commerce.router` (`/v1/commerce/tenants/{id}/deposit*`), used `TENANT_BILLING_READ`/`MANAGE` (Usage Credit's own permission names) for reads and `require_super_admin` (a coarse role check, not a permission) for its one admin mutation.
+- **Fix**: `FINANCE_DEPOSITS_*` selected as sole canonical family (ADR written). `package_commerce`'s 4 endpoints blocked (410) -- zero real caller, plus a real transactional-integrity defect (see L5-05U-004). `platform_commerce.admin_adjust_deposit` migrated to `require_permission(P.FINANCE_DEPOSITS_UPDATE)`.
+- **Status**: **FIXED**.
+
+## L5-05U-002: Frontend/backend permission mismatch -- precise root cause located
+- **Severity**: P0 (live, reproducible: no role could both see AND use the dedicated Security Deposits admin page without holding both namespaces).
+- **Evidence**: `/admin/finance/deposits`'s nav item (`AdminLayout.tsx`) AND its page-level `RequirePermission` route guard both checked `finance.security_deposits.read` (deprecated), while the SAME page's own action menu and every backend endpoint it calls checked `finance:deposits:*` (canonical). `admin_readonly` held only the deprecated alias -- could see the nav item and pass the route guard, but the page's own data fetch (`financeApi.listDeposits()`) would then 403.
+- **Fix**: Nav item, `RequirePermission` wrapper, and `permission-catalog.ts` all migrated to `finance:deposits:read`.
+- **Live evidence**: Read Only admin's `GET /v1/admin/finance/deposits` confirmed live `200` (previously would have been consistent with a UI that could never load).
+- **Status**: **FIXED**.
+
+## L5-05U-003: Role bundles contained inconsistent deposit permissions
+- **Severity**: P1.
+- **Evidence**: `admin_finance` held all 4 canonical AND all 5 active deprecated-namespace keys (05O's bounded fix). `admin_readonly` held only the dead alias (authorized nothing). `admin_operations`/`admin_security` correctly held zero (confirmed unchanged).
+- **Fix**: `admin_finance` now holds exactly the 4 canonical keys. `admin_readonly` migrated to canonical `FINANCE_DEPOSITS_READ`.
+- **Tests**: `TestRolePolicyMatrix` (6 tests) -- exact-set assertions per role, zero unexplained cells.
+- **Status**: **FIXED**.
+
+## L5-05U-004: A real transactional-integrity defect in the (now-blocked) `package_commerce` implementation
+- **Severity**: P0 (financial correctness -- discovered as a byproduct of the namespace investigation, not the mission's literal ask, but squarely "Security Deposit adjustment ... must be auditable" / "no direct current-balance update without history").
+- **Evidence**: `PackageCommerceService.admin_refund_deposit`/`admin_forfeit_deposit`/`admin_mark_deposit_paid` mutated `SecurityDeposit.status` directly with **zero** `SecurityDepositTransaction` history row and no call to the shared `credit_deposit`/`debit_deposit` ledger primitives. Since `current_balance` is a computed property (`total_paid + replenishment_total - warranty_drawn`), a "refund" via this path would flip `status="refunded"` while `current_balance` silently never changed -- confirmed via source read, not merely inferred.
+- **Fix**: The 4 endpoints backing these methods are blocked (410) rather than fixed-in-place, since (a) zero real caller depended on them, (b) the canonical `finance_hub` implementation already does this correctly via `credit_deposit`/`debit_deposit`, so fixing package_commerce's copy would be pure duplication.
+- **Status**: **FIXED (via blocking the defective path, not patching it)**.
+
+## L5-05U-005: Deprecated aliases -- disposition and guard
+- **Severity**: P1 (mission rule 27: no deprecated alias may grant access after migration).
+- **Evidence**: 8 `FINANCE_SECURITY_DEPOSITS_*` keys existed; 4 backed the now-blocked endpoints, 4 (`CONFIG_UPDATE`/`CREATE`/`HOLD`/`AUDIT_READ`) were confirmed via `git grep` to have **never** been wired to any endpoint at all.
+- **Fix**: All 8 constants remain defined (marked `# DEPRECATED` inline, not deleted -- explicit disposition per mission rule 13) but removed from every role bundle. `TestCanonicalPermissionNamespace.test_deprecated_alias_permissions_authorize_zero_active_endpoints` greps the entire `app/` tree for any remaining `require_permission(P.FINANCE_SECURITY_DEPOSITS_*)` call -- fails CI if one is reintroduced.
+- **Status**: **FIXED**.
+
+## L5-05U-006: Tenant-isolation matrix -- a real, previously-undiscovered cross-tenant vulnerability found and fixed
+- **Severity**: P0 (new finding, byproduct of investigating the `platform_commerce` deposit family for this mission's Part 20).
+- **Evidence**: `CommerceService.get_deposit_status`/`initiate_deposit`/`get_deposit_transactions` never verified the caller's own tenant matched the route's `tenant_id`. Gated by `TENANT_BILLING_READ`/`MANAGE`, which `tenant_owner` legitimately holds for self-service -- meaning any authenticated tenant owner could substitute another tenant's UUID and read that tenant's Security Deposit status/history. `require_permission()` is pure RBAC (role→permission only, no tenant scoping), so nothing else in the stack caught this.
+- **Fix**: `CommerceService` gained `actor_tenant_id` tracking + `_assert_owns_tenant_deposit()`, mirroring `ServiceabilityService._assert_owns_tenant()`'s established FINAL-L5-05Q pattern exactly. Scoped to `actor_role == "tenant_owner"` only -- admin/super_admin callers unaffected.
+- **Live + automated evidence**: `test_live_cross_tenant_read_denied_for_tenant_owner` (real Postgres) confirms Tenant A's `tenant_owner` denied reading Tenant B; `test_live_admin_read_across_tenants_still_works` confirms super_admin unaffected.
+- **Status**: **FIXED**.
+
+## L5-05U-007: Deposit idempotency / L5-05U-008: Deposit concurrency
+- **Severity**: P2 (already correct in the canonical path, not a gap this sprint needed to close).
+- **Evidence**: `credit_deposit`/`debit_deposit` (the shared primitives the canonical `finance_hub` and `platform_commerce` paths both use) already enforce non-negative balances (`debit_deposit` raises `SECURITY_DEPOSIT_REQUIRED` if `current < amount`) via real column arithmetic, not application-level bookkeeping that could drift.
+- **New evidence this sprint**: `test_concurrent_debits_never_produce_negative_balance` (real Postgres, 2 concurrent debits of 700 against a balance of 1000) -- exactly 1 succeeds, final balance is deterministic (300), never negative.
+- **Status**: **CONFIRMED CORRECT, extended with real concurrency proof**.
+
+## L5-05U-009: Domain isolation -- confirmed guarded
+- **Severity**: P2 (verification, not a gap).
+- **Evidence**: `credit_deposit`/`debit_deposit`, `FinanceHubService`'s deposit mutations, and `CommerceService`'s deposit methods all confirmed via source read + a real-Postgres test to never reference `tenant_billing`/`usage_credit_ledger`.
+- **Tests**: `TestDomainIsolationGuards` (4 tests, including 1 real-DB before/after comparison).
+- **Status**: **CONFIRMED, GUARDED**.
+
+## L5-05U-010: Admin Read Only presentation -- 2 real ungated frontend controls found and fixed
+- **Severity**: P1.
+- **Evidence**: The deposits list page's Export button had zero frontend permission gating (relied solely on the backend's `FINANCE_EXPORT` check, meaning it visibly rendered for Read Only despite always failing). The Tenant Detail page's "Adjust Security Deposit" overflow-menu item had zero frontend gating at all (rendered for every role that could reach the page, relying solely on the backend's coarse `require_super_admin` -- which, per L5-05U-001, meant even Finance Admin's own rendered button always 403'd).
+- **Fix**: Both gated on their canonical permissions (`finance:hub:export`, `finance:deposits:update` respectively).
+- **Status**: **FIXED**.
+
+## L5-05U-011: Five-role Chromium incomplete
+- **Severity**: P1.
+- **Evidence**: No browser-automation tool was available in this session (same limitation as FINAL-L5-05S/05T). All verification is real, live HTTP/API evidence (5-role matrix, cross-tenant matrix, real audit-row/balance confirmation via direct database query) plus real-Postgres automated tests, not fabricated or silently skipped.
+- **Status**: **NOT FIXED (no tool available)** -- documented honestly.
+
+## L5-05U-012: Responsive/accessibility/performance evidence incomplete
+- **Severity**: P2.
+- **Evidence**: Not attempted this sprint -- no new frontend UI surface was built (only permission-gating fixes to existing controls), so no new layout/accessibility surface exists to certify beyond what FINAL-L5-05M/05N already covered platform-wide.
+- **Status**: **NOT FIXED** -- out of bounded scope, consistent with "do not redesign the broader Finance UI."
+
+## Result
+FINAL-L5-05U adds 12 more (L5-05U-001 through 012): reconciled the Security Deposit permission-namespace duplication FINAL-L5-05O left open, and found the true scope was worse than 05O's framing -- three independent live implementations (not two) against the same tables, with a precisely-located root cause for the "frontend page vs. mutation endpoint" mismatch (the dedicated Security Deposits page's nav item and route guard checked the deprecated namespace while its own action menu and backend checked the canonical one). `FINANCE_DEPOSITS_*` is now the sole canonical family with a full ADR; the deprecated namespace's constants are frozen (not deleted) and pinned by an automated guard. Two real, previously-unknown bugs were found and fixed as byproducts: a transactional-integrity defect in the now-blocked `package_commerce` implementation (refund/forfeit never actually moved money in the ledger) and a genuine cross-tenant vulnerability in `platform_commerce`'s tenant self-service deposit endpoints (no tenant-ownership check at all). Two real, previously-ungated frontend controls (Export button, Adjust Security Deposit menu item) are now correctly permission-gated. All fixes are live-verified via a real 5-role API matrix, real cross-tenant denial, real audit-row confirmation, and 2 new real-Postgres concurrency/isolation tests, with zero regressions in the full 9279-test backend suite. Chromium and responsive/accessibility/performance evidence remain out of scope (no browser tool available; no new UI surface built).

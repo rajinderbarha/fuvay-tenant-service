@@ -68,11 +68,12 @@ export const PERMISSION_CATALOG: Record<string, PermissionMeta> = {
   "finance:topups:read":                  { key: "finance:topups:read", label: "Read Credit Top-ups", domain: "finance", shape: "read" },
   "finance:topups:update":                { key: "finance:topups:update", label: "Approve/Retry Credit Top-up", domain: "finance", shape: "mutation" },
   "finance:topups:refund":                { key: "finance:topups:refund", label: "Refund Credit Top-up", domain: "finance", shape: "mutation" },
-  "finance.security_deposits.read":       { key: "finance.security_deposits.read", label: "Read Security Deposits", domain: "finance", shape: "read" },
-  "finance.security_deposits.adjust":     { key: "finance.security_deposits.adjust", label: "Adjust Security Deposit", domain: "finance", shape: "mutation" },
-  "finance.security_deposits.mark_received": { key: "finance.security_deposits.mark_received", label: "Mark Security Deposit Paid", domain: "finance", shape: "mutation" },
-  "finance.security_deposits.release":    { key: "finance.security_deposits.release", label: "Release Security Deposit", domain: "finance", shape: "mutation" },
+  // FINAL-L5-05U: finance.security_deposits.* removed -- deprecated alias
+  // namespace (authorizes nothing; every live endpoint/nav item/route
+  // guard now uses finance:deposits:* below). See app/core/permissions.py
+  // and docs/final-l5-05/FINAL_L5_05U_ADR_SECURITY_DEPOSIT_CANONICAL_PERMISSION.md.
   "finance.completed_job_deduction_rules.read": { key: "finance.completed_job_deduction_rules.read", label: "Read Completed Job Deduction Rules", domain: "finance", shape: "read" },
+  "finance:deposits:read":                { key: "finance:deposits:read", label: "Read Security Deposits", domain: "finance", shape: "read" },
   "finance:deposits:approve":             { key: "finance:deposits:approve", label: "Approve/Reject Security Deposit", domain: "finance", shape: "mutation" },
   "finance:deposits:update":              { key: "finance:deposits:update", label: "Record/Adjust Security Deposit", domain: "finance", shape: "mutation" },
   "finance:deposits:refund":              { key: "finance:deposits:refund", label: "Refund Security Deposit", domain: "finance", shape: "mutation" },

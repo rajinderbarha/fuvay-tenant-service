@@ -44,13 +44,14 @@ utcnow = lambda: datetime.now(timezone.utc)
 class CommerceService:
     def __init__(self, db: AsyncSession, request_id: str = "x",
                  actor_id: uuid.UUID | None = None, actor_role: str | None = None,
-                 ip_address: str | None = None):
+                 ip_address: str | None = None, actor_tenant_id: uuid.UUID | None = None):
         self.db = db
         self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id
         self.actor_role = actor_role
         self.ip_address = ip_address
+        self.actor_tenant_id = actor_tenant_id
 
     async def _get_tenant(self, tid):
         r = await self.db.execute(select(Tenant).where(Tenant.id == tid))
@@ -58,6 +59,26 @@ class CommerceService:
         if not t:
             raise NotFoundException("Tenant", str(tid))
         return t
+
+    # FINAL-L5-05U: a live audit found `get_deposit_status`/`initiate_deposit`/
+    # `get_deposit_transactions` are gated by TENANT_BILLING_READ/MANAGE --
+    # permissions `tenant_owner` legitimately holds for self-service -- but
+    # neither this class nor `require_permission()` (pure RBAC, no tenant
+    # scoping) ever verified the route's `tenant_id` matched the caller's
+    # own tenant. Any authenticated tenant_owner could substitute another
+    # tenant's UUID and read (or, for initiate, attempt to create a payment
+    # order against) that tenant's Security Deposit -- a real cross-tenant
+    # vulnerability, the same class already fixed for Service Areas in
+    # FINAL-L5-05Q. Mirrors ServiceabilityService._assert_owns_tenant()'s
+    # established pattern exactly: only enforced for actor_role=="tenant_owner"
+    # (self-service callers) -- admin/super_admin callers are unaffected
+    # since they reach these via a different permission and are expected to
+    # act across tenants.
+    def _assert_owns_tenant_deposit(self, tenant_id: uuid.UUID) -> None:
+        if self.actor_role == "tenant_owner" and (
+            self.actor_tenant_id is None or self.actor_tenant_id != tenant_id
+        ):
+            raise NotFoundException("SecurityDeposit", str(tenant_id))
 
     async def _get_or_create_deposit(self, tid):
         r = await self.db.execute(select(SecurityDeposit).where(SecurityDeposit.tenant_id == tid))
@@ -140,6 +161,7 @@ class CommerceService:
 
     # ── Deposit (5) ────────────────────────────────────────────────────────────
     async def get_deposit_status(self, tid):
+        self._assert_owns_tenant_deposit(tid)
         d = await self._get_or_create_deposit(tid)
         return {"tenant_id": str(tid), "status": d.status,
                 "required_amount": float(d.required_amount), "total_paid": float(d.total_paid),
@@ -150,6 +172,7 @@ class CommerceService:
                 "paid_at": d.paid_at.isoformat() if d.paid_at else None}
 
     async def initiate_deposit(self, tid, gateway):
+        self._assert_owns_tenant_deposit(tid)
         d = await self._get_or_create_deposit(tid)
         if d.is_unlocked:
             raise ServiceOSException("CONFLICT", "Security deposit already paid.")
@@ -182,6 +205,7 @@ class CommerceService:
                 "message": "Deposit confirmed. Credit packages now available."}
 
     async def get_deposit_transactions(self, tid, limit, cursor):
+        self._assert_owns_tenant_deposit(tid)
         d = await self._get_or_create_deposit(tid)
         q = (select(SecurityDepositTransaction).where(SecurityDepositTransaction.deposit_id == d.id)
              .order_by(SecurityDepositTransaction.created_at.desc()))

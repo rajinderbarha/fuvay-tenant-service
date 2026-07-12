@@ -358,53 +358,63 @@ async def admin_purchase_package(
 
 # ══════════════════════════════════════════════════════════════
 # SECURITY DEPOSIT — /v1/admin/tenants/{tenant_id}/security-deposit
+# FINAL-L5-05U: all 4 endpoints below are blocked (410), not removed.
+#
+# Investigation found this family duplicated the canonical Security
+# Deposit admin console (app.engines.finance_hub, `/v1/admin/finance/
+# deposits*`) with two real defects: (1) a second, independent permission
+# namespace (`FINANCE_SECURITY_DEPOSITS_*`) that a live frontend/backend
+# audit found mismatched against the actual page/nav/backend contract
+# (the "two active Security Deposit permission namespaces" this mission
+# closes -- see docs/final-l5-05/FINAL_L5_05U_ADR_SECURITY_DEPOSIT_CANONICAL_PERMISSION.md);
+# (2) `PackageCommerceService.admin_mark_deposit_paid`/`admin_refund_deposit`/
+# `admin_forfeit_deposit` mutate `SecurityDeposit.status` directly with NO
+# `SecurityDepositTransaction` history row and NO call to the shared
+# `credit_deposit`/`debit_deposit` ledger primitives used everywhere else
+# in this domain -- a real transactional-integrity gap (mission rule 19:
+# "deposit adjustments must be auditable"; Part 15: "no direct
+# current-balance update without history"). Confirmed via `git grep`
+# that zero frontend caller anywhere in this codebase calls any of these
+# 4 routes (the one client method that referenced GET/mark-paid,
+# `adminTenantApi.getSecurityDeposit`/`markDepositPaid`, was itself dead
+# code, since removed). Blocked rather than silently left reachable with
+# a known money-tracking defect, per the same precedent as FINAL-L5-05H's
+# `engine_deduct_wallet` block.
 # ══════════════════════════════════════════════════════════════
 
+_DEPOSIT_BLOCKED_DETAIL = (
+    "This endpoint is deprecated and blocked. The canonical Security Deposit "
+    "admin console is app.engines.finance_hub (GET/POST /v1/admin/finance/"
+    "deposits*), gated by the canonical finance:deposits:* permission family."
+)
+
+
 @router.get("/v1/admin/tenants/{tenant_id}/security-deposit",
-            summary="Get tenant security deposit", tags=["Security Deposit"])
-async def admin_get_deposit(
-    tenant_id: uuid.UUID,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_permission(P.FINANCE_SECURITY_DEPOSITS_READ)),
-) -> dict:
-    return _ok(await _svc(db, request, user).get_security_deposit(tenant_id), request)
+            summary="[DEPRECATED_410] Get tenant security deposit", tags=["Security Deposit"])
+async def admin_get_deposit(tenant_id: uuid.UUID, request: Request) -> dict:
+    from fastapi import HTTPException
+    raise HTTPException(status_code=410, detail=_DEPOSIT_BLOCKED_DETAIL)
 
 
 @router.post("/v1/admin/tenants/{tenant_id}/security-deposit/mark-paid",
-             summary="Mark security deposit as paid", tags=["Security Deposit"])
-async def admin_mark_deposit_paid(
-    tenant_id: uuid.UUID,
-    payload: dict,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_permission(P.FINANCE_SECURITY_DEPOSITS_MARK_RECEIVED)),
-) -> dict:
-    return _ok(await _svc(db, request, user).admin_mark_deposit_paid(tenant_id, payload), request)
+             summary="[DEPRECATED_410] Mark security deposit as paid", tags=["Security Deposit"])
+async def admin_mark_deposit_paid(tenant_id: uuid.UUID, request: Request) -> dict:
+    from fastapi import HTTPException
+    raise HTTPException(status_code=410, detail=_DEPOSIT_BLOCKED_DETAIL)
 
 
 @router.post("/v1/admin/tenants/{tenant_id}/security-deposit/refund",
-             summary="Refund security deposit", tags=["Security Deposit"])
-async def admin_refund_deposit(
-    tenant_id: uuid.UUID,
-    payload: dict,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_permission(P.FINANCE_SECURITY_DEPOSITS_RELEASE)),
-) -> dict:
-    return _ok(await _svc(db, request, user).admin_refund_deposit(tenant_id, payload), request)
+             summary="[DEPRECATED_410] Refund security deposit", tags=["Security Deposit"])
+async def admin_refund_deposit(tenant_id: uuid.UUID, request: Request) -> dict:
+    from fastapi import HTTPException
+    raise HTTPException(status_code=410, detail=_DEPOSIT_BLOCKED_DETAIL)
 
 
 @router.post("/v1/admin/tenants/{tenant_id}/security-deposit/forfeit",
-             summary="Forfeit security deposit", tags=["Security Deposit"])
-async def admin_forfeit_deposit(
-    tenant_id: uuid.UUID,
-    payload: dict,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_permission(P.FINANCE_SECURITY_DEPOSITS_ADJUST)),
-) -> dict:
-    return _ok(await _svc(db, request, user).admin_forfeit_deposit(tenant_id, payload), request)
+             summary="[DEPRECATED_410] Forfeit security deposit", tags=["Security Deposit"])
+async def admin_forfeit_deposit(tenant_id: uuid.UUID, request: Request) -> dict:
+    from fastapi import HTTPException
+    raise HTTPException(status_code=410, detail=_DEPOSIT_BLOCKED_DETAIL)
 
 
 # ══════════════════════════════════════════════════════════════

@@ -124,7 +124,7 @@ export default function SecurityDepositsPage() {
 
   return (
     <AdminLayout activeNav="finance-deposits">
-      <RequirePermission requiredPermission="finance.security_deposits.read" parentLabel="Dashboard">
+      <RequirePermission requiredPermission="finance:deposits:read" parentLabel="Dashboard">
       <SectionHeader title="Security Deposits" subtitle="Manage provider security deposits, hold status, approvals, refunds, and adjustments." />
       <div style={{ padding: "0 28px 32px" }}>
         {s && (
@@ -146,7 +146,12 @@ export default function SecurityDepositsPage() {
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <Btn variant="secondary" size="sm" icon={<RefreshCw size={13}/>} onClick={refetchAll}>Refresh</Btn>
-              <Btn variant="secondary" size="sm" icon={<Download size={13}/>} onClick={handleExport}>Export</Btn>
+              {/* FINAL-L5-05U: export must not flash for roles that lack it
+                  (Admin Read Only/Operations/Security all lack finance:hub:export) --
+                  backend already enforced this, frontend was not. */}
+              {perm.has("finance:hub:export") && (
+                <Btn variant="secondary" size="sm" icon={<Download size={13}/>} onClick={handleExport}>Export</Btn>
+              )}
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 10, marginBottom: 12 }}>

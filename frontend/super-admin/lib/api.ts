@@ -4499,9 +4499,12 @@ export const adminTenantApi = {
     apiFetch<AdminTenantServiceArea>(`/v1/admin/tenants/${tenantId}/service-areas`, { method:"POST", body:JSON.stringify(data) }),
 
   // Finance
-  getSecurityDeposit: (tenantId: string) => apiFetch<AdminDepositDetail>(`/v1/admin/tenants/${tenantId}/security-deposit`),
-  markDepositPaid:    (tenantId: string, amount: number) =>
-    apiFetch<{ deposit_id:string; status:string; total_paid:number }>(`/v1/admin/tenants/${tenantId}/security-deposit/mark-paid`, { method:"POST", body:JSON.stringify({ amount }) }),
+  // FINAL-L5-05U: getSecurityDeposit/markDepositPaid removed -- dead client
+  // code (zero callers anywhere in this app) targeting the now-blocked
+  // (410) package_commerce security-deposit routes. The canonical Security
+  // Deposit admin surface is commerceApi.getDeposit/adminAdjustDeposit
+  // (/v1/commerce/tenants/{id}/deposit*) and financeApi.listDeposits/etc.
+  // (/v1/admin/finance/deposits*).
   getWallet:          (tenantId: string) => apiFetch<AdminWalletDetail>(`/v1/admin/tenants/${tenantId}/wallet`),
   getWalletLedger:    (tenantId: string, limit=50) => apiFetch<{ transactions: AdminWalletTxn[] }>(`/v1/admin/tenants/${tenantId}/wallet/ledger?limit=${limit}`),
   walletTopup:        (tenantId: string, amount: number, notes: string) =>
@@ -4537,10 +4540,6 @@ export interface AdminTenantUserCreate { name:string; email:string; phone?:strin
 export interface AdminServiceAreaCreate {
   coverage_type?:string; city:string; state:string; zipcode?:string;
   district?:string; zone_name?:string; country?:string; priority?:number;
-}
-export interface AdminDepositDetail {
-  deposit_id:string; tenant_id:string; required_amount:number; total_paid:number;
-  current_balance:number; status:string; paid_at?:string;
 }
 export interface AdminWalletDetail {
   wallet_id:string; tenant_id:string; credit_balance:number;

@@ -559,48 +559,17 @@ async def test_staff_not_found():
 # tests/test_serviceability_hardening.py and
 # tests/test_final_l5_05t_service_area_route_canonicalization.py.
 
-# ═══════════════════════════════════════════════════════════════
-# SECURITY DEPOSIT
-# ═══════════════════════════════════════════════════════════════
-
-@pytest.mark.asyncio
-async def test_get_security_deposit_not_found():
-    from app.exceptions import ServiceOSException
-    db = _make_db()
-    tenant = _make_tenant()
-    db.execute.side_effect = [_scalar_result(tenant), _scalar_result(None)]
-    svc = await _make_svc(db)
-    with pytest.raises(ServiceOSException) as exc:
-        await svc.get_security_deposit(tenant.id)
-    assert "SECURITY_DEPOSIT_NOT_FOUND" == exc.value.error_code
-
-
-@pytest.mark.asyncio
-async def test_mark_deposit_paid():
-    db = _make_db()
-    tenant = _make_tenant()
-    deposit = MagicMock()
-    deposit.status = "unpaid"
-    deposit.id = uuid.uuid4()
-    db.execute.side_effect = [_scalar_result(tenant), _scalar_result(deposit)]
-    svc = await _make_svc(db)
-    result = await svc.mark_deposit_paid(tenant.id, 5000.0)
-    assert deposit.status == "paid"
-    assert result["status"] == "paid"
-
-
-@pytest.mark.asyncio
-async def test_mark_deposit_already_paid():
-    from app.exceptions import ServiceOSException
-    db = _make_db()
-    tenant = _make_tenant()
-    deposit = MagicMock()
-    deposit.status = "paid"
-    db.execute.side_effect = [_scalar_result(tenant), _scalar_result(deposit)]
-    svc = await _make_svc(db)
-    with pytest.raises(ServiceOSException) as exc:
-        await svc.mark_deposit_paid(tenant.id, 5000.0)
-    assert "SECURITY_DEPOSIT_ALREADY_PAID" == exc.value.error_code
+# FINAL-L5-05U: the "SECURITY DEPOSIT" test block that lived here exercised
+# AdminTenantService.get_security_deposit/mark_deposit_paid directly --
+# methods that were already fully orphaned (their routes were removed in
+# an earlier "Phase 4 finance certification" sprint) and have since been
+# deleted entirely (see docs/final-l5-05/FINAL_L5_05U_ADR_SECURITY_DEPOSIT_CANONICAL_PERMISSION.md).
+# Removed rather than kept passing against deleted code (mission rule:
+# "do not keep tests that exercise only dead handlers"). Equivalent
+# coverage for the real, live canonical implementation
+# (app.engines.finance_hub.FinanceHubService /
+# app.engines.platform_commerce.CommerceService) lives in
+# tests/test_final_l5_05u_security_deposit_permission_authorization.py.
 
 
 # ═══════════════════════════════════════════════════════════════

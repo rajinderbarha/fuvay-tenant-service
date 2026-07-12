@@ -113,6 +113,12 @@ def test_wallet_topup_adjust_create_audit_log():
 
 
 # ── Module 8/9/10: Security Deposit ──────────────────────────────────
+# FINAL-L5-05U: these 4 routes are now blocked (410), not removed -- the
+# paths remain registered (test_security_deposit_endpoints_exist is still
+# accurate) but no longer check FINANCE_SECURITY_DEPOSITS_* at all (that
+# permission namespace is deprecated; the canonical Security Deposit admin
+# console is app.engines.finance_hub's finance:deposits:* family). See
+# docs/final-l5-05/FINAL_L5_05U_ADR_SECURITY_DEPOSIT_CANONICAL_PERMISSION.md.
 def test_security_deposit_endpoints_exist():
     for path in ('"/v1/admin/tenants/{tenant_id}/security-deposit"',
                  '"/v1/admin/tenants/{tenant_id}/security-deposit/mark-paid"',
@@ -121,11 +127,13 @@ def test_security_deposit_endpoints_exist():
         assert path in ROUTER
 
 
-def test_security_deposit_permissions_wired():
+def test_security_deposit_endpoints_are_blocked_410_not_permission_gated():
     for perm in ("FINANCE_SECURITY_DEPOSITS_READ", "FINANCE_SECURITY_DEPOSITS_MARK_RECEIVED",
                  "FINANCE_SECURITY_DEPOSITS_RELEASE", "FINANCE_SECURITY_DEPOSITS_ADJUST"):
-        assert perm in PERMISSIONS
-        assert perm in ROUTER
+        assert perm in PERMISSIONS  # constant still defined (deprecated, not deleted)
+        assert perm not in ROUTER   # but no longer referenced by any route
+    assert "status_code=410" in ROUTER
+    assert "_DEPOSIT_BLOCKED_DETAIL" in ROUTER
 
 
 def test_deposit_route_collision_with_tenant_engine_removed():

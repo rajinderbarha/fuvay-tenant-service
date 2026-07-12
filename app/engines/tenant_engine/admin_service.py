@@ -866,44 +866,13 @@ class AdminTenantService:
     # Removed rather than retained as dead code (mission rule: "do not
     # leave unreachable mutation code presented as active").
 
-    # ═══════════════════════════════════════════════════════════════
-    # PHASE 11 — SECURITY DEPOSIT + CREDIT WALLET
-    # ═══════════════════════════════════════════════════════════════
-
-    async def get_security_deposit(self, tenant_id: uuid.UUID) -> dict:
-        await self._get_tenant(tenant_id)
-        r = await self.db.execute(
-            select(SecurityDeposit).where(SecurityDeposit.tenant_id == tenant_id)
-        )
-        dep = r.scalar_one_or_none()
-        if not dep:
-            raise ServiceOSException("SECURITY_DEPOSIT_NOT_FOUND",
-                                     "No security deposit record found for this tenant.")
-        return {
-            "deposit_id": str(dep.id), "tenant_id": str(tenant_id),
-            "required_amount": float(dep.required_amount),
-            "total_paid": float(dep.total_paid),
-            "current_balance": float(dep.current_balance),
-            "status": dep.status,
-            "paid_at": dep.paid_at.isoformat() if dep.paid_at else None,
-        }
-
-    async def mark_deposit_paid(self, tenant_id: uuid.UUID, amount: float) -> dict:
-        await self._get_tenant(tenant_id)
-        r = await self.db.execute(
-            select(SecurityDeposit).where(SecurityDeposit.tenant_id == tenant_id)
-        )
-        dep = r.scalar_one_or_none()
-        if not dep:
-            raise ServiceOSException("SECURITY_DEPOSIT_NOT_FOUND", "No deposit record.")
-        if dep.status == "paid":
-            raise ServiceOSException("SECURITY_DEPOSIT_ALREADY_PAID", "Deposit already paid.")
-        dep.total_paid = Decimal(str(amount))
-        dep.status = "paid"
-        dep.paid_at = utcnow()
-        await self._audit(tenant_id, "admin_mark_deposit_paid",
-                          after={"amount": amount})
-        return {"deposit_id": str(dep.id), "status": "paid", "total_paid": amount}
+    # FINAL-L5-05U: get_security_deposit/mark_deposit_paid removed from this
+    # service entirely -- confirmed orphaned (their routes were already
+    # removed in an earlier "Phase 4 finance certification" sprint per the
+    # comment above the wallet routes in this file's admin_router.py sibling;
+    # these two methods had zero remaining callers anywhere). The canonical
+    # Security Deposit admin console is app.engines.finance_hub (see
+    # docs/final-l5-05/FINAL_L5_05U_ADR_SECURITY_DEPOSIT_CANONICAL_PERMISSION.md).
 
     async def get_credit_wallet(self, tenant_id: uuid.UUID) -> dict:
         await self._get_tenant(tenant_id)

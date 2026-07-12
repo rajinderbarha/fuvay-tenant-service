@@ -1466,7 +1466,15 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                           <hr style={{ margin:"4px 0", border:"none", borderTop:"1px solid var(--border)" }}/>
                         </>}
                         <button onClick={() => { setMoreOpen(false); setTab("onboarding"); }} style={menuItemStyle}>Approve / Review Tenant</button>
-                        <button onClick={() => { setMoreOpen(false); setAdjDepositOpen(true); }} style={menuItemStyle}>Adjust Security Deposit</button>
+                        {/* FINAL-L5-05U: previously ungated -- rendered for
+                            every role that could reach this page regardless
+                            of whether they held any Security Deposit
+                            permission at all; the backend endpoint this
+                            calls (platform_commerce.admin_adjust_deposit)
+                            now requires finance:deposits:update. */}
+                        {perm.has("finance:deposits:update") && (
+                          <button onClick={() => { setMoreOpen(false); setAdjDepositOpen(true); }} style={menuItemStyle}>Adjust Security Deposit</button>
+                        )}
                         {perm.role === "super_admin" && (
                           <button onClick={() => { setMoreOpen(false); setReqChangesOpen(true); }} style={menuItemStyle}>Request Changes</button>
                         )}

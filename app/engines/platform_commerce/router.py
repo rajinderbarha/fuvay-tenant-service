@@ -33,7 +33,8 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db),
           u: UserContext = Depends(get_current_user)) -> CommerceService:
     return CommerceService(db=db, request_id=getattr(r.state, "request_id", "—"),
                             actor_id=uuid.UUID(u.user_id) if u.user_id else None,
-                            actor_role=u.role, ip_address=get_client_ip(r))
+                            actor_role=u.role, ip_address=get_client_ip(r),
+                            actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 
 def _svc_open(r: Request, db: AsyncSession = Depends(get_db)) -> CommerceService:
     return CommerceService(db=db, request_id=getattr(r.state, "request_id", "—"),
@@ -82,7 +83,19 @@ async def get_deposit_transactions(tenant_id: uuid.UUID, r: Request,
 
 @router.post("/tenants/{tenant_id}/deposit/admin-adjust", summary="[Admin] Manual deposit adjustment", response_model=ApiResponse[dict])
 async def admin_adjust_deposit(tenant_id: uuid.UUID, body: DepositAdminAdjustRequest, r: Request,
-                                 u: UserContext = Depends(require_super_admin),
+                                 # FINAL-L5-05U: this admin-only mutation (the
+                                 # only caller anywhere in the codebase is the
+                                 # super-admin app's Tenant Detail "Adjust
+                                 # Security Deposit" action) was gated by the
+                                 # coarse require_super_admin role check
+                                 # instead of a permission -- meaning Finance
+                                 # Admin, whose UI already renders this exact
+                                 # button, could never actually use it (a
+                                 # live, reproducible 403). Migrated to the
+                                 # canonical Security Deposit permission
+                                 # family (see
+                                 # docs/final-l5-05/FINAL_L5_05U_ADR_SECURITY_DEPOSIT_CANONICAL_PERMISSION.md).
+                                 u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_UPDATE)),
                                  s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.admin_adjust_deposit(tenant_id, body.amount, body.reason, body.category)
     return ok(data, _meta(r).request_id, ENGINE_ID)
