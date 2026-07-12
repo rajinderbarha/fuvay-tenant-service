@@ -187,6 +187,35 @@ export function resolveActiveNavId(pathname: string): string {
   return segs[1] ?? "dashboard";
 }
 
+// FINAL-L5-05N — Part 3 route-permission registry: every nav item's
+// requiredPermission, keyed by id. Detail/tab/wizard/create/edit routes
+// that don't have their own NAV_GROUPS entry inherit their nearest
+// (longest-prefix-matched) parent's permission via resolveActiveNavId,
+// giving every reachable /admin/* route real permission coverage without
+// a second, hand-maintained route table.
+const NAV_ITEM_PERMISSIONS: Record<string, string> = Object.fromEntries(
+  NAV_GROUPS.flatMap(g => g.items.map(item => [item.id, item.requiredPermission])),
+);
+
+// Self-service routes every authenticated admin role may reach regardless
+// of their permission bundle (own profile/account/sessions) -- not a
+// second permission registry, just the same "" (visible-to-all) sentinel
+// Dashboard already uses, applied to a short, explicit allowlist of ids
+// that resolveActiveNavId can produce for routes with no NAV_GROUPS entry.
+const SELF_SERVICE_ROUTE_IDS = new Set(["profile", "account", "login", "change-password-required"]);
+
+/** Used by app/admin/layout.tsx's root-level RequirePermission guard --
+ * the one enforcement point covering every /admin/* route, current and
+ * future, via nav-item inheritance rather than per-page wrapping. */
+export function getRequiredPermissionForRoute(pathname: string): string {
+  const id = resolveActiveNavId(pathname);
+  if (id in NAV_ITEM_PERMISSIONS) return NAV_ITEM_PERMISSIONS[id];
+  if (SELF_SERVICE_ROUTE_IDS.has(id)) return "";
+  // Unknown id (no NAV_GROUPS entry, not a recognized self-service route):
+  // fail closed rather than silently default to unrestricted (rule 18).
+  return SUPER_ADMIN_ONLY;
+}
+
 // Nav items that are Home-Services-specific or otherwise vertical-gated, rather than
 // global admin concepts — hidden when the backing vertical/operation is disabled so the
 // sidebar doesn't show irrelevant modules for Coaching/Real Estate/Restaurant/Product tenants.

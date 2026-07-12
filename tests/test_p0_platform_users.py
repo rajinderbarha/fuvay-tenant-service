@@ -89,7 +89,11 @@ class TestPlatformUsersService:
 
     def test_list_excludes_tenant_by_default(self):
         src = _read(SERVICE)
-        assert '"platform": ["super_admin"]' in src
+        # FINAL-L5-05N: "platform" group now scopes to all 5 real admin
+        # roles (PLATFORM_ADMIN_ROLES), not just literal super_admin --
+        # otherwise users invited with a limited role would be invisible
+        # in their own management list.
+        assert '"platform": self.PLATFORM_ADMIN_ROLES' in src
 
     def test_get_platform_users_summary(self):
         assert "async def get_platform_users_summary" in _read(SERVICE)

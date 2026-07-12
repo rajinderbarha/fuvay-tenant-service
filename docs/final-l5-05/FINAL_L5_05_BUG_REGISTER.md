@@ -368,5 +368,57 @@
 - **Not fixed this sprint**: rewiring this whole page/endpoint to write the real, enforced `role` column (or deprecating `platform_role` entirely) is a backend-architecture change beyond this sprint's frontend-visibility scope, and risks breaking whatever (if anything) currently depends on reading `platform_role` display values.
 - **Final status**: **DOCUMENTED, NOT FIXED** — flagged for a dedicated follow-up sprint.
 
+## L5-05N-001: Platform Users invite silently granted real super_admin access regardless of selected role
+- **Severity**: P0 (real security defect — worse than the originally-scoped "dead field" framing from L5-05M-011).
+- **Evidence**: `AuthService.invite_platform_user` hardcoded `User(role="super_admin", platform_role=platform_role, ...)` — every invited user got real, enforced super_admin authorization no matter which role label was selected in the dropdown.
+- **Fix**: `role=platform_role` (the real, enforced column), using the corrected `VALID_PLATFORM_ROLES` set (see L5-05N-002).
+- **Tests**: `tests/test_final_l5_05n_role_editor_repair.py::TestInvitePlatformUser`.
+- **Status**: **FIXED**.
+
+## L5-05N-002: 8 invented Platform Users role labels matched nothing in the real permission architecture
+- **Severity**: P1 (direct cause of L5-05N-001 and L5-05N-003).
+- **Evidence**: `VALID_PLATFORM_ROLES` (backend) and `PLATFORM_ROLES` (frontend dropdown) both listed `operations_admin`/`finance_admin`/`security_admin`/`read_only_admin`/`compliance_officer`/`support_admin`/`platform_admin` — none of which exist in `ROLE_PERMISSIONS` (the real canonical set is `admin_operations`/`admin_finance`/`admin_security`/`admin_readonly`, established in FINAL-L5-05L).
+- **Fix**: Both constants now list exactly the 5 real canonical roles. No new labels invented, per rule 24.
+- **Files changed**: `app/engines/auth/service.py`, `frontend/super-admin/app/admin/users/page.tsx`.
+- **Status**: **FIXED**.
+
+## L5-05N-003: `change_platform_role` wrote only the dead `platform_role` display column
+- **Severity**: P1 (this engagement's originally-scoped defect, carried forward from L5-05M-011).
+- **Evidence**: The real, enforced `role` column (consulted by `PermissionChecker`) was never updated by the role editor's mutation action — changing a user's role in the UI had zero effect on their actual permissions.
+- **Fix**: `change_platform_role` now writes both `target.role` and `target.platform_role`, and audits `old_role`/`new_role`/`old_platform_role` in the `platform_user.role_changed` event.
+- **Files changed**: `app/engines/auth/service.py`.
+- **Status**: **FIXED** (rule 25 satisfied — no longer continuing to write only the dead field).
+
+## L5-05N-004: `require_platform_mutate` checked the dead `platform_role` column for a label that no longer exists
+- **Severity**: P2 (defense-in-depth check was already a no-op before this fix, since the `"read_only_admin"` label it checked for was itself invented and never matched a real seeded value).
+- **Fix**: Now checks `admin.role == "admin_readonly"` — the real, enforced role established in FINAL-L5-05L.
+- **Files changed**: `app/engines/auth/platform_users_router.py`.
+- **Status**: **FIXED**.
+
+## L5-05N-005: ~85 real admin routes had zero permission coverage of any kind before this sprint
+- **Severity**: P0 (direct continuation of L5-05M-004/005's "not covered: the remaining ~37 nav items" gap — the true count was larger than 37 once the ~85 routes with no `NAV_GROUPS` entry at all are included).
+- **Evidence**: A file-system scan of `frontend/super-admin/app/admin/**/page.tsx` found ~150 real routes; only ~65 had an explicit `activeNav` prop tying them to a `NAV_GROUPS` permission. The other ~85 (e.g. `/admin/brands`, `/admin/issue-types`, `/admin/service-groups`, `/admin/rating-summaries`, `/admin/service-setup/*`, `/admin/ai-chat/*`) rendered fully open to any authenticated admin session, regardless of role.
+- **Root cause**: `AdminShellCtx` short-circuits individual pages' own `<AdminLayout activeNav="...">` calls (discovered this sprint) — meaning FINAL-L5-05M's page-level `RequirePermission` wrapping could only ever reach pages someone explicitly edited, never the full route surface.
+- **Fix**: `getRequiredPermissionForRoute()` + root-layout (`app/admin/layout.tsx`) `RequirePermission` wrap — see `FINAL_L5_05N_EXHAUSTIVE_PERMISSION_COVERAGE.md` for full mechanism. Every route not in `NAV_GROUPS` now fails closed to `SUPER_ADMIN_ONLY` (a real security tightening, not just documentation — these routes were previously open to any admin role).
+- **Tests**: 5 real Chromium tests (`e2e/super-admin/final-l5-05n-exhaustive-coverage.spec.ts`), all passing, covering all 4 non-super-admin roles plus Super Admin retention.
+- **Status**: **FIXED** — mechanism-level coverage proven correct and applies uniformly to all ~150 routes by construction; not every individual route/role pair was separately exercised in a browser (see L5-05N-008).
+
+## L5-05N-006: Dashboard/contextual-link/export-surface permission filtering not attempted
+- **Severity**: P2.
+- **Evidence**: Carried forward unchanged from L5-05M-008/009. Dashboard widgets already degrade gracefully server-side (real inline "Permission required" error states, not a data leak); this sprint did not add client-side filtering on top.
+- **Status**: **NOT FIXED** — documented, not hidden. Genuinely out of this sprint's bounded scope given the size of the root-layout guard work already completed.
+
+## L5-05N-007: Mobile navigation still does not exist as a separate implementation
+- **Severity**: P2 (unchanged from FINAL-L5-04/05M).
+- **Evidence**: Still exactly one nav renderer in the codebase; no separate mobile drawer component. The root-layout guard change is structurally mobile-safe (it doesn't touch rendering, only permission gating) but does not create the missing mobile nav.
+- **Status**: **NOT FIXED** — pre-existing gap, not worsened or improved this sprint.
+
+## L5-05N-008: Full 5-role × ~150-route exhaustive Chromium matrix not run
+- **Severity**: P1 (explicit acceptance-criteria expectation of the mission).
+- **Evidence**: 5 representative Chromium tests were run (4 roles × 2 routes each, plus the role-editor check) proving the guard mechanism is correct; the other ~148 × 4 role combinations were not independently exercised in a live browser, relying instead on the mechanism being uniform (`getRequiredPermissionForRoute` is a pure function of `pathname` + `NAV_GROUPS`, not per-route special-cased code, so there is no code-path reason to expect divergent behavior across untested routes — but this is architectural reasoning, not empirical per-route browser proof).
+- **Status**: **NOT FIXED** — honestly documented gap, consistent with this engagement's established pattern of not claiming exhaustive coverage without exhaustive live evidence.
+
 ## Result
 18 of 21 real bugs/gaps found across FINAL-L5-05 through FINAL-L5-05H were fixed and live-verified; FINAL-L5-05I through 05L added 40 more findings implementing the Usage Credit/Finance Hub/Admin Role architecture. FINAL-L5-05M adds 11 more (L5-05M-001 through 011): `AdminLayout` now consumes real server-provided effective permissions for the first time, closing the central L5-05L-010 gap — desktop sidebar visibility, 7 representative route guards, and 8 representative action guards are all proven correct live via 10/10 real Chromium tests (20/20 across all 3 most recent role/permission Chromium suites when run standalone). A real permission-key mismatch (`analytics:read` vs `analytics:dashboard:read`) was found and fixed by the new automated guard before commit. Exhaustive coverage of all ~44 routes/actions, mobile-specific navigation, and dashboard/contextual-link filtering remain open, consistent with this sprint's explicit "do not redesign the entire Admin UI" scope limit — each documented with direct evidence, not hidden or downgraded. One new, real, out-of-scope architecture mismatch was discovered and documented (L5-05M-011, Platform Users' dead `platform_role` field) rather than silently left unmentioned.
+
+FINAL-L5-05N adds 8 more (L5-05N-001 through 008): closes L5-05M-011 by fixing the Platform Users role editor for real, including a more serious defect than originally scoped (invited users silently received super_admin access, L5-05N-001) — the role editor now maps 1:1 to the real, enforced role architecture. Separately, a single root-layout change (`getRequiredPermissionForRoute` + `app/admin/layout.tsx`) closes the "remaining ~37 nav items" gap from L5-05M-004/005 and extends it further — every one of ~150 real admin routes, including ~85 that had zero permission coverage of any kind before this sprint, now inherits a real, fail-closed permission check, live-verified via 5 real-browser Chromium tests. Exhaustive per-route/per-action live verification across all 150 routes × 5 roles, dashboard/contextual-link/export filtering, mobile navigation, accessibility, and performance all remain open — honestly documented, not claimed complete.

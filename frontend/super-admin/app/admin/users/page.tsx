@@ -20,15 +20,20 @@ const TH: React.CSSProperties = {
 };
 const TD: React.CSSProperties = { padding: "10px 10px", fontSize: 13, borderBottom: "1px solid var(--border)" };
 
+// FINAL-L5-05N: these 5 values must match app.core.permissions.ROLE_PERMISSIONS
+// and app.engines.auth.service.AuthService.VALID_PLATFORM_ROLES exactly --
+// they are the real, enforced role strings, not invented labels. The
+// previous 8-value list (platform_admin/compliance_officer/support_admin/
+// operations_admin/finance_admin/security_admin/read_only_admin) matched
+// no real authorization role; the backend silently granted every invited
+// user real super_admin access regardless of which of those labels was
+// selected here (fixed in the same sprint -- see FINAL_L5_05N_ROLE_EDITOR_REPAIR.md).
 const PLATFORM_ROLES = [
-  { value: "super_admin", label: "Super Admin" },
-  { value: "platform_admin", label: "Platform Admin" },
-  { value: "operations_admin", label: "Operations Admin" },
-  { value: "finance_admin", label: "Finance Admin" },
-  { value: "compliance_officer", label: "Compliance Officer" },
-  { value: "support_admin", label: "Support Admin" },
-  { value: "security_admin", label: "Security Admin" },
-  { value: "read_only_admin", label: "Read Only Admin" },
+  { value: "super_admin", label: "Platform Super Admin" },
+  { value: "admin_operations", label: "Operations Admin" },
+  { value: "admin_finance", label: "Finance Admin" },
+  { value: "admin_security", label: "Security Admin" },
+  { value: "admin_readonly", label: "Admin Read Only" },
 ];
 const ACCESS_SCOPES = [
   { value: "global", label: "Global" },

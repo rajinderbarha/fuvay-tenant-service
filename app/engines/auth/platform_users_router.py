@@ -11,8 +11,9 @@ deactivate/reactivate, sessions, login history, password actions) with:
   - audit trail
   - bulk actions
 
-All mutating routes additionally require the actor not be a "read_only_admin"
-platform_role via `require_platform_mutate`, layered on top of require_super_admin.
+All mutating routes additionally require the actor's real role not be
+"admin_readonly" via `require_platform_mutate`, layered on top of
+require_super_admin.
 """
 import uuid
 from typing import Optional
@@ -49,13 +50,13 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db)) -> AuthService:
 
 async def require_platform_mutate(
     admin: UserContext = Depends(require_super_admin),
-    db: AsyncSession = Depends(get_db),
 ) -> UserContext:
-    """require_super_admin plus a block on the advisory 'read_only_admin' platform_role."""
-    from sqlalchemy import select
-    from app.engines.auth.models import User
-    platform_role = await db.scalar(select(User.platform_role).where(User.id == uuid.UUID(admin.user_id)))
-    if platform_role == "read_only_admin":
+    """require_super_admin plus a block on the real admin_readonly role.
+    FINAL-L5-05N: previously checked the advisory, unenforced platform_role
+    column for the legacy "read_only_admin" label (which no longer exists
+    in VALID_PLATFORM_ROLES); now checks the real, enforced role column via
+    admin.role, matching the canonical role from FINAL-L5-05L."""
+    if admin.role == "admin_readonly":
         raise ServiceOSException("PERMISSION_DENIED", "Read-only admins cannot perform this action.")
     return admin
 

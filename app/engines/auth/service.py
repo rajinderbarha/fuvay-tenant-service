@@ -2055,10 +2055,21 @@ class AuthService:
         return {"session_id": str(session_id), "revoked": True, "message": "Session revoked."}
 
     # ── P0 Platform Users: Role & Access Scope ────────────────────────────────
+    # FINAL-L5-05N: these must be exactly the 5 real, enforced role strings
+    # from app.core.permissions.ROLE_PERMISSIONS -- not invented labels. The
+    # previous 8-value set (platform_admin/compliance_officer/support_admin/
+    # operations_admin/finance_admin/security_admin/read_only_admin) matched
+    # no real authorization role except "super_admin"; a user "invited" with
+    # any of those labels was silently granted full super_admin access
+    # (see the User(role="super_admin", ...) bug fixed in invite_platform_user
+    # below) while the UI displayed a plausible-looking limited role.
     VALID_PLATFORM_ROLES = {
-        "super_admin", "platform_admin", "operations_admin", "finance_admin",
-        "compliance_officer", "support_admin", "security_admin", "read_only_admin",
+        "super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly",
     }
+    # Same 5 values as a list, for User.role.in_(...) queries scoping the
+    # Platform Users surface to real platform-level admin accounts (not
+    # just literal super_admin, now that distinct roles are real).
+    PLATFORM_ADMIN_ROLES = list(VALID_PLATFORM_ROLES)
     VALID_ACCESS_SCOPES = {
         "global", "operations", "finance", "compliance", "support",
         "tenant_scoped", "customer_support_limited",
@@ -2068,6 +2079,12 @@ class AuthService:
         self, admin: "UserContext", target_user_id: uuid.UUID,
         platform_role: str, reason: str,
     ) -> dict:
+        """FINAL-L5-05N: updates the real, enforced `role` column (the one
+        app.core.permissions.PermissionChecker actually consults) in
+        addition to `platform_role` (kept in sync as a display label, no
+        longer a dead write since it always mirrors the real role). Prior
+        behavior only wrote platform_role -- this endpoint had zero effect
+        on the target's actual backend authorization."""
         if platform_role not in self.VALID_PLATFORM_ROLES:
             raise ServiceOSException("VALIDATION_ERROR",
                 f"platform_role must be one of: {sorted(self.VALID_PLATFORM_ROLES)}")
@@ -2076,13 +2093,16 @@ class AuthService:
             raise NotFoundException("User", str(target_user_id))
         self._can_admin_manage_user(admin, target)
 
-        old_role = target.platform_role
+        old_role = target.role
+        old_platform_role = target.platform_role
+        target.role = platform_role
         target.platform_role = platform_role
         await self._audit(
             "platform_user.role_changed", "success",
             actor_id=uuid.UUID(admin.user_id), actor_role=admin.role,
             tenant_id=target.tenant_id, target_id=target_user_id, target_type="user",
-            metadata={"reason": reason, "old_role": old_role, "new_role": platform_role},
+            metadata={"reason": reason, "old_role": old_role, "new_role": platform_role,
+                      "old_platform_role": old_platform_role},
         )
         return {"user_id": str(target_user_id), "platform_role": platform_role,
                 "message": "Platform role updated."}
@@ -2171,7 +2191,7 @@ class AuthService:
         stmt = select(User).where(User.deleted_at.is_(None))
         if user_group != "all":
             group_roles = {
-                "platform": ["super_admin"], "tenant": ["tenant_owner"],
+                "platform": self.PLATFORM_ADMIN_ROLES, "tenant": ["tenant_owner"],
                 "staff": ["staff"], "customer": ["customer"],
             }.get(user_group, [])
             if group_roles:
@@ -2215,14 +2235,13 @@ class AuthService:
 
     async def get_platform_users_summary(self) -> dict:
         rows = (await self.db.execute(
-            select(User).where(User.deleted_at.is_(None), User.role == "super_admin")
+            select(User).where(User.deleted_at.is_(None), User.role.in_(self.PLATFORM_ADMIN_ROLES))
         )).scalars().all()
         total = len(rows)
         active = sum(1 for u in rows if self._user_status(u) == "active")
         mfa_on = sum(1 for u in rows if u.is_mfa_enabled)
         mfa_missing = total - mfa_on
-        admins = sum(1 for u in rows if u.platform_role in
-                     ("super_admin", "platform_admin", "security_admin"))
+        admins = sum(1 for u in rows if u.role in ("super_admin", "admin_security"))
         pending_invites = sum(1 for u in rows if u.meta and u.meta.get("invite_token"))
         locked = sum(1 for u in rows if self._user_status(u) == "locked")
         suspicious = sum(1 for u in rows if u.failed_login_attempts >= 3)
@@ -2284,8 +2303,12 @@ class AuthService:
         expires_at = utcnow() + timedelta(days=invite_expiry_days)
 
         user = User(
+            # FINAL-L5-05N: role (the real, enforced authorization column --
+            # see app.core.permissions.ROLE_PERMISSIONS) must match the
+            # intended platform_role, not be hardcoded to "super_admin" for
+            # every invite regardless of the role selected in the UI.
             email=email.lower(), phone=phone, full_name=full_name,
-            role="super_admin", platform_role=platform_role, access_scope=access_scope,
+            role=platform_role, platform_role=platform_role, access_scope=access_scope,
             hashed_password=hash_password(temp_password),
             is_active=True, is_verified=False, force_password_change=True,
             mfa_required=require_mfa,
@@ -2309,7 +2332,7 @@ class AuthService:
     async def list_platform_invites(self) -> dict:
         rows = (await self.db.execute(
             select(User).where(
-                User.role == "super_admin", User.deleted_at.is_(None),
+                User.role.in_(self.PLATFORM_ADMIN_ROLES), User.deleted_at.is_(None),
             ).order_by(User.created_at.desc())
         )).scalars().all()
         invites = []
@@ -2376,9 +2399,9 @@ class AuthService:
            (not target.last_login_at and target.created_at and target.created_at < cutoff):
             signals.append({"risk_type": "inactive_30_days", "risk_level": "medium",
                              "description": "No login activity in the last 30 days."})
-        if target.platform_role in ("super_admin", "security_admin"):
+        if target.role in ("super_admin", "admin_security"):
             signals.append({"risk_type": "role_privilege_high", "risk_level": "low",
-                             "description": f"User holds a high-privilege role ({target.platform_role})."})
+                             "description": f"User holds a high-privilege role ({target.role})."})
 
         levels = [s["risk_level"] for s in signals]
         if "high" in levels and len(levels) >= 2:

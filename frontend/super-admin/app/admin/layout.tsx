@@ -5,7 +5,8 @@
  * Sprint 34K: nav mapping delegated to centralized nav-config.ts
  */
 import { usePathname } from "next/navigation";
-import { AdminLayout, resolveActiveNavId } from "../../components/layout/AdminLayout";
+import { AdminLayout, resolveActiveNavId, getRequiredPermissionForRoute } from "../../components/layout/AdminLayout";
+import { RequirePermission } from "../../components/shared/PermissionGate";
 
 // ADMIN-TENANT-E2E-02 Part 3: previously delegated to lib/nav-config.ts's
 // resolveAdminNavId(), a hand-maintained path-segment map that had drifted out
@@ -20,9 +21,17 @@ function pathToActiveNav(pathname: string): string {
 
 export default function AdminShellLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  // FINAL-L5-05N: single root-level enforcement point covering every
+  // /admin/* route (current and future) via nav-item permission
+  // inheritance -- see getRequiredPermissionForRoute in AdminLayout.tsx.
+  // Individual pages may still nest their own RequirePermission for a
+  // more specific permission than their inherited nav-item default; the
+  // root guard is the floor every route gets for free.
   return (
     <AdminLayout activeNav={pathToActiveNav(pathname)}>
-      {children}
+      <RequirePermission requiredPermission={getRequiredPermissionForRoute(pathname)} parentLabel="Dashboard">
+        {children}
+      </RequirePermission>
     </AdminLayout>
   );
 }
