@@ -281,7 +281,7 @@ async def admin_update_service_area(
     u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     payload = {k: v for k, v in body.model_dump().items() if v is not None}
-    return ok(await s.update_service_area(area_id, payload), _rid(r), ENGINE_ID)
+    return ok(await s.update_service_area(area_id, payload, admin_tenant_id=tenant_id), _rid(r), ENGINE_ID)
 
 
 @router.delete("/v1/admin/tenants/{tenant_id}/service-areas/{area_id}", tags=["Tenant Service Areas"],
@@ -290,7 +290,7 @@ async def admin_delete_service_area(
     tenant_id: uuid.UUID, area_id: uuid.UUID, r: Request,
     u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.deactivate_service_area(area_id), _rid(r), ENGINE_ID)
+    return ok(await s.deactivate_service_area(area_id, admin_tenant_id=tenant_id), _rid(r), ENGINE_ID)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

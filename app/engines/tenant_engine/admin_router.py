@@ -17,6 +17,7 @@ from app.dependencies.db import get_db
 from app.dependencies.auth import require_super_admin, get_current_user, UserContext
 from app.engines.tenant_engine.admin_service import AdminTenantService
 from app.exceptions import ServiceOSException, NotFoundException
+from app.core.audit import record_platform_audit
 
 router = APIRouter(prefix="/v1/admin/tenants", tags=["Admin: Tenants"])
 
@@ -851,15 +852,24 @@ async def admin_suspend_offering(
             detail="A reason is required to suspend an offering.",
             status_code=422,
         )
-    await _fetch_offering_row(db, tenant_id, offering_id)
+    before = await _fetch_offering_row(db, tenant_id, offering_id)
     await db.execute(text("""
         UPDATE provider_enabled_offerings
         SET status = 'suspended', is_active = false, suspended_at = now(),
             suspension_reason = :reason, updated_at = now()
         WHERE id = :oid AND tenant_id = :tid
     """), {"oid": str(offering_id), "tid": str(tenant_id), "reason": reason})
-    await db.commit()
     row = await _fetch_offering_row(db, tenant_id, offering_id)
+    # FINAL-L5-05Q Part 27: this direct-SQL mutation previously wrote no
+    # audit event at all.
+    await record_platform_audit(
+        db, operation="provider_offering.suspended", engine_id="tenant_engine",
+        tenant_id=tenant_id, entity_type="provider_enabled_offering", entity_id=str(offering_id),
+        actor_id=uuid.UUID(user.user_id) if getattr(user, "user_id", None) else None,
+        actor_role=user.role, request_id=_rid(request),
+        before=before, after=row,
+    )
+    await db.commit()
     return ok(row, _rid(request))
 
 
@@ -871,15 +881,22 @@ async def admin_reactivate_offering(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_super_admin),
 ):
-    await _fetch_offering_row(db, tenant_id, offering_id)
+    before = await _fetch_offering_row(db, tenant_id, offering_id)
     await db.execute(text("""
         UPDATE provider_enabled_offerings
         SET status = 'active', is_active = true, suspended_at = NULL,
             suspension_reason = NULL, updated_at = now()
         WHERE id = :oid AND tenant_id = :tid
     """), {"oid": str(offering_id), "tid": str(tenant_id)})
-    await db.commit()
     row = await _fetch_offering_row(db, tenant_id, offering_id)
+    await record_platform_audit(
+        db, operation="provider_offering.reactivated", engine_id="tenant_engine",
+        tenant_id=tenant_id, entity_type="provider_enabled_offering", entity_id=str(offering_id),
+        actor_id=uuid.UUID(user.user_id) if getattr(user, "user_id", None) else None,
+        actor_role=user.role, request_id=_rid(request),
+        before=before, after=row,
+    )
+    await db.commit()
     return ok(row, _rid(request))
 
 

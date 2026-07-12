@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.serviceability.constants import (
@@ -306,6 +306,19 @@ class ServiceabilityService:
         if coverage_type == CoverageType.CITY:
             zipcode = None
 
+        # FINAL-L5-05Q Part 25/26: no DB-level unique constraint exists on
+        # this table (the sibling tenant_service_areas admin path's
+        # UniqueConstraint doesn't apply here) and this SELECT-then-INSERT
+        # check has no locking -- confirmed via a real concurrent-request
+        # test (not a unit test) that two simultaneous creates with an
+        # identical payload both silently succeeded, producing two
+        # duplicate active rows. A transaction-scoped Postgres advisory
+        # lock, keyed on the exact tenant+coverage tuple, serializes
+        # concurrent creates for the same combination.
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+            {"lock_key": f"tsa:{tenant_id}:{coverage_type}:{city}:{zipcode}:{zone_id}:{zone_name}"},
+        )
         await self._check_duplicate_area(tenant_id, coverage_type, city, zipcode, zone_id, zone_name)
 
         limits = await self.get_service_area_limits(tenant_id)
@@ -351,8 +364,19 @@ class ServiceabilityService:
     async def get_service_area_dict(self, area_id: uuid.UUID) -> dict:
         return (await self.get_service_area(area_id)).to_dict()
 
-    async def update_service_area(self, area_id: uuid.UUID, payload: dict) -> dict:
+    async def update_service_area(self, area_id: uuid.UUID, payload: dict,
+                                   admin_tenant_id: uuid.UUID | None = None) -> dict:
         area = await self.get_service_area(area_id)
+        # FINAL-L5-05Q Part 23/24: the admin router path passes tenant_id in
+        # the URL but this method previously never checked it against the
+        # loaded area's real tenant_id -- _assert_owns_tenant() only
+        # enforces anything for actor_role == "tenant_owner" (self-service
+        # callers), so an admin caller could update ANY tenant's service
+        # area while supplying a mismatched tenant_id in the route, and the
+        # mismatch was silently ignored. Confirmed live via direct HTTP
+        # cross-tenant substitution, not just a unit test.
+        if admin_tenant_id is not None and area.tenant_id != admin_tenant_id:
+            raise NotFoundException("TenantServiceArea", str(area_id))
         coverage_type = payload.get("coverage_type", area.coverage_type)
         city = payload.get("city", area.city)
         state = payload.get("state", area.state)
@@ -393,8 +417,13 @@ class ServiceabilityService:
         await self.db.refresh(area)
         return area.to_dict()
 
-    async def deactivate_service_area(self, area_id: uuid.UUID) -> dict:
+    async def deactivate_service_area(self, area_id: uuid.UUID,
+                                       admin_tenant_id: uuid.UUID | None = None) -> dict:
         area = await self.get_service_area(area_id)
+        # FINAL-L5-05Q Part 23/24: see update_service_area's comment -- the
+        # same missing cross-tenant check applied here.
+        if admin_tenant_id is not None and area.tenant_id != admin_tenant_id:
+            raise NotFoundException("TenantServiceArea", str(area_id))
         area.is_active = False
         mappings = (await self.db.execute(
             select(TenantServiceAreaService).where(

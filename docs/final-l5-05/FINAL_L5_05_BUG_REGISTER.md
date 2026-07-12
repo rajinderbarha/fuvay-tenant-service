@@ -574,3 +574,75 @@ FINAL-L5-05O adds 12 more (L5-05O-001 through 012): 4 real, high-leverage, live-
 
 ## Result
 FINAL-L5-05P adds 12 more (L5-05P-001 through 012): 4 real, deeply-investigated, live-verified fixes closed the mission's own explicitly-named highest-risk gap. A serious P0 finding (6 provider mutation endpoints, including provider-visibility/bookability overrides, accepted ANY authenticated principal of any role) is closed. The real onboarding-lifecycle permissions existed but were granted to zero non-super-admin roles despite the mission's own stated policy — fixed. The mission's own named highest-risk file (`tenants/[id]/page.tsx`, 3095 lines, ~24 mutation actions, zero frontend permission checks) is now individually gated. A defensive fix closed a dead bulk-action button. Two domains (Team/Membership, Staff pages) were investigated and confirmed to have no active gap — a genuine, evidenced finding, not an assumption. All fixes are proven correct via live API (real 403/200/404s across all 5 roles) and live Chromium (6 new + 30 re-verified, zero regression). The much larger remainder — exhaustive Provider coverage/brand mutation inventory, bulk-action inventory, cross-tenant isolation testing, concurrency testing, throttled-network/responsive/accessibility — is honestly carried forward as documented, evidenced remaining scope.
+
+## L5-05Q-001: Cross-tenant vulnerability — Service Area update/delete had zero tenant-ownership verification
+- **Severity**: P0 (real, live, exploitable — confirmed via direct HTTP cross-tenant substitution against the real running backend).
+- **Evidence**: `admin_update_service_area`/`admin_delete_service_area` (`app/engines/serviceability/router.py`, the actually-live handlers for `/v1/admin/tenants/{tenant_id}/service-areas/{area_id}`) captured `tenant_id` from the URL but never passed it to `ServiceabilityService.update_service_area`/`deactivate_service_area`, which loaded the target area by `area_id` alone. `_assert_owns_tenant()` only enforces for `actor_role == "tenant_owner"` — a no-op for any admin caller.
+- **Fix**: Added `admin_tenant_id` parameter to both service methods (defaults to `None`, zero behavior change for self-service callers), passed only from the admin router handlers; raises `NotFoundException` on mismatch.
+- **Live API evidence**: Real service area created under Tenant A; `PUT`/`DELETE` against it via Tenant B's route both `404`; row confirmed unchanged via Tenant A's real route; same-tenant update immediately succeeds.
+- **Tests**: `tests/test_final_l5_05q_provider_coverage_mutations.py::TestLiveServiceabilityCrossTenantIsolation` (3 tests, real Postgres).
+- **Status**: **FIXED**.
+
+## L5-05Q-002: Real concurrency bug — duplicate service-area creation via TOCTOU race
+- **Severity**: P1 (data-integrity defect, not a security hole — reproducibly creates duplicate rows under concurrent load).
+- **Evidence**: `ServiceabilityService.create_service_area`'s duplicate check is a plain SELECT with no locking, immediately followed by INSERT. A real concurrent-request test (`asyncio.gather` of 2 simultaneous identical creates against real Postgres) showed both succeeding, producing 2 duplicate active rows.
+- **Fix**: Transaction-scoped Postgres advisory lock (`pg_advisory_xact_lock`, keyed on the exact tenant+coverage tuple) serializes concurrent creates before the duplicate check.
+- **Live evidence**: Same concurrent-request test now shows exactly 1 success + 1 controlled `409`; direct SQL count confirms exactly 1 active row after the race.
+- **Tests**: `TestLiveServiceabilityDuplicatePreventionRealDB` (2 tests, real Postgres, real concurrency).
+- **Status**: **FIXED**.
+
+## L5-05Q-003: Provider Enabled Offering suspend/reactivate wrote zero audit events
+- **Severity**: P1.
+- **Evidence**: `admin_suspend_offering`/`admin_reactivate_offering` (`tenant_engine/admin_router.py`) perform direct SQL UPDATEs with no `_audit()`/`record_platform_audit()` call anywhere.
+- **Fix**: Both now write a `platform_audit_logs` row with actor/tenant/entity/before/after/request_id.
+- **Tests**: `TestOfferingsAuditNowWritten` (3 tests).
+- **Status**: **FIXED**.
+
+## L5-05Q-004: Bookability/Visibility overrides (FINAL-L5-05P) re-verified, no regression
+- **Severity**: informational (regression check).
+- **Evidence**: Live 5-role matrix re-run against the 4 override/remove endpoints — Super Admin `200`, all 4 other roles `403`.
+- **Status**: **RE-CONFIRMED, NO REGRESSION**.
+
+## L5-05Q-005: `AdminTenantService.create_service_area` duplicate-prevention and audit fixes made against a dead code path
+- **Severity**: informational (process finding — caught and correctly re-targeted within this sprint, not shipped as a false fix).
+- **Evidence**: Initial investigation found `AdminTenantService.create_service_area` (`tenant_engine/admin_service.py`) had no duplicate check and added one, before discovering (via L5-05Q-006) this service is unreachable via HTTP for the `/service-areas` path. The fix was kept as harmless defense-in-depth but is NOT the live-path fix.
+- **Tests**: `TestAdminTenantServiceDefenseInDepthFixesStillCorrect` (2 tests, pinning the dead-code fix so it isn't silently reverted).
+- **Status**: **KEPT AS DEFENSE-IN-DEPTH**, correctly not conflated with the real fix (L5-05Q-002).
+
+## L5-05Q-006: Duplicate route registration — `tenant_engine.admin_router`'s Service Area endpoints are unreachable dead code
+- **Severity**: P1 (real architecture defect, not currently a security hole since the live-reachable router is the one that got fixed, but a real source of wasted engineering effort and confusion).
+- **Evidence**: Both `app/engines/serviceability/router.py` and `app/engines/tenant_engine/admin_router.py` register the identical path `/v1/admin/tenants/{tenant_id}/service-areas` (all 4 methods). `main.py` includes `serviceability_router` (line 154) before `admin_tenant_router` (line 349) — FastAPI matches the first-registered route, so `tenant_engine.admin_router`'s identical routes never fire. Discovered only via live HTTP response-shape comparison (`id` vs `area_id`, `DUPLICATE_SERVICE_AREA` vs `DUPLICATE_PROVIDER_ASSIGNMENT`), not by any unit test.
+- **Root cause**: Two independent sprints/engines built the same capability independently, unaware of each other (same class of finding as the earlier `TenantWallet`/Blocker-9 and 05J's "5 independent credit-adjustment implementations" discoveries).
+- **Status**: **DOCUMENTED, NOT RESOLVED** — deciding which implementation is canonical (or whether to merge/deprecate the shadowed one) is a larger architecture decision beyond this sprint's bounded scope. Pinned by a regression guard test (`TestDuplicateRouteRegistrationFinding`) so a future router-order change is caught rather than silently altering which implementation is live.
+
+## L5-05Q-007: Provider brand/zone/zipcode/capacity/SLA/blackout mutation surface does not exist in this codebase
+- **Severity**: informational.
+- **Evidence**: Exhaustive `git grep` across every engine for `provider_zones`/`provider_zipcodes`/`provider_brands`/`provider_capacity`/`provider_sla`/`provider_blackout` table definitions returns zero matches. The closest real concepts (`tenant_supported_brands`, `tenant_service_brands`, `tenant_service_types`) are mutated only via tenant self-service routers (`/v1/tenant/catalog`, `/v1/provider`), never via an admin-side mutation endpoint.
+- **Status**: **NOT APPLICABLE** — there is no such admin mutation surface to gate. Documented rather than silently omitted, matching FINAL-L5-05P's Team/Membership precedent. Pinned by `TestNoUndiscoveredProviderMutationSurface`.
+
+## L5-05Q-008: Bulk Provider coverage/brand/zone operations do not exist beyond the one already-fixed dead button
+- **Severity**: informational.
+- **Evidence**: No bulk coverage/brand/zone mutation UI or endpoint exists anywhere in the Tenant/Provider domain. The only "bulk" action found (`/admin/bookability/providers`'s "Bulk Re-evaluate") was already investigated and fixed in FINAL-L5-05P (found to call a non-existent backend route, gated defensively).
+- **Status**: **NOT APPLICABLE** — documented, not hidden.
+
+## L5-05Q-009: Full five-role Provider Chromium matrix incomplete
+- **Severity**: P1 (explicit acceptance-criteria expectation).
+- **Evidence**: 3 new Chromium tests this sprint (Operations Admin denied Add Area button, Super Admin's Service Areas tab renders cleanly, duplicate creation returns a controlled 409 in-browser) plus 19 re-verified prior-sprint tests, all passing. The mission's specified exhaustive per-page × per-role × per-action matrix (Part 39) was not run in full.
+- **Status**: **PARTIALLY FIXED** — the fixes actually made are proven live; the broader matrix remains open.
+
+## L5-05Q-010: Throttled-network, responsive, and accessibility verification not attempted
+- **Severity**: P2/P3 (unchanged, pre-existing gaps tracked since FINAL-L5-04/05M/05N/05O/05P).
+- **Status**: **NOT FIXED** — same carried-forward scope.
+
+## L5-05Q-011: Concurrency testing beyond service-area creation not performed
+- **Severity**: P2.
+- **Evidence**: Offerings suspend-vs-reactivate races, bookability-vs-suspension races (mission Part 26's full list) were not tested. Only the one concrete concurrency bug actually found (service-area creation) was investigated and fixed.
+- **Status**: **NOT FIXED** — documented, not hidden.
+
+## L5-05Q-012: One full-suite test-order flake investigated and confirmed unrelated
+- **Severity**: informational (process note, not a bug).
+- **Evidence**: `tests/test_trust_quality_phase1.py` (5 tests) failed once during a full 9182-test run; standalone rerun showed 28/28 passing. No relationship to this sprint's Tenant/Provider/service-area changes — confirmed pre-existing test-isolation flakiness, same class as prior sprints' `.next` cache and dev-server first-compile flakes.
+- **Status**: **CONFIRMED NOT A REGRESSION**.
+
+## Result
+FINAL-L5-05Q adds 12 more (L5-05Q-001 through 012): two real, serious, previously-unknown P0 findings were discovered and fixed through live testing no unit test could have caught — a duplicate route registration causing an entire "fixed" endpoint set to be dead code, and a genuine cross-tenant vulnerability on the actually-live Service Area update/delete endpoints. A real concurrency bug (duplicate service areas from a TOCTOU race) was found and fixed with a transaction-scoped advisory lock, verified via a real concurrent-request test. Two Offering-mutation endpoints that wrote zero audit events now do. All fixes are live-verified via direct HTTP cross-tenant substitution, a real 5-role permission matrix, and 3 new + 19 re-verified Chromium tests. The mission's assumed Provider brand/zone/zipcode/capacity/SLA/bulk mutation surface was investigated and found not to exist in this codebase — a genuine, evidenced negative finding.
