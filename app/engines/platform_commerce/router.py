@@ -165,14 +165,24 @@ async def get_wallet_balance(tenant_id: uuid.UUID, r: Request,
     data = await s.get_wallet_balance_for_engine(tenant_id)
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
-@router.post("/tenants/{tenant_id}/wallet/deduct", summary="[Internal engine use] Deduct from wallet", response_model=ApiResponse[dict])
+@router.post("/tenants/{tenant_id}/wallet/deduct", summary="[DEPRECATED] Blocked — superseded by Completed Job Deduction", response_model=ApiResponse[dict])
 async def engine_deduct(tenant_id: uuid.UUID, r: Request,
                          u: UserContext = Depends(require_super_admin),
                          s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    body = await r.json()
-    data = await s.engine_deduct_wallet(tenant_id, body["job_id"],
-                                          Decimal(str(body["amount"])), body.get("description", ""))
-    return ok(data, _meta(r).request_id, ENGINE_ID)
+    # FINAL-L5-05H: blocked. This posted to TenantWallet/wallet_transactions, a
+    # separate ledger from the canonical Completed Job Deduction
+    # (app/engines/execution/usage_credit_deduction.py -> tenant_billing /
+    # usage_credit_ledger). It had zero internal callers and zero test
+    # coverage — nothing in the job-completion/force-close/void flow ever
+    # invoked it. Left callable it would risk becoming a second,
+    # non-idempotent-with-the-canonical-flow job deduction path. Blocked
+    # rather than deleted pending the full domain-service reconciliation.
+    from fastapi import HTTPException
+    raise HTTPException(status_code=410, detail=(
+        "This endpoint is deprecated and blocked. Completed Job Deduction is "
+        "the sole canonical job-linked credit deduction path "
+        "(app.engines.execution.usage_credit_deduction.deduct_for_completed_job)."
+    ))
 
 @router.post("/tenants/{tenant_id}/wallet/credit", summary="[Admin] Manual wallet credit", response_model=ApiResponse[dict])
 async def admin_credit(tenant_id: uuid.UUID, body: ManualCreditRequest, r: Request,

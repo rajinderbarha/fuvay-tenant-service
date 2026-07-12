@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 SA = ROOT / "frontend" / "super-admin"
+APP = ROOT / "app"
 
 FORBIDDEN_TERMS = [
     "Wallet Balance", "Cash Wallet", "Withdrawable Balance", "Tenant Payout",
@@ -128,3 +129,22 @@ class TestNavHrefIntegrityGuard:
         src = _read(SA / "components" / "layout" / "AdminLayout.tsx")
         assert "/admin/finance/usage-credits" in src
         assert '"/admin/reports"' in src
+
+
+class TestFinalL5_05H_JobDeductionGate:
+    """FINAL-L5-05H Part 7 P0 gate: engine_deduct_wallet posts to a
+    different ledger (wallet_transactions) than the canonical Completed
+    Job Deduction (usage_credit_ledger) and had zero internal callers.
+    Must stay blocked so it can never become a second, non-cross-checked
+    job-deduction path."""
+
+    def test_commerce_wallet_deduct_route_is_blocked(self):
+        src = _read(APP / "engines" / "platform_commerce" / "router.py")
+        assert '"/tenants/{tenant_id}/wallet/deduct"' in src
+        assert "status_code=410" in src
+
+    def test_completed_job_deduction_remains_the_sole_wired_caller(self):
+        exec_src = _read(APP / "engines" / "execution" / "home_service_service.py")
+        assert "deduct_for_completed_job" in exec_src
+        commerce_src = _read(APP / "engines" / "platform_commerce" / "service.py")
+        assert "def engine_deduct_wallet" in commerce_src
