@@ -199,16 +199,14 @@ class TenantCatalogService:
             tenant_max   = _decimal_or_none(data.get("tenant_max_price"))
             tenant_visit = _decimal_or_none(data.get("tenant_visit_fee"))
 
-            if any([tenant_base, tenant_min, tenant_max, tenant_visit]):
+            # MODULE-L5-03: `is not None`, not truthiness — Decimal('0') is falsy,
+            # so the old `any([...])`/`if tenant_min and ...` skipped validation
+            # when a tenant set price 0, storing a floor-bypassing value.
+            if any(v is not None for v in (tenant_base, tenant_min, tenant_max, tenant_visit)):
                 if not svc.tenant_override_allowed:
                     raise ServiceOSException("TENANT_SERVICE_OVERRIDE_NOT_ALLOWED",
                         "Price override is not allowed for this service.", status_code=422)
-                if tenant_min and svc.min_price and tenant_min < svc.min_price:
-                    raise ServiceOSException("TENANT_PRICE_BELOW_ADMIN_MIN",
-                        f"Tenant min price cannot be below admin min (₹{svc.min_price}).", status_code=422)
-                if tenant_max and svc.max_price and tenant_max > svc.max_price:
-                    raise ServiceOSException("TENANT_PRICE_ABOVE_ADMIN_MAX",
-                        f"Tenant max price cannot exceed admin max (₹{svc.max_price}).", status_code=422)
+                self._validate_price_overrides(svc, tenant_base, tenant_min, tenant_max, tenant_visit)
 
             ts = TenantService(
                 tenant_id=tenant_id,
@@ -232,6 +230,23 @@ class TenantCatalogService:
         await self.db.flush()
         return self._ts_dict(ts)
 
+    def _validate_price_overrides(self, svc, tenant_base, tenant_min, tenant_max, tenant_visit) -> None:
+        """MODULE-L5-03: canonical platform-floor / ceiling / non-negative
+        enforcement for tenant price overrides. Shared by create and update so
+        the platform floor cannot be bypassed through either path. Uses
+        `is not None` so a 0 override is validated, not silently skipped."""
+        for lbl, val in (("tenant_min_price", tenant_min), ("tenant_max_price", tenant_max),
+                         ("tenant_base_price", tenant_base), ("tenant_visit_fee", tenant_visit)):
+            if val is not None and val < 0:
+                raise ServiceOSException("TENANT_PRICE_NEGATIVE",
+                    f"{lbl} cannot be negative.", status_code=422)
+        if tenant_min is not None and svc is not None and svc.min_price is not None and tenant_min < svc.min_price:
+            raise ServiceOSException("TENANT_PRICE_BELOW_ADMIN_MIN",
+                f"Tenant min price cannot be below admin min (₹{svc.min_price}).", status_code=422)
+        if tenant_max is not None and svc is not None and svc.max_price is not None and tenant_max > svc.max_price:
+            raise ServiceOSException("TENANT_PRICE_ABOVE_ADMIN_MAX",
+                f"Tenant max price cannot exceed admin max (₹{svc.max_price}).", status_code=422)
+
     async def update_enabled_service(self, tenant_service_id: uuid.UUID, data: dict) -> dict:
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
@@ -241,6 +256,23 @@ class TenantCatalogService:
                 if data.get(field) is not None:
                     raise ServiceOSException("TENANT_SERVICE_OVERRIDE_NOT_ALLOWED",
                         "Price override is not allowed for this service.", status_code=422)
+
+        # MODULE-L5-03 FIX: the update path previously did ZERO price validation
+        # and blindly setattr'd any provided price — a clean platform-floor
+        # bypass (a tenant could update below admin min, to 0, or negative).
+        # Validate the effective (post-update) override values against the
+        # master service's admin floor/ceiling before persisting.
+        svc = (await self.db.execute(
+            select(MasterService).where(MasterService.id == ts.master_service_id)
+        )).scalar_one_or_none()
+        eff = {}
+        for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
+            if field in data and data[field] is not None:
+                eff[field] = Decimal(str(data[field]))
+            else:
+                eff[field] = getattr(ts, field)
+        self._validate_price_overrides(svc, eff["tenant_base_price"], eff["tenant_min_price"],
+                                       eff["tenant_max_price"], eff["tenant_visit_fee"])
 
         for field in ("tenant_display_name", "tenant_description"):
             if field in data and data[field] is not None:
