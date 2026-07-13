@@ -16,6 +16,19 @@ def _mock_db():
     db.commit = AsyncMock()
     db.delete = AsyncMock()
     db.add    = MagicMock()
+    # FINAL-L5-05AA: create_export_job now issues an advisory-lock text()
+    # call (return value discarded) and a concurrent-job-count select()
+    # (needs .scalar_one() -> int) before every job creation. A bare
+    # AsyncMock's auto-generated .scalar_one() is itself a MagicMock, which
+    # is truthy and supports comparison operators -- `mock_result >= 3`
+    # silently evaluates via MagicMock.__ge__ rather than raising, so every
+    # test would incorrectly hit the concurrent-job-limit path without this
+    # explicit stub (0 active jobs, well under any configured limit).
+    _default_result = MagicMock()
+    _default_result.scalar_one.return_value = 0
+    _default_result.scalars.return_value.first.return_value = None
+    _default_result.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(return_value=_default_result)
     return db
 
 
@@ -341,7 +354,7 @@ from app.engines.enterprise_grid.constants import ERR_EXPORT_FIELD_NOT_ALLOWED, 
 async def test_create_export_job_success():
     svc = ExportService()
     db  = _mock_db()
-    job = await svc.create_export_job(
+    job, _ = await svc.create_export_job(
         db, _uuid(), None, "admin_service_jobs",
         filters={"status": "completed"},
         columns=["job_number", "status", "created_at"],
@@ -464,7 +477,7 @@ async def test_export_row_limit_blocked_when_too_large():
                return_value=["status", "created_at"]):
         with patch("app.engines.enterprise_grid.services.EnterpriseFilterRegistry.validate_filter",
                    return_value=True):
-            job = await svc.create_export_job(
+            job, _ = await svc.create_export_job(
                 db, _uuid(), _uuid(),
                 resource_key="admin_service_jobs",
                 filters={},
@@ -488,7 +501,7 @@ async def test_export_row_limit_passes_when_within_threshold():
                return_value=["status", "created_at"]):
         with patch("app.engines.enterprise_grid.services.EnterpriseFilterRegistry.validate_filter",
                    return_value=True):
-            job = await svc.create_export_job(
+            job, _ = await svc.create_export_job(
                 db, _uuid(), _uuid(),
                 resource_key="admin_service_jobs",
                 filters={},
@@ -512,7 +525,7 @@ async def test_export_no_estimated_count_defaults_to_pending():
                return_value=["status"]):
         with patch("app.engines.enterprise_grid.services.EnterpriseFilterRegistry.validate_filter",
                    return_value=True):
-            job = await svc.create_export_job(
+            job, _ = await svc.create_export_job(
                 db, _uuid(), None,
                 resource_key="admin_audit_logs",
                 filters={},

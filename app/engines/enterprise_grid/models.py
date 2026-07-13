@@ -106,6 +106,12 @@ class EnterpriseExportJob(Base):
     error_message:        Mapped[str | None]      = mapped_column(Text, nullable=True)
     progress:             Mapped[int]             = mapped_column(Integer, default=0, nullable=False)
 
+    # FINAL-L5-05AA — export abuse protection (migration 136). Unique per
+    # (requested_by_user_id, idempotency_key) via a partial index (NULLs
+    # excluded) so the header is optional without colliding across the
+    # overwhelming majority of callers that never send one.
+    idempotency_key:      Mapped[str | None]      = mapped_column(String(128), nullable=True)
+
     def to_dict(self) -> dict:
         return {
             "id":                   str(self.id),

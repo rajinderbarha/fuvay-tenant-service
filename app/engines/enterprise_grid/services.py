@@ -1,11 +1,13 @@
 """Sprint 26 — Saved Views, Column Preferences, Export Services."""
 from __future__ import annotations
 import csv
+import hashlib
 import io
+import json
 import uuid
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.enterprise_grid.constants import (
@@ -20,6 +22,11 @@ from app.engines.enterprise_grid.constants import (
     ERR_EXPORT_TOO_LARGE, ERR_EXPORT_ASYNC_REQUIRED,
     ERR_EXPORT_JOB_NOT_FOUND,
     ERR_EXPORT_JOB_ACCESS_DENIED, ERR_EXPORT_GENERATION_FAILED,
+    ERR_EXPORT_CONCURRENT_JOB_LIMIT, ERR_EXPORT_TENANT_CONCURRENT_LIMIT,
+    ERR_EXPORT_IDEMPOTENCY_CONFLICT, ERR_EXPORT_FIELD_LIMIT,
+    ERR_EXPORT_SELECTED_ID_LIMIT, ERR_EXPORT_DATE_RANGE_EXCEEDED,
+    EXPORT_MAX_CONCURRENT_JOBS_PER_ACTOR, EXPORT_MAX_CONCURRENT_JOBS_PER_TENANT,
+    EXPORT_MAX_COLUMNS, EXPORT_MAX_SELECTED_IDS, EXPORT_MAX_DATE_RANGE_DAYS,
 )
 from app.engines.enterprise_grid.filter_registry import EnterpriseFilterRegistry
 from app.engines.enterprise_grid.models import (
@@ -274,6 +281,72 @@ class ColumnPreferenceService:
 
 class ExportService:
 
+    # ── FINAL-L5-05AA: payload-bound validation helpers ─────────────────────
+    # Each raises ValueError with a controlled error-code prefix, matching
+    # this file's established convention (router._raise_controlled_export_error
+    # maps the prefix to the right HTTP status).
+
+    _DATE_FILTER_PAIRS = (
+        ("date_from", "date_to"), ("created_from", "created_to"),
+        ("updated_from", "updated_to"), ("start_date", "end_date"),
+    )
+    _ID_LIST_FILTER_KEYS = ("ids", "selected_ids", "id_in", "record_ids")
+
+    def _validate_payload_bounds(self, columns: list[str], filters: dict) -> None:
+        if len(columns) > EXPORT_MAX_COLUMNS:
+            raise ValueError(
+                f"{ERR_EXPORT_FIELD_LIMIT}: {len(columns)} columns requested, "
+                f"maximum is {EXPORT_MAX_COLUMNS}"
+            )
+        for key in self._ID_LIST_FILTER_KEYS:
+            val = filters.get(key)
+            if isinstance(val, (list, tuple)) and len(val) > EXPORT_MAX_SELECTED_IDS:
+                raise ValueError(
+                    f"{ERR_EXPORT_SELECTED_ID_LIMIT}: {len(val)} IDs selected via "
+                    f"'{key}', maximum is {EXPORT_MAX_SELECTED_IDS}"
+                )
+        for from_key, to_key in self._DATE_FILTER_PAIRS:
+            f, t = filters.get(from_key), filters.get(to_key)
+            if not (f and t):
+                continue
+            try:
+                d_from = datetime.fromisoformat(str(f).replace("Z", "+00:00"))
+                d_to = datetime.fromisoformat(str(t).replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue  # malformed dates are the filter-validation layer's concern, not this bound check
+            if (d_to - d_from).days > EXPORT_MAX_DATE_RANGE_DAYS:
+                raise ValueError(
+                    f"{ERR_EXPORT_DATE_RANGE_EXCEEDED}: {(d_to - d_from).days} day range "
+                    f"requested via '{from_key}'/'{to_key}', maximum is {EXPORT_MAX_DATE_RANGE_DAYS} days"
+                )
+
+    @staticmethod
+    def _fingerprint(resource_key: str, filters: dict, columns: list[str], export_format: str) -> str:
+        """Deterministic payload fingerprint -- field/filter key ORDER never
+        changes the fingerprint (mission Part 10: 'field order does not
+        change fingerprint... filter order does not change fingerprint')."""
+        normalized = {
+            "resource_key": resource_key,
+            "filters": {k: filters[k] for k in sorted(filters.keys())},
+            "columns": sorted(columns),
+            "export_format": export_format,
+        }
+        blob = json.dumps(normalized, sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode()).hexdigest()
+
+    async def _count_active_jobs(self, db: AsyncSession, *, user_id: uuid.UUID | None = None,
+                                  tenant_id: uuid.UUID | None = None) -> int:
+        from app.engines.enterprise_grid.constants import EXPORT_PROCESSING
+        conditions = [EnterpriseExportJob.status.in_((EXPORT_PENDING, EXPORT_PROCESSING))]
+        if user_id is not None:
+            conditions.append(EnterpriseExportJob.requested_by_user_id == user_id)
+        if tenant_id is not None:
+            conditions.append(EnterpriseExportJob.tenant_id == tenant_id)
+        result = await db.execute(
+            select(func.count()).select_from(EnterpriseExportJob).where(*conditions)
+        )
+        return result.scalar_one()
+
     async def create_export_job(
         self,
         db: AsyncSession,
@@ -285,7 +358,9 @@ class ExportService:
         export_format: str = "csv",
         scope: str = "admin",
         estimated_row_count: int | None = None,
-    ) -> EnterpriseExportJob:
+        idempotency_key: str | None = None,
+    ) -> tuple[EnterpriseExportJob, bool]:
+        """Returns (job, is_idempotent_replay)."""
         # validate export fields
         allowed_export = EnterpriseFilterRegistry.get_allowed_export_fields(resource_key)
         blocked        = [c for c in columns if c not in allowed_export]
@@ -295,6 +370,70 @@ class ExportService:
         # validate filters — silently drop unknown keys
         invalid_filters = [k for k in filters if not EnterpriseFilterRegistry.validate_filter(resource_key, k)]
         safe_filters    = {k: v for k, v in filters.items() if k not in invalid_filters}
+
+        # FINAL-L5-05AA Part 6/20/22/23: bounded payload -- rejected BEFORE
+        # any rate-limit/idempotency/DB work, matching the mission's
+        # required decision order ("validate payload" precedes "apply
+        # lightweight abuse controls").
+        self._validate_payload_bounds(columns, safe_filters)
+
+        fingerprint = self._fingerprint(resource_key, safe_filters, columns, export_format)
+
+        # FINAL-L5-05AA Part 9/10/12: a single per-actor Postgres advisory
+        # lock guards BOTH the idempotency check-then-insert AND the
+        # concurrent-job count-then-insert sequences. Taking the lock
+        # before the idempotency lookup (not just before the concurrency
+        # count) is required: two simultaneous requests carrying the SAME
+        # idempotency key would otherwise both observe "no existing job"
+        # and both attempt an INSERT, racing on the migration-136 partial
+        # unique index and surfacing a raw IntegrityError instead of a
+        # graceful replay. This mirrors the Service Area advisory-lock
+        # pattern (FINAL-L5-05Q) used to close an equivalent TOCTOU race
+        # for duplicate coverage creation.
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+            {"lock_key": f"export_concurrent:{user_id}"},
+        )
+
+        # Idempotent replay / conflict resolution. Scoped per-actor (never
+        # cross-actor, never cross-tenant) via the migration-136 partial
+        # unique index on (requested_by_user_id, idempotency_key).
+        if idempotency_key:
+            existing = (await db.execute(
+                select(EnterpriseExportJob).where(
+                    EnterpriseExportJob.requested_by_user_id == user_id,
+                    EnterpriseExportJob.idempotency_key == idempotency_key,
+                )
+            )).scalars().first()
+            if existing is not None:
+                existing_fp = self._fingerprint(
+                    existing.resource_key, existing.filters, existing.columns, existing.export_format,
+                )
+                if existing_fp != fingerprint:
+                    raise ValueError(
+                        f"{ERR_EXPORT_IDEMPOTENCY_CONFLICT}: idempotency key '{idempotency_key}' "
+                        f"was already used with a different export request"
+                    )
+                return existing, True
+
+        # Atomic concurrent-job limit (still under the same actor-scoped
+        # lock acquired above). Tenant-level counting is a plain read (not
+        # lock-protected) since the actor-level lock already prevents that
+        # actor's own race, and a tenant limit is a soft-fairness control,
+        # not a hard security boundary requiring cross-actor locking here.
+        actor_active = await self._count_active_jobs(db, user_id=user_id)
+        if actor_active >= EXPORT_MAX_CONCURRENT_JOBS_PER_ACTOR:
+            raise ValueError(
+                f"{ERR_EXPORT_CONCURRENT_JOB_LIMIT}: {actor_active} active export jobs, "
+                f"maximum concurrent is {EXPORT_MAX_CONCURRENT_JOBS_PER_ACTOR}"
+            )
+        if tenant_id is not None:
+            tenant_active = await self._count_active_jobs(db, tenant_id=tenant_id)
+            if tenant_active >= EXPORT_MAX_CONCURRENT_JOBS_PER_TENANT:
+                raise ValueError(
+                    f"{ERR_EXPORT_TENANT_CONCURRENT_LIMIT}: {tenant_active} active export jobs "
+                    f"for this tenant, maximum concurrent is {EXPORT_MAX_CONCURRENT_JOBS_PER_TENANT}"
+                )
 
         # enforce sync export row limit
         too_large       = (
@@ -323,10 +462,11 @@ class ExportService:
             columns              = columns,
             failure_reason       = failure_reason,
             expires_at           = datetime.now(timezone.utc) + timedelta(hours=EXPORT_EXPIRY_HOURS),
+            idempotency_key      = idempotency_key,
         )
         db.add(job)
         await db.commit()
-        return job
+        return job, False
 
     # FINAL-L5-05R Part 14: CSV formula injection mitigation. A cell value
     # beginning with =, +, -, @, tab, or CR opens a formula context in

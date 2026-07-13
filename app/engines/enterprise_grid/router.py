@@ -42,8 +42,13 @@ from app.engines.enterprise_grid.services import SavedViewService, ColumnPrefere
 from app.engines.enterprise_grid.constants import (
     ENTERPRISE_SYNC_EXPORT_ROW_LIMIT, SCOPE_PROVIDER,
     ERR_EXPORT_FIELD_NOT_ALLOWED, ERR_EXPORT_JOB_NOT_FOUND, ERR_EXPORT_JOB_ACCESS_DENIED,
+    ERR_EXPORT_CONCURRENT_JOB_LIMIT, ERR_EXPORT_TENANT_CONCURRENT_LIMIT,
+    ERR_EXPORT_IDEMPOTENCY_CONFLICT, ERR_EXPORT_FIELD_LIMIT,
+    ERR_EXPORT_SELECTED_ID_LIMIT, ERR_EXPORT_DATE_RANGE_EXCEEDED,
+    EXPORT_IDEMPOTENCY_KEY_MAX_LEN,
 )
 from app.core.permissions import permission_checker
+from app.core.security import rate_limiter
 from app.exceptions import ServiceOSException
 
 enterprise_router = APIRouter(prefix="/enterprise", tags=["Enterprise Grid"])
@@ -71,6 +76,15 @@ _EXPORT_ERROR_STATUS = {
     ERR_EXPORT_FIELD_NOT_ALLOWED: 422,
     ERR_EXPORT_JOB_NOT_FOUND:     404,
     ERR_EXPORT_JOB_ACCESS_DENIED: 403,
+    # FINAL-L5-05AA — export abuse-protection error codes (mission Part 8):
+    # 429 for concurrency/quota limits, 422 for payload-bound violations,
+    # 409 for idempotency-key conflicts.
+    ERR_EXPORT_CONCURRENT_JOB_LIMIT:    429,
+    ERR_EXPORT_TENANT_CONCURRENT_LIMIT: 429,
+    ERR_EXPORT_IDEMPOTENCY_CONFLICT:    409,
+    ERR_EXPORT_FIELD_LIMIT:             422,
+    ERR_EXPORT_SELECTED_ID_LIMIT:       422,
+    ERR_EXPORT_DATE_RANGE_EXCEEDED:     422,
 }
 
 
@@ -476,18 +490,36 @@ async def create_export(
                 status_code=403,
                 context={"resource_key": body.resource_key},
             )
+    # FINAL-L5-05AA Part 7: lightweight abuse control BEFORE any DB write --
+    # a denied-authorization or invalid-resource request never reaches this
+    # line (both raise above), so an unauthorized caller never consumes a
+    # Redis round-trip or a database write either way. Reuses the platform's
+    # existing atomic Redis sliding-window limiter (app.core.security,
+    # already proven in app.engines.platform_commerce.service.initiate_deposit)
+    # rather than building a second one -- the "api:export" policy (5/hour)
+    # already existed in RATE_LIMITS but was never actually wired into this
+    # endpoint until now (confirmed via grep: 0 prior callers).
+    await rate_limiter.check_and_raise(
+        limit_key="export", limit_type="api:export", identifier=str(u.user_id),
+    )
+
+    idempotency_key = r.headers.get("X-Idempotency-Key") if r else None
+    if idempotency_key and len(idempotency_key) > EXPORT_IDEMPOTENCY_KEY_MAX_LEN:
+        idempotency_key = idempotency_key[:EXPORT_IDEMPOTENCY_KEY_MAX_LEN]
+
     try:
-        job = await _export.create_export_job(
+        job, is_replay = await _export.create_export_job(
             db, u.user_id, u.tenant_id,
             resource_key         = body.resource_key,
             filters              = body.filters,
             columns              = body.columns,
             export_format        = body.export_format,
             estimated_row_count  = body.estimated_row_count,
+            idempotency_key      = idempotency_key,
         )
     except ValueError as e:
         _raise_controlled_export_error(e)
-    return ok(job.to_dict(), _rid(r), "enterprise.export.created")
+    return ok(job.to_dict(), _rid(r), "enterprise.export.created", idempotent=is_replay)
 
 
 @enterprise_router.get(

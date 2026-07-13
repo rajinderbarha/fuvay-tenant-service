@@ -27,6 +27,15 @@ ERR_EXPORT_JOB_NOT_FOUND          = "EXPORT_JOB_NOT_FOUND"
 ERR_EXPORT_JOB_ACCESS_DENIED      = "EXPORT_JOB_ACCESS_DENIED"
 ERR_EXPORT_GENERATION_FAILED      = "EXPORT_GENERATION_FAILED"
 
+# ── FINAL-L5-05AA: export abuse-protection error codes ──────────────────────
+ERR_EXPORT_RATE_LIMITED           = "EXPORT_RATE_LIMITED"
+ERR_EXPORT_CONCURRENT_JOB_LIMIT   = "EXPORT_CONCURRENT_JOB_LIMIT"
+ERR_EXPORT_TENANT_CONCURRENT_LIMIT = "EXPORT_TENANT_CONCURRENT_JOB_LIMIT"
+ERR_EXPORT_IDEMPOTENCY_CONFLICT   = "EXPORT_IDEMPOTENCY_CONFLICT"
+ERR_EXPORT_FIELD_LIMIT            = "EXPORT_FIELD_LIMIT"
+ERR_EXPORT_SELECTED_ID_LIMIT      = "EXPORT_SELECTED_ID_LIMIT"
+ERR_EXPORT_DATE_RANGE_EXCEEDED    = "EXPORT_DATE_RANGE_EXCEEDED"
+
 # ── Scope types ───────────────────────────────────────────────────────────────
 SCOPE_ADMIN_GLOBAL   = "admin_global"
 SCOPE_PROVIDER       = "provider_tenant"
@@ -58,3 +67,16 @@ MAX_EXPORT_ROWS                = 5000
 ENTERPRISE_SYNC_EXPORT_ROW_LIMIT = 5000   # synchronous exports blocked above this
 MAX_SEARCH_LENGTH              = 256
 EXPORT_EXPIRY_HOURS            = 24
+
+# ── FINAL-L5-05AA: export abuse-protection limits ───────────────────────────
+# Configurable, centralized (mission rule: "do not hardcode magic numbers
+# throughout services"). Reuses the platform's existing api:export rate
+# limit config (app/core/security.py RATE_LIMITS["api:export"] = 5/hour)
+# as the request-rate control; the limits below are the additional
+# payload/concurrency bounds this sprint adds.
+EXPORT_MAX_CONCURRENT_JOBS_PER_ACTOR  = 3   # PENDING+PROCESSING jobs, atomic via advisory lock
+EXPORT_MAX_CONCURRENT_JOBS_PER_TENANT = 10
+EXPORT_MAX_COLUMNS                    = 50
+EXPORT_MAX_SELECTED_IDS                = 500  # for filters carrying an "ids"/"selected_ids" array
+EXPORT_MAX_DATE_RANGE_DAYS             = 366
+EXPORT_IDEMPOTENCY_KEY_MAX_LEN         = 128
