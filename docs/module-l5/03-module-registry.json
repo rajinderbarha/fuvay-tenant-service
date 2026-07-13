@@ -1,0 +1,1034 @@
+{
+  "summary": {
+    "total_modules": 68,
+    "status_counts": {
+      "PARTIAL_NO_UI_NO_TEST_MATCH": 21,
+      "COMPLETE_PROVISIONAL": 23,
+      "BACKEND_ONLY_CANDIDATE": 17,
+      "PARTIAL_UNTESTED": 6,
+      "UNKNOWN": 1
+    },
+    "unknown_modules": [
+      "vertical_billing"
+    ]
+  },
+  "modules": [
+    {
+      "module_id": "admin_catalog",
+      "router_files": [
+        "app\\engines\\admin_catalog\\admin_router.py",
+        "app\\engines\\admin_catalog\\auto_price_options_router.py",
+        "app\\engines\\admin_catalog\\brand_customer_router.py",
+        "app\\engines\\admin_catalog\\brand_provider_router.py",
+        "app\\engines\\admin_catalog\\brand_router.py",
+        "app\\engines\\admin_catalog\\bulk_setup_router.py",
+        "app\\engines\\admin_catalog\\catalog_enterprise_router.py",
+        "app\\engines\\admin_catalog\\category_runtime_router.py",
+        "app\\engines\\admin_catalog\\customer_flow_router.py",
+        "app\\engines\\admin_catalog\\customer_router.py",
+        "app\\engines\\admin_catalog\\home_services_catalog_console_router.py",
+        "app\\engines\\admin_catalog\\recommendation_router.py",
+        "app\\engines\\admin_catalog\\service_option_admin_router.py",
+        "app\\engines\\admin_catalog\\service_option_customer_router.py",
+        "app\\engines\\admin_catalog\\service_option_provider_router.py",
+        "app\\engines\\admin_catalog\\service_setup_template_router.py",
+        "app\\engines\\admin_catalog\\tenant_router.py"
+      ],
+      "endpoint_count": 382,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "ai_chat",
+      "router_files": [
+        "app\\engines\\ai_chat\\router.py"
+      ],
+      "endpoint_count": 2,
+      "has_models": false,
+      "matching_test_files": [
+        "test_ai_chat.py",
+        "test_ai_chat_tools.py",
+        "test_phase22_ai_chat.py"
+      ],
+      "frontend_route_hits_super_admin": 5,
+      "frontend_route_hits_tenant_portal": 1,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "ai_conversation",
+      "router_files": [
+        "app\\engines\\ai_conversation\\admin_router.py",
+        "app\\engines\\ai_conversation\\customer_router.py",
+        "app\\engines\\ai_conversation\\sprint29_admin_router.py",
+        "app\\engines\\ai_conversation\\sprint29_customer_router.py"
+      ],
+      "endpoint_count": 29,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint15_ai_conversation.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "analytics",
+      "router_files": [
+        "app\\engines\\analytics\\admin_router.py",
+        "app\\engines\\analytics\\intelligence_router.py",
+        "app\\engines\\analytics\\kb_router.py",
+        "app\\engines\\analytics\\platform_router.py",
+        "app\\engines\\analytics\\provider_router.py",
+        "app\\engines\\analytics\\router.py"
+      ],
+      "endpoint_count": 110,
+      "has_models": true,
+      "matching_test_files": [
+        "test_p0_platform_analytics_enterprise.py",
+        "test_sprint28_analytics.py"
+      ],
+      "frontend_route_hits_super_admin": 10,
+      "frontend_route_hits_tenant_portal": 6,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "appointment",
+      "router_files": [
+        "app\\engines\\appointment\\router.py"
+      ],
+      "endpoint_count": 14,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint17_coaching_appointment.py"
+      ],
+      "frontend_route_hits_super_admin": 1,
+      "frontend_route_hits_tenant_portal": 1,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "auth",
+      "router_files": [
+        "app\\engines\\auth\\admin_customers_router.py",
+        "app\\engines\\auth\\admin_staff_router.py",
+        "app\\engines\\auth\\platform_users_router.py",
+        "app\\engines\\auth\\router.py"
+      ],
+      "endpoint_count": 110,
+      "has_models": true,
+      "matching_test_files": [
+        "test_auth_login_fix.py",
+        "test_final_l5_05u_security_deposit_permission_authorization.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "booking",
+      "router_files": [
+        "app\\engines\\booking\\admin_router.py",
+        "app\\engines\\booking\\router.py"
+      ],
+      "endpoint_count": 31,
+      "has_models": true,
+      "matching_test_files": [
+        "test_p0_admin_bookings.py",
+        "test_sprint16_home_service_booking.py",
+        "test_step4_booking.py",
+        "test_step5_booking_confirmation.py"
+      ],
+      "frontend_route_hits_super_admin": 3,
+      "frontend_route_hits_tenant_portal": 2,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "brands",
+      "router_files": [
+        "app\\engines\\brands\\admin_router.py",
+        "app\\engines\\brands\\provider_router.py"
+      ],
+      "endpoint_count": 25,
+      "has_models": false,
+      "matching_test_files": [
+        "test_sprint34d_brands.py",
+        "test_sprint76_types_brands_enterprise.py"
+      ],
+      "frontend_route_hits_super_admin": 4,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "chat",
+      "router_files": [
+        "app\\engines\\chat\\router.py"
+      ],
+      "endpoint_count": 13,
+      "has_models": true,
+      "matching_test_files": [
+        "test_ai_chat.py",
+        "test_ai_chat_tools.py",
+        "test_phase22_ai_chat.py"
+      ],
+      "frontend_route_hits_super_admin": 6,
+      "frontend_route_hits_tenant_portal": 3,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "coaching_appointment",
+      "router_files": [
+        "app\\engines\\coaching_appointment\\admin_router.py",
+        "app\\engines\\coaching_appointment\\customer_router.py"
+      ],
+      "endpoint_count": 15,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint17_coaching_appointment.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "complaints",
+      "router_files": [
+        "app\\engines\\complaints\\admin_router.py",
+        "app\\engines\\complaints\\customer_router.py",
+        "app\\engines\\complaints\\provider_router.py"
+      ],
+      "endpoint_count": 61,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint25_complaints.py"
+      ],
+      "frontend_route_hits_super_admin": 2,
+      "frontend_route_hits_tenant_portal": 2,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "compliance",
+      "router_files": [
+        "app\\engines\\compliance\\admin_router.py",
+        "app\\engines\\compliance\\customer_router.py",
+        "app\\engines\\compliance\\provider_router.py",
+        "app\\engines\\compliance\\router.py"
+      ],
+      "endpoint_count": 77,
+      "has_models": true,
+      "matching_test_files": [
+        "test_p0_compliance_enterprise.py",
+        "test_p0_compliance_sla_automation.py",
+        "test_p0_customer_compliance_self_service.py",
+        "test_p0_dpdp_compliance_command_center.py",
+        "test_p0_dpdp_compliance_command_center_frontend.py",
+        "test_p0_tenant_portal_compliance.py"
+      ],
+      "frontend_route_hits_super_admin": 1,
+      "frontend_route_hits_tenant_portal": 2,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "customer_credits",
+      "router_files": [
+        "app\\engines\\customer_credits\\admin_router.py",
+        "app\\engines\\customer_credits\\customer_router.py",
+        "app\\engines\\customer_credits\\provider_router.py"
+      ],
+      "endpoint_count": 26,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 1,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_UNTESTED"
+    },
+    {
+      "module_id": "customer_flow",
+      "router_files": [
+        "app\\engines\\customer_flow\\admin_router.py",
+        "app\\engines\\customer_flow\\router.py"
+      ],
+      "endpoint_count": 11,
+      "has_models": false,
+      "matching_test_files": [
+        "test_sprint14_customer_flow.py",
+        "test_sprint34j_customer_flow.py"
+      ],
+      "frontend_route_hits_super_admin": 3,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "customer_reviews",
+      "router_files": [
+        "app\\engines\\customer_reviews\\admin_router.py",
+        "app\\engines\\customer_reviews\\customer_router.py",
+        "app\\engines\\customer_reviews\\provider_router.py",
+        "app\\engines\\customer_reviews\\public_router.py"
+      ],
+      "endpoint_count": 35,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint24_customer_reviews.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "dashboard_command_center",
+      "router_files": [
+        "app\\engines\\dashboard_command_center\\admin_router.py"
+      ],
+      "endpoint_count": 20,
+      "has_models": false,
+      "matching_test_files": [
+        "test_p0_dashboard_command_center.py",
+        "test_p0_dashboard_command_center_frontend.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "data_science",
+      "router_files": [
+        "app\\engines\\data_science\\router.py"
+      ],
+      "endpoint_count": 24,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "dispatch",
+      "router_files": [
+        "app\\engines\\dispatch\\router.py"
+      ],
+      "endpoint_count": 9,
+      "has_models": true,
+      "matching_test_files": [
+        "test_dispatch_job_sync.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 1,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "document",
+      "router_files": [
+        "app\\engines\\document\\router.py"
+      ],
+      "endpoint_count": 10,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 2,
+      "status_firstpass": "PARTIAL_UNTESTED"
+    },
+    {
+      "module_id": "engine_mgmt",
+      "router_files": [
+        "app\\engines\\engine_mgmt\\admin_router.py"
+      ],
+      "endpoint_count": 44,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "enterprise_grid",
+      "router_files": [
+        "app\\engines\\enterprise_grid\\router.py"
+      ],
+      "endpoint_count": 17,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint26_enterprise_grid.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "entitlement",
+      "router_files": [
+        "app\\engines\\entitlement\\admin_router.py",
+        "app\\engines\\entitlement\\tenant_router.py"
+      ],
+      "endpoint_count": 11,
+      "has_models": true,
+      "matching_test_files": [
+        "test_final_l5_04b_entitlement.py",
+        "test_final_l5_04c_matching_entitlement.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "execution",
+      "router_files": [
+        "app\\engines\\execution\\coaching_router.py",
+        "app\\engines\\execution\\home_service_router.py",
+        "app\\engines\\execution\\real_estate_router.py"
+      ],
+      "endpoint_count": 62,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint21_execution.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 1,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "field_ops",
+      "router_files": [
+        "app\\engines\\field_ops\\admin_finance_router.py",
+        "app\\engines\\field_ops\\checklist_router.py",
+        "app\\engines\\field_ops\\customer_router.py",
+        "app\\engines\\field_ops\\router.py",
+        "app\\engines\\field_ops\\staff_router.py",
+        "app\\engines\\field_ops\\tenant_finance_router.py"
+      ],
+      "endpoint_count": 91,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "final_records",
+      "router_files": [
+        "app\\engines\\final_records\\admin_router.py",
+        "app\\engines\\final_records\\confirm_router.py",
+        "app\\engines\\final_records\\customer_router.py",
+        "app\\engines\\final_records\\provider_router.py"
+      ],
+      "endpoint_count": 31,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint19_final_records.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "finance_hub",
+      "router_files": [
+        "app\\engines\\finance_hub\\admin_router.py"
+      ],
+      "endpoint_count": 38,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "food",
+      "router_files": [
+        "app\\engines\\food\\router.py"
+      ],
+      "endpoint_count": 2,
+      "has_models": false,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "geo",
+      "router_files": [
+        "app\\engines\\geo\\router.py"
+      ],
+      "endpoint_count": 11,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "home_service_assignment",
+      "router_files": [
+        "app\\engines\\home_service_assignment\\admin_router.py",
+        "app\\engines\\home_service_assignment\\customer_router.py",
+        "app\\engines\\home_service_assignment\\provider_router.py",
+        "app\\engines\\home_service_assignment\\staff_router.py"
+      ],
+      "endpoint_count": 25,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "home_service_booking",
+      "router_files": [
+        "app\\engines\\home_service_booking\\admin_router.py",
+        "app\\engines\\home_service_booking\\customer_router.py"
+      ],
+      "endpoint_count": 16,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint16_home_service_booking.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "inventory",
+      "router_files": [
+        "app\\engines\\inventory\\router.py"
+      ],
+      "endpoint_count": 12,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 1,
+      "status_firstpass": "PARTIAL_UNTESTED"
+    },
+    {
+      "module_id": "invoice_payment",
+      "router_files": [
+        "app\\engines\\invoice_payment\\admin_router.py",
+        "app\\engines\\invoice_payment\\customer_router.py",
+        "app\\engines\\invoice_payment\\provider_router.py"
+      ],
+      "endpoint_count": 31,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint23_invoice_payment.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "leads",
+      "router_files": [
+        "app\\engines\\leads\\router.py"
+      ],
+      "endpoint_count": 2,
+      "has_models": false,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "location_engine",
+      "router_files": [
+        "app\\engines\\location_engine\\router.py"
+      ],
+      "endpoint_count": 13,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "loyalty",
+      "router_files": [
+        "app\\engines\\loyalty\\router.py"
+      ],
+      "endpoint_count": 2,
+      "has_models": false,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "marketing",
+      "router_files": [
+        "app\\engines\\marketing\\router.py"
+      ],
+      "endpoint_count": 19,
+      "has_models": true,
+      "matching_test_files": [
+        "test_p0_marketing_automation_command_center.py",
+        "test_sprint29_ai_marketing.py"
+      ],
+      "frontend_route_hits_super_admin": 10,
+      "frontend_route_hits_tenant_portal": 4,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "marketing_automation",
+      "router_files": [
+        "app\\engines\\marketing_automation\\admin_router.py",
+        "app\\engines\\marketing_automation\\provider_router.py"
+      ],
+      "endpoint_count": 24,
+      "has_models": true,
+      "matching_test_files": [
+        "test_p0_marketing_automation_command_center.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "marketing_command_center",
+      "router_files": [
+        "app\\engines\\marketing_command_center\\admin_router.py"
+      ],
+      "endpoint_count": 35,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "media",
+      "router_files": [
+        "app\\engines\\media\\admin_router.py",
+        "app\\engines\\media\\new_router.py",
+        "app\\engines\\media\\router.py"
+      ],
+      "endpoint_count": 45,
+      "has_models": true,
+      "matching_test_files": [
+        "test_media_engine.py",
+        "test_p0_enterprise_media_library.py"
+      ],
+      "frontend_route_hits_super_admin": 1,
+      "frontend_route_hits_tenant_portal": 1,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "notification",
+      "router_files": [
+        "app\\engines\\notification\\admin_router.py",
+        "app\\engines\\notification\\router.py"
+      ],
+      "endpoint_count": 34,
+      "has_models": true,
+      "matching_test_files": [
+        "test_p0_notification_template_center.py",
+        "test_p0_notification_template_center_frontend.py",
+        "test_sprint27_notifications.py"
+      ],
+      "frontend_route_hits_super_admin": 4,
+      "frontend_route_hits_tenant_portal": 3,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "package_commerce",
+      "router_files": [
+        "app\\engines\\package_commerce\\admin_router.py",
+        "app\\engines\\package_commerce\\public_router.py",
+        "app\\engines\\package_commerce\\tenant_router.py"
+      ],
+      "endpoint_count": 45,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "payment",
+      "router_files": [
+        "app\\engines\\payment\\router.py"
+      ],
+      "endpoint_count": 14,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint23_invoice_payment.py"
+      ],
+      "frontend_route_hits_super_admin": 1,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "platform_commerce",
+      "router_files": [
+        "app\\engines\\platform_commerce\\billing_endpoint.py",
+        "app\\engines\\platform_commerce\\router.py"
+      ],
+      "endpoint_count": 58,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "platform_notifications",
+      "router_files": [
+        "app\\engines\\platform_notifications\\admin_router.py",
+        "app\\engines\\platform_notifications\\customer_router.py",
+        "app\\engines\\platform_notifications\\provider_router.py"
+      ],
+      "endpoint_count": 57,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "pricing",
+      "router_files": [
+        "app\\engines\\pricing\\router.py"
+      ],
+      "endpoint_count": 31,
+      "has_models": true,
+      "matching_test_files": [
+        "test_dynamic_pricing_form.py",
+        "test_finance_package_pricing_fix.py",
+        "test_hs3_admin_tier_pricing.py",
+        "test_p0_pricing_enterprise.py",
+        "test_phase3_pricing_rules_certification.py",
+        "test_type_dependent_brand_pricing.py"
+      ],
+      "frontend_route_hits_super_admin": 7,
+      "frontend_route_hits_tenant_portal": 1,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "profile",
+      "router_files": [
+        "app\\engines\\profile\\router.py"
+      ],
+      "endpoint_count": 9,
+      "has_models": false,
+      "matching_test_files": [
+        "test_phase0b_profile_photo.py",
+        "test_phase0c_profile_edit.py",
+        "test_tenant_business_profile_enterprise_ui.py"
+      ],
+      "frontend_route_hits_super_admin": 1,
+      "frontend_route_hits_tenant_portal": 2,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "promo",
+      "router_files": [
+        "app\\engines\\promo\\router.py"
+      ],
+      "endpoint_count": 2,
+      "has_models": false,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "provider_portal",
+      "router_files": [
+        "app\\engines\\provider_portal\\admin_router.py",
+        "app\\engines\\provider_portal\\router.py"
+      ],
+      "endpoint_count": 70,
+      "has_models": false,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "public_registration",
+      "router_files": [
+        "app\\engines\\public_registration\\router.py"
+      ],
+      "endpoint_count": 6,
+      "has_models": false,
+      "matching_test_files": [
+        "test_public_registration.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "quote_checklist",
+      "router_files": [
+        "app\\engines\\quote_checklist\\admin_router.py",
+        "app\\engines\\quote_checklist\\customer_router.py",
+        "app\\engines\\quote_checklist\\provider_router.py"
+      ],
+      "endpoint_count": 33,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint22_quote_checklist.py",
+        "test_step8_quote_checklist.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "rag",
+      "router_files": [
+        "app\\engines\\rag\\router.py"
+      ],
+      "endpoint_count": 18,
+      "has_models": true,
+      "matching_test_files": [
+        "test_final_l5_05q_provider_coverage_mutations.py",
+        "test_hs5b_availability_exceptions_coverage.py",
+        "test_tenant_service_coverage_enterprise_ui.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 2,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "real_estate",
+      "router_files": [
+        "app\\engines\\real_estate\\router.py"
+      ],
+      "endpoint_count": 2,
+      "has_models": false,
+      "matching_test_files": [
+        "test_sprint18_real_estate_lead.py"
+      ],
+      "frontend_route_hits_super_admin": 1,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "real_estate_lead",
+      "router_files": [
+        "app\\engines\\real_estate_lead\\admin_router.py",
+        "app\\engines\\real_estate_lead\\customer_router.py"
+      ],
+      "endpoint_count": 20,
+      "has_models": true,
+      "matching_test_files": [
+        "test_sprint18_real_estate_lead.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "review",
+      "router_files": [
+        "app\\engines\\review\\router.py"
+      ],
+      "endpoint_count": 15,
+      "has_models": true,
+      "matching_test_files": [
+        "test_hs9b_finance_review_low_credit.py",
+        "test_sprint24_customer_reviews.py"
+      ],
+      "frontend_route_hits_super_admin": 4,
+      "frontend_route_hits_tenant_portal": 5,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "roles_permissions",
+      "router_files": [
+        "app\\engines\\roles_permissions\\admin_router.py"
+      ],
+      "endpoint_count": 9,
+      "has_models": false,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "security",
+      "router_files": [
+        "app\\engines\\security\\admin_router.py",
+        "app\\engines\\security\\router.py"
+      ],
+      "endpoint_count": 48,
+      "has_models": true,
+      "matching_test_files": [
+        "test_final_l5_05u_security_deposit_permission_authorization.py",
+        "test_p0_security_enterprise.py",
+        "test_phase0d_password_security.py",
+        "test_phase0e_account_security.py",
+        "test_sprint31_security.py"
+      ],
+      "frontend_route_hits_super_admin": 2,
+      "frontend_route_hits_tenant_portal": 2,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "service_catalog",
+      "router_files": [
+        "app\\engines\\service_catalog\\router.py"
+      ],
+      "endpoint_count": 6,
+      "has_models": true,
+      "matching_test_files": [
+        "test_service_catalog.py"
+      ],
+      "frontend_route_hits_super_admin": 1,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "service_setup",
+      "router_files": [
+        "app\\engines\\service_setup\\bulk_router.py",
+        "app\\engines\\service_setup\\templates_router.py"
+      ],
+      "endpoint_count": 28,
+      "has_models": true,
+      "matching_test_files": [
+        "test_p0_service_setup_bulk_wizard.py",
+        "test_p0_service_setup_templates_enterprise.py",
+        "test_p0_tenant_service_setup_wizard.py",
+        "test_phase2_catalog_service_setup_certification.py",
+        "test_phase2_catalog_service_setup_certification_frontend.py",
+        "test_service_setup_templates_ui_polish.py",
+        "test_sprint34f_service_setup_templates.py",
+        "test_tenant_home_services_service_setup_wizard.py",
+        "test_tenant_service_setup_enterprise_wizard.py"
+      ],
+      "frontend_route_hits_super_admin": 15,
+      "frontend_route_hits_tenant_portal": 1,
+      "status_firstpass": "COMPLETE_PROVISIONAL"
+    },
+    {
+      "module_id": "serviceability",
+      "router_files": [
+        "app\\engines\\serviceability\\router.py"
+      ],
+      "endpoint_count": 29,
+      "has_models": true,
+      "matching_test_files": [
+        "test_serviceability_hardening.py",
+        "test_serviceability_matching.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "settings_engine",
+      "router_files": [
+        "app\\engines\\settings_engine\\admin_router.py",
+        "app\\engines\\settings_engine\\router.py"
+      ],
+      "endpoint_count": 44,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "subscription",
+      "router_files": [
+        "app\\engines\\subscription\\router.py"
+      ],
+      "endpoint_count": 10,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 1,
+      "status_firstpass": "PARTIAL_UNTESTED"
+    },
+    {
+      "module_id": "tenant_engine",
+      "router_files": [
+        "app\\engines\\tenant_engine\\admin_router.py",
+        "app\\engines\\tenant_engine\\portal_router.py",
+        "app\\engines\\tenant_engine\\router.py"
+      ],
+      "endpoint_count": 116,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "trust_quality",
+      "router_files": [
+        "app\\engines\\trust_quality\\admin_router.py"
+      ],
+      "endpoint_count": 24,
+      "has_models": true,
+      "matching_test_files": [
+        "test_trust_quality_phase1.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "usage_credits",
+      "router_files": [
+        "app\\engines\\usage_credits\\router.py"
+      ],
+      "endpoint_count": 5,
+      "has_models": false,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 1,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_UNTESTED"
+    },
+    {
+      "module_id": "vertical_billing",
+      "router_files": [],
+      "endpoint_count": 0,
+      "has_models": false,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "UNKNOWN"
+    },
+    {
+      "module_id": "vertical_catalog",
+      "router_files": [
+        "app\\engines\\vertical_catalog\\admin_router.py"
+      ],
+      "endpoint_count": 11,
+      "has_models": true,
+      "matching_test_files": [
+        "test_p0_vertical_catalog.py",
+        "test_p0_vertical_catalog_menu_fix.py"
+      ],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "BACKEND_ONLY_CANDIDATE"
+    },
+    {
+      "module_id": "webhook",
+      "router_files": [
+        "app\\engines\\webhook\\router.py"
+      ],
+      "endpoint_count": 13,
+      "has_models": true,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 0,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_NO_UI_NO_TEST_MATCH"
+    },
+    {
+      "module_id": "workflows",
+      "router_files": [
+        "app\\engines\\workflows\\workflow_router.py"
+      ],
+      "endpoint_count": 32,
+      "has_models": false,
+      "matching_test_files": [],
+      "frontend_route_hits_super_admin": 2,
+      "frontend_route_hits_tenant_portal": 0,
+      "status_firstpass": "PARTIAL_UNTESTED"
+    }
+  ]
+}
