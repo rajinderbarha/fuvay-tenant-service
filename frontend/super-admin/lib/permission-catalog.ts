@@ -46,6 +46,12 @@ export const PERMISSION_CATALOG: Record<string, PermissionMeta> = {
   "dashboard.activity.read":              { key: "dashboard.activity.read", label: "Read Activity Feed Widget", domain: "dashboard", shape: "read" },
   "finance:hub:export":                   { key: "finance:hub:export", label: "Export Finance Hub Data", domain: "finance", shape: "export" },
   "field_ops:jobs:export":                { key: "field_ops:jobs:export", label: "Export Jobs Data", domain: "operations", shape: "export" },
+  // FINAL-L5-05AB — Enterprise Export ("/v1/enterprise/exports") canonical
+  // permission for operational resources (Service Bookings, Refund
+  // Requests, etc.) per app/engines/enterprise_grid/filter_registry.py's
+  // RESOURCE_EXPORT_PERMISSIONS. Distinct from field_ops:jobs:export
+  // (legacy Jobs domain export, different resource/endpoint).
+  "operations:export":                    { key: "operations:export", label: "Export Operational Records", domain: "operations", shape: "export" },
   // FINAL-L5-05P — Tenant/Provider onboarding lifecycle permissions.
   "tenant:read":                          { key: "tenant:read", label: "Read Tenants", domain: "tenants", shape: "read" },
   "tenants.onboarding.read":              { key: "tenants.onboarding.read", label: "Read Provider Onboarding", domain: "tenants", shape: "read" },

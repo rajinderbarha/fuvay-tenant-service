@@ -4,6 +4,7 @@ import { AdminLayout } from "../../../components/layout/AdminLayout";
 import EnterpriseDataGrid, { GridColumn, GridData } from "../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../components/enterprise/EnterpriseFilterBar";
 import { enterpriseApi, apiFetchPaginatedRaw } from "../../../lib/api";
+import { usePermissions } from "../../../hooks/usePermissions";
 
 const COLUMNS: GridColumn[] = [
   { key: "payment_reference",  label: "Reference",   width: 160 },
@@ -62,6 +63,7 @@ function wrapLegacy(d: unknown, params: Record<string, unknown>) {
 }
 
 export default function AdminPaymentsPage() {
+  const perm = usePermissions();
   const fetchFn = useCallback(async (params: Record<string, unknown>) => {
     const d = await apiFetchPaginatedRaw("/v1/admin/payments", params);
     if (d?.pagination) return d as unknown as GridData;
@@ -75,7 +77,7 @@ export default function AdminPaymentsPage() {
         filters: params,
         columns: ["payment_reference", "status", "amount", "payment_method", "confirmed_at", "created_at"],
       });
-      alert("Export job created — check /admin/exports.");
+      alert("Export job created. View progress and download it from Export Jobs (/admin/exports).");
     } catch { alert("Export failed."); }
   }, []);
 
@@ -88,7 +90,7 @@ export default function AdminPaymentsPage() {
         columns={COLUMNS}
         filters={FILTERS}
         defaultSort={{ sort_by: "created_at", sort_direction: "desc" }}
-        enableExport
+        enableExport={perm.has("finance:hub:export")}
         enableColumnPrefs
         onExport={handleExport}
         title="Payments"

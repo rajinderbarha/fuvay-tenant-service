@@ -4,6 +4,7 @@ import { AdminLayout } from "../../../components/layout/AdminLayout";
 import EnterpriseDataGrid, { GridColumn, GridData } from "../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../components/enterprise/EnterpriseFilterBar";
 import { enterpriseApi, apiFetchPaginatedRaw } from "../../../lib/api";
+import { usePermissions } from "../../../hooks/usePermissions";
 
 const COLUMNS: GridColumn[] = [
   { key: "id",               label: "ID",            width: 120,
@@ -61,6 +62,7 @@ function wrapLegacy(d: unknown, params: Record<string, unknown>) {
 }
 
 export default function AdminRefundRequestsPage() {
+  const perm = usePermissions();
   const fetchFn = useCallback(async (params: Record<string, unknown>) => {
     const d = await apiFetchPaginatedRaw("/v1/admin/refund-requests", params);
     if (d?.pagination) return d as unknown as GridData;
@@ -74,7 +76,7 @@ export default function AdminRefundRequestsPage() {
         filters: params,
         columns: ["status", "refund_type", "requested_amount", "approved_amount", "approved_at", "created_at"],
       });
-      alert("Export job created — check /admin/exports.");
+      alert("Export job created. View progress and download it from Export Jobs (/admin/exports).");
     } catch { alert("Export failed."); }
   }, []);
 
@@ -87,7 +89,7 @@ export default function AdminRefundRequestsPage() {
         columns={COLUMNS}
         filters={FILTERS}
         defaultSort={{ sort_by: "created_at", sort_direction: "desc" }}
-        enableExport
+        enableExport={perm.has("operations:export")}
         enableColumnPrefs
         onExport={handleExport}
         title="Refund Requests"

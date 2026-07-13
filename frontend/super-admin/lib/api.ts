@@ -6626,14 +6626,34 @@ export const enterpriseApi = {
     apiFetch<EnterpriseColumnPreference>("/v1/enterprise/column-preferences/reset", { method: "POST", body: JSON.stringify({ resource_key }) }),
 
   // Exports
-  createExport: (body: { resource_key: string; filters: Record<string, unknown>; columns: string[]; export_format?: string }) =>
-    apiFetch<EnterpriseExportJob>("/v1/enterprise/exports", { method: "POST", body: JSON.stringify(body) }),
+  createExport: (body: { resource_key: string; filters: Record<string, unknown>; columns: string[]; export_format?: string }, idempotencyKey?: string) =>
+    apiFetch<EnterpriseExportJob>("/v1/enterprise/exports", {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : undefined,
+    }),
   listExports:  () =>
     apiFetch<EnterpriseExportJob[]>("/v1/enterprise/exports"),
   getExport:    (id: string) =>
     apiFetch<EnterpriseExportJob>(`/v1/enterprise/exports/${id}`),
   retryExport:  (id: string) =>
     apiFetch<EnterpriseExportJob>(`/v1/enterprise/exports/${id}/retry`, { method: "POST" }),
+  // FINAL-L5-05AB — cancel/download were real backend endpoints (FINAL-L5-05S)
+  // with no frontend wrapper at all; the job-history page needs both.
+  cancelExport: (id: string) =>
+    apiFetch<EnterpriseExportJob>(`/v1/enterprise/exports/${id}/cancel`, { method: "POST" }),
+  downloadExport: async (id: string, filename: string): Promise<Blob> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/v1/enterprise/exports/${id}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      let detail = `Download failed: ${res.status}`;
+      try { const body = await res.json(); if (body?.detail) detail = body.detail; } catch { /* non-JSON error body */ }
+      throw new Error(detail);
+    }
+    return res.blob();
+  },
 };
 
 // ── Sprint 27: Platform Notifications + Chat + Audit ──────────────────────────

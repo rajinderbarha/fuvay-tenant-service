@@ -9,6 +9,7 @@ import EnterpriseDataGrid, { GridColumn, GridData } from "../../../../components
 import { FilterDef } from "../../../../components/enterprise/EnterpriseFilterBar";
 import { enterpriseApi, apiFetchPaginatedRaw, finalRecordsAdminApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
+import { usePermissions } from "../../../../hooks/usePermissions";
 
 const SLA_LABEL: Record<string, string> = {
   ON_TRACK: "On Track", AT_RISK: "At Risk", BREACHED: "Breached", NOT_APPLICABLE: "—",
@@ -87,6 +88,7 @@ function SummaryCards() {
 }
 
 export default function AdminServiceJobsPage() {
+  const perm = usePermissions();
   const fetchJobs = useCallback(async (params: Record<string, unknown>) => {
     const d = await apiFetchPaginatedRaw("/v1/admin/final-records/jobs", params);
     if (d.pagination) return d as unknown as GridData;
@@ -112,7 +114,7 @@ export default function AdminServiceJobsPage() {
         filters:      params,
         columns:      ["job_number", "status", "assignment_status", "created_at"],
       });
-      alert("Export job created — check /admin/exports.");
+      alert("Export job created. View progress and download it from Export Jobs (/admin/exports).");
     } catch {
       alert("Export failed. Check permissions.");
     }
@@ -128,7 +130,7 @@ export default function AdminServiceJobsPage() {
         columns={COLUMNS}
         filters={FILTERS}
         defaultSort={{ sort_by: "created_at", sort_direction: "desc" }}
-        enableExport
+        enableExport={perm.has("field_ops:jobs:export")}
         enableColumnPrefs
         enableSavedViews
         onExport={handleExport}

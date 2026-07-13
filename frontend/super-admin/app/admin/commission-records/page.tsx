@@ -4,6 +4,7 @@ import { AdminLayout } from "../../../components/layout/AdminLayout";
 import EnterpriseDataGrid, { GridColumn, GridData } from "../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../components/enterprise/EnterpriseFilterBar";
 import { enterpriseApi, apiFetchPaginatedRaw } from "../../../lib/api";
+import { usePermissions } from "../../../hooks/usePermissions";
 
 const COLUMNS: GridColumn[] = [
   { key: "commission_number",  label: "Commission #",  width: 160 },
@@ -53,6 +54,7 @@ function wrapLegacy(d: unknown, params: Record<string, unknown>) {
 }
 
 export default function AdminCommissionRecordsPage() {
+  const perm = usePermissions();
   const fetchFn = useCallback(async (params: Record<string, unknown>) => {
     const d = await apiFetchPaginatedRaw("/v1/admin/commission-records", params);
     if (d?.pagination) return d as unknown as GridData;
@@ -66,7 +68,7 @@ export default function AdminCommissionRecordsPage() {
         filters: params,
         columns: ["commission_number", "status", "commission_amount", "commission_rate", "deducted_at", "created_at"],
       });
-      alert("Export job created — check /admin/exports.");
+      alert("Export job created. View progress and download it from Export Jobs (/admin/exports).");
     } catch { alert("Export failed."); }
   }, []);
 
@@ -79,7 +81,7 @@ export default function AdminCommissionRecordsPage() {
         columns={COLUMNS}
         filters={FILTERS}
         defaultSort={{ sort_by: "created_at", sort_direction: "desc" }}
-        enableExport
+        enableExport={perm.has("finance:hub:export")}
         enableColumnPrefs
         onExport={handleExport}
         title="Commission Records"
