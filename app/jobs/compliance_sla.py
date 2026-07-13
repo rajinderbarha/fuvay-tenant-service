@@ -53,15 +53,16 @@ async def run_sla_check() -> dict:
     and fire in-app notifications for super_admin users on transitions.
     Returns counts: checked / breached / at_risk / on_track / notifications_sent.
     """
-    from app.database import AsyncSessionLocal
+    from app.database import get_session_factory
     from sqlalchemy import select, func
     from app.engines.compliance.models import ComplianceRequest, ComplianceAuditLog
     from app.engines.platform_notifications.models import InAppNotification
     from app.engines.auth.models import User
 
     now = utcnow()
+    session_factory = get_session_factory()
 
-    async with AsyncSessionLocal() as db:
+    async with session_factory() as db:
         async with db.begin():
             # ── Load open requests ─────────────────────────────────────────
             r = await db.execute(
@@ -200,13 +201,14 @@ async def run_expire_exports() -> dict:
     Clears the download_url so the link stops working.
     Writes an audit log entry for each expired export.
     """
-    from app.database import AsyncSessionLocal
+    from app.database import get_session_factory
     from sqlalchemy import select
     from app.engines.compliance.models import ComplianceExport, ComplianceAuditLog
 
     now = utcnow()
+    session_factory = get_session_factory()
 
-    async with AsyncSessionLocal() as db:
+    async with session_factory() as db:
         async with db.begin():
             r = await db.execute(
                 select(ComplianceExport).where(

@@ -70,7 +70,14 @@ class TestJobFile:
         assert "15 * 60" in src or "900" in src
 
     def test_uses_asyncsession(self):
-        assert "AsyncSessionLocal" in self._src()
+        # FINAL-L5-05AE: `AsyncSessionLocal` never existed in app/database.py
+        # -- this background loop's `except Exception: log, don't crash`
+        # wrapper silently swallowed an ImportError on every tick since
+        # introduction (real DB session was never acquired). Fixed to use
+        # the real `get_session_factory()` API (same fix already proven
+        # correct in app/jobs/export_worker.py).
+        assert "get_session_factory" in self._src()
+        assert "AsyncSessionLocal" not in self._src()
 
     def test_at_risk_threshold_24h(self):
         src = self._src()
