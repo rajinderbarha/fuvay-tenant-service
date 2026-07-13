@@ -802,10 +802,11 @@ class TenantService:
     # ── 39-41: Data Management ───────────────────────────────────────────────
     async def request_data_export(self, tenant_id: uuid.UUID) -> dict:
         import uuid as _uuid
+        import json
         job_id = str(_uuid.uuid4())
         try:
-            await self.redis.setex(f"serviceos:async:{job_id}:progress",
-                                   86400, '{"status": "pending", "progress": 0}')
+            await self.redis.setex(f"serviceos:async:{job_id}:progress", 86400,
+                                    json.dumps({"status": "pending", "progress": 0, "tenant_id": str(tenant_id)}))
         except Exception:
             pass
         await self._audit(tenant_id, "data.export_requested", after={"job_id": job_id})
@@ -815,11 +816,24 @@ class TenantService:
                 "_note": "Full async export with S3 implemented in Phase 5."}
 
     async def get_export_status(self, tenant_id: uuid.UUID, job_id: str) -> dict:
+        # MODULE-L5-01A: a job_id-only Redis lookup let a caller poll ANY
+        # tenant's export status by guessing/reusing a leaked job_id, even
+        # after the router-level tenant_id check passes with the caller's
+        # own tenant_id -- a nested-resource IDOR distinct from the
+        # path-parameter one. The stored payload now records its owning
+        # tenant_id at creation time; verify it here rather than trusting
+        # job_id alone, and return a generic "not found" rather than a
+        # permission-denied error so a foreign job's existence is not
+        # confirmed to the caller.
         try:
             import json
             raw = await self.redis.get(f"serviceos:async:{job_id}:progress")
             if raw:
-                return {**json.loads(raw), "job_id": job_id}
+                payload = json.loads(raw)
+                owner_tenant_id = payload.get("tenant_id")
+                if owner_tenant_id is not None and str(owner_tenant_id) != str(tenant_id):
+                    return {"job_id": job_id, "status": "unknown"}
+                return {**payload, "job_id": job_id}
         except Exception:
             pass
         return {"job_id": job_id, "status": "unknown"}

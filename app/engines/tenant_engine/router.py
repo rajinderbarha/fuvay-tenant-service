@@ -282,6 +282,7 @@ async def update_tenant(tenant_id: uuid.UUID, request: Request,
 async def get_360_view(tenant_id: uuid.UUID, request: Request,
                         user: UserContext = Depends(require_permission(P.TENANT_360_READ)),
                         svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.get_360_view(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -297,6 +298,7 @@ async def get_360_view(tenant_id: uuid.UUID, request: Request,
 async def get_health_score(tenant_id: uuid.UUID, request: Request,
                             user: UserContext = Depends(require_permission(P.TENANT_HEALTH_READ)),
                             svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.get_health_score(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -309,6 +311,7 @@ async def get_health_history(tenant_id: uuid.UUID, request: Request,
                               days: int = Query(default=30, ge=1, le=365),
                               user: UserContext = Depends(require_permission(P.TENANT_HEALTH_READ)),
                               svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.get_health_history(tenant_id, days)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -318,8 +321,9 @@ async def get_health_history(tenant_id: uuid.UUID, request: Request,
             summary="Check if tenant has capacity for a resource type",
             response_model=ApiResponse[dict])
 async def check_limit(tenant_id: uuid.UUID, limit_type: str, request: Request,
-                       user: UserContext = Depends(get_current_user),
+                       user: UserContext = Depends(require_permission(P.TENANT_READ)),
                        svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.check_limit(tenant_id, limit_type)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -335,6 +339,7 @@ async def check_limit(tenant_id: uuid.UUID, limit_type: str, request: Request,
 async def suspend_tenant(tenant_id: uuid.UUID, request: Request,
                           user: UserContext = Depends(require_permission(P.TENANT_SUSPEND)),
                           svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.suspend_tenant(tenant_id, body.get("reason", "Suspended by admin"),
                                      body.get("reason_category", "manual"))
@@ -348,6 +353,7 @@ async def suspend_tenant(tenant_id: uuid.UUID, request: Request,
 async def reinstate_tenant(tenant_id: uuid.UUID, request: Request,
                             user: UserContext = Depends(require_permission(P.TENANT_REINSTATE)),
                             svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     reason = (body.get("reason") or body.get("notes") or "").strip()
     if not reason:
@@ -363,6 +369,7 @@ async def reinstate_tenant(tenant_id: uuid.UUID, request: Request,
 async def begin_termination(tenant_id: uuid.UUID, request: Request,
                              user: UserContext = Depends(require_permission(P.TENANT_TERMINATE)),
                              svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.begin_termination(tenant_id, body.get("reason", "Terminated by admin"))
     return ok(data, _meta(request).request_id, ENGINE_ID)
@@ -375,6 +382,7 @@ async def begin_termination(tenant_id: uuid.UUID, request: Request,
 async def confirm_termination(tenant_id: uuid.UUID, request: Request,
                                user: UserContext = Depends(require_permission(P.TENANT_TERMINATE)),
                                svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.confirm_termination(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -386,6 +394,7 @@ async def confirm_termination(tenant_id: uuid.UUID, request: Request,
 async def upgrade_plan(tenant_id: uuid.UUID, request: Request,
                         user: UserContext = Depends(require_permission(P.TENANT_PLAN_MANAGE)),
                         svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     reason = (body.get("reason") or "").strip()
     if not reason:
@@ -401,6 +410,7 @@ async def upgrade_plan(tenant_id: uuid.UUID, request: Request,
 async def downgrade_plan(tenant_id: uuid.UUID, request: Request,
                           user: UserContext = Depends(require_permission(P.TENANT_PLAN_MANAGE)),
                           svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.downgrade_plan(tenant_id, body["target_plan"])
     return ok(data, _meta(request).request_id, ENGINE_ID)
@@ -413,6 +423,7 @@ async def downgrade_plan(tenant_id: uuid.UUID, request: Request,
 async def convert_trial(tenant_id: uuid.UUID, request: Request,
                          user: UserContext = Depends(require_permission(P.TENANT_PLAN_MANAGE)),
                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.convert_trial(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -426,8 +437,9 @@ async def convert_trial(tenant_id: uuid.UUID, request: Request,
             summary="List all engines with enabled state and config for this tenant",
             response_model=ApiResponse[dict])
 async def list_engines(tenant_id: uuid.UUID, request: Request,
-                        user: UserContext = Depends(get_current_user),
+                        user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
                         svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.list_engines(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -439,6 +451,7 @@ async def list_engines(tenant_id: uuid.UUID, request: Request,
 async def enable_engine(tenant_id: uuid.UUID, engine_id: str, request: Request,
                          user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.enable_engine(tenant_id, engine_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -450,6 +463,7 @@ async def enable_engine(tenant_id: uuid.UUID, engine_id: str, request: Request,
 async def disable_engine(tenant_id: uuid.UUID, engine_id: str, request: Request,
                           user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
                           svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.disable_engine(tenant_id, engine_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -461,6 +475,7 @@ async def disable_engine(tenant_id: uuid.UUID, engine_id: str, request: Request,
 async def bulk_enable(tenant_id: uuid.UUID, request: Request,
                        user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
                        svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.bulk_enable_engines(tenant_id, body.get("engine_ids", []))
     return ok(data, _meta(request).request_id, ENGINE_ID)
@@ -473,6 +488,7 @@ async def bulk_enable(tenant_id: uuid.UUID, request: Request,
 async def bulk_disable(tenant_id: uuid.UUID, request: Request,
                         user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
                         svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.bulk_disable_engines(tenant_id, body.get("engine_ids", []))
     return ok(data, _meta(request).request_id, ENGINE_ID)
@@ -483,8 +499,9 @@ async def bulk_disable(tenant_id: uuid.UUID, request: Request,
             summary="Get engine configuration for this tenant",
             response_model=ApiResponse[dict])
 async def get_engine_config(tenant_id: uuid.UUID, engine_id: str, request: Request,
-                             user: UserContext = Depends(get_current_user),
+                             user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
                              svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.get_engine_config(tenant_id, engine_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -496,6 +513,7 @@ async def get_engine_config(tenant_id: uuid.UUID, engine_id: str, request: Reque
 async def update_engine_config(tenant_id: uuid.UUID, engine_id: str, request: Request,
                                 user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
                                 svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.update_engine_config(tenant_id, engine_id, body)
     return ok(data, _meta(request).request_id, ENGINE_ID)
@@ -506,8 +524,9 @@ async def update_engine_config(tenant_id: uuid.UUID, engine_id: str, request: Re
              summary="Validate engine config without saving",
              response_model=ApiResponse[dict])
 async def validate_engine_config(tenant_id: uuid.UUID, engine_id: str, request: Request,
-                                  user: UserContext = Depends(get_current_user),
+                                  user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
                                   svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.validate_engine_config(engine_id, body)
     return ok(data, _meta(request).request_id, ENGINE_ID)
@@ -522,8 +541,9 @@ async def validate_engine_config(tenant_id: uuid.UUID, engine_id: str, request: 
             summary="List all feature flag overrides for this tenant",
             response_model=ApiResponse[dict])
 async def list_feature_flags(tenant_id: uuid.UUID, request: Request,
-                              user: UserContext = Depends(get_current_user),
+                              user: UserContext = Depends(require_permission(P.TENANT_FLAGS_MANAGE)),
                               svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.list_feature_flags(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -535,6 +555,7 @@ async def list_feature_flags(tenant_id: uuid.UUID, request: Request,
 async def set_feature_flag(tenant_id: uuid.UUID, flag_key: str, request: Request,
                             user: UserContext = Depends(require_permission(P.TENANT_FLAGS_MANAGE)),
                             svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.set_feature_flag(tenant_id, flag_key, body.get("value"), body.get("notes"))
     return ok(data, _meta(request).request_id, ENGINE_ID)
@@ -547,6 +568,7 @@ async def set_feature_flag(tenant_id: uuid.UUID, flag_key: str, request: Request
 async def delete_feature_flag(tenant_id: uuid.UUID, flag_key: str, request: Request,
                                user: UserContext = Depends(require_permission(P.TENANT_FLAGS_MANAGE)),
                                svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.delete_feature_flag(tenant_id, flag_key)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -556,8 +578,9 @@ async def delete_feature_flag(tenant_id: uuid.UUID, flag_key: str, request: Requ
             summary="Get the resolved effective value of a flag (platform → plan → tenant hierarchy)",
             response_model=ApiResponse[dict])
 async def resolve_feature_flag(tenant_id: uuid.UUID, flag_key: str, request: Request,
-                                user: UserContext = Depends(get_current_user),
+                                user: UserContext = Depends(require_permission(P.TENANT_FLAGS_MANAGE)),
                                 svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.resolve_feature_flag(tenant_id, flag_key)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -573,6 +596,7 @@ async def resolve_feature_flag(tenant_id: uuid.UUID, flag_key: str, request: Req
 async def get_billing(tenant_id: uuid.UUID, request: Request,
                        user: UserContext = Depends(require_permission(P.TENANT_BILLING_READ)),
                        svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.get_billing_summary(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -584,6 +608,7 @@ async def get_billing(tenant_id: uuid.UUID, request: Request,
 async def update_payment_method(tenant_id: uuid.UUID, request: Request,
                                  user: UserContext = Depends(require_permission(P.TENANT_BILLING_MANAGE)),
                                  svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.update_payment_method(tenant_id, body["gateway"], body["gateway_customer_id"])
     return ok(data, _meta(request).request_id, ENGINE_ID)
@@ -597,6 +622,7 @@ async def list_invoices(tenant_id: uuid.UUID, request: Request,
                          limit: int = Query(default=20, ge=1, le=100),
                          user: UserContext = Depends(require_permission(P.TENANT_BILLING_READ)),
                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.list_invoices(tenant_id, limit)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -608,6 +634,7 @@ async def list_invoices(tenant_id: uuid.UUID, request: Request,
 async def trigger_dunning(tenant_id: uuid.UUID, request: Request,
                            user: UserContext = Depends(require_super_admin),
                            svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.trigger_dunning(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -623,6 +650,7 @@ async def trigger_dunning(tenant_id: uuid.UUID, request: Request,
 async def request_data_export(tenant_id: uuid.UUID, request: Request,
                                user: UserContext = Depends(require_permission(P.TENANT_DATA_EXPORT)),
                                svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.request_data_export(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -634,6 +662,7 @@ async def request_data_export(tenant_id: uuid.UUID, request: Request,
 async def get_export_status(tenant_id: uuid.UUID, job_id: str, request: Request,
                              user: UserContext = Depends(require_permission(P.TENANT_DATA_EXPORT)),
                              svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.get_export_status(tenant_id, job_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -645,6 +674,7 @@ async def get_export_status(tenant_id: uuid.UUID, job_id: str, request: Request,
 async def gdpr_deletion(tenant_id: uuid.UUID, request: Request,
                          user: UserContext = Depends(require_permission(P.TENANT_DATA_DELETE)),
                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.request_gdpr_deletion(tenant_id, body.get("reason", "Customer request"))
     return ok(data, _meta(request).request_id, ENGINE_ID)
@@ -661,7 +691,8 @@ async def gdpr_deletion(tenant_id: uuid.UUID, request: Request,
 async def get_audit_log(tenant_id: uuid.UUID, request: Request,
                          limit: int = Query(default=50, ge=1, le=200),
                          cursor: str | None = Query(None),
-                         user: UserContext = Depends(get_current_user),
+                         user: UserContext = Depends(require_permission(P.AUTH_AUDIT_READ)),
                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.get_audit_log(tenant_id, limit, cursor)
     return ok(data, _meta(request).request_id, ENGINE_ID)

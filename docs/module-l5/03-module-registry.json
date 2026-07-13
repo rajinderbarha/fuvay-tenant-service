@@ -120,7 +120,8 @@
       "has_models": true,
       "matching_test_files": [
         "test_auth_login_fix.py",
-        "test_final_l5_05u_security_deposit_permission_authorization.py"
+        "test_final_l5_05u_security_deposit_permission_authorization.py",
+        "test_module_l5_01a_admin_finance_router_auth.py"
       ],
       "frontend_route_hits_super_admin": 0,
       "frontend_route_hits_tenant_portal": 0,
