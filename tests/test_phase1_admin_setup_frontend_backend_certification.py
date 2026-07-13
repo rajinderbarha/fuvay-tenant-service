@@ -31,8 +31,11 @@ def test_login_events_endpoint_supports_email_and_event_type_filters():
 
 
 def test_login_events_endpoint_requires_authentication():
-    # Same file's other admin_audit_router endpoints use get_current_user;
-    # confirm the new endpoint follows the same auth dependency pattern.
+    # MODULE-L5-01B: this whole router was found to be gated only by bare
+    # get_current_user (no role/permission check at all) and was fixed to
+    # require_super_admin, matching the file's own audit/security-sensitivity
+    # level. Accept either marker so this test reflects genuine improvement
+    # rather than pinning to the since-fixed, less-secure pattern.
     idx = NOTIF_ROUTER.index('"/login-events"')
     snippet = NOTIF_ROUTER[idx:idx + 700]
-    assert "get_current_user" in snippet
+    assert "get_current_user" in snippet or "require_super_admin" in snippet

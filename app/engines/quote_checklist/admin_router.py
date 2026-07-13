@@ -1,7 +1,7 @@
 """Sprint 22 — Admin checklist template + job checklist endpoints."""
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_super_admin
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.engines.quote_checklist.checklist_service import ServiceChecklistService
@@ -23,7 +23,7 @@ def _rid(r: Request) -> str:
 @admin_router.post("")
 async def admin_create_template(
     body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin), db: AsyncSession = Depends(get_db),
 ):
     data = await checklist_svc.create_template(
         db,
@@ -41,7 +41,7 @@ async def admin_create_template(
 @admin_router.get("")
 async def admin_list_templates(
     r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin), db: AsyncSession = Depends(get_db),
 ):
     data = await checklist_svc.list_templates(db)
     return ok(data, _rid(r), "admin_list_templates")
@@ -50,7 +50,7 @@ async def admin_list_templates(
 @admin_router.get("/{template_id}")
 async def admin_get_template(
     template_id: str, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin), db: AsyncSession = Depends(get_db),
 ):
     data = await checklist_svc.get_template(db, template_id)
     return ok(data, _rid(r), "admin_get_template")
@@ -59,7 +59,7 @@ async def admin_get_template(
 @admin_router.post("/{template_id}/items")
 async def admin_add_template_item(
     template_id: str, body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin), db: AsyncSession = Depends(get_db),
 ):
     data = await checklist_svc.add_template_item(
         db, template_id,
@@ -78,7 +78,7 @@ async def admin_add_template_item(
 @admin_router.get("/jobs/{job_id}")
 async def admin_job_checklists(
     job_id: str, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin), db: AsyncSession = Depends(get_db),
 ):
     # admin can query any tenant's job checklists — omit tenant filter
     from sqlalchemy import select
@@ -99,7 +99,7 @@ async def admin_job_checklists(
 @admin_quote_router.get("/jobs/{job_id}")
 async def admin_list_job_quotes(
     job_id: str, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin), db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import select
     from app.engines.quote_checklist.models import ServiceJobQuote
@@ -116,7 +116,7 @@ async def admin_list_job_quotes(
 @admin_quote_router.get("/{quote_id}")
 async def admin_get_quote(
     quote_id: str, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin), db: AsyncSession = Depends(get_db),
 ):
     data = await quote_svc.get_quote(db, quote_id)
     return ok(data, _rid(r), "admin_get_quote")
@@ -125,7 +125,7 @@ async def admin_get_quote(
 @admin_quote_router.get("/{quote_id}/events")
 async def admin_quote_events(
     quote_id: str, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin), db: AsyncSession = Depends(get_db),
 ):
     data = await quote_svc.list_quote_events(db, quote_id)
     return ok(data, _rid(r), "admin_quote_events")

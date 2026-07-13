@@ -60,6 +60,7 @@ async def list_types(
     sort_by: str = Query("name"),
     sort_dir: str = Query("asc"),
     s: TypesService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ) -> ApiResponse[dict]:
     return ok(
         await s.list_types(q=q, category_id=category_id, status=status, mapped=mapped,
@@ -136,6 +137,7 @@ async def list_type_mappings(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     s: TypesService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ) -> ApiResponse[dict]:
     return ok(
         await s.list_type_mappings(type_id=type_id, category_id=category_id,
@@ -201,6 +203,7 @@ async def list_brand_mappings(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     s: TypesService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ) -> ApiResponse[dict]:
     return ok(
         await s.list_brand_mappings(brand_id=brand_id, category_id=category_id,

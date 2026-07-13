@@ -23,7 +23,7 @@ admin_router = APIRouter(prefix="/v1/admin", tags=["Admin — Provider Managemen
 async def get_providers_summary(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     """All-providers summary counts for the enterprise directory page."""
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
@@ -115,7 +115,7 @@ WHERE t.terminated_at IS NULL
 async def get_new_requests_summary(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     """Summary counts for the New Business Requests page."""
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
@@ -168,7 +168,7 @@ async def list_new_requests(
     sort_by: str = Query("created_at"),
     sort_dir: str = Query("desc"),
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     """Providers that signed up but haven't submitted for review yet."""
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
@@ -254,7 +254,7 @@ async def send_provider_reminder(
 @admin_router.get("/engines")
 async def list_engines_admin(
     request: Request,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     return ok(registry.summary(), request_id=rid)
@@ -263,7 +263,7 @@ async def list_engines_admin(
 @admin_router.get("/engines/health")
 async def get_engines_health(
     request: Request,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     return ok(registry.summary(), request_id=rid)
@@ -272,7 +272,7 @@ async def get_engines_health(
 @admin_router.get("/engine-audit-logs")
 async def get_engine_audit_logs(
     request: Request,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     return ok({"logs": [], "total": 0}, request_id=rid)
@@ -585,7 +585,7 @@ async def list_bookability(
     category_id: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     q = "SELECT pvs.*, t.tenant_name as tenant_name FROM provider_visibility_statuses pvs LEFT JOIN tenants t ON t.id = pvs.tenant_id WHERE 1=1"
@@ -610,7 +610,7 @@ async def list_bookability(
 async def get_provider_bookability(
     tenant_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     row = await db.execute(text("SELECT pvs.*, t.tenant_name as tenant_name FROM provider_visibility_statuses pvs LEFT JOIN tenants t ON t.id = pvs.tenant_id WHERE pvs.tenant_id=:tid ORDER BY pvs.created_at DESC LIMIT 1"), {"tid": str(tenant_id)})
@@ -625,7 +625,7 @@ async def get_bookability_audit_logs(
     tenant_id: uuid.UUID, request: Request,
     limit: int = Query(20, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     rows_result = await db.execute(text("""
@@ -811,7 +811,7 @@ async def remove_bookability_override(
 @admin_router.get("/bookability/rules")
 async def list_bookability_rules(
     request: Request,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     return ok({"rules": [], "total": 0}, request_id=rid)
@@ -821,7 +821,7 @@ async def list_bookability_rules(
 async def bookability_summary(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     row = await db.execute(text("SELECT COUNT(*) as total, SUM(CASE WHEN is_bookable THEN 1 ELSE 0 END) as bookable, SUM(CASE WHEN is_visible THEN 1 ELSE 0 END) as visible FROM provider_visibility_statuses"))
@@ -837,7 +837,7 @@ async def list_monetization_configs(
     category_id: Optional[str] = Query(None),
     limit: int = Query(50),
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     q = "SELECT * FROM provider_monetization_statuses WHERE 1=1"
@@ -858,7 +858,7 @@ async def list_provider_monetization(
     category_id: Optional[str] = Query(None),
     limit: int = Query(50),
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     q = "SELECT pms.*, t.tenant_name as tenant_name FROM provider_monetization_statuses pms LEFT JOIN tenants t ON t.id = pms.tenant_id WHERE 1=1"
@@ -877,7 +877,7 @@ async def list_provider_monetization(
 async def get_provider_monetization(
     tenant_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     row = await db.execute(text("SELECT pms.*, t.tenant_name as tenant_name FROM provider_monetization_statuses pms LEFT JOIN tenants t ON t.id = pms.tenant_id WHERE pms.tenant_id=:tid LIMIT 1"), {"tid": str(tenant_id)})
@@ -890,7 +890,7 @@ async def get_provider_monetization(
 @admin_router.post("/monetization/providers/{tenant_id}/sync")
 async def sync_monetization(
     tenant_id: uuid.UUID, request: Request,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     return ok({"tenant_id": str(tenant_id), "synced": True}, request_id=rid)
@@ -899,7 +899,7 @@ async def sync_monetization(
 @admin_router.get("/monetization/audit-logs")
 async def monetization_audit_logs(
     request: Request,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     return ok({"logs": [], "total": 0}, request_id=rid)

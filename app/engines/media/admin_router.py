@@ -37,17 +37,17 @@ def _svc(
 # ── Summary + filter options ─────────────────────────────────────────────────
 
 @router.get("/summary", response_model=ApiResponse[dict])
-async def get_media_summary(r: Request, svc: MediaLibraryAdminService = Depends(_svc)):
+async def get_media_summary(r: Request, svc: MediaLibraryAdminService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await svc.get_summary(), _rid(r))
 
 
 @router.get("/storage-summary", response_model=ApiResponse[dict])
-async def get_storage_summary(r: Request, svc: MediaLibraryAdminService = Depends(_svc)):
+async def get_storage_summary(r: Request, svc: MediaLibraryAdminService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await svc.get_storage_summary(), _rid(r))
 
 
 @router.get("/filter-options", response_model=ApiResponse[dict])
-async def get_filter_options(r: Request, svc: MediaLibraryAdminService = Depends(_svc)):
+async def get_filter_options(r: Request, svc: MediaLibraryAdminService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await svc.get_filter_options(), _rid(r))
 
 
@@ -71,6 +71,7 @@ async def list_media(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.list_assets_admin(
         q=q, context=context, owner_type=owner_type, visibility=visibility,
@@ -87,6 +88,7 @@ async def get_media_detail(
     r: Request,
     media_id: uuid.UUID,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.get_detail(media_id), _rid(r))
 
@@ -96,6 +98,7 @@ async def get_linked_records(
     r: Request,
     media_id: uuid.UUID,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.get_linked_records(media_id), _rid(r))
 
@@ -106,6 +109,7 @@ async def get_audit_logs(
     media_id: uuid.UUID,
     limit: int = Query(50, ge=1, le=200),
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.get_audit_logs(media_id, limit=limit), _rid(r))
 
@@ -117,6 +121,7 @@ async def create_signed_preview_url(
     r: Request,
     media_id: uuid.UUID,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.create_signed_preview_url(media_id), _rid(r))
 
@@ -126,6 +131,7 @@ async def create_signed_download_url(
     r: Request,
     media_id: uuid.UUID,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.create_signed_download_url(media_id), _rid(r))
 
@@ -138,6 +144,7 @@ async def archive_media(
     media_id: uuid.UUID,
     payload: dict = {},
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.archive_asset(media_id, reason=payload.get("reason")), _rid(r))
 
@@ -147,6 +154,7 @@ async def restore_media(
     r: Request,
     media_id: uuid.UUID,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.restore_asset(media_id), _rid(r))
 
@@ -157,6 +165,7 @@ async def delete_media(
     media_id: uuid.UUID,
     force: bool = Query(False),
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.delete_asset(media_id, force=force), _rid(r))
 
@@ -167,6 +176,7 @@ async def change_visibility(
     media_id: uuid.UUID,
     payload: dict,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     is_public = bool(payload.get("is_public", False))
     return ok(await svc.change_visibility(media_id, is_public), _rid(r))
@@ -180,6 +190,7 @@ async def flag_media(
     media_id: uuid.UUID,
     payload: dict,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     reason = str(payload.get("reason", "flagged by admin"))[:80]
     return ok(await svc.flag_asset(media_id, reason=reason), _rid(r))
@@ -190,6 +201,7 @@ async def mark_clean(
     r: Request,
     media_id: uuid.UUID,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.mark_clean(media_id), _rid(r))
 
@@ -200,6 +212,7 @@ async def quarantine_media(
     media_id: uuid.UUID,
     payload: dict,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     reason = str(payload.get("reason", "quarantined by admin"))[:80]
     return ok(await svc.quarantine_asset(media_id, reason=reason), _rid(r))
@@ -212,6 +225,7 @@ async def bulk_archive(
     r: Request,
     payload: dict,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     ids = payload.get("ids", [])
     return ok(await svc.bulk_archive(ids), _rid(r))
@@ -222,6 +236,7 @@ async def bulk_delete(
     r: Request,
     payload: dict,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     ids = payload.get("ids", [])
     force = bool(payload.get("force", False))
@@ -233,6 +248,7 @@ async def bulk_change_visibility(
     r: Request,
     payload: dict,
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     ids = payload.get("ids", [])
     is_public = bool(payload.get("is_public", False))
@@ -256,6 +272,7 @@ async def export_csv(
     status: str | None = Query(None),
     is_flagged: bool | None = Query(None),
     svc: MediaLibraryAdminService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     csv_text = await svc.export_csv(context=context, status=status, is_flagged=is_flagged)
     return StreamingResponse(

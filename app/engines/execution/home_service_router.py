@@ -359,7 +359,7 @@ admin_router = APIRouter(prefix="/v1/admin/service-jobs", tags=["Sprint21-Admin-
 
 
 @admin_router.get("/{job_id}/execution-timeline")
-async def admin_get_timeline(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def admin_get_timeline(job_id: uuid.UUID, r: Request, user=Depends(require_super_admin), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     from sqlalchemy import select
     from app.engines.final_records.models import ServiceJob
@@ -373,7 +373,7 @@ async def admin_get_timeline(job_id: uuid.UUID, r: Request, user=Depends(get_cur
 
 
 @admin_router.get("/{job_id}/notes")
-async def admin_get_notes(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def admin_get_notes(job_id: uuid.UUID, r: Request, user=Depends(require_super_admin), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     from sqlalchemy import select
     from app.engines.final_records.models import ServiceJob

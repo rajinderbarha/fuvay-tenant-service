@@ -176,7 +176,7 @@ async def _linked_counts(db: AsyncSession, category_ids: list[str]) -> dict[str,
 @router.get("/summary", summary="Category summary cards")
 async def get_categories_summary(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     sql = text("""
@@ -256,7 +256,7 @@ async def list_categories(
     page_size: int = Query(50, ge=1, le=200),
     sort_by: str = Query("display_order"),
     sort_dir: str = Query("asc"),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     svc: AdminCatalogService = Depends(_svc),
     db: AsyncSession = Depends(get_db),
 ):
@@ -352,7 +352,7 @@ async def export_categories(
     r: Request,
     status: Optional[str] = Query(None),
     vertical_type: Optional[str] = Query(None),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     svc: AdminCatalogService = Depends(_svc),
     db: AsyncSession = Depends(get_db),
 ):
@@ -406,7 +406,7 @@ async def export_categories(
 async def get_category(
     category_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     svc: AdminCatalogService = Depends(_svc),
     db: AsyncSession = Depends(get_db),
 ):
@@ -436,7 +436,7 @@ async def update_category(
 async def get_category_runtime(
     category_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     svc: AdminCatalogService = Depends(_svc),
     db: AsyncSession = Depends(get_db),
 ):
@@ -468,7 +468,7 @@ async def update_category_runtime(
 async def get_category_readiness(
     category_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     svc: AdminCatalogService = Depends(_svc),
     db: AsyncSession = Depends(get_db),
 ):
@@ -519,7 +519,7 @@ async def deactivate_category(
 async def list_category_engines(
     category_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     svc: AdminCatalogService = Depends(_svc),
 ):
     cat = await svc.get_category(category_id)
@@ -581,7 +581,7 @@ async def set_primary_engine(
 async def list_dashboard_modules(
     category_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     svc: AdminCatalogService = Depends(_svc),
 ):
     cat = await svc.get_category(category_id)

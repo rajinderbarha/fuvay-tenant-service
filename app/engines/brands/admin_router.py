@@ -41,7 +41,7 @@ async def list_brands(
     q: str | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_brands(status=status, is_active=is_active, category_id=category_id,
@@ -62,7 +62,7 @@ async def create_brand(
 @router.get("/brands/{brand_id}", response_model=ApiResponse[dict], summary="Get brand")
 async def get_brand(
     r: Request, brand_id: uuid.UUID,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.get_brand(brand_id), _rid(r), "brands")
@@ -131,7 +131,7 @@ async def map_brand_categories(
             summary="List brand category mappings")
 async def list_brand_categories(
     r: Request, brand_id: uuid.UUID,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_brand_categories(brand_id), _rid(r), "brands")
@@ -152,7 +152,7 @@ async def map_brand_services(
             summary="List brand service mappings")
 async def list_brand_services(
     r: Request, brand_id: uuid.UUID,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_brand_services(brand_id), _rid(r), "brands")
@@ -167,7 +167,7 @@ async def list_brand_requests(
     r: Request,
     status: str | None = Query(None),
     tenant_id: uuid.UUID | None = Query(None),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_brand_requests(status=status, tenant_id=tenant_id), _rid(r), "brands")
@@ -216,7 +216,7 @@ async def list_brand_templates(
     r: Request,
     status: str | None = Query(None),
     category_id: uuid.UUID | None = Query(None),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_templates(status=status, category_id=category_id), _rid(r), "brands")

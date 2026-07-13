@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import P, require_permission
-from app.dependencies.auth import UserContext
+from app.dependencies.auth import UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.finance_hub.service import FinanceHubService
 from app.schemas.base import ApiResponse, ok
@@ -32,12 +32,12 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/summary", response_model=ApiResponse[dict], summary="Finance Hub summary cards")
-async def finance_summary(r: Request, s: FinanceHubService = Depends(_svc)):
+async def finance_summary(r: Request, s: FinanceHubService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_finance_summary(), _rid(r), ENGINE_ID)
 
 
 @router.get("/overview", response_model=ApiResponse[dict], summary="Finance Hub overview insights")
-async def finance_overview(r: Request, s: FinanceHubService = Depends(_svc)):
+async def finance_overview(r: Request, s: FinanceHubService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_finance_overview(), _rid(r), ENGINE_ID)
 
 

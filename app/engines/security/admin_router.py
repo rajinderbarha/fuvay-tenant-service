@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import P, require_permission
-from app.dependencies.auth import UserContext
+from app.dependencies.auth import UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.security.admin_service import SecurityAdminService
 from app.schemas.base import ApiResponse, ok
@@ -35,7 +35,7 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/overview", response_model=ApiResponse[dict], summary="SOC overview")
-async def overview(r: Request, s: SecurityAdminService = Depends(_svc)):
+async def overview(r: Request, s: SecurityAdminService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_security_overview(), _rid(r), ENGINE_ID)
 
 

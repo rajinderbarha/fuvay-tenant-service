@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import P, require_permission
-from app.dependencies.auth import UserContext
+from app.dependencies.auth import UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.settings_engine.service import SettingsService
 from app.exceptions import NotFoundException
@@ -38,7 +38,7 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/summary", summary="Settings summary cards")
-async def summary(r: Request, s: SettingsService = Depends(_svc)):
+async def summary(r: Request, s: SettingsService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_summary(), _rid(r), ENGINE_ID)
 
 

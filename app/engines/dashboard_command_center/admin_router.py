@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import UserContext
+from app.dependencies.auth import UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.core.permissions import P, require_permission
 from app.core.audit import record_platform_audit
@@ -28,12 +28,12 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db),
 
 
 @router.get("/executive-summary", summary="Executive KPI summary")
-async def executive_summary(r: Request, s: DashboardCommandCenterService = Depends(_svc)):
+async def executive_summary(r: Request, s: DashboardCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_executive_summary(), _rid(r), "dashboard_command_center")
 
 
 @router.get("/platform-health", summary="Platform health score")
-async def platform_health(r: Request, s: DashboardCommandCenterService = Depends(_svc)):
+async def platform_health(r: Request, s: DashboardCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_platform_health(), _rid(r), "dashboard_command_center")
 
 
@@ -46,12 +46,12 @@ async def finance_snapshot(r: Request, date_from: Optional[str] = Query(None), d
 
 
 @router.get("/tenant-lifecycle", summary="Tenant lifecycle snapshot")
-async def tenant_lifecycle(r: Request, s: DashboardCommandCenterService = Depends(_svc)):
+async def tenant_lifecycle(r: Request, s: DashboardCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_tenant_lifecycle(), _rid(r), "dashboard_command_center")
 
 
 @router.get("/home-services-summary", summary="Home Services vertical summary (shown as its own dashboard section)")
-async def home_services_summary(r: Request, s: DashboardCommandCenterService = Depends(_svc)):
+async def home_services_summary(r: Request, s: DashboardCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_home_services_summary(), _rid(r), "dashboard_command_center")
 
 
@@ -73,6 +73,7 @@ async def live_operations(r: Request, limit: int = Query(30, le=200),
 
 @router.get("/trends", summary="Trend charts")
 async def trends(r: Request, date_from: Optional[str] = Query(None), date_to: Optional[str] = Query(None),
+    u: UserContext = Depends(require_super_admin),
                   vertical: Optional[str] = Query(None), s: DashboardCommandCenterService = Depends(_svc)):
     return ok(await s.get_trends(date_from, date_to, vertical), _rid(r), "dashboard_command_center")
 
@@ -126,7 +127,7 @@ async def engine_health(r: Request, db: AsyncSession = Depends(get_db),
 
 
 @router.get("/at-risk-tenants", summary="At-risk tenants panel")
-async def at_risk_tenants(r: Request, limit: int = Query(50, le=500), s: DashboardCommandCenterService = Depends(_svc)):
+async def at_risk_tenants(r: Request, limit: int = Query(50, le=500), s: DashboardCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_at_risk_tenants(limit), _rid(r), "dashboard_command_center")
 
 
@@ -138,7 +139,7 @@ async def compliance_security(r: Request, db: AsyncSession = Depends(get_db),
 
 
 @router.get("/trust-quality", summary="Trust & quality snapshot")
-async def trust_quality(r: Request, s: DashboardCommandCenterService = Depends(_svc)):
+async def trust_quality(r: Request, s: DashboardCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_trust_quality(), _rid(r), "dashboard_command_center")
 
 
@@ -152,6 +153,7 @@ async def activity_feed(r: Request, limit: int = Query(30, le=200),
 
 @router.get("/category-performance", summary="Category performance snapshot")
 async def category_performance(r: Request, date_from: Optional[str] = Query(None), date_to: Optional[str] = Query(None),
+    u: UserContext = Depends(require_super_admin),
                                 s: DashboardCommandCenterService = Depends(_svc)):
     return ok(await s.get_category_performance(date_from, date_to), _rid(r), "dashboard_command_center")
 

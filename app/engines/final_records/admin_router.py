@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import require_super_admin, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 from app.engines.final_records.models import (
@@ -59,7 +59,7 @@ async def admin_list_bookings(
     tenant_id: uuid.UUID | None = Query(None),
     limit:     int              = Query(50, ge=1, le=200),
     offset:    int              = Query(0, ge=0),
-    user:      UserContext      = Depends(get_current_user),
+    user:      UserContext      = Depends(require_super_admin),
 ):
     db = await anext(get_db())
     try:
@@ -84,7 +84,7 @@ async def admin_list_bookings(
 @router.get("/bookings/{booking_id}", summary="Get a service booking (admin)",
             response_model=ApiResponse)
 async def admin_get_booking(booking_id: uuid.UUID, r: Request,
-                             user: UserContext = Depends(get_current_user)):
+                             user: UserContext = Depends(require_super_admin)):
     db = await anext(get_db())
     result = await db.execute(select(ServiceBooking).where(ServiceBooking.id == booking_id))
     booking = result.scalars().first()
@@ -105,7 +105,7 @@ async def admin_jobs_summary(
     r:         Request,
     tenant_id: uuid.UUID | None = Query(None),
     status:    str | None       = Query(None),
-    user:      UserContext      = Depends(get_current_user),
+    user:      UserContext      = Depends(require_super_admin),
 ):
     from app.engines.final_records.sla_summary import compute_summary
     db = await anext(get_db())
@@ -120,7 +120,7 @@ async def admin_list_jobs(
     tenant_id: uuid.UUID | None = Query(None),
     limit:     int              = Query(50, ge=1, le=200),
     offset:    int              = Query(0, ge=0),
-    user:      UserContext      = Depends(get_current_user),
+    user:      UserContext      = Depends(require_super_admin),
 ):
     from app.engines.final_records.sla_summary import attach_sla
     db = await anext(get_db())
@@ -169,7 +169,7 @@ async def admin_list_jobs(
 
 @router.get("/jobs/{job_id}", summary="Get a service job (admin)", response_model=ApiResponse)
 async def admin_get_job(job_id: uuid.UUID, r: Request,
-                         user: UserContext = Depends(get_current_user)):
+                         user: UserContext = Depends(require_super_admin)):
     from app.engines.final_records.sla_summary import attach_sla
     db = await anext(get_db())
     result = await db.execute(select(ServiceJob).where(ServiceJob.id == job_id))
@@ -216,7 +216,7 @@ async def admin_list_appointments(
     tenant_id: uuid.UUID | None = Query(None),
     limit:     int              = Query(50, ge=1, le=200),
     offset:    int              = Query(0, ge=0),
-    user:      UserContext      = Depends(get_current_user),
+    user:      UserContext      = Depends(require_super_admin),
 ):
     db = await anext(get_db())
     filters = []
@@ -239,7 +239,7 @@ async def admin_list_appointments(
 @router.get("/appointments/{appointment_id}", summary="Get a coaching appointment (admin)",
             response_model=ApiResponse)
 async def admin_get_appointment(appointment_id: uuid.UUID, r: Request,
-                                 user: UserContext = Depends(get_current_user)):
+                                 user: UserContext = Depends(require_super_admin)):
     db = await anext(get_db())
     result = await db.execute(
         select(CoachingAppointment).where(CoachingAppointment.id == appointment_id)
@@ -261,7 +261,7 @@ async def admin_list_leads(
     intent:    str | None       = Query(None),
     limit:     int              = Query(50, ge=1, le=200),
     offset:    int              = Query(0, ge=0),
-    user:      UserContext      = Depends(get_current_user),
+    user:      UserContext      = Depends(require_super_admin),
 ):
     db = await anext(get_db())
     filters = []
@@ -286,7 +286,7 @@ async def admin_list_leads(
 @router.get("/leads/{lead_id}", summary="Get a real estate lead (admin)",
             response_model=ApiResponse)
 async def admin_get_lead(lead_id: uuid.UUID, r: Request,
-                          user: UserContext = Depends(get_current_user)):
+                          user: UserContext = Depends(require_super_admin)):
     db = await anext(get_db())
     result = await db.execute(select(RealEstateLead).where(RealEstateLead.id == lead_id))
     lead = result.scalars().first()
@@ -305,7 +305,7 @@ async def admin_list_audit_logs(
     draft_type: str | None       = Query(None),
     limit:      int              = Query(50, ge=1, le=200),
     offset:     int              = Query(0, ge=0),
-    user:       UserContext      = Depends(get_current_user),
+    user:       UserContext      = Depends(require_super_admin),
 ):
     db = await anext(get_db())
     q = select(FinalCreationAuditLog)
@@ -328,7 +328,7 @@ async def admin_list_confirmations(
     status:     str | None = Query(None),
     limit:      int        = Query(50, ge=1, le=200),
     offset:     int        = Query(0, ge=0),
-    user:       UserContext = Depends(get_current_user),
+    user:       UserContext = Depends(require_super_admin),
 ):
     db = await anext(get_db())
     q = select(CustomerBookingConfirmation)

@@ -35,6 +35,7 @@ def _rid(r: Request) -> str:
             summary="Enterprise compliance summary — 10 dashboard cards",
             response_model=ApiResponse[dict])
 async def get_summary(r: Request,
+    u: UserContext = Depends(require_super_admin),
                       s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_enterprise_summary(), _rid(r), "compliance_admin")
 
@@ -43,6 +44,7 @@ async def get_summary(r: Request,
             summary="Alias for summary — compliance overview",
             response_model=ApiResponse[dict])
 async def get_overview(r: Request,
+    u: UserContext = Depends(require_super_admin),
                        s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_enterprise_summary(), _rid(r), "compliance_admin")
 
@@ -53,6 +55,7 @@ async def get_overview(r: Request,
              summary="Refresh SLA statuses on all open requests",
              response_model=ApiResponse[dict])
 async def refresh_sla(r: Request,
+    u: UserContext = Depends(require_super_admin),
                       s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.refresh_sla_statuses(), _rid(r), "compliance_admin")
 
@@ -72,6 +75,7 @@ async def list_requests(
         search: str | None = Query(None),
         page: int = Query(1, ge=1),
         limit: int = Query(50, ge=1, le=200),
+    u: UserContext = Depends(require_super_admin),
         s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.list_requests(
         request_type=request_type, status=req_status, sla_status=sla_status,
@@ -84,6 +88,7 @@ async def list_requests(
              status_code=status.HTTP_201_CREATED,
              response_model=ApiResponse[dict])
 async def create_request(r: Request,
+    u: UserContext = Depends(require_super_admin),
                          s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.create_request(body), _rid(r), "compliance_admin")
@@ -93,6 +98,7 @@ async def create_request(r: Request,
             summary="Get enterprise request detail with items and audit trail",
             response_model=ApiResponse[dict])
 async def get_request(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                       s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_request(request_id), _rid(r), "compliance_admin")
 
@@ -101,6 +107,7 @@ async def get_request(request_id: uuid.UUID, r: Request,
              summary="Mark identity as verified for this request",
              response_model=ApiResponse[dict])
 async def verify_identity(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                           s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.verify_identity(request_id, body.get("notes")), _rid(r), "compliance_admin")
@@ -110,6 +117,7 @@ async def verify_identity(request_id: uuid.UUID, r: Request,
              summary="Scan data modules and create request inventory items",
              response_model=ApiResponse[dict])
 async def scan_data(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                     s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.scan_data(request_id), _rid(r), "compliance_admin")
 
@@ -118,6 +126,7 @@ async def scan_data(request_id: uuid.UUID, r: Request,
              summary="Approve (or partially approve) a compliance request",
              response_model=ApiResponse[dict])
 async def approve_request(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                           s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.approve_request(request_id, body.get("notes")), _rid(r), "compliance_admin")
@@ -127,6 +136,7 @@ async def approve_request(request_id: uuid.UUID, r: Request,
              summary="Reject a compliance request — rejection reason required",
              response_model=ApiResponse[dict])
 async def reject_request(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                          s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.reject_request(request_id, body.get("reason", "")),
@@ -137,6 +147,7 @@ async def reject_request(request_id: uuid.UUID, r: Request,
              summary="Apply a legal/statutory exemption to a specific request item",
              response_model=ApiResponse[dict])
 async def apply_exemption(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                           s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.apply_exemption(
@@ -148,6 +159,7 @@ async def apply_exemption(request_id: uuid.UUID, r: Request,
              summary="Execute the approved compliance request",
              response_model=ApiResponse[dict])
 async def process_request(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                           s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.process_request(request_id), _rid(r), "compliance_admin")
 
@@ -156,6 +168,7 @@ async def process_request(request_id: uuid.UUID, r: Request,
             summary="Audit trail for a specific compliance request",
             response_model=ApiResponse[dict])
 async def get_request_audit(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                             s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_request_audit(request_id), _rid(r), "compliance_admin")
 
@@ -172,6 +185,7 @@ async def list_consents(
         action: str | None = Query(None),
         page: int = Query(1, ge=1),
         limit: int = Query(50, ge=1, le=200),
+    u: UserContext = Depends(require_super_admin),
         s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.list_consent_records(
         subject_id=subject_id, consent_type=consent_type,
@@ -182,6 +196,7 @@ async def list_consents(
              summary="Admin revoke / withdraw consent for a user + type",
              response_model=ApiResponse[dict])
 async def revoke_consent(user_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                          s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.revoke_consent(
@@ -198,6 +213,7 @@ async def list_exports(
         req_status: str | None = Query(None, alias="status"),
         page: int = Query(1, ge=1),
         limit: int = Query(50, ge=1, le=200),
+    u: UserContext = Depends(require_super_admin),
         s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.list_exports(status=req_status, page=page, limit=limit),
               _rid(r), "compliance_admin")
@@ -207,6 +223,7 @@ async def list_exports(
             summary="Get export detail",
             response_model=ApiResponse[dict])
 async def get_export(export_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                      s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_export(export_id), _rid(r), "compliance_admin")
 
@@ -215,6 +232,7 @@ async def get_export(export_id: uuid.UUID, r: Request,
              summary="Manually expire an export file",
              response_model=ApiResponse[dict])
 async def expire_export(export_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                         s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.expire_export(export_id), _rid(r), "compliance_admin")
 
@@ -225,6 +243,7 @@ async def expire_export(export_id: uuid.UUID, r: Request,
             summary="List all data retention policies",
             response_model=ApiResponse[dict])
 async def list_retention(r: Request,
+    u: UserContext = Depends(require_super_admin),
                          s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.list_retention_policies(), _rid(r), "compliance_admin")
 
@@ -233,6 +252,7 @@ async def list_retention(r: Request,
              summary="Create or update a retention policy",
              response_model=ApiResponse[dict])
 async def create_retention(r: Request,
+    u: UserContext = Depends(require_super_admin),
                            s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.create_retention_policy(body), _rid(r), "compliance_admin")
@@ -242,6 +262,7 @@ async def create_retention(r: Request,
             summary="Update retention policy for a specific table",
             response_model=ApiResponse[dict])
 async def update_retention(table_name: str, r: Request,
+    u: UserContext = Depends(require_super_admin),
                            s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.update_retention_policy(table_name, body), _rid(r), "compliance_admin")
@@ -312,6 +333,7 @@ async def get_health(r: Request, s: ComplianceEnterpriseService = Depends(_svc))
             summary="Pending compliance action queue, prioritized by SLA risk",
             response_model=ApiResponse[dict])
 async def get_action_queue(r: Request, limit: int = Query(50, le=500),
+    u: UserContext = Depends(require_super_admin),
                             s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_action_queue(limit), _rid(r), "compliance_admin")
 
@@ -320,6 +342,7 @@ async def get_action_queue(r: Request, limit: int = Query(50, le=500),
              summary="Assign a compliance request to an admin owner",
              response_model=ApiResponse[dict])
 async def assign_request(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                          s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.assign_action(request_id, uuid.UUID(str(body["assigned_to_user_id"]))),
@@ -330,6 +353,7 @@ async def assign_request(request_id: uuid.UUID, r: Request,
              summary="Escalate a compliance request to critical priority",
              response_model=ApiResponse[dict])
 async def escalate_request(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                            s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.escalate_action(request_id, body.get("reason", "")), _rid(r), "compliance_admin")
@@ -341,6 +365,7 @@ async def escalate_request(request_id: uuid.UUID, r: Request,
             summary="Affected data map for a compliance request",
             response_model=ApiResponse[dict])
 async def get_data_map(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                        s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_data_map(request_id), _rid(r), "compliance_admin")
 
@@ -349,6 +374,7 @@ async def get_data_map(request_id: uuid.UUID, r: Request,
              summary="Re-scan and refresh the affected data map",
              response_model=ApiResponse[dict])
 async def refresh_data_map(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                            s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     await s.scan_data(request_id)
     return ok(await s.get_data_map(request_id), _rid(r), "compliance_admin")
@@ -361,6 +387,7 @@ async def refresh_data_map(request_id: uuid.UUID, r: Request,
             response_model=ApiResponse[dict])
 async def list_legal_holds(r: Request, hold_status: str | None = Query(None, alias="status"),
                             page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200),
+    u: UserContext = Depends(require_super_admin),
                             s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.list_legal_holds(status=hold_status, page=page, limit=limit),
               _rid(r), "compliance_admin")
@@ -371,6 +398,7 @@ async def list_legal_holds(r: Request, hold_status: str | None = Query(None, ali
              status_code=status.HTTP_201_CREATED,
              response_model=ApiResponse[dict])
 async def apply_legal_hold(r: Request,
+    u: UserContext = Depends(require_super_admin),
                            s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.apply_legal_hold(body), _rid(r), "compliance_admin")
@@ -380,6 +408,7 @@ async def apply_legal_hold(r: Request,
              summary="Release a legal hold — reason required",
              response_model=ApiResponse[dict])
 async def release_legal_hold(hold_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                              s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.release_legal_hold(hold_id, body.get("reason", "")),
@@ -392,6 +421,7 @@ async def release_legal_hold(hold_id: uuid.UUID, r: Request,
              summary="Generate a full evidence/audit package for a request",
              response_model=ApiResponse[dict])
 async def generate_evidence_pack(request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin),
                                  s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.generate_evidence_pack(request_id), _rid(r), "compliance_admin")
 
@@ -401,6 +431,7 @@ async def generate_evidence_pack(request_id: uuid.UUID, r: Request,
             response_model=ApiResponse[dict])
 async def list_evidence_packs(r: Request, request_id: uuid.UUID | None = Query(None),
                                page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200),
+    u: UserContext = Depends(require_super_admin),
                                s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.list_evidence_packs(request_id=request_id, page=page, limit=limit),
               _rid(r), "compliance_admin")

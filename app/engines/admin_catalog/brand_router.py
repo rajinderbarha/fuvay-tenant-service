@@ -46,7 +46,7 @@ async def list_brands(
     search: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_brands(status=status, category_id=category_id, search=search,
@@ -80,7 +80,7 @@ async def seed_brands(
 async def get_brand(
     brand_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.get_brand(brand_id), _rid(r))
@@ -140,7 +140,7 @@ async def archive_brand(
 async def list_category_mappings(
     brand_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_category_mappings(brand_id), _rid(r))
@@ -180,7 +180,7 @@ async def unmap_brand_category(
 async def list_service_mappings(
     brand_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_service_mappings(brand_id), _rid(r))
@@ -302,7 +302,7 @@ async def list_brand_templates(
     r: Request,
     status: str | None = Query(None),
     category_id: uuid.UUID | None = Query(None),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_brand_templates(status=status, category_id=category_id), _rid(r))

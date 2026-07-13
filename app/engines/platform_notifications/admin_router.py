@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Request, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import get_current_user, require_super_admin, require_platform_staff, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.engines.platform_notifications.notification_service import NotificationService
@@ -62,7 +62,7 @@ async def admin_list_notifications(
     read_status: Optional[str] = Query(None),
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_platform_staff),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _notif_svc.get_user_notifications(
@@ -74,7 +74,7 @@ async def admin_list_notifications(
 @admin_notif_router.get("/unread-count", summary="Admin unread notification count")
 async def admin_unread_count(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_platform_staff),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _notif_svc.get_unread_count(db, uuid.UUID(u.user_id))
@@ -85,7 +85,7 @@ async def admin_unread_count(
 async def admin_mark_read(
     notification_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_platform_staff),
     db: AsyncSession = Depends(get_db),
 ):
     notif = await _notif_svc.mark_notification_read(db, uuid.UUID(u.user_id), notification_id)
@@ -95,7 +95,7 @@ async def admin_mark_read(
 @admin_notif_router.post("/mark-all-read", summary="Mark all admin notifications read")
 async def admin_mark_all_read(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_platform_staff),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _notif_svc.mark_all_read(db, uuid.UUID(u.user_id))
@@ -114,7 +114,7 @@ async def admin_list_events(
     tenant_id: Optional[uuid.UUID] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import func as sqlfunc
@@ -145,7 +145,7 @@ async def admin_list_outbox(
     tenant_id: Optional[uuid.UUID] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _notif_svc.list_outbox(
@@ -160,7 +160,7 @@ async def admin_list_outbox(
 async def admin_get_outbox(
     outbox_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     outbox = await _notif_svc.get_outbox_record(db, outbox_id)
@@ -171,7 +171,7 @@ async def admin_get_outbox(
 async def admin_retry_outbox(
     outbox_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     outbox = await _notif_svc.retry_outbox(db, outbox_id)
@@ -186,7 +186,7 @@ async def admin_retry_outbox(
 async def admin_list_templates(
     r: Request,
     channel: Optional[str] = Query(None),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     items = await _notif_svc.list_templates(db, channel=channel)
@@ -208,7 +208,7 @@ class CreateTemplateIn(BaseModel):
 async def admin_create_template(
     body: CreateTemplateIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     tmpl = await _notif_svc.create_template(db, body.model_dump())
@@ -228,7 +228,7 @@ async def admin_update_template(
     template_id: uuid.UUID,
     body: UpdateTemplateIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     tmpl = await _notif_svc.update_template(db, template_id, body.model_dump(exclude_none=True))
@@ -239,7 +239,7 @@ async def admin_update_template(
 async def admin_activate_template(
     template_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     tmpl = await _notif_svc.set_template_active(db, template_id, True)
@@ -250,7 +250,7 @@ async def admin_activate_template(
 async def admin_deactivate_template(
     template_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     tmpl = await _notif_svc.set_template_active(db, template_id, False)
@@ -268,7 +268,7 @@ async def admin_list_threads(
     tenant_id: Optional[uuid.UUID] = Query(None),
     limit: int = Query(30, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     from app.engines.platform_notifications.models import ChatThread
@@ -289,7 +289,7 @@ async def admin_list_threads(
 async def admin_get_thread(
     thread_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     from app.engines.platform_notifications.models import ChatThread
@@ -306,7 +306,7 @@ async def admin_list_messages(
     r: Request,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _msg_svc.list_messages(
@@ -327,7 +327,7 @@ async def admin_send_message(
     thread_id: uuid.UUID,
     body: AdminSendMsgIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     msg = await _msg_svc.send_message(
@@ -343,7 +343,7 @@ async def admin_send_message(
 async def admin_close_thread(
     thread_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     thread = await _thread_svc.close_thread(
@@ -361,7 +361,7 @@ async def admin_hide_message(
     message_id: uuid.UUID,
     body: HideMsgIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     msg = await _msg_svc.moderate_message(db, message_id, uuid.UUID(u.user_id), body.reason)
@@ -383,7 +383,7 @@ async def admin_list_audit(
     search: Optional[str] = Query(None, max_length=256),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _audit_svc.get_audit_logs(
@@ -402,7 +402,7 @@ async def admin_list_login_events(
     event_type: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Phase 1 Admin Setup certification fix: login/logout events were being
@@ -442,7 +442,7 @@ async def admin_record_timeline(
     resource_type: str,
     resource_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     items = await _audit_svc.get_record_timeline(db, resource_type, resource_id, actor_type="admin")

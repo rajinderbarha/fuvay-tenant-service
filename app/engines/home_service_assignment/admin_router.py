@@ -47,7 +47,7 @@ async def list_assignments(
     limit:  int = 50,
     offset: int = 0,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_super_admin),
     db:   AsyncSession = Depends(get_db),
 ):
     q = select(ServiceJobAssignment)
@@ -70,7 +70,7 @@ async def list_unassigned_jobs(
     limit:  int = 50,
     offset: int = 0,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_super_admin),
     db:   AsyncSession = Depends(get_db),
 ):
     from app.engines.final_records.models import ServiceJob
@@ -90,7 +90,7 @@ async def list_assigned_jobs(
     limit:  int = 50,
     offset: int = 0,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_super_admin),
     db:   AsyncSession = Depends(get_db),
 ):
     from app.engines.final_records.models import ServiceJob
@@ -110,7 +110,7 @@ async def list_assigned_jobs(
 async def get_assignment(
     assignment_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_super_admin),
     db:   AsyncSession = Depends(get_db),
 ):
     res = await db.execute(
@@ -136,7 +136,7 @@ admin_jobs_router = APIRouter(
 async def admin_get_timeline(
     job_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_super_admin),
     db:   AsyncSession = Depends(get_db),
 ):
     res = await db.execute(

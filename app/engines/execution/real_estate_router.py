@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_super_admin
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 from app.engines.execution.real_estate_service import RealEstateLeadExecutionService
@@ -169,14 +169,14 @@ admin_router = APIRouter(prefix="/v1/admin/real-estate-leads", tags=["Sprint21-A
 
 
 @admin_router.get("/{lead_id}/execution-timeline")
-async def admin_timeline(lead_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def admin_timeline(lead_id: uuid.UUID, r: Request, user=Depends(require_super_admin), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.get_timeline(db, lead_id)
     return ok(result, rid, "admin-re-timeline")
 
 
 @admin_router.get("/{lead_id}/notes")
-async def admin_notes(lead_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def admin_notes(lead_id: uuid.UUID, r: Request, user=Depends(require_super_admin), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.get_notes(db, lead_id)
     return ok(result, rid, "admin-re-notes")

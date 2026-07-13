@@ -43,7 +43,7 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 async def list_option_groups(r: Request,
                               status_filter: str | None = Query(None, alias="status"),
                               category_id: uuid.UUID | None = Query(None),
-                              u: UserContext = Depends(get_current_user),
+                              u: UserContext = Depends(require_super_admin),
                               s: ServiceOptionService = Depends(_svc)):
     return ok(await s.list_option_groups(status_filter, category_id), _rid(r))
 
@@ -68,7 +68,7 @@ async def update_option_group(group_id: uuid.UUID, r: Request,
 
 @opt_router.get("/summary", response_model=ApiResponse[dict])
 async def get_service_options_summary(r: Request,
-                                      u: UserContext = Depends(get_current_user),
+                                      u: UserContext = Depends(require_super_admin),
                                       s: ServiceOptionService = Depends(_svc)):
     return ok(await s.list_service_options_summary(), _rid(r))
 
@@ -84,7 +84,7 @@ async def list_service_options(r: Request,
                                 search: str | None = Query(None),
                                 page: int = Query(1, ge=1),
                                 page_size: int = Query(50, ge=1, le=200),
-                                u: UserContext = Depends(get_current_user),
+                                u: UserContext = Depends(require_super_admin),
                                 s: ServiceOptionService = Depends(_svc)):
     return ok(await s.list_service_options(
         status_filter, category_id, master_service_id, option_group_id,
@@ -100,7 +100,7 @@ async def create_service_option(r: Request,
 
 @opt_router.get("/{option_id}", response_model=ApiResponse[dict])
 async def get_service_option(option_id: uuid.UUID, r: Request,
-                              u: UserContext = Depends(get_current_user),
+                              u: UserContext = Depends(require_super_admin),
                               s: ServiceOptionService = Depends(_svc)):
     return ok(await s.get_service_option(option_id), _rid(r))
 
@@ -145,7 +145,7 @@ async def list_issue_types(r: Request,
                             search: str | None = Query(None),
                             page: int = Query(1, ge=1),
                             page_size: int = Query(50, ge=1, le=200),
-                            u: UserContext = Depends(get_current_user),
+                            u: UserContext = Depends(require_super_admin),
                             s: ServiceOptionService = Depends(_svc)):
     return ok(await s.list_issue_types(status_filter, category_id, master_service_id,
                                        search, page, page_size), _rid(r))
@@ -160,7 +160,7 @@ async def create_issue_type(r: Request,
 
 @iss_router.get("/{issue_id}", response_model=ApiResponse[dict])
 async def get_issue_type(issue_id: uuid.UUID, r: Request,
-                          u: UserContext = Depends(get_current_user),
+                          u: UserContext = Depends(require_super_admin),
                           s: ServiceOptionService = Depends(_svc)):
     return ok(await s.get_issue_type(issue_id), _rid(r))
 
@@ -199,7 +199,7 @@ async def archive_issue_type(issue_id: uuid.UUID, r: Request,
 
 @map_router.get("/{service_id}/options", response_model=ApiResponse[list])
 async def list_service_option_mappings(service_id: uuid.UUID, r: Request,
-                                        u: UserContext = Depends(get_current_user),
+                                        u: UserContext = Depends(require_super_admin),
                                         s: ServiceOptionService = Depends(_svc)):
     return ok(await s.list_service_option_mappings(service_id), _rid(r))
 
@@ -232,7 +232,7 @@ async def remove_service_option_mapping(service_id: uuid.UUID, mapping_id: uuid.
 
 @map_router.get("/{service_id}/issues", response_model=ApiResponse[list])
 async def list_service_issue_mappings(service_id: uuid.UUID, r: Request,
-                                       u: UserContext = Depends(get_current_user),
+                                       u: UserContext = Depends(require_super_admin),
                                        s: ServiceOptionService = Depends(_svc)):
     return ok(await s.list_service_issue_mappings(service_id), _rid(r))
 
@@ -266,7 +266,7 @@ async def remove_service_issue_mapping(service_id: uuid.UUID, mapping_id: uuid.U
 
 @map_router.get("/{service_id}/workflow-mapping-status", response_model=ApiResponse[dict])
 async def get_workflow_mapping_status(service_id: uuid.UUID, r: Request,
-                                       u: UserContext = Depends(get_current_user),
+                                       u: UserContext = Depends(require_super_admin),
                                        db: AsyncSession = Depends(get_db)):
     from sqlalchemy import select
     from app.engines.admin_catalog.models import MasterWorkflowTemplate, MasterService
@@ -304,7 +304,7 @@ async def list_checklist_items(r: Request,
                                 search: str | None = Query(None),
                                 page: int = Query(1, ge=1),
                                 page_size: int = Query(50, ge=1, le=200),
-                                u: UserContext = Depends(get_current_user),
+                                u: UserContext = Depends(require_super_admin),
                                 s: ServiceOptionService = Depends(_svc)):
     return ok(await s.list_checklist_items(status_filter, category_id, master_service_id,
                                             search, page, page_size), _rid(r))
@@ -326,7 +326,7 @@ async def seed_default_checklists(r: Request,
 
 @chk_router.get("/{item_id}", response_model=ApiResponse[dict])
 async def get_checklist_item(item_id: uuid.UUID, r: Request,
-                              u: UserContext = Depends(get_current_user),
+                              u: UserContext = Depends(require_super_admin),
                               s: ServiceOptionService = Depends(_svc)):
     return ok(await s.get_checklist_item(item_id), _rid(r))
 

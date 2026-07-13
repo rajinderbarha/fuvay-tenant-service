@@ -33,7 +33,7 @@ def _rid(r: Request) -> str:
 async def get_customer_flow_config(
     category_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     svc: CustomerCategoryFlowService = Depends(_svc),
 ):
     """Returns the customer flow configuration for the given category."""

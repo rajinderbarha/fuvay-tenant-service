@@ -296,7 +296,7 @@ async def get_review_events(
 async def list_flags(
     status: str | None = None,
     r: Request = None,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     flags = await _svc.list_flags(db, status=status)
@@ -307,7 +307,7 @@ async def list_flags(
 async def resolve_flag(
     flag_id: str,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     flag = await _svc.resolve_flag(db, uuid.UUID(flag_id), u.user_id, request_id=_rid(r))
@@ -319,7 +319,7 @@ async def resolve_flag(
 async def list_replies(
     status: str | None = None,
     r: Request = None,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     q = select(ReviewReply)
@@ -335,7 +335,7 @@ async def list_replies(
 async def approve_reply(
     review_id: str,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     reply = await _svc.approve_reply(db, uuid.UUID(review_id), u.user_id, request_id=_rid(r))
@@ -347,7 +347,7 @@ async def reject_reply(
     review_id: str,
     body: dict,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     reply = await _svc.reject_reply(
@@ -362,7 +362,7 @@ async def reject_reply(
 @admin_policy_router.get("")
 async def list_policies(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     policies = await _svc.list_policies(db)
@@ -373,7 +373,7 @@ async def list_policies(
 async def get_policy(
     policy_id: str,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     p = await _svc.get_policy(db, uuid.UUID(policy_id))
@@ -385,7 +385,7 @@ async def update_policy(
     policy_id: str,
     body: dict,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     p = await _svc.update_policy(db, uuid.UUID(policy_id), body)
@@ -396,7 +396,7 @@ async def update_policy(
 @admin_rating_router.get("")
 async def list_tenant_summaries(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     res = await db.execute(select(TenantRatingSummary).order_by(TenantRatingSummary.average_rating.desc()))
@@ -408,7 +408,7 @@ async def list_tenant_summaries(
 async def list_staff_summaries(
     tenant_id: str | None = None,
     r: Request = None,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     q = select(StaffRatingSummary)
@@ -424,7 +424,7 @@ async def list_staff_summaries(
 async def recompute_tenant_summary(
     tenant_id: str,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     summary = await _agg.recompute_tenant_summary(db, uuid.UUID(tenant_id))

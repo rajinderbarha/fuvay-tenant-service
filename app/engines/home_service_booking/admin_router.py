@@ -11,7 +11,7 @@ import structlog
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import require_super_admin, UserContext
 from app.dependencies.db import get_db
 from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
 from app.schemas.base import ApiResponse, ok
@@ -47,7 +47,7 @@ async def admin_list_drafts(
     city:        Optional[str] = Query(None, description="Filter by city (partial match)"),
     offering_id: Optional[str] = Query(None, description="Filter by offering UUID"),
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     result = await svc.admin_list_drafts(
         page=page, page_size=page_size,
@@ -70,7 +70,7 @@ async def admin_get_draft(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     result = await svc.admin_get_draft(draft_id=draft_id)
     return ok(result, _rid(r), "home_service_booking")
@@ -87,7 +87,7 @@ async def admin_get_draft_events(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
 ):
     events = await svc.admin_get_draft_events(draft_id=draft_id)
     return ok({"events": events, "total": len(events)}, _rid(r), "home_service_booking")

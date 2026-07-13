@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_super_admin
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 from app.engines.execution.coaching_service import CoachingAppointmentExecutionService
@@ -138,7 +138,7 @@ admin_router = APIRouter(prefix="/v1/admin/coaching-appointments", tags=["Sprint
 
 
 @admin_router.get("/{appointment_id}/execution-timeline")
-async def admin_timeline(appointment_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def admin_timeline(appointment_id: uuid.UUID, r: Request, user=Depends(require_super_admin), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     from sqlalchemy import select
     from app.engines.final_records.models import CoachingAppointment

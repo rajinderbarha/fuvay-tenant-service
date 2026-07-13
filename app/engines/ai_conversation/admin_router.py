@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.db import get_db
 from app.engines.ai_conversation.service import AIConversationService
 from app.schemas.base import ApiResponse, ok
+from app.dependencies.auth import require_super_admin, UserContext
 
 router = APIRouter(prefix="/v1/admin/ai-chat", tags=["Admin AI Chat"])
 
@@ -33,6 +34,7 @@ async def admin_list_sessions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     svc: AIConversationService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     """Admin view of all AI conversation sessions with optional status filter."""
     data = await svc.admin_list_sessions(
@@ -50,6 +52,7 @@ async def admin_get_session(
     session_id: uuid.UUID,
     r: Request,
     svc: AIConversationService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     """Admin: get full session detail by ID."""
     data = await svc.get_session(session_id)
@@ -67,6 +70,7 @@ async def admin_get_session_messages(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     svc: AIConversationService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     """Admin: get all messages in a session."""
     data = await svc.get_messages(session_id=session_id, page=page, page_size=page_size)
@@ -89,6 +93,7 @@ async def admin_list_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     svc: AIConversationService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     """Admin: list all DeepSeek API call logs with token usage and latency."""
     data = await svc.admin_list_llm_logs(
@@ -109,6 +114,7 @@ async def admin_get_log(
     log_id: uuid.UUID,
     r: Request,
     svc: AIConversationService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     """Admin: get a specific LLM call log including all associated tool calls."""
     data = await svc.admin_get_llm_log(log_id)
@@ -129,6 +135,7 @@ async def list_prompt_templates(
     category: str | None = Query(None, description="Filter by category: system/workflow/safety"),
     active_only: bool = Query(True),
     svc: AIConversationService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     """Admin: list all AI prompt templates."""
     data = await svc.list_prompt_templates(category=category, active_only=active_only)
@@ -144,6 +151,7 @@ async def list_prompt_templates(
 async def create_prompt_template(
     r: Request,
     svc: AIConversationService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     """
     Admin: create a new prompt template.
@@ -171,6 +179,7 @@ async def get_prompt_template(
     template_key: str,
     r: Request,
     svc: AIConversationService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     """Admin: get a single prompt template by key."""
     data = await svc.get_prompt_template(template_key)
@@ -186,6 +195,7 @@ async def update_prompt_template(
     template_key: str,
     r: Request,
     svc: AIConversationService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     """
     Admin: update a prompt template. Changing template_content increments version.
@@ -207,6 +217,7 @@ async def update_prompt_template(
 async def admin_test_console(
     r: Request,
     svc: AIConversationService = Depends(_svc),
+    u: UserContext = Depends(require_super_admin),
 ):
     """
     Admin test console — fire a single DeepSeek call without session persistence.

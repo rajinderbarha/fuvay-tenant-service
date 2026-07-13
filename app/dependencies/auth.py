@@ -213,3 +213,25 @@ async def require_no_force_password_change(user: UserContext = Depends(get_curre
             resolution="Change your password at PUT /v1/auth/password/change then log in again.",
         )
     return user
+
+
+# MODULE-L5-01B: the 5 platform-level admin_* roles, canonical in one place
+# so callers don't redefine this set ad hoc per router (the anti-pattern
+# this sprint is closing). These roles have no tenant_id of their own and
+# operate across the whole platform by design.
+PLATFORM_STAFF_ROLES = ("super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly")
+
+
+async def require_platform_staff(user: UserContext = Depends(get_current_user)) -> UserContext:
+    """Any of the 5 platform admin_* roles -- for admin-console-only surfaces
+    that are not further permission-differentiated (e.g. an admin's own
+    notification inbox). Not a substitute for require_permission() on
+    endpoints where a specific permission already exists."""
+    _check_force_password_change(user)
+    if user.role not in PLATFORM_STAFF_ROLES:
+        raise ServiceOSException(
+            error_code="PERMISSION_DENIED",
+            detail=f"Platform admin access required. Your role: '{user.role}'.",
+            blocking_rule=f"required_role: {' | '.join(PLATFORM_STAFF_ROLES)}",
+        )
+    return user

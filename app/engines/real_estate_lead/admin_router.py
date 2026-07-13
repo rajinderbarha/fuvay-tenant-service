@@ -2,9 +2,9 @@
 from __future__ import annotations
 import uuid
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Depends, Request, Query
 
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_super_admin, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 
@@ -30,6 +30,7 @@ async def admin_list_drafts(
     intent: str | None = Query(None, description="Filter by lead_intent"),
     limit:  int        = Query(50, ge=1, le=200),
     offset: int        = Query(0, ge=0),
+    u: UserContext = Depends(require_super_admin),
 ):
     await get_current_user(r)
     db = await anext(get_db())
@@ -50,7 +51,7 @@ async def admin_list_drafts(
     summary="Get a specific real estate lead draft (admin)",
     response_model=ApiResponse,
 )
-async def admin_get_draft(draft_id: uuid.UUID, r: Request):
+async def admin_get_draft(draft_id: uuid.UUID, r: Request, u: UserContext = Depends(require_super_admin)):
     await get_current_user(r)
     db = await anext(get_db())
     try:
@@ -69,7 +70,7 @@ async def admin_get_draft(draft_id: uuid.UUID, r: Request):
     summary="Get event log for a real estate lead draft (admin)",
     response_model=ApiResponse,
 )
-async def admin_get_draft_events(draft_id: uuid.UUID, r: Request):
+async def admin_get_draft_events(draft_id: uuid.UUID, r: Request, u: UserContext = Depends(require_super_admin)):
     await get_current_user(r)
     db = await anext(get_db())
     try:
@@ -92,6 +93,7 @@ async def admin_list_routing_rules(
     r:           Request,
     category_id: uuid.UUID | None = Query(None, description="Filter by category"),
     active_only: bool              = Query(True),
+    u: UserContext = Depends(require_super_admin),
 ):
     await get_current_user(r)
     db = await anext(get_db())
@@ -111,7 +113,7 @@ async def admin_list_routing_rules(
     summary="Create a lead routing rule (admin)",
     response_model=ApiResponse,
 )
-async def admin_create_routing_rule(r: Request):
+async def admin_create_routing_rule(r: Request, u: UserContext = Depends(require_super_admin)):
     await get_current_user(r)
     db = await anext(get_db())
     try:
@@ -136,7 +138,7 @@ async def admin_create_routing_rule(r: Request):
     summary="Update a lead routing rule (admin)",
     response_model=ApiResponse,
 )
-async def admin_update_routing_rule(rule_id: uuid.UUID, r: Request):
+async def admin_update_routing_rule(rule_id: uuid.UUID, r: Request, u: UserContext = Depends(require_super_admin)):
     await get_current_user(r)
     db = await anext(get_db())
     try:
@@ -158,7 +160,7 @@ async def admin_update_routing_rule(rule_id: uuid.UUID, r: Request):
     summary="Activate a lead routing rule (admin)",
     response_model=ApiResponse,
 )
-async def admin_activate_rule(rule_id: uuid.UUID, r: Request):
+async def admin_activate_rule(rule_id: uuid.UUID, r: Request, u: UserContext = Depends(require_super_admin)):
     await get_current_user(r)
     db = await anext(get_db())
     try:
@@ -179,7 +181,7 @@ async def admin_activate_rule(rule_id: uuid.UUID, r: Request):
     summary="Deactivate a lead routing rule (admin)",
     response_model=ApiResponse,
 )
-async def admin_deactivate_rule(rule_id: uuid.UUID, r: Request):
+async def admin_deactivate_rule(rule_id: uuid.UUID, r: Request, u: UserContext = Depends(require_super_admin)):
     await get_current_user(r)
     db = await anext(get_db())
     try:
@@ -200,7 +202,7 @@ async def admin_deactivate_rule(rule_id: uuid.UUID, r: Request):
     summary="Seed Real Estate category, offerings, and routing rules (admin)",
     response_model=ApiResponse,
 )
-async def admin_seed_real_estate(r: Request):
+async def admin_seed_real_estate(r: Request, u: UserContext = Depends(require_super_admin)):
     """Idempotent: safe to call multiple times. Creates or updates category,
     two master offerings, and four routing rules by their natural slug/key."""
     await get_current_user(r)
@@ -222,7 +224,7 @@ async def admin_seed_real_estate(r: Request):
     summary="Expire all stale real estate lead drafts (admin / manual trigger)",
     response_model=ApiResponse,
 )
-async def admin_expire_drafts(r: Request):
+async def admin_expire_drafts(r: Request, u: UserContext = Depends(require_super_admin)):
     """Marks non-terminal drafts whose expires_at < now() as EXPIRED.
     Normally run by the scheduled job (python -m app.jobs.expire_drafts),
     but this endpoint allows manual triggering from the admin panel."""

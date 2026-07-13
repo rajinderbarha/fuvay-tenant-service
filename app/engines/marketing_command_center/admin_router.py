@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import UserContext
+from app.dependencies.auth import UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.core.permissions import P, require_permission
 from app.schemas.base import ok
@@ -34,7 +34,7 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db),
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 @router.get("/automation/summary", summary="Marketing automation KPI summary")
-async def get_summary(r: Request, s: MarketingCommandCenterService = Depends(_svc)):
+async def get_summary(r: Request, s: MarketingCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_summary(), _rid(r), "marketing_command_center")
 
 
@@ -43,12 +43,13 @@ async def get_summary(r: Request, s: MarketingCommandCenterService = Depends(_sv
 @router.get("/posts", summary="List marketing posts")
 async def list_posts(r: Request, status: Optional[str] = Query(None),
                       campaign_id: Optional[uuid.UUID] = Query(None), limit: int = Query(50, le=200),
+    u: UserContext = Depends(require_super_admin),
                       s: MarketingCommandCenterService = Depends(_svc)):
     return ok(await s.list_posts(status, campaign_id, limit), _rid(r), "marketing_command_center")
 
 
 @router.get("/posts/{post_id}", summary="Get a marketing post")
-async def get_post(post_id: uuid.UUID, r: Request, s: MarketingCommandCenterService = Depends(_svc)):
+async def get_post(post_id: uuid.UUID, r: Request, s: MarketingCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_post(post_id), _rid(r), "marketing_command_center")
 
 
@@ -170,6 +171,7 @@ async def generate_variations(r: Request, db: AsyncSession = Depends(get_db),
 @router.get("/calendar", summary="Content calendar")
 async def get_calendar(r: Request, date_from: Optional[datetime] = Query(None),
                         date_to: Optional[datetime] = Query(None),
+    u: UserContext = Depends(require_super_admin),
                         s: MarketingCommandCenterService = Depends(_svc)):
     return ok(await s.get_calendar(date_from, date_to), _rid(r), "marketing_command_center")
 
@@ -177,7 +179,7 @@ async def get_calendar(r: Request, date_from: Optional[datetime] = Query(None),
 # ── Social accounts ──────────────────────────────────────────────────────────
 
 @router.get("/social-accounts", summary="List connected social accounts")
-async def list_social_accounts(r: Request, s: MarketingCommandCenterService = Depends(_svc)):
+async def list_social_accounts(r: Request, s: MarketingCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.list_social_accounts(), _rid(r), "marketing_command_center")
 
 
@@ -190,7 +192,7 @@ async def connect_social_account(r: Request, db: AsyncSession = Depends(get_db),
 
 
 @router.post("/social-accounts/{account_id}/test", summary="Test social account connection")
-async def test_social_account(account_id: uuid.UUID, r: Request, s: MarketingCommandCenterService = Depends(_svc)):
+async def test_social_account(account_id: uuid.UUID, r: Request, s: MarketingCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.test_social_account(account_id), _rid(r), "marketing_command_center")
 
 
@@ -211,7 +213,7 @@ async def disconnect_social_account(account_id: uuid.UUID, r: Request, db: Async
 # ── Content templates ────────────────────────────────────────────────────────
 
 @router.get("/content-templates", summary="List content templates")
-async def list_templates(r: Request, s: MarketingCommandCenterService = Depends(_svc)):
+async def list_templates(r: Request, s: MarketingCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.list_templates(), _rid(r), "marketing_command_center")
 
 
@@ -234,7 +236,7 @@ async def update_template(template_id: uuid.UUID, r: Request, db: AsyncSession =
 # ── AI Budget ────────────────────────────────────────────────────────────────
 
 @router.get("/ai-budget", summary="Get platform AI budget")
-async def get_ai_budget(r: Request, s: MarketingCommandCenterService = Depends(_svc)):
+async def get_ai_budget(r: Request, s: MarketingCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_ai_budget(), _rid(r), "marketing_command_center")
 
 
@@ -248,6 +250,7 @@ async def update_ai_budget(r: Request, db: AsyncSession = Depends(get_db),
 
 @router.get("/ai-budget/ledger", summary="Platform AI budget ledger")
 async def get_ai_budget_ledger(r: Request, limit: int = Query(50, le=500),
+    u: UserContext = Depends(require_super_admin),
                                 s: MarketingCommandCenterService = Depends(_svc)):
     return ok(await s.get_ai_budget_ledger(limit), _rid(r), "marketing_command_center")
 
@@ -256,6 +259,7 @@ async def get_ai_budget_ledger(r: Request, limit: int = Query(50, le=500),
 
 @router.get("/publish-failures", summary="Failed publish attempts / retry queue")
 async def list_publish_failures(r: Request, limit: int = Query(50, le=500),
+    u: UserContext = Depends(require_super_admin),
                                  s: MarketingCommandCenterService = Depends(_svc)):
     return ok(await s.list_publish_failures(limit), _rid(r), "marketing_command_center")
 
@@ -263,22 +267,22 @@ async def list_publish_failures(r: Request, limit: int = Query(50, le=500),
 # ── Analytics ────────────────────────────────────────────────────────────────
 
 @router.get("/analytics/summary", summary="Marketing analytics summary")
-async def analytics_summary(r: Request, s: MarketingCommandCenterService = Depends(_svc)):
+async def analytics_summary(r: Request, s: MarketingCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_analytics_summary(), _rid(r), "marketing_command_center")
 
 
 @router.get("/analytics/posts", summary="Top performing posts")
-async def analytics_posts(r: Request, s: MarketingCommandCenterService = Depends(_svc)):
+async def analytics_posts(r: Request, s: MarketingCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_top_posts(), _rid(r), "marketing_command_center")
 
 
 @router.get("/analytics/campaigns", summary="Campaign performance")
-async def analytics_campaigns(r: Request, s: MarketingCommandCenterService = Depends(_svc)):
+async def analytics_campaigns(r: Request, s: MarketingCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_campaign_performance(), _rid(r), "marketing_command_center")
 
 
 @router.get("/analytics/channels", summary="Channel performance")
-async def analytics_channels(r: Request, s: MarketingCommandCenterService = Depends(_svc)):
+async def analytics_channels(r: Request, s: MarketingCommandCenterService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
     return ok(await s.get_channel_performance(), _rid(r), "marketing_command_center")
 
 

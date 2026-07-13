@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.feature_flags import get_home_services_pricing_flags
 from app.core.permissions import P, require_permission
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.admin_catalog.bargain_engine import (
     BargainValidationError, compute_symmetric_customer_price_tiers,
@@ -50,7 +50,7 @@ def _rid(r: Request) -> str:
                    summary="Get Home Services pricing feature-flag status (manual bargain vs. automatic price options)")
 async def get_home_services_config(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     flags = await get_home_services_pricing_flags(db)

@@ -90,7 +90,7 @@ async def resolve_location_get(r: Request,
                                 state: str | None = Query(None),
                                 district: str | None = Query(None),
                                 zone: str | None = Query(None),
-                                u: UserContext = Depends(get_current_user),
+                                u: UserContext = Depends(require_super_admin),
                                 s: AdminCatalogService = Depends(_svc)):
     return ok(await s.resolve_location(city, zipcode, state, None, district, zone), _rid(r), ENGINE_ID)
 
@@ -98,7 +98,7 @@ async def resolve_location_get(r: Request,
 @router.post("/tiers/resolve-location", response_model=ApiResponse[dict],
              summary="Resolve tier from city/zipcode (POST)", tags=["Pricing Tiers"])
 async def resolve_location_post(r: Request,
-                                 u: UserContext = Depends(get_current_user),
+                                 u: UserContext = Depends(require_super_admin),
                                  s: AdminCatalogService = Depends(_svc)):
     body = await r.json()
     return ok(await s.resolve_location(body.get("city"), body.get("zipcode"),
@@ -116,7 +116,7 @@ async def get_tier_detail(tier_id: uuid.UUID, r: Request,
 @router.get("/tiers/{tier_id}", response_model=ApiResponse[dict], summary="Get pricing tier",
             tags=["Pricing Tiers"])
 async def get_tier(tier_id: uuid.UUID, r: Request,
-                   u: UserContext = Depends(get_current_user),
+                   u: UserContext = Depends(require_super_admin),
                    s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_tier(tier_id), _rid(r), ENGINE_ID)
 
@@ -306,7 +306,7 @@ async def resolve_conflict_location(location_id: uuid.UUID, r: Request,
             tags=["Service Categories"])
 async def list_categories(r: Request,
                            is_active: bool | None = Query(None),
-                           u: UserContext = Depends(get_current_user),
+                           u: UserContext = Depends(require_super_admin),
                            s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_categories(is_active), _rid(r), ENGINE_ID)
 
@@ -318,7 +318,7 @@ async def category_options(r: Request,
                             vertical_type: str | None = Query(None),
                             status: str | None = Query(None),
                             db: AsyncSession = Depends(get_db),
-                            u: UserContext = Depends(get_current_user)):
+                            u: UserContext = Depends(require_super_admin)):
     from sqlalchemy import select, or_
     from app.engines.admin_catalog.models import ServiceCategory
     stmt = select(ServiceCategory)
@@ -359,7 +359,7 @@ async def create_category(r: Request,
 @router.get("/service-categories/{category_id}", response_model=ApiResponse[dict],
             summary="Get service category", tags=["Service Categories"])
 async def get_category(category_id: uuid.UUID, r: Request,
-                       u: UserContext = Depends(get_current_user),
+                       u: UserContext = Depends(require_super_admin),
                        s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_category(category_id), _rid(r), ENGINE_ID)
 
@@ -401,7 +401,7 @@ async def hard_delete_category(category_id: uuid.UUID, r: Request,
 @router.get("/service-groups/summary", response_model=ApiResponse[dict],
             summary="Service groups summary cards", tags=["Service Groups"])
 async def service_groups_summary(r: Request,
-                                  u: UserContext = Depends(get_current_user),
+                                  u: UserContext = Depends(require_super_admin),
                                   s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_service_groups_summary(), _rid(r), ENGINE_ID)
 
@@ -411,7 +411,7 @@ async def service_groups_summary(r: Request,
 async def export_service_groups(r: Request,
                                  category_id: uuid.UUID | None = Query(None),
                                  status: str | None = Query(None),
-                                 u: UserContext = Depends(get_current_user),
+                                 u: UserContext = Depends(require_super_admin),
                                  s: AdminCatalogService = Depends(_svc)):
     rows = await s.export_service_groups(category_id=category_id, status=status)
     return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
@@ -426,7 +426,7 @@ async def list_service_groups(r: Request,
                                has_services: bool | None = Query(None),
                                limit: int = Query(200, ge=1, le=1000),
                                offset: int = Query(0, ge=0),
-                               u: UserContext = Depends(get_current_user),
+                               u: UserContext = Depends(require_super_admin),
                                s: AdminCatalogService = Depends(_svc)):
     return ok(
         await s.list_service_groups_enterprise(
@@ -449,7 +449,7 @@ async def create_service_group(r: Request,
 @router.get("/service-groups/{group_id}", response_model=ApiResponse[dict],
             summary="Get service group", tags=["Service Groups"])
 async def get_service_group(group_id: uuid.UUID, r: Request,
-                             u: UserContext = Depends(get_current_user),
+                             u: UserContext = Depends(require_super_admin),
                              s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_service_group(group_id), _rid(r), ENGINE_ID)
 
@@ -498,7 +498,7 @@ async def archive_service_group(group_id: uuid.UUID, r: Request,
 @router.get("/master-services/summary", response_model=ApiResponse[dict],
             summary="Master services summary cards", tags=["Master Services"])
 async def master_services_summary(r: Request,
-                                   u: UserContext = Depends(get_current_user),
+                                   u: UserContext = Depends(require_super_admin),
                                    s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_master_services_summary(), _rid(r), ENGINE_ID)
 
@@ -510,7 +510,7 @@ async def export_master_services(r: Request,
                                   service_group_id: uuid.UUID | None = Query(None),
                                   job_type: str | None = Query(None),
                                   is_active: bool | None = Query(None),
-                                  u: UserContext = Depends(get_current_user),
+                                  u: UserContext = Depends(require_super_admin),
                                   s: AdminCatalogService = Depends(_svc)):
     rows = await s.export_master_services(
         category_id=category_id, service_group_id=service_group_id,
@@ -530,7 +530,7 @@ async def list_master_services(r: Request,
                                 is_active: bool | None = Query(None),
                                 limit: int = Query(200, ge=1, le=1000),
                                 offset: int = Query(0, ge=0),
-                                u: UserContext = Depends(get_current_user),
+                                u: UserContext = Depends(require_super_admin),
                                 s: AdminCatalogService = Depends(_svc)):
     return ok(
         await s.list_master_services_enterprise(
@@ -554,7 +554,7 @@ async def create_master_service(r: Request,
 @router.get("/master-services/{service_id}", response_model=ApiResponse[dict],
             summary="Get master service", tags=["Master Services"])
 async def get_master_service(service_id: uuid.UUID, r: Request,
-                              u: UserContext = Depends(get_current_user),
+                              u: UserContext = Depends(require_super_admin),
                               s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_master_service(service_id), _rid(r), ENGINE_ID)
 
@@ -618,7 +618,7 @@ async def archive_master_service(service_id: uuid.UUID, r: Request,
 async def list_service_types(r: Request,
                               category_id: uuid.UUID | None = Query(None),
                               is_active: bool | None = Query(None),
-                              u: UserContext = Depends(get_current_user),
+                              u: UserContext = Depends(require_super_admin),
                               s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_service_types(category_id, is_active), _rid(r), ENGINE_ID)
 
@@ -668,7 +668,7 @@ async def hard_delete_service_type(type_id: uuid.UUID, r: Request,
 @router.get("/master-services/{service_id}/types", response_model=ApiResponse[dict],
             summary="List type mappings for service", tags=["Service Type Mapping"])
 async def list_service_type_mappings(service_id: uuid.UUID, r: Request,
-                                      u: UserContext = Depends(get_current_user),
+                                      u: UserContext = Depends(require_super_admin),
                                       s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_service_type_mappings(service_id), _rid(r), ENGINE_ID)
 
@@ -694,7 +694,7 @@ async def remove_service_type_mapping(service_id: uuid.UUID, mapping_id: uuid.UU
 @router.get("/master-services/{service_id}/brands", response_model=ApiResponse[dict],
             summary="List brand mappings for service", tags=["Brand Mapping"])
 async def list_service_brand_mappings(service_id: uuid.UUID, r: Request,
-                                       u: UserContext = Depends(get_current_user),
+                                       u: UserContext = Depends(require_super_admin),
                                        s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_service_brand_mappings(service_id), _rid(r), ENGINE_ID)
 
@@ -702,7 +702,7 @@ async def list_service_brand_mappings(service_id: uuid.UUID, r: Request,
 @router.get("/master-services/{service_id}/issues", response_model=ApiResponse[dict],
             summary="List issue-type mappings for service", tags=["Issue Type Mapping"])
 async def list_service_issue_mappings(service_id: uuid.UUID, r: Request,
-                                       u: UserContext = Depends(get_current_user),
+                                       u: UserContext = Depends(require_super_admin),
                                        s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_service_issue_mappings(service_id), _rid(r), ENGINE_ID)
 
@@ -778,7 +778,7 @@ async def export_pricing_rules(r: Request,
 @router.post("/pricing-rules/preview", response_model=ApiResponse[dict],
              summary="Preview price resolution", tags=["Pricing Rules"])
 async def preview_pricing(r: Request,
-                           u: UserContext = Depends(get_current_user),
+                           u: UserContext = Depends(require_super_admin),
                            s: AdminCatalogService = Depends(_svc)):
     body = await r.json()
     return ok(await s.preview_pricing(body), _rid(r), ENGINE_ID)
@@ -804,7 +804,7 @@ async def get_pricing_rule_conflicts(rule_id: uuid.UUID, r: Request,
 @router.get("/pricing-rules/{rule_id}", response_model=ApiResponse[dict],
             summary="Get pricing rule", tags=["Pricing Rules"])
 async def get_pricing_rule(rule_id: uuid.UUID, r: Request,
-                            u: UserContext = Depends(get_current_user),
+                            u: UserContext = Depends(require_super_admin),
                             s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_pricing_rule(rule_id), _rid(r), ENGINE_ID)
 
@@ -1086,7 +1086,7 @@ async def list_issue_types(r: Request,
                             category_id: uuid.UUID | None = Query(None),
                             master_service_id: uuid.UUID | None = Query(None),
                             is_active: bool | None = Query(None),
-                            u: UserContext = Depends(get_current_user),
+                            u: UserContext = Depends(require_super_admin),
                             s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_issue_types(category_id, master_service_id, is_active), _rid(r), ENGINE_ID)
 
@@ -1103,7 +1103,7 @@ async def create_issue_type(r: Request,
 @router.get("/issue-types/{issue_type_id}", response_model=ApiResponse[dict],
             summary="Get master issue type", tags=["Master Issue Types"])
 async def get_issue_type(issue_type_id: uuid.UUID, r: Request,
-                          u: UserContext = Depends(get_current_user),
+                          u: UserContext = Depends(require_super_admin),
                           s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_issue_type(issue_type_id), _rid(r), ENGINE_ID)
 
@@ -1142,7 +1142,7 @@ async def list_service_options(r: Request,
                                 search: str | None = Query(None),
                                 page: int = Query(1, ge=1),
                                 page_size: int = Query(50, ge=1, le=200),
-                                u: UserContext = Depends(get_current_user),
+                                u: UserContext = Depends(require_super_admin),
                                 s: ServiceOptionService = Depends(_opt_svc)):
     if is_active is not None and status_filter is None:
         status_filter = "active" if is_active else "inactive"
@@ -1162,7 +1162,7 @@ async def create_service_option(r: Request,
 @router.get("/service-options/summary", response_model=ApiResponse[dict],
             summary="Service options summary counts", tags=["Master Service Options"])
 async def get_service_options_summary(r: Request,
-                                      u: UserContext = Depends(get_current_user),
+                                      u: UserContext = Depends(require_super_admin),
                                       s: ServiceOptionService = Depends(_opt_svc)):
     return ok(await s.list_service_options_summary(), _rid(r))
 
@@ -1170,7 +1170,7 @@ async def get_service_options_summary(r: Request,
 @router.get("/service-options/{option_id}", response_model=ApiResponse[dict],
             summary="Get master service option", tags=["Master Service Options"])
 async def get_service_option(option_id: uuid.UUID, r: Request,
-                              u: UserContext = Depends(get_current_user),
+                              u: UserContext = Depends(require_super_admin),
                               s: ServiceOptionService = Depends(_opt_svc)):
     return ok(await s.get_service_option(option_id), _rid(r))
 
@@ -1198,7 +1198,7 @@ async def delete_service_option(option_id: uuid.UUID, r: Request,
 @router.get("/workflow-templates/summary", response_model=ApiResponse[dict],
             summary="Workflow templates summary cards", tags=["Master Workflow Templates"])
 async def get_workflow_templates_summary(r: Request,
-                                          u: UserContext = Depends(get_current_user),
+                                          u: UserContext = Depends(require_super_admin),
                                           s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_workflow_templates_summary(), _rid(r), ENGINE_ID)
 
@@ -1206,7 +1206,7 @@ async def get_workflow_templates_summary(r: Request,
 @router.get("/workflow-templates/export", response_model=ApiResponse[dict],
             summary="Export workflow templates", tags=["Master Workflow Templates"])
 async def export_workflow_templates(r: Request,
-                                     u: UserContext = Depends(get_current_user),
+                                     u: UserContext = Depends(require_super_admin),
                                      s: AdminCatalogService = Depends(_svc)):
     data = await s.list_workflow_templates(limit=10000)
     return ok({"rows": data["workflow_templates"], "count": len(data["workflow_templates"]), "format": "json"}, _rid(r), ENGINE_ID)
@@ -1231,7 +1231,7 @@ async def seed_workflow_defaults(r: Request,
 @router.post("/workflow-templates/preview-runtime", response_model=ApiResponse[dict],
              summary="Preview resolved runtime workflow for a service scope", tags=["Master Workflow Templates"])
 async def preview_workflow_runtime(r: Request,
-                                    u: UserContext = Depends(get_current_user),
+                                    u: UserContext = Depends(require_super_admin),
                                     s: AdminCatalogService = Depends(_svc)):
     body = await r.json()
     return ok(await s.preview_workflow_runtime(
@@ -1254,7 +1254,7 @@ async def list_workflow_templates(r: Request,
                                    readiness: str | None = Query(None),
                                    page: int = Query(1, ge=1),
                                    limit: int = Query(50, ge=1, le=200),
-                                   u: UserContext = Depends(get_current_user),
+                                   u: UserContext = Depends(require_super_admin),
                                    s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_workflow_templates(category_id, master_service_id, workflow_type, is_active,
                                               status_, q, readiness, page, limit), _rid(r), ENGINE_ID)
@@ -1272,7 +1272,7 @@ async def create_workflow_template(r: Request,
 @router.get("/workflow-templates/{template_id}", response_model=ApiResponse[dict],
             summary="Get master workflow template", tags=["Master Workflow Templates"])
 async def get_workflow_template(template_id: uuid.UUID, r: Request,
-                                 u: UserContext = Depends(get_current_user),
+                                 u: UserContext = Depends(require_super_admin),
                                  s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_workflow_template(template_id), _rid(r), ENGINE_ID)
 
@@ -1329,7 +1329,7 @@ async def deactivate_workflow_template(template_id: uuid.UUID, r: Request,
 @router.post("/workflow-templates/{template_id}/validate", response_model=ApiResponse[dict],
              summary="Validate workflow template structure", tags=["Master Workflow Templates"])
 async def validate_workflow_template(template_id: uuid.UUID, r: Request,
-                                      u: UserContext = Depends(get_current_user),
+                                      u: UserContext = Depends(require_super_admin),
                                       s: AdminCatalogService = Depends(_svc)):
     return ok(await s.validate_workflow_template(template_id), _rid(r), ENGINE_ID)
 
@@ -1337,7 +1337,7 @@ async def validate_workflow_template(template_id: uuid.UUID, r: Request,
 @router.get("/workflow-templates/{template_id}/readiness", response_model=ApiResponse[dict],
             summary="Get runtime readiness of workflow template", tags=["Master Workflow Templates"])
 async def get_workflow_readiness(template_id: uuid.UUID, r: Request,
-                                  u: UserContext = Depends(get_current_user),
+                                  u: UserContext = Depends(require_super_admin),
                                   s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_workflow_readiness(template_id), _rid(r), ENGINE_ID)
 
@@ -1347,7 +1347,7 @@ async def get_workflow_readiness(template_id: uuid.UUID, r: Request,
 @router.get("/workflow-templates/{template_id}/steps", response_model=ApiResponse[dict],
             summary="List workflow steps", tags=["Master Workflow Templates"])
 async def list_workflow_steps(template_id: uuid.UUID, r: Request,
-                               u: UserContext = Depends(get_current_user),
+                               u: UserContext = Depends(require_super_admin),
                                s: AdminCatalogService = Depends(_svc)):
     row = await s.get_workflow_template(template_id)
     return ok({"steps": row["steps"], "total": len(row["steps"])}, _rid(r), ENGINE_ID)
@@ -1393,7 +1393,7 @@ async def reorder_workflow_steps(template_id: uuid.UUID, r: Request,
 @router.get("/workflow-templates/{template_id}/transitions", response_model=ApiResponse[dict],
             summary="List workflow transitions", tags=["Master Workflow Templates"])
 async def list_workflow_transitions(template_id: uuid.UUID, r: Request,
-                                     u: UserContext = Depends(get_current_user),
+                                     u: UserContext = Depends(require_super_admin),
                                      s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_transitions(template_id), _rid(r), ENGINE_ID)
 
@@ -1429,7 +1429,7 @@ async def delete_workflow_transition(template_id: uuid.UUID, transition_id: str,
 @router.get("/workflow-templates/{template_id}/mappings", response_model=ApiResponse[dict],
             summary="List workflow service mappings", tags=["Master Workflow Templates"])
 async def list_workflow_mappings(template_id: uuid.UUID, r: Request,
-                                  u: UserContext = Depends(get_current_user),
+                                  u: UserContext = Depends(require_super_admin),
                                   s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_workflow_mappings(template_id), _rid(r), ENGINE_ID)
 
@@ -1456,7 +1456,7 @@ async def delete_workflow_mapping(template_id: uuid.UUID, mapping_id: uuid.UUID,
 @router.get("/workflow-templates/{template_id}/audit-logs", response_model=ApiResponse[dict],
             summary="Workflow template audit logs", tags=["Master Workflow Templates"])
 async def get_workflow_template_audit_logs(template_id: uuid.UUID, r: Request,
-                                            u: UserContext = Depends(get_current_user),
+                                            u: UserContext = Depends(require_super_admin),
                                             s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_master_data_audit(entity_type="master_workflow_template", entity_id=template_id),
               _rid(r), ENGINE_ID)
@@ -1465,7 +1465,7 @@ async def get_workflow_template_audit_logs(template_id: uuid.UUID, r: Request,
 @router.get("/workflows/audit-logs", response_model=ApiResponse[dict],
             summary="All workflow-related audit logs", tags=["Master Workflow Templates"])
 async def get_workflows_audit_logs(r: Request,
-                                    u: UserContext = Depends(get_current_user),
+                                    u: UserContext = Depends(require_super_admin),
                                     s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_master_data_audit(entity_type="master_workflow_template"), _rid(r), ENGINE_ID)
 

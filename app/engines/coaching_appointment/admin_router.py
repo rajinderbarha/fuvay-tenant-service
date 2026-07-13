@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import require_super_admin, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 from app.engines.coaching_appointment.service import CoachingAppointmentFlowService
@@ -27,7 +27,7 @@ async def admin_list_drafts(
     city:      str | None = Query(None),
     page:      int        = Query(1, ge=1),
     page_size: int        = Query(25, ge=1, le=100),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     svc    = CoachingAppointmentFlowService(db, _rid(r))
@@ -39,7 +39,7 @@ async def admin_list_drafts(
 async def admin_get_draft(
     draft_id: uuid.UUID,
     r: Request,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     svc    = CoachingAppointmentFlowService(db, _rid(r))
@@ -51,7 +51,7 @@ async def admin_get_draft(
 async def admin_get_draft_events(
     draft_id: uuid.UUID,
     r: Request,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     svc    = CoachingAppointmentFlowService(db, _rid(r))
@@ -65,7 +65,7 @@ async def admin_list_slot_holds(
     status:    str | None = Query(None),
     page:      int        = Query(1, ge=1),
     page_size: int        = Query(25, ge=1, le=100),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     svc    = CoachingAppointmentFlowService(db, _rid(r))

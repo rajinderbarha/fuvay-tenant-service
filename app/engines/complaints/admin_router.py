@@ -299,7 +299,7 @@ async def list_complaints(
     record_type: Optional[str]       = None,
     limit:       int                 = 100,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     complaints = await _complaint.admin_list_complaints(
@@ -313,7 +313,7 @@ async def list_complaints(
 async def get_complaint(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     c = await _complaint.get_complaint(db, complaint_id)
@@ -325,7 +325,7 @@ async def assign_complaint(
     complaint_id: uuid.UUID,
     body: AssignIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     c = await _complaint.admin_assign_complaint(db, u.user_id, complaint_id, body.assignee_id, request_id=_rid(r))
@@ -337,7 +337,7 @@ async def change_priority(
     complaint_id: uuid.UUID,
     body: PriorityIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     c = await _complaint.admin_change_priority(db, u.user_id, complaint_id, body.priority, body.reason, request_id=_rid(r))
@@ -348,7 +348,7 @@ async def change_priority(
 async def request_provider_response(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     c = await _complaint.admin_request_provider_response(db, u.user_id, complaint_id, request_id=_rid(r))
@@ -360,7 +360,7 @@ async def admin_add_message(
     complaint_id: uuid.UUID,
     body: AdminMessageIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     msg = await _complaint.admin_add_message(
@@ -373,7 +373,7 @@ async def admin_add_message(
 async def list_messages(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     msgs = await _complaint.list_messages(db, complaint_id, viewer="admin")
@@ -387,7 +387,7 @@ async def propose_resolution(
     complaint_id: uuid.UUID,
     body: ProposeResolutionIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     res = await _complaint.admin_propose_resolution(
@@ -404,7 +404,7 @@ async def propose_resolution(
 async def list_resolutions(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     resolutions = await _complaint.list_resolutions(db, complaint_id)
@@ -419,7 +419,7 @@ async def reject_complaint(
     complaint_id: uuid.UUID,
     body: RejectComplaintIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     c = await _complaint.admin_reject_complaint(db, u.user_id, complaint_id, body.reason, request_id=_rid(r))
@@ -431,7 +431,7 @@ async def resolve_complaint(
     complaint_id: uuid.UUID,
     body: ReasonIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     c = await _complaint.admin_resolve_complaint(db, u.user_id, complaint_id, reason=body.reason, request_id=_rid(r))
@@ -443,7 +443,7 @@ async def close_complaint(
     complaint_id: uuid.UUID,
     body: ReasonIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     from app.engines.complaints.constants import ACTOR_ADMIN
@@ -456,7 +456,7 @@ async def close_complaint(
 async def list_events(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     events = await _complaint.list_events(db, complaint_id)
@@ -472,7 +472,7 @@ async def list_rework_requests(
     tenant_id: Optional[uuid.UUID] = None,
     status:    Optional[str]       = None,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     reworks = await _rework.list_rework_requests(db, tenant_id=tenant_id, status=status)
@@ -487,7 +487,7 @@ async def approve_rework(
     rework_id: uuid.UUID,
     body: ReworkApproveIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     rw = await _rework.approve_rework(db, rework_id, u.user_id, admin_notes=body.admin_notes, request_id=_rid(r))
@@ -499,7 +499,7 @@ async def reject_rework(
     rework_id: uuid.UUID,
     body: RejectComplaintIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     rw = await _rework.reject_rework(db, rework_id, u.user_id, body.reason, request_id=_rid(r))
@@ -511,7 +511,7 @@ async def assign_rework(
     rework_id: uuid.UUID,
     body: ReworkAssignIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     rw = await _rework.assign_rework(db, rework_id, body.staff_member_id, u.user_id, request_id=_rid(r))
@@ -525,7 +525,7 @@ async def list_refund_requests(
     customer_id: Optional[uuid.UUID] = None,
     status:      Optional[str]       = None,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     refunds = await _refund.list_refund_requests(db, tenant_id=tenant_id, customer_id=customer_id, status=status)
@@ -541,7 +541,7 @@ async def approve_refund(
     refund_id: uuid.UUID,
     body: RefundApproveIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     rf = await _refund.admin_approve_refund(
@@ -556,7 +556,7 @@ async def reject_refund(
     refund_id: uuid.UUID,
     body: RefundRejectIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     rf = await _refund.admin_reject_refund(db, refund_id, u.user_id, body.reason, request_id=_rid(r))
@@ -568,7 +568,7 @@ async def record_refund(
     refund_id: uuid.UUID,
     body: RefundRecordIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     from app.engines.complaints.constants import ACTOR_ADMIN
@@ -584,7 +584,7 @@ async def record_refund(
 async def verify_refund(
     refund_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     rf = await _refund.verify_refund(db, refund_id, u.user_id, request_id=_rid(r))
@@ -596,7 +596,7 @@ async def verify_refund(
 @admin_cpolicy_router.get("")
 async def list_policies(
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     policies = await _complaint.list_policies(db)
@@ -607,7 +607,7 @@ async def list_policies(
 async def create_policy(
     body: PolicyIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     p = await _complaint.create_policy(db, body.model_dump(exclude_none=True))
@@ -619,7 +619,7 @@ async def update_policy(
     policy_id: uuid.UUID,
     body: PolicyIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     p = await _complaint.update_policy(db, policy_id, body.model_dump(exclude_none=True))
@@ -681,7 +681,7 @@ async def create_admin_settlement_proposal(
 async def list_settlement_proposals(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     proposals = await _complaint.list_settlement_proposals(db, complaint_id)
@@ -692,7 +692,7 @@ async def list_settlement_proposals(
 async def get_ai_session(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     session = await _complaint.get_ai_session(db, complaint_id)
@@ -703,7 +703,7 @@ async def get_ai_session(
 async def get_complaint_timeline(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Unified timeline: messages + events + proposals in chronological order."""
