@@ -34,21 +34,60 @@ API_KEY_RANDOM_BYTES = 32
 LOGIN_RATE_LIMIT_ATTEMPTS = 100
 LOGIN_RATE_LIMIT_WINDOW_MINUTES = 15
 
-# Roles hierarchy
-ROLES = ["super_admin", "tenant_owner", "staff", "customer", "guest"]
+# ── Canonical system-role vocabulary ──────────────────────────────────────────
+# MODULE-L5-01D (BLK-01D-1 decision, Option A): the single authoritative role
+# registry is app/core/permissions.py::ROLE_PERMISSIONS. These constants are a
+# convenience mirror of that enforced set and MUST stay in sync with it (the
+# canonical_role_registry_guard enforces this). This list was previously a stale
+# 5-role vocabulary (missing `technician` and the four least-privilege platform
+# admin roles), which MODULE-L5-01C flagged as a competing registry. It is now
+# reconciled to the enforced canonical set. Scope/authority is NOT defined here —
+# it lives in ROLE_PERMISSIONS; this is only names + advisory audience/hierarchy.
+ROLES = [
+    "super_admin",
+    "admin_operations",
+    "admin_finance",
+    "admin_security",
+    "admin_readonly",
+    "tenant_owner",
+    "staff",
+    "technician",
+    "customer",
+    "guest",
+]
+
+# Advisory only (no authorization decision is made from this map; canonical
+# authority is permissions.py). Platform-scoped admin roles rank below super_admin
+# and above tenant roles; scope (platform vs tenant) — not this linear rank — is
+# the real boundary and is enforced in permissions.py / require_platform_staff.
 ROLE_HIERARCHY = {
     "super_admin": 4,
+    "admin_security": 3,
+    "admin_finance": 3,
+    "admin_operations": 3,
+    "admin_readonly": 3,
     "tenant_owner": 3,
     "staff": 2,
+    "technician": 2,
     "customer": 1,
     "guest": 0,
 }
 
-# Token audience per app
+# Token audience per app. Consumed by utils.create_access_token via
+# AUDIENCE.get(role, "serviceos:customer"). Before this sprint `technician` and
+# the four admin_* roles were absent and silently fell back to the CUSTOMER
+# audience on their tokens; they are added here so each role's token carries a
+# correct audience. (decode_token uses verify_aud=False, so this is a
+# correctness/clarity fix, not a validation-behavior change.)
 AUDIENCE = {
     "super_admin": "serviceos:admin",
+    "admin_operations": "serviceos:admin",
+    "admin_finance": "serviceos:admin",
+    "admin_security": "serviceos:admin",
+    "admin_readonly": "serviceos:admin",
     "tenant_owner": "serviceos:tenant",
     "staff": "serviceos:staff",
+    "technician": "serviceos:staff",
     "customer": "serviceos:customer",
     "guest": "serviceos:customer",
 }
