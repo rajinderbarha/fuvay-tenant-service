@@ -300,6 +300,22 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
     <AdminMenuRefreshCtx.Provider value={loadEffectiveMenu}>
     <div style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
 
+      {/* FINAL-L5-05AC: skip-to-content -- first focusable element in the
+          shell, visually hidden until keyboard-focused. */}
+      <a
+        href="#admin-main-content"
+        style={{
+          position: "absolute", left: -9999, top: 0, zIndex: 1000,
+          padding: "10px 16px", background: "var(--surface-elevated)",
+          color: "var(--text-primary)", borderRadius: 8,
+          border: "1px solid var(--border)", fontSize: 13, fontWeight: 600,
+        }}
+        onFocus={e => { e.currentTarget.style.left = "12px"; e.currentTarget.style.top = "12px"; }}
+        onBlur={e => { e.currentTarget.style.left = "-9999px"; }}
+      >
+        Skip to main content
+      </a>
+
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       <aside style={{
         width: w, flexShrink: 0,
@@ -387,7 +403,12 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
           borderTop: "1px solid var(--sidebar-border)",
           display: "flex", flexDirection: "column", gap: 2,
         }}>
-          <button onClick={() => setCollapsed(!collapsed)} style={footerBtnStyle(collapsed)}>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            style={footerBtnStyle(collapsed)}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : undefined}
+          >
             {collapsed
               ? <ChevronRight size={15} style={{ flexShrink: 0 }}/>
               : <ChevronLeft size={15} style={{ flexShrink: 0 }}/>}
@@ -399,8 +420,8 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
       {/* ── Main ────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         <TopNav theme={theme} onToggleTheme={toggle} onLogout={handleLogout}/>
-        <main style={{ flex: 1, overflowY: "auto", padding: "28px 32px", position: "relative",
-          background: "var(--bg-gradient)" }}>
+        <main id="admin-main-content" tabIndex={-1} style={{ flex: 1, overflowY: "auto", padding: "28px 32px", position: "relative",
+          background: "var(--bg-gradient)", outline: "none" }}>
           <div style={{ maxWidth: 1440, margin: "0 auto" }}>
             <Breadcrumbs/>
             {children}

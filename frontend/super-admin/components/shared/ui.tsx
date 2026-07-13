@@ -315,16 +315,55 @@ export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
 }
 
 // ── Modal ────────────────────────────────────────────────────────────────────
+// FINAL-L5-05AC: canonical shared dialog -- every Admin dialog in the app
+// renders through this one component, so focus trap / restoration / ARIA
+// semantics fixed here apply everywhere at once rather than per-page.
+let modalTitleSeq = 0;
 export function Modal({ open, onClose, title, children, size = "md" }: {
   open: boolean; onClose: () => void; title?: string;
   children: React.ReactNode; size?: "sm" | "md" | "lg" | "xl";
 }) {
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const previouslyFocused = React.useRef<HTMLElement | null>(null);
+  const titleId = React.useRef(`modal-title-${++modalTitleSeq}`).current;
+
+  // Escape closes; Tab/Shift+Tab is trapped within the dialog's focusable
+  // elements (rule 7/8: dialogs must trap focus and restore it on close).
   React.useEffect(() => {
     if (!open) return;
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key !== "Tab" || !dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, [open, onClose]);
+
+  // On open: remember the trigger, move focus into the dialog. On close:
+  // restore focus to the trigger so keyboard users never lose their place.
+  React.useEffect(() => {
+    if (open) {
+      previouslyFocused.current = document.activeElement as HTMLElement | null;
+      const t = setTimeout(() => {
+        const focusable = dialogRef.current?.querySelector<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        (focusable ?? dialogRef.current)?.focus();
+      }, 0);
+      return () => clearTimeout(t);
+    }
+    previouslyFocused.current?.focus?.();
+    previouslyFocused.current = null;
+  }, [open]);
+
   if (!open) return null;
   const W = { sm: 400, md: 560, lg: 720, xl: 900 };
   return (
@@ -334,19 +373,25 @@ export function Modal({ open, onClose, title, children, size = "md" }: {
       background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)",
       animation: "fadeIn 0.15s ease",
     }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{
-        width: "100%", maxWidth: W[size], maxHeight: "90vh", overflow: "auto",
-        background: "var(--surface-elevated)", borderRadius: 18,
-        boxShadow: "var(--shadow-lg)", border: "1px solid var(--border)",
-        animation: "slideUp 0.2s cubic-bezier(0.34,1.56,0.64,1)",
-      }}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        tabIndex={-1}
+        style={{
+          width: "100%", maxWidth: W[size], maxHeight: "90vh", overflow: "auto",
+          background: "var(--surface-elevated)", borderRadius: 18,
+          boxShadow: "var(--shadow-lg)", border: "1px solid var(--border)",
+          animation: "slideUp 0.2s cubic-bezier(0.34,1.56,0.64,1)",
+        }}>
         {title && (
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
             padding: "18px 24px", borderBottom: "1px solid var(--border)",
           }}>
-            <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{title}</h2>
-            <button onClick={onClose} style={{
+            <h2 id={titleId} style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{title}</h2>
+            <button onClick={onClose} aria-label="Close dialog" style={{
               background: "none", border: "none", cursor: "pointer", padding: 6,
               color: "var(--text-tertiary)", borderRadius: 8,
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -374,7 +419,12 @@ const TOAST_CONFIG = {
 };
 export function Toaster({ toasts, onRemove }: { toasts: ToastItem[]; onRemove: (id: string) => void }) {
   return (
-    <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 400, display: "flex", flexDirection: "column", gap: 10, maxWidth: 360 }}>
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="false"
+      style={{ position: "fixed", bottom: 24, right: 24, zIndex: 400, display: "flex", flexDirection: "column", gap: 10, maxWidth: 360 }}
+    >
       {toasts.map(t => {
         const c = TOAST_CONFIG[t.variant];
         return (
@@ -389,7 +439,7 @@ export function Toaster({ toasts, onRemove }: { toasts: ToastItem[]; onRemove: (
               <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{t.title}</p>
               {t.description && <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "3px 0 0" }}>{t.description}</p>}
             </div>
-            <button onClick={() => onRemove(t.id)} style={{
+            <button onClick={() => onRemove(t.id)} aria-label="Dismiss notification" style={{
               background: "none", border: "none", cursor: "pointer",
               color: "var(--text-tertiary)", padding: 0, display: "flex", alignItems: "center",
             }}><X size={14}/></button>

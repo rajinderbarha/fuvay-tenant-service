@@ -262,6 +262,19 @@ a { color: inherit; text-decoration: none; }
 /* Status pulse dot */
 .pulse-dot { animation: pulse 2s ease-in-out infinite; }
 
+/* FINAL-L5-05AC: respect prefers-reduced-motion platform-wide. The
+   !important overrides apply even to inline style={{animation:"..."}}
+   declarations (Modal, Toast, etc.) per CSS cascade rules, so this one
+   rule covers every animated surface without touching each component. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ─── SPRINT 34L — UI Utility Classes (Sprint 34E/34H pages) ─────────────── */
 
 /* Page layout */
