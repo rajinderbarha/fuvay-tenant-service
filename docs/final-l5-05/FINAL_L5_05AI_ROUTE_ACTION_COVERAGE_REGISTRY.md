@@ -27,8 +27,8 @@ Extracted directly from `frontend/super-admin/components/layout/AdminLayout.tsx`
 |---|---|---|---|---|---|
 | dashboard | `/admin/dashboard` | DASHBOARD | (visible to all authenticated) | CRITICAL | **COVERED** (05l, 05m) |
 | tenants | `/admin/tenants` | TENANT_ADMINISTRATION | `tenant:read` | CRITICAL | **COVERED** (05l, 05p, 05q) |
-| onboarding | `/admin/tenants/onboarding` | TENANT_ADMINISTRATION | `SUPER_ADMIN_ONLY` | HIGH | NONE |
-| onboarding-providers | `/admin/onboarding/providers` | PROVIDER_OPERATIONS | `SUPER_ADMIN_ONLY` | HIGH | NONE |
+| onboarding | `/admin/tenants/onboarding` | TENANT_ADMINISTRATION | `SUPER_ADMIN_ONLY` | **CRITICAL** (upgraded, FINAL-L5-05AJ) | **COVERED** (05aj) |
+| onboarding-providers | `/admin/onboarding/providers` | PROVIDER_OPERATIONS | `SUPER_ADMIN_ONLY` | **CRITICAL** (upgraded, FINAL-L5-05AJ) | **PARTIALLY COVERED** (05aj -- surfaced a real 500 defect, see L5-05AJ-002) |
 | packages | `/admin/packages` | PACKAGES | `SUPER_ADMIN_ONLY` | MEDIUM | **COVERED** (05l) |
 | bookings | `/admin/bookings` | BOOKINGS | `SUPER_ADMIN_ONLY` | MEDIUM | NONE |
 | operations (Jobs) | `/admin/home-services/service-jobs` | JOBS | `admin:jobs:read` | CRITICAL | **COVERED** (05l) |
@@ -48,10 +48,10 @@ Extracted directly from `frontend/super-admin/components/layout/AdminLayout.tsx`
 | hs-price-experience | `/admin/home-services/price-experience` | PRICING | `SUPER_ADMIN_ONLY` | LOW | NONE |
 | hs-provider-matching | `/admin/home-services/provider-matching` | MATCHING | `SUPER_ADMIN_ONLY` | MEDIUM | NONE |
 | hs-matching-diagnostics | `/admin/home-services/matching-diagnostics` | MATCHING | `SUPER_ADMIN_ONLY` | LOW | NONE |
-| hs-service-areas | `/admin/home-services/service-areas` | SERVICE_AREAS | `SUPER_ADMIN_ONLY` | HIGH | NONE (Service Area mutations covered indirectly via tenant-detail tab, see 05q) |
+| hs-service-areas | `/admin/home-services/service-areas` | SERVICE_AREAS | `SUPER_ADMIN_ONLY` | **CRITICAL** (upgraded, FINAL-L5-05AJ) | **COVERED** (05aj; mutations also covered indirectly via tenant-detail tab, see 05q) |
 | hs-completed-job-deduction | `/admin/home-services/completed-job-deduction` | FINANCE | `finance.completed_job_deduction_rules.read` | HIGH | NONE |
 | hs-settings | `/admin/home-services/settings` | SYSTEM_CONFIGURATION | `SUPER_ADMIN_ONLY` | MEDIUM | NONE |
-| finance | `/admin/finance` | FINANCE | `finance:hub:read` | CRITICAL | NONE (sub-pages covered, hub landing page not directly tested) |
+| finance | `/admin/finance` | FINANCE | `finance:hub:read` | CRITICAL | **PARTIALLY COVERED** (05aj -- Operations denial proven; Super Admin allowed-render test hit a login timeout, see L5-05AJ-003) |
 | finance-usage-credits | `/admin/finance/usage-credits` | USAGE_CREDITS | `finance.usage_credits.read` | CRITICAL | **COVERED** (05k, 05l, 05m) |
 | finance-deposits | `/admin/finance/deposits` | SECURITY_DEPOSITS | `finance:deposits:read` | CRITICAL | **COVERED** (05k) |
 | finance-topups | `/admin/finance/topups` | FINANCE | `finance:topups:read` | HIGH | **COVERED** (05k) |
@@ -66,12 +66,12 @@ Extracted directly from `frontend/super-admin/components/layout/AdminLayout.tsx`
 | engines | `/admin/engines` | SYSTEM_CONFIGURATION | `SUPER_ADMIN_ONLY` | HIGH | NONE |
 | security | `/admin/security` | SECURITY_OPERATIONS | `security:read` | CRITICAL | **COVERED** (05l) |
 | workflow-templates | `/admin/workflow-templates` | SYSTEM_CONFIGURATION | `SUPER_ADMIN_ONLY` | MEDIUM | NONE |
-| audit-logs | `/admin/audit-logs` | AUDIT | `auth:audit:read` | CRITICAL | NONE |
+| audit-logs | `/admin/audit-logs` | AUDIT | `auth:audit:read` | CRITICAL | **COVERED** (05aj) |
 | users | `/admin/users` | IDENTITY | `auth:users:read` | CRITICAL | **COVERED** (05l, 05n) |
 | roles | `/admin/users/roles` | ROLES_PERMISSIONS | `platform:roles:read` | CRITICAL | **COVERED** (05l) |
-| permissions | `/admin/users/permissions` | ROLES_PERMISSIONS | `platform:permissions:read` | CRITICAL | NONE |
+| permissions | `/admin/users/permissions` | ROLES_PERMISSIONS | `platform:permissions:read` | CRITICAL | **COVERED** (05aj) |
 | media | `/admin/media` | SYSTEM_CONFIGURATION | `SUPER_ADMIN_ONLY` | LOW | NONE |
-| settings | `/admin/settings` | SYSTEM_CONFIGURATION | `SUPER_ADMIN_ONLY` | HIGH | NONE |
+| settings | `/admin/settings` | SYSTEM_CONFIGURATION | `SUPER_ADMIN_ONLY` | **CRITICAL** (upgraded, FINAL-L5-05AJ) | **COVERED** (05aj) |
 
 **43 top-level navigation routes hand-documented above — 0 UNKNOWN.** The automated `e2e/route_coverage_guard.js` (built this sprint, parses `AdminLayout.tsx` directly rather than a hand-copied duplicate) counts **47** real nav items — 4 more than manually transcribed above, confirming the hand-count in this table is a close but not pixel-perfect transcription of the real source; the guard's own count is the authoritative one going forward. 13 of the routes documented above have real, existing Chromium coverage (counting `bookability/providers`, covered separately below as a nested route under `tenants`).
 
