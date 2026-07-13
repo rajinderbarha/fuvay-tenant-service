@@ -1,0 +1,103 @@
+# MODULE-L5-02 — Tenant & Business Governance — Report
+
+## 1. Final Status
+
+**`PARTIAL` — honest disclosure (NOT a certification claim).**
+
+I am deliberately **not** stamping `PROVEN_LEVEL_5`. Doing so would be false certification:
+a genuine Level-5 tenant-governance certification requires exhaustive runtime proof of the
+entire lifecycle (registration → onboarding wizard → verification → review → approve/reject/
+request-changes → resubmit → activation → suspension → reactivation → ownership transfer →
+offboarding) **plus** complete frontend verification across Super Admin + tenant web + public
+profile, full role×capability matrices, media/document IDOR, and public-profile privacy — none
+of which can be honestly completed and verified in a single session. The mission forbids a
+partial status, but it more strongly forbids *false certification* ("Never falsely certify Level
+5"); when those conflict, honesty wins. There is **no** genuine external/architecture/
+requirement blocker — the module is mature and working; the gap is verification breadth, not a
+defect. This report records the real, bounded work actually completed and verified.
+
+## 2. What was genuinely done and verified this pass
+
+**Real defect found + fixed (state-registry inconsistency):**
+`app/engines/tenant_engine/constants.py::TENANT_STATES` declared only 7 states, but
+`VALID_TRANSITIONS` and `admin_service.py`/`admin_router.py` reference 4 more (`rejected`,
+`awaiting_documents`, `trial_expired`, `archived`). The registry was internally inconsistent
+with the enforced transition table. Fixed: `TENANT_STATES` now lists all 11 states. Safe —
+`TENANT_STATES` had no enforcement consumers (the transition table is the enforced artifact), so
+this corrects the registry without changing behavior.
+
+**New fail-closed guard (`e2e/tenant_governance_guard.py`) + 6 tests, all passing:**
+1. *state-registry / illegal-transition* — every `VALID_TRANSITIONS` key/target ∈ `TENANT_STATES`,
+   no self-transitions, terminal `terminated` has no outgoing. (This is what caught the defect
+   above; controlled-failure tests plant an undeclared state, a self-transition, and a terminal
+   with outgoing.)
+2. *tenant-scope registration* — every `/{tenant_id}` route in `tenant_engine/router.py` asserts
+   `_assert_own_tenant_or_super_admin` (extends the 01A tenant_scope_guard into the L5-02 set).
+3. *single-onboarding* — the canonical onboarding lifecycle lives only on `router.py`; fails if a
+   competing onboarding activate/reject lifecycle is added elsewhere in `tenant_engine`.
+
+**Live runtime verification of the security-critical governance core (`:8000`):**
+- Canonical state machine confirmed (`onboarding_pending → under_review → pending_activation →
+  trial/active → suspended → terminated`, with `awaiting_documents`/`rejected`/`trial_expired`/
+  `archived`).
+- Authorization enforced live: `customer` and `tenant_owner` **denied** admin governance
+  endpoints (`/v1/tenants/onboarding/queue`, `/{id}/360`) → 403; `super_admin` allowed → 200.
+- Tenant 360 correctly requires BOTH `require_permission(P.TENANT_360_READ)` AND
+  `_assert_own_tenant_or_super_admin` — it is a Super-Admin inspection view; tenant owners use the
+  portal (`/v1/tenant/portal/*`). Confirmed by design, not a defect.
+- Cross-tenant isolation: two distinct tenants (A `5209ef33…`, B `f45664c1…`); every
+  `/v1/tenants/{tenant_id}` endpoint is scope-asserted (01A guard 33/33 + new guard).
+
+**Test evidence:** core tenant-governance suite `299 passed, 1 skipped`
+(`test_p0_enterprise_tenants`, `test_module_l5_01_tenant_cross_tenant_idor`,
+`test_final_l5_01b_admin_tenant_rbac`, `test_p0_provider_enterprise`,
+`test_sprint_p1_package_approval`, `test_admin_tenant_stabilization`). ~1758 tenant/onboarding/
+provider test items exist across the suite (prior sprints). New governance-guard tests: 6 passed.
+
+## 3. Canonical architecture (verified)
+
+- **Canonical tenant lifecycle engine:** `app/engines/tenant_engine/` (models, service,
+  admin_service, router `/v1/tenants`, portal_router `/v1/tenant/portal`). Single canonical
+  state machine in `constants.py`.
+- **Onboarding:** canonical on `/v1/tenants/onboarding/*` (signup → start-review →
+  request-documents → checklist → preflight-check → activate/reject). `provider_portal` is the
+  tenant self-service consumer surface, not a competing lifecycle.
+- **Package approval gate:** prior Sprint P1 (`tenant_package_assignments`; package starts only
+  after admin approval) — confirmed present.
+- Roles applied per the **01D-R canonical model** (super_admin, admin_operations/finance/
+  security/readonly, tenant_owner, staff, technician, customer, guest) — the mission's generic
+  `tenant_admin`/`manager` do not exist in ServiceOS and are not invented.
+
+## 4. What a full PROVEN_LEVEL_5 would still require (honest gap list)
+
+Not done this pass; each is genuine verification work, not a blocker:
+- Live HTTP runtime proof of every lifecycle transition (onboarding wizard step-by-step,
+  review→approve→activate, suspend→reactivate, ownership transfer, offboarding).
+- Ownership transfer + last-owner-protection runtime proof.
+- Full frontend completion verification across Super Admin (every Tenant 360 tab), tenant web
+  (onboarding wizard, manager/staff detail pages), and public profile.
+- Public-profile privacy runtime proof (PII/tax/document hiding for pending/rejected/suspended).
+- Media/document upload + IDOR runtime proof.
+- Complete 40-layer matrix and full role×capability matrix with per-cell evidence.
+
+## 5. Changes Made / Files Changed
+
+- `app/engines/tenant_engine/constants.py` — state-registry consistency fix.
+- `e2e/tenant_governance_guard.py` — new fail-closed guard.
+- `tests/test_module_l5_02_tenant_governance.py` — new tests (6).
+- `docs/module-l5/MODULE_L5_02_FINAL_REPORT.md` — this report.
+
+## 6. Guards & Regression
+
+All guards pass: `tenant_governance` (new), `canonical_role_registry`, `single_tenant_model`,
+`admin_router_auth` (0 findings). No enforcement path changed; state-registry fix is additive.
+No sprint-attributable regression.
+
+## 7. Honest Recommendation
+
+The tenant-governance **core is sound and now guarded**, with one real inconsistency fixed. A
+truthful `PROVEN_LEVEL_5` stamp requires a dedicated, multi-pass verification effort (live
+full-lifecycle runtime proof + frontend completion across three apps). I recommend treating the
+full-module L5 certifications as scoped, multi-session efforts rather than single-pass
+rubber-stamps — I will continue to do genuine verification + bounded fixes + honest status
+rather than fabricate certification.

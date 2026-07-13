@@ -1,6 +1,10 @@
 """Tenant Engine — constants."""
 
-TENANT_STATES = ["onboarding_pending","under_review","pending_activation","trial","active","suspended","terminated"]
+# MODULE-L5-02: the registry must list every state the transition table and
+# admin logic actually use. Previously omitted rejected/awaiting_documents/
+# trial_expired/archived even though VALID_TRANSITIONS and admin_service.py
+# reference them — the tenant_governance_guard now fails closed on any such drift.
+TENANT_STATES = ["onboarding_pending","under_review","awaiting_documents","pending_activation","trial","trial_expired","active","suspended","terminated","rejected","archived"]
 
 VALID_TRANSITIONS = {
     "onboarding_pending": ["under_review", "rejected"],
