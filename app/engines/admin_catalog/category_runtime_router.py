@@ -315,7 +315,20 @@ async def list_categories(
     valid_sort = {"display_order", "name", "vertical_type", "finance_model", "readiness_status", "updated_at"}
     sort_key = sort_by if sort_by in valid_sort else "display_order"
     reverse = sort_dir == "desc"
-    enriched.sort(key=lambda c: (c.get(sort_key) or ""), reverse=reverse)
+    # FINAL-L5-05AK: `c.get(sort_key) or ""` treated falsy-but-valid values
+    # (display_order == 0, e.g. the real seeded "Home Services" category)
+    # as "missing" and substituted "" -- mixing int and str in the same
+    # sort comparison raises TypeError on every call with the default
+    # sort_by="display_order", which is exactly why GET /v1/admin/categories
+    # 500'd unconditionally. Use an explicit None-check with a
+    # type-appropriate default instead of a truthy/falsy fallback.
+    _numeric_sort_keys = {"display_order"}
+    def _sort_value(c: dict):
+        v = c.get(sort_key)
+        if v is not None:
+            return v
+        return 0 if sort_key in _numeric_sort_keys else ""
+    enriched.sort(key=_sort_value, reverse=reverse)
 
     # Paginate
     offset = (page - 1) * page_size

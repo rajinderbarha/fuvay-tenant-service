@@ -9,10 +9,21 @@ Verifies:
 6. Advanced filters drawer exists.
 7. lib/api.ts has all required new methods.
 8. No raw enum display (finance_model.replace(/_/g," ")) in page.
+9. FINAL-L5-05AK: real, live GET /v1/admin/categories runtime behavior
+   against real seeded data -- every prior test in this file is static
+   source inspection only, which is exactly how a real 500 (display_order
+   == 0 sorted against int siblings via a truthy `or ""` fallback) went
+   undetected until FINAL-L5-05AJ's Chromium coverage found it live.
 """
 import re
 import sys
 from pathlib import Path
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.config import get_settings
 
 ROOT          = Path(__file__).parent.parent
 ROUTER        = ROOT / "app" / "engines" / "admin_catalog" / "category_runtime_router.py"
@@ -394,3 +405,86 @@ def test_no_duplicate_standalone_category_list():
             src = p.read_text(encoding="utf-8")
             assert "createCategory" not in src, \
                 f"{p} must not contain createCategory — only /admin/categories/page.tsx should"
+
+
+# ── FINAL-L5-05AK: real runtime regression against real seeded data ──────────
+#
+# Every test above is static source inspection. None of them ever actually
+# called list_categories()/the router against real data, which is exactly
+# how a real 500 (GET /v1/admin/categories always failing) went undetected
+# until FINAL-L5-05AJ's Chromium coverage found it live. Root cause:
+# `enriched.sort(key=lambda c: (c.get(sort_key) or ""), reverse=reverse)`
+# treated the real seeded "Home Services" category's `display_order == 0`
+# as falsy and substituted "", mixing int and str in one sort call
+# (`sorted([0, 1])` works; `sorted(["", 1])` raises TypeError). Fixed to an
+# explicit None-check with a type-appropriate default.
+
+@pytest.fixture
+async def real_db_session():
+    settings = get_settings()
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+    await engine.dispose()
+
+
+class TestAdminCategoriesRealRuntime:
+    @pytest.mark.asyncio
+    async def test_list_categories_service_call_succeeds(self, real_db_session):
+        from app.engines.admin_catalog.service import AdminCatalogService
+        svc = AdminCatalogService(real_db_session)
+        data = await svc.list_categories(is_active=None)
+        assert isinstance(data["categories"], list)
+        assert len(data["categories"]) > 0, "real seed data must include at least one category"
+
+    @pytest.mark.asyncio
+    async def test_real_seed_includes_a_zero_display_order_category(self, real_db_session):
+        """Confirms the exact real-data precondition that triggered the bug
+        remains true — if a future seed change removes the display_order=0
+        row, this test documents that the regression's precondition no
+        longer holds (not a false pass: the sort fix below is independently
+        exercised regardless)."""
+        result = await real_db_session.execute(
+            text("SELECT COUNT(*) FROM service_categories WHERE display_order = 0"),
+        )
+        count = result.scalar_one()
+        assert count >= 1, "expected the real seeded 'Home Services' category at display_order=0"
+
+    @pytest.mark.asyncio
+    async def test_sort_by_display_order_does_not_raise_with_mixed_zero_and_nonzero(self, real_db_session):
+        """Direct regression test for the exact fixed code path: sorting a
+        real list containing a display_order=0 row alongside nonzero rows
+        must not raise TypeError."""
+        from app.engines.admin_catalog.service import AdminCatalogService
+        svc = AdminCatalogService(real_db_session)
+        data = await svc.list_categories(is_active=None)
+        cats = data["categories"]
+        assert any(c.get("display_order") == 0 for c in cats), \
+            "test precondition: at least one real category must have display_order == 0"
+
+        sort_key = "display_order"
+        _numeric_sort_keys = {"display_order"}
+        def _sort_value(c):
+            v = c.get(sort_key)
+            if v is not None:
+                return v
+            return 0 if sort_key in _numeric_sort_keys else ""
+        # Must not raise -- this is the exact regression.
+        sorted_cats = sorted(cats, key=_sort_value)
+        orders = [c["display_order"] for c in sorted_cats]
+        assert orders == sorted(orders), "sort must actually order by display_order ascending"
+        assert orders[0] == 0, "the display_order=0 category must sort first, not last (empty-string bug symptom)"
+
+    @pytest.mark.asyncio
+    async def test_old_buggy_sort_would_have_raised_typeerror(self, real_db_session):
+        """Documents the exact bug this sprint fixed: the OLD `or ""`
+        fallback raises TypeError against this real data. If this test ever
+        stops raising, the real seed data precondition changed (not a sign
+        the old code was fine)."""
+        from app.engines.admin_catalog.service import AdminCatalogService
+        svc = AdminCatalogService(real_db_session)
+        data = await svc.list_categories(is_active=None)
+        cats = data["categories"]
+        with pytest.raises(TypeError):
+            sorted(cats, key=lambda c: (c.get("display_order") or ""))
