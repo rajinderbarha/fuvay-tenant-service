@@ -159,6 +159,7 @@ function OverviewTab() {
 // ═══════════════════════════════════════════════════════════════
 
 function ThreatsTab({ router }: { router: ReturnType<typeof useRouter> }) {
+  const perm = usePermissions();
   const [status, setStatus] = useState("");
   const threats = useApi(useCallback(() => securityAdminApi.listThreats({ status: status || undefined, limit: 100 }), [status]));
   const statusAction = useAction(useCallback((id: string, s: string) => securityAdminApi.updateThreatStatus(id, s), []));
@@ -195,11 +196,11 @@ function ThreatsTab({ router }: { router: ReturnType<typeof useRouter> }) {
                   <Td>{new Date(t.created_at).toLocaleString("en-IN")}</Td>
                   <Td>
                     <ActionMenu items={[
-                      { label: "Mark Investigating", onClick: () => act(t, () => statusAction.execute(t.threat_id, "investigating")) },
-                      { label: "Block IP", onClick: () => act(t, () => blockAction.execute(t.threat_id, "Blocked from threat review")), disabled: !t.ip_address },
-                      { label: "Revoke Sessions", onClick: () => act(t, () => revokeAction.execute(t.threat_id, "Sessions revoked from threat review")), disabled: !t.target_user_id },
-                      { label: "Mark Resolved", onClick: () => act(t, () => statusAction.execute(t.threat_id, "resolved")) },
-                      { label: "Mark False Positive", onClick: () => act(t, () => statusAction.execute(t.threat_id, "false_positive")) },
+                      perm.has("security:threats:resolve") && { label: "Mark Investigating", onClick: () => act(t, () => statusAction.execute(t.threat_id, "investigating")) },
+                      perm.has("security:threats:block_ip") && { label: "Block IP", onClick: () => act(t, () => blockAction.execute(t.threat_id, "Blocked from threat review")), disabled: !t.ip_address },
+                      perm.has("security:sessions:revoke") && { label: "Revoke Sessions", onClick: () => act(t, () => revokeAction.execute(t.threat_id, "Sessions revoked from threat review")), disabled: !t.target_user_id },
+                      perm.has("security:threats:resolve") && { label: "Mark Resolved", onClick: () => act(t, () => statusAction.execute(t.threat_id, "resolved")) },
+                      perm.has("security:threats:resolve") && { label: "Mark False Positive", onClick: () => act(t, () => statusAction.execute(t.threat_id, "false_positive")) },
                     ]} />
                   </Td>
                 </tr>
@@ -273,6 +274,7 @@ function SessionsTab() {
 // ═══════════════════════════════════════════════════════════════
 
 function IpBlocklistTab() {
+  const perm = usePermissions();
   const [modal, setModal] = useState(false);
   const [ip, setIp] = useState("");
   const [reason, setReason] = useState("");
@@ -292,7 +294,9 @@ function IpBlocklistTab() {
   return (
     <div>
       <div style={{ marginBottom: 14 }}>
-        <Btn variant="danger" size="sm" icon={<Ban size={14} />} onClick={() => setModal(true)}>Block IP</Btn>
+        {perm.has("security:ip_blocklist:create") && (
+          <Btn variant="danger" size="sm" icon={<Ban size={14} />} onClick={() => setModal(true)}>Block IP</Btn>
+        )}
       </div>
       <Card padding={0}>
         {blocklist.loading ? <Skeleton height={200} /> : (blocklist.data?.entries.length ?? 0) === 0 ? <EmptyState text="No IP blocks configured." /> : (
@@ -308,9 +312,11 @@ function IpBlocklistTab() {
                   <Td><Badge variant={e.status === "active" ? "danger" : "muted"} size="sm">{e.status}</Badge></Td>
                   <Td>{e.hit_count}</Td>
                   <Td>
-                    <ActionMenu items={[
-                      { label: "Revoke Block", onClick: () => handleRevoke(e), disabled: e.status !== "active", destructive: true },
-                    ]} />
+                    {perm.has("security:ip_blocklist:revoke") && (
+                      <ActionMenu items={[
+                        { label: "Revoke Block", onClick: () => handleRevoke(e), disabled: e.status !== "active", destructive: true },
+                      ]} />
+                    )}
                   </Td>
                 </tr>
               ))}
@@ -339,6 +345,7 @@ function IpBlocklistTab() {
 // ═══════════════════════════════════════════════════════════════
 
 function ApiKeysTab() {
+  const perm = usePermissions();
   const [modal, setModal] = useState(false);
   const [name, setName] = useState("");
   const [tenantId, setTenantId] = useState("");
@@ -368,7 +375,9 @@ function ApiKeysTab() {
   return (
     <div>
       <div style={{ marginBottom: 14 }}>
-        <Btn variant="primary" size="sm" icon={<Key size={14} />} onClick={() => setModal(true)}>Create API Key</Btn>
+        {perm.has("security:api_keys:create") && (
+          <Btn variant="primary" size="sm" icon={<Key size={14} />} onClick={() => setModal(true)}>Create API Key</Btn>
+        )}
       </div>
       <Card padding={0}>
         {keys.loading ? <Skeleton height={200} /> : (keys.data?.api_keys.length ?? 0) === 0 ? <EmptyState text="No API keys created yet." /> : (
@@ -385,8 +394,8 @@ function ApiKeysTab() {
                   <Td>{new Date(k.created_at).toLocaleDateString("en-IN")}</Td>
                   <Td>
                     <ActionMenu items={[
-                      { label: "Rotate Key", onClick: () => handleRotate(k), disabled: k.status !== "active" },
-                      { label: "Revoke Key", onClick: () => handleRevoke(k), disabled: k.status !== "active", destructive: true },
+                      perm.has("security:api_keys:rotate") && { label: "Rotate Key", onClick: () => handleRotate(k), disabled: k.status !== "active" },
+                      perm.has("security:api_keys:revoke") && { label: "Revoke Key", onClick: () => handleRevoke(k), disabled: k.status !== "active", destructive: true },
                     ]} />
                   </Td>
                 </tr>
@@ -430,6 +439,7 @@ function ApiKeysTab() {
 // ═══════════════════════════════════════════════════════════════
 
 function AuditLogsTab() {
+  const perm = usePermissions();
   const [q, setQ] = useState("");
   const logs = useApi(useCallback(() => securityAdminApi.listAuditLogs({ q: q || undefined, limit: 100 }), [q]));
   const exportAction = useAction(useCallback(() => securityAdminApi.exportAuditLogs(), []));
@@ -450,9 +460,11 @@ function AuditLogsTab() {
         <div style={{ maxWidth: 320, flex: 1 }}>
           <Input placeholder="Search by operation, entity, or IP..." value={q} onChange={setQ} />
         </div>
-        <Btn variant="secondary" size="sm" icon={<Download size={14} />} loading={exportAction.loading} onClick={handleExport}>
-          Export Audit Log
-        </Btn>
+        {perm.has("security:audit:export") && (
+          <Btn variant="secondary" size="sm" icon={<Download size={14} />} loading={exportAction.loading} onClick={handleExport}>
+            Export Audit Log
+          </Btn>
+        )}
       </div>
       <Card padding={0}>
         {logs.loading ? <Skeleton height={200} /> : (logs.data?.audit_logs.length ?? 0) === 0 ? <EmptyState text="No audit entries match this filter." /> : (
@@ -485,6 +497,7 @@ function AuditLogsTab() {
 // ═══════════════════════════════════════════════════════════════
 
 function PoliciesTab() {
+  const perm = usePermissions();
   const policies = useApi(useCallback(() => securityAdminApi.getPolicies(), []));
   const updateAction = useAction(useCallback((key: string, value: unknown, reason: string) => securityAdminApi.updatePolicy(key, value, reason), []));
   const [editKey, setEditKey] = useState<string | null>(null);
@@ -519,7 +532,7 @@ function PoliciesTab() {
                   <Td><code>{p.policy_key}</code></Td>
                   <Td>{typeof p.policy_value === "object" ? JSON.stringify(p.policy_value) : String(p.policy_value)}</Td>
                   <Td>{p.description ?? "—"}</Td>
-                  <Td><Btn variant="secondary" size="xs" onClick={() => openEdit(p.policy_key, p.policy_value)}>Edit</Btn></Td>
+                  <Td>{perm.has("security:policies:update") && <Btn variant="secondary" size="xs" onClick={() => openEdit(p.policy_key, p.policy_value)}>Edit</Btn>}</Td>
                 </tr>
               ))}
             </tbody>
