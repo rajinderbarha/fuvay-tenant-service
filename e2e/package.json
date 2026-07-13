@@ -10,7 +10,8 @@
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
     "report": "playwright show-report",
-    "install-browsers": "playwright install chromium"
+    "install-browsers": "playwright install chromium",
+    "test:e2e:preflight": "node preflight.js"
   },
   "devDependencies": {
     "@playwright/test": "1.52.0",

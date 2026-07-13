@@ -49,6 +49,26 @@ const ROLES: Array<{ name: string; email: string; password: string }> = [
 ];
 
 test.describe("FINAL-L5-05L real browser — five-role login + dashboard smoke", () => {
+  // FINAL-L5-05AG: this spec drives a real Next.js *dev* server (Turbopack,
+  // on-demand per-route compilation, confirmed slow on this environment's
+  // filesystem via the dev server's own "Slow filesystem detected"
+  // warning). Under parallel execution, concurrent browser contexts each
+  // trigger a fresh on-demand compile of /login and time out waiting for
+  // /v1/auth/login (test-infrastructure defect, not a product defect --
+  // reproduced and root-caused this sprint: 4/7 failed in parallel, 7/7
+  // passed twice consecutively in serial). `mode: "serial"` guarantees
+  // ordering *within this file*; it does not prevent Playwright from
+  // running a DIFFERENT real-backend spec file concurrently in another
+  // worker (confirmed: running this file + final-l5-05m-*.spec.ts
+  // together under default parallel invocation still produced 2
+  // failures from cross-file contention). Invoke real-backend specs
+  // with `--workers=1` (proven fully deterministic across 3 consecutive
+  // clean runs) rather than relying on per-file config alone; the
+  // shared root config is deliberately NOT changed to workers:1 globally
+  // since that would needlessly serialize the ~17 fully-mocked,
+  // parallelism-safe specs too.
+  test.describe.configure({ mode: "serial" });
+
   for (const role of ROLES) {
     test(`${role.name}: logs in, loads dashboard with no crash, /v1/auth/me returns correct role`, async ({ page }) => {
       const consoleErrors: string[] = [];

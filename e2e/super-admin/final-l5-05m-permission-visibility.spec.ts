@@ -50,6 +50,12 @@ async function sidebarText(page: Page): Promise<string> {
 }
 
 test.describe("FINAL-L5-05M real browser — five-role sidebar permission visibility", () => {
+  // FINAL-L5-05AG: same dev-server on-demand-compilation root cause as
+  // final-l5-05l-admin-role-runtime.spec.ts -- forcing serial execution
+  // makes this real-backend suite deterministic under default (parallel)
+  // invocation. See that file's comment for full root-cause detail.
+  test.describe.configure({ mode: "serial" });
+
   test("Platform Super Admin: sees all intended menu groups including Finance and Platform", async ({ page }) => {
     await login(page, "admin@serviceos.local", PASSWORD_SUPER);
     await page.goto("http://localhost:3000/admin/dashboard", { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -115,6 +121,8 @@ test.describe("FINAL-L5-05M real browser — five-role sidebar permission visibi
 });
 
 test.describe("FINAL-L5-05M real browser — direct-route Permission Denied + read-only presentation", () => {
+  test.describe.configure({ mode: "serial" });
+
   test("Operations Admin: direct navigation to Usage Credits shows Permission Denied, no protected data flash", async ({ page }) => {
     await login(page, "admin.ops@serviceos.local", PASSWORD_TEST_ROLES);
     await page.goto(`http://localhost:3000/admin/finance/usage-credits?tenant_id=${REAL_TENANT_ID}`, {
