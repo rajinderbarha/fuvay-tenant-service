@@ -1,17 +1,13 @@
-"""Vertical Billing Engine — constants. Proven Level 5.
+"""Vertical Billing — orphaned scaffold, NOT the canonical implementation.
 
-THE CORE DESIGN DECISION:
-Every billing decision in the platform checks BillingMode FIRST.
-The vertical determines which billing path runs — not hardcoded if/else.
-All billing behaviour is driven from VerticalBillingConfig rows.
-Adding a new vertical = add new config rows. Zero application code change.
-
-Proven patterns:
-  ✅ VerticalBillingConfig versioned (valid_from/valid_until) — same as Pricing Phase 4
-  ✅ BillingRouter reads config at runtime — no hardcoded vertical logic
-  ✅ Home services: credit wallet + commission on job close (already built, unchanged)
-  ✅ Coaching center: subscription + lead cap (future, config-driven)
-  ✅ New verticals: add config row, nothing else changes
+MODULE-L5-00A finding: this directory has no router, no model, and no
+active caller anywhere in the codebase. The real, working
+VerticalBillingConfig / BillingRouter implementation this file's constants
+describe lives entirely in `app.engines.platform_commerce`
+(billing_constants.py, billing_models.py, billing_router.py) — see
+docs/module-l5/00a-vertical-billing-disposition.md for the full
+investigation. This module is scheduled for deletion (backlog item BL-002);
+do not treat it as canonical or import from it.
 """
 
 class Vertical:

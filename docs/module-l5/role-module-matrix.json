@@ -1,0 +1,1201 @@
+{
+  "modules_total": 17,
+  "roles_total": 10,
+  "cells_total": 170,
+  "cells_unknown": 0,
+  "cells_runtime_verified": 47,
+  "cells_source_inferred": 40,
+  "cells_business_default": 83,
+  "matrix": [
+    {
+      "module": "identity_access",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "identity_access",
+      "role": "admin_operations",
+      "cell": "DENIED",
+      "reason": "no AUTH_USERS_* write perms in bundle",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "identity_access",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "no AUTH_USERS_* write perms in bundle",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "identity_access",
+      "role": "admin_security",
+      "cell": "SECONDARY_OPERATOR",
+      "reason": "AUTH_USERS_READ, session/device revoke perms",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "identity_access",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "AUTH_USERS_READ only, 0 mutation perms (guarded invariant)",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "identity_access",
+      "role": "tenant_owner",
+      "cell": "SELF_SERVICE",
+      "reason": "manages own tenant's staff accounts",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "identity_access",
+      "role": "staff",
+      "cell": "SELF_SERVICE",
+      "reason": "own profile/session only",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "identity_access",
+      "role": "technician",
+      "cell": "SELF_SERVICE",
+      "reason": "own profile/session only",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "identity_access",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "own account/session only",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "identity_access",
+      "role": "guest",
+      "cell": "SYSTEM_TRIGGER_ONLY",
+      "reason": "registration/login entry point only",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "tenant_onboarding",
+      "role": "super_admin",
+      "cell": "APPROVER",
+      "reason": "tenant approve/reject/request-more-info endpoints",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "tenant_onboarding",
+      "role": "admin_operations",
+      "cell": "APPROVER",
+      "reason": "tenants.approve/reject granted per FINAL-L5-05P",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "tenant_onboarding",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "no tenant-approval perms in bundle",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "tenant_onboarding",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "no tenant-approval perms in bundle",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "tenant_onboarding",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "TENANT_READ granted, 0 mutation",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "tenant_onboarding",
+      "role": "tenant_owner",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "submits own onboarding application/documents",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "tenant_onboarding",
+      "role": "staff",
+      "cell": "DENIED",
+      "reason": "no onboarding ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "tenant_onboarding",
+      "role": "technician",
+      "cell": "DENIED",
+      "reason": "no onboarding ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "tenant_onboarding",
+      "role": "customer",
+      "cell": "NOT_APPLICABLE",
+      "reason": "tenant onboarding is a provider/business concern",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "tenant_onboarding",
+      "role": "guest",
+      "cell": "SYSTEM_TRIGGER_ONLY",
+      "reason": "initiates registration as a prospective tenant",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "geography_serviceability",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "geography_serviceability",
+      "role": "admin_operations",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "Service Area/Operations scope",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "geography_serviceability",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "outside Finance domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "geography_serviceability",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "outside Security domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "geography_serviceability",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "geography_serviceability",
+      "role": "tenant_owner",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "configures own Service Areas",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "geography_serviceability",
+      "role": "staff",
+      "cell": "READ_ONLY",
+      "reason": "views assigned coverage area",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "geography_serviceability",
+      "role": "technician",
+      "cell": "READ_ONLY",
+      "reason": "views assigned coverage area",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "geography_serviceability",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "serviceability check for own address",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "geography_serviceability",
+      "role": "guest",
+      "cell": "SELF_SERVICE",
+      "reason": "pre-registration serviceability check",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "catalog_offerings",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "catalog_offerings",
+      "role": "admin_operations",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "Operations scope per canonical role intent",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "catalog_offerings",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "outside Finance domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "catalog_offerings",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "outside Security domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "catalog_offerings",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "catalog_offerings",
+      "role": "tenant_owner",
+      "cell": "SECONDARY_OPERATOR",
+      "reason": "enables/configures offerings within admin-defined catalog",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "catalog_offerings",
+      "role": "staff",
+      "cell": "DENIED",
+      "reason": "no catalog ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "catalog_offerings",
+      "role": "technician",
+      "cell": "DENIED",
+      "reason": "no catalog ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "catalog_offerings",
+      "role": "customer",
+      "cell": "READ_ONLY",
+      "reason": "browses catalog to book",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "catalog_offerings",
+      "role": "guest",
+      "cell": "READ_ONLY",
+      "reason": "browses catalog pre-registration",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "pricing_bargain",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "pricing_bargain",
+      "role": "admin_operations",
+      "cell": "DENIED",
+      "reason": "Finance-adjacent, not Operations per canonical intent",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "pricing_bargain",
+      "role": "admin_finance",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "Finance domain per canonical role intent",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "pricing_bargain",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "outside Security domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "pricing_bargain",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "pricing_bargain",
+      "role": "tenant_owner",
+      "cell": "SECONDARY_OPERATOR",
+      "reason": "provider-level overrides within admin-set floors",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "pricing_bargain",
+      "role": "staff",
+      "cell": "DENIED",
+      "reason": "no pricing ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "pricing_bargain",
+      "role": "technician",
+      "cell": "DENIED",
+      "reason": "no pricing ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "pricing_bargain",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "views price, participates in bargaining flow where enabled",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "pricing_bargain",
+      "role": "guest",
+      "cell": "READ_ONLY",
+      "reason": "views indicative pricing pre-registration",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "provider_staff_availability",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "provider_staff_availability",
+      "role": "admin_operations",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "Operations scope per canonical role intent",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "provider_staff_availability",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "outside Finance domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "provider_staff_availability",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "outside Security domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "provider_staff_availability",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "provider_staff_availability",
+      "role": "tenant_owner",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "manages own staff/technician roster and availability",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "provider_staff_availability",
+      "role": "staff",
+      "cell": "SELF_SERVICE",
+      "reason": "manages own availability",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "provider_staff_availability",
+      "role": "technician",
+      "cell": "SELF_SERVICE",
+      "reason": "manages own availability",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "provider_staff_availability",
+      "role": "customer",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no direct customer interaction with provider roster admin",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "provider_staff_availability",
+      "role": "guest",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no direct interaction",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "packages_credits_deposits",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "packages_credits_deposits",
+      "role": "admin_operations",
+      "cell": "DENIED",
+      "reason": "Finance domain, not Operations",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "packages_credits_deposits",
+      "role": "admin_finance",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "FINANCE_USAGE_CREDITS_*, FINANCE_DEPOSITS_* perms",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "packages_credits_deposits",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "confirmed via FINAL-L5-05AL live 5-role matrix",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "packages_credits_deposits",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "FINANCE_READ granted, 0 mutation",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "packages_credits_deposits",
+      "role": "tenant_owner",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "submits Security Deposit, purchases packages",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "packages_credits_deposits",
+      "role": "staff",
+      "cell": "DENIED",
+      "reason": "no financial ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "packages_credits_deposits",
+      "role": "technician",
+      "cell": "DENIED",
+      "reason": "no financial ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "packages_credits_deposits",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "views own Usage Credit/wallet balance where applicable",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "packages_credits_deposits",
+      "role": "guest",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no account yet",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "booking_matching_scheduling",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "booking_matching_scheduling",
+      "role": "admin_operations",
+      "cell": "APPROVER",
+      "reason": "operational oversight, override/reassignment",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "booking_matching_scheduling",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "outside Finance domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "booking_matching_scheduling",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "outside Security domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "booking_matching_scheduling",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "booking_matching_scheduling",
+      "role": "tenant_owner",
+      "cell": "READ_ONLY",
+      "reason": "visibility into own tenant's bookings",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "booking_matching_scheduling",
+      "role": "staff",
+      "cell": "SECONDARY_OPERATOR",
+      "reason": "views/accepts assigned bookings",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "booking_matching_scheduling",
+      "role": "technician",
+      "cell": "SECONDARY_OPERATOR",
+      "reason": "views/accepts assigned bookings",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "booking_matching_scheduling",
+      "role": "customer",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "creates/cancels/reschedules own bookings -- core self-service purpose",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "booking_matching_scheduling",
+      "role": "guest",
+      "cell": "SYSTEM_TRIGGER_ONLY",
+      "reason": "may initiate booking flow pre-registration in some verticals",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "job_lifecycle",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard, force-close/void proven FINAL-L5-05AD",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "job_lifecycle",
+      "role": "admin_operations",
+      "cell": "APPROVER",
+      "reason": "admin:jobs:force_close/void per FINAL-L5-05AD",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "job_lifecycle",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "outside Finance domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "job_lifecycle",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "outside Security domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "job_lifecycle",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "job_lifecycle",
+      "role": "tenant_owner",
+      "cell": "READ_ONLY",
+      "reason": "visibility into own tenant's job execution",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "job_lifecycle",
+      "role": "staff",
+      "cell": "SECONDARY_OPERATOR",
+      "reason": "dispatch/oversight of technicians",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "job_lifecycle",
+      "role": "technician",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "executes job: accept/en-route/arrived/in-progress/completed (confirmed, staff-app JobDetailScreen)",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "job_lifecycle",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "confirms completion, provides quote approval where required",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "job_lifecycle",
+      "role": "guest",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no account yet",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "finance_ledger_commission",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "finance_ledger_commission",
+      "role": "admin_operations",
+      "cell": "DENIED",
+      "reason": "confirmed via FINAL-L5-05AJ live direct-navigation denial test",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "finance_ledger_commission",
+      "role": "admin_finance",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "FINANCE_* permission bundle",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "finance_ledger_commission",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "outside Security domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "finance_ledger_commission",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "finance_ledger_commission",
+      "role": "tenant_owner",
+      "cell": "READ_ONLY",
+      "reason": "views own tenant's commission/invoice ledger",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "finance_ledger_commission",
+      "role": "staff",
+      "cell": "DENIED",
+      "reason": "no financial ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "finance_ledger_commission",
+      "role": "technician",
+      "cell": "SELF_SERVICE",
+      "reason": "views own earnings (staff-app EarningsScreen confirmed)",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "finance_ledger_commission",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "views own invoice/receipt",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "finance_ledger_commission",
+      "role": "guest",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no account yet",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "notifications_audit_workers",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "notifications_audit_workers",
+      "role": "admin_operations",
+      "cell": "READ_ONLY",
+      "reason": "operational notifications visibility",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "notifications_audit_workers",
+      "role": "admin_finance",
+      "cell": "READ_ONLY",
+      "reason": "financial notifications visibility",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "notifications_audit_workers",
+      "role": "admin_security",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "AUTH_AUDIT_READ, SECURITY_AUDIT_* perms",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "notifications_audit_workers",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "notifications_audit_workers",
+      "role": "tenant_owner",
+      "cell": "SELF_SERVICE",
+      "reason": "receives own tenant's notifications",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "notifications_audit_workers",
+      "role": "staff",
+      "cell": "SELF_SERVICE",
+      "reason": "receives own assignment notifications",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "notifications_audit_workers",
+      "role": "technician",
+      "cell": "SELF_SERVICE",
+      "reason": "receives own assignment notifications",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "notifications_audit_workers",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "receives own booking/job notifications",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "notifications_audit_workers",
+      "role": "guest",
+      "cell": "SYSTEM_TRIGGER_ONLY",
+      "reason": "OTP delivery only",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "reviews_rewards_disputes",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "reviews_rewards_disputes",
+      "role": "admin_operations",
+      "cell": "APPROVER",
+      "reason": "dispute/complaint operational resolution",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "reviews_rewards_disputes",
+      "role": "admin_finance",
+      "cell": "APPROVER",
+      "reason": "Service Credit / refund financial resolution",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "reviews_rewards_disputes",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "outside Security domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "reviews_rewards_disputes",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "reviews_rewards_disputes",
+      "role": "tenant_owner",
+      "cell": "SECONDARY_OPERATOR",
+      "reason": "responds to disputes/reviews about own tenant",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "reviews_rewards_disputes",
+      "role": "staff",
+      "cell": "DENIED",
+      "reason": "no dispute-resolution ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "reviews_rewards_disputes",
+      "role": "technician",
+      "cell": "READ_ONLY",
+      "reason": "views own reviews/ratings",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "reviews_rewards_disputes",
+      "role": "customer",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "submits reviews, raises disputes -- core self-service purpose",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "reviews_rewards_disputes",
+      "role": "guest",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no account yet",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "compliance_security_ops",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "compliance_security_ops",
+      "role": "admin_operations",
+      "cell": "DENIED",
+      "reason": "outside Operations domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "compliance_security_ops",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "outside Finance domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "compliance_security_ops",
+      "role": "admin_security",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "SECURITY_THREATS_*, SECURITY_IP_BLOCKLIST_*, SECURITY_API_KEYS_* -- proven FINAL-L5-05AL/AM",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "compliance_security_ops",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "SECURITY_READ/SESSIONS_READ/AUDIT_READ granted, 0 mutation",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "compliance_security_ops",
+      "role": "tenant_owner",
+      "cell": "SELF_SERVICE",
+      "reason": "DPDP/compliance requests for own tenant data",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "compliance_security_ops",
+      "role": "staff",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no compliance-request ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "compliance_security_ops",
+      "role": "technician",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no compliance-request ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "compliance_security_ops",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "DPDP/compliance requests for own personal data",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "compliance_security_ops",
+      "role": "guest",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no account yet",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "media_storage_exports",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard, export permission matrix proven FINAL-L5-05AA/AB/AD",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "media_storage_exports",
+      "role": "admin_operations",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "operational exports per RESOURCE_EXPORT_PERMISSIONS",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "media_storage_exports",
+      "role": "admin_finance",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "financial exports per RESOURCE_EXPORT_PERMISSIONS",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "media_storage_exports",
+      "role": "admin_security",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "SECURITY_AUDIT_EXPORT proven FINAL-L5-05O",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "media_storage_exports",
+      "role": "admin_readonly",
+      "cell": "DENIED",
+      "reason": "0 export creation by default policy, proven FINAL-L5-05AJ",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "media_storage_exports",
+      "role": "tenant_owner",
+      "cell": "SELF_SERVICE",
+      "reason": "uploads own documents/logo/photos",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "media_storage_exports",
+      "role": "staff",
+      "cell": "SELF_SERVICE",
+      "reason": "uploads job-site evidence photos where required",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "media_storage_exports",
+      "role": "technician",
+      "cell": "SELF_SERVICE",
+      "reason": "uploads job-site evidence photos where required",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "media_storage_exports",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "uploads profile photo, views own invoices/receipts",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "media_storage_exports",
+      "role": "guest",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no account yet",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "system_configuration",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "system_configuration",
+      "role": "admin_operations",
+      "cell": "DENIED",
+      "reason": "outside Operations domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "system_configuration",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "outside Finance domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "system_configuration",
+      "role": "admin_security",
+      "cell": "PARTIAL",
+      "reason": "Security Policy read-only proven; update ownership UNRESOLVED per FINAL-L5-05AM",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "system_configuration",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "system_configuration",
+      "role": "tenant_owner",
+      "cell": "SELF_SERVICE",
+      "reason": "own tenant operational settings only",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "system_configuration",
+      "role": "staff",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no system-config ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "system_configuration",
+      "role": "technician",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no system-config ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "system_configuration",
+      "role": "customer",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no system-config ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "system_configuration",
+      "role": "guest",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no system-config ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "marketing_leads",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "marketing_leads",
+      "role": "admin_operations",
+      "cell": "DENIED",
+      "reason": "outside Operations domain per canonical role intent",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "marketing_leads",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "outside Finance domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "marketing_leads",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "outside Security domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "marketing_leads",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "marketing_leads",
+      "role": "tenant_owner",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "manages own campaigns/promotions per FINAL-L5-05 marketing sprints",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "marketing_leads",
+      "role": "staff",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no marketing ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "marketing_leads",
+      "role": "technician",
+      "cell": "NOT_APPLICABLE",
+      "reason": "no marketing ownership",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "marketing_leads",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "redeems promotions/coupons",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "marketing_leads",
+      "role": "guest",
+      "cell": "READ_ONLY",
+      "reason": "sees public promotions pre-registration",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "vertical_extensions",
+      "role": "super_admin",
+      "cell": "OWNER",
+      "reason": "P.ALL wildcard",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "vertical_extensions",
+      "role": "admin_operations",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "operational scope for non-home-services verticals",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "vertical_extensions",
+      "role": "admin_finance",
+      "cell": "DENIED",
+      "reason": "outside Finance domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "vertical_extensions",
+      "role": "admin_security",
+      "cell": "DENIED",
+      "reason": "outside Security domain",
+      "cert_status": "SOURCE_INFERRED"
+    },
+    {
+      "module": "vertical_extensions",
+      "role": "admin_readonly",
+      "cell": "READ_ONLY",
+      "reason": "0 mutation invariant",
+      "cert_status": "RUNTIME_VERIFIED"
+    },
+    {
+      "module": "vertical_extensions",
+      "role": "tenant_owner",
+      "cell": "PRIMARY_OPERATOR",
+      "reason": "operates own vertical-specific business (real estate/food/etc)",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "vertical_extensions",
+      "role": "staff",
+      "cell": "SECONDARY_OPERATOR",
+      "reason": "executes vertical-specific workflows",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "vertical_extensions",
+      "role": "technician",
+      "cell": "NOT_APPLICABLE",
+      "reason": "vertical extensions are non-home-services by definition",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "vertical_extensions",
+      "role": "customer",
+      "cell": "SELF_SERVICE",
+      "reason": "consumes vertical-specific offerings via AI chat flows",
+      "cert_status": "BUSINESS_DEFAULT"
+    },
+    {
+      "module": "vertical_extensions",
+      "role": "guest",
+      "cell": "SYSTEM_TRIGGER_ONLY",
+      "reason": "AI chat lead capture pre-registration",
+      "cert_status": "BUSINESS_DEFAULT"
+    }
+  ]
+}
