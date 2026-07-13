@@ -63,6 +63,37 @@ def _svc_with_actor(request: Request, db: AsyncSession = Depends(get_db),
     )
 
 
+
+# Platform-level roles (no tenant_id of their own) that are meant to operate
+# across tenants by design -- e.g. admin_operations legitimately reads/manages
+# ANY tenant's profile per its canonical Tenant Administration scope
+# (FINAL-L5-05AI). Only tenant-scoped roles are restricted to their own
+# tenant_id below.
+_PLATFORM_ROLES = {"super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly"}
+
+
+def _assert_own_tenant_or_super_admin(tenant_id: uuid.UUID, user: UserContext) -> None:
+    """
+    MODULE-L5-01: closes a confirmed cross-tenant IDOR -- tenant-scoped roles
+    (tenant_owner/staff/technician) hold TENANT_READ/TENANT_UPDATE for their
+    OWN tenant's self-service, but the {tenant_id} path parameter was never
+    checked against the caller's actual tenant_id, letting any tenant_owner
+    substitute a different tenant's UUID and read/update that tenant's
+    profile and billing data. Platform-level admin roles are exempt (they
+    operate across tenants by design), matching TenantScopeService's existing
+    convention elsewhere.
+    """
+    if user.role in _PLATFORM_ROLES:
+        return
+    if not user.tenant_id or str(tenant_id) != str(user.tenant_id):
+        raise ServiceOSException(
+            error_code="PERMISSION_DENIED",
+            detail="You may only access your own tenant's data.",
+            blocking_rule="tenant_scope: caller.tenant_id must match path tenant_id",
+            resolution="Use your own tenant_id, or contact a platform administrator.",
+        )
+
+
 # ── Engine Introspection ──────────────────────────────────────────────────────
 @router.get("/meta", summary="Tenant engine introspection", tags=["Engine Registry"])
 async def engine_meta() -> dict:
@@ -219,6 +250,7 @@ async def list_tenants(
 async def get_tenant(tenant_id: uuid.UUID, request: Request,
                      user: UserContext = Depends(require_permission(P.TENANT_READ)),
                      svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.get_tenant_detail(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID,
               links=Links(
@@ -237,6 +269,7 @@ async def get_tenant(tenant_id: uuid.UUID, request: Request,
 async def update_tenant(tenant_id: uuid.UUID, request: Request,
                          user: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
+    _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.update_tenant(tenant_id, body)
     return ok(data, _meta(request).request_id, ENGINE_ID)
