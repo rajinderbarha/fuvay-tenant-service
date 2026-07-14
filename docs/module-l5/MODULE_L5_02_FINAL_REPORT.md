@@ -93,6 +93,41 @@ All guards pass: `tenant_governance` (new), `canonical_role_registry`, `single_t
 `admin_router_auth` (0 findings). No enforcement path changed; state-registry fix is additive.
 No sprint-attributable regression.
 
+## 6b. Frontend contract + live lifecycle verification (added this session)
+
+Drove real frontend-connectivity + lifecycle verification toward a genuine L5:
+
+**Frontend baseline (real):** all 3 apps (`super-admin`, `tenant-portal`, `customer-app`)
+**typecheck clean (0 errors)**, **zero stub/mock/TODO markers**. The super-admin tenant surface
+is substantial and real (3,161-line `tenants/[id]/page.tsx`, 9,900-line `api.ts`).
+
+**Live contract verification** (probed the tenant detail page's actual API calls against the
+running backend as super_admin): **~23 endpoints return 200** — list, detail, `/360`, health,
+billing (+invoices), feature-flags, audit-log, onboarding queue, commerce
+wallet/deposit/commission, geo zones/coverage, media files/quota, reviews (+aggregate),
+usage-credit-ledger, finance settlements/penalties, staff/users lists, at-risk dashboard,
+engine tenant-overrides, bookability.
+
+**Two real 500s found + fixed + committed** (broke real UI tabs): provider-wallet tab
+(bare `ValueError` → 500) and monetization tab (missing `provider_monetization_statuses`
+table → 500). Both now degrade gracefully; verified 500→200 live. (§commit `acf81ed`.)
+
+**Live lifecycle proof:** executed a fully-reversible **suspend → reinstate** cycle on the
+dedicated test tenant (Isolation Test Services) on a fresh backend running current code:
+`suspend` → HTTP 200 (status `active`→`suspended`), `reinstate` → HTTP 200 (`suspended`→
+`active`). Tenant restored; no data corruption. The tenant lifecycle mutations are
+runtime-proven on the committed codebase.
+
+**Operational finding (not a code bug):** the long-running shared `:8000` dev backend is
+serving **stale code** — its `suspend` endpoint 500s while the current committed code returns
+200 (verified on a fresh `:8001` instance). Recommend restarting `:8000` to pick up committed
+fixes; not a defect in the codebase.
+
+**Remaining for a genuine Module 02 L5 stamp:** exhaustive verification of the tenant-portal
+side (tenant's own onboarding wizard + dashboard), the customer-facing public profile privacy,
+and the remaining lifecycle transitions (approve/reject/request-changes end-to-end) — real,
+scoped work, not yet certified.
+
 ## 7. Honest Recommendation
 
 The tenant-governance **core is sound and now guarded**, with one real inconsistency fixed. A
