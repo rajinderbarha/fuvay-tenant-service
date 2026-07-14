@@ -346,6 +346,75 @@ class TestRecalculationJobIsReal:
                                json={"reason": "should fail"})
         assert bad.status_code == 422, "60% weight total must be rejected"
 
+    async def test_earned_badges_surface_to_all_audiences(self, client):
+        """A configured badge, once awarded, must be readable by admin, provider
+        and public surfaces — with its icon/colour — not just live in the admin
+        config. (User: 'do these icons show on tenant/staff/customer/admin side?')
+        Also proves the read layer dedupes and applies visibility."""
+        import random, httpx
+        sfx = random.randint(10000, 99999)
+
+        # A customer-visible badge with an icon + colour.
+        r = await client.post("/v1/admin/trust-quality/badges/definitions", json={
+            "badge_key": f"l5surf_{sfx}", "name": "Surfacing Badge", "target_type": "tenant",
+            "icon": "crown", "color": "#8b5cf6", "customer_visible": True, "status": "active"})
+        badge_id = r.json()["data"]["id"]
+
+        # Pick a real tenant to award it to.
+        r = await client.get("/v1/admin/tenants?page=1&page_size=1")
+        items = r.json()["data"]["items"]
+        assert items, "need a tenant to award to"
+        tenant_id = items[0]["tenant_id"]
+
+        await client.post("/v1/admin/trust-quality/badges/manual-award", json={
+            "badge_id": badge_id, "target_type": "tenant", "target_id": tenant_id,
+            "reason": "L5 surfacing test"})
+        # Award the same badge twice — the read layer must still report it once.
+        await client.post("/v1/admin/trust-quality/badges/manual-award", json={
+            "badge_id": badge_id, "target_type": "tenant", "target_id": tenant_id,
+            "reason": "L5 dup"})
+
+        def _find(items):
+            return [b for b in items if b["badge_key"] == f"l5surf_{sfx}"]
+
+        # 1. Admin per-target view.
+        r = await client.get(
+            f"/v1/admin/trust-quality/badges/earned?target_type=tenant&target_id={tenant_id}")
+        mine = _find(r.json()["data"]["items"])
+        assert len(mine) == 1, "read layer must dedupe repeated assignments"
+        assert mine[0]["icon"] == "crown" and mine[0]["color"] == "#8b5cf6"
+
+        # 2. Public (customer) view — same badge, customer-visible.
+        async with httpx.AsyncClient(base_url=BASE, timeout=30) as anon:
+            r = await anon.get(f"/v1/public/trust-quality/providers/{tenant_id}/badges")
+        pub = _find(r.json()["data"]["items"])
+        assert len(pub) == 1 and pub[0]["icon"] == "crown"
+
+    async def test_internal_badge_hidden_from_customers(self, client):
+        """A non-customer-visible badge must appear to the admin but never to the
+        public/customer audience — visibility gating is enforced in the read
+        layer, not just the UI."""
+        import random, httpx
+        sfx = random.randint(10000, 99999)
+        r = await client.post("/v1/admin/trust-quality/badges/definitions", json={
+            "badge_key": f"l5int_{sfx}", "name": "Internal Only", "target_type": "tenant",
+            "icon": "shield", "color": "#64748b", "customer_visible": False, "status": "active"})
+        badge_id = r.json()["data"]["id"]
+        r = await client.get("/v1/admin/tenants?page=1&page_size=1")
+        tenant_id = r.json()["data"]["items"][0]["tenant_id"]
+        await client.post("/v1/admin/trust-quality/badges/manual-award", json={
+            "badge_id": badge_id, "target_type": "tenant", "target_id": tenant_id,
+            "reason": "internal test"})
+
+        r = await client.get(
+            f"/v1/admin/trust-quality/badges/earned?target_type=tenant&target_id={tenant_id}")
+        assert any(b["badge_key"] == f"l5int_{sfx}" for b in r.json()["data"]["items"])
+
+        async with httpx.AsyncClient(base_url=BASE, timeout=30) as anon:
+            r = await anon.get(f"/v1/public/trust-quality/providers/{tenant_id}/badges")
+        assert not any(b["badge_key"] == f"l5int_{sfx}" for b in r.json()["data"]["items"]), \
+            "internal badge must never surface to customers"
+
     async def test_rule_toggle_requires_a_reason(self, client):
         r = await client.get("/v1/admin/trust-quality/badge-rules")
         d = r.json()["data"]

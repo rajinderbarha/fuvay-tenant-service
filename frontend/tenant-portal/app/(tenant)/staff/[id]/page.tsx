@@ -10,6 +10,8 @@ import React, { useCallback, useState, useEffect } from "react";
 import { TenantLayout }                  from "../../../../components/layout/TenantLayout";
 import { Card, Btn, Skeleton, Badge, JobStatusBadge, Modal, SectionHeader, EditBtn } from "../../../../components/shared/ui";
 import { staffApi, serviceJobsApi, authApi }    from "../../../../lib/api";
+import { trustBadgesApi }                from "../../../../lib/api";
+import { TrustBadges }                    from "../../../../components/TrustBadges";
 import { useApi, useAction }             from "../../../../hooks/useApi";
 import type { WorkingHours, StaffSecurityStatus, StaffLoginEvent } from "../../../../lib/api";
 import { CalendarDays } from "lucide-react";
@@ -25,6 +27,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
 
   const staff       = useApi(useCallback(() => staffApi.get(id),            [id]));
   const performance = useApi(useCallback(() => staffApi.getPerformance(id), [id]));
+  const badges      = useApi(useCallback(() => trustBadgesApi.staffBadges(id), [id]));
   const jobs        = useApi(useCallback(() => serviceJobsApi.list({ limit: 20 }), []));
 
   const [scheduleModal, setScheduleModal] = useState(false);
@@ -165,6 +168,14 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                 <Btn variant="secondary" size="sm" icon={<CalendarDays size={14}/>} onClick={openSchedule}>Edit Schedule</Btn>
               </div>
             </div>
+          </Card>
+
+          {/* ── Trust badges ── */}
+          <Card padding={20}>
+            <h3 style={{ fontSize:15, fontWeight:600, color:"var(--text-primary)", margin:"0 0 12px" }}>
+              Trust Badges
+            </h3>
+            <TrustBadges badges={badges.data ?? []} empty="No badges earned yet." />
           </Card>
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>

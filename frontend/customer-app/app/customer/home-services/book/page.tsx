@@ -1,7 +1,10 @@
 "use client";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle } from "lucide-react";
+import {
+  CheckCircle, Award, Star, Shield, ShieldCheck, Crown, Trophy, Medal, Gem, Sparkles,
+  BadgeCheck, Flame, Zap, Heart, ThumbsUp, TrendingUp, CheckCircle2, Rocket, Target,
+} from "lucide-react";
 import ErrorBanner from "../../../../components/ErrorBanner";
 import {
   getCustomerHomeServicesCatalog, getCatalogServices, getCatalogBrands, getCatalogIssueTypes, getCatalogServiceTypes,
@@ -313,9 +316,30 @@ function BookHomeServiceInner() {
 
 const inputStyle: React.CSSProperties = { width: "100%", padding: 14, borderRadius: 12, border: "1px solid var(--border-strong)", fontSize: 16 };
 
+// Trust badges arrive as objects {name, icon, color} from the matching engine;
+// tolerate legacy string entries too.
+const CUST_BADGE_ICONS: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
+  award: Award, star: Star, shield: Shield, "shield-check": ShieldCheck, crown: Crown,
+  trophy: Trophy, medal: Medal, gem: Gem, sparkles: Sparkles, "badge-check": BadgeCheck,
+  flame: Flame, zap: Zap, heart: Heart, "thumbs-up": ThumbsUp, "trending-up": TrendingUp,
+  "check-circle": CheckCircle2, rocket: Rocket, target: Target,
+};
+
+function CustomerTrustBadge({ badge }: { badge: { name: string; icon?: string | null; color?: string | null } }) {
+  const Cmp = CUST_BADGE_ICONS[badge.icon ?? ""] ?? Award;
+  const c = badge.color || "#f59e0b";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px 4px 7px",
+      borderRadius: 999, background: `${c}18`, border: `1px solid ${c}55`, fontSize: 12, fontWeight: 600 }}>
+      <Cmp size={13} color={c} />{badge.name}
+    </span>
+  );
+}
+
 function ProviderCard({ provider, onNext }: { provider: any; onNext: () => void }) {
-  const allowedBadges = ["Verified", "Top Rated", "Fast Response", "Gold Provider"];
-  const badges: string[] = (provider.public_badges || provider.badges || []).filter((b: string) => allowedBadges.includes(b));
+  const raw: any[] = provider.public_badges || provider.badges || [];
+  const badges = raw.map((b) => (typeof b === "string" ? { name: b } : b))
+    .filter((b) => b && b.name);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -327,7 +351,11 @@ function ProviderCard({ provider, onNext }: { provider: any; onNext: () => void 
           </div>
         </div>
       </div>
-      <div>{badges.map((b) => <span key={b} className="co-badge">{b}</span>)}</div>
+      {badges.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {badges.map((b, i) => <CustomerTrustBadge key={b.name + i} badge={b} />)}
+        </div>
+      )}
       {(provider.city || provider.service_area) && <div style={{ fontSize: 13 }}>Serving: {provider.city || provider.service_area}</div>}
       {provider.estimated_visit_window && <div style={{ fontSize: 13 }}>Estimated visit: {provider.estimated_visit_window}</div>}
       <button className="co-btn-primary" onClick={onNext}>See Price Options</button>

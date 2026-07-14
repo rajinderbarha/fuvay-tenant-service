@@ -108,6 +108,15 @@ async def simulate_badge_rule(
 
 # ── Badge Assignments (Badge Management) ────────────────────────────────────
 
+@router.get("/badges/earned")
+async def list_earned_badges(
+    r: Request, target_type: str = Query(...), target_id: uuid.UUID = Query(...),
+    db: AsyncSession = Depends(get_db), u=Depends(require_permission(P.BADGE_MANAGEMENT_READ)),
+) -> ApiResponse[dict]:
+    """The badges a specific provider/staff/customer/service currently holds."""
+    return ok({"items": await _svc(db, u).list_earned_badges(target_type, target_id, "admin")}, _rid(r))
+
+
 @router.post("/badges/manual-award")
 async def manual_award_badge(
     r: Request, body: dict,

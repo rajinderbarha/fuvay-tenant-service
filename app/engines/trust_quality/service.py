@@ -412,6 +412,51 @@ class TrustQualityService:
         await self.db.commit()
         return a.to_dict()
 
+    async def list_earned_badges(self, target_type: str, target_id: uuid.UUID,
+                                 audience: str = "admin") -> list[dict]:
+        """A target's currently-earned badges, joined with their definition and
+        filtered for the audience that will see them.
+
+        This is the read side that every consumer surface (provider self-view,
+        customer provider-view, admin per-target view) shares. Only active,
+        non-expired assignments count, and `audience` gates by the badge's
+        visibility flags so a customer never sees an internal-only badge.
+        """
+        rows = (await self.db.execute(
+            select(BadgeAssignment, BadgeDefinition)
+            .join(BadgeDefinition, BadgeDefinition.id == BadgeAssignment.badge_id)
+            .where(
+                BadgeAssignment.target_type == target_type,
+                BadgeAssignment.target_id == target_id,
+                BadgeAssignment.status == "active",
+            )
+        )).all()
+        now = _now()
+        # A target holds each distinct badge once — historical data can carry
+        # several active assignment rows for the same badge, so dedupe by
+        # badge_key and keep the earliest earned_at (when it was first earned).
+        by_key: dict[str, dict] = {}
+        for a, b in rows:
+            if a.expires_at and a.expires_at < now:
+                continue
+            if audience == "customer" and not b.customer_visible:
+                continue
+            if audience == "provider" and not (b.tenant_visible or b.customer_visible):
+                continue
+            earned = a.earned_at.isoformat() if a.earned_at else None
+            prev = by_key.get(b.badge_key)
+            if prev and (prev["earned_at"] or "") <= (earned or ""):
+                continue  # keep the earlier assignment
+            by_key[b.badge_key] = {
+                "assignment_id": str(a.id), "badge_key": b.badge_key, "name": b.name,
+                "description": b.description, "icon": b.icon, "color": b.color,
+                "customer_visible": b.customer_visible, "tenant_visible": b.tenant_visible,
+                "award_source": a.award_source, "earned_at": earned,
+                "expires_at": a.expires_at.isoformat() if a.expires_at else None,
+            }
+        # Most-recently earned first.
+        return sorted(by_key.values(), key=lambda x: x["earned_at"] or "", reverse=True)
+
     async def recalculate_badges_for_target(self, target_type: str, target_id: uuid.UUID, metrics: dict) -> list[dict]:
         """Evaluate all active auto-award rules for target_type against metrics; award/revoke as needed."""
         rules = (await self.db.execute(
@@ -1063,7 +1108,8 @@ class TrustQualityService:
             b = BadgeDefinition(
                 badge_key=spec["badge_key"], name=spec["name"], description=spec.get("description"),
                 target_type=spec["target_type"], customer_visible=spec.get("customer_visible", False),
-                tenant_visible=spec.get("tenant_visible", True), status="active",
+                tenant_visible=spec.get("tenant_visible", True),
+                icon=spec.get("icon"), color=spec.get("color"), status="active",
                 created_at=_now(), updated_at=_now(),
             )
             self.db.add(b)
@@ -1145,15 +1191,17 @@ class TrustQualityService:
 
 # ── Default seed specs (Home Services baseline; extended per-vertical in later phases) ──
 
+# icon values are lucide names the frontends render (see BADGE_ICONS in the admin
+# page and the shared badge components); color is the accent hex.
 _DEFAULT_BADGES = [
-    {"badge_key": "verified_provider", "name": "Verified Provider", "target_type": "tenant", "customer_visible": True},
-    {"badge_key": "top_rated_provider", "name": "Top Rated Provider", "target_type": "tenant", "customer_visible": True},
-    {"badge_key": "fast_response", "name": "Fast Response", "target_type": "tenant", "customer_visible": True},
-    {"badge_key": "low_complaint_provider", "name": "Low Complaint Provider", "target_type": "tenant", "customer_visible": False},
-    {"badge_key": "verified_technician", "name": "Verified Technician", "target_type": "technician", "customer_visible": True},
-    {"badge_key": "top_technician", "name": "Top Technician", "target_type": "technician", "customer_visible": True},
-    {"badge_key": "frequent_booker", "name": "Frequent Booker", "target_type": "customer", "customer_visible": True},
-    {"badge_key": "popular_service", "name": "Popular Service", "target_type": "service", "customer_visible": True},
+    {"badge_key": "verified_provider", "name": "Verified Provider", "target_type": "tenant", "customer_visible": True, "icon": "shield-check", "color": "#3b82f6"},
+    {"badge_key": "top_rated_provider", "name": "Top Rated Provider", "target_type": "tenant", "customer_visible": True, "icon": "star", "color": "#f59e0b"},
+    {"badge_key": "fast_response", "name": "Fast Response", "target_type": "tenant", "customer_visible": True, "icon": "zap", "color": "#14b8a6"},
+    {"badge_key": "low_complaint_provider", "name": "Low Complaint Provider", "target_type": "tenant", "customer_visible": False, "icon": "thumbs-up", "color": "#10b981"},
+    {"badge_key": "verified_technician", "name": "Verified Technician", "target_type": "technician", "customer_visible": True, "icon": "badge-check", "color": "#3b82f6"},
+    {"badge_key": "top_technician", "name": "Top Technician", "target_type": "technician", "customer_visible": True, "icon": "medal", "color": "#f59e0b"},
+    {"badge_key": "frequent_booker", "name": "Frequent Booker", "target_type": "customer", "customer_visible": True, "icon": "heart", "color": "#ec4899"},
+    {"badge_key": "popular_service", "name": "Popular Service", "target_type": "service", "customer_visible": True, "icon": "flame", "color": "#f97316"},
 ]
 
 _DEFAULT_BADGE_RULES = [

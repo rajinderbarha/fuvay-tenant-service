@@ -8116,6 +8116,12 @@ export interface BadgeDefinition {
   target_type: string; customer_visible: boolean; tenant_visible: boolean;
   admin_only: boolean; status: string; icon?: string | null; color?: string | null;
 }
+export interface EarnedBadge {
+  assignment_id: string; badge_key: string; name: string; description?: string | null;
+  icon?: string | null; color?: string | null;
+  customer_visible: boolean; tenant_visible: boolean;
+  award_source: string; earned_at: string | null; expires_at: string | null;
+}
 export interface BadgeCriterionInput {
   metric_key: string; operator: string; value: unknown;
   is_required?: boolean; time_window_days?: number | null;
@@ -8202,6 +8208,11 @@ export const trustQualityApi = {
     apiFetch(`/v1/admin/trust-quality/health-rules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   getHealthFormula: (id: string) =>
     apiFetch<unknown>(`/v1/admin/trust-quality/health-rules/${id}`),
+  // Which badges a specific target (provider/staff/customer/service) holds now.
+  listEarnedBadges: (targetType: string, targetId: string) =>
+    apiFetch<unknown>(
+      `/v1/admin/trust-quality/badges/earned?target_type=${encodeURIComponent(targetType)}&target_id=${encodeURIComponent(targetId)}`,
+    ).then(d => tqList<EarnedBadge>(d)),
   // Preview a rule/formula outcome against sample metrics before activating.
   simulateBadgeRule: (id: string, metrics: Record<string, unknown>) =>
     apiFetch<unknown>(`/v1/admin/trust-quality/badge-rules/${id}/simulate`, {

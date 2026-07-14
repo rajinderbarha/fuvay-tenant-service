@@ -19,13 +19,13 @@ import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Card, SectionHeader, Btn, Badge, Spinner, Modal, Input, Select } from "../../../components/shared/ui";
 import {
   trustQualityApi, TQ_ENUMS,
-  BadgeRule, HealthRule, RecalcJob, BadgeDefinition,
+  BadgeRule, HealthRule, RecalcJob, BadgeDefinition, EarnedBadge,
   BadgeCriterionInput, HealthComponentInput, HealthBandInput,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { RequirePermission } from "../../../components/shared/PermissionGate";
 
-type Tab = "definitions" | "badges" | "health" | "recalc";
+type Tab = "definitions" | "badges" | "health" | "recalc" | "earned";
 
 const opt = (v: string) => ({ value: v, label: v.replace(/_/g, " ") });
 
@@ -128,7 +128,16 @@ export default function TrustQualityPage() {
     { id: "definitions", label: "Badges" },
     { id: "health", label: "Health Formulas" },
     { id: "recalc", label: "Recalculation" },
+    { id: "earned", label: "Earned (by target)" },
   ];
+
+  // Earned-badges lookup for a specific target (provider/staff/customer/service).
+  const [lookup, setLookup] = useState({ target_type: "tenant", target_id: "" });
+  const [earned, setEarned] = useState<EarnedBadge[] | null>(null);
+  const doLookup = useAction(async () => {
+    if (!lookup.target_id.trim()) return;
+    setEarned(await trustQualityApi.listEarnedBadges(lookup.target_type, lookup.target_id.trim()));
+  });
 
   return (
     <AdminLayout activeNav="providers">
@@ -330,6 +339,49 @@ export default function TrustQualityPage() {
               )}
             </Card>
           </div>
+        )}
+
+        {tab === "earned" && (
+          <Card>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Badges held by a target</div>
+            <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
+              Look up the badges a specific provider, staff member, customer or service currently holds.
+              Paste the target ID (e.g. a provider/tenant ID from the Providers page).
+            </p>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div style={{ minWidth: 180 }}>
+                <Select label="Target type" value={lookup.target_type}
+                  onChange={v => setLookup({ ...lookup, target_type: v })}
+                  options={TQ_ENUMS.badgeTargets.map(opt)} />
+              </div>
+              <div style={{ flex: 1, minWidth: 260 }}>
+                <Input label="Target ID" value={lookup.target_id}
+                  onChange={v => setLookup({ ...lookup, target_id: v })}
+                  placeholder="00000000-0000-0000-0000-000000000000" />
+              </div>
+              <Btn disabled={!lookup.target_id.trim()} onClick={() => doLookup.execute()}>Look up</Btn>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              {earned === null ? (
+                <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Enter a target and look up.</p>
+              ) : earned.length === 0 ? (
+                <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>This target holds no badges.</p>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                  {earned.map(b => (
+                    <span key={b.assignment_id} title={b.description ?? b.name}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px 7px 8px",
+                        borderRadius: 999, background: `${b.color || "#f59e0b"}18`,
+                        border: `1px solid ${b.color || "#f59e0b"}55`, fontSize: 13, fontWeight: 600 }}>
+                      <BadgeIcon icon={b.icon} color={b.color} size={15} />
+                      {b.name}
+                      {!b.customer_visible && <Badge variant="muted" size="sm">internal</Badge>}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card>
         )}
 
         {/* ── Config modals ─────────────────────────────────────────────── */}

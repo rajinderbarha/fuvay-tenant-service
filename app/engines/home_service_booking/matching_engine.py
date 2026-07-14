@@ -100,7 +100,9 @@ class CandidateSignals:
     distance_score: float = 0.0          # zipcode-exact=100, city-only=60
     cancellation_score: float = 0.0      # 100 - recent_cancellation_rate*100
     capacity_score: float = 0.0          # inverse of current open-job load vs technician count
-    public_badges: list[str] = field(default_factory=list)
+    # Objects {name, icon, color} — the real customer-visible trust badges when
+    # the provider has them, else computed fallbacks (see _public_badges).
+    public_badges: list[dict] = field(default_factory=list)
     rating: float | None = None
 
 
@@ -594,12 +596,27 @@ async def _capacity_score(db: AsyncSession, tenant_id: uuid.UUID) -> float:
     return round(max(0.0, 100.0 - load_ratio * 25.0), 2)
 
 
-async def _public_badges(db: AsyncSession, tenant_id: uuid.UUID, health_score, rating) -> list[str]:
-    badges = ["Verified"]
+async def _public_badges(db: AsyncSession, tenant_id: uuid.UUID, health_score, rating) -> list[dict]:
+    """The customer-visible badges shown on a provider card.
+
+    Prefers the provider's real, admin-configured trust_quality badges (with the
+    icon/colour the admin set). Falls back to computed signals only when the
+    provider has not earned any configured badge yet, so a card is never empty.
+    """
+    from app.engines.trust_quality.service import TrustQualityService
+    try:
+        earned = await TrustQualityService(db, None, "public").list_earned_badges(
+            "tenant", tenant_id, "customer")
+    except Exception:  # badge lookup must never break provider matching
+        earned = []
+    if earned:
+        return [{"name": b["name"], "icon": b.get("icon"), "color": b.get("color")} for b in earned]
+
+    badges = [{"name": "Verified", "icon": "shield-check", "color": "#3b82f6"}]
     if rating and float(rating) >= 4.5:
-        badges.append("Highly Rated")
+        badges.append({"name": "Highly Rated", "icon": "star", "color": "#f59e0b"})
     if health_score and float(health_score) >= 90:
-        badges.append("High Completion")
+        badges.append({"name": "High Completion", "icon": "check-circle", "color": "#10b981"})
     return badges
 
 

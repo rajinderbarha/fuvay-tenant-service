@@ -233,7 +233,11 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
 
     # Trust & Quality Engine — Badges, Health, Risk (migration 095)
     from app.engines.trust_quality.admin_router import router as trust_quality_admin_router
+    from app.engines.trust_quality.provider_router import provider_trust_quality_router
+    from app.engines.trust_quality.public_router import public_trust_quality_router
     app.include_router(trust_quality_admin_router)
+    app.include_router(provider_trust_quality_router)
+    app.include_router(public_trust_quality_router)
 
     # Notification Template Center (migration 101)
     from app.engines.notification.admin_router import router as notif_templates_admin_router

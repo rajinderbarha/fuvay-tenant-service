@@ -4053,6 +4053,20 @@ export interface TenantStatusAuditLogEntry {
   created_at: string;
 }
 
+// MODULE-L5-12: earned trust badges (with icon/colour) for this provider + staff.
+export interface EarnedBadge {
+  assignment_id: string; badge_key: string; name: string; description?: string | null;
+  icon?: string | null; color?: string | null;
+  customer_visible: boolean; tenant_visible: boolean;
+  award_source: string; earned_at: string | null; expires_at: string | null;
+}
+export const trustBadgesApi = {
+  myBadges: () =>
+    apiFetch<{ items: EarnedBadge[] }>("/v1/provider/trust-quality/badges").then(d => d.items ?? []),
+  staffBadges: (staffId: string) =>
+    apiFetch<{ items: EarnedBadge[] }>(`/v1/provider/trust-quality/staff/${staffId}/badges`).then(d => d.items ?? []),
+};
+
 export const myStatusApi = {
   getStatus:            () => providerStatusApi.get(),
   getOfferingStatuses:   () => providerStatusApi.getOfferingStatuses(),

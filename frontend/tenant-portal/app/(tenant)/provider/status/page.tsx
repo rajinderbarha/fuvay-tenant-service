@@ -8,6 +8,8 @@ import {
   type PackageAssignmentSummary, type TenantSecurityDepositStatus, type TenantCreditWalletDetail,
   type ProviderServiceArea, type ProviderTeamMember, type ProviderAvailabilityRule,
 } from "../../../../lib/api";
+import { trustBadgesApi } from "../../../../lib/api";
+import { TrustBadges } from "../../../../components/TrustBadges";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { useTenant } from "../../../../hooks/useTenant";
 import { blockerMeta, safeNum, safeArray, type RequiredAction } from "../../../../lib/status-format";
@@ -36,6 +38,7 @@ export default function ProviderStatusPage() {
   const teamApi           = useApi(useCallback(() => myStatusApi.getTeamMembers(), []));
   const availabilityApi   = useApi(useCallback(() => myStatusApi.getAvailability(), []));
   const activityApi       = useApi(useCallback(() => myStatusApi.getAuditLog(15), []));
+  const badgesApi         = useApi(useCallback(() => trustBadgesApi.myBadges(), []));
 
   const refreshAll = useCallback(() => {
     statusApi.refetch(); offeringStatusApi.refetch(); enabledOfferingsApi.refetch();
@@ -262,6 +265,19 @@ export default function ProviderStatusPage() {
 
       {/* Score Cards */}
       <TenantReadinessScoreCards cards={scoreCards}/>
+
+      {/* Trust Badges — what customers see on your profile */}
+      <div style={{ background: "var(--surface, #fff)", border: "1px solid var(--border, #e5e5e5)",
+        borderRadius: 14, padding: 18 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Trust Badges</h2>
+          <span style={{ fontSize: 12, color: "var(--text-tertiary, #888)" }}>
+            Earned automatically — shown to customers on your profile
+          </span>
+        </div>
+        <TrustBadges badges={badgesApi.data ?? []}
+          empty="No badges earned yet. Keep your ratings high and jobs completed to earn them." />
+      </div>
 
       {/* Offerings Status */}
       {(enabledOfferingsApi.error || offeringStatusApi.error) ? (
