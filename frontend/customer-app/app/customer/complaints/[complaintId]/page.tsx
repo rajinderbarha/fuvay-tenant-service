@@ -22,7 +22,8 @@ import {
   getComplaint, getComplaintMessages, getComplaintResolutions,
   getSettlementProposals, addComplaintMessage, acceptResolution,
   rejectResolution, requestRefund, respondToSettlement, cancelComplaint,
-  Complaint, ComplaintMessage, ComplaintResolution, SettlementProposal,
+  getAISession, submitAIAnswers,
+  Complaint, ComplaintMessage, ComplaintResolution, SettlementProposal, AISession,
 } from "../../../../lib/api/customer-complaints";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -52,6 +53,8 @@ export default function CustomerComplaintDetailPage() {
   const [messages, setMessages] = useState<ComplaintMessage[]>([]);
   const [resolutions, setResolutions] = useState<ComplaintResolution[]>([]);
   const [proposals, setProposals] = useState<SettlementProposal[]>([]);
+  const [aiSession, setAiSession] = useState<AISession | null>(null);
+  const [aiAnswers, setAiAnswers] = useState<string[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [actionError, setActionError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -66,6 +69,10 @@ export default function CustomerComplaintDetailPage() {
     getComplaintMessages(id).then(setMessages).catch(() => {});
     getComplaintResolutions(id).then(setResolutions).catch(() => {});
     getSettlementProposals(id).then(setProposals).catch(() => {});
+    getAISession(id).then(s => {
+      setAiSession(s);
+      if (s?.customer_questions) setAiAnswers(a => a.length ? a : s.customer_questions!.map(() => ""));
+    }).catch(() => {});
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -108,6 +115,44 @@ export default function CustomerComplaintDetailPage() {
           </div>
 
           <ErrorBanner error={actionError} />
+
+          {/* ── AI settlement questions (bug #34/#37) ── */}
+          {aiSession && (aiSession.customer_questions?.length ?? 0) > 0 && (
+            <div className="co-card" style={{ marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>AI settlement — a few questions</div>
+              <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>
+                An AI mediator is reviewing your complaint. Answer these so it can propose a fair
+                outcome. Compensation, if any, is paid in account credit — never cash.
+              </div>
+              {aiSession.awaiting_your_answers ? (
+                <>
+                  {(aiSession.customer_questions ?? []).map((q, i) => (
+                    <div key={i} style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{q}</div>
+                      <textarea
+                        rows={2}
+                        value={aiAnswers[i] ?? ""}
+                        onChange={e => setAiAnswers(a => { const n = [...a]; n[i] = e.target.value; return n; })}
+                        style={{ width: "100%", padding: 8, borderRadius: 8 }}
+                      />
+                    </div>
+                  ))}
+                  <button
+                    className="co-btn"
+                    disabled={busy || aiAnswers.some(a => !a.trim())}
+                    onClick={() => run(() => submitAIAnswers(id, aiAnswers))}
+                  >
+                    Submit answers
+                  </button>
+                </>
+              ) : (
+                <div style={{ fontSize: 13, color: "#0a7c3f" }}>
+                  ✓ Thanks — your answers are in. The AI will propose a settlement once the provider
+                  has responded too.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── Resolutions offered (bug #35: the customer can finally SEE these) ── */}
           {resolutions.length > 0 && (

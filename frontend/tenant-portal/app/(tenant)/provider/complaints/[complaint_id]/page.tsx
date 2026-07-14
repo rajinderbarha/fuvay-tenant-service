@@ -77,8 +77,9 @@ export default function ProviderComplaintDetailPage() {
   const params = useParams();
   const id = String(params?.complaint_id ?? "");
 
-  const [tab, setTab] = useState<"messages" | "resolutions" | "settlement">("messages");
+  const [tab, setTab] = useState<"messages" | "resolutions" | "settlement" | "ai">("messages");
   const [reply, setReply] = useState("");
+  const [aiAnswers, setAiAnswers] = useState<string[]>([]);
   const [resOpen, setResOpen] = useState(false);
   const [resType, setResType] = useState("rework");
   const [resDesc, setResDesc] = useState("");
@@ -95,10 +96,26 @@ export default function ProviderComplaintDetailPage() {
     useCallback(() => apiFetch<Dict[]>(`/v1/provider/complaints/${id}/resolutions`), [id]), [id]);
   const proposals = useApi<Dict[]>(
     useCallback(() => apiFetch<Dict[]>(`/v1/provider/complaints/${id}/settlement-proposals`), [id]), [id]);
+  const aiSession = useApi<Dict | null>(
+    useCallback(() => apiFetch<Dict | null>(`/v1/provider/complaints/${id}/ai-session`), [id]), [id]);
 
   const refreshAll = () => {
-    complaint.refetch(); messages.refetch(); resolutions.refetch(); proposals.refetch();
+    complaint.refetch(); messages.refetch(); resolutions.refetch(); proposals.refetch(); aiSession.refetch();
   };
+
+  // seed the answer boxes from the AI's tenant questions once they load
+  React.useEffect(() => {
+    const qs = (aiSession.data as Dict | null)?.tenant_questions as string[] | undefined;
+    if (qs && aiAnswers.length === 0) setAiAnswers(qs.map(() => ""));
+  }, [aiSession.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const submitAiAnswers = useAction(
+    async (answers: string[]) =>
+      apiFetch(`/v1/provider/complaints/${id}/ai-session/answers`, {
+        method: "POST", body: JSON.stringify({ answers }),
+      }),
+    { onSuccess: refreshAll },
+  );
 
   const respond = useAction(
     async (text: string) =>
@@ -186,9 +203,10 @@ export default function ProviderComplaintDetailPage() {
       </Card>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        {(["messages", "resolutions", "settlement"] as const).map(t => (
+        {(["messages", "resolutions", "settlement", "ai"] as const).map(t => (
           <Btn key={t} variant={tab === t ? "primary" : "ghost"} size="sm" onClick={() => setTab(t)}>
-            {t === "messages" ? "Messages" : t === "resolutions" ? "Resolutions" : "Settlement"}
+            {t === "messages" ? "Messages" : t === "resolutions" ? "Resolutions"
+              : t === "settlement" ? "Settlement" : "AI settlement"}
           </Btn>
         ))}
       </div>
@@ -299,6 +317,57 @@ export default function ProviderComplaintDetailPage() {
           {respondProposal.error && (
             <p style={{ color: "var(--danger)", fontSize: 12 }}>{respondProposal.error}</p>
           )}
+        </Card>
+      )}
+
+      {tab === "ai" && (
+        <Card>
+          <CardHeader title="AI settlement"
+            subtitle="If the customer's issue reaches AI mediation, answer these so it can weigh both sides. Running AI settlement is charged to your account." />
+          {aiSession.loading ? <Spinner /> : !aiSession.data ? (
+            <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
+              No AI settlement session for this complaint.
+            </p>
+          ) : (() => {
+            const ai = aiSession.data as Dict;
+            const qs = (ai.tenant_questions as string[]) ?? [];
+            const awaiting = Boolean(ai.awaiting_your_answers);
+            return (
+              <div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <Badge variant={s(ai.status) === "completed" ? "success"
+                                : s(ai.status) === "failed" ? "danger" : "info"}>
+                    {s(ai.status).replace(/_/g, " ")}
+                  </Badge>
+                </div>
+                {awaiting ? (
+                  <>
+                    {qs.map((q, i) => (
+                      <div key={i} style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{q}</div>
+                        <Input rows={2} value={aiAnswers[i] ?? ""}
+                          onChange={(v: string) => setAiAnswers(a => { const n = [...a]; n[i] = v; return n; })}
+                          placeholder="Your response…" />
+                      </div>
+                    ))}
+                    {submitAiAnswers.error && (
+                      <p style={{ color: "var(--danger)", fontSize: 12 }}>{submitAiAnswers.error}</p>
+                    )}
+                    <Btn disabled={submitAiAnswers.loading ||
+                                   qs.length === 0 ||
+                                   qs.some((_, i) => !(aiAnswers[i] ?? "").trim())}
+                         onClick={() => submitAiAnswers.execute(qs.map((_, i) => aiAnswers[i] ?? ""))}>
+                      {submitAiAnswers.loading ? "Submitting…" : "Submit answers"}
+                    </Btn>
+                  </>
+                ) : (
+                  <p style={{ fontSize: 13, color: "var(--success)" }}>
+                    ✓ Your answers are recorded. The AI will propose an outcome once both sides have responded.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </Card>
       )}
 

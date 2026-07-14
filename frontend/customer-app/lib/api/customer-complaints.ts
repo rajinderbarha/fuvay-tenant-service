@@ -120,6 +120,27 @@ export function getSettlementProposals(id: string): Promise<SettlementProposal[]
   return apiFetch<SettlementProposal[]>(`/v1/customer/complaints/${id}/settlement-proposals`);
 }
 
+export interface AISession {
+  id: string;
+  status: string;
+  customer_questions?: string[] | null;
+  customer_answers?: string[] | null;
+  awaiting_your_answers?: boolean;
+}
+
+/** bug #37/#34: the AI settlement asks the customer clarifying questions; they
+ *  must be able to see and answer them from the app. */
+export function getAISession(id: string): Promise<AISession | null> {
+  return apiFetch<AISession | null>(`/v1/customer/complaints/${id}/ai-session`);
+}
+
+export function submitAIAnswers(id: string, answers: string[]): Promise<AISession> {
+  return apiFetch<AISession>(`/v1/customer/complaints/${id}/ai-session/answers`, {
+    method: "POST",
+    body: JSON.stringify({ answers }),
+  });
+}
+
 // ── Actions ──────────────────────────────────────────────────────────────────
 
 export function addComplaintMessage(id: string, messageText: string): Promise<ComplaintMessage> {
