@@ -67,3 +67,22 @@ def test_proposed_resolution_can_be_accepted_or_rejected():
     allowed = ALLOWED_TRANSITIONS[STATUS_RESOLUTION_PROPOSED]
     assert STATUS_RESOLVED in allowed
     assert STATUS_UNDER_ADMIN_REVIEW in allowed
+
+
+def test_accepting_rework_resolution_creates_rework_request():
+    """MODULE-L5-02 bug #28: create_rework_request_from_complaint had no caller
+    anywhere, so a rework request could never exist and the entire rework
+    sub-flow (admin approve/assign, provider schedule/start/complete) was
+    unreachable. Accepting a rework-type resolution must now spawn the request
+    and move the complaint to rework_approved. Proven live end-to-end: accept ->
+    rework list 0->1 -> approve -> schedule -> start -> complete -> complaint
+    resolved, rework completed."""
+    import inspect
+    from app.engines.complaints.complaint_service import ComplaintService
+    src = inspect.getsource(ComplaintService.customer_accept_resolution)
+    assert "create_rework_request_from_complaint" in src
+    assert 'resolution_type' in src and "rework" in src
+    from app.engines.complaints.constants import (
+        ALLOWED_TRANSITIONS, STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
+    )
+    assert STATUS_REWORK_APPROVED in ALLOWED_TRANSITIONS[STATUS_RESOLUTION_PROPOSED]

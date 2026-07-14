@@ -250,10 +250,30 @@ class ComplaintService:
 
         complaint = await self._get_complaint(db, complaint_id)
         complaint.customer_accepted_resolution_at = datetime.now(timezone.utc)
-
         await db.flush()
-        await self._transition(db, complaint, STATUS_RESOLVED, ACTOR_CUSTOMER, customer_id,
-                               reason="Customer accepted resolution", request_id=request_id)
+
+        # MODULE-L5-02 bug #28: a rework-type resolution must actually spawn a
+        # ServiceReworkRequest — create_rework_request_from_complaint had NO
+        # caller anywhere, so the entire rework sub-flow (admin approve/assign,
+        # provider schedule/start/complete) operated on records that could never
+        # exist. When the customer accepts a rework resolution, create the rework
+        # request and move the complaint to rework_approved (the provider then
+        # runs the rework, whose completion resolves the complaint). All other
+        # resolution types resolve the complaint immediately as before.
+        if getattr(resolution, "resolution_type", None) == "rework":
+            from app.engines.complaints.rework_service import ServiceReworkService
+            await ServiceReworkService().create_rework_request_from_complaint(
+                db, complaint_id, customer_id, ACTOR_CUSTOMER,
+                rework_reason=(resolution.description or "Customer accepted rework resolution"),
+                request_id=request_id,
+            )
+            # the helper committed; re-fetch the complaint before transitioning
+            complaint = await self._get_complaint(db, complaint_id)
+            await self._transition(db, complaint, STATUS_REWORK_APPROVED, ACTOR_CUSTOMER, customer_id,
+                                   reason="Customer accepted rework resolution", request_id=request_id)
+        else:
+            await self._transition(db, complaint, STATUS_RESOLVED, ACTOR_CUSTOMER, customer_id,
+                                   reason="Customer accepted resolution", request_id=request_id)
         await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_CUSTOMER, customer_id,
                               EVT_RESOLUTION_ACCEPTED, None, None, None, {"resolution_id": str(resolution_id)},
                               request_id=request_id)

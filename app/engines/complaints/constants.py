@@ -61,7 +61,8 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     # awaiting_customer was, and nothing ever moved it there), so a proposed
     # resolution could never be accepted or rejected — every complaint stalled at
     # resolution_proposed. Allow the customer's accept/reject targets directly.
-    STATUS_RESOLUTION_PROPOSED:{STATUS_AWAITING_CUSTOMER, STATUS_RESOLVED, STATUS_UNDER_ADMIN_REVIEW},
+    STATUS_RESOLUTION_PROPOSED:{STATUS_AWAITING_CUSTOMER, STATUS_RESOLVED, STATUS_UNDER_ADMIN_REVIEW,
+                                STATUS_REWORK_APPROVED},
     STATUS_AWAITING_CUSTOMER:  {STATUS_RESOLVED, STATUS_UNDER_ADMIN_REVIEW},
     STATUS_REWORK_APPROVED:    {STATUS_RESOLVED},
     STATUS_REFUND_REQUESTED:   {STATUS_REFUND_APPROVED},
