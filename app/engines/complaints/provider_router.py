@@ -248,6 +248,54 @@ class SettlementRespondIn(BaseModel):
     response: str
 
 
+class AIAnswersIn(BaseModel):
+    answers: list[str]
+
+
+@provider_complaint_router.get("/{complaint_id}/ai-session")
+async def get_ai_session(
+    complaint_id: uuid.UUID,
+    r: Request       = None,
+    u: UserContext   = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The provider must be able to SEE the questions the AI asked them."""
+    await _complaint.provider_get_complaint(db, u.tenant_id, complaint_id)
+    session = await _complaint.get_ai_session(db, complaint_id)
+    if not session:
+        return ok(None, _rid(r), "provider.complaint.ai_session.get")
+    # provider-safe view — never expose the customer's answers to the other side
+    return ok({
+        "id":               str(session.id),
+        "status":           session.status,
+        "tenant_questions": session.tenant_questions,
+        "tenant_answers":   session.tenant_answers,
+        "awaiting_your_answers": session.tenant_answers is None,
+    }, _rid(r), "provider.complaint.ai_session.get")
+
+
+@provider_complaint_router.post("/{complaint_id}/ai-session/answers")
+async def submit_ai_answers(
+    complaint_id: uuid.UUID,
+    body: AIAnswersIn,
+    r: Request       = None,
+    u: UserContext   = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """MODULE-L5-02 bug #37: the AI settlement session asked the provider
+    clarifying questions but there was NO endpoint to answer them. Once both
+    sides have answered, the (previously orphaned) analysis runs and produces the
+    settlement proposal."""
+    complaint = await _complaint.provider_get_complaint(db, u.tenant_id, complaint_id)
+    from app.engines.complaints.ai_settlement_service import AISettlementService
+    session = await AISettlementService().submit_answers(
+        db, complaint, "tenant", body.answers, request_id=_rid(r),
+    )
+    await db.commit()
+    return ok({"id": str(session.id), "status": session.status},
+              _rid(r), "provider.complaint.ai_answers.submitted")
+
+
 @provider_complaint_router.get("/{complaint_id}/settlement-proposals")
 async def list_settlement_proposals(
     complaint_id: uuid.UUID,

@@ -40,7 +40,16 @@ def _now() -> datetime:
 
 
 def _api_key() -> str:
-    key = os.environ.get("DEEPSEEK_API_KEY", "")
+    # MODULE-L5-02 bug #38: this read os.environ directly, which does NOT pick up
+    # .env — pydantic Settings (env_file=".env") is what loads it. So the AI
+    # settlement analysis ALWAYS failed with "DEEPSEEK_API_KEY not configured"
+    # even though the key was correctly configured and every other AI feature
+    # worked, because every other DeepSeek caller (ai_chat, ai_conversation) goes
+    # through get_settings(). The bug was invisible while analyze_and_propose had
+    # no caller at all (bug #37). Read it the same way everyone else does, still
+    # falling back to the raw environment.
+    from app.config import get_settings
+    key = get_settings().DEEPSEEK_API_KEY or os.environ.get("DEEPSEEK_API_KEY", "")
     if not key:
         raise RuntimeError("DEEPSEEK_API_KEY not configured")
     return key
@@ -99,6 +108,58 @@ class AISettlementService:
         await db.flush()
 
         return session
+
+    async def submit_answers(
+        self,
+        db: AsyncSession,
+        complaint: CustomerComplaint,
+        party: str,
+        answers: list[str] | dict,
+        request_id: str = "—",
+    ) -> AISettlementSession:
+        """MODULE-L5-02 bug #37: start_session asked the customer and the tenant
+        a set of clarifying questions — but NOTHING could ever answer them. There
+        was no endpoint on either side, so customer_answers/tenant_answers stayed
+        NULL forever and the session sat in 'collecting' permanently. And
+        analyze_and_propose() — which turns those answers into the AI
+        recommendation and the SettlementProposal — had ZERO callers, so the AI
+        never actually analysed anything. The whole AI settlement engine was a
+        dead end.
+
+        This is the missing step: record one party's answers and, once BOTH have
+        answered, run the analysis that produces the settlement proposal (which
+        then flows into the normal dual-acceptance path).
+        """
+        session = await self._get_active_session(db, complaint.id)
+        if session is None:
+            raise ValueError("AI_SESSION_NOT_FOUND")
+        if session.status not in (AI_SESSION_COLLECTING,):
+            raise ValueError("AI_SESSION_NOT_COLLECTING")
+        if party not in ("customer", "tenant"):
+            raise ValueError("AI_SESSION_INVALID_PARTY")
+
+        if party == "customer":
+            session.customer_answers = answers
+        else:
+            session.tenant_answers = answers
+        await db.flush()
+
+        # Both sides in → run the (previously orphaned) analysis.
+        if session.customer_answers is not None and session.tenant_answers is not None:
+            await self.analyze_and_propose(db, session, complaint, request_id=request_id)
+
+        await db.flush()
+        return session
+
+    async def _get_active_session(
+        self, db: AsyncSession, complaint_id: uuid.UUID
+    ) -> AISettlementSession | None:
+        r = await db.execute(
+            select(AISettlementSession)
+            .where(AISettlementSession.complaint_id == complaint_id)
+            .order_by(AISettlementSession.created_at.desc())
+        )
+        return r.scalars().first()
 
     async def analyze_and_propose(
         self,

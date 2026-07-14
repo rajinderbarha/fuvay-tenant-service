@@ -181,6 +181,56 @@ async def list_resolutions(
               rid, "complaint.resolutions.list")
 
 
+# ── AI settlement: answer the clarifying questions ────────────────────────────
+class AIAnswersIn(BaseModel):
+    answers: list[str]
+
+
+@customer_complaint_router.get("/{complaint_id}/ai-session")
+async def get_ai_session(
+    complaint_id: uuid.UUID,
+    r: Request       = None,
+    u: UserContext   = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The customer must be able to SEE the questions the AI asked them."""
+    rid = getattr(r.state, "request_id", "—") if r else "—"
+    await _complaint.get_customer_complaint(db, u.user_id, complaint_id)
+    session = await _complaint.get_ai_session(db, complaint_id)
+    if not session:
+        return ok(None, rid, "complaint.ai_session.get")
+    # customer-safe view only — never expose the tenant's answers or the raw
+    # AI risk flags / confidence to the other side of the dispute
+    return ok({
+        "id":                 str(session.id),
+        "status":             session.status,
+        "customer_questions": session.customer_questions,
+        "customer_answers":   session.customer_answers,
+        "awaiting_your_answers": session.customer_answers is None,
+    }, rid, "complaint.ai_session.get")
+
+
+@customer_complaint_router.post("/{complaint_id}/ai-session/answers")
+async def submit_ai_answers(
+    complaint_id: uuid.UUID,
+    body: AIAnswersIn,
+    r: Request       = None,
+    u: UserContext   = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """MODULE-L5-02 bug #37: the AI settlement session asked the customer
+    clarifying questions but there was NO endpoint to answer them, so the session
+    sat in 'collecting' forever and the analysis never ran."""
+    rid = getattr(r.state, "request_id", "—") if r else "—"
+    complaint = await _complaint.get_customer_complaint(db, u.user_id, complaint_id)
+    from app.engines.complaints.ai_settlement_service import AISettlementService
+    session = await AISettlementService().submit_answers(
+        db, complaint, "customer", body.answers, request_id=rid,
+    )
+    await db.commit()
+    return ok({"id": str(session.id), "status": session.status}, rid, "complaint.ai_answers.submitted")
+
+
 # ── Cancel complaint ──────────────────────────────────────────────────────────
 @customer_complaint_router.post("/{complaint_id}/cancel")
 async def cancel_complaint(
