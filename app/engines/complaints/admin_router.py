@@ -81,12 +81,25 @@ class RefundRecordIn(BaseModel):
 
 
 class PolicyIn(BaseModel):
+    # MODULE-L5-02 bug #39: policy_name is NOT NULL on the model but was absent
+    # from this schema, so POST /v1/admin/complaint-policies ALWAYS died with a
+    # NotNullViolation — a complaint policy could never be created at all (the
+    # table was empty in every environment). tenant_id/category_id were missing
+    # too, so a policy could not be scoped, and `allow_rework_request` does not
+    # exist on the model (the column is `allow_rework`) so it silently did
+    # nothing. All fixed here.
     policy_key:                    Optional[str]  = None
+    policy_name:                   Optional[str]  = None
+    tenant_id:                     Optional[uuid.UUID] = None
+    category_id:                   Optional[uuid.UUID] = None
     complaint_window_hours:        Optional[int]  = None
     allow_duplicate_open_complaints: Optional[bool] = None
-    allow_rework_request:          Optional[bool] = None
+    allow_rework:                  Optional[bool] = None
     allow_refund_request:          Optional[bool] = None
     require_admin_review:          Optional[bool] = None
+    require_provider_response:     Optional[bool] = None
+    default_provider_response_hours: Optional[int] = None
+    default_resolution_hours:      Optional[int]  = None
     is_active:                     Optional[bool] = None
 
     # ── The AI settlement rule — this is the ONLY thing the admin sets ─────────

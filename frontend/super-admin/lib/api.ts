@@ -6478,11 +6478,25 @@ export interface RefundRecord {
   approved_at?: string; recorded_at?: string; verified_at?: string; created_at?: string;
 }
 export interface ComplaintPolicyRecord {
-  id: string; policy_key: string; category_id?: string;
+  id: string; policy_key: string; policy_name?: string; category_id?: string; tenant_id?: string;
   complaint_window_hours: number; allow_duplicate_open_complaints: boolean;
-  allow_rework_request: boolean; allow_refund_request: boolean;
+  // NOTE: the model column is `allow_rework` — `allow_rework_request` never
+  // applied to anything (MODULE-L5-02 bug #39).
+  allow_rework?: boolean; allow_rework_request?: boolean; allow_refund_request: boolean;
   require_admin_review: boolean; is_active: boolean;
   created_at?: string;
+
+  // ── The AI settlement rule — the only thing the admin sets ──────────────────
+  // AI settlement takes over automatically once the PROVIDER has failed to solve
+  // the complaint; it may offer at most `ai_settlement_max_pct` of the job value,
+  // in CREDIT POINTS only (never money), funded from the provider's credit wallet
+  // and then their security deposit. A case warranting more than the cap is
+  // escalated to admin manual review instead of being settled.
+  ai_settlement_enabled?: boolean;
+  ai_auto_start_on_provider_failure?: boolean;
+  ai_settlement_max_pct?: number;
+  ai_settlement_allowed_remedies?: string[];
+  settlement_payout_in_credits_only?: boolean;
 }
 export interface ComplaintEventRecord {
   id: string; complaint_id: string; event_type: string;

@@ -437,6 +437,14 @@ class ComplaintPolicy(Base):
             "require_provider_response":    self.require_provider_response,
             "default_provider_response_hours": self.default_provider_response_hours,
             "default_resolution_hours":     self.default_resolution_hours,
+            # The AI settlement rule (migration 138) — without these the admin UI
+            # could set the rule but never read it back.
+            "ai_settlement_enabled":             self.ai_settlement_enabled,
+            "ai_auto_start_on_provider_failure": self.ai_auto_start_on_provider_failure,
+            "ai_settlement_max_pct":            (float(self.ai_settlement_max_pct)
+                                                 if self.ai_settlement_max_pct is not None else None),
+            "ai_settlement_allowed_remedies":    self.ai_settlement_allowed_remedies,
+            "settlement_payout_in_credits_only": self.settlement_payout_in_credits_only,
             "is_active":                    self.is_active,
             "created_at":                   self.created_at.isoformat() if self.created_at else None,
             "updated_at":                   self.updated_at.isoformat() if self.updated_at else None,

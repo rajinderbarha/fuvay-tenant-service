@@ -25,10 +25,15 @@ export default function AdminComplaintPoliciesPage() {
     setForm({
       complaint_window_hours:          p.complaint_window_hours,
       allow_duplicate_open_complaints: p.allow_duplicate_open_complaints,
-      allow_rework_request:            p.allow_rework_request,
+      allow_rework:                    p.allow_rework ?? p.allow_rework_request,
       allow_refund_request:            p.allow_refund_request,
       require_admin_review:            p.require_admin_review,
       is_active:                       p.is_active,
+      ai_settlement_enabled:             p.ai_settlement_enabled ?? true,
+      ai_auto_start_on_provider_failure: p.ai_auto_start_on_provider_failure ?? true,
+      ai_settlement_max_pct:             p.ai_settlement_max_pct ?? 25,
+      ai_settlement_allowed_remedies:    p.ai_settlement_allowed_remedies ?? ["credit_points", "rework"],
+      settlement_payout_in_credits_only: p.settlement_payout_in_credits_only ?? true,
     });
   };
 
@@ -89,6 +94,40 @@ export default function AdminComplaintPoliciesPage() {
               </p>
             </div>
           </div>
+
+          <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12,
+            background: "var(--surface-sunken)" }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 2px" }}>
+              AI Settlement Rule
+            </p>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+              The AI takes over automatically once the provider has failed to solve the complaint.
+              It never pays money &mdash; compensation is credit points, funded from the provider&apos;s
+              credits and then their security deposit. A case worth more than the cap goes to admin
+              manual review.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {[
+                { label: "AI Settlement", val: (p.ai_settlement_enabled ?? true) ? "Enabled" : "Disabled" },
+                { label: "Auto-start on provider failure",
+                  val: (p.ai_auto_start_on_provider_failure ?? true) ? "Yes" : "No" },
+                { label: "Max AI offer", val: `${p.ai_settlement_max_pct ?? 25}% of job value` },
+                { label: "Payout", val: (p.settlement_payout_in_credits_only ?? true)
+                    ? "Credit points only (never money)" : "\u2014" },
+              ].map(({ label, val }) => (
+                <div key={label} style={{ background: "var(--surface)", borderRadius: 8, padding: 10 }}>
+                  <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>{label}</p>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>{val}</p>
+                </div>
+              ))}
+              <div style={{ background: "var(--surface)", borderRadius: 8, padding: 10, gridColumn: "span 2" }}>
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>Permitted remedies</p>
+                <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>
+                  {(p.ai_settlement_allowed_remedies ?? ["credit_points", "rework"]).join(", ").replace(/_/g, " ")}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       ))}
 
@@ -115,10 +154,72 @@ export default function AdminComplaintPoliciesPage() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <BoolField label="Allow Duplicate Open Complaints" field="allow_duplicate_open_complaints" />
-              <BoolField label="Allow Rework Requests"           field="allow_rework_request" />
+              <BoolField label="Allow Rework Requests"           field="allow_rework" />
               <BoolField label="Allow Refund Requests"           field="allow_refund_request" />
               <BoolField label="Require Admin Review"            field="require_admin_review" />
               <BoolField label="Is Active"                       field="is_active" />
+            </div>
+
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14,
+              display: "flex", flexDirection: "column", gap: 10 }}>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 2px" }}>
+                  AI Settlement Rule
+                </p>
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
+                  You set the rule; the rest runs automatically. The AI takes over once the provider
+                  has failed to solve the complaint. Running it charges the provider 20 credits.
+                </p>
+              </div>
+
+              <BoolField label="Enable AI settlement" field="ai_settlement_enabled" />
+              <BoolField label="Auto-start when the provider fails to solve it"
+                         field="ai_auto_start_on_provider_failure" />
+
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+                  Maximum the AI may offer (% of job value)
+                </label>
+                <input type="number" min={0} max={100} step={1}
+                  style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
+                  value={form.ai_settlement_max_pct ?? 25}
+                  onChange={e => setForm(prev => ({ ...prev, ai_settlement_max_pct: +e.target.value }))}
+                />
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
+                  A case worth more than this is escalated to admin manual review &mdash; it is never
+                  quietly settled down at the cap.
+                </p>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+                  Remedies the AI may offer
+                </label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                  {["credit_points", "rework", "callback", "apology", "no_action"].map(rem => {
+                    const list = (form.ai_settlement_allowed_remedies ?? []) as string[];
+                    const on = list.includes(rem);
+                    return (
+                      <label key={rem} style={{ display: "flex", alignItems: "center", gap: 6,
+                        fontSize: 13, cursor: "pointer" }}>
+                        <input type="checkbox" checked={on} style={{ width: 16, height: 16 }}
+                          onChange={e => setForm(prev => {
+                            const cur = ((prev.ai_settlement_allowed_remedies ?? []) as string[]);
+                            return { ...prev, ai_settlement_allowed_remedies:
+                              e.target.checked ? [...cur, rem] : cur.filter(x => x !== rem) };
+                          })}
+                        />
+                        {rem.replace(/_/g, " ")}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+                  Refunds and every other cash remedy are deliberately absent: the platform never
+                  settles a dispute with real money. Compensation is paid in credit points, deducted
+                  from the provider&apos;s credits and then their security deposit.
+                </p>
+              </div>
             </div>
             <button onClick={() => saveAction.execute()} disabled={saveAction.loading}
               style={{ padding: "8px 0", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none",

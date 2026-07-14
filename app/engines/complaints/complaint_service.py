@@ -632,9 +632,16 @@ class ComplaintService:
         return r.scalars().all()
 
     async def create_policy(self, db: AsyncSession, data: dict) -> ComplaintPolicy:
+        # MODULE-L5-02 bug #39: policy_name is NOT NULL, so a create without one
+        # blew up with a NotNullViolation -> 500. Default it from the key.
+        data = dict(data)
+        data.setdefault("policy_key", "default")
+        if not data.get("policy_name"):
+            data["policy_name"] = str(data["policy_key"]).replace("_", " ").title()
         p = ComplaintPolicy(**{k: v for k, v in data.items() if hasattr(ComplaintPolicy, k)})
         db.add(p)
         await db.commit()
+        await db.refresh(p)
         return p
 
     async def update_policy(self, db: AsyncSession, policy_id: uuid.UUID, data: dict) -> ComplaintPolicy:
@@ -647,6 +654,7 @@ class ComplaintService:
             if hasattr(p, k):
                 setattr(p, k, v)
         await db.commit()
+        await db.refresh(p)
         return p
 
     # ── SLA management ────────────────────────────────────────────────────────
