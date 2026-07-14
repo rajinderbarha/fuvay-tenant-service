@@ -415,9 +415,15 @@ async def test_verify_refund_success():
     svc = RefundRequestService()
     db  = _mock_db()
     rf  = MagicMock(status=REFUND_RECORDED)
-    with patch.object(svc, '_get_refund', AsyncMock(return_value=rf)):
+    # MODULE-L5-02 bug #29: verifying a refund now also resolves the underlying
+    # complaint (previously it stayed at refund_recorded forever), so the
+    # complaint lookup must be stubbed too.
+    complaint = MagicMock(status=STATUS_REFUND_RECORDED)
+    with patch.object(svc, '_get_refund', AsyncMock(return_value=rf)), \
+         patch.object(svc._complaint_svc, 'get_complaint', AsyncMock(return_value=complaint)):
         result = await svc.verify_refund(db, _uuid(), _uuid())
     assert result.status == REFUND_VERIFIED
+    assert complaint.status == STATUS_RESOLVED
 
 
 @pytest.mark.asyncio

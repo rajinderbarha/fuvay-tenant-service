@@ -86,3 +86,27 @@ def test_accepting_rework_resolution_creates_rework_request():
         ALLOWED_TRANSITIONS, STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
     )
     assert STATUS_REWORK_APPROVED in ALLOWED_TRANSITIONS[STATUS_RESOLUTION_PROPOSED]
+
+
+def test_refund_path_advances_and_resolves_the_complaint():
+    """MODULE-L5-02 bug #29: the customer refund endpoint is reachable from an
+    open complaint, but refund_requested was not a permitted target from open (or
+    awaiting_provider). refund_service SILENTLY SKIPS a complaint transition it
+    is not allowed to make, so the complaint stayed 'open' while the refund ran
+    all the way to approved/recorded — a refund could be fully paid out with the
+    complaint still showing open, never resolving. And verify_refund never moved
+    the complaint out of refund_recorded at all.
+
+    Proven live: request -> refund_requested, approve -> refund_approved,
+    record -> refund_recorded, verify -> resolved."""
+    import inspect
+    from app.engines.complaints.constants import (
+        ALLOWED_TRANSITIONS, STATUS_OPEN, STATUS_AWAITING_PROVIDER,
+        STATUS_REFUND_REQUESTED, STATUS_REFUND_RECORDED, STATUS_RESOLVED,
+    )
+    assert STATUS_REFUND_REQUESTED in ALLOWED_TRANSITIONS[STATUS_OPEN]
+    assert STATUS_REFUND_REQUESTED in ALLOWED_TRANSITIONS[STATUS_AWAITING_PROVIDER]
+    assert STATUS_RESOLVED in ALLOWED_TRANSITIONS[STATUS_REFUND_RECORDED]
+    from app.engines.complaints.refund_service import RefundRequestService
+    src = inspect.getsource(RefundRequestService.verify_refund)
+    assert "STATUS_RESOLVED" in src and "get_complaint" in src

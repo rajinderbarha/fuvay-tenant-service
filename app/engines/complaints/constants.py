@@ -50,8 +50,17 @@ FINAL_STATUSES = {STATUS_CLOSED, STATUS_CANCELLED, STATUS_REJECTED}
 
 # ── Valid status transitions ───────────────────────────────────────────────────
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    STATUS_OPEN:               {STATUS_AWAITING_PROVIDER, STATUS_UNDER_ADMIN_REVIEW, STATUS_CANCELLED},
-    STATUS_AWAITING_PROVIDER:  {STATUS_UNDER_ADMIN_REVIEW, STATUS_RESOLUTION_PROPOSED},
+    # MODULE-L5-02 bug #29: the customer refund endpoint is reachable directly
+    # from an open (or awaiting_provider) complaint, but refund_requested was not
+    # a permitted target from either. refund_service guards every complaint
+    # transition with `if status in allowed` and SILENTLY SKIPS otherwise, so the
+    # complaint stayed 'open' while the refund advanced to approved/recorded —
+    # i.e. a refund could be fully approved and paid out and the complaint would
+    # still show as open forever, never resolving. Allow refund_requested here.
+    STATUS_OPEN:               {STATUS_AWAITING_PROVIDER, STATUS_UNDER_ADMIN_REVIEW, STATUS_CANCELLED,
+                                STATUS_REFUND_REQUESTED},
+    STATUS_AWAITING_PROVIDER:  {STATUS_UNDER_ADMIN_REVIEW, STATUS_RESOLUTION_PROPOSED,
+                                STATUS_REFUND_REQUESTED},
     STATUS_UNDER_ADMIN_REVIEW: {STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
                                 STATUS_REFUND_REQUESTED, STATUS_REJECTED, STATUS_RESOLVED},
     # MODULE-L5-02 bug #27: once a provider/admin proposes a resolution the

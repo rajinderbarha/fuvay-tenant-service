@@ -166,6 +166,14 @@ class RefundRequestService:
         refund.status              = REFUND_VERIFIED
         refund.verified_by_user_id = admin_user_id
         refund.verified_at         = datetime.now(timezone.utc)
+        # MODULE-L5-02 bug #29: verifying the refund is the terminal step of the
+        # refund path, but nothing ever moved the complaint out of
+        # refund_recorded — so a fully paid-out and verified refund left the
+        # complaint permanently unresolved. Resolve it here.
+        complaint = await self._complaint_svc.get_complaint(db, refund.complaint_id)
+        if STATUS_RESOLVED in ALLOWED_TRANSITIONS.get(complaint.status, set()):
+            complaint.status      = STATUS_RESOLVED
+            complaint.resolved_at = datetime.now(timezone.utc)
         await db.commit()
         return refund
 
