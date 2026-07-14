@@ -143,6 +143,18 @@ class ServicePaymentService:
                               new_value={"payment_mode": payment_mode,
                                          "collected_amount": str(collected_amount)},
                               request_id=request_id)
+        # MODULE-L5-10: book the platform's customer charge as revenue. The fee is
+        # part of what the customer paid (customer_payable = service value + fee);
+        # this records it as an auditable platform-revenue event so the customer
+        # side of platform earnings is captured, not just displayed.
+        fee = Decimal(str(getattr(inv, "platform_fee_amount", 0) or 0))
+        if fee > Decimal("0"):
+            from app.engines.invoice_payment.constants import FEV_PLATFORM_CUSTOMER_FEE
+            await self._log_event(db, inv, pay, FEV_PLATFORM_CUSTOMER_FEE, "system", user_id,
+                                  new_value={"platform_fee": str(fee),
+                                             "service_value": str(inv.total_amount),
+                                             "customer_payable": str(inv.customer_payable_amount)},
+                                  request_id=request_id)
         await db.commit()
         await db.refresh(pay)
         result = pay.to_dict()

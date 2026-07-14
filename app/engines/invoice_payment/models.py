@@ -36,6 +36,10 @@ class ServiceInvoice(ServiceOSBase):
     discount_amount:       Mapped[Decimal]         = mapped_column(Numeric(14,2), nullable=False, default=0)
     tax_amount:            Mapped[Decimal]         = mapped_column(Numeric(14,2), nullable=False, default=0)
     total_amount:          Mapped[Decimal]         = mapped_column(Numeric(14,2), nullable=False, default=0)
+    # MODULE-L5-10 (migration 141): the per-category customer charge captured on
+    # the invoice. customer_payable_amount = total_amount (service value) +
+    # platform_fee_amount. Commission is charged on total_amount only.
+    platform_fee_amount:   Mapped[Decimal]         = mapped_column(Numeric(14,2), nullable=False, default=0)
     customer_payable_amount: Mapped[Decimal]       = mapped_column(Numeric(14,2), nullable=False, default=0)
     payment_mode:          Mapped[str]             = mapped_column(String(30), nullable=False, default="onsite")
     payment_status:        Mapped[str]             = mapped_column(String(30), nullable=False, default="pending")
@@ -67,6 +71,7 @@ class ServiceInvoice(ServiceOSBase):
             "discount_amount":         str(self.discount_amount),
             "tax_amount":              str(self.tax_amount),
             "total_amount":            str(self.total_amount),
+            "platform_fee_amount":     str(self.platform_fee_amount),
             "customer_payable_amount": str(self.customer_payable_amount),
             "payment_mode":            self.payment_mode,
             "payment_status":          self.payment_status,
@@ -93,6 +98,7 @@ class ServiceInvoice(ServiceOSBase):
             "discount_amount":         str(self.discount_amount),
             "tax_amount":              str(self.tax_amount),
             "total_amount":            str(self.total_amount),
+            "platform_fee_amount":     str(self.platform_fee_amount),
             "customer_payable_amount": str(self.customer_payable_amount),
             "payment_mode":            "Pay provider directly on-site",
             "payment_status":          self.payment_status,

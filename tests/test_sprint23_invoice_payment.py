@@ -65,6 +65,7 @@ def _mock_invoice(status="draft", tenant_id=None, customer_id=None):
     inv.tax_amount            = Decimal("0")
     inv.discount_amount       = Decimal("0")
     inv.total_amount          = Decimal("1000.00")
+    inv.platform_fee_amount   = Decimal("0")
     inv.issued_at             = None
     inv.paid_at               = None
     inv.cancelled_at          = None
@@ -492,7 +493,7 @@ class TestCommissionService:
         from app.engines.invoice_payment.commission_service import ServiceCommissionService
         svc = ServiceCommissionService()
         inv = _mock_invoice()
-        inv.customer_payable_amount = Decimal("2000.00")
+        inv.total_amount = Decimal("2000.00")   # commission base is the service value
         db = _mock_db(
             _scalars_result([inv]),
             _scalars_result([]),

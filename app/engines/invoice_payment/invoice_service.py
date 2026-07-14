@@ -214,11 +214,31 @@ class ServiceInvoiceService:
         )
         items = list(res.scalars().all())
         totals = self._recalculate(items)
+        # MODULE-L5-10: apply the per-category customer charge (platform fee).
+        # total_amount stays the SERVICE value (the provider-commission base); the
+        # platform fee is added ON TOP so the customer is billed the inclusive
+        # amount. The provider is never charged commission on the platform's fee.
+        service_value = Decimal(str(totals["total_amount"]))
+        fee_pct = await self._resolve_customer_charge_pct(db, inv.category_id)
+        platform_fee = (service_value * fee_pct / Decimal("100")).quantize(Decimal("0.01"))
+        totals["platform_fee_amount"] = platform_fee
+        totals["customer_payable_amount"] = service_value + platform_fee
         await db.execute(
             update(ServiceInvoice)
             .where(ServiceInvoice.id == inv.id)
             .values(**totals, updated_at=_utcnow())
         )
+
+    async def _resolve_customer_charge_pct(self, db: AsyncSession, category_id) -> Decimal:
+        """The per-category customer charge %, or 0 when unset (migration 140)."""
+        if category_id is None:
+            return Decimal("0")
+        from app.engines.admin_catalog.models import ServiceCategory
+        pct = (await db.execute(
+            select(ServiceCategory.customer_charge_pct)
+            .where(ServiceCategory.id == category_id)
+        )).scalar_one_or_none()
+        return Decimal(str(pct)) if pct is not None else Decimal("0")
 
     # ── Add item to draft invoice ──────────────────────────────────────────────
 

@@ -93,7 +93,12 @@ class ServiceCommissionService:
             raise ValueError(ERR_COMMISSION_ALREADY_DEDUCTED)
 
         rate = await self._resolve_rate(db, inv.category_id)
-        base = inv.customer_payable_amount
+        # MODULE-L5-10: commission is charged on the SERVICE value (total_amount),
+        # NOT customer_payable_amount — the latter now includes the platform's own
+        # customer charge, and the provider must not pay commission on that fee.
+        # For invoices with no platform fee the two are equal, so this is a no-op
+        # for existing data.
+        base = inv.total_amount
         amount = (base * rate / Decimal("100")).quantize(Decimal("0.01"))
         now = _utcnow()
 

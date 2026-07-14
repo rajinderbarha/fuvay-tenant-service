@@ -74,6 +74,7 @@ FEV_WALLET_EXHAUSTED      = "wallet_exhausted"
 FEV_SUBSCRIPTION_CHECKED  = "subscription_checked"
 FEV_SUBSCRIPTION_INACTIVE = "subscription_inactive"
 FEV_COMMISSION_REVERSED   = "commission_reversed"
+FEV_PLATFORM_CUSTOMER_FEE = "platform_customer_fee_charged"
 
 # ── Default commission rate (pct) — overridden by category/offering config ────
 DEFAULT_COMMISSION_RATE = 10  # 10%
