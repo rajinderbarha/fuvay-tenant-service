@@ -16,3 +16,29 @@ def test_reverse_requires_deducted_status():
     guard = src.index("ERR_COMMISSION_NOT_REVERSIBLE")
     credit = src.index("credit_wallet")
     assert guard < credit, "status guard must precede the wallet credit"
+
+
+def test_deposit_balance_is_computed_and_cannot_be_overdrawn():
+    """Finance invariant: SecurityDeposit.current_balance is a derived property
+    (total_paid + replenishment_total - warranty_drawn), so a draw that only
+    bumps warranty_drawn still correctly lowers the balance — there is no stored
+    balance column that could drift and allow an over-draw."""
+    from app.engines.platform_commerce.models import SecurityDeposit
+    import inspect
+    src = inspect.getsource(SecurityDeposit)
+    assert "def current_balance" in src
+    assert "self.total_paid + self.replenishment_total - self.warranty_drawn" in src
+    # it must be a property, not a writable column
+    assert "current_balance: Mapped" not in src
+
+
+def test_deposit_replenishment_is_not_triggered_by_a_plain_wallet_credit():
+    """Finance invariant: crediting the wallet (e.g. a commission reversal) must
+    NOT replenish the security deposit — otherwise a reversal would fund the
+    deposit from nothing. credit_wallet touches only wallet fields; deposit
+    replenishment is a separate explicit credit_deposit call."""
+    import inspect
+    from app.engines.platform_commerce import ledger
+    src = inspect.getsource(ledger.credit_wallet)
+    assert "replenishment" not in src
+    assert "SecurityDeposit" not in src
