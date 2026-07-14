@@ -14,6 +14,7 @@ from app.engines.invoice_payment.constants import (
     FEV_COMMISSION_FAILED, FEV_COMMISSION_REVERSED, FEV_WALLET_LOW_BALANCE,
     ERR_COMMISSION_ALREADY_DEDUCTED, ERR_COMMISSION_DEDUCTION_FAILED,
     ERR_COMMISSION_RETRY_NOT_ALLOWED, ERR_COMMISSION_REVERSAL_REASON,
+    ERR_COMMISSION_NOT_REVERSIBLE,
     ERR_INVOICE_NOT_FOUND,
 )
 from app.engines.invoice_payment.models import (
@@ -257,6 +258,13 @@ class ServiceCommissionService:
         cr = res.scalar_one_or_none()
         if not cr:
             raise ValueError(ERR_INVOICE_NOT_FOUND)
+        # MODULE-L5-10: only a commission that was actually DEDUCTED can be
+        # reversed. Reversing one that never took money (calculated / failed /
+        # insufficient_credit) would credit the provider's wallet for a charge
+        # that never happened — free money — and reversing an already-reversed one
+        # would double it. Guard on status before crediting anything back.
+        if cr.status != COM_DEDUCTED:
+            raise ValueError(ERR_COMMISSION_NOT_REVERSIBLE)
         # Credit wallet back
         idem_key = f"reversal-{commission_id}"
         await credit_wallet(
