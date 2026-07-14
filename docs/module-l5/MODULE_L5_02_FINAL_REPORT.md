@@ -312,6 +312,40 @@ canonical rewire and Demo AC driven to bookable. A fully-live booking is now blo
 `ServiceCatalogItem`↔`master_services` coverage-catalog bridge (architectural), not by any
 remaining customer-flow crash.
 
+## 6k. Area-coverage catalog bridge — major bug FIXED + booking reached serviceability
+
+Investigated and fixed the `ServiceCatalogItem` ↔ `master_services` bridge (§6j's architectural
+finding). Root cause + fix:
+
+- **Bug #11 (FIXED) — area coverage validated against an empty legacy catalog.** Serviceability's
+  `_assert_service_active` (the validator for creating `tenant_service_area_services` coverage
+  mappings) checked `service_catalog.service_catalog_items` — a **legacy table with 0 rows** —
+  while the matching engine reads `tenant_service_area_services.service_id` as a **master_service
+  id** (`offering_id = master_service_id`). So **no coverage mapping could ever be created**
+  (every `service_id` → `SERVICE_NOT_FOUND`), meaning `SERVICE_NOT_COVERED_IN_AREA` tripped for
+  **every** booking — the entire service-area-coverage feature was non-functional. Fixed:
+  `_assert_service_active` now validates against the canonical `admin_catalog.MasterService`,
+  aligning mapping-creation with what matching consumes.
+
+- **Verified live end-to-end progress** (after this fix + the #9/#10 fixes + provisioning): the
+  area-coverage mapping for ac_installation was **created (201)**, `serviceability-check` now
+  returns **`serviceable: true`**, and the matching engine **found Demo AC Services** as a
+  candidate (signals present) — clearing bookability, coverage, and pricing-rule gates that were
+  previously all blocking.
+
+- **Last remaining gate (documented, another fixed-price theme):** `match-and-price` →
+  `PRICE_OPTIONS_UNAVAILABLE` ("selected provider does not have a customer price range configured
+  yet"). The price-options/bargain engine expects a customer price *range*, which a fixed-price
+  (`tenant_override_allowed=false`) service does not have — the options should simply be the fixed
+  price. This is a further price-options-engine follow-up (same fixed-price-vs-range family as
+  #9), not chased here. (A `confirm-price-choice` 500 seen during testing was a test-harness
+  malformed-JSON artifact, not a product bug.)
+
+**Related follow-up (not fixed):** `_resolve_service_type_id` in the same serviceability service
+also references the empty `service_catalog_items`; it is on the serviceability-check field-
+resolution path and returns `(service_type_id, name, category)` which `MasterService` does not
+provide 1:1, so it needs a more careful mapping — recorded, not forced.
+
 ## 7-final. Module 02 honest status
 
 **Not `PROVEN_LEVEL_5`.** But materially de-risked: 10 real defects eliminated, 3 apps

@@ -604,7 +604,16 @@ class ServiceabilityService:
                 "min_price cannot be greater than max_price.", status_code=422)
 
     async def _assert_service_active(self, service_id: uuid.UUID) -> None:
-        service = await self.db.get(ServiceCatalogItem, service_id)
+        # MODULE-L5-02 fix: validate against the CANONICAL catalog
+        # (admin_catalog.master_services), not the legacy service_catalog_items
+        # table (which is empty — 0 rows — so no area-coverage mapping could ever
+        # be created, permanently tripping SERVICE_NOT_COVERED_IN_AREA for every
+        # booking). The matching engine already reads
+        # tenant_service_area_services.service_id as a master_service id
+        # (offering_id=master_service_id), so this aligns mapping-creation with
+        # what matching consumes.
+        from app.engines.admin_catalog.models import MasterService
+        service = await self.db.get(MasterService, service_id)
         if not service:
             raise ServiceOSException(ERR_SERVICE_NOT_FOUND,
                 f"Service '{service_id}' not found.", status_code=404)
