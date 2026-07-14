@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
 from app.schemas.base import ok
+from app.exceptions import ServiceOSException
 from app.engines.invoice_payment.invoice_service import ServiceInvoiceService
 from app.engines.invoice_payment.payment_service import ServicePaymentService
 
@@ -17,12 +18,26 @@ def _rid(r: Request) -> str:
     return getattr(r.state, "request_id", "—")
 
 
+def _raise_4xx(exc: ValueError):
+    """MODULE-L5-02 bug #22: the invoice/payment services raise bare ValueErrors
+    for domain rejections (INVOICE_NOT_FOUND / INVOICE_ACCESS_DENIED / etc.).
+    Every customer handler here called them without catching, so a customer
+    viewing an invoice they don't own — or one that doesn't exist — got a 500
+    instead of a clean 403/404. Map to the error code + a 4xx."""
+    code = str(exc)
+    status = 404 if "NOT_FOUND" in code else (403 if "ACCESS_DENIED" in code else 422)
+    raise ServiceOSException(code, code.replace("_", " ").title(), status_code=status)
+
+
 @customer_invoice_router.get("/{invoice_id}")
 async def customer_get_invoice(
     invoice_id: str, r: Request = None,
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
-    data = await inv_svc.get_invoice_for_customer(db, invoice_id, str(user.user_id))
+    try:
+        data = await inv_svc.get_invoice_for_customer(db, invoice_id, str(user.user_id))
+    except ValueError as exc:
+        _raise_4xx(exc)
     return ok(data, _rid(r), "customer_get_invoice")
 
 
@@ -31,6 +46,13 @@ async def customer_payment_status(
     invoice_id: str, r: Request = None,
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
+    # MODULE-L5-02 bug #22: verify the customer actually owns the invoice before
+    # returning its payment timeline (previously any customer could read any
+    # invoice's payment status by id — an IDOR).
+    try:
+        await inv_svc.get_invoice_for_customer(db, invoice_id, str(user.user_id))
+    except ValueError as exc:
+        _raise_4xx(exc)
     # Returns only customer-safe payment info — no wallet/commission
     data = await pay_svc.get_payment_timeline(db, invoice_id)
     safe = [
@@ -51,9 +73,12 @@ async def customer_confirm_payment(
     invoice_id: str, r: Request = None,
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
-    data = await pay_svc.customer_confirm_payment(
-        db, invoice_id, str(user.user_id), str(user.user_id), _rid(r),
-    )
+    try:
+        data = await pay_svc.customer_confirm_payment(
+            db, invoice_id, str(user.user_id), str(user.user_id), _rid(r),
+        )
+    except ValueError as exc:
+        _raise_4xx(exc)
     return ok({"confirmed": data["customer_confirmed"]}, _rid(r), "customer_confirm_payment")
 
 
@@ -63,7 +88,10 @@ async def customer_get_receipt(
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
     # Returns same safe invoice view as a receipt
-    data = await inv_svc.get_invoice_for_customer(db, invoice_id, str(user.user_id))
+    try:
+        data = await inv_svc.get_invoice_for_customer(db, invoice_id, str(user.user_id))
+    except ValueError as exc:
+        _raise_4xx(exc)
     data["receipt_type"] = "service_invoice"
     data["generated_at"] = data.get("paid_at") or data.get("issued_at")
     return ok(data, _rid(r), "customer_get_receipt")

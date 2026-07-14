@@ -90,3 +90,20 @@ def test_payment_flow_wires_best_effort_commission():
     helper = inspect.getsource(payment_service.ServicePaymentService._best_effort_commission)
     assert "deduct_commission" in helper
     assert "except Exception" in helper  # never propagate a commission failure
+
+
+def test_customer_invoice_handlers_map_valueerror_and_guard_ownership():
+    """MODULE-L5-02 bug #22: customer invoice/receipt/confirm handlers called the
+    service without catching its bare ValueErrors, so a customer viewing an
+    invoice they don't own (or a missing one) got a 500 instead of 403/404. And
+    payment-status returned any invoice's timeline by id without an ownership
+    check (IDOR). Proven live: non-owner -> 403 on all three; owner -> 200."""
+    import inspect
+    from app.engines.invoice_payment import customer_router
+    for fn in (customer_router.customer_get_invoice,
+               customer_router.customer_get_receipt,
+               customer_router.customer_confirm_payment):
+        assert "except ValueError" in inspect.getsource(fn), fn.__name__
+    ps = inspect.getsource(customer_router.customer_payment_status)
+    # payment-status must now verify ownership before returning the timeline
+    assert "get_invoice_for_customer" in ps and "except ValueError" in ps
