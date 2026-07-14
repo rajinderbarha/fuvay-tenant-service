@@ -1357,6 +1357,15 @@ export const catalogApi = {
     apiFetch<ServiceCategory>(`/v1/admin/service-categories/${categoryId}`, { method:"PUT", body:JSON.stringify(data) }),
   deleteCategory: (categoryId: string) =>
     apiFetch<void>(`/v1/admin/service-categories/${categoryId}`, { method:"DELETE" }),
+
+  // MODULE-L5-10: per-category commission rate (was a hardcoded flat 10%).
+  listCategoryCommissionRates: () =>
+    apiFetch<CategoryCommissionRate[]>("/v1/admin/category-commission-rates"),
+  setCategoryCommissionRate: (categoryId: string, commissionPct: number | null) =>
+    apiFetch<{ id: string; commission_pct: number | null; using_default: boolean }>(
+      `/v1/admin/category-commission-rates/${categoryId}`,
+      { method: "PUT", body: JSON.stringify({ commission_pct: commissionPct }) },
+    ),
   hardDeleteCategory: (categoryId: string) =>
     apiFetch<{ deleted: boolean; category_id: string; hard_delete: boolean }>(`/v1/admin/service-categories/${categoryId}/hard-delete`, { method:"DELETE" }),
 
@@ -3420,6 +3429,18 @@ export interface ImportBatch {
   created_at?:string; updated_at?:string;
 }
 export interface ResolveResult { matched_by:string|null; tier:PricingTier|null; resolution_path:string[]; }
+export interface CategoryCommissionRate {
+  id: string;
+  name: string;
+  slug: string;
+  vertical_type?: string | null;
+  is_active: boolean;
+  commission_pct: number | null;   // null = using the platform default
+  effective_pct: number;           // what actually applies
+  using_default: boolean;
+  default_pct: number;
+}
+
 export interface ServiceCategory {
   category_id: string; name: string; slug: string; description?: string | null;
   icon_url?: string | null; image_url?: string | null; display_order: number;

@@ -3,8 +3,12 @@ All write endpoints require require_super_admin.
 Read endpoints require authenticated user (for dropdown population in tenant portal).
 """
 import uuid
+from decimal import Decimal
+from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.exceptions import ServiceOSException
 
 from app.core.permissions import P, require_permission
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
@@ -326,6 +330,65 @@ async def list_categories(r: Request,
                            u: UserContext = Depends(require_super_admin),
                            s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_categories(is_active), _rid(r), ENGINE_ID)
+
+
+# ── MODULE-L5-10: per-category commission rate ────────────────────────────────
+@router.get("/category-commission-rates", response_model=ApiResponse[list],
+            summary="List categories with their commission rate", tags=["Commission"])
+async def list_category_commission_rates(
+    r: Request,
+    db: AsyncSession = Depends(get_db),
+    u: UserContext = Depends(require_super_admin),
+):
+    from sqlalchemy import select
+    from app.engines.admin_catalog.models import ServiceCategory
+    from app.engines.invoice_payment.constants import DEFAULT_COMMISSION_RATE
+    rows = (await db.execute(
+        select(ServiceCategory).order_by(ServiceCategory.display_order, ServiceCategory.name)
+    )).scalars().all()
+    default = float(DEFAULT_COMMISSION_RATE)
+    return ok([{
+        "id":               str(c.id),
+        "name":             c.name,
+        "slug":             c.slug,
+        "vertical_type":    c.vertical_type,
+        "is_active":        c.is_active,
+        "commission_pct":   float(c.commission_pct) if c.commission_pct is not None else None,
+        "effective_pct":    float(c.commission_pct) if c.commission_pct is not None else default,
+        "using_default":    c.commission_pct is None,
+        "default_pct":      default,
+    } for c in rows], _rid(r), ENGINE_ID)
+
+
+class CategoryCommissionIn(BaseModel):
+    commission_pct: Optional[Decimal] = None  # None clears -> falls back to default
+
+
+@router.put("/category-commission-rates/{category_id}", response_model=ApiResponse[dict],
+            summary="Set (or clear) a category's commission rate", tags=["Commission"])
+async def set_category_commission_rate(
+    category_id: uuid.UUID,
+    body: CategoryCommissionIn,
+    r: Request,
+    db: AsyncSession = Depends(get_db),
+    u: UserContext = Depends(require_super_admin),
+):
+    from sqlalchemy import select
+    from app.engines.admin_catalog.models import ServiceCategory
+    pct = body.commission_pct
+    if pct is not None and not (Decimal("0") <= pct <= Decimal("100")):
+        raise ServiceOSException("VALIDATION_ERROR",
+            "commission_pct must be between 0 and 100.", status_code=422)
+    cat = (await db.execute(
+        select(ServiceCategory).where(ServiceCategory.id == category_id)
+    )).scalar_one_or_none()
+    if not cat:
+        raise ServiceOSException("NOT_FOUND", "Category not found.", status_code=404)
+    cat.commission_pct = pct
+    await db.commit()
+    return ok({"id": str(category_id),
+               "commission_pct": float(pct) if pct is not None else None,
+               "using_default": pct is None}, _rid(r), ENGINE_ID)
 
 
 @router.get("/catalog/categories/options", response_model=ApiResponse[list],

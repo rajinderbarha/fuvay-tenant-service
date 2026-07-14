@@ -101,6 +101,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Engagement",
     items: [
       { id: "reviews",   href: "/reviews",   label: "Reviews",   icon: <Star size={16}/> },
+      { id: "provider-complaints", href: "/provider/complaints", label: "Complaints", icon: <AlertCircle size={16}/> },
       { id: "marketing", href: "/marketing", label: "Marketing", icon: <Megaphone size={16}/> },
       { id: "customers", href: "/customers", label: "Customers", icon: <Users2 size={16}/> },
       { id: "chat",      href: "/chat",      label: "Chat",      icon: <MessageCircle size={16}/> },

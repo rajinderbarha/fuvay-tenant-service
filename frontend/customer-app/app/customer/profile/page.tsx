@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import BottomNav from "../../../components/BottomNav";
 import { getCustomerName, getCustomerId } from "../../../lib/api/client";
 import { customerLogout } from "../../../lib/api/auth";
@@ -13,6 +14,16 @@ export default function ProfilePage() {
       <div className="co-card" style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
         <div style={{ fontWeight: 700 }}>{name || "Customer"}</div>
         <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>ID: {id}</div>
+      </div>
+      {/* MODULE-L5-02/L5-10: the customer complaints surface exists but was only
+          reachable from a completed booking. Give it a permanent home here. */}
+      <div className="co-card" style={{ marginBottom: 16, padding: 0 }}>
+        <Link href="/customer/complaints"
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                   padding: "14px 16px", textDecoration: "none", color: "inherit" }}>
+          <span style={{ fontWeight: 600 }}>My Complaints</span>
+          <span style={{ color: "var(--text-tertiary)" }}>›</span>
+        </Link>
       </div>
       <button className="co-btn-secondary" onClick={customerLogout}>Log Out</button>
       <BottomNav />

@@ -101,6 +101,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "pricing-tiers",       href: "/admin/pricing-tiers",              label: "Pricing Tiers",    icon: <LayoutGrid size={16}/>,     requiredPermission: SUPER_ADMIN_ONLY },
       { id: "location-mapping",    href: "/admin/location-mapping",           label: "City/Zip Mapping", icon: <MapPin size={16}/>,         requiredPermission: SUPER_ADMIN_ONLY },
       { id: "provider-overrides",  href: "/admin/pricing/provider-overrides", label: "Provider Pricing Overrides", icon: <PercentSquare size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "category-commission", href: "/admin/pricing/commission",          label: "Category Commission", icon: <PercentSquare size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {

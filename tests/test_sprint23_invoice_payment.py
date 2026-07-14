@@ -479,6 +479,7 @@ class TestCommissionService:
         db = _mock_db(
             _scalars_result([inv]),   # _get_invoice
             _scalars_result([]),      # no existing commission record
+            _scalars_result([]),      # category commission_pct lookup -> None (default 10%)
         )
         with patch.object(svc, '_log_event', AsyncMock()):
             result = await svc.calculate_commission(db, str(INVOICE_ID))
@@ -495,6 +496,7 @@ class TestCommissionService:
         db = _mock_db(
             _scalars_result([inv]),
             _scalars_result([]),
+            _scalars_result([]),      # category commission_pct lookup -> None (default 10%)
         )
         with patch.object(svc, '_log_event', AsyncMock()):
             result = await svc.calculate_commission(db, str(INVOICE_ID))

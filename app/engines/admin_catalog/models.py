@@ -91,6 +91,9 @@ class ServiceCategory(ServiceOSBase):
     is_provider_registerable:Mapped[bool]         = mapped_column(Boolean, default=True, nullable=False)
     is_customer_visible:    Mapped[bool]          = mapped_column(Boolean, default=True, nullable=False)
     monetization_model:     Mapped[str | None]    = mapped_column(String(50), nullable=True)
+    # MODULE-L5-10 (migration 139) — per-category commission rate. NULL = use the
+    # platform default (DEFAULT_COMMISSION_RATE). Set per category by the admin.
+    commission_pct:         Mapped[Decimal | None]= mapped_column(Numeric(5, 2), nullable=True)
     # Sprint 38 — universal category fields
     vertical_type:          Mapped[str | None]    = mapped_column(String(50), nullable=True)
     finance_model:          Mapped[str | None]    = mapped_column(String(50), nullable=True)

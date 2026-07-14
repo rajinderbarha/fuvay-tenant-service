@@ -64,8 +64,18 @@ class ServiceCommissionService:
         )
         db.add(ev)
 
-    def _resolve_rate(self) -> Decimal:
-        """Return commission rate. Override with category/offering config in future."""
+    async def _resolve_rate(self, db: AsyncSession, category_id) -> Decimal:
+        """MODULE-L5-10: commission rate, per category. Was a hardcoded flat 10%
+        for every category regardless of value; now reads the category's
+        commission_pct, falling back to the platform default when it is unset."""
+        if category_id is not None:
+            from app.engines.admin_catalog.models import ServiceCategory
+            rate = (await db.execute(
+                select(ServiceCategory.commission_pct)
+                .where(ServiceCategory.id == category_id)
+            )).scalar_one_or_none()
+            if rate is not None:
+                return Decimal(str(rate))
         return Decimal(str(DEFAULT_COMMISSION_RATE))
 
     # ── Calculate commission ───────────────────────────────────────────────────
@@ -82,7 +92,7 @@ class ServiceCommissionService:
         if cr and cr.status in {COM_DEDUCTED}:
             raise ValueError(ERR_COMMISSION_ALREADY_DEDUCTED)
 
-        rate = self._resolve_rate()
+        rate = await self._resolve_rate(db, inv.category_id)
         base = inv.customer_payable_amount
         amount = (base * rate / Decimal("100")).quantize(Decimal("0.01"))
         now = _utcnow()
