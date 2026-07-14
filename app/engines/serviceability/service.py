@@ -239,11 +239,21 @@ class ServiceabilityService:
                     "latitude, longitude, and radius_km are required for radius coverage.",
                     status_code=422)
 
+    # Platform roles carry tenant_id=None (01D-R canonical model) and operate
+    # cross-tenant by design (Super Admin manages any tenant's areas via
+    # /v1/admin/tenants/{tenant_id}/service-areas).
+    PLATFORM_ROLES = ("super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly")
+
     def _assert_owns_tenant(self, tenant_id: uuid.UUID) -> None:
-        if self.actor_role == "tenant_owner" and (
-            self.actor_tenant_id is None or self.actor_tenant_id != tenant_id
-        ):
-            raise NotFoundException("TenantServiceArea", str(tenant_id))
+        # MODULE-L5-04 FIX (active cross-tenant IDOR): the old check confined
+        # ONLY `tenant_owner`. But `staff` and `technician` both hold
+        # tenant_service_area:read and can reach GET /v1/tenant/service-areas/
+        # {area_id}, so the tenant_owner-only gate let a staff/technician at
+        # tenant A read tenant B's service area by area_id. Confine EVERY
+        # tenant-scoped actor to its own tenant; platform roles are exempt.
+        if self.actor_role not in self.PLATFORM_ROLES:
+            if self.actor_tenant_id is None or self.actor_tenant_id != tenant_id:
+                raise NotFoundException("TenantServiceArea", str(tenant_id))
 
     # FINAL-L5-05T: this service is the certified canonical owner of Tenant
     # Service Areas (see docs/final-l5-05/FINAL_L5_05T_ADR_SERVICE_AREA_CANONICAL_OWNER.md).
