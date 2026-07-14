@@ -15,9 +15,16 @@ export default function ProfilePage() {
         <div style={{ fontWeight: 700 }}>{name || "Customer"}</div>
         <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>ID: {id}</div>
       </div>
-      {/* MODULE-L5-02/L5-10: the customer complaints surface exists but was only
-          reachable from a completed booking. Give it a permanent home here. */}
+      {/* MODULE-L5-02/L5-10/L5-11: surfaces that exist in the backend but had no
+          reachable home in the app. Give them permanent entries here. */}
       <div className="co-card" style={{ marginBottom: 16, padding: 0 }}>
+        <Link href="/customer/notifications"
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                   padding: "14px 16px", textDecoration: "none", color: "inherit",
+                   borderBottom: "1px solid #f0f0f0" }}>
+          <span style={{ fontWeight: 600 }}>Notifications</span>
+          <span style={{ color: "var(--text-tertiary)" }}>›</span>
+        </Link>
         <Link href="/customer/complaints"
           style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
                    padding: "14px 16px", textDecoration: "none", color: "inherit" }}>
