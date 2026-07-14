@@ -373,6 +373,33 @@ pricing rule and a bargain rule (customer 150 = fixed price, floor 150); created
 coverage mapping. Combined with the code fixes #9/#10/#11/#12, Demo AC is now genuinely bookable
 and a customer can complete a real booking.
 
+## 6m. Second legacy-catalog path — investigated, honestly left as ARCHITECTURE follow-up
+
+Investigated the `_resolve_service_type_id` follow-up (§6k). It is a genuine but
+**architecture-scoped** tangle, not a bounded bug, and I deliberately did **not** force a risky
+fix:
+
+- The **serviceability engine has its own parallel catalog and matching path**, separate from
+  the canonical one the working booking flow uses:
+  - Canonical booking path (works): `home_service_booking.select_best_provider`, keyed on
+    `master_service` ids.
+  - Serviceability path: `get_matching_tenants` (active endpoint `/v1/serviceability/
+    matching-tenants`, called by the customer/tenant clients) → `_resolve_service_type_id` →
+    looks up `service_catalog.ServiceCatalogItem` (the **empty** `service_catalog_items` table)
+    → resolves a `service_type_id` → `match_tenants_for_location` (keyed on `service_type_id`,
+    NOT `master_service_id`).
+- So `/v1/serviceability/matching-tenants` is broken for any service_id (empty catalog), **but**
+  a correct fix requires reconciling two catalogs with **mismatched field shapes**
+  (`ServiceCatalogItem` has `service_type_id`/`category`/`service_type` denormalized;
+  `MasterService` has `category_id`/`job_type`/`slug`) **and** two matching functions with
+  different id semantics. That cannot be done safely without a deeper design decision, and a
+  hasty swap would risk the exact "silent inconsistency" the pricing/matching code comments
+  repeatedly warn against.
+- **Disposition: ARCHITECTURE follow-up** — unify serviceability's `ServiceCatalogItem`/
+  `match_tenants_for_location` path onto the canonical `master_services`/`select_best_provider`
+  path (or formally deprecate the parallel serviceability matching endpoint if the
+  home_service_booking flow supersedes it). Reported honestly rather than forced.
+
 ## 7-final. Module 02 honest status
 
 **Not `PROVEN_LEVEL_5`.** But materially de-risked: 10 real defects eliminated, 3 apps
