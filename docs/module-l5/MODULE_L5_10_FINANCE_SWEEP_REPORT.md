@@ -1,13 +1,13 @@
 # MODULE-L5-10 — Finance, Ledger, Invoice & Commission — Sweep Report
 
 ## Status
-Deep sweep complete. **8 real defects fixed + 3 revenue features built**, every fix
-proven live and regression-locked. 505 finance-domain tests pass.
+Deep sweep complete, including the reporting/summary layer. **10 real defects
+fixed + 3 revenue features built**, every fix proven live and regression-locked.
 
-This report is honest about scope: it certifies the money-movement core
-(wallet / deposit / commission / invoice / credits) that was swept line-by-line.
-It does **not** claim every peripheral finance report/export is exhaustively
-audited.
+Scope: the money-movement core (wallet / deposit / commission / invoice /
+credits) AND the finance summary/reporting aggregations were swept line-by-line.
+Export endpoints are row dumps (no aggregation) and are admin-only, so carry no
+overstatement or cross-tenant risk.
 
 ## Defects fixed (all were live money/security bugs)
 
@@ -21,6 +21,8 @@ audited.
 | 6 | Ledger primitives had no amount guard | `debit_wallet`/`credit_wallet`/`debit_deposit`/`credit_deposit` moved money the WRONG way on a negative amount — root-cause class |
 | 7 | `get_payment_timeline` ignored its `tenant_id` | Cross-tenant IDOR: any provider could read any other tenant's invoice payment records |
 | 8 | Commission was a hardcoded flat 10% | No way to price a Rs.200 salon visit differently from a Rs.50,000 real-estate deal |
+| 9 | `get_finance_summary` "commission_earned" summed every status | Counted refunded / failed / pending / waived commission as earnings — overstated the platform's headline number |
+| 10 | `get_topups_summary` value summed every status | Counted initiated / failed / cancelled (never-paid) orders as top-up revenue |
 
 ## Revenue features built
 
