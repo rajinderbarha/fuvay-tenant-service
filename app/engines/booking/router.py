@@ -247,6 +247,13 @@ async def request_reschedule(booking_id: uuid.UUID, r: Request,
                               u: UserContext = Depends(require_permission(P.BOOKING_RESCHEDULE)),
                               s: BookingService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
+    # MODULE-L5-02 bug #26: raw body["requested_date"]/["requested_slot"] access
+    # raised KeyError -> 500 when a field was missing. Validate to a clean 422.
+    missing = [f for f in ("requested_date", "requested_slot") if not body.get(f)]
+    if missing:
+        raise ServiceOSException("RESCHEDULE_FIELDS_REQUIRED",
+            f"Missing required field(s): {', '.join(missing)}.", status_code=422,
+            context={"missing": missing})
     return ok(await s.request_reschedule(booking_id, body["requested_date"],
               body["requested_slot"], body.get("reason")), _rid(r), ENGINE_ID)
 

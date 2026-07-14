@@ -41,3 +41,15 @@ def test_create_complaint_resolves_tenant_from_record():
     helper = inspect.getsource(ComplaintService._resolve_tenant_for_record)
     for t in ("service_jobs", "service_bookings", "service_invoices"):
         assert t in helper
+
+
+def test_reschedule_request_validates_required_fields():
+    """MODULE-L5-02 bug #26: request_reschedule read body["requested_date"] and
+    body["requested_slot"] with raw dict access, so a missing field raised
+    KeyError -> 500. It must validate to a clean 422. Proven live: missing
+    fields -> 422 RESCHEDULE_FIELDS_REQUIRED (was 500)."""
+    import inspect
+    from app.engines.booking import router
+    src = inspect.getsource(router.request_reschedule)
+    assert "RESCHEDULE_FIELDS_REQUIRED" in src
+    assert 'body.get(f)' in src or 'body.get(' in src
