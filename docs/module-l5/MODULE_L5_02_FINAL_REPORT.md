@@ -205,10 +205,29 @@ return empty regardless.
   mapping against — kept the graceful-default fallback and flagged a fuller onboarding-checklist
   reconciliation as an honest follow-up (documented, not guessed).
 
-**Remaining for a truthful `PROVEN_LEVEL_5`:** the onboarding-checklist shape reconciliation
-above; tenant-portal onboarding *wizard* end-to-end; live public-visibility exclusion probe;
-customer-app tenant-facing flows. Real, scoped work — **not yet certified**, but Module 02 is
-materially closer with real defects removed and the package endpoint on its canonical source.
+## 6g. Customer-app tenant-facing flows — live verification (added this session)
+
+Verified the customer-app (`frontend/customer-app`, typecheck clean) live as a **customer**
+against current code. **The customer-app is healthy — 0 bugs found** (contrast the 6 real 500s in
+the admin/tenant apps):
+
+- **Catalog browse (all 200):** categories, services, service-types, brands, service-options,
+  issue-types, `flow/config` — the full customer catalog entry works with a real category id.
+- **Bookings + reviews (200):** `/v1/customer/bookings`, `/v1/customer/reviews`.
+- **Booking-draft journey (live):** created a draft (`POST …/booking-drafts` → 200, real
+  draft with category/offering), fetched it (200), and cancelled it (200, cleaned up). The
+  multi-step journey endpoints (serviceability-check / price-estimate / match-and-price /
+  select-provider / summary / confirm) are POST-only (GET→405 is expected).
+
+This completes the **3-app frontend contract verification** for Module 02: super-admin (~23
+endpoints, 2 bugs fixed), tenant-portal (~25 endpoints, 4 bugs fixed), customer-app (~15
+endpoints + booking-draft flow, 0 bugs). All three typecheck clean with zero stubs.
+
+**Remaining for a truthful `PROVEN_LEVEL_5`:** the onboarding-checklist shape reconciliation;
+the tenant-portal onboarding *wizard* multi-step flow end-to-end; the full customer booking
+journey end-to-end (create→serviceability→price→match→confirm as one transaction); and a live
+public-visibility exclusion probe. Real, scoped work — **not yet certified**, but Module 02's
+core is now broadly verified and free of the defects found.
 
 ## 7. Honest Recommendation
 
