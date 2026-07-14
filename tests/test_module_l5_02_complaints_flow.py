@@ -53,3 +53,17 @@ def test_reschedule_request_validates_required_fields():
     src = inspect.getsource(router.request_reschedule)
     assert "RESCHEDULE_FIELDS_REQUIRED" in src
     assert 'body.get(f)' in src or 'body.get(' in src
+
+
+def test_proposed_resolution_can_be_accepted_or_rejected():
+    """MODULE-L5-02 bug #27: after a resolution is proposed the customer responds
+    via accept (-> resolved) or reject (-> under_admin_review), but neither was a
+    permitted transition from resolution_proposed, so every proposed resolution
+    stalled forever. Proven live: accept -> 200, complaint status 'resolved'."""
+    from app.engines.complaints.constants import (
+        ALLOWED_TRANSITIONS, STATUS_RESOLUTION_PROPOSED, STATUS_RESOLVED,
+        STATUS_UNDER_ADMIN_REVIEW,
+    )
+    allowed = ALLOWED_TRANSITIONS[STATUS_RESOLUTION_PROPOSED]
+    assert STATUS_RESOLVED in allowed
+    assert STATUS_UNDER_ADMIN_REVIEW in allowed

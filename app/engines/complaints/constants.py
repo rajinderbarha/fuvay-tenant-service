@@ -54,7 +54,14 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     STATUS_AWAITING_PROVIDER:  {STATUS_UNDER_ADMIN_REVIEW, STATUS_RESOLUTION_PROPOSED},
     STATUS_UNDER_ADMIN_REVIEW: {STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
                                 STATUS_REFUND_REQUESTED, STATUS_REJECTED, STATUS_RESOLVED},
-    STATUS_RESOLUTION_PROPOSED:{STATUS_AWAITING_CUSTOMER},
+    # MODULE-L5-02 bug #27: once a provider/admin proposes a resolution the
+    # complaint sits in resolution_proposed, and the customer responds directly
+    # via customer_accept_resolution (-> resolved) or customer_reject_resolution
+    # (-> under_admin_review). Neither target was reachable from here (only
+    # awaiting_customer was, and nothing ever moved it there), so a proposed
+    # resolution could never be accepted or rejected — every complaint stalled at
+    # resolution_proposed. Allow the customer's accept/reject targets directly.
+    STATUS_RESOLUTION_PROPOSED:{STATUS_AWAITING_CUSTOMER, STATUS_RESOLVED, STATUS_UNDER_ADMIN_REVIEW},
     STATUS_AWAITING_CUSTOMER:  {STATUS_RESOLVED, STATUS_UNDER_ADMIN_REVIEW},
     STATUS_REWORK_APPROVED:    {STATUS_RESOLVED},
     STATUS_REFUND_REQUESTED:   {STATUS_REFUND_APPROVED},
