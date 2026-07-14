@@ -40,6 +40,14 @@ async def create_badge_definition(
     return ok(await _svc(db, u).create_badge_definition(body), _rid(r))
 
 
+@router.put("/badges/definitions/{badge_id}")
+async def update_badge_definition(
+    r: Request, badge_id: uuid.UUID, body: dict,
+    db: AsyncSession = Depends(get_db), u=Depends(require_permission(P.BADGE_MANAGEMENT_WRITE)),
+) -> ApiResponse[dict]:
+    return ok(await _svc(db, u).update_badge_definition(badge_id, body), _rid(r))
+
+
 # ── Badge Rules ──────────────────────────────────────────────────────────────
 
 @router.get("/badge-rules")
@@ -64,6 +72,14 @@ async def create_badge_rule(
     db: AsyncSession = Depends(get_db), u=Depends(require_permission(P.BADGE_RULES_WRITE)),
 ) -> ApiResponse[dict]:
     return ok(await _svc(db, u).create_badge_rule(body), _rid(r))
+
+
+@router.put("/badge-rules/{rule_id}")
+async def update_badge_rule(
+    r: Request, rule_id: uuid.UUID, body: dict,
+    db: AsyncSession = Depends(get_db), u=Depends(require_permission(P.BADGE_RULES_WRITE)),
+) -> ApiResponse[dict]:
+    return ok(await _svc(db, u).update_badge_rule(rule_id, body), _rid(r))
 
 
 @router.post("/badge-rules/{rule_id}/activate")
@@ -146,6 +162,14 @@ async def create_health_formula(
     db: AsyncSession = Depends(get_db), u=Depends(require_permission(P.HEALTH_RULES_WRITE)),
 ) -> ApiResponse[dict]:
     return ok(await _svc(db, u).create_health_formula(body), _rid(r))
+
+
+@router.put("/health-rules/{formula_id}")
+async def update_health_formula(
+    r: Request, formula_id: uuid.UUID, body: dict,
+    db: AsyncSession = Depends(get_db), u=Depends(require_permission(P.HEALTH_RULES_WRITE)),
+) -> ApiResponse[dict]:
+    return ok(await _svc(db, u).update_health_formula(formula_id, body), _rid(r))
 
 
 @router.post("/health-rules/{formula_id}/activate")

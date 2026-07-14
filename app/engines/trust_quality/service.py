@@ -147,6 +147,21 @@ class TrustQualityService:
         await self.db.commit()
         return b.to_dict()
 
+    async def update_badge_definition(self, badge_id: uuid.UUID, data: dict) -> dict:
+        """Patch a badge's presentation/visibility. Only the fields present in
+        `data` change; badge_key and target_type are immutable identity."""
+        b = await self._get_badge(badge_id)
+        old = b.to_dict()
+        for field in ("name", "description", "icon", "color",
+                      "customer_visible", "tenant_visible", "admin_only", "status"):
+            if field in data and data[field] is not None:
+                setattr(b, field, data[field])
+        b.updated_at = _now()
+        self._audit("badge_definition.updated", target_type=b.target_type, target_id=b.id,
+                    old_value=old, new_value=b.to_dict())
+        await self.db.commit()
+        return b.to_dict()
+
     async def _get_badge(self, badge_id: uuid.UUID) -> BadgeDefinition:
         b = await self.db.get(BadgeDefinition, badge_id)
         if not b:
@@ -249,6 +264,59 @@ class TrustQualityService:
         self._audit("badge_rule.created", target_type="badge_rule", target_id=r.id, new_value=r.to_dict())
         await self.db.commit()
         return await self.get_badge_rule(r.id)
+
+    async def update_badge_rule(self, rule_id: uuid.UUID, data: dict) -> dict:
+        """Edit a rule's scalar config and, when `criteria` is supplied, replace
+        its criteria wholesale (same shape as create). rule_key is immutable."""
+        r = await self._get_badge_rule(rule_id)
+        old = r.to_dict()
+
+        if "badge_id" in data and data["badge_id"]:
+            badge_id = uuid.UUID(str(data["badge_id"]))
+            await self._get_badge(badge_id)
+            r.badge_id = badge_id
+        if "rule_type" in data and data["rule_type"] is not None:
+            if data["rule_type"] not in VALID_BADGE_RULE_TYPES:
+                raise ServiceOSException("VALIDATION_ERROR", f"rule_type must be one of {sorted(VALID_BADGE_RULE_TYPES)}")
+            r.rule_type = data["rule_type"]
+        if "scope_type" in data and data["scope_type"] is not None:
+            if data["scope_type"] not in VALID_SCOPES:
+                raise ServiceOSException("VALIDATION_ERROR", f"scope_type must be one of {sorted(VALID_SCOPES)}")
+            r.scope_type = data["scope_type"]
+        for field in ("target_type", "auto_award", "manual_award_allowed",
+                      "requires_admin_review", "expiry_enabled", "expiry_days"):
+            if field in data and data[field] is not None:
+                setattr(r, field, data[field])
+
+        # Replacing criteria only when the caller sends the key, so a scalar-only
+        # edit leaves the existing criteria untouched.
+        if "criteria" in data:
+            for c in await self._get_criteria(rule_id):
+                await self.db.delete(c)
+            await self.db.flush()
+            for c in data["criteria"]:
+                if c.get("operator") not in VALID_OPERATORS:
+                    raise ServiceOSException("VALIDATION_ERROR", f"Invalid criterion operator '{c.get('operator')}'.")
+                self.db.add(BadgeRuleCriteria(
+                    badge_rule_id=r.id, metric_key=c["metric_key"], operator=c["operator"],
+                    value_json=c.get("value"), time_window_days=c.get("time_window_days"),
+                    is_required=c.get("is_required", True), weight=c.get("weight"),
+                    created_at=_now(), updated_at=_now(),
+                ))
+
+        # An active rule must keep at least one criterion unless it is manual-only.
+        if r.status == "active" and not r.manual_award_allowed:
+            remaining = await self._get_criteria(rule_id)
+            if not remaining:
+                raise ServiceOSException("VALIDATION_ERROR",
+                                          "Active rule must have at least one award criterion unless manual-only.")
+
+        r.updated_at = _now()
+        await self.db.flush()
+        self._audit("badge_rule.updated", target_type="badge_rule", target_id=r.id,
+                    old_value=old, new_value=r.to_dict())
+        await self.db.commit()
+        return await self.get_badge_rule(rule_id)
 
     async def activate_badge_rule(self, rule_id: uuid.UUID, reason: str) -> dict:
         if not reason or not reason.strip():
@@ -503,6 +571,70 @@ class TrustQualityService:
         self._audit("health_formula.created", target_type="health_formula", target_id=f.id, new_value=f.to_dict())
         await self.db.commit()
         return await self.get_health_formula(f.id)
+
+    async def update_health_formula(self, formula_id: uuid.UUID, data: dict) -> dict:
+        """Edit a formula's scalars and, when supplied, replace its components,
+        bands, penalties and bonuses wholesale. formula_key is immutable.
+
+        If the formula is active (or is being set active) the same integrity gates
+        as create apply: component weights must total 100% and bands must cover
+        0-100 — an edit cannot leave a live formula in an invalid state.
+        """
+        f = await self._get_formula(formula_id)
+        old = f.to_dict()
+
+        if "target_type" in data and data["target_type"] is not None:
+            if data["target_type"] not in VALID_HEALTH_TARGETS:
+                raise ServiceOSException("VALIDATION_ERROR", f"target_type must be one of {sorted(VALID_HEALTH_TARGETS)}")
+            f.target_type = data["target_type"]
+        for field in ("name", "scope_type", "scope_id", "base_score", "min_score", "max_score", "status"):
+            if field in data and data[field] is not None:
+                setattr(f, field, data[field])
+
+        async def _replace(get_rows, add_fn, key):
+            if key not in data:
+                return
+            for row in await get_rows(formula_id):
+                await self.db.delete(row)
+            await self.db.flush()
+            for item in data[key]:
+                add_fn(item)
+
+        await _replace(self._get_components, lambda c: self.db.add(HealthFormulaComponent(
+            formula_id=f.id, metric_key=c["metric_key"], weight_percent=c["weight_percent"],
+            direction=c.get("direction", "positive"), min_value=c.get("min_value"),
+            max_value=c.get("max_value"), normalization_method=c.get("normalization_method", "linear"),
+            is_required=c.get("is_required", True), created_at=_now(), updated_at=_now())), "components")
+        await _replace(self._get_penalties, lambda p: self.db.add(HealthPenaltyRule(
+            formula_id=f.id, metric_key=p["metric_key"], operator=p["operator"],
+            value_json=p.get("value"), penalty_points=p["penalty_points"],
+            hard_override_score=p.get("hard_override_score"), created_at=_now(), updated_at=_now())), "penalties")
+        await _replace(self._get_bonuses, lambda b: self.db.add(HealthBonusRule(
+            formula_id=f.id, metric_key=b["metric_key"], operator=b["operator"],
+            value_json=b.get("value"), bonus_points=b["bonus_points"],
+            max_bonus_cap=b.get("max_bonus_cap"), created_at=_now(), updated_at=_now())), "bonuses")
+        await _replace(self._get_bands, lambda band: self.db.add(HealthBandRule(
+            formula_id=f.id, band_key=band["band_key"], band_name=band["band_name"],
+            min_score=band["min_score"], max_score=band["max_score"], color=band.get("color"),
+            bookable_allowed=band.get("bookable_allowed", True),
+            recommended_action=band.get("recommended_action"), created_at=_now(), updated_at=_now())), "bands")
+
+        await self.db.flush()
+
+        if f.status == "active":
+            components = await self._get_components(formula_id)
+            if not components:
+                raise ServiceOSException("VALIDATION_ERROR", "Active formula must have valid components.")
+            total_weight = sum(float(c.weight_percent) for c in components)
+            if abs(total_weight - 100.0) > 0.01:
+                raise ServiceOSException("VALIDATION_ERROR", f"Total component weights must equal 100% (got {total_weight}%).")
+            self._validate_bands([b.to_dict() for b in await self._get_bands(formula_id)])
+
+        f.updated_at = _now()
+        self._audit("health_formula.updated", target_type="health_formula", target_id=f.id,
+                    old_value=old, new_value=f.to_dict())
+        await self.db.commit()
+        return await self.get_health_formula(formula_id)
 
     async def activate_health_formula(self, formula_id: uuid.UUID, reason: str) -> dict:
         if not reason or not reason.strip():

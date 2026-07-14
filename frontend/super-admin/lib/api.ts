@@ -8188,12 +8188,18 @@ export const trustQualityApi = {
     apiFetch<unknown>("/v1/admin/trust-quality/badges/definitions").then(d => tqList<BadgeDefinition>(d)),
   createBadgeDefinition: (body: Partial<BadgeDefinition>) =>
     apiFetch("/v1/admin/trust-quality/badges/definitions", { method: "POST", body: JSON.stringify(body) }),
+  updateBadgeDefinition: (id: string, body: Partial<BadgeDefinition>) =>
+    apiFetch(`/v1/admin/trust-quality/badges/definitions/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   createBadgeRule: (body: BadgeRuleInput) =>
     apiFetch("/v1/admin/trust-quality/badge-rules", { method: "POST", body: JSON.stringify(body) }),
+  updateBadgeRule: (id: string, body: Partial<BadgeRuleInput>) =>
+    apiFetch(`/v1/admin/trust-quality/badge-rules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   getBadgeRule: (id: string) =>
     apiFetch<unknown>(`/v1/admin/trust-quality/badge-rules/${id}`),
   createHealthFormula: (body: HealthFormulaInput) =>
     apiFetch("/v1/admin/trust-quality/health-rules", { method: "POST", body: JSON.stringify(body) }),
+  updateHealthFormula: (id: string, body: Partial<HealthFormulaInput>) =>
+    apiFetch(`/v1/admin/trust-quality/health-rules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   getHealthFormula: (id: string) =>
     apiFetch<unknown>(`/v1/admin/trust-quality/health-rules/${id}`),
   // Preview a rule/formula outcome against sample metrics before activating.

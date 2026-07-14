@@ -243,6 +243,91 @@ class TestRecalculationJobIsReal:
         await client.post(f"/v1/admin/trust-quality/health-rules/{formula_id}/deactivate",
                           json={"reason": "cleanup"})
 
+    async def test_admin_can_edit_existing_config(self, client):
+        """The admin must be able to EDIT config in place — badge presentation,
+        a rule's criteria, and a formula's components — not just create/toggle.
+        (User feedback: no edit button existed.)"""
+        import random
+        sfx = random.randint(10000, 99999)
+
+        # Badge: edit name + icon + color.
+        r = await client.post("/v1/admin/trust-quality/badges/definitions", json={
+            "badge_key": f"l5ed_badge_{sfx}", "name": "Before", "target_type": "tenant",
+            "icon": "star", "color": "#3b82f6", "status": "active"})
+        badge_id = r.json()["data"]["id"]
+        r = await client.put(f"/v1/admin/trust-quality/badges/definitions/{badge_id}",
+                            json={"name": "After", "icon": "crown", "color": "#8b5cf6"})
+        assert r.status_code == 200, r.text
+        d = r.json()["data"]
+        assert (d["name"], d["icon"], d["color"]) == ("After", "crown", "#8b5cf6")
+
+        # Rule: replace criteria (1 -> 2) and flip auto_award.
+        r = await client.post("/v1/admin/trust-quality/badge-rules", json={
+            "rule_key": f"l5ed_rule_{sfx}", "badge_id": badge_id, "target_type": "tenant",
+            "rule_type": "auto_award", "status": "draft",
+            "criteria": [{"metric_key": "average_rating", "operator": "greater_than_or_equal",
+                          "value": 4.0, "is_required": True}]})
+        rule_id = r.json()["data"]["id"]
+        r = await client.put(f"/v1/admin/trust-quality/badge-rules/{rule_id}", json={
+            "auto_award": False,
+            "criteria": [
+                {"metric_key": "completed_jobs_count", "operator": "greater_than_or_equal",
+                 "value": 50, "is_required": True},
+                {"metric_key": "average_rating", "operator": "greater_than_or_equal",
+                 "value": 4.7, "is_required": True}]})
+        assert r.status_code == 200, r.text
+        d = r.json()["data"]
+        assert d["auto_award"] is False
+        assert len(d["criteria"]) == 2
+
+        # Formula: replace components (1 -> 2).
+        r = await client.post("/v1/admin/trust-quality/health-rules", json={
+            "formula_key": f"l5ed_formula_{sfx}", "name": "F", "target_type": "tenant_provider",
+            "status": "draft",
+            "components": [{"metric_key": "job_completion_rate", "weight_percent": 100,
+                            "direction": "positive", "min_value": 0, "max_value": 100}],
+            "bands": [{"band_key": "h", "band_name": "H", "min_score": 0, "max_score": 100}]})
+        formula_id = r.json()["data"]["id"]
+        r = await client.put(f"/v1/admin/trust-quality/health-rules/{formula_id}", json={
+            "name": "F2",
+            "components": [
+                {"metric_key": "job_completion_rate", "weight_percent": 50, "direction": "positive",
+                 "min_value": 0, "max_value": 100},
+                {"metric_key": "average_rating", "weight_percent": 50, "direction": "positive",
+                 "min_value": 0, "max_value": 5}]})
+        assert r.status_code == 200, r.text
+        d = r.json()["data"]
+        assert d["name"] == "F2"
+        assert len(d["components"]) == 2
+
+    async def test_editing_active_formula_to_bad_weights_is_rejected_and_rolled_back(self, client):
+        """An edit cannot leave a LIVE formula invalid: setting an active formula's
+        weights to 60% must 422, and the formula must stay active at 100%."""
+        import random
+        sfx = random.randint(10000, 99999)
+        r = await client.post("/v1/admin/trust-quality/health-rules", json={
+            "formula_key": f"l5edg_{sfx}", "name": "G", "target_type": "tenant_provider",
+            "status": "draft",
+            "components": [{"metric_key": "job_completion_rate", "weight_percent": 100,
+                            "direction": "positive", "min_value": 0, "max_value": 100}],
+            "bands": [{"band_key": "h", "band_name": "H", "min_score": 0, "max_score": 100}]})
+        fid = r.json()["data"]["id"]
+        await client.post(f"/v1/admin/trust-quality/health-rules/{fid}/activate",
+                          json={"reason": "guard test"})
+
+        bad = await client.put(f"/v1/admin/trust-quality/health-rules/{fid}", json={
+            "components": [{"metric_key": "job_completion_rate", "weight_percent": 60,
+                            "direction": "positive", "min_value": 0, "max_value": 100}]})
+        assert bad.status_code == 422
+
+        # Rolled back: still active, still one 100% component.
+        r = await client.get(f"/v1/admin/trust-quality/health-rules/{fid}")
+        d = r.json()["data"]
+        assert d["status"] == "active"
+        assert sum(float(c["weight_percent"]) for c in d["components"]) == 100.0
+        await client.post(f"/v1/admin/trust-quality/health-rules/{fid}/deactivate",
+                          json={"reason": "cleanup"})
+
     async def test_health_formula_rejects_bad_weights_on_activation(self, client):
         """Weights that don't total 100 must be refused at activation — the config
         UI shows the running total for exactly this reason."""

@@ -67,8 +67,13 @@ export default function TrustQualityPage() {
   const jobs = useApi(useCallback(() => trustQualityApi.listRecalcJobs(), []), []);
   const [busy, setBusy] = useState<string | null>(null);
 
-  // Which config modal is open, if any.
-  const [modal, setModal] = useState<null | "definition" | "badge-rule" | "health-formula">(null);
+  // Which config modal is open, if any — with the record being edited (if any).
+  const [modal, setModal] = useState<
+    | null
+    | { type: "definition"; editing?: BadgeDefinition }
+    | { type: "badge-rule"; editing?: BadgeRule }
+    | { type: "health-formula"; editing?: HealthRule }
+  >(null);
 
   // Activating/deactivating a rule is an audited change and the backend refuses a
   // blank reason, so the admin is asked for one before the call goes out.
@@ -132,9 +137,9 @@ export default function TrustQualityPage() {
           title="Trust & Quality"
           subtitle="Configure provider badges, award rules and health-score formulas, then recalculate. Badges and health band drive provider trust and commission."
           actions={
-            tab === "badges" ? <Btn size="sm" onClick={() => setModal("badge-rule")}>+ New Badge Rule</Btn>
-            : tab === "definitions" ? <Btn size="sm" onClick={() => setModal("definition")}>+ New Badge</Btn>
-            : tab === "health" ? <Btn size="sm" onClick={() => setModal("health-formula")}>+ New Health Formula</Btn>
+            tab === "badges" ? <Btn size="sm" onClick={() => setModal({ type: "badge-rule" })}>+ New Badge Rule</Btn>
+            : tab === "definitions" ? <Btn size="sm" onClick={() => setModal({ type: "definition" })}>+ New Badge</Btn>
+            : tab === "health" ? <Btn size="sm" onClick={() => setModal({ type: "health-formula" })}>+ New Health Formula</Btn>
             : undefined
           }
         />
@@ -176,10 +181,13 @@ export default function TrustQualityPage() {
                       <td style={{ padding: "10px 16px" }}>{r.auto_award ? "Auto" : "Manual"}</td>
                       <td style={{ padding: "10px 16px" }}>{statusBadge(r.status)}</td>
                       <td style={{ padding: "10px 16px" }}>
-                        <Btn size="sm" variant="secondary" disabled={busy === r.id}
-                          onClick={() => askReason("badge", r, r.badge?.name ?? r.rule_key)}>
-                          {r.status === "active" ? "Deactivate" : "Activate"}
-                        </Btn>
+                        <span style={{ display: "inline-flex", gap: 6 }}>
+                          <Btn size="sm" variant="ghost" onClick={() => setModal({ type: "badge-rule", editing: r })}>Edit</Btn>
+                          <Btn size="sm" variant="secondary" disabled={busy === r.id}
+                            onClick={() => askReason("badge", r, r.badge?.name ?? r.rule_key)}>
+                            {r.status === "active" ? "Deactivate" : "Activate"}
+                          </Btn>
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -202,6 +210,7 @@ export default function TrustQualityPage() {
                   <th style={{ padding: "10px 16px" }}>Target</th>
                   <th style={{ padding: "10px 16px" }}>Visibility</th>
                   <th style={{ padding: "10px 16px" }}>Status</th>
+                  <th style={{ padding: "10px 16px" }}></th>
                 </tr></thead>
                 <tbody>
                   {badgeDefs.data?.map(b => (
@@ -220,10 +229,13 @@ export default function TrustQualityPage() {
                         {b.admin_only && <Badge variant="warning" size="sm">admin-only</Badge>}
                       </td>
                       <td style={{ padding: "10px 16px" }}>{statusBadge(b.status)}</td>
+                      <td style={{ padding: "10px 16px" }}>
+                        <Btn size="sm" variant="ghost" onClick={() => setModal({ type: "definition", editing: b })}>Edit</Btn>
+                      </td>
                     </tr>
                   ))}
                   {badgeDefs.data?.length === 0 && (
-                    <tr><td colSpan={5} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No badges defined.</td></tr>
+                    <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No badges defined.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -250,10 +262,13 @@ export default function TrustQualityPage() {
                       <td style={{ padding: "10px 16px" }}>{r.min_score}–{r.max_score} (base {r.base_score})</td>
                       <td style={{ padding: "10px 16px" }}>{statusBadge(r.status)}</td>
                       <td style={{ padding: "10px 16px" }}>
-                        <Btn size="sm" variant="secondary" disabled={busy === r.id}
-                          onClick={() => askReason("health", r, r.name)}>
-                          {r.status === "active" ? "Deactivate" : "Activate"}
-                        </Btn>
+                        <span style={{ display: "inline-flex", gap: 6 }}>
+                          <Btn size="sm" variant="ghost" onClick={() => setModal({ type: "health-formula", editing: r })}>Edit</Btn>
+                          <Btn size="sm" variant="secondary" disabled={busy === r.id}
+                            onClick={() => askReason("health", r, r.name)}>
+                            {r.status === "active" ? "Deactivate" : "Activate"}
+                          </Btn>
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -319,16 +334,19 @@ export default function TrustQualityPage() {
 
         {/* ── Config modals ─────────────────────────────────────────────── */}
         <BadgeDefinitionModal
-          open={modal === "definition"} onClose={() => setModal(null)}
+          open={modal?.type === "definition"} onClose={() => setModal(null)}
+          editing={modal?.type === "definition" ? modal.editing : undefined}
           onSaved={() => { setModal(null); badgeDefs.refetch(); }}
         />
         <BadgeRuleModal
-          open={modal === "badge-rule"} onClose={() => setModal(null)}
+          open={modal?.type === "badge-rule"} onClose={() => setModal(null)}
+          editing={modal?.type === "badge-rule" ? modal.editing : undefined}
           badges={badgeDefs.data ?? []}
           onSaved={() => { setModal(null); badgeRules.refetch(); }}
         />
         <HealthFormulaModal
-          open={modal === "health-formula"} onClose={() => setModal(null)}
+          open={modal?.type === "health-formula"} onClose={() => setModal(null)}
+          editing={modal?.type === "health-formula" ? modal.editing : undefined}
           onSaved={() => { setModal(null); healthRules.refetch(); }}
         />
 
@@ -371,28 +389,45 @@ const rowStyle: React.CSSProperties = {
 
 // ── Badge Definition modal ────────────────────────────────────────────────────
 
-function BadgeDefinitionModal({ open, onClose, onSaved }: {
-  open: boolean; onClose: () => void; onSaved: () => void;
+function BadgeDefinitionModal({ open, onClose, onSaved, editing }: {
+  open: boolean; onClose: () => void; onSaved: () => void; editing?: BadgeDefinition;
 }) {
   const [f, setF] = useState({
     badge_key: "", name: "", target_type: "tenant", customer_visible: true,
     icon: BADGE_ICON_NAMES[0], color: BADGE_COLORS[0],
   });
   const [err, setErr] = useState<string | null>(null);
+
+  // Prefill when opened for editing; reset when opened fresh.
+  React.useEffect(() => {
+    if (!open) return;
+    setErr(null);
+    setF(editing ? {
+      badge_key: editing.badge_key, name: editing.name, target_type: editing.target_type,
+      customer_visible: editing.customer_visible,
+      icon: editing.icon || BADGE_ICON_NAMES[0], color: editing.color || BADGE_COLORS[0],
+    } : { badge_key: "", name: "", target_type: "tenant", customer_visible: true,
+      icon: BADGE_ICON_NAMES[0], color: BADGE_COLORS[0] });
+  }, [open, editing]);
+
   const save = useAction(async () => {
     setErr(null);
     try {
-      await trustQualityApi.createBadgeDefinition({
-        badge_key: f.badge_key.trim(), name: f.name.trim(),
-        target_type: f.target_type, customer_visible: f.customer_visible,
-        icon: f.icon, color: f.color, status: "active",
-      });
+      if (editing) {
+        await trustQualityApi.updateBadgeDefinition(editing.id, {
+          name: f.name.trim(), customer_visible: f.customer_visible, icon: f.icon, color: f.color });
+      } else {
+        await trustQualityApi.createBadgeDefinition({
+          badge_key: f.badge_key.trim(), name: f.name.trim(),
+          target_type: f.target_type, customer_visible: f.customer_visible,
+          icon: f.icon, color: f.color, status: "active" });
+      }
       onSaved();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to create badge."); }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to save badge."); }
   });
   const valid = f.badge_key.trim() && f.name.trim();
   return (
-    <Modal open={open} onClose={onClose} title="New badge" size="md">
+    <Modal open={open} onClose={onClose} title={editing ? "Edit badge" : "New badge"} size="md">
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {/* Live preview of the icon + color the badge will carry. */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 10,
@@ -401,10 +436,10 @@ function BadgeDefinitionModal({ open, onClose, onSaved }: {
           <span style={{ fontWeight: 600 }}>{f.name || "Badge preview"}</span>
         </div>
         <Input label="Badge key" required value={f.badge_key} onChange={v => setF({ ...f, badge_key: v })}
-          hint="Unique machine key, e.g. top_rated_pro" />
+          disabled={!!editing} hint={editing ? "Key is immutable" : "Unique machine key, e.g. top_rated_pro"} />
         <Input label="Display name" required value={f.name} onChange={v => setF({ ...f, name: v })} />
         <Select label="Target" value={f.target_type} onChange={v => setF({ ...f, target_type: v })}
-          options={TQ_ENUMS.badgeTargets.map(opt)} />
+          disabled={!!editing} options={TQ_ENUMS.badgeTargets.map(opt)} />
 
         <div>
           <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)" }}>Icon</label>
@@ -446,7 +481,7 @@ function BadgeDefinitionModal({ open, onClose, onSaved }: {
         <ErrText msg={err} />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn disabled={!valid} onClick={() => save.execute()}>Create badge</Btn>
+          <Btn disabled={!valid} onClick={() => save.execute()}>{editing ? "Save changes" : "Create badge"}</Btn>
         </div>
       </div>
     </Modal>
@@ -455,14 +490,31 @@ function BadgeDefinitionModal({ open, onClose, onSaved }: {
 
 // ── Badge Rule modal (with criteria builder) ──────────────────────────────────
 
-function BadgeRuleModal({ open, onClose, onSaved, badges }: {
+function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
   open: boolean; onClose: () => void; onSaved: () => void; badges: BadgeDefinition[];
+  editing?: BadgeRule;
 }) {
   const [f, setF] = useState({ rule_key: "", badge_id: "", rule_type: "auto_award", auto_award: true });
   const [criteria, setCriteria] = useState<BadgeCriterionInput[]>([
     { metric_key: "", operator: "greater_than_or_equal", value: "", is_required: true },
   ]);
   const [err, setErr] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setErr(null);
+    if (editing) {
+      setF({ rule_key: editing.rule_key, badge_id: editing.badge_id,
+        rule_type: editing.rule_type, auto_award: editing.auto_award });
+      setCriteria((editing.criteria ?? []).length
+        ? editing.criteria!.map(c => ({ metric_key: c.metric_key, operator: c.operator,
+            value: c.value, is_required: true }))
+        : [{ metric_key: "", operator: "greater_than_or_equal", value: "", is_required: true }]);
+    } else {
+      setF({ rule_key: "", badge_id: "", rule_type: "auto_award", auto_award: true });
+      setCriteria([{ metric_key: "", operator: "greater_than_or_equal", value: "", is_required: true }]);
+    }
+  }, [open, editing]);
 
   const selectedBadge = useMemo(() => badges.find(b => b.id === f.badge_id), [badges, f.badge_id]);
 
@@ -482,19 +534,24 @@ function BadgeRuleModal({ open, onClose, onSaved, badges }: {
           value: raw !== "" && !Number.isNaN(num) ? num : raw };
       });
     try {
-      await trustQualityApi.createBadgeRule({
-        rule_key: f.rule_key.trim(), badge_id: f.badge_id,
-        target_type: selectedBadge?.target_type ?? "tenant",
-        rule_type: f.rule_type, auto_award: f.auto_award,
-        status: "draft", criteria: cleaned,
-      });
+      if (editing) {
+        await trustQualityApi.updateBadgeRule(editing.id, {
+          badge_id: f.badge_id, rule_type: f.rule_type, auto_award: f.auto_award,
+          target_type: selectedBadge?.target_type ?? editing.target_type, criteria: cleaned });
+      } else {
+        await trustQualityApi.createBadgeRule({
+          rule_key: f.rule_key.trim(), badge_id: f.badge_id,
+          target_type: selectedBadge?.target_type ?? "tenant",
+          rule_type: f.rule_type, auto_award: f.auto_award,
+          status: "draft", criteria: cleaned });
+      }
       onSaved();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to create rule."); }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to save rule."); }
   });
 
   const valid = f.rule_key.trim() && f.badge_id;
   return (
-    <Modal open={open} onClose={onClose} title="New badge rule" size="lg">
+    <Modal open={open} onClose={onClose} title={editing ? "Edit badge rule" : "New badge rule"} size="lg">
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {badges.length === 0 && (
           <div style={{ fontSize: 13, color: "var(--warning-text)", background: "var(--warning-bg)",
@@ -503,7 +560,7 @@ function BadgeRuleModal({ open, onClose, onSaved, badges }: {
           </div>
         )}
         <Input label="Rule key" required value={f.rule_key} onChange={v => setF({ ...f, rule_key: v })}
-          hint="Unique machine key, e.g. auto_top_rated" />
+          disabled={!!editing} hint={editing ? "Key is immutable" : "Unique machine key, e.g. auto_top_rated"} />
         <Select label="Badge to award" value={f.badge_id} onChange={v => setF({ ...f, badge_id: v })}
           placeholder="Select a badge…"
           options={badges.map(b => ({ value: b.id, label: `${b.name} (${b.target_type})` }))} />
@@ -537,11 +594,13 @@ function BadgeRuleModal({ open, onClose, onSaved, badges }: {
         <ErrText msg={err} />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn disabled={!valid} onClick={() => save.execute()}>Create rule (draft)</Btn>
+          <Btn disabled={!valid} onClick={() => save.execute()}>{editing ? "Save changes" : "Create rule (draft)"}</Btn>
         </div>
-        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-          New rules are created as drafts. Activate them from the Badge Rules tab once reviewed.
-        </p>
+        {!editing && (
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
+            New rules are created as drafts. Activate them from the Badge Rules tab once reviewed.
+          </p>
+        )}
       </div>
     </Modal>
   );
@@ -549,8 +608,8 @@ function BadgeRuleModal({ open, onClose, onSaved, badges }: {
 
 // ── Health Formula modal (components + bands builder) ─────────────────────────
 
-function HealthFormulaModal({ open, onClose, onSaved }: {
-  open: boolean; onClose: () => void; onSaved: () => void;
+function HealthFormulaModal({ open, onClose, onSaved, editing }: {
+  open: boolean; onClose: () => void; onSaved: () => void; editing?: HealthRule;
 }) {
   const [f, setF] = useState({ formula_key: "", name: "", target_type: "tenant_provider" });
   const [components, setComponents] = useState<HealthComponentInput[]>([
@@ -561,6 +620,37 @@ function HealthFormulaModal({ open, onClose, onSaved }: {
     { band_key: "healthy", band_name: "Healthy", min_score: 50, max_score: 100 },
   ]);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // The list row has only scalars, so on edit fetch the full formula for its
+  // components and bands.
+  React.useEffect(() => {
+    if (!open) return;
+    setErr(null);
+    if (!editing) {
+      setF({ formula_key: "", name: "", target_type: "tenant_provider" });
+      setComponents([{ metric_key: "", weight_percent: 100, direction: "positive", min_value: 0, max_value: 100 }]);
+      setBands([{ band_key: "blocked", band_name: "Blocked", min_score: 0, max_score: 49 },
+        { band_key: "healthy", band_name: "Healthy", min_score: 50, max_score: 100 }]);
+      return;
+    }
+    setLoading(true);
+    setF({ formula_key: editing.formula_key, name: editing.name, target_type: editing.target_type });
+    trustQualityApi.getHealthFormula(editing.id).then(res => {
+      const d = (res as { data?: Record<string, unknown> })?.data ?? (res as Record<string, unknown>);
+      const comps = (d.components as Record<string, unknown>[] | undefined) ?? [];
+      const bnds = (d.bands as Record<string, unknown>[] | undefined) ?? [];
+      setComponents(comps.length ? comps.map(c => ({
+        metric_key: String(c.metric_key), weight_percent: Number(c.weight_percent),
+        direction: String(c.direction ?? "positive"),
+        min_value: Number(c.min_value ?? 0), max_value: Number(c.max_value ?? 100),
+      })) : [{ metric_key: "", weight_percent: 100, direction: "positive", min_value: 0, max_value: 100 }]);
+      setBands(bnds.length ? bnds.map(b => ({
+        band_key: String(b.band_key), band_name: String(b.band_name ?? b.band_key),
+        min_score: Number(b.min_score), max_score: Number(b.max_score),
+      })) : []);
+    }).catch(() => setErr("Failed to load formula detail.")).finally(() => setLoading(false));
+  }, [open, editing]);
 
   const totalWeight = components.reduce((s, c) => s + (Number(c.weight_percent) || 0), 0);
 
@@ -571,30 +661,36 @@ function HealthFormulaModal({ open, onClose, onSaved }: {
 
   const save = useAction(async () => {
     setErr(null);
+    const payload = {
+      name: f.name.trim(), target_type: f.target_type,
+      components: components.filter(c => c.metric_key.trim()).map(c => ({
+        ...c, metric_key: c.metric_key.trim(), weight_percent: Number(c.weight_percent),
+        min_value: Number(c.min_value), max_value: Number(c.max_value),
+      })),
+      bands: bands.map(b => ({ ...b, min_score: Number(b.min_score), max_score: Number(b.max_score) })),
+    };
     try {
-      await trustQualityApi.createHealthFormula({
-        formula_key: f.formula_key.trim(), name: f.name.trim(), target_type: f.target_type,
-        base_score: 100, min_score: 0, max_score: 100, status: "draft",
-        components: components.filter(c => c.metric_key.trim()).map(c => ({
-          ...c, metric_key: c.metric_key.trim(), weight_percent: Number(c.weight_percent),
-          min_value: Number(c.min_value), max_value: Number(c.max_value),
-        })),
-        bands: bands.map(b => ({ ...b, min_score: Number(b.min_score), max_score: Number(b.max_score) })),
-      });
+      if (editing) {
+        await trustQualityApi.updateHealthFormula(editing.id, payload);
+      } else {
+        await trustQualityApi.createHealthFormula({
+          formula_key: f.formula_key.trim(), base_score: 100, min_score: 0, max_score: 100,
+          status: "draft", ...payload });
+      }
       onSaved();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to create formula."); }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to save formula."); }
   });
 
   const valid = f.formula_key.trim() && f.name.trim() && components.some(c => c.metric_key.trim());
   return (
-    <Modal open={open} onClose={onClose} title="New health formula" size="xl">
+    <Modal open={open} onClose={onClose} title={editing ? "Edit health formula" : "New health formula"} size="xl">
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           <Input label="Formula key" required value={f.formula_key} onChange={v => setF({ ...f, formula_key: v })}
-            hint="e.g. provider_health_v2" />
+            disabled={!!editing} hint={editing ? "Key is immutable" : "e.g. provider_health_v2"} />
           <Input label="Name" required value={f.name} onChange={v => setF({ ...f, name: v })} />
           <Select label="Target" value={f.target_type} onChange={v => setF({ ...f, target_type: v })}
-            options={TQ_ENUMS.healthTargets.map(opt)} />
+            disabled={!!editing} options={TQ_ENUMS.healthTargets.map(opt)} />
         </div>
 
         <div>
@@ -646,11 +742,14 @@ function HealthFormulaModal({ open, onClose, onSaved }: {
         <ErrText msg={err} />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn disabled={!valid} onClick={() => save.execute()}>Create formula (draft)</Btn>
+          <Btn disabled={!valid || loading} onClick={() => save.execute()}>
+            {loading ? "Loading…" : editing ? "Save changes" : "Create formula (draft)"}
+          </Btn>
         </div>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-          New formulas are created as drafts. Component weights must total 100% and bands must cover
-          0–100 before the formula can be activated.
+          {editing
+            ? "Editing an active formula re-checks that weights total 100% and bands cover 0–100."
+            : "New formulas are created as drafts. Component weights must total 100% and bands must cover 0–100 before the formula can be activated."}
         </p>
       </div>
     </Modal>
