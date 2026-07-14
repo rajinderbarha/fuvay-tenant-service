@@ -761,11 +761,19 @@ class ComplaintService:
         complaint = await self._get_complaint(db, complaint_id)
 
         if response == "accept":
-            proposal.status = PROPOSAL_ACCEPTED
+            # MODULE-L5-02 bug #30a: this used to set proposal.status =
+            # PROPOSAL_ACCEPTED *before* _check_dual_acceptance, so a customer
+            # accepting ALONE marked the proposal accepted (and stamped
+            # settlement_status/resolved_at) without the provider ever agreeing —
+            # defeating the whole dual-acceptance guarantee. Let
+            # _check_dual_acceptance be the only thing that promotes the status.
             self._check_dual_acceptance(proposal)
             if proposal.status == PROPOSAL_ACCEPTED:
                 complaint.settlement_status = PROPOSAL_ACCEPTED
                 complaint.resolved_at = now
+                # bug #30b: complaint.status was never advanced, so a fully
+                # dual-accepted settlement left the complaint 'open' forever.
+                complaint.status = STATUS_SETTLED
         elif response == "reject":
             proposal.status = PROPOSAL_REJECTED
             complaint.settlement_status = PROPOSAL_REJECTED
@@ -820,6 +828,10 @@ class ComplaintService:
             if proposal.status == PROPOSAL_ACCEPTED:
                 complaint.settlement_status = PROPOSAL_ACCEPTED
                 complaint.resolved_at = now
+                # MODULE-L5-02 bug #30b: complaint.status was never advanced on
+                # dual acceptance, so a settlement accepted by BOTH parties left
+                # the complaint sitting at 'open' in every queue forever.
+                complaint.status = STATUS_SETTLED
         elif response == "reject":
             proposal.status = PROPOSAL_REJECTED
             complaint.settlement_status = PROPOSAL_REJECTED

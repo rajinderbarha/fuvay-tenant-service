@@ -110,3 +110,27 @@ def test_refund_path_advances_and_resolves_the_complaint():
     from app.engines.complaints.refund_service import RefundRequestService
     src = inspect.getsource(RefundRequestService.verify_refund)
     assert "STATUS_RESOLVED" in src and "get_complaint" in src
+
+
+def test_settlement_requires_dual_acceptance_and_settles_the_complaint():
+    """MODULE-L5-02 bug #30:
+    (a) customer_respond_to_settlement set proposal.status = PROPOSAL_ACCEPTED
+        BEFORE _check_dual_acceptance, so a customer accepting alone marked the
+        proposal accepted and stamped settlement_status/resolved_at without the
+        provider ever agreeing — defeating the dual-acceptance guarantee.
+    (b) Neither respond path advanced complaint.status, so a settlement accepted
+        by BOTH parties left the complaint at 'open' forever.
+
+    Proven live: customer-alone accept -> proposal 'proposed', complaint 'open';
+    provider then accepts -> complaint 'settled', proposal 'accepted'."""
+    import inspect
+    from app.engines.complaints.complaint_service import ComplaintService
+    cust = inspect.getsource(ComplaintService.customer_respond_to_settlement)
+    ten  = inspect.getsource(ComplaintService.tenant_respond_to_settlement)
+    # (a) the customer path must not unilaterally promote the proposal
+    accept_block = cust.split('if response == "accept":')[1].split("elif")[0]
+    assert "proposal.status = PROPOSAL_ACCEPTED" not in accept_block
+    assert "_check_dual_acceptance" in accept_block
+    # (b) both paths must settle the complaint on dual acceptance
+    for src in (cust, ten):
+        assert "complaint.status = STATUS_SETTLED" in src
