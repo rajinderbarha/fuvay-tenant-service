@@ -198,10 +198,16 @@ async def submit_booking_rating(
     user: UserContext  = Depends(get_current_user),
     db:   AsyncSession = Depends(get_db),
 ):
+    # MODULE-L5-13: the booking rating used to write to the LEGACY review engine
+    # (`reviews` table), which the provider/admin review dashboards and the rating
+    # aggregation (tenant_rating_summaries / staff_rating_summaries — the source of
+    # trust_quality's average_rating) never read. Customer ratings therefore never
+    # reached the provider, the aggregates, or health scoring. This now submits
+    # through the real customer_reviews engine, which records the review AND
+    # recomputes the tenant/staff summaries the dashboards and health read.
     from app.exceptions import ServiceOSException
-    from app.engines.final_records.models import ServiceBooking, ServiceJob
-    from app.engines.review.service import ReviewService
-    from app.engines.review.models import Review
+    from app.engines.final_records.models import ServiceBooking
+    from app.engines.customer_reviews.review_service import ReviewService
 
     customer_id = uuid.UUID(user.user_id)
     body = await r.json() if r.headers.get("content-length", "0") != "0" else {}
@@ -210,44 +216,33 @@ async def submit_booking_rating(
     booking = res.scalars().first()
     if not booking or str(booking.customer_id) != str(customer_id):
         raise ServiceOSException("BOOKING_NOT_FOUND", "Booking not found.", status_code=404)
-    if booking.status != "completed":
-        raise ServiceOSException(
-            "BOOKING_NOT_COMPLETED",
-            "You can review this service after it is completed.",
-            status_code=422,
-        )
-
-    res2 = await db.execute(select(ServiceJob).where(ServiceJob.booking_id == booking.id))
-    job = res2.scalars().first()
-    if not job:
-        raise ServiceOSException("BOOKING_NOT_FOUND", "Booking not found.", status_code=404)
-
-    existing = (await db.execute(
-        select(Review).where(Review.customer_id == customer_id, Review.job_id == str(job.id))
-    )).scalars().first()
-    if existing:
-        raise ServiceOSException(
-            "REVIEW_ALREADY_SUBMITTED",
-            "A review has already been submitted for this booking.",
-            status_code=409,
-        )
 
     rating = body.get("rating")
     if rating is None or not (1 <= int(rating) <= 5):
         raise ServiceOSException("RATING_REQUIRED", "Rating must be between 1 and 5.", status_code=422)
 
-    svc = ReviewService(db=db, request_id=_RID(r), actor_id=customer_id, actor_role="customer")
-    signals = {
-        "overall_quality": float(rating), "punctuality": float(rating),
-        "cleanliness": float(rating), "value_for_money": float(rating),
-        "communication": float(rating),
-    }
-    result = await svc.create_review(
-        tenant_id=booking.tenant_id, job_id=str(job.id), customer_id=customer_id,
-        staff_id=job.assigned_staff_id, signals=signals, comment=body.get("comment"),
-    )
-    await db.commit()
-    return ok(result, _RID(r), "assignment")
+    # The engine's eligibility check owns the "completed"/"already reviewed" rules;
+    # map its domain ValueErrors back to the codes/messages the app expects.
+    try:
+        review = await ReviewService().submit_review(
+            db, customer_id=customer_id, tenant_id=booking.tenant_id,
+            record_type="service_booking", record_id=booking_id,
+            overall_rating=int(rating), review_text=body.get("comment"),
+            request_id=_RID(r),
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "REVIEW_ALREADY_EXISTS":
+            raise ServiceOSException("REVIEW_ALREADY_SUBMITTED",
+                                     "A review has already been submitted for this booking.",
+                                     status_code=409)
+        if code == "REVIEW_NOT_ELIGIBLE":
+            raise ServiceOSException("BOOKING_NOT_COMPLETED",
+                                     "You can review this service after it is completed.",
+                                     status_code=422)
+        status = 404 if code == "RECORD_NOT_FOUND" else 422
+        raise ServiceOSException(code, code.replace("_", " ").title(), status_code=status)
+    return ok(review.to_dict(), _RID(r), "assignment")
 
 
 @router.get("/{booking_id}/rating", response_model=ApiResponse)
@@ -257,30 +252,24 @@ async def get_booking_rating(
     user: UserContext  = Depends(get_current_user),
     db:   AsyncSession = Depends(get_db),
 ):
-    from app.engines.final_records.models import ServiceBooking, ServiceJob
-    from app.engines.review.models import Review
+    # MODULE-L5-13: read the review back from the same customer_reviews engine the
+    # rating now writes to (was reading the orphaned legacy `reviews` table).
+    from app.engines.customer_reviews.models import CustomerReview
 
     customer_id = uuid.UUID(user.user_id)
-    res = await db.execute(select(ServiceBooking).where(ServiceBooking.id == booking_id))
-    booking = res.scalars().first()
-    if not booking or str(booking.customer_id) != str(customer_id):
-        return ok({"review": None}, _RID(r), "assignment")
-
-    res2 = await db.execute(select(ServiceJob).where(ServiceJob.booking_id == booking.id))
-    job = res2.scalars().first()
-    if not job:
-        return ok({"review": None}, _RID(r), "assignment")
-
     review = (await db.execute(
-        select(Review).where(Review.customer_id == customer_id, Review.job_id == str(job.id))
+        select(CustomerReview).where(
+            CustomerReview.customer_id == customer_id,
+            CustomerReview.booking_id == booking_id,
+        )
     )).scalars().first()
     if not review:
         return ok({"review": None}, _RID(r), "assignment")
 
     return ok({
         "review": {
-            "rating": review.overall_quality,
-            "comment": review.comment,
+            "rating": review.overall_rating,
+            "comment": review.review_text,
             "created_at": review.created_at.isoformat() if review.created_at else None,
         },
     }, _RID(r), "assignment")
