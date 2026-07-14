@@ -262,13 +262,25 @@ engine's own reason codes):
   ₹150, no min/max). So the tenant **cannot** set a price range for this service, yet bookability
   demands one → the provider can never become bookable for a fixed-price/no-override service.
 
-**Conclusion:** this is **not a customer-flow code defect** — the booking journey is wired and
-crash-free, and the matching engine gates correctly with diagnosable reasons. Completing a
-successful booking is a **provider-provisioning/demo-data** task, and there is a plausible
-**bookability-logic follow-up**: the `PROVIDER_PRICE_RANGE_MISSING` gate should likely treat a
-fixed-price / `tenant_override_allowed=False` service as already-priced (no range required)
-rather than permanently blocking it. Recorded as a follow-up (Sprint-12 bookability engine
-scope), not chased here.
+**The bookability price-range wrinkle turned out to be a real bug — now fixed.** The
+`PROVIDER_PRICE_RANGE_MISSING` check only counted services with a `tenant_min_price`, so a
+provider whose published services are all fixed-price / `tenant_override_allowed=False` (priced
+at the admin level, unable to set a range) could **never** clear the gate and thus never become
+bookable. Fixed: the priced-services query now also counts published services whose
+`master_services.tenant_override_allowed = false` and have a base/min price. Verified live: Demo
+AC's `PROVIDER_PRICE_RANGE_MISSING` blocker **cleared** (blockers → `[]`, `priced_count` 0→3)
+after a bookability refresh.
+
+**Remaining gates for a live end-to-end booking (correctly enforced, pure provisioning — not
+bugs):** `is_bookable` additionally requires `availability_count > 0` (Demo AC has 6 ✓),
+`credit_balance > 0` (Demo AC has **no usage credits**), and `deposit_satisfied`. Topping up
+credits + satisfying the deposit are legitimate business requirements the code correctly gates
+on; completing them is demo-data/financial provisioning, not chased here.
+
+**Conclusion:** the booking journey is wired + crash-free (§6h), the matching engine gates
+correctly with diagnosable reasons, and one genuine bookability bug (fixed-price providers
+permanently unbookable) was found and fixed. A fully-live booking now needs only financial
+provisioning (credits + deposit), not code changes.
 
 **Remaining for a truthful `PROVEN_LEVEL_5`:** the bookability price-range wrinkle above (or
 demo-data that makes one provider fully bookable); onboarding-checklist shape reconciliation;

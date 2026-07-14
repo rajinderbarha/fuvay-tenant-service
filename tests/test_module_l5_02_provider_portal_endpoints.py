@@ -35,3 +35,13 @@ def test_onboarding_items_guarded():
 
 def test_packages_status_guarded():
     assert _guarded('async def get_packages_status(')
+
+
+def test_bookability_price_range_counts_fixed_price_services():
+    """MODULE-L5-02: PROVIDER_PRICE_RANGE_MISSING must not permanently block a
+    provider whose published services are all fixed-price / no-override (they
+    are priced at the admin level and cannot set a tenant range). The priced
+    check now also counts master_services with tenant_override_allowed=false
+    and a base/min price."""
+    assert "ms.tenant_override_allowed = false" in PROV_ROUTER
+    assert "COALESCE(ms.base_price, ms.min_price) IS NOT NULL" in PROV_ROUTER
