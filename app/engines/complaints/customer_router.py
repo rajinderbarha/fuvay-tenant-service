@@ -157,6 +157,30 @@ async def list_messages(
                 "created_at": str(m.created_at)} for m in msgs], rid, "complaint.messages.list")
 
 
+# ── List resolutions ──────────────────────────────────────────────────────────
+@customer_complaint_router.get("/{complaint_id}/resolutions")
+async def list_resolutions(
+    complaint_id: uuid.UUID,
+    r: Request       = None,
+    u: UserContext   = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """MODULE-L5-02 bug #35: the customer could accept or reject a resolution
+    (POST .../resolutions/{resolution_id}/accept|reject) but had NO endpoint to
+    list them — so they could never see what had been offered, and had no way to
+    obtain the resolution_id those endpoints require. The provider has had this
+    endpoint all along; the customer's accept/reject was effectively unusable."""
+    rid = getattr(r.state, "request_id", "—") if r else "—"
+    await _complaint.get_customer_complaint(db, u.user_id, complaint_id)
+    resolutions = await _complaint.list_resolutions(db, complaint_id)
+    return ok([{"id": str(res.id), "status": res.status,
+                "resolution_type": res.resolution_type,
+                "description": res.description,
+                "customer_visible_notes": res.customer_visible_notes,
+                "created_at": str(res.created_at)} for res in resolutions],
+              rid, "complaint.resolutions.list")
+
+
 # ── Cancel complaint ──────────────────────────────────────────────────────────
 @customer_complaint_router.post("/{complaint_id}/cancel")
 async def cancel_complaint(

@@ -37,6 +37,18 @@ export default function BookingDetailPage() {
           {detail.status === "completed" && (
             <Link href={`/customer/bookings/${bookingId}/rate`} className="co-btn-primary" style={{ textAlign: "center" }}>Rate Your Experience</Link>
           )}
+          {/* MODULE-L5-02 bug #34: the customer app had no way at all to raise a
+              complaint about a job that went wrong — every complaint endpoint
+              existed and none was reachable. Deep-links into the complaint form. */}
+          {detail.status === "completed" && (
+            <Link
+              href={`/customer/complaints?record_type=service_booking&record_id=${bookingId}`}
+              className="co-btn-secondary"
+              style={{ textAlign: "center" }}
+            >
+              Report a problem
+            </Link>
+          )}
         </div>
       )}
 
