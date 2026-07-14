@@ -25,7 +25,16 @@ MATCH_LEVEL_PRIORITY: dict[str, int] = {
     MatchLevel.RADIUS:  4,
 }
 
-JOB_TYPES = ["repair", "service", "consultation"]
+# MODULE-L5-02 fix: this must stay aligned with the canonical catalog job types
+# (app/engines/admin_catalog/service.py::VALID_JOB_TYPES). It was previously a
+# stale 3-item subset (["repair","service","consultation"]), so a tenant could
+# not create a service-area coverage mapping for any service whose canonical
+# job_type was installation/uninstallation/inspection/maintenance/cleaning/
+# custom — meaning those services could never be covered in an area and thus
+# never became customer-bookable. Kept as a list (schema/description consumers)
+# but now covering the full canonical set.
+JOB_TYPES = ["repair", "installation", "uninstallation", "inspection",
+             "maintenance", "cleaning", "consultation", "service", "custom"]
 
 # ── Error codes ───────────────────────────────────────────────────────────────
 ERR_ADDRESS_NOT_FOUND  = "CUSTOMER_ADDRESS_NOT_FOUND"

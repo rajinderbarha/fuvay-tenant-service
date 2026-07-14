@@ -279,8 +279,46 @@ on; completing them is demo-data/financial provisioning, not chased here.
 
 **Conclusion:** the booking journey is wired + crash-free (§6h), the matching engine gates
 correctly with diagnosable reasons, and one genuine bookability bug (fixed-price providers
-permanently unbookable) was found and fixed. A fully-live booking now needs only financial
-provisioning (credits + deposit), not code changes.
+permanently unbookable) was found and fixed.
+
+## 6j. Provisioning Demo AC to bookable — 2 more real bugs found (added this session)
+
+Drove Demo AC to a fully-bookable state through the real APIs to prove a live booking. En route:
+
+- **Demo AC is now fully bookable** (`is_visible=True, is_bookable=True, status="bookable"`, no
+  blockers). Achieved via: the price-range fix (§6i) + completing the business profile's
+  `address_line1` via `PUT /v1/provider/business-profile` (the only missing profile field;
+  business_name/city were set). Credits (₹3980) + deposit (not required, amount 0) were already
+  satisfied.
+- **Bug #10 — stale service-area job-type taxonomy (FIXED):** `serviceability/constants.py::
+  JOB_TYPES` was a stale 3-item subset `["repair","service","consultation"]`, while the canonical
+  `admin_catalog.VALID_JOB_TYPES` has 9 (adds `installation, uninstallation, inspection,
+  maintenance, cleaning, custom`). So a tenant could **not** create a service-area coverage
+  mapping for any service whose job_type was e.g. `installation` (ac_installation) →
+  `SERVICE_NOT_COVERED_IN_AREA` → those services could never become customer-bookable. Fixed:
+  `JOB_TYPES` now covers the full canonical set (a test asserts `VALID_JOB_TYPES ⊆ JOB_TYPES`).
+
+- **Remaining architectural finding (not chased):** area-coverage mappings reference a **separate
+  `ServiceCatalogItem` table** (serviceability's own catalog), not the `master_services` the
+  customer booking uses — so seeding coverage for the master service `ac_installation` returns
+  `SERVICE_NOT_FOUND` from the mapping API. Bridging serviceability's `ServiceCatalogItem` with
+  the canonical `master_services` is a deeper architecture item (candidate for an
+  ARCHITECTURE-scoped follow-up), and is the last blocker to a fully-live end-to-end booking in
+  this data set. Recorded honestly, not forced.
+
+**Session tally of real bugs fixed toward Module 02 L5: 10** (2 admin + 4 tenant-portal + 2
+customer-journey + 1 bookability price-range + 1 service-area job-type), plus the packages
+canonical rewire and Demo AC driven to bookable. A fully-live booking is now blocked only by the
+`ServiceCatalogItem`↔`master_services` coverage-catalog bridge (architectural), not by any
+remaining customer-flow crash.
+
+## 7-final. Module 02 honest status
+
+**Not `PROVEN_LEVEL_5`.** But materially de-risked: 10 real defects eliminated, 3 apps
+contract-verified, full lifecycle + isolation proven, booking journey crash-free, and the demo
+provider driven to bookable. Remaining before a truthful stamp: the ServiceCatalogItem/master
+coverage bridge (to complete a live booking), onboarding-checklist shape reconciliation, and the
+tenant-portal onboarding wizard e2e.
 
 **Remaining for a truthful `PROVEN_LEVEL_5`:** the bookability price-range wrinkle above (or
 demo-data that makes one provider fully bookable); onboarding-checklist shape reconciliation;

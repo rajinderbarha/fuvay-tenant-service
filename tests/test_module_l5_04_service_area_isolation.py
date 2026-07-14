@@ -47,3 +47,12 @@ def test_platform_roles_exempt():
 
 def test_guard_passes_on_real_repo():
     assert guard.check() == []
+
+
+def test_serviceability_job_types_match_canonical_catalog():
+    """MODULE-L5-02: area-mapping job types were a stale 3-item subset, so
+    installation/maintenance/cleaning/etc. services could never get area
+    coverage. They must cover the canonical catalog job types."""
+    from app.engines.serviceability.constants import JOB_TYPES
+    from app.engines.admin_catalog.service import VALID_JOB_TYPES
+    assert set(VALID_JOB_TYPES) <= set(JOB_TYPES), set(VALID_JOB_TYPES) - set(JOB_TYPES)
