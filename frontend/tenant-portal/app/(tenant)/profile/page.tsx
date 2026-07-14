@@ -8,7 +8,8 @@ import {
   mediaAssetApi,
   type UserProfile, type BusinessProfile, type MediaAsset,
 } from "../../../lib/api";
-import { ServiceOSError } from "../../../lib/api";
+import { ServiceOSError, trustBadgesApi } from "../../../lib/api";
+import { TrustBadges } from "../../../components/TrustBadges";
 import { useApi, useAction } from "../../../hooks/useApi";
 import {
   Building2, User, Mail, Phone, Globe, Clock, Camera, AlertTriangle,
@@ -245,6 +246,7 @@ export default function ProviderProfilePage() {
   const teamApi = useApi(useCallback(()=>myStatusApi.getTeamMembers(),[]), []);
   const areasApi = useApi(useCallback(()=>myStatusApi.getServiceAreas(),[]), []);
   const selfApi = useApi(useCallback(()=>authApi.me(),[]), []);
+  const badgesApi = useApi(useCallback(()=>trustBadgesApi.myBadges(),[]), []);
 
   const [tab, setTab] = useState<TabKey>("overview");
   const [editOpen, setEditOpen] = useState(false);
@@ -685,6 +687,16 @@ export default function ProviderProfilePage() {
 
             {tab === "overview" && (
               <div className="overview-grid" id="overview">
+                {/* Trust Badges — what customers see on your profile */}
+                <div className="card" style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+                    <p style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:0 }}>Trust Badges</p>
+                    <span style={{ fontSize:12, color:"var(--text-tertiary)" }}>Earned automatically · shown to customers</span>
+                  </div>
+                  <TrustBadges badges={badgesApi.data ?? []}
+                    empty="No badges earned yet. Keep ratings high and jobs completed to earn them." />
+                </div>
+
                 {/* Business Information */}
                 <div className="card">
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>

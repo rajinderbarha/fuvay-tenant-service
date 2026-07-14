@@ -11,6 +11,7 @@ import {
   serviceAreaAdminApi, serviceabilityApi, mediaApi, authApi, financeApi, usageCreditsAdminApi,
   catalogApi as adminCatalogApi, engineMgmtApi, adminTenantApi,
   adminProviderOnboardingApi, adminOnboardingProvidersApi, adminProviderEnablementApi, adminBookabilityApi,
+  trustQualityApi,
   type TenantAuditLog,
   type AdminStaffUser, type Booking, type GeoZone, type MediaFile,
   type Deposit, type MatchedTenant, type EnabledService,
@@ -1104,6 +1105,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
 
   // ── Tab data (all eager so switching is instant) ──────────────────────────
   const health      = useApi(useCallback(() => tenantApi.getHealth(id),                     [id]));
+  const earnedBadges = useApi(useCallback(() => trustQualityApi.listEarnedBadges("tenant", id), [id]));
   const billing     = useApi(useCallback(() => tenantApi.getBillingInfo(id),                [id]));
   const flags       = useApi(useCallback(() => tenantApi.getFeatureFlags(id),               [id]));
   const invoices    = useApi(useCallback(() => tenantApi.getBillingInvoices(id, 5),         [id]));
@@ -1615,6 +1617,30 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
         ].slice(0, 4);
 
         return (
+          <>
+          {/* ── Trust badges this provider holds (with icon/colour) ── */}
+          <Card style={{ marginBottom: 16 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <span style={{ fontSize:15, fontWeight:700 }}>Trust Badges</span>
+              <span style={{ fontSize:12, color:"var(--text-tertiary)" }}>Earned by this provider</span>
+            </div>
+            {(earnedBadges.data ?? []).length === 0 ? (
+              <span style={{ fontSize:13, color:"var(--text-tertiary)" }}>No badges earned yet.</span>
+            ) : (
+              <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
+                {(earnedBadges.data ?? []).map(b => (
+                  <span key={b.assignment_id} title={b.description ?? b.name}
+                    style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"6px 12px 6px 10px",
+                      borderRadius:999, background:`${b.color || "#f59e0b"}18`,
+                      border:`1px solid ${b.color || "#f59e0b"}55`, fontSize:13, fontWeight:600 }}>
+                    <span style={{ width:10, height:10, borderRadius:"50%", background:b.color || "#f59e0b" }} />
+                    {b.name}
+                    {!b.customer_visible && <Badge variant="muted" size="sm">internal</Badge>}
+                  </span>
+                ))}
+              </div>
+            )}
+          </Card>
           <div style={{ display:"grid", gridTemplateColumns:overviewCols, gap:16 }}>
             {/* ── LEFT COLUMN ── */}
             <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -1840,6 +1866,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
               )}
             </div>
           </div>
+          </>
         );
       })()}
 
