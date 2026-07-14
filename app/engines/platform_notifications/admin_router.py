@@ -102,6 +102,41 @@ async def admin_mark_all_read(
     return ok({"marked_read": count}, _rid(r), "admin.notifications.mark_all_read")
 
 
+# ── MODULE-L5-11: admin notification settings (preferences) ────────────────────
+# The admin side had no notification settings page at all — only providers could
+# manage which events/channels they receive. These mirror the provider
+# preference endpoints, scoped to the logged-in admin's own user.
+@admin_notif_router.get("/preferences", summary="Get my (admin) notification preferences")
+async def admin_get_prefs(
+    r: Request,
+    u: UserContext = Depends(require_platform_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    prefs = await _notif_svc.get_preferences(db, uuid.UUID(u.user_id))
+    return ok([p.to_dict() for p in prefs], _rid(r), "admin.notifications.preferences")
+
+
+class AdminPrefIn(BaseModel):
+    event_key: str
+    channel: str
+    is_enabled: bool
+
+
+@admin_notif_router.put("/preferences", summary="Update my (admin) notification preference")
+async def admin_update_pref(
+    body: AdminPrefIn,
+    r: Request,
+    u: UserContext = Depends(require_platform_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    pref = await _notif_svc.update_preference(
+        db, uuid.UUID(u.user_id),
+        uuid.UUID(str(u.tenant_id)) if getattr(u, "tenant_id", None) else None,
+        body.event_key, body.channel, body.is_enabled,
+    )
+    return ok(pref.to_dict(), _rid(r), "admin.notifications.preferences.update")
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ADMIN NOTIFICATION EVENTS
 # ═══════════════════════════════════════════════════════════════════════════════

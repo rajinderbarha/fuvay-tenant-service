@@ -6808,6 +6808,15 @@ export const sprint27AdminApi = {
   markAllRead: () =>
     apiFetch<{ marked_read: number }>("/v1/admin/notifications/mark-all-read", { method: "POST" }),
 
+  // MODULE-L5-11: the admin's own notification preferences (settings page).
+  getPreferences: () =>
+    apiFetch<{ id: string; event_key: string; channel: string; is_enabled: boolean }[]>(
+      "/v1/admin/notifications/preferences"),
+  updatePreference: (event_key: string, channel: string, is_enabled: boolean) =>
+    apiFetch<{ id: string; event_key: string; channel: string; is_enabled: boolean }>(
+      "/v1/admin/notifications/preferences",
+      { method: "PUT", body: JSON.stringify({ event_key, channel, is_enabled }) }),
+
   // Notification events
   listEvents: (params?: Record<string, string | number>) =>
     apiFetch<{ items: NotificationEventRecord[]; total: number }>(`/v1/admin/notification-events?${new URLSearchParams(params as Record<string, string>)}`),

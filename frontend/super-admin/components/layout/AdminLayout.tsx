@@ -139,6 +139,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "marketing",     href: "/admin/marketing",     label: "Campaigns",       icon: <Megaphone size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "notification-settings", href: "/admin/notifications/settings", label: "Notification Settings", icon: <Bell size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "analytics",     href: "/admin/analytics",     label: "Analytics",       icon: <BarChart3 size={16}/>, requiredPermission: "analytics:dashboard:read" },
       { id: "reports",       href: "/admin/reports",       label: "Reports",         icon: <ScrollText size={16}/>, requiredPermission: "analytics:dashboard:read" },
       { id: "intelligence",  href: "/admin/intelligence",  label: "AI Intelligence", icon: <Brain size={16}/>,     requiredPermission: SUPER_ADMIN_ONLY },
