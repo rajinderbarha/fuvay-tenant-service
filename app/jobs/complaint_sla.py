@@ -142,6 +142,19 @@ async def run_escalations() -> dict:
                 reason="SLA admin-escalation deadline passed with no provider response",
                 request_id="job:complaint_sla",
             )
+            # bug #40: notify the admins that a stalled complaint is now theirs.
+            try:
+                from app.engines.complaints.notifications import notify_admins_complaint
+                await notify_admins_complaint(
+                    db, c,
+                    notification_type="complaint.sla.escalated",
+                    title=f"Complaint escalated to you — {c.complaint_number}",
+                    body="The provider did not respond within the SLA window; this "
+                         "complaint has been escalated to admin manual review.",
+                    severity="critical",
+                )
+            except Exception:
+                pass
             counts["escalated"] += 1
 
         await db.commit()

@@ -261,6 +261,19 @@ class AISettlementService:
                 },
                 request_id    = request_id,
             ))
+            # bug #40: tell the admins a case has landed in their lap — the AI
+            # deliberately did NOT settle it and it now needs a human decision.
+            try:
+                from app.engines.complaints.notifications import notify_admins_complaint
+                await notify_admins_complaint(
+                    db, complaint,
+                    notification_type="complaint.ai_settlement.escalated",
+                    title=f"AI settlement escalated — {complaint.complaint_number}",
+                    body=verdict.reason,
+                    severity="warning",
+                )
+            except Exception:
+                pass
             await db.flush()
             return None
 
