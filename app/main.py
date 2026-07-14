@@ -80,6 +80,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _notif_task = asyncio.create_task(_notif_loop())
     logger.info("notifications_loop.started")
 
+    # 9. Draft-expiry housekeeping loop (MODULE-L5-11) — the draft-expiry job was
+    # CLI-only, so abandoned lead/booking/appointment drafts were never cleaned
+    # up without external cron.
+    from app.jobs.expire_drafts import background_loop as _expire_loop
+    _expire_task = asyncio.create_task(_expire_loop())
+    logger.info("expire_drafts_loop.started")
+
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
@@ -102,6 +109,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _notif_task.cancel()
     try:
         await _notif_task
+    except asyncio.CancelledError:
+        pass
+    _expire_task.cancel()
+    try:
+        await _expire_task
     except asyncio.CancelledError:
         pass
     await close_redis()
