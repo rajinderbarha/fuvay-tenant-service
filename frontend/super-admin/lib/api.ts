@@ -8092,6 +8092,58 @@ export const customerFlowApi = {
 };
 
 // ── Complaints (Sprint 75) ────────────────────────────────────────────────────
+// MODULE-L5-12: Trust & Quality (badges / provider health / recalculation).
+// The engine was live with real config but had no admin UI at all.
+export interface BadgeRule {
+  id: string; rule_key: string; badge_id: string; target_type: string; rule_type: string;
+  auto_award: boolean; manual_award_allowed: boolean; requires_admin_review: boolean;
+  status: string;
+  badge?: { badge_key: string; name: string; customer_visible: boolean } | null;
+  criteria?: { metric_key: string; operator: string; value: number }[];
+}
+export interface HealthRule {
+  id: string; formula_key: string; name: string; target_type: string;
+  base_score: number; min_score: number; max_score: number; status: string;
+}
+export interface RecalcJob {
+  id: string; job_type: string; scope_type: string; status: string;
+  total_count: number; processed_count: number; failed_count: number;
+  triggered_by: string; started_at: string | null; completed_at: string | null;
+  error_summary: string | null;
+}
+const tqList = <T,>(d: unknown): T[] => {
+  const x = (d as { items?: T[] })?.items;
+  return Array.isArray(x) ? x : (Array.isArray(d) ? (d as T[]) : []);
+};
+export const trustQualityApi = {
+  listBadgeRules: () =>
+    apiFetch<unknown>("/v1/admin/trust-quality/badge-rules").then(d => tqList<BadgeRule>(d)),
+  // Every activate/deactivate is audited and the backend rejects a blank reason,
+  // so the caller must always collect one from the admin.
+  activateBadgeRule: (id: string, reason: string) =>
+    apiFetch(`/v1/admin/trust-quality/badge-rules/${id}/activate`, {
+      method: "POST", body: JSON.stringify({ reason }) }),
+  deactivateBadgeRule: (id: string, reason: string) =>
+    apiFetch(`/v1/admin/trust-quality/badge-rules/${id}/deactivate`, {
+      method: "POST", body: JSON.stringify({ reason }) }),
+  listHealthRules: () =>
+    apiFetch<unknown>("/v1/admin/trust-quality/health-rules").then(d => tqList<HealthRule>(d)),
+  activateHealthRule: (id: string, reason: string) =>
+    apiFetch(`/v1/admin/trust-quality/health-rules/${id}/activate`, {
+      method: "POST", body: JSON.stringify({ reason }) }),
+  deactivateHealthRule: (id: string, reason: string) =>
+    apiFetch(`/v1/admin/trust-quality/health-rules/${id}/deactivate`, {
+      method: "POST", body: JSON.stringify({ reason }) }),
+  listRecalcJobs: () =>
+    apiFetch<unknown>("/v1/admin/trust-quality/recalculation-jobs").then(d => tqList<RecalcJob>(d)),
+  // /recalculate/{badges,health,risk} each re-score a SINGLE target and require a
+  // target_id. The platform-wide sweep is /recalculate/all, which takes the kind
+  // as its job_type and records a recalculation job.
+  recalculate: (kind: "badges" | "health" | "risk" | "all") =>
+    apiFetch("/v1/admin/trust-quality/recalculate/all", {
+      method: "POST", body: JSON.stringify({ job_type: kind, scope_type: "all" }) }),
+};
+
 export const complaintsApi = {
   adminSummary: (tenantId?: string) => {
     const qs = tenantId ? `?tenant_id=${tenantId}` : "";

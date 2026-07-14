@@ -65,6 +65,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "onboarding",           href: "/admin/tenants/onboarding",   label: "New Requests",     icon: <Inbox size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       { id: "onboarding-providers", href: "/admin/onboarding/providers", label: "Verify & Approve", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "packages",             href: "/admin/packages",             label: "Packages",         icon: <Package size={16}/>,    requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "trust-quality",        href: "/admin/trust-quality",        label: "Trust & Quality",  icon: <Star size={16}/>,       requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {

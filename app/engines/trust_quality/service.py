@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.trust_quality.models import (
@@ -20,6 +20,26 @@ from app.engines.trust_quality.models import (
     TrustQualityRecalculationJob, TrustQualityAuditLog,
 )
 from app.exceptions import ServiceOSException
+
+# Where a recalculation job finds the rows for each target_type. The badge engine
+# and the health engine name the same entity differently ("tenant" vs
+# "tenant_provider"), so both spellings map to the tenants table. Every statement
+# ends in a WHERE so _enumerate_targets can append a scope filter with AND.
+_TARGET_SOURCE_SQL: dict[str, str] = {
+    "tenant":           "SELECT id FROM tenants WHERE status = 'active'",
+    "tenant_provider":  "SELECT id FROM tenants WHERE status = 'active'",
+    "technician":       "SELECT id FROM users WHERE role = 'staff' AND deleted_at IS NULL",
+    "customer_account": "SELECT id FROM users WHERE role = 'customer' AND deleted_at IS NULL",
+}
+
+# A job that reached delivery vs one that never did. Both sets are terminal, and
+# together they form the denominator for completion/cancellation/complaint rates.
+_JOB_DONE_STATUSES = ("completed", "invoice_issued", "force_closed")
+_JOB_CANCELLED_STATUSES = ("cancelled", "voided")
+
+# How much of a formula's total weight must be measurable before its score is
+# trustworthy enough to put a target into a band. See _calc_score.
+_MIN_HEALTH_COVERAGE_PERCENT = 50.0
 
 
 def _now() -> datetime:
@@ -522,6 +542,7 @@ class TrustQualityService:
         base = float(formula.base_score)
         breakdown = []
         weighted_sum = 0.0
+        contributing_weight = 0.0
         for c in components:
             raw = metrics.get(c.metric_key)
             if raw is None:
@@ -529,6 +550,7 @@ class TrustQualityService:
                     raw = 0
                 else:
                     continue
+            contributing_weight += float(c.weight_percent)
             norm = float(raw)
             lo = float(c.min_value) if c.min_value is not None else 0.0
             hi = float(c.max_value) if c.max_value is not None else 100.0
@@ -541,7 +563,29 @@ class TrustQualityService:
             breakdown.append({"metric_key": c.metric_key, "raw_value": raw, "normalized": norm,
                                "weight_percent": float(c.weight_percent), "contribution": contribution})
 
-        score = weighted_sum if components else base
+        # Optional components whose metric is unavailable are skipped above, so
+        # their weight must leave the denominator too. Scoring the weighted sum
+        # straight out of 100 would cap a target at the total weight of whichever
+        # metrics happen to be measurable, marking a flawless provider "at_risk"
+        # purely because, say, no deposit score exists yet. So renormalise over
+        # the weight that actually contributed.
+        #
+        # But renormalising over a *sliver* of the formula is just as wrong in the
+        # other direction: a provider whose only known metric is "documents
+        # verified" would score 100/100 and land in the top band off one 10-point
+        # component. So the score is only banded when enough of the formula is
+        # actually measurable. Below that, the target is genuinely unassessed and
+        # is left unbanded (band_key = None) rather than given a flattering or
+        # damning band it has not earned — health bands gate commission, so an
+        # invented band is worse than no band.
+        total_weight = sum(float(c.weight_percent) for c in components)
+        coverage = (contributing_weight / total_weight * 100.0) if total_weight else 0.0
+        insufficient = bool(components) and coverage < _MIN_HEALTH_COVERAGE_PERCENT
+
+        if not components or contributing_weight <= 0:
+            score = base
+        else:
+            score = weighted_sum * 100.0 / contributing_weight
         penalties_applied = []
         hard_override = None
         for p in penalties:
@@ -570,16 +614,23 @@ class TrustQualityService:
         if hard_override is not None:
             score = hard_override
 
+        # A hard override (e.g. the tenant is suspended) is a declared verdict, not
+        # a score inferred from metrics, so it bands regardless of coverage — a
+        # suspended provider is blocked whether or not we can measure anything else.
         band_key, recommended_actions = None, []
-        for band in bands:
-            if float(band.min_score) <= score <= float(band.max_score):
-                band_key = band.band_key
-                if band.recommended_action:
-                    recommended_actions.append(band.recommended_action)
-                break
+        if hard_override is not None:
+            insufficient = False
+        if not insufficient:
+            for band in bands:
+                if float(band.min_score) <= score <= float(band.max_score):
+                    band_key = band.band_key
+                    if band.recommended_action:
+                        recommended_actions.append(band.recommended_action)
+                    break
 
         return {
             "score": round(score, 2), "band_key": band_key,
+            "coverage_percent": round(coverage, 2), "insufficient_data": insufficient,
             "component_breakdown": breakdown, "penalties_applied": penalties_applied,
             "bonuses_applied": bonuses_applied, "recommended_actions": recommended_actions,
         }
@@ -685,9 +736,100 @@ class TrustQualityService:
 
     # ── Recalculation Job (synchronous phase-1 runner) ──────────────────────
 
+    async def _enumerate_targets(self, target_type: str, scope_type: str,
+                                  scope_id: uuid.UUID | None) -> list[uuid.UUID]:
+        """The rows a job of this target_type has to re-score.
+
+        Returns [] for a target_type with no entity table behind it (e.g.
+        "service_quality", which scores an offering rather than an actor) — such
+        a formula is skipped rather than counted as a failure.
+        """
+        sql = _TARGET_SOURCE_SQL.get(target_type)
+        if not sql:
+            return []
+        params: dict = {}
+        if scope_type == "tenant" and scope_id is not None:
+            col = "id" if target_type in ("tenant", "tenant_provider") else "tenant_id"
+            sql += f" AND {col} = :scope_id"
+            params["scope_id"] = str(scope_id)
+        rows = (await self.db.execute(text(sql), params)).scalars().all()
+        return [r if isinstance(r, uuid.UUID) else uuid.UUID(str(r)) for r in rows]
+
+    async def _gather_metrics(self, target_type: str, target_id: uuid.UUID) -> dict:
+        """Compute a target's live metrics from the operational tables.
+
+        Only metrics with a real source are returned. A metric with no source is
+        left OUT rather than defaulted, because a criterion that reads a missing
+        metric evaluates false — which correctly withholds a badge instead of
+        awarding one off a fabricated number.
+        """
+        m: dict = {}
+
+        if target_type in ("tenant", "tenant_provider"):
+            job_col, review_col, complaint_col = "tenant_id", "tenant_id", "tenant_id"
+        elif target_type == "technician":
+            job_col, review_col, complaint_col = "assigned_staff_id", "staff_member_id", None
+        elif target_type == "customer_account":
+            job_col, review_col, complaint_col = "customer_id", "customer_id", "customer_id"
+        else:
+            return m
+
+        counts = dict((await self.db.execute(
+            text(f"SELECT status, count(*) AS c FROM service_jobs "
+                 f"WHERE {job_col} = :t GROUP BY status"), {"t": str(target_id)})).all())
+        done = sum(counts.get(s, 0) for s in _JOB_DONE_STATUSES)
+        cancelled = sum(counts.get(s, 0) for s in _JOB_CANCELLED_STATUSES)
+        terminal = done + cancelled
+        m["completed_jobs_count"] = done
+        if terminal:
+            m["job_completion_rate"] = round(done * 100.0 / terminal, 2)
+            m["cancellation_rate"] = round(cancelled * 100.0 / terminal, 2)
+
+        row = (await self.db.execute(
+            text(f"SELECT avg(overall_rating) AS avg, count(*) AS n FROM customer_reviews "
+                 f"WHERE {review_col} = :t AND hidden_at IS NULL"), {"t": str(target_id)})).one()
+        m["review_count"] = int(row.n or 0)
+        if row.avg is not None:
+            m["average_rating"] = round(float(row.avg), 2)
+            # Formulas score out of 100, ratings are out of 5.
+            m["rating_score"] = round(float(row.avg) * 20.0, 2)
+
+        if complaint_col:
+            row = (await self.db.execute(
+                text(f"SELECT count(*) AS n, "
+                     f"       count(*) FILTER (WHERE sla_status = 'breached') AS breached "
+                     f"FROM customer_complaints WHERE {complaint_col} = :t"),
+                {"t": str(target_id)})).one()
+            n, breached = int(row.n or 0), int(row.breached or 0)
+            if terminal:
+                rate = round(n * 100.0 / terminal, 2)
+                m["complaint_rate"] = rate
+                m["complaint_dispute_score"] = rate
+            if n:
+                # Share of complaints answered inside the SLA.
+                m["response_sla_score"] = round((n - breached) * 100.0 / n, 2)
+                m["sla_success_rate"] = m["response_sla_score"]
+
+        if target_type in ("tenant", "tenant_provider"):
+            v = (await self.db.execute(
+                text("SELECT verification_status FROM tenants WHERE id = :t"),
+                {"t": str(target_id)})).scalar_one_or_none()
+            verified = v == "verified"
+            m["document_verified"] = verified
+            m["owner_verified"] = verified
+            m["document_verification_score"] = 100.0 if verified else 0.0
+
+        return m
+
     async def run_recalculation_job(self, job_type: str, scope_type: str = "all",
                                      scope_id: uuid.UUID | None = None,
                                      triggered_by: str = "manual") -> dict:
+        """Re-score every in-scope target against the active rules.
+
+        This runs the badge, health and risk engines for real: it enumerates the
+        targets, gathers each one's live metrics, and applies the rules. The job
+        row's counts are the true number of targets processed.
+        """
         if job_type not in ("badges", "health", "risk", "all"):
             raise ServiceOSException("VALIDATION_ERROR", "job_type must be one of badges|health|risk|all")
         job = TrustQualityRecalculationJob(
@@ -697,7 +839,58 @@ class TrustQualityService:
         )
         self.db.add(job)
         await self.db.flush()
-        job.status = "completed"
+
+        kinds = ("badges", "health", "risk") if job_type == "all" else (job_type,)
+
+        # (kind, target_type, formula) units of work, deduped by target so a
+        # target is counted once even when several rules cover it.
+        units: list[tuple[str, str, HealthFormula | None]] = []
+        if "badges" in kinds:
+            for tt in (await self.db.execute(
+                select(BadgeRule.target_type).where(
+                    BadgeRule.status == "active",
+                    BadgeRule.auto_award == True,  # noqa: E712
+                ).distinct())).scalars().all():
+                units.append(("badges", tt, None))
+        if "health" in kinds:
+            for f in (await self.db.execute(
+                select(HealthFormula).where(HealthFormula.status == "active"))).scalars().all():
+                units.append(("health", f.target_type, f))
+        if "risk" in kinds:
+            for tt in (await self.db.execute(
+                select(RiskRule.target_type).where(RiskRule.status == "active").distinct()
+            )).scalars().all():
+                units.append(("risk", tt, None))
+
+        processed = failed = 0
+        errors: list[str] = []
+        metrics_cache: dict[tuple[str, uuid.UUID], dict] = {}
+
+        for kind, target_type, formula in units:
+            for target_id in await self._enumerate_targets(target_type, scope_type, scope_id):
+                key = (target_type, target_id)
+                try:
+                    if key not in metrics_cache:
+                        metrics_cache[key] = await self._gather_metrics(target_type, target_id)
+                    metrics = metrics_cache[key]
+                    if kind == "badges":
+                        await self.recalculate_badges_for_target(target_type, target_id, metrics)
+                    elif kind == "health":
+                        await self.recalculate_health_for_target(
+                            formula.id, target_type, target_id, metrics)
+                    else:
+                        await self.recalculate_risk_for_target(target_type, target_id, metrics)
+                    processed += 1
+                except Exception as exc:  # one bad target must not sink the run
+                    failed += 1
+                    if len(errors) < 10:
+                        errors.append(f"{kind}/{target_type}/{target_id}: {exc}")
+
+        job.total_count = processed + failed
+        job.processed_count = processed
+        job.failed_count = failed
+        job.error_summary = "; ".join(errors) or None
+        job.status = "completed" if failed == 0 else "completed_with_errors"
         job.completed_at = _now()
         job.updated_at = _now()
         self._audit("recalculation_job.completed", target_type="recalculation_job", target_id=job.id, new_value=job.to_dict())

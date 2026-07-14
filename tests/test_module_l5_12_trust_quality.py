@@ -1,0 +1,210 @@
+"""MODULE-L5-12 — Trust & Quality recalculation + health scoring.
+
+Locks in three defects found during the Level-5 sweep of the trust_quality engine:
+
+  1. run_recalculation_job was a no-op. It inserted a job row, stamped it
+     "completed" and returned — never enumerating a target, never calling any of
+     the per-target engines. Every one of the 190 historical jobs read 0/0, so an
+     admin clicking "Recalculate" got a green tick while nothing was recalculated.
+
+  2. _calc_score scored the weighted sum straight out of 100 even though optional
+     components whose metric is unavailable are skipped. Their weight stayed in
+     the denominator, so a provider scoring perfectly on every metric the platform
+     can actually measure was still capped at the total weight of those metrics.
+
+  3. Renormalising naively then broke the other way: a provider whose only known
+     metric was "documents verified" (one 10-point component) renormalised to
+     100/100 and landed in the TOP band. Health bands gate commission, so a band
+     awarded off a sliver of evidence is worse than no band at all.
+"""
+from __future__ import annotations
+
+import pytest
+import pytest_asyncio
+from httpx import AsyncClient
+
+from app.engines.trust_quality.service import TrustQualityService, _MIN_HEALTH_COVERAGE_PERCENT
+
+BASE = "http://localhost:8000"
+ADMIN_EMAIL = "admin@serviceos.local"
+ADMIN_PASS = "Password123!"
+
+_TOKEN_CACHE: dict = {}
+
+
+@pytest_asyncio.fixture(scope="module")
+async def token(anyio_backend):
+    if "tok" not in _TOKEN_CACHE:
+        async with AsyncClient(base_url=BASE, timeout=30) as c:
+            r = await c.post("/v1/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASS})
+            assert r.status_code == 200, r.text
+            _TOKEN_CACHE["tok"] = r.json()["data"]["access_token"]
+    return _TOKEN_CACHE["tok"]
+
+
+@pytest_asyncio.fixture
+async def client(token):
+    # A full recalculation sweep can take a while when the box is also compiling
+    # the two Next.js frontends, so give the client generous headroom.
+    async with AsyncClient(base_url=BASE, headers={"Authorization": f"Bearer {token}"}, timeout=120) as c:
+        yield c
+
+
+class _Component:
+    def __init__(self, metric_key, weight_percent, direction="positive",
+                 is_required=False, min_value=0, max_value=100):
+        self.metric_key = metric_key
+        self.weight_percent = weight_percent
+        self.direction = direction
+        self.is_required = is_required
+        self.min_value = min_value
+        self.max_value = max_value
+
+
+class _Formula:
+    def __init__(self, base_score=100, min_score=0, max_score=100):
+        self.base_score = base_score
+        self.min_score = min_score
+        self.max_score = max_score
+
+
+class _Band:
+    def __init__(self, band_key, min_score, max_score):
+        self.band_key = band_key
+        self.min_score = min_score
+        self.max_score = max_score
+        self.recommended_action = None
+
+
+class _Penalty:
+    def __init__(self, metric_key, operator, value_json, penalty_points=0,
+                 hard_override_score=None):
+        self.metric_key = metric_key
+        self.operator = operator
+        self.value_json = value_json
+        self.penalty_points = penalty_points
+        self.hard_override_score = hard_override_score
+
+
+BANDS = [
+    _Band("blocked", 0, 19.99),
+    _Band("at_risk", 20, 39.99),
+    _Band("watchlist", 40, 59.99),
+    _Band("silver", 60, 74.99),
+    _Band("gold", 75, 89.99),
+    _Band("platinum", 90, 100),
+]
+
+
+def _calc(components, metrics, penalties=None):
+    svc = TrustQualityService.__new__(TrustQualityService)
+    return svc._calc_score(_Formula(), components, penalties or [], [], BANDS, metrics)
+
+
+class TestHealthScoreRenormalisation:
+    """Bug 2 + 3 — the score must reflect what is measurable, and must not band a
+    target on a sliver of evidence."""
+
+    def test_unmeasured_weight_does_not_drag_the_score_down(self):
+        # Measurable: 60 of the formula's 100 weight, all perfect. The remaining
+        # 40 points of weight have no metric behind them. The provider is flawless
+        # on everything we can see, so it must not be dragged to 60/100.
+        components = [
+            _Component("job_completion_rate", 30),
+            _Component("rating_score", 30),
+            _Component("security_deposit_score", 20),   # unmeasurable
+            _Component("package_credit_score", 20),      # unmeasurable
+        ]
+        d = _calc(components, {"job_completion_rate": 100, "rating_score": 100})
+
+        assert d["score"] == 100.0
+        assert d["band_key"] == "platinum"
+        assert d["coverage_percent"] == 60.0
+        assert d["insufficient_data"] is False
+
+    def test_score_is_proportional_within_the_measured_weight(self):
+        components = [
+            _Component("job_completion_rate", 30),
+            _Component("rating_score", 30),
+            _Component("security_deposit_score", 40),  # unmeasurable
+        ]
+        # 100 and 40 across two equally-weighted components -> 70.
+        d = _calc(components, {"job_completion_rate": 100, "rating_score": 40})
+
+        assert d["score"] == 70.0
+        assert d["band_key"] == "silver"
+
+    def test_sliver_of_evidence_is_left_unbanded(self):
+        # The exact live case: the only known fact about this provider is that its
+        # documents are verified (one 10-point component). Renormalising that alone
+        # yields 100 -- it must NOT be crowned platinum off 10% coverage.
+        components = [
+            _Component("document_verification_score", 10),
+            _Component("job_completion_rate", 30),
+            _Component("rating_score", 30),
+            _Component("security_deposit_score", 30),
+        ]
+        d = _calc(components, {"document_verification_score": 100})
+
+        assert d["coverage_percent"] == 10.0
+        assert d["coverage_percent"] < _MIN_HEALTH_COVERAGE_PERCENT
+        assert d["insufficient_data"] is True
+        assert d["band_key"] is None, "a 10%-coverage target must not be banded"
+
+    def test_hard_override_bands_regardless_of_coverage(self):
+        # A suspended tenant is a declared verdict, not an inferred score, so it
+        # bands even with zero measurable metrics.
+        components = [_Component("job_completion_rate", 100)]
+        penalties = [_Penalty("tenant_status", "equals", "suspended",
+                              penalty_points=0, hard_override_score=0)]
+        d = _calc(components, {"tenant_status": "suspended"}, penalties)
+
+        assert d["score"] == 0.0
+        assert d["band_key"] == "blocked"
+        assert d["insufficient_data"] is False
+
+
+class TestRecalculationJobIsReal:
+    """Bug 1 — the job must actually enumerate and process targets."""
+
+    async def test_job_processes_targets_and_reports_true_counts(self, client):
+        r = await client.post("/v1/admin/trust-quality/recalculate/all",
+                              json={"job_type": "health", "scope_type": "all"})
+        assert r.status_code == 200, r.text
+        job = r.json()["data"]
+
+        assert job["job_type"] == "health"
+        assert job["status"] in ("completed", "completed_with_errors")
+        # The no-op version always reported 0/0. A real run touches real targets.
+        assert job["total_count"] > 0, "recalculation job enumerated no targets"
+        assert job["processed_count"] == job["total_count"] - job["failed_count"]
+        assert job["failed_count"] == 0, job.get("error_summary")
+
+    async def test_job_shows_up_in_the_jobs_list(self, client):
+        await client.post("/v1/admin/trust-quality/recalculate/all",
+                          json={"job_type": "badges", "scope_type": "all"})
+        r = await client.get("/v1/admin/trust-quality/recalculation-jobs")
+        assert r.status_code == 200
+        d = r.json()["data"]
+        jobs = d.get("items", d)
+        assert any(j["job_type"] == "badges" and j["total_count"] > 0 for j in jobs)
+
+    async def test_rule_toggle_requires_a_reason(self, client):
+        r = await client.get("/v1/admin/trust-quality/badge-rules")
+        d = r.json()["data"]
+        rule = (d.get("items", d))[0]
+
+        # The admin UI must collect a reason -- an empty body is refused, and that
+        # is why the console prompts for one before it calls.
+        bad = await client.post(
+            f"/v1/admin/trust-quality/badge-rules/{rule['id']}/deactivate", json={})
+        assert bad.status_code == 422
+
+        good = await client.post(
+            f"/v1/admin/trust-quality/badge-rules/{rule['id']}/deactivate",
+            json={"reason": "L5 test"})
+        assert good.status_code == 200
+
+        await client.post(
+            f"/v1/admin/trust-quality/badge-rules/{rule['id']}/activate",
+            json={"reason": "L5 test restore"})
