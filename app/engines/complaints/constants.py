@@ -113,7 +113,12 @@ VALID_RECORD_TYPES = {
 # ── Eligible statuses per record type ─────────────────────────────────────────
 ELIGIBLE_STATUSES: dict[str, set[str]] = {
     RECORD_SERVICE_BOOKING:      {"completed","payment_collected","paid","cancelled","failed","quote_rejected"},
-    RECORD_SERVICE_JOB:          {"completed","work_done","cancelled"},
+    # MODULE-L5-02 bug #23 (same class as the review-eligibility fix): a
+    # completed job transitions to invoice_issued the moment it is billed, and to
+    # paid once settled. Excluding those states meant a customer could not file a
+    # complaint about a completed job that had gone through billing — the normal
+    # flow — so poor-quality billed work became uncontestable.
+    RECORD_SERVICE_JOB:          {"completed","work_done","cancelled","invoice_issued","paid"},
     RECORD_SERVICE_INVOICE:      {"issued","paid","overdue","cancelled"},
     RECORD_COACHING_APPOINTMENT: {"completed","no_show","cancelled"},
     RECORD_REAL_ESTATE_LEAD:     {"accepted","contacted","follow_up","site_visit_planned",

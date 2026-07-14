@@ -47,6 +47,27 @@ class ComplaintService:
         self._eligibility = ComplaintEligibilityService()
 
     # ── Create complaint ───────────────────────────────────────────────────────
+    async def _resolve_tenant_for_record(
+        self, db: AsyncSession, record_type: str, record_id: uuid.UUID
+    ) -> uuid.UUID | None:
+        """Resolve the owning tenant of the record a complaint is filed against,
+        so provider-scoped queries can see it (bug #25)."""
+        from app.engines.complaints.constants import (
+            RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB, RECORD_SERVICE_INVOICE,
+        )
+        table = {
+            RECORD_SERVICE_BOOKING: "service_bookings",
+            RECORD_SERVICE_JOB:     "service_jobs",
+            RECORD_SERVICE_INVOICE: "service_invoices",
+        }.get(record_type)
+        if not table:
+            return None
+        from sqlalchemy import text
+        row = await db.execute(
+            text(f"SELECT tenant_id FROM {table} WHERE id = :rid"), {"rid": str(record_id)}
+        )
+        return row.scalar_one_or_none()
+
     async def create_complaint(
         self,
         db: AsyncSession,
@@ -63,6 +84,15 @@ class ComplaintService:
         title: str | None = None,
         request_id: str = "—",
     ) -> CustomerComplaint:
+        # MODULE-L5-02 bug #25: the customer who files a complaint has no tenant
+        # (tenant_id is None on customer accounts), so the complaint was persisted
+        # with tenant_id = NULL. That made it invisible to the provider whose job
+        # it is about — provider_list_complaints filters by tenant_id and
+        # provider_get_complaint denies when it does not match — so the entire
+        # provider-side complaint flow was dead. Resolve the owning tenant from
+        # the linked record when the caller did not supply one.
+        if tenant_id is None:
+            tenant_id = await self._resolve_tenant_for_record(db, record_type, record_id)
         complaint = CustomerComplaint(
             customer_id          = customer_id,
             tenant_id            = tenant_id,

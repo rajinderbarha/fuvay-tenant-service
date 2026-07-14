@@ -3,9 +3,41 @@ ServiceOS — Global Exception Handlers
 All unhandled exceptions are converted to RFC 7807 Problem Details.
 No raw Python exceptions ever reach the client.
 """
+import re
 import traceback
 import uuid
 from typing import Any
+
+# A bare ValueError whose message is a domain error *code* — ALL_CAPS_SNAKE, no
+# spaces, e.g. "COMPLAINT_ACCESS_DENIED" — is the codebase's idiom for a domain
+# rejection raised from a service layer (raise ValueError(ERR_CONSTANT)). These
+# should surface as a 4xx to the client, not a 500. Genuine Python ValueErrors
+# ("invalid literal for int()", etc.) contain spaces/lowercase and fall through
+# to the 500 handler unchanged.
+_DOMAIN_CODE_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
+
+
+def _domain_code_status(code: str) -> int | None:
+    """Map a domain error code to a 4xx status, or None if it is not code-like.
+
+    Also accepts the `CODE: human detail` form some services raise
+    (e.g. "COMPLAINT_INVALID_STATUS_TRANSITION: open -> resolution_proposed") by
+    inspecting only the leading token before the first colon."""
+    if not code:
+        return None
+    head = code.split(":", 1)[0].strip()
+    if len(head) > 80 or not _DOMAIN_CODE_RE.match(head):
+        return None
+    code = head
+    if "NOT_FOUND" in code or code.endswith("_MISSING"):
+        return 404
+    if "ACCESS_DENIED" in code or "DENIED" in code or "FORBIDDEN" in code or "NOT_ALLOWED" in code:
+        return 403
+    if "UNAUTHORIZED" in code:
+        return 401
+    if "CONFLICT" in code or "ALREADY" in code or "DUPLICATE" in code:
+        return 409
+    return 422
 
 import structlog
 from fastapi import FastAPI, Request, status
@@ -172,6 +204,34 @@ def register_exception_handlers(app: FastAPI) -> None:
             errors=errors,
         )
         logger.info("validation.error", path=request.url.path, error_count=len(errors))
+        return _problem_response(problem)
+
+    @app.exception_handler(ValueError)
+    async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
+        # MODULE-L5-02 bug #24: service layers across the app raise bare
+        # ValueError(ERR_CODE) for domain rejections (not found / access denied /
+        # already-exists / invalid state). Handlers that forgot to catch them let
+        # them hit the catch-all below as 500s — a recurring class of false
+        # "Internal Server Error"s on legitimate 4xx conditions (complaints,
+        # invoices, reviews, ...). Map code-like ValueErrors to the right 4xx;
+        # anything that is not a domain code still falls through to a 500.
+        raw = str(exc)
+        st = _domain_code_status(raw)
+        if st is None:
+            return await unhandled_exception_handler(request, exc)
+        # Use only the clean leading code token as the client-facing error_code
+        # (the full message may carry a human detail after a colon, including
+        # non-ASCII like "->" that must not leak into the code/detail fields).
+        code = raw.split(":", 1)[0].strip()
+        detail = raw.split(":", 1)[1].strip() if ":" in raw else code.replace("_", " ").title()
+        problem = make_problem(
+            error_code=code,
+            detail=detail,
+            instance=str(request.url.path),
+            request_id=_get_request_id(request),
+        )
+        problem.status = st
+        logger.info("domain.value_error", error_code=code, status=st, path=request.url.path)
         return _problem_response(problem)
 
     @app.exception_handler(Exception)
