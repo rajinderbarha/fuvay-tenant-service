@@ -212,11 +212,18 @@ class ServicePaymentService:
     async def get_payment_timeline(
         self, db: AsyncSession, invoice_id: str, tenant_id: str | None = None,
     ) -> list[dict]:
-        res = await db.execute(
-            select(ServicePaymentRecord)
-            .where(ServicePaymentRecord.invoice_id == uuid.UUID(invoice_id))
-            .order_by(ServicePaymentRecord.created_at.desc())
-        )
+        # MODULE-L5-10: tenant_id was accepted and then IGNORED, so the provider
+        # financial-timeline endpoint (which passes user.tenant_id) leaked every
+        # other tenant's payment records — amounts, modes, timestamps — for any
+        # invoice_id an attacker enumerated: a cross-tenant IDOR. Enforce the
+        # tenant scope when a tenant_id is supplied. (The customer path passes
+        # None and gates ownership in its router — see bug #22.)
+        q = (select(ServicePaymentRecord)
+             .where(ServicePaymentRecord.invoice_id == uuid.UUID(invoice_id)))
+        if tenant_id is not None:
+            q = q.where(ServicePaymentRecord.tenant_id == uuid.UUID(str(tenant_id)))
+        q = q.order_by(ServicePaymentRecord.created_at.desc())
+        res = await db.execute(q)
         return [p.to_dict() for p in res.scalars().all()]
 
     async def list_tenant_payments(self, db: AsyncSession, tenant_id: str) -> list[dict]:
