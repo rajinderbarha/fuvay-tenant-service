@@ -40,7 +40,40 @@ VALID_JOB_TYPES    = {
     "repair", "installation", "uninstallation", "inspection",
     "maintenance", "cleaning", "consultation", "service", "custom",
 }
-VALID_PRICING_MODELS = {"fixed", "range", "post_assessment", "hourly"}
+# MODULE-L5-03: canonical pricing-model registry — the single source of truth
+# for the models the backend validates (_validate_pricing_config) AND for what
+# clients should render. Exposed via GET /v1/admin/pricing-models so frontend/
+# mobile dropdowns load from the API instead of hardcoding a list that can drift.
+# VALID_PRICING_MODELS is derived from this so the two cannot disagree; the
+# pricing_model_registry_guard fails closed if the endpoint stops matching it or
+# if _validate_pricing_config gains/loses a model.
+PRICING_MODEL_REGISTRY = {
+    "fixed": {
+        "label": "Fixed Price",
+        "description": "A single fixed amount for the service.",
+        "required_fields": ["base_price"],
+        "optional_fields": ["visit_fee"],
+    },
+    "range": {
+        "label": "Price Range (Min/Max)",
+        "description": "A minimum and maximum price; final price set later.",
+        "required_fields": ["min_price", "max_price"],
+        "optional_fields": ["default_estimate"],
+    },
+    "post_assessment": {
+        "label": "Quote After Assessment",
+        "description": "A visit/diagnostic fee; final price quoted after inspection.",
+        "required_fields": ["visit_fee", "customer_note"],
+        "optional_fields": ["assessment_label"],
+    },
+    "hourly": {
+        "label": "Hourly Rate",
+        "description": "Billed per hour with a minimum billable time.",
+        "required_fields": ["hourly_rate", "minimum_billable_hours"],
+        "optional_fields": ["visit_fee"],
+    },
+}
+VALID_PRICING_MODELS = set(PRICING_MODEL_REGISTRY)
 VALID_TIER_TYPES   = {"metro", "large_city", "mid_city", "small_city", "rural", "premium_zone"}
 
 # Sprint 38 — universal category constants

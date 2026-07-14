@@ -36,6 +36,23 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 
 
 # ═══════════════════════════════════════════════════════════════
+# PRICING MODEL REGISTRY (canonical, data-driven dropdown source)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/pricing-models", response_model=ApiResponse[dict],
+            summary="List canonical pricing models + their field requirements",
+            tags=["Pricing Models"])
+async def list_pricing_models(r: Request, u: UserContext = Depends(get_current_user)):
+    """MODULE-L5-03: single source of truth for pricing models. Frontend/mobile
+    pricing dropdowns should load from here instead of hardcoding a list. Any
+    authenticated user (Super Admin catalog forms + tenant portal) may read this
+    non-sensitive static metadata."""
+    from app.engines.admin_catalog.service import PRICING_MODEL_REGISTRY
+    models = [{"code": code, **meta} for code, meta in PRICING_MODEL_REGISTRY.items()]
+    return ok({"pricing_models": models, "count": len(models)}, _rid(r), ENGINE_ID)
+
+
+# ═══════════════════════════════════════════════════════════════
 # PRICING TIERS
 # ═══════════════════════════════════════════════════════════════
 

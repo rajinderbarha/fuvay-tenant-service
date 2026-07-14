@@ -96,13 +96,41 @@ is now confined. Verified: 3 new tests (`test_technician_confined_to_own_tenant`
 `test_tenant_owner_still_confined`, `test_platform_role_crosses_tenants`) + 1175 catalog/pricing
 tests pass.
 
+## 5c. Third slice — data-drive the pricing-model dropdown (single source of truth)
+
+The mission requires pricing models to load "from the canonical API or registry" and that
+"hardcoded client options must be removed." Previously `VALID_PRICING_MODELS` was a bare set in
+`service.py` with no API exposure, so the ~7 Super-Admin frontend pages had to hardcode the list
+(backend/frontend drift risk).
+
+**Delivered:**
+- `PRICING_MODEL_REGISTRY` in `admin_catalog/service.py` — the canonical source describing each
+  model (`fixed`, `range`, `post_assessment`, `hourly`) with `label`, `description`,
+  `required_fields`, `optional_fields`, derived to match `_validate_pricing_config`.
+  `VALID_PRICING_MODELS = set(PRICING_MODEL_REGISTRY)` — the two **cannot drift**.
+- `GET /v1/admin/pricing-models` (any authenticated user, incl. tenant portal) serving the
+  registry so clients load models from the API instead of hardcoding.
+- `e2e/pricing_model_registry_guard.py` (fail-closed): asserts `VALID_PRICING_MODELS` == registry,
+  every model has label + required_fields, `_validate_pricing_config` branches on exactly the
+  registry's models, and the endpoint exists.
+
+**Verified (genuine in-process HTTP):** 6 new tests incl. `test_pricing_models_endpoint_serves_registry`
+(200 + all 4 models with field metadata), tenant-owner access, and auth-required (401). The
+existing 25 `test_dynamic_pricing_form` assertions still pass (no drift from deriving
+`VALID_PRICING_MODELS`). Registry guard passes. (Frontend migration to *consume* the new endpoint
+is a follow-up; the canonical API source now exists.)
+
 ## 6. Files Changed
 
 - `app/engines/admin_catalog/tenant_service.py` — shared floor/ceiling/negative validator;
   fixed create-path truthiness gate; added validation to the previously-unvalidated update path;
   hardened `_assert_tenant_owns_ts` to confine all tenant-scoped roles (not a fragile allowlist).
-- `e2e/pricing_floor_guard.py` — new fail-closed guard.
-- `tests/test_module_l5_03_pricing_floor.py` — new tests (9: 6 floor + 3 isolation).
+- `app/engines/admin_catalog/service.py` — `PRICING_MODEL_REGISTRY` single source of truth;
+  `VALID_PRICING_MODELS` derived from it.
+- `app/engines/admin_catalog/admin_router.py` — `GET /v1/admin/pricing-models` registry endpoint.
+- `e2e/pricing_floor_guard.py`, `e2e/pricing_model_registry_guard.py` — new fail-closed guards.
+- `tests/test_module_l5_03_pricing_floor.py` (9), `tests/test_module_l5_03_pricing_models.py` (6)
+  — new tests.
 - `docs/module-l5/MODULE_L5_03_PRICING_DEEPDIVE_REPORT.md` — this report.
 
 ## 7. Honest Status
