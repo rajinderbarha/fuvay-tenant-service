@@ -72,6 +72,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _complaint_sla_task = asyncio.create_task(_complaint_sla_loop())
     logger.info("complaint_sla_loop.started")
 
+    # 8. Notification dispatch/retry loop (MODULE-L5-11) — the notification
+    # outbox worker was CLI-only, so a transiently-failed (PENDING) notification
+    # was never retried without external cron. Runs the same dispatch/retry the
+    # docstring intends every minute.
+    from app.jobs.notifications import background_loop as _notif_loop
+    _notif_task = asyncio.create_task(_notif_loop())
+    logger.info("notifications_loop.started")
+
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
@@ -89,6 +97,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         pass
     try:
         await _complaint_sla_task
+    except asyncio.CancelledError:
+        pass
+    _notif_task.cancel()
+    try:
+        await _notif_task
     except asyncio.CancelledError:
         pass
     await close_redis()

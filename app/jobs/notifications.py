@@ -82,6 +82,37 @@ async def run_all() -> None:
     log.info("jobs.notifications.done")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# BACKGROUND LOOP
+# ─────────────────────────────────────────────────────────────────────────────
+
+LOOP_INTERVAL_SECONDS = 60  # docstring: "dispatch: every 1 minute"
+
+
+async def background_loop(interval: int = LOOP_INTERVAL_SECONDS) -> None:
+    """MODULE-L5-11: notification delivery is inline on create, so this loop is
+    the retry/catch-up net — it re-dispatches records left PENDING by a transient
+    inline-delivery failure and re-queues FAILED ones within the retry limit.
+    Nothing ran it: unlike the compliance-SLA, complaint-SLA and export-worker
+    loops (all started in the app lifespan), the notification dispatcher was
+    CLI-only, so in any deployment without an external per-minute cron a
+    transiently-failed notification stayed PENDING forever and was never retried.
+    Started as an asyncio task in app/main.py lifespan."""
+    log.info("jobs.notifications.loop_started", interval_seconds=interval)
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            d = await dispatch_pending()
+            f = await retry_failed()
+            log.info("jobs.notifications.loop_tick",
+                     dispatched=d.get("processed"), retried=f.get("requeued"))
+        except asyncio.CancelledError:
+            log.info("jobs.notifications.loop_cancelled")
+            raise
+        except Exception as exc:  # never crash the loop on a transient error
+            log.error("jobs.notifications.loop_error", error=str(exc))
+
+
 if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else "all"
     jobs = {
