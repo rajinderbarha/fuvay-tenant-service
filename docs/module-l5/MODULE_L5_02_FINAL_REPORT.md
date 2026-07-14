@@ -167,10 +167,30 @@ Minor cosmetic follow-up: the approve-gate 422 is wrapped with a generic "Intern
 title instead of surfacing the helpful "Profile completion is X%" detail — status code is
 correct (422); UX-only.
 
-**Remaining for a genuine Module 02 L5 stamp:** the customer-facing public-profile privacy
-(pending/suspended tenants hidden), reconciling the 3 unbacked onboarding/package tables against
-a canonical source, and the tenant-portal onboarding *wizard* end-to-end — real, scoped work,
-not yet certified.
+## 6e. Public visibility / suspension exclusion (added this session)
+
+ServiceOS has **no public tenant-directory endpoint** (the only `/v1/public/*` routes are
+location lookups) — tenants surface to customers via **serviceability matching**, not a public
+profile browse. So the relevant "public visibility" invariant is: does matching exclude
+non-active tenants? **Verified (source):** `serviceability/service.py::match_tenants_for_location`
+builds `base_where = [Tenant.status == "active", TenantServiceArea.is_active.is_(True), …]` — so
+**suspended, rejected, and pending tenants are excluded from customer matching**. Combined with
+the live proof that suspend sets `status=suspended` (§6b), the invariant "an unapproved/suspended
+tenant must not be publicly bookable" is enforced. (A live match-exclusion probe would add
+runtime rigor — a small remaining nicety.)
+
+## 7-summary. Module 02 — what's genuinely proven vs. remaining
+
+**Proven this session (real evidence):** canonical lifecycle + state machine (registry fixed);
+tenant isolation (proven + guarded); 3 apps typecheck clean, zero stubs; ~48 admin + tenant-portal
+endpoints contract-verified live; **6 real 500 bugs fixed**; full lifecycle runtime-proven
+(request-changes / approve+gate / reject / suspend / reinstate); suspension excludes tenants from
+matching.
+
+**Remaining for a truthful `PROVEN_LEVEL_5`:** reconcile the 3 unbacked onboarding/package tables
+against a canonical source (or formally retire the endpoints); tenant-portal onboarding *wizard*
+end-to-end; live public-visibility exclusion probe; customer-app tenant-facing flows. Real,
+scoped work — **not yet certified**, but Module 02 is materially closer with real defects removed.
 
 ## 7. Honest Recommendation
 
