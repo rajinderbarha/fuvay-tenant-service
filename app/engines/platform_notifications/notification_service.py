@@ -154,6 +154,15 @@ class NotificationService:
                 await self._dispatch_outbox(db, outbox, None, None)
                 processed += 1
             except Exception as exc:
+                # MODULE-L5-11: a raised delivery error (gateway down, network
+                # error) used to be logged while the record stayed PENDING — so it
+                # was re-dispatched every loop tick FOREVER with no cap, because
+                # the max_retries limit only governs records in the FAILED state
+                # (via retry_failed). Mark it FAILED here so it enters the normal
+                # capped retry cycle instead of looping unbounded.
+                outbox.delivery_status = DELIVERY_FAILED
+                outbox.failure_code = "DISPATCH_EXCEPTION"
+                outbox.failure_message = str(exc)[:2000]
                 log.warning("dispatch.failed", outbox_id=str(outbox.id), error=str(exc))
                 failed += 1
         await db.commit()
