@@ -223,11 +223,34 @@ This completes the **3-app frontend contract verification** for Module 02: super
 endpoints, 2 bugs fixed), tenant-portal (~25 endpoints, 4 bugs fixed), customer-app (~15
 endpoints + booking-draft flow, 0 bugs). All three typecheck clean with zero stubs.
 
-**Remaining for a truthful `PROVEN_LEVEL_5`:** the onboarding-checklist shape reconciliation;
-the tenant-portal onboarding *wizard* multi-step flow end-to-end; the full customer booking
-journey end-to-end (create→serviceability→price→match→confirm as one transaction); and a live
-public-visibility exclusion probe. Real, scoped work — **not yet certified**, but Module 02's
-core is now broadly verified and free of the defects found.
+## 6h. Customer booking journey end-to-end — live proof + 2 fixes (added this session)
+
+Walked the full customer booking journey live (create → update → serviceability → price →
+match → summary → cancel) against current code. Found and fixed **2 real 500s** in the core
+flow:
+
+1. **Draft update (`PUT …/booking-drafts/{id}`) → 500:** `update_draft_fields` stored
+   `preferred_date` (a client string `"2026-08-01"`) directly into a DATE column → asyncpg
+   `DataError: 'str' object has no attribute 'toordinal'`. Fixed: parse ISO date strings to a
+   `date` before persisting.
+2. **`…/match-and-price` → 500:** the matching engine did `city.strip()` on a `None` city
+   (draft with no address) → `AttributeError`. Fixed: a clean `HOME_BOOKING_ADDRESS_REQUIRED`
+   422 in the service layer + a defensive `(city or "").strip()` in `matching_engine.py`.
+
+After the fixes, every journey step returns a proper code (**no 500s**): PUT 200, serviceability
+200 (`serviceable:false` — legit for the demo data), match-and-price 422 `NO_PROVIDER` (legit —
+no bookable provider seeded for this exact service/location), summary 200, cancel 200. The
+booking journey is now **wired end-to-end without crashes**; a fully-serviceable match would
+need demo data (a provider enabled for the exact service+area), a data-setup item, not a code
+bug. 3 tests pin the fixes.
+
+**Session tally of real bugs fixed toward Module 02 L5: 8** (2 admin + 4 tenant-portal + 2
+customer booking-journey), plus the packages-endpoint canonical rewire.
+
+**Remaining for a truthful `PROVEN_LEVEL_5`:** onboarding-checklist shape reconciliation; the
+tenant-portal onboarding *wizard* multi-step flow; a fully-serviceable end-to-end booking
+confirmation (needs demo data); and a live public-visibility exclusion probe. Real, scoped work
+— **not yet certified**, but Module 02's core flows are now broadly verified and crash-free.
 
 ## 7. Honest Recommendation
 

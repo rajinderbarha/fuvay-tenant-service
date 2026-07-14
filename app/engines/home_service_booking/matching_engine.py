@@ -297,7 +297,9 @@ async def select_best_provider(
     from app.engines.tenant_engine.models import Tenant
     from app.engines.serviceability.models import TenantServiceArea
 
-    norm_city = city.strip().lower()
+    # MODULE-L5-02: defensive — city can be None if the draft has no address yet;
+    # never AttributeError here (the service layer also validates upstream).
+    norm_city = (city or "").strip().lower()
     strip_zip = zipcode.strip() if zipcode else None
 
     # Base candidate pool: active, home_services, not suspended, matching category.

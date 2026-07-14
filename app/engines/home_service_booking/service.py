@@ -198,7 +198,18 @@ class HomeServiceChatbotBookingService:
 
         for field in updatable:
             if field in payload and payload[field] is not None:
-                setattr(draft, field, payload[field])
+                val = payload[field]
+                # MODULE-L5-02: preferred_date is a DATE column; a raw string
+                # ("2026-08-01") from the client crashed the UPDATE with an
+                # asyncpg DataError ('str' has no attribute 'toordinal'). Parse
+                # ISO date strings to a date object before persisting.
+                if field == "preferred_date" and isinstance(val, str):
+                    from datetime import date, datetime as _dt
+                    try:
+                        val = date.fromisoformat(val)
+                    except ValueError:
+                        val = _dt.fromisoformat(val).date()
+                setattr(draft, field, val)
                 changes[field] = payload[field]
 
         for field in uuid_fields:
@@ -551,6 +562,16 @@ class HomeServiceChatbotBookingService:
 
         category = await self.db.get(ServiceCategory, category_id)
         assert_home_services_vertical(category.vertical_type if category else None)
+
+        # MODULE-L5-02: require a city before matching (a draft with no address
+        # previously reached the matching engine and crashed with a NoneType
+        # .strip() 500). Return the same clean error as serviceability-check.
+        if not city:
+            raise ServiceOSException(
+                "HOME_BOOKING_ADDRESS_REQUIRED",
+                "Please set your service address (city) before matching a provider.",
+                status_code=422,
+            )
 
         match = await select_best_provider(
             self.db, category_id=category_id, offering_id=master_service_id,
