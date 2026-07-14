@@ -64,18 +64,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _export_worker_task = asyncio.create_task(_export_worker_loop())
     logger.info("export_worker_loop.started")
 
+    # 7. Complaint SLA background loop (MODULE-L5-02 bug #32) — nothing ever
+    # evaluated the complaint SLA deadlines, so sla_status stayed 'on_time'
+    # forever and no escalation fired. This drives check_and_update_sla and the
+    # admin escalation of complaints the provider never answered.
+    from app.jobs.complaint_sla import background_loop as _complaint_sla_loop
+    _complaint_sla_task = asyncio.create_task(_complaint_sla_loop())
+    logger.info("complaint_sla_loop.started")
+
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
     logger.info("serviceos.shutting_down")
     _sla_task.cancel()
     _export_worker_task.cancel()
+    _complaint_sla_task.cancel()
     try:
         await _sla_task
     except asyncio.CancelledError:
         pass
     try:
         await _export_worker_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await _complaint_sla_task
     except asyncio.CancelledError:
         pass
     await close_redis()
