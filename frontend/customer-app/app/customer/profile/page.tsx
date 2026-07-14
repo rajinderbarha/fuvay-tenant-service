@@ -25,6 +25,13 @@ export default function ProfilePage() {
           <span style={{ fontWeight: 600 }}>Notifications</span>
           <span style={{ color: "var(--text-tertiary)" }}>›</span>
         </Link>
+        <Link href="/customer/chat"
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                   padding: "14px 16px", textDecoration: "none", color: "inherit",
+                   borderBottom: "1px solid #f0f0f0" }}>
+          <span style={{ fontWeight: 600 }}>Messages</span>
+          <span style={{ color: "var(--text-tertiary)" }}>›</span>
+        </Link>
         <Link href="/customer/reviews"
           style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
                    padding: "14px 16px", textDecoration: "none", color: "inherit",

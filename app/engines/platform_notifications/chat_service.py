@@ -68,6 +68,72 @@ class ChatThreadService:
             tenant_id=tenant_id, customer_id=customer_id,
         )
 
+    async def _resolve_record_parties(
+        self, db: AsyncSession, record_type: str, record_id: uuid.UUID,
+    ) -> tuple[uuid.UUID | None, uuid.UUID | None]:
+        """The (tenant_id, customer_id) that own a linked record.
+
+        A customer opening a thread only knows its own id — the provider side is
+        implied by the booking/job/complaint. Without resolving it the thread is
+        created with tenant_id=NULL and the provider, who lists threads by their
+        tenant, never sees the customer's messages. So chat is only two-sided if
+        the tenant is filled in here.
+        """
+        try:
+            if record_type in ("service_booking", "service_job"):
+                from app.engines.final_records.models import ServiceBooking, ServiceJob
+                if record_type == "service_job":
+                    job = await db.get(ServiceJob, record_id)
+                    if job is None:
+                        return (None, None)
+                    booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
+                else:
+                    booking = await db.get(ServiceBooking, record_id)
+                if booking is not None:
+                    return (booking.tenant_id, booking.customer_id)
+            elif record_type == "complaint":
+                from app.engines.complaints.models import CustomerComplaint
+                comp = await db.get(CustomerComplaint, record_id)
+                if comp is not None:
+                    return (comp.tenant_id, comp.customer_id)
+        except Exception:
+            # Resolution is best-effort; never block thread creation on it.
+            return (None, None)
+        return (None, None)
+
+    async def _provider_participants(
+        self, db: AsyncSession, tenant_id: uuid.UUID, record_type: str, record_id: uuid.UUID,
+    ) -> list[dict]:
+        """The provider-side users who should be in a thread: the tenant owner,
+        plus the staff member assigned to the record (if any). Without these the
+        provider cannot see or open the customer's thread."""
+        parts: list[dict] = []
+        try:
+            from app.engines.tenant_engine.models import Tenant
+            tenant = await db.get(Tenant, tenant_id)
+            owner_id = getattr(tenant, "owner_user_id", None) if tenant else None
+            if owner_id:
+                parts.append({"user_id": owner_id, "participant_type": RECIP_PROVIDER,
+                              "tenant_id": tenant_id})
+
+            staff_id = None
+            if record_type in ("service_booking", "service_job"):
+                from app.engines.final_records.models import ServiceBooking, ServiceJob
+                if record_type == "service_job":
+                    job = await db.get(ServiceJob, record_id)
+                else:
+                    booking = await db.get(ServiceBooking, record_id)
+                    job = (await db.execute(
+                        select(ServiceJob).where(ServiceJob.booking_id == record_id))
+                    ).scalars().first() if booking else None
+                staff_id = getattr(job, "assigned_staff_id", None) if job else None
+            if staff_id and str(staff_id) != str(owner_id):
+                parts.append({"user_id": staff_id, "participant_type": RECIP_STAFF,
+                              "tenant_id": tenant_id})
+        except Exception:
+            return parts
+        return parts
+
     async def create_thread(
         self,
         db: AsyncSession,
@@ -79,6 +145,24 @@ class ChatThreadService:
         customer_id: uuid.UUID | None = None,
         initial_participants: list[dict] | None = None,
     ) -> ChatThread:
+        # Fill in whichever party the caller didn't supply from the linked record,
+        # so a customer-created thread still knows its provider (and vice versa).
+        if tenant_id is None or customer_id is None:
+            rec_tenant, rec_customer = await self._resolve_record_parties(db, record_type, record_id)
+            tenant_id = tenant_id or rec_tenant
+            customer_id = customer_id or rec_customer
+
+        # Seed the OTHER side as participants. Threads are participant-gated for
+        # both listing and access, so a customer-created thread is invisible to
+        # the provider unless the provider side is added here. Add the tenant
+        # owner (and the assigned staff, if any) as provider-side participants.
+        if tenant_id is not None:
+            provider_parts = await self._provider_participants(db, tenant_id, record_type, record_id)
+            existing_ids = {str(p.get("user_id")) for p in (initial_participants or [])}
+            initial_participants = (initial_participants or []) + [
+                p for p in provider_parts if str(p["user_id"]) not in existing_ids
+                and str(p["user_id"]) != str(actor_user_id)
+            ]
         thread = ChatThread(
             thread_number=_gen_thread_number(),
             tenant_id=tenant_id,
@@ -114,21 +198,24 @@ class ChatThreadService:
         limit: int = 30,
         offset: int = 0,
     ) -> dict:
-        # Find thread IDs where user is participant
-        part_q = select(ChatThreadParticipant.thread_id).where(
-            ChatThreadParticipant.user_id == actor_user_id,
-            ChatThreadParticipant.left_at == None,
-        )
-        part_r = await db.execute(part_q)
-        thread_ids = [row[0] for row in part_r.all()]
-
-        q = select(ChatThread).where(ChatThread.id.in_(thread_ids))
+        # A provider/staff user sees every thread for THEIR TENANT — not only the
+        # threads they were individually added to. The provider handling chat is
+        # rarely the exact user a customer-opened thread happened to seed, so
+        # participant-only scoping made customer threads invisible to the rest of
+        # the provider's team. The customer side stays scoped to its own threads.
+        if actor_type in (RECIP_PROVIDER, RECIP_STAFF) and tenant_id:
+            q = select(ChatThread).where(ChatThread.tenant_id == tenant_id)
+        else:
+            part_q = select(ChatThreadParticipant.thread_id).where(
+                ChatThreadParticipant.user_id == actor_user_id,
+                ChatThreadParticipant.left_at == None,
+            )
+            thread_ids = [row[0] for row in (await db.execute(part_q)).all()]
+            q = select(ChatThread).where(ChatThread.id.in_(thread_ids))
+            if actor_type == RECIP_CUSTOMER:
+                q = q.where(ChatThread.customer_id == actor_user_id)
         if status:
             q = q.where(ChatThread.status == status)
-        if actor_type in (RECIP_PROVIDER, RECIP_STAFF) and tenant_id:
-            q = q.where(ChatThread.tenant_id == tenant_id)
-        elif actor_type == RECIP_CUSTOMER:
-            q = q.where(ChatThread.customer_id == actor_user_id)
 
         total_r = await db.execute(select(func.count()).select_from(q.subquery()))
         total = total_r.scalar_one()
@@ -178,19 +265,25 @@ class ChatThreadService:
         if actor_type == RECIP_ADMIN:
             return  # Admin can access all threads
         if actor_type == RECIP_CUSTOMER:
+            # A customer may only touch its own thread — ownership IS the gate.
             if str(thread.customer_id) != str(actor_user_id):
                 raise ValueError(ERR_CHAT_THREAD_ACCESS_DENIED)
-        elif actor_type in (RECIP_PROVIDER, RECIP_STAFF):
-            if tenant_id and thread.tenant_id and str(thread.tenant_id) != str(tenant_id):
-                raise ValueError(ERR_CHAT_THREAD_ACCESS_DENIED)
-        # Verify participant record
+            return
+        if actor_type in (RECIP_PROVIDER, RECIP_STAFF):
+            # Tenant match is the gate for the provider side: any authorized user
+            # of the owning tenant may handle its customer threads (not only the
+            # one who happens to be a participant row).
+            if thread.tenant_id and tenant_id and str(thread.tenant_id) == str(tenant_id):
+                return
+            raise ValueError(ERR_CHAT_THREAD_ACCESS_DENIED)
+        # Anyone else must be a participant.
         r = await db.execute(
             select(ChatThreadParticipant).where(
                 ChatThreadParticipant.thread_id == thread.id,
                 ChatThreadParticipant.user_id == actor_user_id,
             )
         )
-        if not r.scalars().first() and actor_type != RECIP_ADMIN:
+        if not r.scalars().first():
             raise ValueError(ERR_CHAT_THREAD_ACCESS_DENIED)
 
     async def add_participant(

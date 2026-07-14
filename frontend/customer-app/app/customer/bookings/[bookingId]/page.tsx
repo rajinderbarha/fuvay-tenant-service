@@ -34,6 +34,17 @@ export default function BookingDetailPage() {
           {detail.selected_price_amount && <div><strong>Price:</strong> ₹{detail.selected_price_amount} ({detail.selected_price_option})</div>}
           <div><strong>Payment:</strong> Customer Pays Provider Directly</div>
           {detail.address && <div><strong>Address:</strong> {detail.address.address_line1}, {detail.city}</div>}
+          {/* MODULE-L5-14: message the provider about this booking. The customer
+              had no chat surface at all though customer_chat_router exists. */}
+          {detail.status !== "cancelled" && (
+            <Link
+              href={`/customer/chat?record_type=service_booking&record_id=${bookingId}`}
+              className="co-btn-secondary"
+              style={{ textAlign: "center" }}
+            >
+              Message Provider
+            </Link>
+          )}
           {detail.status === "completed" && (
             <Link href={`/customer/bookings/${bookingId}/rate`} className="co-btn-primary" style={{ textAlign: "center" }}>Rate Your Experience</Link>
           )}
