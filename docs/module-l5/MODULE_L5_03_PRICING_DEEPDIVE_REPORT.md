@@ -74,12 +74,35 @@ Wired into **both** mutation paths:
   effective_to date windows and reads min_price/bargain_floor from the matched rule. Sound at a
   glance; full precedence certification not performed here.
 
+## 5b. Second finding — cross-tenant catalog isolation (defense-in-depth hardening)
+
+Audited the tenant catalog IDOR surface: all 12 `/{tenant_service_id}` endpoints in
+`admin_catalog/tenant_router.py` correctly call `_load_tenant_service` + `_assert_tenant_owns_ts`
+(no missing-check IDOR). **However**, `_assert_tenant_owns_ts` enforced ownership only for an
+allowlist — `if self.actor_role in ("tenant_owner", "staff") and self.actor_tenant_id`. This
+**fails open** for any other tenant-scoped role: a `technician` (or a future tenant role) would
+skip the `ts.tenant_id == actor_tenant_id` check entirely.
+
+**Current exploitability: none** — `technician`/`staff` hold only `tenant_service_area:read`,
+not `tenant:read`/`tenant:update`, so they cannot presently reach these endpoints (the
+permission layer is the effective boundary and holds). This is therefore a **defense-in-depth /
+future-proofing** hardening, not an active vulnerability — reported honestly as such.
+
+**Fix:** enforce ownership for **every** tenant-scoped actor —
+`if self.actor_tenant_id and self.actor_role not in PLATFORM_ROLES`. Platform roles
+(`super_admin`, `admin_*`) carry `tenant_id=None` (01D-R canonical model) and correctly remain
+cross-tenant. `tenant_owner`/`staff` behavior is unchanged; `technician`/any future tenant role
+is now confined. Verified: 3 new tests (`test_technician_confined_to_own_tenant`,
+`test_tenant_owner_still_confined`, `test_platform_role_crosses_tenants`) + 1175 catalog/pricing
+tests pass.
+
 ## 6. Files Changed
 
 - `app/engines/admin_catalog/tenant_service.py` — shared floor/ceiling/negative validator;
-  fixed create-path truthiness gate; added validation to the previously-unvalidated update path.
+  fixed create-path truthiness gate; added validation to the previously-unvalidated update path;
+  hardened `_assert_tenant_owns_ts` to confine all tenant-scoped roles (not a fragile allowlist).
 - `e2e/pricing_floor_guard.py` — new fail-closed guard.
-- `tests/test_module_l5_03_pricing_floor.py` — new tests (6).
+- `tests/test_module_l5_03_pricing_floor.py` — new tests (9: 6 floor + 3 isolation).
 - `docs/module-l5/MODULE_L5_03_PRICING_DEEPDIVE_REPORT.md` — this report.
 
 ## 7. Honest Status

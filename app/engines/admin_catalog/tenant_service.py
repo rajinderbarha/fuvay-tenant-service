@@ -731,8 +731,17 @@ class TenantCatalogService:
             raise NotFoundException("TenantService", str(tenant_service_id))
         return ts
 
+    # Platform roles carry no tenant_id (super_admin / admin_* have tenant_id=None
+    # per the 01D-R canonical model) and legitimately operate cross-tenant.
+    PLATFORM_ROLES = ("super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly")
+
     def _assert_tenant_owns_ts(self, ts: TenantService) -> None:
-        if self.actor_role in ("tenant_owner", "staff") and self.actor_tenant_id:
+        # MODULE-L5-03 hardening: enforce for EVERY tenant-scoped actor, not a
+        # fragile allowlist. The old check only covered ("tenant_owner","staff"),
+        # so any other tenant role (e.g. technician, or a future tenant role)
+        # would bypass the ownership check and fail open. Platform roles have
+        # actor_tenant_id=None and are correctly skipped.
+        if self.actor_tenant_id and self.actor_role not in self.PLATFORM_ROLES:
             if ts.tenant_id != self.actor_tenant_id:
                 raise NotFoundException("TenantService", str(ts.id))
 

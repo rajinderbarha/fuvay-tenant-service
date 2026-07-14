@@ -56,3 +56,41 @@ def test_valid_at_or_above_floor_passes():
 
 def test_guard_passes_on_real_repo():
     assert guard.check() == []
+
+
+# ── Cross-tenant catalog isolation hardening (_assert_tenant_owns_ts) ──────────
+
+import uuid as _uuid
+from app.exceptions import NotFoundException
+
+
+def _svc_with_actor(role, tenant_id):
+    inst = TenantCatalogService.__new__(TenantCatalogService)
+    inst.actor_role = role
+    inst.actor_tenant_id = tenant_id
+    return inst
+
+
+def _ts(tenant_id):
+    return SimpleNamespace(id=_uuid.uuid4(), tenant_id=tenant_id)
+
+
+def test_technician_confined_to_own_tenant():
+    """Regression: technician was NOT in the old ('tenant_owner','staff')
+    allowlist, so the ownership check failed open for it."""
+    a, b = _uuid.uuid4(), _uuid.uuid4()
+    svc = _svc_with_actor("technician", a)
+    with pytest.raises(NotFoundException):
+        svc._assert_tenant_owns_ts(_ts(b))          # other tenant -> denied
+    svc._assert_tenant_owns_ts(_ts(a))              # own tenant -> allowed
+
+
+def test_tenant_owner_still_confined():
+    a, b = _uuid.uuid4(), _uuid.uuid4()
+    with pytest.raises(NotFoundException):
+        _svc_with_actor("tenant_owner", a)._assert_tenant_owns_ts(_ts(b))
+
+
+def test_platform_role_crosses_tenants():
+    # super_admin has tenant_id=None -> not confined.
+    _svc_with_actor("super_admin", None)._assert_tenant_owns_ts(_ts(_uuid.uuid4()))
