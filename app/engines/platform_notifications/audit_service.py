@@ -166,11 +166,20 @@ class PlatformAuditLogService:
         for k, v in payload.items():
             if k.lower() in SENSITIVE_FIELDS or any(s in k.lower() for s in SENSITIVE_FIELDS):
                 result[k] = "[REDACTED]"
-            elif isinstance(v, dict):
-                result[k] = self.redact_sensitive_fields(v)
             else:
-                result[k] = v
+                # MODULE-L5-11: recurse into lists too, not just dicts. Previously
+                # a secret inside a list (e.g. {"users": [{"password": "x"}]}) was
+                # stored RAW in the audit log — a data leak, since audit payloads
+                # routinely carry arrays of records (bulk ops, multi-item events).
+                result[k] = self._redact_value(v)
         return result
+
+    def _redact_value(self, v):
+        if isinstance(v, dict):
+            return self.redact_sensitive_fields(v)
+        if isinstance(v, list):
+            return [self._redact_value(item) for item in v]
+        return v
 
     def _to_dict(self, audit: PlatformAuditLog) -> dict:
         return {
