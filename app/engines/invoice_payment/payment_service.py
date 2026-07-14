@@ -11,6 +11,7 @@ from app.engines.invoice_payment.constants import (
     PAY_STATUS_PENDING, PAY_STATUS_COLLECTED, PAY_STATUS_VERIFIED, PAY_STATUS_FAILED,
     VALID_PAYMENT_MODES, FEV_PAYMENT_RECORDED, FEV_PAYMENT_VERIFIED,
     ERR_INVOICE_NOT_FOUND, ERR_INVOICE_ACCESS_DENIED, ERR_INVOICE_ALREADY_ISSUED,
+    ERR_INVALID_PAYMENT_MODE,
     ERR_PAYMENT_ALREADY_RECORDED, ERR_PAYMENT_RECORD_NOT_FOUND, ERR_PAYMENT_ACCESS_DENIED,
     ERR_PAYMENT_AMOUNT_MISMATCH,
 )
@@ -66,7 +67,10 @@ class ServicePaymentService:
         staff_member_id: str | None, request_id: str | None,
     ) -> dict:
         if payment_mode not in VALID_PAYMENT_MODES:
-            raise ValueError(ERR_INVOICE_ALREADY_ISSUED)
+            # MODULE-L5-02 bug #18: this guard raised the wrong constant
+            # (ERR_INVOICE_ALREADY_ISSUED) for an invalid payment mode, producing
+            # a nonsensical "invoice already issued" message on the payment path.
+            raise ValueError(ERR_INVALID_PAYMENT_MODE)
         # Get invoice
         res = await db.execute(
             select(ServiceInvoice).where(ServiceInvoice.id == uuid.UUID(invoice_id))

@@ -33,7 +33,7 @@ class OptionalNoteBody(BaseModel):
 @agent_router.post("/{lead_id}/accept")
 async def agent_accept(lead_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.accept_lead(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), request_id=rid)
+    result = await _svc.accept_lead(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-accept")
 
@@ -41,7 +41,7 @@ async def agent_accept(lead_id: uuid.UUID, r: Request, user=Depends(get_current_
 @agent_router.post("/{lead_id}/reject")
 async def agent_reject(lead_id: uuid.UUID, body: ReasonBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.reject_lead(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
+    result = await _svc.reject_lead(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-reject")
 
@@ -49,7 +49,7 @@ async def agent_reject(lead_id: uuid.UUID, body: ReasonBody, r: Request, user=De
 @agent_router.post("/{lead_id}/mark-contacted")
 async def agent_mark_contacted(lead_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.mark_contacted(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
+    result = await _svc.mark_contacted(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-contacted")
 
@@ -57,7 +57,7 @@ async def agent_mark_contacted(lead_id: uuid.UUID, body: OptionalNoteBody, r: Re
 @agent_router.post("/{lead_id}/schedule-follow-up")
 async def agent_follow_up(lead_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.schedule_follow_up(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
+    result = await _svc.schedule_follow_up(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-follow-up")
 
@@ -65,7 +65,7 @@ async def agent_follow_up(lead_id: uuid.UUID, body: OptionalNoteBody, r: Request
 @agent_router.post("/{lead_id}/plan-site-visit")
 async def agent_plan_site_visit(lead_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.plan_site_visit(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
+    result = await _svc.plan_site_visit(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-site-plan")
 
@@ -73,7 +73,7 @@ async def agent_plan_site_visit(lead_id: uuid.UUID, body: OptionalNoteBody, r: R
 @agent_router.post("/{lead_id}/complete-site-visit")
 async def agent_complete_site_visit(lead_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.complete_site_visit(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
+    result = await _svc.complete_site_visit(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-site-done")
 
@@ -81,7 +81,7 @@ async def agent_complete_site_visit(lead_id: uuid.UUID, body: OptionalNoteBody, 
 @agent_router.post("/{lead_id}/qualify")
 async def agent_qualify(lead_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.qualify_lead(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
+    result = await _svc.qualify_lead(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-qualify")
 
@@ -89,7 +89,7 @@ async def agent_qualify(lead_id: uuid.UUID, body: OptionalNoteBody, r: Request, 
 @agent_router.post("/{lead_id}/disqualify")
 async def agent_disqualify(lead_id: uuid.UUID, body: ReasonBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.disqualify_lead(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
+    result = await _svc.disqualify_lead(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-disqualify")
 
@@ -97,7 +97,7 @@ async def agent_disqualify(lead_id: uuid.UUID, body: ReasonBody, r: Request, use
 @agent_router.post("/{lead_id}/convert")
 async def agent_convert(lead_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.convert_lead(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
+    result = await _svc.convert_lead(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-convert")
 
@@ -105,7 +105,7 @@ async def agent_convert(lead_id: uuid.UUID, body: OptionalNoteBody, r: Request, 
 @agent_router.post("/{lead_id}/close-lost")
 async def agent_close_lost(lead_id: uuid.UUID, body: ReasonBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.close_lost(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
+    result = await _svc.close_lost(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-close-lost")
 
@@ -113,7 +113,7 @@ async def agent_close_lost(lead_id: uuid.UUID, body: ReasonBody, r: Request, use
 @agent_router.post("/{lead_id}/notes")
 async def agent_add_note(lead_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.add_note(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), note_text=body.note_text, is_customer_visible=body.is_customer_visible, request_id=rid)
+    result = await _svc.add_note(db, lead_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), note_text=body.note_text, is_customer_visible=body.is_customer_visible, request_id=rid)
     await db.commit()
     return ok(result, rid, "agent-re-note")
 

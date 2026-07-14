@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
 from app.schemas.base import ok
+from app.exceptions import ServiceOSException
 from app.engines.invoice_payment.invoice_service import ServiceInvoiceService
 from app.engines.invoice_payment.payment_service import ServicePaymentService
 from app.engines.invoice_payment.commission_service import ServiceCommissionService
@@ -61,15 +62,29 @@ async def provider_record_payment(
     invoice_id: str, body: dict, r: Request = None,
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
-    data = await pay_svc.record_onsite_payment(
-        db, invoice_id, str(user.tenant_id),
-        payment_mode=body.get("payment_mode", "onsite_cash"),
-        collected_amount=float(body.get("collected_amount", 0)),
-        proof_media_url=body.get("proof_media_url"),
-        user_id=str(user.user_id),
-        staff_member_id=str(user.staff_member_id) if user.staff_member_id else None,
-        request_id=_rid(r),
-    )
+    try:
+        data = await pay_svc.record_onsite_payment(
+            db, invoice_id, str(user.tenant_id),
+            payment_mode=body.get("payment_mode", "onsite_cash"),
+            collected_amount=float(body.get("collected_amount", 0)),
+            proof_media_url=body.get("proof_media_url"),
+            user_id=str(user.user_id),
+            # MODULE-L5-02 bug #17: UserContext has no `staff_member_id` attribute
+            # at all, so this line raised AttributeError -> 500 on every payment
+            # record, killing the whole post-completion settlement flow. The staff
+            # identity in this system is keyed off users.id (see
+            # home_service_assignment reconciliation), so fall back to user id.
+            staff_member_id=str(getattr(user, "staff_member_id", None) or user.user_id),
+            request_id=_rid(r),
+        )
+    except ValueError as exc:
+        # MODULE-L5-02 bug #18: the service raises bare ValueErrors for domain
+        # rejections (invalid mode / not found / access denied / already paid);
+        # they were leaking as 500s. Map to the ticket's error code + a 4xx.
+        code = str(exc)
+        status = 404 if code in ("INVOICE_NOT_FOUND",) else (
+            403 if code in ("INVOICE_ACCESS_DENIED",) else 422)
+        raise ServiceOSException(code, code.replace("_", " ").title(), status_code=status)
     return ok(data, _rid(r), "provider_record_payment")
 
 

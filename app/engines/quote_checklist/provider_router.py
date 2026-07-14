@@ -73,7 +73,9 @@ async def staff_create_quote(
         tenant_id=str(user.tenant_id),
         quote_type=body.get("quote_type", "repair_quote"),
         user_id=str(user.user_id),
-        staff_member_id=str(user.staff_member_id) if user.staff_member_id else None,
+        # MODULE-L5-02 bug #17: UserContext has no `staff_member_id` -> 500.
+        # Staff identity is keyed off users.id; fall back to it.
+        staff_member_id=str(getattr(user, "staff_member_id", None) or user.user_id),
         notes=body.get("notes"),
         request_id=_rid(r),
     )

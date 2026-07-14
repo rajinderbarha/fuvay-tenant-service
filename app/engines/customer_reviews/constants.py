@@ -66,7 +66,12 @@ VALID_RECORD_TYPES = {
 # ── Eligible statuses per record type ─────────────────────────────────────────
 ELIGIBLE_STATUSES: dict[str, set[str]] = {
     RECORD_TYPE_SERVICE_BOOKING:      {"completed", "payment_collected", "paid"},
-    RECORD_TYPE_SERVICE_JOB:          {"completed", "work_done"},
+    # MODULE-L5-02 bug #20: a completed job transitions to "invoice_issued" the
+    # moment it is billed (invoice_service sets job.status = invoice_issued) and
+    # to "paid" once settled — the normal downstream flow. Excluding those states
+    # slammed the review window shut the instant a completed job was invoiced, so
+    # a customer could realistically never review a job that went through billing.
+    RECORD_TYPE_SERVICE_JOB:          {"completed", "work_done", "invoice_issued", "paid"},
     RECORD_TYPE_COACHING_APPOINTMENT: {"completed"},
     RECORD_TYPE_REAL_ESTATE_LEAD:     {
         "contacted", "follow_up", "site_visit_completed",

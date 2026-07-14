@@ -33,7 +33,7 @@ class OptionalNoteBody(BaseModel):
 @staff_router.post("/{appointment_id}/accept")
 async def staff_accept(appointment_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.accept_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), request_id=rid)
+    result = await _svc.accept_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
     return ok(result, rid, "staff-coaching-accept")
 
@@ -41,7 +41,7 @@ async def staff_accept(appointment_id: uuid.UUID, r: Request, user=Depends(get_c
 @staff_router.post("/{appointment_id}/reject")
 async def staff_reject(appointment_id: uuid.UUID, body: ReasonBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.reject_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
+    result = await _svc.reject_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
     await db.commit()
     return ok(result, rid, "staff-coaching-reject")
 
@@ -49,7 +49,7 @@ async def staff_reject(appointment_id: uuid.UUID, body: ReasonBody, r: Request, 
 @staff_router.post("/{appointment_id}/start")
 async def staff_start(appointment_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.start_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), request_id=rid)
+    result = await _svc.start_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
     return ok(result, rid, "staff-coaching-start")
 
@@ -57,7 +57,7 @@ async def staff_start(appointment_id: uuid.UUID, r: Request, user=Depends(get_cu
 @staff_router.post("/{appointment_id}/complete")
 async def staff_complete(appointment_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.complete_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), request_id=rid)
+    result = await _svc.complete_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
     return ok(result, rid, "staff-coaching-complete")
 
@@ -65,7 +65,7 @@ async def staff_complete(appointment_id: uuid.UUID, r: Request, user=Depends(get
 @staff_router.post("/{appointment_id}/no-show")
 async def staff_no_show(appointment_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.mark_no_show(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
+    result = await _svc.mark_no_show(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
     await db.commit()
     return ok(result, rid, "staff-coaching-no-show")
 
@@ -73,7 +73,7 @@ async def staff_no_show(appointment_id: uuid.UUID, body: OptionalNoteBody, r: Re
 @staff_router.post("/{appointment_id}/request-reschedule")
 async def staff_reschedule(appointment_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.request_reschedule(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
+    result = await _svc.request_reschedule(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
     await db.commit()
     return ok(result, rid, "staff-coaching-reschedule")
 
@@ -81,7 +81,7 @@ async def staff_reschedule(appointment_id: uuid.UUID, body: OptionalNoteBody, r:
 @staff_router.post("/{appointment_id}/notes")
 async def staff_add_note(appointment_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.add_note(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.staff_member_id)), uuid.UUID(str(user.user_id)), note_text=body.note_text, is_customer_visible=body.is_customer_visible, request_id=rid)
+    result = await _svc.add_note(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), note_text=body.note_text, is_customer_visible=body.is_customer_visible, request_id=rid)
     await db.commit()
     return ok(result, rid, "staff-coaching-note")
 

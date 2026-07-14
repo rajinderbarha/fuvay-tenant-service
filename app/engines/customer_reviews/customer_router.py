@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
 from app.schemas.base import ok
+from app.exceptions import ServiceOSException
 from app.engines.customer_reviews.review_service import ReviewService
 from app.engines.customer_reviews.eligibility_service import ReviewEligibilityService
 
@@ -37,25 +38,33 @@ async def submit_review(
 ):
     import uuid
     rid = getattr(r.state, "request_id", "—")
-    review = await _svc.submit_review(
-        db,
-        customer_id     = user.user_id,
-        tenant_id       = uuid.UUID(str(body["tenant_id"])),
-        record_type     = body["record_type"],
-        record_id       = uuid.UUID(str(body["record_id"])),
-        overall_rating  = int(body["overall_rating"]),
-        provider_rating = body.get("provider_rating"),
-        staff_rating    = body.get("staff_rating"),
-        communication_rating = body.get("communication_rating"),
-        punctuality_rating   = body.get("punctuality_rating"),
-        quality_rating  = body.get("quality_rating"),
-        value_rating    = body.get("value_rating"),
-        review_title    = body.get("review_title"),
-        review_text     = body.get("review_text"),
-        review_tags     = body.get("review_tags"),
-        media_urls      = body.get("media_urls"),
-        request_id      = rid,
-    )
+    try:
+        review = await _svc.submit_review(
+            db,
+            customer_id     = user.user_id,
+            tenant_id       = uuid.UUID(str(body["tenant_id"])),
+            record_type     = body["record_type"],
+            record_id       = uuid.UUID(str(body["record_id"])),
+            overall_rating  = int(body["overall_rating"]),
+            provider_rating = body.get("provider_rating"),
+            staff_rating    = body.get("staff_rating"),
+            communication_rating = body.get("communication_rating"),
+            punctuality_rating   = body.get("punctuality_rating"),
+            quality_rating  = body.get("quality_rating"),
+            value_rating    = body.get("value_rating"),
+            review_title    = body.get("review_title"),
+            review_text     = body.get("review_text"),
+            review_tags     = body.get("review_tags"),
+            media_urls      = body.get("media_urls"),
+            request_id      = rid,
+        )
+    except ValueError as exc:
+        # MODULE-L5-02 bug #19: the service raises bare ValueErrors for domain
+        # rejections (not eligible / already reviewed / record not found / invalid
+        # rating); they were leaking as 500s. Map to the error code + a 4xx.
+        code = str(exc)
+        status = 404 if code == "RECORD_NOT_FOUND" else 422
+        raise ServiceOSException(code, code.replace("_", " ").title(), status_code=status)
     return ok(review.to_dict(), rid, "review.submitted")
 
 
