@@ -37,9 +37,15 @@ async def _staff_member_id(user, db) -> uuid.UUID:
         )
     )
     row = res.scalars().first()
-    if not row:
-        raise ServiceOSException("STAFF_MEMBER_NOT_FOUND", "You are not registered as a technician on this account.", status_code=403)
-    return row
+    if row:
+        return row
+    # FINAL-L5-05C reconciliation: provider_team_members is unpopulated in
+    # real/demo data and the assignment/service layer now keys staff off
+    # `users.id` (service_jobs.assigned_staff_id = users.id). Translating the
+    # login through the empty team-members table made every technician
+    # status-transition endpoint a hard 403. Fall back to the raw auth user id
+    # so the execution lifecycle matches what assignment actually stored.
+    return uuid.UUID(str(user.user_id))
 
 
 class AcceptBody(BaseModel):

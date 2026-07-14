@@ -33,9 +33,17 @@ async def _resolve_staff_member_id(user: UserContext, db: AsyncSession) -> uuid.
         )
     )
     row = res.scalars().first()
-    if not row:
-        raise ValueError(ERR_JOB_NOT_FOUND)
-    return row
+    if row:
+        return row
+    # FINAL-L5-05C reconciliation: the service layer (assign_job /
+    # get_staff_assigned_jobs / technician_accept_job) was migrated to key staff
+    # off `users.id` because `provider_team_members` is unpopulated in real/demo
+    # data — assign_job stores `service_jobs.assigned_staff_id = users.id`. This
+    # router, however, still translated the login through the empty
+    # provider_team_members table, so a real technician could never see (empty
+    # list) or act on (500 on accept) their own assigned job. Fall back to the
+    # raw auth user id, which is exactly what the service layer now matches.
+    return uuid.UUID(str(user.user_id))
 
 router = APIRouter(
     prefix="/v1/staff/service-jobs",

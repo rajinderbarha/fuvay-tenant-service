@@ -65,3 +65,22 @@ def test_staff_me_jobs_does_not_require_tenant_id_query():
     # an optional Query(None) exposes default None.
     assert getattr(default, "default", default) is None, (
         "tenant_id must be optional on the staff self /me/jobs endpoint")
+
+
+def test_staff_id_resolvers_fall_back_to_user_id_not_empty_team_table():
+    """MODULE-L5-02 bug #15: the service layer keys staff off users.id
+    (service_jobs.assigned_staff_id = users.id) because provider_team_members is
+    unpopulated, but both staff-facing routers translated the login through that
+    empty table — so a real technician got an empty job list, a 500 on accept,
+    and 403s on every execution transition. The resolvers must fall back to the
+    raw auth user id instead of raising when no team-member row exists."""
+    import inspect
+    from app.engines.home_service_assignment import staff_router as asn
+    from app.engines.execution import home_service_router as ex
+    for fn in (asn._resolve_staff_member_id, ex._staff_member_id):
+        src = inspect.getsource(fn)
+        assert "user.user_id" in src and "return uuid.UUID(str(user.user_id))" in src, \
+            f"{fn.__qualname__} must fall back to the auth user id"
+        # must NOT raise/deny on the missing-team-member path anymore
+        assert "raise ValueError(ERR_JOB_NOT_FOUND)" not in src
+        assert 'raise ServiceOSException("STAFF_MEMBER_NOT_FOUND"' not in src
