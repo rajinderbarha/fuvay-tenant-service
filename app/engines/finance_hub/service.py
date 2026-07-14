@@ -462,9 +462,28 @@ class FinanceHubService:
 
     async def refund_topup(self, topup_id: uuid.UUID, amount: Decimal, reason: str) -> dict:
         t = await self._load_topup(topup_id)
+        amount = Decimal(str(amount))
+        # MODULE-L5-10: refunded_amount used to be OVERWRITTEN (t.refunded_amount
+        # = amount), so a second partial refund silently lost the first, and there
+        # was no cap — an admin could record a refund larger than amount_paid, or
+        # refund a fully-refunded order again. Accumulate and cap at what was paid.
+        if amount <= Decimal("0"):
+            raise ServiceOSException("VALIDATION_ERROR",
+                "Refund amount must be positive.", status_code=422)
+        already = Decimal(str(t.refunded_amount or "0"))
+        paid = Decimal(str(t.amount_paid or "0"))
+        if already >= paid:
+            raise ServiceOSException("TOPUP_ALREADY_REFUNDED",
+                "This top-up has already been fully refunded.", status_code=409)
+        if already + amount > paid:
+            raise ServiceOSException("TOPUP_REFUND_EXCEEDS_PAID",
+                f"Refund would exceed the amount paid. Paid {paid}, already refunded "
+                f"{already}, requested {amount}.", status_code=422,
+                context={"paid": float(paid), "already_refunded": float(already),
+                         "requested": float(amount)})
         before = t.to_dict()
-        t.refunded_amount = Decimal(str(amount))
-        t.payment_status = "refunded" if Decimal(str(amount)) >= t.amount_paid else "partially_refunded"
+        t.refunded_amount = already + amount
+        t.payment_status = "refunded" if t.refunded_amount >= paid else "partially_refunded"
         t.failure_reason = t.failure_reason or reason
         await self._audit("topup.refund", "credit_topup_order", str(topup_id), t.tenant_id, before, t.to_dict())
         return t.to_dict()
