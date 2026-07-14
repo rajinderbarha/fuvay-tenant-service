@@ -5,24 +5,70 @@
  * The trust_quality engine was registered and live — provider badges, badge
  * award rules, health-score formulas and recalculation jobs, all with real
  * seeded config — but had NO admin UI at all. This is its management console.
+ *
+ * The admin configures the engine here: creating badge definitions, badge award
+ * rules (with metric criteria), and health-score formulas (with weighted
+ * components and score bands), then activating/deactivating and recalculating.
  */
-import React, { useCallback, useState } from "react";
-import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, SectionHeader, Btn, Badge, Spinner } from "../../../components/shared/ui";
+import React, { useCallback, useMemo, useState } from "react";
 import {
-  trustQualityApi, BadgeRule, HealthRule, RecalcJob,
+  Award, Star, Shield, ShieldCheck, Crown, Trophy, Medal, Gem, Sparkles,
+  BadgeCheck, Flame, Zap, Heart, ThumbsUp, TrendingUp, CheckCircle2, Rocket, Target,
+} from "lucide-react";
+import { AdminLayout } from "../../../components/layout/AdminLayout";
+import { Card, SectionHeader, Btn, Badge, Spinner, Modal, Input, Select } from "../../../components/shared/ui";
+import {
+  trustQualityApi, TQ_ENUMS,
+  BadgeRule, HealthRule, RecalcJob, BadgeDefinition,
+  BadgeCriterionInput, HealthComponentInput, HealthBandInput,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { RequirePermission } from "../../../components/shared/PermissionGate";
 
-type Tab = "badges" | "health" | "recalc";
+type Tab = "definitions" | "badges" | "health" | "recalc";
+
+const opt = (v: string) => ({ value: v, label: v.replace(/_/g, " ") });
+
+// Curated lucide icons for badges, keyed by the name stored in the badge's
+// `icon` field. Keeping a fixed registry (rather than free-text) means every
+// badge renders to a real component and the picker can preview them.
+const BADGE_ICONS: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
+  award: Award, star: Star, shield: Shield, "shield-check": ShieldCheck, crown: Crown,
+  trophy: Trophy, medal: Medal, gem: Gem, sparkles: Sparkles, "badge-check": BadgeCheck,
+  flame: Flame, zap: Zap, heart: Heart, "thumbs-up": ThumbsUp, "trending-up": TrendingUp,
+  "check-circle": CheckCircle2, rocket: Rocket, target: Target,
+};
+const BADGE_ICON_NAMES = Object.keys(BADGE_ICONS);
+
+// Distinct, accessible badge colors. First entry is the default.
+const BADGE_COLORS = [
+  "#f59e0b", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444",
+  "#14b8a6", "#ec4899", "#6366f1", "#f97316", "#64748b",
+];
+
+/** Renders a badge's lucide icon in its color inside a soft tinted chip. */
+function BadgeIcon({ icon, color, size = 16 }: { icon?: string | null; color?: string | null; size?: number }) {
+  const Cmp = BADGE_ICONS[icon ?? ""] ?? Award;
+  const c = color || BADGE_COLORS[0];
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
+      width: size + 12, height: size + 12, borderRadius: 8, flexShrink: 0,
+      background: `${c}22`, border: `1px solid ${c}55` }}>
+      <Cmp size={size} color={c} />
+    </span>
+  );
+}
 
 export default function TrustQualityPage() {
   const [tab, setTab] = useState<Tab>("badges");
+  const badgeDefs = useApi(useCallback(() => trustQualityApi.listBadgeDefinitions(), []), []);
   const badgeRules = useApi(useCallback(() => trustQualityApi.listBadgeRules(), []), []);
   const healthRules = useApi(useCallback(() => trustQualityApi.listHealthRules(), []), []);
   const jobs = useApi(useCallback(() => trustQualityApi.listRecalcJobs(), []), []);
   const [busy, setBusy] = useState<string | null>(null);
+
+  // Which config modal is open, if any.
+  const [modal, setModal] = useState<null | "definition" | "badge-rule" | "health-formula">(null);
 
   // Activating/deactivating a rule is an audited change and the backend refuses a
   // blank reason, so the admin is asked for one before the call goes out.
@@ -53,6 +99,7 @@ export default function TrustQualityPage() {
     setReason("");
     setPrompt({ kind, id: r.id, label, activating: r.status !== "active" });
   };
+
   const runRecalc = useAction(async (kind: "badges" | "health" | "risk" | "all") => {
     setBusy(kind);
     try { await trustQualityApi.recalculate(kind); jobs.refetch(); }
@@ -64,18 +111,38 @@ export default function TrustQualityPage() {
       : s === "failed" ? "danger" : s === "running" ? "info" : "muted"}>{s}</Badge>
   );
 
+  // Look up a rule's badge definition so its icon/color show on the rule row.
+  const defsById = useMemo(() => {
+    const m: Record<string, BadgeDefinition> = {};
+    for (const b of badgeDefs.data ?? []) m[b.id] = b;
+    return m;
+  }, [badgeDefs.data]);
+
+  const TABS: { id: Tab; label: string }[] = [
+    { id: "badges", label: "Badge Rules" },
+    { id: "definitions", label: "Badges" },
+    { id: "health", label: "Health Formulas" },
+    { id: "recalc", label: "Recalculation" },
+  ];
+
   return (
     <AdminLayout activeNav="providers">
       <RequirePermission requiredPermission="" parentLabel="Providers">
         <SectionHeader
           title="Trust & Quality"
-          subtitle="Provider badges, health-score formulas and recalculation. Badges and health drive provider trust and (via health band) commission."
+          subtitle="Configure provider badges, award rules and health-score formulas, then recalculate. Badges and health band drive provider trust and commission."
+          actions={
+            tab === "badges" ? <Btn size="sm" onClick={() => setModal("badge-rule")}>+ New Badge Rule</Btn>
+            : tab === "definitions" ? <Btn size="sm" onClick={() => setModal("definition")}>+ New Badge</Btn>
+            : tab === "health" ? <Btn size="sm" onClick={() => setModal("health-formula")}>+ New Health Formula</Btn>
+            : undefined
+          }
         />
 
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          {(["badges", "health", "recalc"] as Tab[]).map(t => (
-            <Btn key={t} size="sm" variant={tab === t ? "primary" : "ghost"} onClick={() => setTab(t)}>
-              {t === "badges" ? "Badge Rules" : t === "health" ? "Health Formulas" : "Recalculation"}
+          {TABS.map(t => (
+            <Btn key={t.id} size="sm" variant={tab === t.id ? "primary" : "ghost"} onClick={() => setTab(t.id)}>
+              {t.label}
             </Btn>
           ))}
         </div>
@@ -96,8 +163,11 @@ export default function TrustQualityPage() {
                   {badgeRules.data?.map(r => (
                     <tr key={r.id} style={{ borderBottom: "1px solid var(--border)" }}>
                       <td style={{ padding: "10px 16px", fontWeight: 600 }}>
-                        {r.badge?.name ?? r.rule_key}
-                        {r.badge?.customer_visible && <Badge variant="muted" size="sm">customer-visible</Badge>}
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <BadgeIcon icon={defsById[r.badge_id]?.icon} color={defsById[r.badge_id]?.color} />
+                          {r.badge?.name ?? r.rule_key}
+                          {r.badge?.customer_visible && <Badge variant="muted" size="sm">customer-visible</Badge>}
+                        </span>
                       </td>
                       <td style={{ padding: "10px 16px", color: "var(--text-tertiary)" }}>{r.rule_type?.replace(/_/g, " ")}</td>
                       <td style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-secondary)" }}>
@@ -114,7 +184,46 @@ export default function TrustQualityPage() {
                     </tr>
                   ))}
                   {badgeRules.data?.length === 0 && (
-                    <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No badge rules.</td></tr>
+                    <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No badge rules — create one to start awarding badges.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </Card>
+        )}
+
+        {tab === "definitions" && (
+          <Card padding={0}>
+            {badgeDefs.loading ? <Spinner /> : (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead><tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
+                  <th style={{ padding: "10px 16px" }}>Badge</th>
+                  <th style={{ padding: "10px 16px" }}>Key</th>
+                  <th style={{ padding: "10px 16px" }}>Target</th>
+                  <th style={{ padding: "10px 16px" }}>Visibility</th>
+                  <th style={{ padding: "10px 16px" }}>Status</th>
+                </tr></thead>
+                <tbody>
+                  {badgeDefs.data?.map(b => (
+                    <tr key={b.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                      <td style={{ padding: "10px 16px", fontWeight: 600 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <BadgeIcon icon={b.icon} color={b.color} />
+                          {b.name}
+                        </span>
+                      </td>
+                      <td style={{ padding: "10px 16px", color: "var(--text-tertiary)", fontFamily: "monospace", fontSize: 12 }}>{b.badge_key}</td>
+                      <td style={{ padding: "10px 16px" }}>{b.target_type?.replace(/_/g, " ")}</td>
+                      <td style={{ padding: "10px 16px", fontSize: 12 }}>
+                        {b.customer_visible && <Badge variant="info" size="sm">customer</Badge>}
+                        {b.tenant_visible && <Badge variant="muted" size="sm">provider</Badge>}
+                        {b.admin_only && <Badge variant="warning" size="sm">admin-only</Badge>}
+                      </td>
+                      <td style={{ padding: "10px 16px" }}>{statusBadge(b.status)}</td>
+                    </tr>
+                  ))}
+                  {badgeDefs.data?.length === 0 && (
+                    <tr><td colSpan={5} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No badges defined.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -208,39 +317,342 @@ export default function TrustQualityPage() {
           </div>
         )}
 
+        {/* ── Config modals ─────────────────────────────────────────────── */}
+        <BadgeDefinitionModal
+          open={modal === "definition"} onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); badgeDefs.refetch(); }}
+        />
+        <BadgeRuleModal
+          open={modal === "badge-rule"} onClose={() => setModal(null)}
+          badges={badgeDefs.data ?? []}
+          onSaved={() => { setModal(null); badgeRules.refetch(); }}
+        />
+        <HealthFormulaModal
+          open={modal === "health-formula"} onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); healthRules.refetch(); }}
+        />
+
+        {/* ── Reason prompt for activate/deactivate ─────────────────────── */}
         {prompt && (
-          <div onClick={() => setPrompt(null)} style={{ position: "fixed", inset: 0,
-            background: "rgba(0,0,0,0.45)", zIndex: 300,
-            display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div onClick={e => e.stopPropagation()} style={{ width: "min(460px, 94vw)",
-              background: "var(--surface)", borderRadius: 12, padding: 22,
-              boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
-              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
-                {prompt.activating ? "Activate" : "Deactivate"} {prompt.label}
-              </h2>
-              <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "6px 0 14px" }}>
-                This change is recorded in the audit trail. A reason is required.
-              </p>
-              <textarea
-                value={reason}
-                onChange={e => setReason(e.target.value)}
-                rows={3}
-                placeholder="Why is this rule being changed?"
-                style={{ width: "100%", padding: 10, fontSize: 13, fontFamily: "inherit",
-                  borderRadius: 8, border: "1px solid var(--border)",
-                  background: "var(--bg)", color: "var(--text-primary)", resize: "vertical" }}
-              />
-              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-                <Btn variant="ghost" onClick={() => setPrompt(null)}>Cancel</Btn>
-                <Btn disabled={!reason.trim() || busy === prompt.id}
-                  onClick={() => applyToggle.execute()}>
-                  {busy === prompt.id ? "Saving…" : prompt.activating ? "Activate" : "Deactivate"}
-                </Btn>
-              </div>
+          <Modal open onClose={() => setPrompt(null)}
+            title={`${prompt.activating ? "Activate" : "Deactivate"} ${prompt.label}`} size="sm">
+            <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 14px" }}>
+              This change is recorded in the audit trail. A reason is required.
+            </p>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+              placeholder="Why is this rule being changed?"
+              style={{ width: "100%", padding: 10, fontSize: 13, fontFamily: "inherit",
+                borderRadius: 8, border: "1px solid var(--border)",
+                background: "var(--surface)", color: "var(--text-primary)", resize: "vertical", boxSizing: "border-box" }}
+            />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+              <Btn variant="ghost" onClick={() => setPrompt(null)}>Cancel</Btn>
+              <Btn disabled={!reason.trim() || busy === prompt.id} onClick={() => applyToggle.execute()}>
+                {busy === prompt.id ? "Saving…" : prompt.activating ? "Activate" : "Deactivate"}
+              </Btn>
             </div>
-          </div>
+          </Modal>
         )}
       </RequirePermission>
     </AdminLayout>
+  );
+}
+
+// ── Shared small pieces ───────────────────────────────────────────────────────
+
+function ErrText({ msg }: { msg: string | null }) {
+  if (!msg) return null;
+  return <p style={{ fontSize: 12, color: "var(--danger-text)", margin: "4px 0 0" }}>{msg}</p>;
+}
+
+const rowStyle: React.CSSProperties = {
+  display: "grid", gap: 8, alignItems: "end", marginBottom: 8,
+};
+
+// ── Badge Definition modal ────────────────────────────────────────────────────
+
+function BadgeDefinitionModal({ open, onClose, onSaved }: {
+  open: boolean; onClose: () => void; onSaved: () => void;
+}) {
+  const [f, setF] = useState({
+    badge_key: "", name: "", target_type: "tenant", customer_visible: true,
+    icon: BADGE_ICON_NAMES[0], color: BADGE_COLORS[0],
+  });
+  const [err, setErr] = useState<string | null>(null);
+  const save = useAction(async () => {
+    setErr(null);
+    try {
+      await trustQualityApi.createBadgeDefinition({
+        badge_key: f.badge_key.trim(), name: f.name.trim(),
+        target_type: f.target_type, customer_visible: f.customer_visible,
+        icon: f.icon, color: f.color, status: "active",
+      });
+      onSaved();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to create badge."); }
+  });
+  const valid = f.badge_key.trim() && f.name.trim();
+  return (
+    <Modal open={open} onClose={onClose} title="New badge" size="md">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* Live preview of the icon + color the badge will carry. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 10,
+          borderRadius: 8, background: "var(--surface-sunken)" }}>
+          <BadgeIcon icon={f.icon} color={f.color} size={22} />
+          <span style={{ fontWeight: 600 }}>{f.name || "Badge preview"}</span>
+        </div>
+        <Input label="Badge key" required value={f.badge_key} onChange={v => setF({ ...f, badge_key: v })}
+          hint="Unique machine key, e.g. top_rated_pro" />
+        <Input label="Display name" required value={f.name} onChange={v => setF({ ...f, name: v })} />
+        <Select label="Target" value={f.target_type} onChange={v => setF({ ...f, target_type: v })}
+          options={TQ_ENUMS.badgeTargets.map(opt)} />
+
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)" }}>Icon</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+            {BADGE_ICON_NAMES.map(name => {
+              const Cmp = BADGE_ICONS[name];
+              const sel = f.icon === name;
+              return (
+                <button key={name} type="button" onClick={() => setF({ ...f, icon: name })}
+                  aria-label={name} style={{
+                    width: 34, height: 34, borderRadius: 8, cursor: "pointer",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    background: sel ? `${f.color}22` : "var(--surface)",
+                    border: `1px solid ${sel ? f.color : "var(--border)"}` }}>
+                  <Cmp size={16} color={sel ? f.color : "var(--text-tertiary)"} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)" }}>Color</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+            {BADGE_COLORS.map(c => (
+              <button key={c} type="button" onClick={() => setF({ ...f, color: c })}
+                aria-label={c} style={{
+                  width: 26, height: 26, borderRadius: "50%", cursor: "pointer", background: c,
+                  border: f.color === c ? "3px solid var(--text-primary)" : "2px solid var(--border)" }} />
+            ))}
+          </div>
+        </div>
+
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+          <input type="checkbox" checked={f.customer_visible}
+            onChange={e => setF({ ...f, customer_visible: e.target.checked })} />
+          Visible to customers
+        </label>
+        <ErrText msg={err} />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn disabled={!valid} onClick={() => save.execute()}>Create badge</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Badge Rule modal (with criteria builder) ──────────────────────────────────
+
+function BadgeRuleModal({ open, onClose, onSaved, badges }: {
+  open: boolean; onClose: () => void; onSaved: () => void; badges: BadgeDefinition[];
+}) {
+  const [f, setF] = useState({ rule_key: "", badge_id: "", rule_type: "auto_award", auto_award: true });
+  const [criteria, setCriteria] = useState<BadgeCriterionInput[]>([
+    { metric_key: "", operator: "greater_than_or_equal", value: "", is_required: true },
+  ]);
+  const [err, setErr] = useState<string | null>(null);
+
+  const selectedBadge = useMemo(() => badges.find(b => b.id === f.badge_id), [badges, f.badge_id]);
+
+  const setCrit = (i: number, patch: Partial<BadgeCriterionInput>) =>
+    setCriteria(cs => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+
+  const save = useAction(async () => {
+    setErr(null);
+    // Coerce numeric-looking criterion values to numbers; the engine compares
+    // metric values numerically for the ordering operators.
+    const cleaned = criteria
+      .filter(c => c.metric_key.trim())
+      .map(c => {
+        const raw = String(c.value ?? "").trim();
+        const num = Number(raw);
+        return { ...c, metric_key: c.metric_key.trim(),
+          value: raw !== "" && !Number.isNaN(num) ? num : raw };
+      });
+    try {
+      await trustQualityApi.createBadgeRule({
+        rule_key: f.rule_key.trim(), badge_id: f.badge_id,
+        target_type: selectedBadge?.target_type ?? "tenant",
+        rule_type: f.rule_type, auto_award: f.auto_award,
+        status: "draft", criteria: cleaned,
+      });
+      onSaved();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to create rule."); }
+  });
+
+  const valid = f.rule_key.trim() && f.badge_id;
+  return (
+    <Modal open={open} onClose={onClose} title="New badge rule" size="lg">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {badges.length === 0 && (
+          <div style={{ fontSize: 13, color: "var(--warning-text)", background: "var(--warning-bg)",
+            padding: 10, borderRadius: 8 }}>
+            Create a badge first (Badges tab) — a rule awards an existing badge.
+          </div>
+        )}
+        <Input label="Rule key" required value={f.rule_key} onChange={v => setF({ ...f, rule_key: v })}
+          hint="Unique machine key, e.g. auto_top_rated" />
+        <Select label="Badge to award" value={f.badge_id} onChange={v => setF({ ...f, badge_id: v })}
+          placeholder="Select a badge…"
+          options={badges.map(b => ({ value: b.id, label: `${b.name} (${b.target_type})` }))} />
+        <Select label="Rule type" value={f.rule_type} onChange={v => setF({ ...f, rule_type: v })}
+          options={TQ_ENUMS.badgeRuleTypes.map(opt)} />
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+          <input type="checkbox" checked={f.auto_award}
+            onChange={e => setF({ ...f, auto_award: e.target.checked })} />
+          Award automatically when criteria are met
+        </label>
+
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, margin: "6px 0 8px" }}>Award criteria</div>
+          {criteria.map((c, i) => (
+            <div key={i} style={{ ...rowStyle, gridTemplateColumns: "1fr 1fr 0.8fr auto" }}>
+              <Input label={i === 0 ? "Metric key" : undefined} value={c.metric_key}
+                onChange={v => setCrit(i, { metric_key: v })} placeholder="average_rating" />
+              <Select label={i === 0 ? "Operator" : undefined} value={c.operator}
+                onChange={v => setCrit(i, { operator: v })} options={TQ_ENUMS.operators.map(opt)} />
+              <Input label={i === 0 ? "Value" : undefined} value={String(c.value ?? "")}
+                onChange={v => setCrit(i, { value: v })} placeholder="4.5" />
+              <Btn size="sm" variant="ghost" onClick={() => setCriteria(cs => cs.filter((_, j) => j !== i))}>✕</Btn>
+            </div>
+          ))}
+          <Btn size="sm" variant="secondary"
+            onClick={() => setCriteria(cs => [...cs, { metric_key: "", operator: "greater_than_or_equal", value: "", is_required: true }])}>
+            + Add criterion
+          </Btn>
+        </div>
+
+        <ErrText msg={err} />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn disabled={!valid} onClick={() => save.execute()}>Create rule (draft)</Btn>
+        </div>
+        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
+          New rules are created as drafts. Activate them from the Badge Rules tab once reviewed.
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Health Formula modal (components + bands builder) ─────────────────────────
+
+function HealthFormulaModal({ open, onClose, onSaved }: {
+  open: boolean; onClose: () => void; onSaved: () => void;
+}) {
+  const [f, setF] = useState({ formula_key: "", name: "", target_type: "tenant_provider" });
+  const [components, setComponents] = useState<HealthComponentInput[]>([
+    { metric_key: "", weight_percent: 100, direction: "positive", min_value: 0, max_value: 100 },
+  ]);
+  const [bands, setBands] = useState<HealthBandInput[]>([
+    { band_key: "blocked", band_name: "Blocked", min_score: 0, max_score: 49 },
+    { band_key: "healthy", band_name: "Healthy", min_score: 50, max_score: 100 },
+  ]);
+  const [err, setErr] = useState<string | null>(null);
+
+  const totalWeight = components.reduce((s, c) => s + (Number(c.weight_percent) || 0), 0);
+
+  const setComp = (i: number, patch: Partial<HealthComponentInput>) =>
+    setComponents(cs => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  const setBand = (i: number, patch: Partial<HealthBandInput>) =>
+    setBands(bs => bs.map((b, j) => (j === i ? { ...b, ...patch } : b)));
+
+  const save = useAction(async () => {
+    setErr(null);
+    try {
+      await trustQualityApi.createHealthFormula({
+        formula_key: f.formula_key.trim(), name: f.name.trim(), target_type: f.target_type,
+        base_score: 100, min_score: 0, max_score: 100, status: "draft",
+        components: components.filter(c => c.metric_key.trim()).map(c => ({
+          ...c, metric_key: c.metric_key.trim(), weight_percent: Number(c.weight_percent),
+          min_value: Number(c.min_value), max_value: Number(c.max_value),
+        })),
+        bands: bands.map(b => ({ ...b, min_score: Number(b.min_score), max_score: Number(b.max_score) })),
+      });
+      onSaved();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to create formula."); }
+  });
+
+  const valid = f.formula_key.trim() && f.name.trim() && components.some(c => c.metric_key.trim());
+  return (
+    <Modal open={open} onClose={onClose} title="New health formula" size="xl">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          <Input label="Formula key" required value={f.formula_key} onChange={v => setF({ ...f, formula_key: v })}
+            hint="e.g. provider_health_v2" />
+          <Input label="Name" required value={f.name} onChange={v => setF({ ...f, name: v })} />
+          <Select label="Target" value={f.target_type} onChange={v => setF({ ...f, target_type: v })}
+            options={TQ_ENUMS.healthTargets.map(opt)} />
+        </div>
+
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, margin: "6px 0 8px",
+            display: "flex", justifyContent: "space-between" }}>
+            <span>Weighted components</span>
+            <span style={{ color: Math.abs(totalWeight - 100) < 0.01 ? "var(--success-text)" : "var(--warning-text)" }}>
+              Total weight: {totalWeight}% {Math.abs(totalWeight - 100) < 0.01 ? "✓" : "(must be 100 to activate)"}
+            </span>
+          </div>
+          {components.map((c, i) => (
+            <div key={i} style={{ ...rowStyle, gridTemplateColumns: "1.4fr 0.7fr 0.9fr auto" }}>
+              <Input label={i === 0 ? "Metric key" : undefined} value={c.metric_key}
+                onChange={v => setComp(i, { metric_key: v })} placeholder="job_completion_rate" />
+              <Input label={i === 0 ? "Weight %" : undefined} type="number" value={String(c.weight_percent)}
+                onChange={v => setComp(i, { weight_percent: Number(v) })} />
+              <Select label={i === 0 ? "Direction" : undefined} value={c.direction ?? "positive"}
+                onChange={v => setComp(i, { direction: v })} options={TQ_ENUMS.directions.map(opt)} />
+              <Btn size="sm" variant="ghost" onClick={() => setComponents(cs => cs.filter((_, j) => j !== i))}>✕</Btn>
+            </div>
+          ))}
+          <Btn size="sm" variant="secondary"
+            onClick={() => setComponents(cs => [...cs, { metric_key: "", weight_percent: 0, direction: "positive", min_value: 0, max_value: 100 }])}>
+            + Add component
+          </Btn>
+        </div>
+
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, margin: "6px 0 8px" }}>Score bands (must cover 0–100)</div>
+          {bands.map((b, i) => (
+            <div key={i} style={{ ...rowStyle, gridTemplateColumns: "1fr 1fr 0.7fr 0.7fr auto" }}>
+              <Input label={i === 0 ? "Band key" : undefined} value={b.band_key}
+                onChange={v => setBand(i, { band_key: v })} placeholder="healthy" />
+              <Input label={i === 0 ? "Band name" : undefined} value={b.band_name}
+                onChange={v => setBand(i, { band_name: v })} />
+              <Input label={i === 0 ? "Min" : undefined} type="number" value={String(b.min_score)}
+                onChange={v => setBand(i, { min_score: Number(v) })} />
+              <Input label={i === 0 ? "Max" : undefined} type="number" value={String(b.max_score)}
+                onChange={v => setBand(i, { max_score: Number(v) })} />
+              <Btn size="sm" variant="ghost" onClick={() => setBands(bs => bs.filter((_, j) => j !== i))}>✕</Btn>
+            </div>
+          ))}
+          <Btn size="sm" variant="secondary"
+            onClick={() => setBands(bs => [...bs, { band_key: "", band_name: "", min_score: 0, max_score: 0 }])}>
+            + Add band
+          </Btn>
+        </div>
+
+        <ErrText msg={err} />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn disabled={!valid} onClick={() => save.execute()}>Create formula (draft)</Btn>
+        </div>
+        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
+          New formulas are created as drafts. Component weights must total 100% and bands must cover
+          0–100 before the formula can be activated.
+        </p>
+      </div>
+    </Modal>
   );
 }

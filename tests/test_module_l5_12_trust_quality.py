@@ -189,6 +189,78 @@ class TestRecalculationJobIsReal:
         jobs = d.get("items", d)
         assert any(j["job_type"] == "badges" and j["total_count"] > 0 for j in jobs)
 
+    async def test_admin_can_configure_the_engine_end_to_end(self, client):
+        """The admin must be able to CREATE config, not just toggle it — a badge,
+        an award rule with criteria, and a health formula with components/bands,
+        then activate the formula. (User feedback: the console could only
+        enable/disable, not configure.)"""
+        import random
+        sfx = random.randint(10000, 99999)
+
+        # 1. Create a badge definition.
+        r = await client.post("/v1/admin/trust-quality/badges/definitions", json={
+            "badge_key": f"l5cfg_badge_{sfx}", "name": "L5 Cfg Badge",
+            "target_type": "tenant", "customer_visible": True, "status": "active"})
+        assert r.status_code == 200, r.text
+        badge_id = r.json()["data"]["id"]
+
+        # 2. Create an auto-award rule that awards it, with a metric criterion.
+        r = await client.post("/v1/admin/trust-quality/badge-rules", json={
+            "rule_key": f"l5cfg_rule_{sfx}", "badge_id": badge_id, "target_type": "tenant",
+            "rule_type": "auto_award", "auto_award": True, "status": "draft",
+            "criteria": [{"metric_key": "average_rating", "operator": "greater_than_or_equal",
+                          "value": 4.5, "is_required": True}]})
+        assert r.status_code == 200, r.text
+        rule = r.json()["data"]
+        assert len(rule["criteria"]) == 1
+        assert rule["status"] == "draft"
+
+        # 3. Create a health formula with weighted components (=100) and 0-100 bands.
+        r = await client.post("/v1/admin/trust-quality/health-rules", json={
+            "formula_key": f"l5cfg_formula_{sfx}", "name": "L5 Cfg Formula",
+            "target_type": "tenant_provider", "base_score": 100, "min_score": 0, "max_score": 100,
+            "status": "draft",
+            "components": [
+                {"metric_key": "job_completion_rate", "weight_percent": 60, "direction": "positive",
+                 "min_value": 0, "max_value": 100},
+                {"metric_key": "average_rating", "weight_percent": 40, "direction": "positive",
+                 "min_value": 0, "max_value": 5}],
+            "bands": [
+                {"band_key": "blocked", "band_name": "Blocked", "min_score": 0, "max_score": 49},
+                {"band_key": "healthy", "band_name": "Healthy", "min_score": 50, "max_score": 100}]})
+        assert r.status_code == 200, r.text
+        formula = r.json()["data"]
+        formula_id = formula["id"]
+        assert len(formula["components"]) == 2
+
+        # 4. The configured draft can be activated (weights total 100, bands cover 0-100).
+        r = await client.post(f"/v1/admin/trust-quality/health-rules/{formula_id}/activate",
+                              json={"reason": "L5 config lifecycle test"})
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["status"] == "active"
+
+        # Leave nothing active behind: a live test formula would join real scoring.
+        await client.post(f"/v1/admin/trust-quality/health-rules/{formula_id}/deactivate",
+                          json={"reason": "cleanup"})
+
+    async def test_health_formula_rejects_bad_weights_on_activation(self, client):
+        """Weights that don't total 100 must be refused at activation — the config
+        UI shows the running total for exactly this reason."""
+        import random
+        sfx = random.randint(10000, 99999)
+        r = await client.post("/v1/admin/trust-quality/health-rules", json={
+            "formula_key": f"l5bad_{sfx}", "name": "L5 Bad Weights",
+            "target_type": "tenant_provider", "status": "draft",
+            "components": [{"metric_key": "job_completion_rate", "weight_percent": 60,
+                            "direction": "positive", "min_value": 0, "max_value": 100}],
+            "bands": [{"band_key": "healthy", "band_name": "Healthy",
+                       "min_score": 0, "max_score": 100}]})
+        assert r.status_code == 200, r.text
+        fid = r.json()["data"]["id"]
+        bad = await client.post(f"/v1/admin/trust-quality/health-rules/{fid}/activate",
+                               json={"reason": "should fail"})
+        assert bad.status_code == 422, "60% weight total must be rejected"
+
     async def test_rule_toggle_requires_a_reason(self, client):
         r = await client.get("/v1/admin/trust-quality/badge-rules")
         d = r.json()["data"]

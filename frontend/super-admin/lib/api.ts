@@ -8111,6 +8111,46 @@ export interface RecalcJob {
   triggered_by: string; started_at: string | null; completed_at: string | null;
   error_summary: string | null;
 }
+export interface BadgeDefinition {
+  id: string; badge_key: string; name: string; description?: string | null;
+  target_type: string; customer_visible: boolean; tenant_visible: boolean;
+  admin_only: boolean; status: string; icon?: string | null; color?: string | null;
+}
+export interface BadgeCriterionInput {
+  metric_key: string; operator: string; value: unknown;
+  is_required?: boolean; time_window_days?: number | null;
+}
+export interface BadgeRuleInput {
+  rule_key: string; badge_id: string; target_type: string; rule_type: string;
+  scope_type?: string; auto_award?: boolean; manual_award_allowed?: boolean;
+  requires_admin_review?: boolean; status?: string; criteria?: BadgeCriterionInput[];
+}
+export interface HealthComponentInput {
+  metric_key: string; weight_percent: number; direction?: string;
+  min_value?: number; max_value?: number; is_required?: boolean;
+}
+export interface HealthBandInput {
+  band_key: string; band_name: string; min_score: number; max_score: number;
+  color?: string; bookable_allowed?: boolean; recommended_action?: string;
+}
+export interface HealthFormulaInput {
+  formula_key: string; name: string; target_type: string;
+  base_score?: number; min_score?: number; max_score?: number; status?: string;
+  components?: HealthComponentInput[]; bands?: HealthBandInput[];
+}
+// Mirrors the backend VALID_* sets (app/engines/trust_quality/service.py). Kept
+// here so the config forms only ever offer values the API will accept.
+export const TQ_ENUMS = {
+  badgeTargets: ["tenant", "tenant_owner", "staff", "technician", "customer", "service", "category"],
+  badgeRuleTypes: ["auto_award", "manual_award", "hybrid", "seasonal", "quality_based",
+    "performance_based", "verification_based", "subscription_based", "compliance_based"],
+  scopes: ["global", "vertical", "category", "service", "plan", "tenant"],
+  operators: ["equals", "not_equals", "greater_than", "greater_than_or_equal",
+    "less_than", "less_than_or_equal", "between", "in", "not_in", "exists", "not_exists"],
+  healthTargets: ["tenant_provider", "tenant_staff", "technician", "customer_account",
+    "service_quality", "category_quality"],
+  directions: ["positive", "negative"],
+} as const;
 const tqList = <T,>(d: unknown): T[] => {
   const x = (d as { items?: T[] })?.items;
   return Array.isArray(x) ? x : (Array.isArray(d) ? (d as T[]) : []);
@@ -8142,6 +8182,27 @@ export const trustQualityApi = {
   recalculate: (kind: "badges" | "health" | "risk" | "all") =>
     apiFetch("/v1/admin/trust-quality/recalculate/all", {
       method: "POST", body: JSON.stringify({ job_type: kind, scope_type: "all" }) }),
+
+  // ── Configuration (admin creates the rules the engine runs) ──────────────
+  listBadgeDefinitions: () =>
+    apiFetch<unknown>("/v1/admin/trust-quality/badges/definitions").then(d => tqList<BadgeDefinition>(d)),
+  createBadgeDefinition: (body: Partial<BadgeDefinition>) =>
+    apiFetch("/v1/admin/trust-quality/badges/definitions", { method: "POST", body: JSON.stringify(body) }),
+  createBadgeRule: (body: BadgeRuleInput) =>
+    apiFetch("/v1/admin/trust-quality/badge-rules", { method: "POST", body: JSON.stringify(body) }),
+  getBadgeRule: (id: string) =>
+    apiFetch<unknown>(`/v1/admin/trust-quality/badge-rules/${id}`),
+  createHealthFormula: (body: HealthFormulaInput) =>
+    apiFetch("/v1/admin/trust-quality/health-rules", { method: "POST", body: JSON.stringify(body) }),
+  getHealthFormula: (id: string) =>
+    apiFetch<unknown>(`/v1/admin/trust-quality/health-rules/${id}`),
+  // Preview a rule/formula outcome against sample metrics before activating.
+  simulateBadgeRule: (id: string, metrics: Record<string, unknown>) =>
+    apiFetch<unknown>(`/v1/admin/trust-quality/badge-rules/${id}/simulate`, {
+      method: "POST", body: JSON.stringify({ metrics }) }),
+  simulateHealthFormula: (id: string, metrics: Record<string, unknown>) =>
+    apiFetch<unknown>(`/v1/admin/trust-quality/health-rules/${id}/simulate`, {
+      method: "POST", body: JSON.stringify({ metrics }) }),
 };
 
 export const complaintsApi = {
