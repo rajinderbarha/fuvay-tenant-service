@@ -88,8 +88,13 @@ class FinanceHubService:
         credits_issued = (await self.db.execute(
             select(func.coalesce(func.sum(TenantWallet.lifetime_purchased), 0))
         )).scalar_one()
+        # MODULE-L5-10: "commission earned" must count only commission actually
+        # COLLECTED. Summing every status counted refunded commission (given back),
+        # failed/pending (never collected) and waived (deliberately not charged) as
+        # earnings — overstating the platform's headline commission number.
         commission_earned = (await self.db.execute(
             select(func.coalesce(func.sum(CommissionRecord.commission_amount), 0))
+            .where(CommissionRecord.status == "deducted")
         )).scalar_one()
         deposits = (await self.db.execute(select(SecurityDeposit))).scalars().all()
         deposit_held = sum((d.current_balance for d in deposits if d.status in DEPOSIT_ACTIVE_STATUSES), Decimal("0"))
@@ -403,14 +408,19 @@ class FinanceHubService:
         topups = (await self.db.execute(select(CreditTopupOrder))).scalars().all()
         now = utcnow()
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # MODULE-L5-10: "value" must count only top-ups where money was actually
+        # received. Summing amount_paid across ALL statuses counted initiated /
+        # failed / cancelled orders (never paid) as revenue, overstating the total.
+        PAID = ("credited", "paid_pending_credit", "refunded", "partially_refunded")
+        paid_topups = [t for t in topups if t.payment_status in PAID]
         return {
             "total_topups": len(topups),
-            "total_topup_value": float(sum((t.amount_paid for t in topups), Decimal("0"))),
+            "total_topup_value": float(sum((t.amount_paid for t in paid_topups), Decimal("0"))),
             "pending_topups": sum(1 for t in topups if t.payment_status in ("initiated", "paid_pending_credit")),
             "failed_topups": sum(1 for t in topups if t.payment_status == "failed"),
             "refunded_topups": sum(1 for t in topups if t.payment_status in ("refunded", "partially_refunded")),
             "topup_value_this_month": float(sum(
-                (t.amount_paid for t in topups if t.created_at and t.created_at >= month_start), Decimal("0"))),
+                (t.amount_paid for t in paid_topups if t.created_at and t.created_at >= month_start), Decimal("0"))),
         }
 
     async def _load_topup(self, topup_id: uuid.UUID) -> CreditTopupOrder:
