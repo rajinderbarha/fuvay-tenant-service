@@ -247,10 +247,34 @@ bug. 3 tests pin the fixes.
 **Session tally of real bugs fixed toward Module 02 L5: 8** (2 admin + 4 tenant-portal + 2
 customer booking-journey), plus the packages-endpoint canonical rewire.
 
-**Remaining for a truthful `PROVEN_LEVEL_5`:** onboarding-checklist shape reconciliation; the
-tenant-portal onboarding *wizard* multi-step flow; a fully-serviceable end-to-end booking
-confirmation (needs demo data); and a live public-visibility exclusion probe. Real, scoped work
-— **not yet certified**, but Module 02's core flows are now broadly verified and crash-free.
+## 6i. Fully-serviceable booking — why the demo can't complete it (investigated)
+
+Traced exactly why a full end-to-end booking confirmation doesn't complete for the demo data
+(the code path is crash-free after §6h; this is about *matchability*, diagnosed via the matching
+engine's own reason codes):
+
+- The matching engine correctly excludes candidates with precise reasons. For Ludhiana/147001 +
+  ac_installation: Isolation Test Services → `TENANT_CATEGORY_NOT_ENTITLED` (expected); Demo AC
+  Services → `NOT_BOOKABLE_CANONICAL_STATUS`.
+- Demo AC's bookability blocker (`provider_visibility_statuses`) is
+  **`PROVIDER_PRICE_RANGE_MISSING`** — "set your provider price range for a published service."
+- **But** `master_services.ac_installation` has `tenant_override_allowed = False` (fixed price
+  ₹150, no min/max). So the tenant **cannot** set a price range for this service, yet bookability
+  demands one → the provider can never become bookable for a fixed-price/no-override service.
+
+**Conclusion:** this is **not a customer-flow code defect** — the booking journey is wired and
+crash-free, and the matching engine gates correctly with diagnosable reasons. Completing a
+successful booking is a **provider-provisioning/demo-data** task, and there is a plausible
+**bookability-logic follow-up**: the `PROVIDER_PRICE_RANGE_MISSING` gate should likely treat a
+fixed-price / `tenant_override_allowed=False` service as already-priced (no range required)
+rather than permanently blocking it. Recorded as a follow-up (Sprint-12 bookability engine
+scope), not chased here.
+
+**Remaining for a truthful `PROVEN_LEVEL_5`:** the bookability price-range wrinkle above (or
+demo-data that makes one provider fully bookable); onboarding-checklist shape reconciliation;
+the tenant-portal onboarding *wizard* multi-step flow; and a live public-visibility exclusion
+probe. Real, scoped work — **not yet certified**, but Module 02's core flows are broadly verified
+and crash-free, with 8 real defects removed this session.
 
 ## 7. Honest Recommendation
 
