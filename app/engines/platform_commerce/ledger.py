@@ -63,6 +63,16 @@ async def debit_wallet(
     meta: dict | None = None,
 ) -> WalletTransaction:
     """Debit wallet with row lock. Raises if insufficient balance."""
+    # MODULE-L5-10: the ledger primitives must never move money the wrong way on
+    # a bad amount. A non-positive amount here would pass the balance check
+    # (balance < negative is False) and then run `balance -= negative`, i.e.
+    # INFLATE the balance. Reject it at the source so no caller — present or
+    # future — can invert a debit/credit.
+    if amount is None or amount <= Decimal("0"):
+        raise ServiceOSException("INVALID_LEDGER_AMOUNT",
+            "Ledger amount must be a positive number.", status_code=422,
+            context={"amount": float(amount) if amount is not None else None})
+
     if idempotency_key:
         existing = await db.execute(
             select(WalletTransaction).where(WalletTransaction.idempotency_key == idempotency_key)
@@ -119,6 +129,16 @@ async def credit_wallet(
     meta: dict | None = None,
 ) -> WalletTransaction:
     """Credit wallet. Also row-locked to keep balance accurate."""
+    # MODULE-L5-10: the ledger primitives must never move money the wrong way on
+    # a bad amount. A non-positive amount here would pass the balance check
+    # (balance < negative is False) and then run `balance -= negative`, i.e.
+    # INFLATE the balance. Reject it at the source so no caller — present or
+    # future — can invert a debit/credit.
+    if amount is None or amount <= Decimal("0"):
+        raise ServiceOSException("INVALID_LEDGER_AMOUNT",
+            "Ledger amount must be a positive number.", status_code=422,
+            context={"amount": float(amount) if amount is not None else None})
+
     if idempotency_key:
         existing = await db.execute(
             select(WalletTransaction).where(WalletTransaction.idempotency_key == idempotency_key)
@@ -162,6 +182,16 @@ async def debit_deposit(
     actor_id: uuid.UUID | None,
 ) -> SecurityDepositTransaction:
     """Draw from security deposit. Raises if insufficient balance."""
+    # MODULE-L5-10: the ledger primitives must never move money the wrong way on
+    # a bad amount. A non-positive amount here would pass the balance check
+    # (balance < negative is False) and then run `balance -= negative`, i.e.
+    # INFLATE the balance. Reject it at the source so no caller — present or
+    # future — can invert a debit/credit.
+    if amount is None or amount <= Decimal("0"):
+        raise ServiceOSException("INVALID_LEDGER_AMOUNT",
+            "Ledger amount must be a positive number.", status_code=422,
+            context={"amount": float(amount) if amount is not None else None})
+
     current = deposit.current_balance
     if current < amount:
         raise ServiceOSException(
@@ -197,6 +227,16 @@ async def credit_deposit(
     actor_id: uuid.UUID | None,
 ) -> SecurityDepositTransaction:
     """Credit security deposit (replenishment or admin adjustment)."""
+    # MODULE-L5-10: the ledger primitives must never move money the wrong way on
+    # a bad amount. A non-positive amount here would pass the balance check
+    # (balance < negative is False) and then run `balance -= negative`, i.e.
+    # INFLATE the balance. Reject it at the source so no caller — present or
+    # future — can invert a debit/credit.
+    if amount is None or amount <= Decimal("0"):
+        raise ServiceOSException("INVALID_LEDGER_AMOUNT",
+            "Ledger amount must be a positive number.", status_code=422,
+            context={"amount": float(amount) if amount is not None else None})
+
     balance_before = deposit.current_balance
     if txn_type == DepositTxnType.REPLENISHMENT:
         deposit.replenishment_total += amount
