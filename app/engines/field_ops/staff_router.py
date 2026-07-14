@@ -34,12 +34,17 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 
 @router.get("", summary="Step 6: My assigned jobs", response_model=ApiResponse[dict])
 async def my_jobs(r: Request,
-                   tenant_id: uuid.UUID = Query(...),
+                   tenant_id: uuid.UUID | None = Query(None),
                    job_status: str | None = Query(None, alias="status"),
                    limit: int = Query(50, ge=1, le=200),
                    cursor: str | None = Query(None),
                    s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.list_jobs(tenant_id, job_status, s.actor_id, limit, cursor), _rid(r), ENGINE_ID)
+    # This is a staff/technician *self* endpoint: the caller's tenant is taken
+    # from their JWT inside list_jobs (which always overrides tenant_id with
+    # actor_tenant_id for staff/technician). Requiring tenant_id as a query param
+    # here was dead weight that only produced spurious 422s for the staff app.
+    return ok(await s.list_jobs(tenant_id or s.actor_tenant_id, job_status, s.actor_id, limit, cursor),
+              _rid(r), ENGINE_ID)
 
 
 @router.get("/{job_id}", summary="Step 6: My assigned job detail", response_model=ApiResponse[dict])

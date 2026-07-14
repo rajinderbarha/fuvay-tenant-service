@@ -48,3 +48,20 @@ def test_tenant_owner_cannot_mutate_other_tenant_booking():
 
 def test_guard_enforces_booking_mutation_coverage():
     assert guard.check() == []
+
+
+def test_staff_me_jobs_does_not_require_tenant_id_query():
+    """MODULE-L5-02 bug #14: /v1/staff/me/jobs is a staff/technician *self*
+    endpoint — its tenant is derived from the JWT inside list_jobs, which always
+    overrides the passed tenant_id with actor_tenant_id for staff/technician.
+    The router previously declared tenant_id as a REQUIRED query param, so every
+    call from the staff app returned 422 (and, worse, invited the client to
+    supply its own tenant_id on a /me/ endpoint). The param must be optional."""
+    import inspect
+    from app.engines.field_ops import staff_router
+    sig = inspect.signature(staff_router.my_jobs)
+    default = sig.parameters["tenant_id"].default
+    # FastAPI Query(...) marker for a required param exposes default is Ellipsis;
+    # an optional Query(None) exposes default None.
+    assert getattr(default, "default", default) is None, (
+        "tenant_id must be optional on the staff self /me/jobs endpoint")
