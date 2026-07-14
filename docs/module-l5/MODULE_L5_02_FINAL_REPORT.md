@@ -123,10 +123,33 @@ serving **stale code** — its `suspend` endpoint 500s while the current committ
 200 (verified on a fresh `:8001` instance). Recommend restarting `:8000` to pick up committed
 fixes; not a defect in the codebase.
 
-**Remaining for a genuine Module 02 L5 stamp:** exhaustive verification of the tenant-portal
-side (tenant's own onboarding wizard + dashboard), the customer-facing public profile privacy,
-and the remaining lifecycle transitions (approve/reject/request-changes end-to-end) — real,
-scoped work, not yet certified.
+## 6c. Tenant-portal (tenant's own app) contract verification (added this session)
+
+Verified the tenant-portal's core endpoints live as a **tenant_owner** against a fresh backend
+(current code). Of ~25 core dashboard/onboarding/status endpoints probed, most return 200
+(dashboard runtime, navigation, engines, me/modules/categories/entitlements, provider status,
+offerings, service-areas, team-members, business-profile, profile, monetization status,
+security-deposit, reviews summary, subscription status, usage-credits, package-summary). Found
+**4 real 500s** breaking core tenant pages, all fixed + committed + live-verified 500→200:
+
+| Endpoint | Root cause | Fix |
+|---|---|---|
+| `/v1/provider/wallet` | `get_wallet` bare `ValueError` (no wallet) | zero-balance default (same as admin wallet) |
+| `/v1/provider/onboarding/status` | queries un-provisioned `provider_onboarding_statuses` | try/except → not-started default |
+| `/v1/provider/onboarding/items` | un-provisioned `provider_onboarding_items` | try/except → empty list |
+| `/v1/provider/packages/status` | un-provisioned `provider_package_purchases` | try/except → no-packages default |
+
+Honest caveat: the 3 onboarding/packages tables genuinely do not exist in this DB, so those
+features are unbacked — the fixes make the pages **load** (graceful default) rather than crash;
+a fuller fix would reconcile them against the canonical onboarding/package source (a follow-up).
+One 404 (`/v1/tenant/credit-wallet`) is likely a wrong client path — to confirm.
+
+**Running tally of real bugs fixed toward Module 02 L5 this session: 6** (2 admin tenant-detail
+500s + 4 tenant-portal 500s), all live-verified and regression-clean.
+
+**Remaining for a genuine Module 02 L5 stamp:** the customer-facing public-profile privacy,
+the approve/reject/request-changes lifecycle transitions end-to-end, and reconciling the 3
+unbacked onboarding/package tables — real, scoped work, not yet certified.
 
 ## 7. Honest Recommendation
 

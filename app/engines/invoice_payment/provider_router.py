@@ -146,7 +146,16 @@ async def provider_get_wallet(
     r: Request = None,
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
-    data = await wal_svc.get_wallet(db, str(user.tenant_id))
+    # MODULE-L5-02: a tenant may not have a wallet provisioned yet. get_wallet
+    # raises a bare ValueError -> 500 (breaking the provider wallet page). Return
+    # a zero-balance default (same fix as the admin wallet handler).
+    try:
+        data = await wal_svc.get_wallet(db, str(user.tenant_id))
+    except ValueError:
+        data = {"tenant_id": str(user.tenant_id), "currency": "INR", "current_balance": "0",
+                "reserved_balance": "0", "total_purchased": "0", "total_deducted": "0",
+                "low_balance_threshold": None, "is_active": False,
+                "last_transaction_at": None, "provisioned": False}
     return ok(data, _rid(r), "provider_get_wallet")
 
 

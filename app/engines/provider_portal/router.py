@@ -1296,8 +1296,14 @@ async def get_onboarding_status(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    row = await db.execute(text("SELECT * FROM provider_onboarding_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"), {"tid": str(tid)})
-    r = row.fetchone()
+    # MODULE-L5-02: provider_onboarding_statuses is not provisioned in all
+    # environments; fall back to the not-started default instead of a 500.
+    try:
+        row = await db.execute(text("SELECT * FROM provider_onboarding_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"), {"tid": str(tid)})
+        r = row.fetchone()
+    except Exception:
+        await db.rollback()
+        r = None
     if r:
         data = dict(r._mapping)
     else:
@@ -1319,15 +1325,21 @@ async def get_onboarding_items(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    result = await db.execute(text("""
-        SELECT poi.*, oct.title, oct.description as template_description, oct.item_type,
-               oct.is_required as template_required, oct.completion_source
-        FROM provider_onboarding_items poi
-        LEFT JOIN onboarding_checklist_templates oct ON oct.id = poi.template_id
-        WHERE poi.tenant_id = :tid
-        ORDER BY oct.display_order, poi.checklist_key
-    """), {"tid": str(tid)})
-    rows = [dict(r._mapping) for r in result.fetchall()]
+    # MODULE-L5-02: provider_onboarding_items may not be provisioned; fall back
+    # to an empty list instead of a 500.
+    try:
+        result = await db.execute(text("""
+            SELECT poi.*, oct.title, oct.description as template_description, oct.item_type,
+                   oct.is_required as template_required, oct.completion_source
+            FROM provider_onboarding_items poi
+            LEFT JOIN onboarding_checklist_templates oct ON oct.id = poi.template_id
+            WHERE poi.tenant_id = :tid
+            ORDER BY oct.display_order, poi.checklist_key
+        """), {"tid": str(tid)})
+        rows = [dict(r._mapping) for r in result.fetchall()]
+    except Exception:
+        await db.rollback()
+        rows = []
     return ok({"items": rows, "count": len(rows)}, request_id=rid)
 
 
@@ -1351,15 +1363,21 @@ async def get_packages_status(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    result = await db.execute(text("""
-        SELECT ppp.*, sp.name as package_name, sp.package_type as pkg_type,
-               sp.plan_level, sp.features
-        FROM provider_package_purchases ppp
-        LEFT JOIN service_packages sp ON sp.id = ppp.package_id
-        WHERE ppp.tenant_id = :tid AND ppp.purchase_status != 'cancelled'
-        ORDER BY ppp.created_at DESC
-    """), {"tid": str(tid)})
-    rows = [dict(r._mapping) for r in result.fetchall()]
+    # MODULE-L5-02: provider_package_purchases may not be provisioned; fall back
+    # to no-packages instead of a 500.
+    try:
+        result = await db.execute(text("""
+            SELECT ppp.*, sp.name as package_name, sp.package_type as pkg_type,
+                   sp.plan_level, sp.features
+            FROM provider_package_purchases ppp
+            LEFT JOIN service_packages sp ON sp.id = ppp.package_id
+            WHERE ppp.tenant_id = :tid AND ppp.purchase_status != 'cancelled'
+            ORDER BY ppp.created_at DESC
+        """), {"tid": str(tid)})
+        rows = [dict(r._mapping) for r in result.fetchall()]
+    except Exception:
+        await db.rollback()
+        rows = []
     active = [r for r in rows if r.get("purchase_status") == "active"]
     return ok({
         "has_active_package": len(active) > 0,
