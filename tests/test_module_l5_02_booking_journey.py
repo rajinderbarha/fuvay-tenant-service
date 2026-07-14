@@ -29,3 +29,14 @@ def test_matching_engine_defensive_on_none_city():
     idx = ME.index("def select_best_provider(")
     body = ME[idx:idx + 2500]
     assert '(city or "").strip()' in body
+
+
+def test_coverage_treats_null_brand_type_as_wildcard():
+    """MODULE-L5-02: a service-level coverage row (brand_id/service_type_id NULL)
+    must cover ANY brand/type. The exact-match-only check + the (area,service,
+    job_type) duplicate constraint meant a brand-required service with only
+    service-level coverage could never match (BRAND_NOT_COVERED_IN_AREA), making
+    it unbookable. Coverage checks now treat NULL as wildcard."""
+    ME = (ROOT / "app/engines/home_service_booking/matching_engine.py").read_text(encoding="utf-8")
+    assert "tsas.brand_id=:bid OR tsas.brand_id IS NULL" in ME
+    assert "tsas.service_type_id=:stid OR tsas.service_type_id IS NULL" in ME

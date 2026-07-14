@@ -489,11 +489,19 @@ async def _passes_full_eligibility_gate(
     if not svc_row:
         return False, "SERVICE_NOT_COVERED_IN_AREA"
 
+    # MODULE-L5-02: a service-level coverage row (service_type_id / brand_id NULL)
+    # covers ANY type/brand. The exact-match-only check here, combined with the
+    # add_service_mapping duplicate constraint on (area, service, job_type) —
+    # which blocks adding a type/brand-specific row alongside a service-level one
+    # — meant a brand- or type-required service with only service-level coverage
+    # could NEVER match (BRAND_NOT_COVERED / TYPE_NOT_COVERED), so it was never
+    # bookable. Treat NULL (service-level) coverage as a wildcard.
     if offering_type_id:
         type_row = (await db.execute(text(
             "SELECT count(*) FROM tenant_service_area_services tsas "
             "JOIN tenant_service_areas tsa ON tsa.id = tsas.tenant_service_area_id "
-            "WHERE tsas.tenant_id=:tid AND tsas.service_id=:oid AND tsas.service_type_id=:stid "
+            "WHERE tsas.tenant_id=:tid AND tsas.service_id=:oid "
+            "AND (tsas.service_type_id=:stid OR tsas.service_type_id IS NULL) "
             "AND tsas.is_available=true AND tsa.is_active=true"
             + (" AND tsa.zipcode=:zip" if zipcode else "")
         ), {"tid": str(tenant_id), "oid": str(offering_id), "stid": str(offering_type_id),
@@ -505,7 +513,8 @@ async def _passes_full_eligibility_gate(
         brand_row = (await db.execute(text(
             "SELECT count(*) FROM tenant_service_area_services tsas "
             "JOIN tenant_service_areas tsa ON tsa.id = tsas.tenant_service_area_id "
-            "WHERE tsas.tenant_id=:tid AND tsas.service_id=:oid AND tsas.brand_id=:bid "
+            "WHERE tsas.tenant_id=:tid AND tsas.service_id=:oid "
+            "AND (tsas.brand_id=:bid OR tsas.brand_id IS NULL) "
             "AND tsas.is_available=true AND tsa.is_active=true"
             + (" AND tsa.zipcode=:zip" if zipcode else "")
         ), {"tid": str(tenant_id), "oid": str(offering_id), "bid": str(brand_id),

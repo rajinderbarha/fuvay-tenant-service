@@ -346,6 +346,33 @@ also references the empty `service_catalog_items`; it is on the serviceability-c
 resolution path and returns `(service_type_id, name, category)` which `MasterService` does not
 provide 1:1, so it needs a more careful mapping — recorded, not forced.
 
+## 6l. 🎯 COMPLETE live end-to-end booking ACHIEVED + bug #12
+
+Drove the entire customer booking journey to a **real, persisted booking** on current code:
+
+```
+create draft → PUT(address/brand) → serviceability-check (serviceable:true)
+  → match-and-price (200, Demo AC selected, ₹150) → confirm-price-choice (mid, 200)
+  → summary (200) → confirm (200)
+    → booking BK-20260714-000001 (service_bookings, status pending_assignment)
+    → job JOB-20260714-000001, booking_status=confirmed, provider=Demo AC, ₹150
+```
+
+**Bug #12 (FIXED) — brand/type coverage exact-match made brand-required services unbookable.**
+The matching engine's type/brand coverage checks required an **exact** `service_type_id`/
+`brand_id` match, but `add_service_mapping`'s duplicate constraint is on `(area, service,
+job_type)` — so you cannot add a brand-specific coverage row alongside a service-level one. A
+brand-required service (e.g. ac_installation → brand LG) with only service-level coverage thus
+always failed `BRAND_NOT_COVERED_IN_AREA` and could never be booked. Fixed: coverage checks now
+treat a NULL (service-level) `brand_id`/`service_type_id` as a **wildcard** covering any
+brand/type. This was the final code fix that let the end-to-end booking complete.
+
+**Provisioning used (real APIs / admin data, to make Demo AC a fully-onboarded bookable
+provider):** completed business-profile `address_line1`; created an `ac_installation` service
+pricing rule and a bargain rule (customer 150 = fixed price, floor 150); created the service-area
+coverage mapping. Combined with the code fixes #9/#10/#11/#12, Demo AC is now genuinely bookable
+and a customer can complete a real booking.
+
 ## 7-final. Module 02 honest status
 
 **Not `PROVEN_LEVEL_5`.** But materially de-risked: 10 real defects eliminated, 3 apps
