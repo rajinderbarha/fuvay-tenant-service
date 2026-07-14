@@ -306,8 +306,25 @@ class FinanceHubService:
 
     async def record_offline_deposit(self, deposit_id: uuid.UUID, amount: Decimal, reference: str | None, notes: str | None) -> dict:
         d = await self._load_deposit(deposit_id)
+        amount = Decimal(str(amount))
+        # MODULE-L5-10: money IN. A negative amount would run total_paid +=
+        # negative and REDUCE the deposit; and recording the same bank reference
+        # twice would double-credit it (confirm_deposit already dedupes on the
+        # reference — this offline path did not). Validate + dedupe on reference.
+        if amount <= Decimal("0"):
+            raise ServiceOSException("VALIDATION_ERROR",
+                "Deposit amount must be positive.", status_code=422)
+        if reference:
+            dup = await self.db.execute(
+                select(SecurityDepositTransaction).where(
+                    SecurityDepositTransaction.deposit_id == d.id,
+                    SecurityDepositTransaction.reference_id == reference,
+                )
+            )
+            if dup.scalars().first() is not None:
+                return {**self._deposit_dict(d), "idempotent": True}
         before = self._deposit_dict(d)
-        await credit_deposit(self.db, d, Decimal(str(amount)), DepositTxnType.INITIAL_PAYMENT,
+        await credit_deposit(self.db, d, amount, DepositTxnType.INITIAL_PAYMENT,
                               reference, notes or "Offline deposit recorded by admin", self.actor_id)
         if d.total_paid >= d.required_amount:
             d.status = "paid"; d.hold_state = "held"
