@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import EnterpriseDataGrid, { GridColumn, GridData } from "../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../components/enterprise/EnterpriseFilterBar";
-import { apiFetchPaginatedRaw } from "../../../lib/api";
+import { apiFetchPaginatedRaw, sprint27AdminApi, AuditLogRecord } from "../../../lib/api";
 
 type LogSource = "engine" | "security" | "auth";
 
@@ -121,6 +121,23 @@ export default function AuditLogsPage() {
   const [tab, setTab] = useState<LogSource>("engine");
   const cfg = TAB_CONFIG[tab];
 
+  // MODULE-L5-11: the record-timeline endpoint (full audit history of one record)
+  // had a client method but was reachable from no UI. Wire it as a row-action
+  // drill-in: "View record timeline" opens the complete trail for that resource.
+  const [timeline, setTimeline] = useState<{
+    open: boolean; loading: boolean; type: string; id: string; rows: AuditLogRecord[];
+  } | null>(null);
+
+  const openTimeline = useCallback(async (resourceType: string, resourceId: string) => {
+    setTimeline({ open: true, loading: true, type: resourceType, id: resourceId, rows: [] });
+    try {
+      const r = await sprint27AdminApi.getAuditTimeline(resourceType, resourceId);
+      setTimeline({ open: true, loading: false, type: resourceType, id: resourceId, rows: r.timeline ?? [] });
+    } catch {
+      setTimeline({ open: true, loading: false, type: resourceType, id: resourceId, rows: [] });
+    }
+  }, []);
+
   const fetchFn = useCallback(async (params: Record<string, unknown>) => {
     const d = await apiFetchPaginatedRaw(TAB_CONFIG[tab].endpoint, params);
     if (d?.pagination) return d as unknown as GridData;
@@ -161,7 +178,66 @@ export default function AuditLogsPage() {
         defaultSort={{ sort_by: "created_at", sort_direction: "desc" }}
         enableColumnPrefs
         emptyMessage="No audit logs found."
+        rowActions={tab === "engine" ? (row) => {
+          const rt = String(row.resource_type ?? row.entity_type ?? "");
+          const ri = String(row.resource_id ?? row.entity_id ?? "");
+          if (!rt || !ri) return [];
+          return [{ label: "View record timeline", onClick: () => openTimeline(rt, ri) }];
+        } : undefined}
       />
+
+      {timeline?.open && (
+        <div onClick={() => setTimeline(null)} style={{ position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", justifyContent: "flex-end" }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: "min(520px, 96vw)",
+            background: "var(--surface)", height: "100%", overflowY: "auto",
+            boxShadow: "-4px 0 32px rgba(0,0,0,0.25)" }}>
+            <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)",
+              display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Record timeline</h2>
+                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "3px 0 0" }}>
+                  {timeline.type} · {timeline.id}
+                </p>
+              </div>
+              <button onClick={() => setTimeline(null)} style={{ background: "none", border: "none",
+                fontSize: 20, cursor: "pointer", color: "var(--text-tertiary)" }}>✕</button>
+            </div>
+            <div style={{ padding: "16px 22px" }}>
+              {timeline.loading ? (
+                <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Loading…</p>
+              ) : timeline.rows.length === 0 ? (
+                <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No audit entries for this record.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                  {timeline.rows.map((e, i) => (
+                    <div key={e.id ?? i} style={{ display: "flex", gap: 12,
+                      paddingBottom: 14, position: "relative" }}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                        <span style={{ width: 9, height: 9, borderRadius: "50%", background: "var(--brand)", marginTop: 4 }} />
+                        {i < timeline.rows.length - 1 && (
+                          <span style={{ width: 2, flex: 1, background: "var(--border)", marginTop: 2 }} />
+                        )}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                          {e.action}{e.is_high_risk ? " ⚠" : ""}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)", margin: "2px 0" }}>
+                          {e.actor_role ?? "system"}{e.engine_key ? ` · ${e.engine_key}` : ""}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                          {String(e.created_at ?? "").replace("T", " ").slice(0, 19)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </AdminLayout>
   );
