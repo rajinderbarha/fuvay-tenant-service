@@ -147,9 +147,30 @@ One 404 (`/v1/tenant/credit-wallet`) is likely a wrong client path — to confir
 **Running tally of real bugs fixed toward Module 02 L5 this session: 6** (2 admin tenant-detail
 500s + 4 tenant-portal 500s), all live-verified and regression-clean.
 
-**Remaining for a genuine Module 02 L5 stamp:** the customer-facing public-profile privacy,
-the approve/reject/request-changes lifecycle transitions end-to-end, and reconciling the 3
-unbacked onboarding/package tables — real, scoped work, not yet certified.
+## 6d. Onboarding review lifecycle — live proof (added this session)
+
+Exercised the full admin onboarding review lifecycle against a throwaway tenant (created in
+`verification_status=pending`, then deleted; real tenants untouched) on current code:
+
+| Transition | Endpoint | Result | State after |
+|---|---|---|---|
+| request-changes | `POST /v1/admin/onboarding/providers/{id}/request-changes` | **200** | `verification=changes_requested` |
+| **approve (gated)** | `POST …/approve` | **422 — correctly blocked** | unchanged (profile < 100%) |
+| reject | `POST …/reject` | **200** | `verification=rejected`, `status=rejected` |
+
+The **approve gate works** — a tenant with < 100% profile completion cannot be approved (the
+core governance invariant "an unapproved/incomplete tenant must not become operational").
+Combined with the earlier suspend→reinstate proof (§6b), the tenant lifecycle mutations are now
+runtime-proven end-to-end: request-changes, approve (+gate), reject, suspend, reinstate.
+
+Minor cosmetic follow-up: the approve-gate 422 is wrapped with a generic "Internal Server Error"
+title instead of surfacing the helpful "Profile completion is X%" detail — status code is
+correct (422); UX-only.
+
+**Remaining for a genuine Module 02 L5 stamp:** the customer-facing public-profile privacy
+(pending/suspended tenants hidden), reconciling the 3 unbacked onboarding/package tables against
+a canonical source, and the tenant-portal onboarding *wizard* end-to-end — real, scoped work,
+not yet certified.
 
 ## 7. Honest Recommendation
 
