@@ -134,3 +134,26 @@ def test_settlement_requires_dual_acceptance_and_settles_the_complaint():
     # (b) both paths must settle the complaint on dual acceptance
     for src in (cust, ten):
         assert "complaint.status = STATUS_SETTLED" in src
+
+
+def test_refund_events_log_the_status_actually_applied():
+    """MODULE-L5-02 bug #31: the refund service's complaint transitions are a
+    silent no-op when disallowed (deliberately — the skip is load-bearing for
+    idempotent cases), but the events were logged with a HARDCODED new_status and
+    old_status=None regardless. So the complaint's audit trail recorded status
+    changes that never happened — before the #29 fix it showed
+    refund_requested/approved/recorded while the complaint was really still
+    'open', actively misleading anyone auditing a dispute.
+
+    Proven live: the trail now reads open -> refund_requested ->
+    refund_approved -> refund_recorded, matching reality."""
+    import inspect
+    from app.engines.complaints.refund_service import RefundRequestService
+    for fn in (RefundRequestService.create_refund_request_from_complaint,
+               RefundRequestService.admin_approve_refund,
+               RefundRequestService.record_refund):
+        src = inspect.getsource(fn)
+        assert "applied = None" in src, fn.__name__
+        assert "old_status = complaint.status" in src, fn.__name__
+        # the event must be logged with the real old/applied status
+        assert "old_status, applied" in src, fn.__name__

@@ -55,13 +55,21 @@ class RefundRequestService:
         db.add(refund)
         await db.flush()
 
+        # MODULE-L5-02 bug #31: the complaint transition here is a silent no-op
+        # when disallowed, but the event below used to log new_status =
+        # STATUS_REFUND_REQUESTED unconditionally — so the complaint's audit trail
+        # recorded a status change that never actually happened. Log the status
+        # that was really applied (None when the transition was skipped).
+        old_status = complaint.status
         allowed = ALLOWED_TRANSITIONS.get(complaint.status, set())
+        applied = None
         if STATUS_REFUND_REQUESTED in allowed:
             complaint.status = STATUS_REFUND_REQUESTED
+            applied = STATUS_REFUND_REQUESTED
             await db.flush()
 
         await self._log_event(db, complaint_id, complaint.tenant_id, actor_type, actor_user_id,
-                              EVT_REFUND_REQUESTED, None, STATUS_REFUND_REQUESTED,
+                              EVT_REFUND_REQUESTED, old_status, applied,
                               {"refund_id": str(refund.id)}, request_id)
         await db.commit()
         return refund
@@ -98,13 +106,17 @@ class RefundRequestService:
         await db.flush()
 
         complaint = await self._complaint_svc.get_complaint(db, refund.complaint_id)
+        # bug #31: log the status actually applied, not an assumed one.
+        old_status = complaint.status
         allowed = ALLOWED_TRANSITIONS.get(complaint.status, set())
+        applied = None
         if STATUS_REFUND_APPROVED in allowed:
             complaint.status = STATUS_REFUND_APPROVED
+            applied = STATUS_REFUND_APPROVED
             await db.flush()
 
         await self._log_event(db, refund.complaint_id, refund.tenant_id, ACTOR_ADMIN, admin_user_id,
-                              EVT_REFUND_APPROVED, None, STATUS_REFUND_APPROVED,
+                              EVT_REFUND_APPROVED, old_status, applied,
                               {"approved_amount": str(refund.approved_amount)}, request_id)
         await db.commit()
         return refund
@@ -142,13 +154,17 @@ class RefundRequestService:
         await db.flush()
 
         complaint = await self._complaint_svc.get_complaint(db, refund.complaint_id)
+        # bug #31: log the status actually applied, not an assumed one.
+        old_status = complaint.status
         allowed = ALLOWED_TRANSITIONS.get(complaint.status, set())
+        applied = None
         if STATUS_REFUND_RECORDED in allowed:
             complaint.status = STATUS_REFUND_RECORDED
+            applied = STATUS_REFUND_RECORDED
             await db.flush()
 
         await self._log_event(db, refund.complaint_id, refund.tenant_id, actor_type, actor_user_id,
-                              EVT_REFUND_RECORDED, None, STATUS_REFUND_RECORDED,
+                              EVT_REFUND_RECORDED, old_status, applied,
                               {"recorded_amount": str(recorded_amount)}, request_id)
         await db.commit()
         return refund
