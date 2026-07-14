@@ -598,6 +598,11 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
   // indicator regardless of real state). Now fetches the real unread
   // count from the backend and navigates to the real notification center.
   const [unreadCount, setUnreadCount] = useState<number | null>(null);
+  // MODULE-L5-11: the bell now opens a small dropdown card with the most recent
+  // notifications and a "View all notifications" link, instead of navigating away.
+  const [bellOpen, setBellOpen] = useState(false);
+  const [recentNotifs, setRecentNotifs] = useState<import("../../lib/api").InAppNotification[] | null>(null);
+  const bellRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
     authApi.me().then(u => {
       setMyName(u.full_name ?? "Super Admin");
@@ -605,6 +610,21 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
     }).catch(() => {});
     sprint27AdminApi.getUnreadCount().then(r => setUnreadCount(r.unread_count)).catch(() => setUnreadCount(null));
   }, []);
+  const openBell = () => {
+    setBellOpen(o => !o);
+    if (!bellOpen) {
+      sprint27AdminApi.listNotifications({ limit: 6 })
+        .then(r => setRecentNotifs(r.items ?? [])).catch(() => setRecentNotifs([]));
+    }
+  };
+  React.useEffect(() => {
+    if (!bellOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [bellOpen]);
   const iconBtnStyle: React.CSSProperties = {
     width: 36, height: 36, borderRadius: 10,
     border: "1px solid var(--border)", background: "var(--surface)",
@@ -659,18 +679,95 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
       </button>
 
       {/* Notifications */}
-      <a href="/admin/notifications" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
-        title="Notifications" style={{ ...iconBtnStyle, position: "relative", textDecoration: "none" }}>
-        <Bell size={16}/>
-        {!!unreadCount && unreadCount > 0 && (
-          <span style={{
-            position: "absolute", top: 3, right: 3, minWidth: 15, height: 15, padding: "0 3px",
-            borderRadius: "50%", background: "var(--danger)", border: "2px solid var(--surface)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 9, fontWeight: 700, color: "#fff", lineHeight: 1,
-          }}>{unreadCount > 99 ? "99+" : unreadCount}</span>
+      <div ref={bellRef} style={{ position: "relative" }}>
+        <button onClick={openBell}
+          aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
+          title="Notifications" style={{ ...iconBtnStyle, position: "relative" }}>
+          <Bell size={16}/>
+          {!!unreadCount && unreadCount > 0 && (
+            <span style={{
+              position: "absolute", top: 3, right: 3, minWidth: 15, height: 15, padding: "0 3px",
+              borderRadius: "50%", background: "var(--danger)", border: "2px solid var(--surface)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 9, fontWeight: 700, color: "#fff", lineHeight: 1,
+            }}>{unreadCount > 99 ? "99+" : unreadCount}</span>
+          )}
+        </button>
+
+        {bellOpen && (
+          <div style={{
+            position: "absolute", top: 44, right: 0, width: 340, maxHeight: 440,
+            background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12,
+            boxShadow: "0 12px 40px rgba(0,0,0,0.22)", zIndex: 300, overflow: "hidden",
+            display: "flex", flexDirection: "column",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Notifications</span>
+              {!!unreadCount && unreadCount > 0 && (
+                <button
+                  onClick={() => { sprint27AdminApi.markAllRead().then(() => {
+                    setUnreadCount(0);
+                    setRecentNotifs(rs => (rs ?? []).map(n => ({ ...n, read_status: "read" })));
+                  }).catch(() => {}); }}
+                  style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none",
+                    cursor: "pointer", padding: 0 }}>
+                  Mark all read
+                </button>
+              )}
+            </div>
+
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {recentNotifs === null ? (
+                <div style={{ padding: 16, fontSize: 13, color: "var(--text-tertiary)" }}>Loading…</div>
+              ) : recentNotifs.length === 0 ? (
+                <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--text-tertiary)" }}>
+                  No notifications
+                </div>
+              ) : recentNotifs.map(n => {
+                const unread = n.read_status !== "read";
+                const dot = n.severity === "critical" || n.severity === "danger" ? "var(--danger)"
+                          : n.severity === "warning" ? "var(--warning, #b45309)" : "var(--accent)";
+                const go = () => {
+                  if (unread) sprint27AdminApi.markRead(n.id).catch(() => {});
+                  setBellOpen(false);
+                  window.location.href = n.action_url || "/admin/notifications";
+                };
+                return (
+                  <div key={n.id} onClick={go} style={{
+                    display: "flex", gap: 10, padding: "11px 16px", cursor: "pointer",
+                    borderBottom: "1px solid var(--border)",
+                    background: unread ? "var(--surface-2, rgba(0,0,0,0.02))" : "transparent",
+                  }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", marginTop: 5,
+                      background: unread ? dot : "transparent", flexShrink: 0 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: unread ? 700 : 500, color: "var(--text-primary)",
+                        marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {n.title}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4,
+                        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                        {n.body}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 3 }}>
+                        {new Date(n.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <a href="/admin/notifications" onClick={() => setBellOpen(false)}
+              style={{ display: "block", textAlign: "center", padding: "12px 16px",
+                borderTop: "1px solid var(--border)", fontSize: 13, fontWeight: 600,
+                color: "var(--accent)", textDecoration: "none" }}>
+              View all notifications
+            </a>
+          </div>
         )}
-      </a>
+      </div>
 
       {/* User → My Profile */}
       <a href="/admin/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
