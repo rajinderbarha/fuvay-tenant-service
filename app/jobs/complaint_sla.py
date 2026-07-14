@@ -150,10 +150,84 @@ async def run_escalations() -> dict:
     return counts
 
 
+async def run_ai_auto_start() -> dict:
+    """MODULE-L5-02 — AI settlement is not started by hand.
+
+    It takes over automatically once the PROVIDER has failed to solve the
+    complaint: either they never responded within their SLA window, or the
+    customer rejected the resolution they offered (which lands the complaint in
+    under_admin_review). The admin only sets the rule — enable/disable, the cap,
+    the permitted remedies — on complaint_policies.
+
+    Starting a session charges the provider the AI settlement fee.
+
+    Returns counts: candidates / started / skipped.
+    """
+    from sqlalchemy import select, or_
+    from app.database import get_session_factory
+    from app.engines.complaints.complaint_service import ComplaintService
+    from app.engines.complaints.ai_settlement_service import AISettlementService
+    from app.engines.complaints.models import CustomerComplaint, AISettlementSession
+    from app.engines.complaints.settlement_rules import resolve_rule
+    from app.engines.complaints.constants import (
+        FINAL_STATUSES, STATUS_SETTLED, STATUS_AWAITING_PROVIDER,
+        STATUS_UNDER_ADMIN_REVIEW, STATUS_AI_SETTLEMENT_STARTED,
+    )
+
+    svc = ComplaintService()
+    ai = AISettlementService()
+    session_factory = get_session_factory()
+    counts = {"candidates": 0, "started": 0, "skipped": 0}
+    now = utcnow()
+
+    async with session_factory() as db:
+        # Provider failed = they blew their response SLA, or the customer bounced
+        # their resolution back and it is sitting with admin.
+        q = (
+            select(CustomerComplaint)
+            .where(
+                CustomerComplaint.status.notin_(list(FINAL_STATUSES | {STATUS_SETTLED})),
+                or_(
+                    (CustomerComplaint.status == STATUS_AWAITING_PROVIDER) &
+                    (CustomerComplaint.tenant_first_response_due_at < now) &
+                    (CustomerComplaint.provider_responded_at.is_(None)),
+                    CustomerComplaint.status == STATUS_UNDER_ADMIN_REVIEW,
+                ),
+            )
+            .limit(100)
+        )
+        complaints = (await db.execute(q)).scalars().all()
+
+        for c in complaints:
+            counts["candidates"] += 1
+
+            existing = (await db.execute(
+                select(AISettlementSession).where(AISettlementSession.complaint_id == c.id)
+            )).scalars().first()
+            if existing:
+                counts["skipped"] += 1      # already had its turn with the AI
+                continue
+
+            rule = await resolve_rule(db, c)
+            if not rule.enabled or not rule.auto_start_on_provider_failure:
+                counts["skipped"] += 1      # the admin turned this off
+                continue
+
+            await ai.start_session(db, c, actor_id=None, request_id="job:ai_auto_start")
+            c.status = STATUS_AI_SETTLEMENT_STARTED
+            counts["started"] += 1
+
+        await db.commit()
+
+    log.info("jobs.complaint_sla.ai_auto_start_done", **counts)
+    return counts
+
+
 async def run_all() -> dict:
     return {
-        "sla_check":   await run_sla_check(),
-        "escalations": await run_escalations(),
+        "sla_check":     await run_sla_check(),
+        "escalations":   await run_escalations(),
+        "ai_auto_start": await run_ai_auto_start(),
     }
 
 
@@ -175,7 +249,8 @@ async def background_loop(interval: int = LOOP_INTERVAL_SECONDS) -> None:
             log.info("jobs.complaint_sla.loop_tick",
                      breached=result["sla_check"]["breached"],
                      at_risk=result["sla_check"]["at_risk"],
-                     escalated=result["escalations"]["escalated"])
+                     escalated=result["escalations"]["escalated"],
+                     ai_started=result["ai_auto_start"]["started"])
         except asyncio.CancelledError:
             log.info("jobs.complaint_sla.loop_cancelled")
             raise
@@ -192,11 +267,12 @@ def main() -> None:
     commands: dict[str, Any] = {
         "sla":      run_sla_check,
         "escalate": run_escalations,
+        "ai":       run_ai_auto_start,
         "all":      run_all,
     }
     fn = commands.get(cmd)
     if fn is None:
-        print(f"Unknown command: {cmd}. Use: sla | escalate | all")
+        print(f"Unknown command: {cmd}. Use: sla | escalate | ai | all")
         sys.exit(1)
 
     async def _run() -> dict:

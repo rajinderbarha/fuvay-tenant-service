@@ -1,4 +1,5 @@
 # Sprint 25 — Complaints constants
+from decimal import Decimal
 
 # ── Error codes ────────────────────────────────────────────────────────────────
 ERR_COMPLAINT_NOT_FOUND              = "COMPLAINT_NOT_FOUND"
@@ -289,3 +290,50 @@ EVT_SETTLEMENT_COUNTERED     = "settlement_countered"
 EVT_ADMIN_ESCALATED          = "admin_escalated"
 EVT_COMPLAINT_SETTLED        = "complaint_settled"
 EVT_SEVERITY_CHANGED         = "severity_changed"
+
+# ── AI settlement rule (migration 138) ────────────────────────────────────────
+# The admin sets the rule; everything else is automatic.
+#
+#  * The AI takes over only once the PROVIDER has failed to solve the complaint
+#    (no response within SLA, or the customer rejected what they offered).
+#  * It may offer at most AI_SETTLEMENT_DEFAULT_MAX_PCT of the job's value.
+#  * A case strong enough to warrant MORE than the cap is NOT settled by the AI —
+#    it is escalated to admin manual review.
+#  * Compensation is paid in CREDIT POINTS, never real money. Those credits are
+#    funded by deducting from the PROVIDER's credit wallet, falling back to their
+#    security deposit.
+AI_SETTLEMENT_DEFAULT_MAX_PCT = Decimal("25.00")
+
+# Remedies the AI is allowed to propose. Deliberately excludes every monetary
+# option — the platform never settles a dispute with real money.
+AI_ALLOWED_REMEDIES = ["credit_points", "rework", "callback", "apology", "no_action"]
+
+# Proposal types that move REAL MONEY. The AI must never reach for these, and the
+# code rejects them even if the model returns one anyway.
+MONETARY_REMEDIES = {
+    "refund", "partial_refund", "full_refund", "cash", "cash_refund",
+    "tenant_direct_refund", "manual_customer_refund_exception", "bank_transfer",
+}
+
+# Maps an allowed AI remedy onto the DisputeSettlement settlement_type that
+# actually executes it (see app/engines/customer_credits/service.py).
+REMEDY_TO_SETTLEMENT_TYPE = {
+    "credit_points": "customer_service_credit",
+    "rework":        "tenant_revisit",
+    "callback":      "tenant_revisit",
+    "apology":       "no_compensation",
+    "no_action":     "no_compensation",
+}
+
+# Provider credits first, then their security deposit.
+SETTLEMENT_DEDUCTION_STRATEGY = "tenant_wallet_then_security_deposit"
+
+# Running an AI settlement is a paid platform service: the PROVIDER is charged
+# this many usage credits when the session starts (deducted from their credit
+# wallet, falling back to their security deposit — same cascade as the payout).
+AI_SETTLEMENT_FEE_CREDITS = Decimal("20.00")
+
+ERR_AI_SETTLEMENT_DISABLED = "AI_SETTLEMENT_DISABLED"
+EVT_AI_CAP_EXCEEDED        = "ai_settlement_cap_exceeded"
+EVT_AI_AUTO_STARTED        = "ai_settlement_auto_started"
+EVT_SETTLEMENT_EXECUTED    = "settlement_executed"

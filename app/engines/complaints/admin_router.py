@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 import uuid
 from decimal import Decimal
@@ -11,6 +11,7 @@ from app.dependencies.auth import get_current_user, require_super_admin, UserCon
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.engines.complaints.complaint_service import ComplaintService
+from app.engines.complaints.constants import MONETARY_REMEDIES
 from app.engines.complaints.rework_service import ServiceReworkService
 from app.engines.complaints.refund_service import RefundRequestService
 
@@ -87,6 +88,37 @@ class PolicyIn(BaseModel):
     allow_refund_request:          Optional[bool] = None
     require_admin_review:          Optional[bool] = None
     is_active:                     Optional[bool] = None
+
+    # ── The AI settlement rule — this is the ONLY thing the admin sets ─────────
+    # Everything downstream is automatic: the AI takes over when the provider has
+    # failed, offers at most `ai_settlement_max_pct` of the job value in credit
+    # points, and hands anything bigger to a human.
+    ai_settlement_enabled:             Optional[bool]    = None
+    ai_auto_start_on_provider_failure: Optional[bool]    = None
+    ai_settlement_max_pct:             Optional[Decimal] = None
+    ai_settlement_allowed_remedies:    Optional[list[str]] = None
+    settlement_payout_in_credits_only: Optional[bool]    = None
+
+    @field_validator("ai_settlement_max_pct")
+    @classmethod
+    def _pct_range(cls, v):
+        if v is not None and not (Decimal("0") <= v <= Decimal("100")):
+            raise ValueError("ai_settlement_max_pct must be between 0 and 100")
+        return v
+
+    @field_validator("ai_settlement_allowed_remedies")
+    @classmethod
+    def _no_money(cls, v):
+        """The platform never settles a dispute with real money — an admin cannot
+        configure their way around that."""
+        if v:
+            bad = [r for r in v if r.lower() in MONETARY_REMEDIES]
+            if bad:
+                raise ValueError(
+                    f"Settlements are paid in credit points, never money. "
+                    f"Remedies not allowed: {', '.join(bad)}"
+                )
+        return v
 
 
 class StartAISettlementIn(BaseModel):

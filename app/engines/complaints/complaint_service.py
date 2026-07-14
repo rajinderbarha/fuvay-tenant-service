@@ -774,6 +774,9 @@ class ComplaintService:
                 # bug #30b: complaint.status was never advanced, so a fully
                 # dual-accepted settlement left the complaint 'open' forever.
                 complaint.status = STATUS_SETTLED
+                # Pay the customer in CREDIT POINTS, funded from the PROVIDER's
+                # credit wallet and then their security deposit. Never money.
+                await self._execute_settlement_payout(db, complaint, proposal, customer_id)
         elif response == "reject":
             proposal.status = PROPOSAL_REJECTED
             complaint.settlement_status = PROPOSAL_REJECTED
@@ -832,6 +835,9 @@ class ComplaintService:
                 # dual acceptance, so a settlement accepted by BOTH parties left
                 # the complaint sitting at 'open' in every queue forever.
                 complaint.status = STATUS_SETTLED
+                # Pay the customer in CREDIT POINTS, funded from the PROVIDER's
+                # credit wallet and then their security deposit. Never money.
+                await self._execute_settlement_payout(db, complaint, proposal, actor_user_id)
         elif response == "reject":
             proposal.status = PROPOSAL_REJECTED
             complaint.settlement_status = PROPOSAL_REJECTED
@@ -925,6 +931,57 @@ class ComplaintService:
         """Mark proposal accepted only when BOTH parties have accepted."""
         if proposal.customer_response == "accept" and proposal.tenant_response == "accept":
             proposal.status = PROPOSAL_ACCEPTED
+
+    async def _execute_settlement_payout(
+        self, db: AsyncSession, complaint: CustomerComplaint,
+        proposal: SettlementProposal, actor_id: uuid.UUID | None = None,
+    ) -> dict | None:
+        """MODULE-L5-02 — pay out a dual-accepted settlement.
+
+        The customer is compensated in CREDIT POINTS, never money, and those
+        credits are funded by deducting from the PROVIDER's credit wallet,
+        falling back to their security deposit. Remedies that carry no amount
+        (rework / callback / apology / no_action) move no value and are skipped.
+
+        Never fatal: a payout problem must not undo the parties' agreement — the
+        settlement record carries the shortfall for finance to chase.
+        """
+        from decimal import Decimal
+        from app.engines.complaints.constants import (
+            MONETARY_REMEDIES, REMEDY_TO_SETTLEMENT_TYPE, SETTLEMENT_DEDUCTION_STRATEGY,
+        )
+        from app.engines.customer_credits.service import DisputeSettlementService
+
+        remedy = (proposal.proposal_type or "").lower()
+        amount = Decimal(str(proposal.proposal_amount or "0"))
+
+        # Belt and braces: money never leaves this way, whoever proposed it.
+        if remedy in MONETARY_REMEDIES:
+            return None
+        if amount <= Decimal("0"):
+            return None  # non-monetary remedy — nothing to move
+
+        svc = DisputeSettlementService(db=db, actor_id=actor_id)
+        try:
+            settlement = await svc.create_settlement(complaint.id, {
+                "settlement_type":    REMEDY_TO_SETTLEMENT_TYPE.get(remedy, "customer_service_credit"),
+                "settlement_amount":  float(amount),
+                "deduction_strategy": SETTLEMENT_DEDUCTION_STRATEGY,
+                "reason":             f"Settlement accepted by both parties — {proposal.proposal_type}",
+            })
+            sid = uuid.UUID(str(settlement["id"]))
+            await svc.approve_settlement(sid)
+            return await svc.execute_settlement(sid)
+        except Exception as exc:
+            db.add(ComplaintEvent(
+                complaint_id  = complaint.id,
+                tenant_id     = complaint.tenant_id,
+                actor_type    = ACTOR_SYSTEM,
+                actor_user_id = None,
+                event_type    = "settlement_payout_failed",
+                reason        = f"Settlement payout failed: {exc}",
+            ))
+            return None
 
     async def _get_settlement_proposal(
         self, db: AsyncSession, proposal_id: uuid.UUID

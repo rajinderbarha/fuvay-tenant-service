@@ -31,10 +31,25 @@ def test_complaint_sla_loop_registered_in_lifespan():
     assert "_complaint_sla_task.cancel()" in src
 
 
-def test_ai_escalation_is_not_auto_fired():
-    """ai_escalation_at calls out to DeepSeek; firing it from an unattended loop
-    would incur external API cost. It must stay an explicit admin action."""
+def test_ai_settlement_auto_starts_when_the_provider_fails():
+    """Business rule (supersedes the earlier "never auto-fire the AI" guard):
+    AI settlement is NOT started by hand. It takes over automatically once the
+    PROVIDER has failed to solve the complaint — they blew their response SLA, or
+    the customer rejected the resolution they offered. The admin only sets the
+    rule (enable/disable, the cap, the permitted remedies) on complaint_policies.
+
+    Starting a session charges the provider the AI settlement fee, so the job
+    honours the policy's enable/auto-start switches before doing so."""
     from app.jobs import complaint_sla
-    src = inspect.getsource(complaint_sla)
-    assert "start_session" not in src
-    assert "AISettlementService" not in src
+    assert hasattr(complaint_sla, "run_ai_auto_start")
+    src = inspect.getsource(complaint_sla.run_ai_auto_start)
+    assert "AISettlementService" in src and "start_session" in src
+    # the provider-failure condition
+    assert "STATUS_AWAITING_PROVIDER" in src and "provider_responded_at" in src
+    assert "STATUS_UNDER_ADMIN_REVIEW" in src
+    # the admin's rule is honoured, and a complaint only gets one AI session
+    assert "resolve_rule" in src
+    assert "auto_start_on_provider_failure" in src
+    assert "AISettlementSession" in src  # skip if it already had its turn
+    # and it is part of the scheduled run
+    assert "ai_auto_start" in inspect.getsource(complaint_sla.run_all)

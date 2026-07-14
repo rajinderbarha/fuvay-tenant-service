@@ -101,6 +101,30 @@ class AISettlementService:
 
         await db.flush()
 
+        # Running an AI settlement is a paid platform service: the PROVIDER is
+        # charged for it, from their credit wallet and falling back to their
+        # security deposit. Never fatal — a provider who cannot cover the fee
+        # still gets the settlement; the shortfall is recorded for finance.
+        from app.engines.complaints.settlement_rules import charge_ai_settlement_fee
+        try:
+            fee = await charge_ai_settlement_fee(
+                db, complaint.tenant_id, complaint.id, actor_id=actor_id)
+            db.add(ComplaintEvent(
+                complaint_id  = complaint.id,
+                tenant_id     = complaint.tenant_id,
+                actor_type    = ACTOR_SYSTEM,
+                actor_user_id = None,
+                event_type    = "ai_settlement_fee_charged",
+                reason        = (f"AI settlement fee {fee['fee']} charged to provider "
+                                 f"(wallet {fee['charged_from_wallet']}, "
+                                 f"deposit {fee['charged_from_deposit']}, "
+                                 f"uncovered {fee['uncovered']})"),
+                new_value     = fee,
+                request_id    = request_id,
+            ))
+        except Exception:  # a billing problem must never block the dispute
+            pass
+
         # Generate questions for customer and tenant
         questions = await self._generate_questions(complaint)
         session.customer_questions = questions.get("customer_questions", [])
@@ -169,11 +193,21 @@ class AISettlementService:
         request_id: str = "—",
     ) -> SettlementProposal | None:
         """Analyze all evidence and answers, then generate a settlement proposal."""
+        from app.engines.complaints.settlement_rules import (
+            resolve_rule, resolve_job_value, evaluate_proposal,
+        )
+        from app.engines.complaints.constants import (
+            STATUS_UNDER_ADMIN_REVIEW, ALLOWED_TRANSITIONS, EVT_AI_CAP_EXCEEDED,
+        )
+
+        rule      = await resolve_rule(db, complaint)
+        job_value = await resolve_job_value(db, complaint)
+
         session.status = AI_SESSION_ANALYZING
         await db.flush()
 
         try:
-            result = await self._analyze_dispute(complaint, session)
+            result = await self._analyze_dispute(complaint, session, rule, job_value)
         except Exception as exc:
             session.status       = AI_SESSION_FAILED
             session.ai_recommendation = f"Analysis failed: {exc}"
@@ -195,12 +229,47 @@ class AISettlementService:
             await db.flush()
             return None
 
+        # ── The rule, enforced in code ────────────────────────────────────────
+        # Whatever the model returned is re-checked here against the admin's
+        # policy. A monetary remedy, a remedy the admin has not permitted, or an
+        # amount above the cap does NOT get clamped down and settled quietly —
+        # the case is handed to a human, which is the entire point of the cap.
+        verdict = evaluate_proposal(
+            rule, job_value,
+            remedy=proposal_data.get("type", ""),
+            amount=proposal_data.get("amount"),
+        )
+
+        if not verdict.allowed:
+            session.status = AI_SESSION_COMPLETED
+            session.completed_at = _now()
+            complaint.ai_session_id = session.id
+            if STATUS_UNDER_ADMIN_REVIEW in ALLOWED_TRANSITIONS.get(complaint.status, set()):
+                complaint.status = STATUS_UNDER_ADMIN_REVIEW
+            db.add(ComplaintEvent(
+                complaint_id  = complaint.id,
+                tenant_id     = complaint.tenant_id,
+                actor_type    = ACTOR_AI,
+                actor_user_id = None,
+                event_type    = EVT_AI_CAP_EXCEEDED,
+                reason        = verdict.reason,
+                new_value     = {
+                    "proposed_remedy": verdict.remedy,
+                    "proposed_amount": str(verdict.amount),
+                    "cap":             str(rule.cap_amount(job_value)),
+                    "job_value":       str(job_value),
+                },
+                request_id    = request_id,
+            ))
+            await db.flush()
+            return None
+
         proposal = SettlementProposal(
             complaint_id     = complaint.id,
             tenant_id        = complaint.tenant_id,
             proposed_by      = ACTOR_AI,
-            proposal_type    = proposal_data.get("type", "partial_refund"),
-            proposal_amount  = proposal_data.get("amount"),
+            proposal_type    = verdict.remedy,
+            proposal_amount  = verdict.amount if verdict.amount > 0 else None,
             description      = proposal_data.get("description", "AI-generated settlement"),
             conditions       = proposal_data.get("conditions"),
             status           = PROPOSAL_PROPOSED,
@@ -259,8 +328,16 @@ Return JSON: {{"customer_questions": [...], "tenant_questions": [...]}}"""
             }
 
     async def _analyze_dispute(
-        self, complaint: CustomerComplaint, session: AISettlementSession
+        self, complaint: CustomerComplaint, session: AISettlementSession,
+        rule=None, job_value=None,
     ) -> dict:
+        from decimal import Decimal
+        from app.engines.complaints.settlement_rules import DEFAULT_RULE
+
+        rule = rule or DEFAULT_RULE
+        job_value = Decimal(str(job_value if job_value is not None else "0"))
+        cap = rule.cap_amount(job_value)
+
         customer_qa = self._format_qa(
             session.customer_questions or [], session.customer_answers or []
         )
@@ -268,6 +345,9 @@ Return JSON: {{"customer_questions": [...], "tenant_questions": [...]}}"""
             session.tenant_questions or [], session.tenant_answers or []
         )
 
+        # The rule is stated to the model, and then enforced again in code after
+        # it answers (see settlement_rules.evaluate_proposal) — the model is
+        # never trusted to honour the cap or the no-money rule on its own.
         prompt = f"""Analyze this dispute and propose a fair settlement.
 
 Complaint: {complaint.complaint_type}
@@ -281,6 +361,22 @@ Customer responses:
 Provider responses:
 {tenant_qa}
 
+SETTLEMENT RULES — these are hard limits, not suggestions:
+- The job is worth {job_value}. You may offer AT MOST {rule.max_pct}% of that,
+  i.e. a maximum of {cap}.
+- Compensation is paid in CREDIT POINTS only. You must NEVER propose money: no
+  refund, partial refund, cash or bank transfer of any kind.
+- Permitted remedies, and nothing else: {", ".join(rule.allowed_remedies)}
+    credit_points = account credit (has an "amount", must be <= {cap})
+    rework        = a free repeat visit (no amount)
+    callback      = a follow-up call (no amount)
+    apology       = an apology only (no amount)
+    no_action     = the complaint does not merit compensation
+- If this case is strong enough that fairness demands MORE than {cap}, do NOT
+  try to settle it. Set "type" to "escalate" and explain why — a human will
+  decide. Escalating a genuinely strong case is the correct outcome, not a
+  failure.
+
 Return JSON with:
 {{
   "evidence_summary": "objective summary of facts",
@@ -288,8 +384,8 @@ Return JSON with:
   "risk_flags": ["list of concerns"],
   "confidence_score": 0.0-1.0,
   "proposal": {{
-    "type": "partial_refund|full_refund|rework|apology|no_action|service_credit",
-    "amount": null or number,
+    "type": "{'|'.join(rule.allowed_remedies)}|escalate",
+    "amount": null or number (only for credit_points, and <= {cap}),
     "description": "what the settlement entails",
     "conditions": "any conditions on the settlement"
   }}

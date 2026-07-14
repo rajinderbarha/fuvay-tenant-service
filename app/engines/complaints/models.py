@@ -405,6 +405,18 @@ class ComplaintPolicy(Base):
     require_provider_response    = Column(Boolean, nullable=False, default=True)
     default_provider_response_hours = Column(Integer, nullable=False, default=24)
     default_resolution_hours     = Column(Integer, nullable=False, default=72)
+
+    # ── AI settlement rule (migration 138) — admin sets this; the rest is automatic ──
+    # The AI takes over only once the PROVIDER has failed to solve the complaint,
+    # may offer at most `ai_settlement_max_pct` of the job value, and pays in
+    # CREDIT POINTS — never real money. A case that warrants more than the cap is
+    # escalated to admin manual review rather than settled by the AI.
+    ai_settlement_enabled            = Column(Boolean, nullable=False, default=True)
+    ai_auto_start_on_provider_failure = Column(Boolean, nullable=False, default=True)
+    ai_settlement_max_pct            = Column(Numeric(5, 2), nullable=False, default=Decimal("25.00"))
+    ai_settlement_allowed_remedies   = Column(JSONB, nullable=True)
+    settlement_payout_in_credits_only = Column(Boolean, nullable=False, default=True)
+
     is_active                    = Column(Boolean, nullable=False, default=True)
     created_at                   = Column(DateTime(timezone=True), nullable=True, default=_now)
     updated_at                   = Column(DateTime(timezone=True), nullable=True, default=_now, onupdate=_now)
