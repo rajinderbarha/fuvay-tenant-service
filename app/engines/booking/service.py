@@ -963,7 +963,7 @@ class BookingService:
         r = await self.db.execute(select(Booking).where(Booking.id == booking_id))
         b = r.scalar_one_or_none()
         if not b: raise NotFoundException("Booking", str(booking_id))
-        self._assert_owns(b.customer_id)
+        self._assert_can_access_booking(b)  # MODULE-L5-05: tenant/customer scope (was customer-only _assert_owns)
         if b.reschedule_count >= MAX_RESCHEDULE_COUNT:
             raise ServiceOSException("CONFLICT",
                 f"Maximum reschedule count ({MAX_RESCHEDULE_COUNT}) reached.",
@@ -990,6 +990,7 @@ class BookingService:
         br = await self.db.execute(select(Booking).where(Booking.id == req.booking_id))
         b = br.scalar_one_or_none()
         if not b: raise NotFoundException("Booking", str(req.booking_id))
+        self._assert_can_access_booking(b)  # MODULE-L5-05: confine to booking's tenant
 
         old_slot = b.preferred_slot
         b.preferred_date = req.requested_date
@@ -1009,6 +1010,11 @@ class BookingService:
             BookingRescheduleRequest.id == reschedule_id))
         req = r.scalar_one_or_none()
         if not req: raise NotFoundException("RescheduleRequest", str(reschedule_id))
+        # MODULE-L5-05: confine to the booking's tenant (was unscoped — a
+        # tenant_owner could reject another tenant's reschedule request).
+        b = (await self.db.execute(select(Booking).where(Booking.id == req.booking_id))).scalar_one_or_none()
+        if not b: raise NotFoundException("Booking", str(req.booking_id))
+        self._assert_can_access_booking(b)
         req.status = "rejected"; req.rejection_reason = rejection_reason
         req.resolved_at = utcnow()
         return {"reschedule_request_id": str(reschedule_id), "status": "rejected",
@@ -1030,6 +1036,7 @@ class BookingService:
         r = await self.db.execute(select(Booking).where(Booking.id == booking_id))
         b = r.scalar_one_or_none()
         if not b: raise NotFoundException("Booking", str(booking_id))
+        self._assert_can_access_booking(b)  # MODULE-L5-05: was unscoped + endpoint had auth-only (any user could note any booking)
         note = BookingNote(booking_id=b.id, tenant_id=b.tenant_id,
             author_id=self.actor_id, author_role=self.actor_role,
             content=content, is_internal=is_internal)
@@ -1078,6 +1085,7 @@ class BookingService:
         r = await self.db.execute(select(Booking).where(Booking.id == booking_id))
         b = r.scalar_one_or_none()
         if not b: raise NotFoundException("Booking", str(booking_id))
+        self._assert_can_access_booking(b)  # MODULE-L5-05: defense-in-depth (endpoint is super_admin-only)
         if b.status in TERMINAL_BOOKING_STATUSES:
             raise ServiceOSException("CONFLICT", f"Booking is already in terminal status: {b.status}")
         from_status = b.status; b.status = BS.VOIDED

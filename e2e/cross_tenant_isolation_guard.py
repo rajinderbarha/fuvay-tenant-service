@@ -37,8 +37,29 @@ def _method_body(text: str, name: str) -> str | None:
     return m.group(0) if m else None
 
 
-def check() -> list[str]:
+def _check_booking_mutation_coverage() -> list[str]:
+    """Every BookingService method that loads a Booking by id must call
+    _assert_can_access_booking (MODULE-L5-05: request/accept/reject_reschedule,
+    add_note, void_booking previously loaded a booking and mutated it with no
+    tenant/customer scope check)."""
     findings = []
+    # create_booking re-fetches only via the actor's OWN Redis idempotency key
+    # (inherently the caller's booking) — not an arbitrary-id access.
+    ALLOW = {"create_booking"}
+    text = (ROOT / "app/engines/booking/service.py").read_text(encoding="utf-8")
+    for m in re.finditer(r'\n    async def (\w+)\(.*?(?=\n    (async )?def )', text, re.S):
+        name, body = m.group(1), m.group(0)
+        if name in ALLOW:
+            continue
+        loads = re.search(r'select\(Booking\)\.where\(Booking\.id ==|db\.get\(Booking,', body)
+        if loads and "_assert_can_access_booking" not in body:
+            findings.append(f"booking/service.py:{name} loads a Booking by id but never calls "
+                            f"_assert_can_access_booking (cross-tenant mutation/read risk)")
+    return findings
+
+
+def check() -> list[str]:
+    findings = _check_booking_mutation_coverage()
     for rel, meth in TARGETS:
         text = (ROOT / rel).read_text(encoding="utf-8")
         body = _method_body(text, meth)
