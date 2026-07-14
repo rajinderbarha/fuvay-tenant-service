@@ -1363,22 +1363,26 @@ async def get_packages_status(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    # MODULE-L5-02: provider_package_purchases may not be provisioned; fall back
-    # to no-packages instead of a 500.
+    # MODULE-L5-02: rewired from the phantom `provider_package_purchases` table
+    # to the CANONICAL `tenant_package_assignments` (the real package table,
+    # Sprint P1). `status` is aliased as `purchase_status` to preserve the
+    # frontend contract. Safety net retained.
     try:
         result = await db.execute(text("""
-            SELECT ppp.*, sp.name as package_name, sp.package_type as pkg_type,
+            SELECT tpa.*, tpa.status as purchase_status,
+                   sp.name as package_name, sp.package_type as pkg_type,
                    sp.plan_level, sp.features
-            FROM provider_package_purchases ppp
-            LEFT JOIN service_packages sp ON sp.id = ppp.package_id
-            WHERE ppp.tenant_id = :tid AND ppp.purchase_status != 'cancelled'
-            ORDER BY ppp.created_at DESC
+            FROM tenant_package_assignments tpa
+            LEFT JOIN service_packages sp ON sp.id = tpa.package_id
+            WHERE tpa.tenant_id = :tid AND tpa.status != 'cancelled'
+                  AND tpa.deleted_at IS NULL
+            ORDER BY tpa.created_at DESC
         """), {"tid": str(tid)})
         rows = [dict(r._mapping) for r in result.fetchall()]
     except Exception:
         await db.rollback()
         rows = []
-    active = [r for r in rows if r.get("purchase_status") == "active"]
+    active = [r for r in rows if r.get("purchase_status") in ("active", "activated")]
     return ok({
         "has_active_package": len(active) > 0,
         "active_package": active[0] if active else None,

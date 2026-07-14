@@ -187,10 +187,28 @@ endpoints contract-verified live; **6 real 500 bugs fixed**; full lifecycle runt
 (request-changes / approve+gate / reject / suspend / reinstate); suspension excludes tenants from
 matching.
 
-**Remaining for a truthful `PROVEN_LEVEL_5`:** reconcile the 3 unbacked onboarding/package tables
-against a canonical source (or formally retire the endpoints); tenant-portal onboarding *wizard*
-end-to-end; live public-visibility exclusion probe; customer-app tenant-facing flows. Real,
-scoped work — **not yet certified**, but Module 02 is materially closer with real defects removed.
+## 6f. Onboarding/package table reconciliation (added this session)
+
+Investigated the 3 unbacked tables. The DB's **canonical** sources are `tenant_package_assignments`
+(Sprint P1) for packages and `onboarding_requests` for onboarding — the stale endpoints queried
+superseded names (`provider_package_purchases`, `provider_onboarding_statuses/items`). Both
+canonical tables currently have **0 rows** for the demo tenant, so all these endpoints correctly
+return empty regardless.
+
+- **`/v1/provider/packages/status`: rewired to the canonical `tenant_package_assignments`** (JOIN
+  `service_packages`, `status` aliased to `purchase_status` to preserve the frontend contract) —
+  architecturally correct (real table; returns real data once a package is assigned) rather than
+  an except-fallback on a phantom table. Query validated against the DB; 478 package/onboarding
+  tests pass.
+- **`/onboarding/status` + `/items`:** `onboarding_requests` exists but its shape does not map
+  cleanly to the frontend's per-item checklist expectation, and there are 0 rows to validate a
+  mapping against — kept the graceful-default fallback and flagged a fuller onboarding-checklist
+  reconciliation as an honest follow-up (documented, not guessed).
+
+**Remaining for a truthful `PROVEN_LEVEL_5`:** the onboarding-checklist shape reconciliation
+above; tenant-portal onboarding *wizard* end-to-end; live public-visibility exclusion probe;
+customer-app tenant-facing flows. Real, scoped work — **not yet certified**, but Module 02 is
+materially closer with real defects removed and the package endpoint on its canonical source.
 
 ## 7. Honest Recommendation
 
