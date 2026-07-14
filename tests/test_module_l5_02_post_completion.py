@@ -69,3 +69,24 @@ def test_no_router_uses_bare_user_staff_member_id():
                         if "user.staff_member_id" in line and "getattr" not in line:
                             offenders.append(f"{root}/{f}: {line.strip()}")
     assert not offenders, offenders
+
+
+def test_payment_flow_wires_best_effort_commission():
+    """MODULE-L5-02: the ServiceCommissionService was orphaned — no endpoint or
+    payment step ever generated/deducted commission, so the platform never
+    collected its cut on the whole service-invoice path (commission-status was
+    perpetually null). record_onsite_payment must now trigger a best-effort
+    commission generation+deduction AFTER the payment commit, and it must be
+    non-fatal (a commission failure can never fail the payment).
+
+    Proven live on :8001: paying INV-226E15FDD9 (Rs.150) produced a commission
+    record status=deducted, amount Rs.15 (10%), and debited the provider wallet
+    500 -> 485.
+    """
+    import inspect
+    from app.engines.invoice_payment import payment_service
+    src = inspect.getsource(payment_service.ServicePaymentService.record_onsite_payment)
+    assert "_best_effort_commission" in src
+    helper = inspect.getsource(payment_service.ServicePaymentService._best_effort_commission)
+    assert "deduct_commission" in helper
+    assert "except Exception" in helper  # never propagate a commission failure

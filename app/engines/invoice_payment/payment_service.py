@@ -30,6 +30,34 @@ class ServicePaymentService:
     def __init__(self):
         self._inv_svc = ServiceInvoiceService()
 
+    async def _best_effort_commission(
+        self, db: AsyncSession, invoice_id: str, actor_user_id: str | None,
+        request_id: str | None,
+    ) -> None:
+        """MODULE-L5-02: the service-invoice commission subsystem
+        (ServiceCommissionService) was orphaned — nothing in the payment flow
+        ever generated or deducted commission, so the platform never collected
+        its cut on this whole invoice path and commission-status was perpetually
+        null. Attempt generation+deduction here, AFTER the payment is durably
+        committed, and never let a commission failure (e.g. insufficient provider
+        credit) affect the payment: deduct_commission already records the failure
+        state (COM_INSUFFICIENT_CREDIT / COM_FAILED) for admin retry."""
+        from app.engines.invoice_payment.commission_service import ServiceCommissionService
+        try:
+            await ServiceCommissionService().deduct_commission(
+                db, invoice_id, idempotency_key=f"auto-{invoice_id}",
+                actor_user_id=actor_user_id, request_id=request_id,
+            )
+        except Exception:
+            # Non-fatal: the commission record (if any) is persisted in its own
+            # transaction with a failure status the admin can retry. Roll back
+            # only the failed commission unit-of-work so the caller's session is
+            # clean; the payment commit above is already durable.
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+
     async def _get_payment(self, db: AsyncSession, payment_id: str) -> ServicePaymentRecord:
         res = await db.execute(
             select(ServicePaymentRecord).where(ServicePaymentRecord.id == uuid.UUID(payment_id))
@@ -117,7 +145,10 @@ class ServicePaymentService:
                               request_id=request_id)
         await db.commit()
         await db.refresh(pay)
-        return pay.to_dict()
+        result = pay.to_dict()
+        # Generate + deduct platform commission best-effort (non-fatal).
+        await self._best_effort_commission(db, invoice_id, user_id, request_id)
+        return result
 
     # ── Customer confirms payment ───────────────────────────────────────────────
 
