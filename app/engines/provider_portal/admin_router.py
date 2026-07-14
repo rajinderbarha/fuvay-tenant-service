@@ -880,8 +880,16 @@ async def get_provider_monetization(
     user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
-    row = await db.execute(text("SELECT pms.*, t.tenant_name as tenant_name FROM provider_monetization_statuses pms LEFT JOIN tenants t ON t.id = pms.tenant_id WHERE pms.tenant_id=:tid LIMIT 1"), {"tid": str(tenant_id)})
-    r = row.fetchone()
+    # MODULE-L5-02: provider_monetization_statuses is not provisioned in all
+    # environments. Mirror the graceful fallback already used by the tenant
+    # portal (tenant_engine/portal_router.get_monetization_status) so the admin
+    # tenant detail page's monetization tab shows "not ready" instead of a 500.
+    try:
+        row = await db.execute(text("SELECT pms.*, t.tenant_name as tenant_name FROM provider_monetization_statuses pms LEFT JOIN tenants t ON t.id = pms.tenant_id WHERE pms.tenant_id=:tid LIMIT 1"), {"tid": str(tenant_id)})
+        r = row.fetchone()
+    except Exception:
+        await db.rollback()
+        return ok({"tenant_id": str(tenant_id), "is_monetization_ready": False, "monetization_model": None}, request_id=rid)
     if not r:
         return ok({"tenant_id": str(tenant_id), "is_monetization_ready": False}, request_id=rid)
     return ok(dict(r._mapping), request_id=rid)

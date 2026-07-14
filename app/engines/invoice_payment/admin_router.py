@@ -151,7 +151,17 @@ async def admin_get_wallet(
     tenant_id: str, r: Request = None,
     user=Depends(require_super_admin), db: AsyncSession = Depends(get_db),
 ):
-    data = await wal_svc.get_wallet(db, tenant_id)
+    # MODULE-L5-02: a tenant may not have a wallet provisioned yet. get_wallet
+    # raises a bare ValueError in that case, which the global handler maps to a
+    # 500 — breaking the admin tenant detail page's wallet tab. Return a
+    # zero-balance default so the UI shows an empty wallet instead of crashing.
+    try:
+        data = await wal_svc.get_wallet(db, tenant_id)
+    except ValueError:
+        data = {"tenant_id": tenant_id, "currency": "INR", "current_balance": "0",
+                "reserved_balance": "0", "total_purchased": "0", "total_deducted": "0",
+                "low_balance_threshold": None, "is_active": False,
+                "last_transaction_at": None, "provisioned": False}
     return ok(data, _rid(r), "admin_get_wallet")
 
 
