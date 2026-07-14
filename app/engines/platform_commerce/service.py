@@ -348,6 +348,22 @@ class CommerceService:
             CreditTopupOrder.tenant_id == tid, CreditTopupOrder.gateway_order_id == order_id))
         topup = topup_r.scalar_one_or_none()
 
+        # MODULE-L5-10: idempotency guard. This endpoint is fired by the client
+        # AND the Razorpay webhook (and is retried), so a single payment routinely
+        # confirms more than once. The credit grant is idempotent on the topup id,
+        # but credit_deposit() has no idempotency and purchase_count/total_revenue
+        # were incremented unconditionally — so a duplicate confirm replenished the
+        # security deposit TWICE and double-counted revenue for one payment. If the
+        # top-up is already credited, return the same result without moving money
+        # again.
+        if topup is not None and topup.wallet_credit_status == "credited":
+            total = p.credits_amount * (1 + p.bonus_pct / Decimal("100"))
+            replen = (p.price_inr * DEPOSIT_REPLENISHMENT_PCT).quantize(Decimal("0.01"))
+            return {"credits_added": float(total), "base_credits": float(p.credits_amount),
+                    "bonus_credits": float(total - p.credits_amount),
+                    "deposit_replenished": float(replen), "payment_id": payment_id,
+                    "idempotent": True}
+
         if not razorpay_client.verify_payment_signature(order_id, payment_id, signature):
             if topup:
                 topup.payment_status = "failed"
