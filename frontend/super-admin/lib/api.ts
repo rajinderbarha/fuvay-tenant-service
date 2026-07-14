@@ -8100,6 +8100,45 @@ export const complaintsApi = {
     apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/reject`, {
       method: "POST", body: JSON.stringify({ reason }),
     }),
+
+  // MODULE-L5-02 bug #36: the complaints list has always linked to
+  // /admin/complaints/{id}, but that page did not exist — so most of the admin
+  // complaint API had no client and no UI at all. These back the new detail page.
+  listMessages: (id: string) =>
+    apiFetch<Record<string, unknown>[]>(`/v1/admin/complaints/${id}/messages`),
+
+  addMessage: (id: string, messageText: string) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/messages`, {
+      method: "POST", body: JSON.stringify({ message_text: messageText }),
+    }),
+
+  listResolutions: (id: string) =>
+    apiFetch<Record<string, unknown>[]>(`/v1/admin/complaints/${id}/resolutions`),
+
+  proposeResolution: (id: string, body: { resolution_type: string; description: string }) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/propose-resolution`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
+
+  setPriority: (id: string, priority: string) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/priority`, {
+      method: "POST", body: JSON.stringify({ priority }),
+    }),
+
+  requestProviderResponse: (id: string) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/request-provider-response`, {
+      method: "POST", body: JSON.stringify({}),
+    }),
+
+  adminResolve: (id: string, notes?: string) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/resolve`, {
+      method: "POST", body: JSON.stringify({ notes }),
+    }),
+
+  adminClose: (id: string, notes?: string) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/close`, {
+      method: "POST", body: JSON.stringify({ notes }),
+    }),
 };
 
 // ── Finance Hub (P0 Enterprise Finance Upgrade) ───────────────────────────────
