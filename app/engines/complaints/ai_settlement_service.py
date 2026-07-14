@@ -294,6 +294,23 @@ class AISettlementService:
         session.status = AI_SESSION_COMPLETED
         complaint.ai_session_id = session.id
 
+        # bug #42: the AI proposal needs BOTH parties to accept — tell them both
+        # it is now awaiting their response.
+        try:
+            from app.engines.complaints.notifications import (
+                notify_customer_complaint, notify_provider_complaint,
+            )
+            title = f"AI proposed a settlement — {complaint.complaint_number}"
+            body = (f"The AI mediator proposed: {verdict.remedy.replace('_', ' ')}"
+                    f"{f' ({verdict.amount} credits)' if verdict.amount > 0 else ''}. "
+                    "It takes effect once both you and the other party accept.")
+            await notify_customer_complaint(db, complaint,
+                notification_type="complaint.ai_settlement_proposed", title=title, body=body)
+            await notify_provider_complaint(db, complaint,
+                notification_type="complaint.ai_settlement_proposed", title=title, body=body)
+        except Exception:
+            pass
+
         db.add(ComplaintEvent(
             complaint_id  = complaint.id,
             tenant_id     = complaint.tenant_id,

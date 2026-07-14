@@ -23,6 +23,81 @@ async def _super_admin_ids(db: AsyncSession) -> list[uuid.UUID]:
     return [r for r in rows.scalars().all()]
 
 
+async def _tenant_owner_ids(db: AsyncSession, tenant_id) -> list[uuid.UUID]:
+    from app.engines.auth.models import User
+    if not tenant_id:
+        return []
+    rows = await db.execute(
+        select(User.id).where(
+            User.tenant_id == tenant_id,
+            User.role == "tenant_owner",
+            User.is_active.is_(True),
+        )
+    )
+    return [r for r in rows.scalars().all()]
+
+
+async def notify_customer_complaint(
+    db: AsyncSession,
+    complaint,
+    *,
+    notification_type: str,
+    title: str,
+    body: str,
+    severity: str = "info",
+) -> int:
+    """Notify the customer who raised the complaint. MODULE-L5-02 bug #42: the
+    dual-acceptance flow needs each party to act in turn, but the customer was
+    never told when a resolution or settlement proposal was awaiting them — so it
+    silently waited on someone who had no idea it was their move."""
+    from app.engines.platform_notifications.models import InAppNotification
+    if not complaint.customer_id:
+        return 0
+    db.add(InAppNotification(
+        user_id=complaint.customer_id,
+        tenant_id=None,
+        notification_type=notification_type,
+        title=title,
+        body=body,
+        action_url=f"/customer/complaints/{complaint.id}",
+        action_label="View complaint",
+        source_record_type="customer_complaints",
+        source_record_id=complaint.id,
+        severity=severity,
+        read_status="unread",
+    ))
+    return 1
+
+
+async def notify_provider_complaint(
+    db: AsyncSession,
+    complaint,
+    *,
+    notification_type: str,
+    title: str,
+    body: str,
+    severity: str = "info",
+) -> int:
+    """Notify the provider (tenant owners) whose job the complaint is about."""
+    from app.engines.platform_notifications.models import InAppNotification
+    owner_ids = await _tenant_owner_ids(db, complaint.tenant_id)
+    for oid in owner_ids:
+        db.add(InAppNotification(
+            user_id=oid,
+            tenant_id=complaint.tenant_id,
+            notification_type=notification_type,
+            title=title,
+            body=body,
+            action_url=f"/provider/complaints/{complaint.id}",
+            action_label="View complaint",
+            source_record_type="customer_complaints",
+            source_record_id=complaint.id,
+            severity=severity,
+            read_status="unread",
+        ))
+    return len(owner_ids)
+
+
 async def notify_admins_complaint(
     db: AsyncSession,
     complaint,

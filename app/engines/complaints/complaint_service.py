@@ -139,6 +139,20 @@ class ComplaintService:
             EVT_COMPLAINT_CREATED, None, STATUS_OPEN, None, None,
             request_id=request_id,
         )
+        # bug #42: tell the provider a customer has raised a complaint about their
+        # job — otherwise they never know they need to respond.
+        try:
+            from app.engines.complaints.notifications import notify_provider_complaint
+            await notify_provider_complaint(
+                db, complaint,
+                notification_type="complaint.filed",
+                title=f"New complaint — {complaint.complaint_number}",
+                body=(complaint.title or complaint.complaint_type.replace("_", " ")).strip()
+                     + " — please respond.",
+                severity="warning",
+            )
+        except Exception:
+            pass
         await db.commit()
         return complaint
 
@@ -379,6 +393,21 @@ class ComplaintService:
         await self._log_event(db, complaint_id, tenant_id, ACTOR_PROVIDER, actor_user_id,
                               EVT_RESOLUTION_PROPOSED, None, None, None, {"type": resolution_type},
                               request_id=request_id)
+        # bug #42: the customer must be told a resolution is awaiting their
+        # accept/reject — otherwise the complaint sits in resolution_proposed
+        # forever with nobody aware it is the customer's move.
+        try:
+            from app.engines.complaints.notifications import notify_customer_complaint
+            await notify_customer_complaint(
+                db, complaint,
+                notification_type="complaint.resolution_offered",
+                title=f"A resolution was offered — {complaint.complaint_number}",
+                body=f"The provider offered: {resolution_type.replace('_', ' ')}. "
+                     "Open the complaint to accept or reject it.",
+                severity="info",
+            )
+        except Exception:
+            pass
         await db.commit()
         return resolution
 
@@ -746,6 +775,24 @@ class ComplaintService:
             None, {"type": proposal_type, "amount": str(proposal_amount or "")},
             request_id=request_id,
         )
+        # bug #42: a settlement needs BOTH parties to accept, so notify whoever
+        # did NOT make this proposal that it is now awaiting their response. An
+        # AI/admin proposal awaits both sides.
+        try:
+            from app.engines.complaints.notifications import (
+                notify_customer_complaint, notify_provider_complaint,
+            )
+            title = f"Settlement proposed — {complaint.complaint_number}"
+            body = (f"A {proposal_type.replace('_', ' ')} settlement was proposed. "
+                    "It only takes effect once both parties accept.")
+            if proposed_by != ACTOR_CUSTOMER:
+                await notify_customer_complaint(db, complaint,
+                    notification_type="complaint.settlement_proposed", title=title, body=body)
+            if proposed_by != ACTOR_PROVIDER:
+                await notify_provider_complaint(db, complaint,
+                    notification_type="complaint.settlement_proposed", title=title, body=body)
+        except Exception:
+            pass
         await db.commit()
         return proposal
 
@@ -979,7 +1026,20 @@ class ComplaintService:
             })
             sid = uuid.UUID(str(settlement["id"]))
             await svc.approve_settlement(sid)
-            return await svc.execute_settlement(sid)
+            result = await svc.execute_settlement(sid)
+            # bug #42: tell the customer their compensation has been issued.
+            try:
+                from app.engines.complaints.notifications import notify_customer_complaint
+                await notify_customer_complaint(
+                    db, complaint,
+                    notification_type="complaint.settlement_paid",
+                    title=f"Settlement credited — {complaint.complaint_number}",
+                    body=f"{amount} credit points have been added to your account as agreed.",
+                    severity="success",
+                )
+            except Exception:
+                pass
+            return result
         except Exception as exc:
             db.add(ComplaintEvent(
                 complaint_id  = complaint.id,
