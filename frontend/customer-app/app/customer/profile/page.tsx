@@ -41,8 +41,15 @@ export default function ProfilePage() {
         </Link>
         <Link href="/customer/complaints"
           style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                   padding: "14px 16px", textDecoration: "none", color: "inherit" }}>
+                   padding: "14px 16px", textDecoration: "none", color: "inherit",
+                   borderBottom: "1px solid #f0f0f0" }}>
           <span style={{ fontWeight: 600 }}>My Complaints</span>
+          <span style={{ color: "var(--text-tertiary)" }}>›</span>
+        </Link>
+        <Link href="/customer/privacy"
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                   padding: "14px 16px", textDecoration: "none", color: "inherit" }}>
+          <span style={{ fontWeight: 600 }}>Privacy &amp; Data</span>
           <span style={{ color: "var(--text-tertiary)" }}>›</span>
         </Link>
       </div>

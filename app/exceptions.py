@@ -155,11 +155,20 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         if exc.status_code:
             problem.status = exc.status_code
+        elif problem.status == 500:
+            # The code wasn't in ERROR_CODES so make_problem defaulted to 500.
+            # A domain-code-shaped error (e.g. DUPLICATE_OPEN_REQUEST, INVALID_STATE)
+            # is a client error, not a server fault — infer its 4xx from the code
+            # so unregistered codes don't leak as 500s. Only downgrades 500→4xx.
+            inferred = _domain_code_status(exc.error_code)
+            if inferred is not None:
+                problem.status = inferred
         logger.warning(
             "serviceos.exception",
             error_code=exc.error_code,
             detail=exc.detail,
             path=request.url.path,
+            status=problem.status,
         )
         return _problem_response(problem)
 
