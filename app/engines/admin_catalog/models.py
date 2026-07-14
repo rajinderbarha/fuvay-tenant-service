@@ -94,6 +94,9 @@ class ServiceCategory(ServiceOSBase):
     # MODULE-L5-10 (migration 139) — per-category commission rate. NULL = use the
     # platform default (DEFAULT_COMMISSION_RATE). Set per category by the admin.
     commission_pct:         Mapped[Decimal | None]= mapped_column(Numeric(5, 2), nullable=True)
+    # MODULE-L5-10 (migration 140) — per-category customer charge (platform fee
+    # added to what the customer pays, shown to them as included). NULL = 0%.
+    customer_charge_pct:    Mapped[Decimal | None]= mapped_column(Numeric(5, 2), nullable=True)
     # Sprint 38 — universal category fields
     vertical_type:          Mapped[str | None]    = mapped_column(String(50), nullable=True)
     finance_model:          Mapped[str | None]    = mapped_column(String(50), nullable=True)

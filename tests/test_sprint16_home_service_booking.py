@@ -95,6 +95,8 @@ def _make_category(name="Home Services", slug="home-services"):
     cat.slug = slug
     cat.is_active = True
     cat.is_customer_visible = True
+    cat.commission_pct = None       # unset -> platform default
+    cat.customer_charge_pct = None  # unset -> no customer charge
     return cat
 
 

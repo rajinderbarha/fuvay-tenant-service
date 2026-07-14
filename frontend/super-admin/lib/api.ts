@@ -1366,6 +1366,11 @@ export const catalogApi = {
       `/v1/admin/category-commission-rates/${categoryId}`,
       { method: "PUT", body: JSON.stringify({ commission_pct: commissionPct }) },
     ),
+  setCategoryCustomerCharge: (categoryId: string, customerChargePct: number | null) =>
+    apiFetch<{ id: string; customer_charge_pct: number | null }>(
+      `/v1/admin/category-commission-rates/${categoryId}`,
+      { method: "PUT", body: JSON.stringify({ customer_charge_pct: customerChargePct }) },
+    ),
   hardDeleteCategory: (categoryId: string) =>
     apiFetch<{ deleted: boolean; category_id: string; hard_delete: boolean }>(`/v1/admin/service-categories/${categoryId}/hard-delete`, { method:"DELETE" }),
 
@@ -3439,6 +3444,7 @@ export interface CategoryCommissionRate {
   effective_pct: number;           // what actually applies
   using_default: boolean;
   default_pct: number;
+  customer_charge_pct: number | null;  // platform fee added to what the customer pays; null = 0%
 }
 
 export interface ServiceCategory {

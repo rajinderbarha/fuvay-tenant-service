@@ -21,7 +21,7 @@ def test_admin_endpoints_and_page_exist():
     router = open(os.path.join(root, "app", "engines", "admin_catalog", "admin_router.py"),
                   encoding="utf-8").read()
     assert '/category-commission-rates' in router
-    assert 'commission_pct must be between 0 and 100' in router   # range guard
+    assert 'must be between 0 and 100' in router   # range guard
     page = os.path.join(root, "frontend", "super-admin", "app", "admin", "pricing",
                         "commission", "page.tsx")
     assert os.path.isfile(page)

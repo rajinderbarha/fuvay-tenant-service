@@ -353,19 +353,23 @@ async def list_category_commission_rates(
         "slug":             c.slug,
         "vertical_type":    c.vertical_type,
         "is_active":        c.is_active,
+        # provider commission (migration 139)
         "commission_pct":   float(c.commission_pct) if c.commission_pct is not None else None,
         "effective_pct":    float(c.commission_pct) if c.commission_pct is not None else default,
         "using_default":    c.commission_pct is None,
         "default_pct":      default,
+        # customer charge / platform fee (migration 140) — NULL = 0%
+        "customer_charge_pct": float(c.customer_charge_pct) if c.customer_charge_pct is not None else None,
     } for c in rows], _rid(r), ENGINE_ID)
 
 
 class CategoryCommissionIn(BaseModel):
-    commission_pct: Optional[Decimal] = None  # None clears -> falls back to default
+    commission_pct: Optional[Decimal] = None       # None clears -> falls back to default
+    customer_charge_pct: Optional[Decimal] = None  # the customer-side platform fee
 
 
 @router.put("/category-commission-rates/{category_id}", response_model=ApiResponse[dict],
-            summary="Set (or clear) a category's commission rate", tags=["Commission"])
+            summary="Set a category's commission rate and/or customer charge", tags=["Commission"])
 async def set_category_commission_rate(
     category_id: uuid.UUID,
     body: CategoryCommissionIn,
@@ -375,20 +379,28 @@ async def set_category_commission_rate(
 ):
     from sqlalchemy import select
     from app.engines.admin_catalog.models import ServiceCategory
-    pct = body.commission_pct
-    if pct is not None and not (Decimal("0") <= pct <= Decimal("100")):
-        raise ServiceOSException("VALIDATION_ERROR",
-            "commission_pct must be between 0 and 100.", status_code=422)
+    fields = body.model_dump(exclude_unset=True)
+    for key in ("commission_pct", "customer_charge_pct"):
+        v = fields.get(key)
+        if v is not None and not (Decimal("0") <= v <= Decimal("100")):
+            raise ServiceOSException("VALIDATION_ERROR",
+                f"{key} must be between 0 and 100.", status_code=422)
     cat = (await db.execute(
         select(ServiceCategory).where(ServiceCategory.id == category_id)
     )).scalar_one_or_none()
     if not cat:
         raise ServiceOSException("NOT_FOUND", "Category not found.", status_code=404)
-    cat.commission_pct = pct
+    # only touch the fields the caller actually sent (so setting one does not
+    # clear the other)
+    if "commission_pct" in fields:
+        cat.commission_pct = fields["commission_pct"]
+    if "customer_charge_pct" in fields:
+        cat.customer_charge_pct = fields["customer_charge_pct"]
     await db.commit()
     return ok({"id": str(category_id),
-               "commission_pct": float(pct) if pct is not None else None,
-               "using_default": pct is None}, _rid(r), ENGINE_ID)
+               "commission_pct": float(cat.commission_pct) if cat.commission_pct is not None else None,
+               "customer_charge_pct": float(cat.customer_charge_pct) if cat.customer_charge_pct is not None else None,
+               "using_default": cat.commission_pct is None}, _rid(r), ENGINE_ID)
 
 
 @router.get("/catalog/categories/options", response_model=ApiResponse[list],

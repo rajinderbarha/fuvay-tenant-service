@@ -1217,16 +1217,35 @@ class HomeServiceChatbotBookingService:
         min_price = float(offering.min_price) if offering.min_price else base
         max_price = float(offering.max_price) if offering.max_price else None
 
+        # MODULE-L5-10: per-category customer charge (platform fee). The platform
+        # earns from both sides — a commission from the provider AND this charge
+        # added to what the customer pays, shown to them as an included fee.
+        # e.g. Rs.500 service + 10% = Rs.550 ("Rs.50 platform fee included").
+        charge_pct = float(cat.customer_charge_pct) if (cat and cat.customer_charge_pct is not None) else 0.0
+        def _with_fee(x):
+            return round(x * (1 + charge_pct / 100.0), 2) if x is not None else None
+        platform_fee = round(base * charge_pct / 100.0, 2)
+        customer_total = round(base + platform_fee, 2)
+
         return {
             "pricing_model":   pricing_model,
             "visit_fee":       base if pricing_model == PRICING_MODEL_VISIT_FEE else 0,
-            "base_price":      base,
+            "base_price":      base,          # service price (provider basis)
             "min_price":       min_price,
             "max_price":       max_price,
             "currency":        "INR",
             "city_tier":       floor_row.tier if floor_row else "tier_3",
             "note":            note,
-            "display_price":   f"₹{int(base)}",
+            # ── customer-facing platform fee (inclusive) ──────────────────────
+            "platform_fee_pct":       charge_pct,
+            "platform_fee":           platform_fee,
+            "customer_total":         customer_total,      # what the customer pays
+            "customer_min_price":     _with_fee(min_price),
+            "customer_max_price":     _with_fee(max_price),
+            "fee_included_note":      (f"Includes ₹{int(platform_fee)} platform fee ({charge_pct:g}%)"
+                                       if charge_pct else None),
+            # display the inclusive total the customer actually pays
+            "display_price":   f"₹{int(customer_total)}",
             "source":          "backend_catalog",
         }
 
