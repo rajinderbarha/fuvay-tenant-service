@@ -319,8 +319,22 @@ class FinanceHubService:
 
     async def refund_deposit(self, deposit_id: uuid.UUID, amount: Decimal, reason: str) -> dict:
         d = await self._load_deposit(deposit_id)
+        amount = Decimal(str(amount))
+        # MODULE-L5-10: guard the refund path (money OUT to the tenant).
+        #  - amount must be positive: a negative amount would run
+        #    warranty_drawn += negative and INFLATE the deposit balance.
+        #  - a deposit already 'refunded' must not be refunded again. A *partial*
+        #    refund leaves status='refunded' with balance still > 0, so without
+        #    this guard a second call would draw more money to the tenant (a full
+        #    prior refund is only incidentally blocked by the balance check).
+        if amount <= Decimal("0"):
+            raise ServiceOSException("VALIDATION_ERROR",
+                "Refund amount must be positive.", status_code=422)
+        if d.status == "refunded":
+            raise ServiceOSException("DEPOSIT_ALREADY_REFUNDED",
+                "This security deposit has already been refunded.", status_code=409)
         before = self._deposit_dict(d)
-        await debit_deposit(self.db, d, Decimal(str(amount)), "refund", None, reason, self.actor_id)
+        await debit_deposit(self.db, d, amount, "refund", None, reason, self.actor_id)
         d.status = "refunded"; d.hold_state = "released"; d.refunded_at = utcnow()
         await self._audit("deposit.refund", "security_deposit", str(deposit_id), d.tenant_id, before, self._deposit_dict(d))
         return self._deposit_dict(d)
