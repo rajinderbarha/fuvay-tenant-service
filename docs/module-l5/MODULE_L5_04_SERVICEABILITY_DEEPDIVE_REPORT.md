@@ -73,11 +73,64 @@ def _assert_owns_tenant(self, tenant_id):
 - **156 serviceability tests pass**; full regression (totals in commit) — no sprint-attributable
   regression.
 
+## 5b. Systemic audit — the `tenant_owner`-only isolation anti-pattern across engines
+
+After finding this pattern twice (catalog, serviceability), I audited the whole `app/engines`
+tree for role-allowlist tenant-isolation checks. Triage of every `actor_role == "tenant_owner"`
+isolation site:
+
+| Site | Verdict | Reachable by staff/tech? | Action |
+|---|---|---|---|
+| `serviceability/_assert_owns_tenant` | **ACTIVE IDOR** | yes (`tenant_service_area:read`) | fixed (§2-3) |
+| `booking/_assert_can_access_booking` | **ACTIVE IDOR (customer PII)** | yes (`booking:bookings:read`) | **fixed (below)** |
+| `booking.list_bookings` `else` branch | **ACTIVE (cross-tenant list)** | yes | **fixed (below)** |
+| `admin_catalog/_assert_tenant_owns_ts` | defense-in-depth | no (lacks `tenant:*`) | fixed earlier (03 slice) |
+| `platform_commerce/_assert_owns_tenant_deposit` | defense-in-depth | no (deposit perms platform-only) | **hardened (below)** |
+| `field_ops/*` (`_assert_can_access_job` etc.) | **SECURE** | n/a | not changed — uses `_assert_assigned` (staff/tech confined to jobs *assigned to them*, stricter than tenant) |
+| `serviceability/_assert_admin_can_view_customer` | **SECURE** | n/a | positive allowlist + fail-closed default `raise`; only tenant_owner holds perm |
+| `serviceability` matching `filter_tenant` | **SECURE** | n/a | marketplace matching (None = all serving tenants, correct for customers) |
+| `platform_notifications` recipient query | **SECURE** | n/a | a SELECT filter, not an isolation check |
+
+### 5b.1 Booking — ACTIVE cross-tenant customer-PII IDOR (HIGH, most severe of the session)
+
+`P.BOOKING_READ` = `booking:bookings:read`, held by **staff and technician**.
+`GET /v1/bookings/{booking_id}` → `get_booking` → `_assert_can_access_booking`, which handled
+only `customer` and `tenant_owner` and **fell through with no check** for staff/technician. So a
+staff/technician at tenant A could read **any booking across all tenants** — customer name,
+address, phone, schedule, price. `list_bookings` similarly let them fall into an `else` branch
+that accepted an arbitrary `tenant_id`, listing any tenant's bookings.
+
+**Fixed:** `_assert_can_access_booking` is now fail-closed — platform roles unrestricted;
+`customer` → own booking; every other (tenant-scoped) role → own tenant; no-tenant/guest →
+denied. `list_bookings` forces tenant scoping for all tenant-scoped roles and only lets platform
+roles filter by arbitrary tenant/customer. A stale test
+(`test_customer_idor.py::test_staff_can_view_any_booking_in_their_tenant`) that had **encoded
+the vulnerability** (staff with no tenant_id viewing any booking) was corrected to assert the
+secure behavior (own-tenant allowed, other-tenant denied) + a new denial regression test.
+
+### 5b.2 Security deposit — hardened (defense-in-depth)
+
+`platform_commerce/_assert_owns_tenant_deposit` had the same `tenant_owner`-only gate. Deposit
+perms are platform-only (`admin_finance`/`admin_readonly`), so it was not reachable by
+staff/technician — hardened anyway to the PLATFORM_ROLES-denylist pattern for consistency and
+future-proofing (behavior-identical for tenant_owner and platform).
+
+### 5b.3 Systemic guard
+
+`e2e/cross_tenant_isolation_guard.py` (fail-closed) locks in all four fixes — asserts each
+audited isolation method has dropped the vulnerable `actor_role == "tenant_owner"` gate and uses
+a PLATFORM_ROLES denylist. Passes (4/4). Deliberately a fixed registry, not a broad grep, so the
+legitimate `tenant_owner` uses above are not flagged.
+
 ## 6. Files Changed
 
 - `app/engines/serviceability/service.py` — `_assert_owns_tenant` hardened (active IDOR fix).
-- `e2e/serviceability_isolation_guard.py` — new fail-closed guard.
-- `tests/test_module_l5_04_service_area_isolation.py` — new tests (6).
+- `app/engines/booking/service.py` — `_assert_can_access_booking` + `list_bookings` fail-closed
+  tenant scoping (active cross-tenant customer-PII IDOR fix).
+- `app/engines/platform_commerce/service.py` — `_assert_owns_tenant_deposit` hardened (d-i-d).
+- `e2e/serviceability_isolation_guard.py`, `e2e/cross_tenant_isolation_guard.py` — new guards.
+- `tests/test_module_l5_04_service_area_isolation.py` (6), `tests/test_customer_idor.py`
+  (corrected stale test + new denial regression) — tests.
 - `docs/module-l5/MODULE_L5_04_SERVICEABILITY_DEEPDIVE_REPORT.md` — this report.
 
 ## 7. Honest Status

@@ -50,15 +50,32 @@ async def test_customer_can_get_own_booking():
 
 
 @pytest.mark.asyncio
-async def test_staff_can_view_any_booking_in_their_tenant():
+async def test_staff_can_view_booking_in_their_tenant():
+    """MODULE-L5-04: staff may view a booking IN THEIR OWN TENANT (tenant_id
+    match), and only that. (The prior version of this test created a staff with
+    NO actor_tenant_id and asserted it could view ANY booking — encoding the
+    cross-tenant IDOR that MODULE-L5-04 fixed. Corrected to the secure behavior.)"""
     from app.engines.booking.service import BookingService
-    fake_booking = MagicMock(id=uuid.uuid4(), customer_id=uuid.uuid4())
+    tid = uuid.uuid4()
+    fake_booking = MagicMock(id=uuid.uuid4(), customer_id=uuid.uuid4(), tenant_id=tid)
     db = make_db_returning(fake_booking)
-    svc = BookingService(db=db, actor_id=uuid.uuid4(), actor_role="staff")
+    svc = BookingService(db=db, actor_id=uuid.uuid4(), actor_role="staff", actor_tenant_id=tid)
     svc._booking_dict = lambda b: {"booking_id": str(b.id)}
 
     result = await svc.get_booking(fake_booking.id)
     assert result["booking_id"] == str(fake_booking.id)
+
+
+@pytest.mark.asyncio
+async def test_staff_cannot_view_booking_in_another_tenant():
+    """MODULE-L5-04 regression: staff holds booking:bookings:read but must NOT be
+    able to read a booking belonging to a different tenant."""
+    from app.engines.booking.service import BookingService
+    fake_booking = MagicMock(id=uuid.uuid4(), customer_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+    db = make_db_returning(fake_booking)
+    svc = BookingService(db=db, actor_id=uuid.uuid4(), actor_role="staff", actor_tenant_id=uuid.uuid4())
+    with pytest.raises(NotFoundException):
+        await svc.get_booking(fake_booking.id)
 
 
 @pytest.mark.asyncio

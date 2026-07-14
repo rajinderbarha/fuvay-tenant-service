@@ -61,15 +61,31 @@ class BookingService:
         if self.actor_role == "customer" and (self.actor_id is None or self.actor_id != customer_id):
             raise NotFoundException("Booking", str(customer_id))
 
+    # Platform roles carry tenant_id=None (01D-R canonical model) and have
+    # unrestricted cross-tenant booking access by design.
+    PLATFORM_ROLES = ("super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly")
+
     def _assert_can_access_booking(self, booking: Booking) -> None:
-        """Step 4: enforce tenant_owner + customer isolation. 404 hides existence."""
+        """Enforce booking isolation, fail-closed. 404 hides existence.
+
+        MODULE-L5-04 FIX (active cross-tenant IDOR / customer-PII leak): the old
+        check handled only customer + tenant_owner and fell THROUGH (no check)
+        for every other role. But `staff` and `technician` hold
+        booking:bookings:read and reach GET /v1/bookings/{booking_id}, so they
+        could read ANY booking across ALL tenants (customer name/address/phone/
+        price). Now: platform roles unrestricted; customer -> own; every other
+        (tenant-scoped) role -> own tenant; unknown/guest -> denied.
+        """
+        if self.actor_role in self.PLATFORM_ROLES:
+            return
         if self.actor_role == "customer":
             if self.actor_id is None or self.actor_id != booking.customer_id:
                 raise NotFoundException("Booking", str(booking.id))
-        elif self.actor_role == "tenant_owner":
-            if self.actor_tenant_id is None or self.actor_tenant_id != booking.tenant_id:
-                raise NotFoundException("Booking", str(booking.id))
-        # super_admin: unrestricted access
+            return
+        # All tenant-scoped roles (tenant_owner, staff, technician, ...) are
+        # confined to their own tenant; roles without a tenant_id are denied.
+        if self.actor_tenant_id is None or self.actor_tenant_id != booking.tenant_id:
+            raise NotFoundException("Booking", str(booking.id))
 
     async def _write_history(self, booking: Booking, from_s: str | None,
                               to_s: str, reason: str | None = None, meta: dict | None = None):
@@ -573,13 +589,23 @@ class BookingService:
         """Step 4: unified list — role determines scope."""
         q = select(Booking).order_by(Booking.created_at.desc())
 
+        # MODULE-L5-04 FIX: force tenant scoping for ALL tenant-scoped roles.
+        # Previously only tenant_owner was scoped and the `else` branch let
+        # staff/technician (who hold booking:bookings:read) pass an arbitrary
+        # tenant_id and list ANY tenant's bookings (cross-tenant customer-PII).
         if self.actor_role == "customer":
             q = q.where(Booking.customer_id == self.actor_id)
-        elif self.actor_role == "tenant_owner":
-            q = q.where(Booking.tenant_id == self.actor_tenant_id)
-        else:
+        elif self.actor_role in self.PLATFORM_ROLES:
+            # platform roles may filter by any tenant/customer
             if tenant_id:
                 q = q.where(Booking.tenant_id == tenant_id)
+            if customer_id:
+                q = q.where(Booking.customer_id == customer_id)
+        else:
+            # all tenant-scoped roles -> confined to their own tenant
+            if self.actor_tenant_id is None:
+                raise NotFoundException("Booking", "list")
+            q = q.where(Booking.tenant_id == self.actor_tenant_id)
             if customer_id:
                 q = q.where(Booking.customer_id == customer_id)
 

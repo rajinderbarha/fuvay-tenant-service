@@ -75,10 +75,14 @@ class CommerceService:
     # since they reach these via a different permission and are expected to
     # act across tenants.
     def _assert_owns_tenant_deposit(self, tenant_id: uuid.UUID) -> None:
-        if self.actor_role == "tenant_owner" and (
-            self.actor_tenant_id is None or self.actor_tenant_id != tenant_id
-        ):
-            raise NotFoundException("SecurityDeposit", str(tenant_id))
+        # MODULE-L5-04 hardening: confine every tenant-scoped actor, not just
+        # tenant_owner (defense-in-depth — deposit perms are currently platform-
+        # only, but this future-proofs against the tenant_owner-only anti-pattern
+        # that was an ACTIVE cross-tenant IDOR in serviceability + booking).
+        _PLATFORM = ("super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly")
+        if self.actor_role not in _PLATFORM:
+            if self.actor_tenant_id is None or self.actor_tenant_id != tenant_id:
+                raise NotFoundException("SecurityDeposit", str(tenant_id))
 
     async def _get_or_create_deposit(self, tid):
         r = await self.db.execute(select(SecurityDeposit).where(SecurityDeposit.tenant_id == tid))
