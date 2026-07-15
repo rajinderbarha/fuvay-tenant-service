@@ -318,9 +318,13 @@ class PackageCommerceService:
 
     async def delete_package(self, package_id: uuid.UUID) -> dict:
         pkg = await self._load_package(package_id)
-        # Block hard-delete if purchases exist
+        # MODULE-L5-32: this queried TenantPackagePurchase, whose backing
+        # table (tenant_package_purchases) was never migrated -- this check
+        # 500'd on every call instead of ever actually blocking a delete.
+        # TenantPackageAssignment is the real, live table tenant purchases
+        # are recorded in.
         r = await self.db.execute(
-            select(TenantPackagePurchase).where(TenantPackagePurchase.package_id == package_id)
+            select(TenantPackageAssignment).where(TenantPackageAssignment.package_id == package_id)
         )
         if r.scalar_one_or_none():
             raise ServiceOSException(
@@ -936,20 +940,28 @@ class PackageCommerceService:
         self, tenant_id: uuid.UUID
     ) -> tuple[Decimal, uuid.UUID | None]:
         """Commission rate priority: active_purchase > tenant_settings > platform_default."""
-        # 1. Active paid onboarding/subscription purchase with commission_rate
+        # MODULE-L5-32: this queried TenantPackagePurchase, whose backing
+        # table (tenant_package_purchases) was never migrated -- every call
+        # 500'd, so a per-package commission override could never actually
+        # be honored; it always fell through to tenant settings/platform
+        # default (or crashed). TenantPackageAssignment is the real, active
+        # assignment; the commission rate itself lives on ServicePackage.
         r = await self.db.execute(
-            select(TenantPackagePurchase)
+            select(TenantPackageAssignment, ServicePackage.commission_rate)
+            .join(ServicePackage, ServicePackage.id == TenantPackageAssignment.package_id)
             .where(
-                TenantPackagePurchase.tenant_id == tenant_id,
-                TenantPackagePurchase.payment_status == "paid",
-                TenantPackagePurchase.commission_rate.is_not(None),
+                TenantPackageAssignment.tenant_id == tenant_id,
+                TenantPackageAssignment.status == "active",
+                ServicePackage.commission_rate.is_not(None),
             )
-            .order_by(desc(TenantPackagePurchase.purchased_at))
+            .order_by(desc(TenantPackageAssignment.activated_at))
             .limit(1)
         )
-        purchase = r.scalar_one_or_none()
-        if purchase and purchase.commission_rate is not None:
-            return purchase.commission_rate, purchase.id
+        row = r.first()
+        if row is not None:
+            assignment, commission_rate = row
+            if commission_rate is not None:
+                return commission_rate, assignment.id
 
         # 2. Tenant operational settings
         r2 = await self.db.execute(

@@ -22,7 +22,7 @@ def _make_db():
     return db
 
 
-def _scalar_result(value):
+def _scalar_result(value, first=None):
     """SQLAlchemy result mock. scalar_* methods are SYNCHRONOUS in SQLAlchemy async."""
     r = MagicMock()
     r.scalar_one_or_none = MagicMock(return_value=value)
@@ -30,6 +30,7 @@ def _scalar_result(value):
     r.scalars = MagicMock(
         return_value=MagicMock(all=MagicMock(return_value=value if isinstance(value, list) else []))
     )
+    r.first = MagicMock(return_value=first)
     return r
 
 
@@ -109,6 +110,16 @@ def _make_purchase(**kwargs) -> MagicMock:
     p.expires_at = None
     p.created_at = None
     return p
+
+
+def _make_assignment(**kwargs) -> MagicMock:
+    a = MagicMock()
+    a.id = uuid.uuid4()
+    a.tenant_id = kwargs.get("tenant_id", uuid.uuid4())
+    a.package_id = kwargs.get("package_id", uuid.uuid4())
+    a.status = kwargs.get("status", "active")
+    a.activated_at = None
+    return a
 
 
 def _make_commission(**kwargs) -> MagicMock:
@@ -821,8 +832,7 @@ async def test_30_cross_tenant_wallet_access_blocked():
 @pytest.mark.asyncio
 async def test_31_commission_uses_package_rate_when_available():
     tid = uuid.uuid4()
-    purchase = _make_purchase(tenant_id=tid, commission_rate=Decimal("8.00"),
-                              payment_status="paid")
+    assignment = _make_assignment(tenant_id=tid, status="active")
     wallet = _make_wallet(tenant_id=tid, credit_balance="5000")
 
     call_count = [0]
@@ -832,7 +842,8 @@ async def test_31_commission_uses_package_rate_when_available():
         if call_count[0] == 1:
             return _scalar_result(None)  # existing commission check
         elif call_count[0] == 2:
-            return _scalar_result(purchase)  # package purchase for rate
+            # active package assignment joined with ServicePackage.commission_rate
+            return _scalar_result(None, first=(assignment, Decimal("8.00")))
         else:
             return _scalar_result(wallet)
 
