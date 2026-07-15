@@ -193,6 +193,14 @@ class HomeServiceFinalCreationService:
                           draft.customer_id, draft.selected_tenant_id, request_id,
                           {"job_id": str(job.id), "job_number": job_number})
 
+        # 8. MODULE-L5-27: tell the provider a new booking arrived so they assign a
+        # technician, and confirm to the customer. Confirming a booking only
+        # emitted internal events, so the provider had to poll to discover new
+        # work and the customer got no bell notification.
+        await self._notify_booking_confirmed(
+            booking_id=booking.id, booking_number=booking_number,
+            tenant_id=draft.selected_tenant_id, customer_id=draft.customer_id)
+
         booking_summary = draft.booking_summary or {}
         return {
             "idempotent":                  False,
@@ -208,6 +216,40 @@ class HomeServiceFinalCreationService:
             "selected_price_amount":       booking_summary.get("customer_offer"),
             "payment_mode":                "customer_pays_provider_directly",
         }
+
+    async def _notify_booking_confirmed(self, *, booking_id, booking_number,
+                                        tenant_id, customer_id) -> None:
+        """Notify the provider (a new booking to staff) and the customer (their
+        booking is confirmed). Best-effort — never block confirmation on it."""
+        try:
+            from app.engines.platform_notifications.models import InAppNotification
+            if customer_id:
+                self.db.add(InAppNotification(
+                    user_id=customer_id, tenant_id=tenant_id,
+                    notification_type="booking.confirmed",
+                    title="Your booking is confirmed",
+                    body=f"Booking {booking_number} is confirmed. We'll assign a professional shortly.",
+                    action_url=f"/customer/bookings/{booking_id}",
+                    action_label="View booking",
+                    source_record_type="service_bookings", source_record_id=booking_id,
+                    severity="info"))
+            if tenant_id:
+                from app.engines.tenant_engine.models import Tenant
+                tenant = await self.db.get(Tenant, tenant_id)
+                owner_id = getattr(tenant, "owner_user_id", None) if tenant else None
+                if owner_id:
+                    self.db.add(InAppNotification(
+                        user_id=owner_id, tenant_id=tenant_id,
+                        notification_type="booking.new",
+                        title="New booking received",
+                        body=f"Booking {booking_number} came in. Assign a technician to get started.",
+                        action_url="/service-jobs",
+                        action_label="View jobs",
+                        source_record_type="service_bookings", source_record_id=booking_id,
+                        severity="info"))
+        except Exception:
+            # Notification must never break booking confirmation.
+            pass
 
     async def _audit(self, action, draft_type, draft_id, result_type, result_id, result_number,
                      customer_id, tenant_id, request_id, details=None):
