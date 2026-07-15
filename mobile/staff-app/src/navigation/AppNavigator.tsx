@@ -36,7 +36,7 @@ export function AppNavigator() {
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen}
               options={({ route }) => ({
                 headerShown:true,
-                title: (route.params as { name:string }).name ?? "Chat",
+                title: (route.params as { title:string }).title ?? "Chat",
                 headerStyle:{ backgroundColor:theme.colors.surface },
                 headerTintColor:theme.colors.textPrimary,
                 headerTitleStyle:{ fontWeight:"700" },

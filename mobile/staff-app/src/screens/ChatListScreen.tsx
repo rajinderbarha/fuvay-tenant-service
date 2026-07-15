@@ -1,58 +1,60 @@
 import React, { useCallback } from "react";
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useApi } from "../hooks/useApi";
-import { chatApi, type ChatRoom } from "../lib/api";
+import { chatApi, type ChatThread } from "../lib/api";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 type Props = { navigation: NativeStackNavigationProp<never> };
 
-export function ChatListScreen({ navigation }: Props) {
-  const rooms = useApi(useCallback(() => chatApi.listRooms(), []));
+// MODULE-L5-34: rewired to real ChatThread fields. There is no
+// participant_name, last_message preview, or unread_count on the backend --
+// threads are keyed by what they're about (record_type/record_id), not by
+// who's in them.
+const RECORD_LABELS: Record<string,string> = {
+  service_booking: "Booking", service_job: "Job", complaint: "Complaint",
+};
 
-  function renderRoom({ item:r }: { item:ChatRoom }) {
-    const time = r.last_message_at
-      ? new Date(r.last_message_at).toLocaleTimeString("en-IN",{ hour:"2-digit", minute:"2-digit" })
+export function ChatListScreen({ navigation }: Props) {
+  const threads = useApi(useCallback(() => chatApi.listThreads(), []));
+
+  function renderThread({ item:t }: { item:ChatThread }) {
+    const time = t.last_message_at
+      ? new Date(t.last_message_at).toLocaleTimeString("en-IN",{ hour:"2-digit", minute:"2-digit" })
       : "";
+    const label = RECORD_LABELS[t.record_type] ?? t.record_type;
     return (
       <TouchableOpacity style={s.row} activeOpacity={0.85}
-        onPress={() => navigation.navigate("ChatRoom" as never, { roomId:r.room_id, name:r.participant_name } as never)}>
+        onPress={() => navigation.navigate("ChatRoom" as never,
+          { threadId:t.id, title:`${label} · ${t.thread_number}` } as never)}>
         <View style={s.avatar}>
-          <Text style={s.avatarText}>{r.participant_name[0].toUpperCase()}</Text>
+          <Text style={s.avatarText}>{label[0].toUpperCase()}</Text>
         </View>
         <View style={{ flex:1 }}>
           <View style={[gs.row, { justifyContent:"space-between" }]}>
-            <Text style={s.name}>{r.participant_name}</Text>
+            <Text style={s.name}>{label} · {t.thread_number}</Text>
             <Text style={s.time}>{time}</Text>
           </View>
-          {r.job_number && <Text style={s.jobRef}>Job: {r.job_number}</Text>}
-          {r.last_message && (
-            <Text style={s.preview} numberOfLines={1}>{r.last_message}</Text>
-          )}
+          <Text style={s.jobRef}>{t.status}</Text>
         </View>
-        {r.unread_count > 0 && (
-          <View style={s.badge}>
-            <Text style={s.badgeText}>{r.unread_count > 9 ? "9+" : r.unread_count}</Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   }
 
   return (
     <View style={gs.screen}>
-      {rooms.loading ? (
+      {threads.loading ? (
         <View style={{ padding:theme.spacing.base, gap:14 }}>
           {[...Array(5)].map((_,i) => <Skeleton key={i} height={70} />)}
         </View>
       ) : (
         <FlatList
-          data={rooms.data?.rooms ?? []}
-          renderItem={renderRoom}
-          keyExtractor={r => r.room_id}
-          onRefresh={rooms.refetch}
-          refreshing={rooms.loading}
+          data={threads.data?.items ?? []}
+          renderItem={renderThread}
+          keyExtractor={t => t.id}
+          onRefresh={threads.refetch}
+          refreshing={threads.loading}
           ItemSeparatorComponent={() => <View style={gs.sep} />}
           ListEmptyComponent={
             <View style={{ alignItems:"center", paddingTop:80, gap:10 }}>

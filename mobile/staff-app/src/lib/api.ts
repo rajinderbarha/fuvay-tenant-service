@@ -87,10 +87,26 @@ export interface EarningsSummary {
   jobs_completed_this_month:number; job_value_this_month:number;
   average_rating:number|null;
 }
-export interface ChatRoom            { room_id:string; job_id?:string; job_number?:string; participant_name:string; last_message?:string; last_message_at?:string; unread_count:number; }
-export interface ChatMessage         { message_id:string; room_id:string; sender_id:string; sender_name?:string; content:string; message_type:string; sent_at:string; is_read:boolean; }
-export interface ChatRoomListResponse{ rooms:ChatRoom[]; has_next:boolean; }
-export interface MessageListResponse { messages:ChatMessage[]; has_next:boolean; }
+// MODULE-L5-34: this modeled a richer chat concept (room_id, participant_name,
+// last_message preview, unread_count) than the real staff chat backend
+// (app/engines/platform_notifications, built in MODULE-L5-19) provides --
+// and called /v1/chat/rooms/*, which doesn't exist at all (the real chat
+// engine only exposes /v1/chat/conversations*, and staff chat specifically
+// lives at /v1/staff/chat/*). Threads carry record_type/record_id (what the
+// conversation is about) and last_message_at, not a participant name or
+// message preview; there is no per-thread unread count.
+export interface ChatThread {
+  id:string; thread_number:string; tenant_id:string|null; customer_id:string|null;
+  record_type:string; record_id:string; status:string;
+  last_message_at:string|null; created_at:string;
+}
+export interface ChatMessage {
+  id:string; thread_id:string; sender_user_id:string|null; sender_type:string;
+  message_type:string; message_text:string|null; visibility:string;
+  delivery_status:string; created_at:string;
+}
+export interface ChatThreadListResponse { items:ChatThread[]; total:number; }
+export interface ChatMessageListResponse{ items:ChatMessage[]; total:number; }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authApi = {
@@ -139,13 +155,16 @@ export const geoApi = {
 };
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
+// MODULE-L5-34: rewired to the real staff chat surface built in
+// MODULE-L5-19 (/v1/staff/chat/threads*) -- /v1/chat/rooms* never existed.
 export const chatApi = {
-  listRooms:   ()                       => apiFetch<ChatRoomListResponse>("/v1/chat/rooms?limit=30"),
-  getMessages: (roomId:string, limit=50)=> apiFetch<MessageListResponse>(`/v1/chat/rooms/${roomId}/messages?limit=${limit}`),
-  sendMessage: (roomId:string, content:string) =>
-    apiFetch<ChatMessage>(`/v1/chat/rooms/${roomId}/messages`,
-      { method:"POST", body:JSON.stringify({ content, message_type:"text" }) }),
-  markRead:    (roomId:string) => apiFetch<void>(`/v1/chat/rooms/${roomId}/read`, { method:"POST" }),
+  listThreads: (limit=30) => apiFetch<ChatThreadListResponse>(`/v1/staff/chat/threads?limit=${limit}`),
+  getMessages: (threadId:string, limit=50) =>
+    apiFetch<ChatMessageListResponse>(`/v1/staff/chat/threads/${threadId}/messages?limit=${limit}`),
+  sendMessage: (threadId:string, messageText:string) =>
+    apiFetch<ChatMessage>(`/v1/staff/chat/threads/${threadId}/messages`,
+      { method:"POST", body:JSON.stringify({ message_text:messageText, message_type:"text" }) }),
+  markRead:    (threadId:string) => apiFetch<{ messages_marked_read:number }>(`/v1/staff/chat/threads/${threadId}/read`, { method:"POST" }),
 };
 
 // ── Earnings ──────────────────────────────────────────────────────────────────

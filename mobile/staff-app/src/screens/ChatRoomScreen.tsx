@@ -7,26 +7,26 @@ import { Skeleton } from "../components/Skeleton";
 import { theme } from "../styles/theme";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
-type Params = { roomId:string; name:string };
+type Params = { threadId:string; title:string };
 type Props  = NativeStackScreenProps<{ ChatRoom:Params }, "ChatRoom">;
 
 export function ChatRoomScreen({ route }: Props) {
-  const { roomId, name } = route.params;
+  const { threadId } = route.params;
   const { user } = useAuth();
   const [text, setText] = useState("");
   const listRef = useRef<FlatList>(null);
 
-  const messages = useApi(useCallback(() => chatApi.getMessages(roomId), [roomId]));
+  const messages = useApi(useCallback(() => chatApi.getMessages(threadId), [threadId]));
   const sendAction = useAction(useCallback(
-    (content:string) => chatApi.sendMessage(roomId, content), [roomId]
+    (messageText:string) => chatApi.sendMessage(threadId, messageText), [threadId]
   ));
 
   useEffect(() => {
-    chatApi.markRead(roomId).catch(() => {});
-  }, [roomId]);
+    chatApi.markRead(threadId).catch(() => {});
+  }, [threadId]);
 
   useEffect(() => {
-    if (messages.data?.messages.length) {
+    if (messages.data?.items.length) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated:false }), 100);
     }
   }, [messages.data]);
@@ -41,13 +41,13 @@ export function ChatRoomScreen({ route }: Props) {
   const fmtTime = (d:string) => new Date(d).toLocaleTimeString("en-IN",{ hour:"2-digit", minute:"2-digit" });
 
   function renderMessage({ item:m }: { item:ChatMessage }) {
-    const isMe = m.sender_id === user?.id;
+    const isMe = m.sender_user_id === user?.id;
     return (
       <View style={[s.msgRow, isMe ? s.msgRight : s.msgLeft]}>
         <View style={[s.bubble, isMe ? s.bubbleMe : s.bubbleOther]}>
-          <Text style={[s.msgText, isMe && { color:"#fff" }]}>{m.content}</Text>
+          <Text style={[s.msgText, isMe && { color:"#fff" }]}>{m.message_text}</Text>
         </View>
-        <Text style={s.msgTime}>{fmtTime(m.sent_at)}</Text>
+        <Text style={s.msgTime}>{fmtTime(m.created_at)}</Text>
       </View>
     );
   }
@@ -62,9 +62,9 @@ export function ChatRoomScreen({ route }: Props) {
       ) : (
         <FlatList
           ref={listRef}
-          data={messages.data?.messages ?? []}
+          data={messages.data?.items ?? []}
           renderItem={renderMessage}
-          keyExtractor={m => m.message_id}
+          keyExtractor={m => m.id}
           contentContainerStyle={{ padding:14, gap:10 }}
         />
       )}
