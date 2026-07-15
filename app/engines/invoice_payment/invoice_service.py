@@ -303,6 +303,24 @@ class ServiceInvoiceService:
         await self._log_event(db, inv, FEV_INVOICE_ISSUED, "staff", user_id,
                               old_value={"status": old_status},
                               new_value={"status": INV_ISSUED}, request_id=request_id)
+        # MODULE-L5-26: tell the customer their invoice is ready and payment is
+        # due. Issuing the invoice was silent, so the customer had no idea an
+        # amount was owed until they happened to open the booking.
+        if inv.customer_id:
+            from app.engines.platform_notifications.models import InAppNotification
+            db.add(InAppNotification(
+                user_id=inv.customer_id,
+                tenant_id=inv.tenant_id,
+                notification_type="invoice.issued",
+                title="Your invoice is ready",
+                body=(f"Amount due: {inv.currency}{inv.customer_payable_amount}. "
+                      f"Pay your provider directly after the service is complete."),
+                action_url=f"/customer/invoices/{inv.id}",
+                action_label="View invoice",
+                source_record_type="service_invoices",
+                source_record_id=inv.id,
+                severity="info",
+            ))
         await db.commit()
         await db.refresh(inv)
         return inv.to_dict()
