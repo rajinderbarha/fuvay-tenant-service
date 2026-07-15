@@ -1485,6 +1485,24 @@ class PackageCommerceService:
         if not pkg.is_active:
             raise ServiceOSException("PACKAGE_INACTIVE", "Package is not available.")
 
+        # MODULE-L5-30: without this, a tenant clicking Purchase twice (or a
+        # retried request) created a second pending assignment for the same
+        # package with no guard at all — a customer_credits-style double-spend
+        # shape (see MODULE-L5-28). One in-flight selection per tenant+package.
+        existing = (await self.db.execute(
+            select(TenantPackageAssignment).where(
+                TenantPackageAssignment.tenant_id == tenant_id,
+                TenantPackageAssignment.package_id == package_id,
+                TenantPackageAssignment.status.in_(
+                    ["selected", "pending_review", "pending_payment", "paid_pending_approval"]
+                ),
+            )
+        )).scalars().first()
+        if existing:
+            raise ServiceOSException(
+                "PACKAGE_ALREADY_PENDING",
+                "You already have a pending selection for this package awaiting approval.")
+
         now = utcnow()
         status = "paid_pending_approval" if is_paid else "pending_review"
 

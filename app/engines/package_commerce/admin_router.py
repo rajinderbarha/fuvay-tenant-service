@@ -351,9 +351,18 @@ async def admin_purchase_package(
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_permission(P.PACKAGES_CREATE)),
 ) -> dict:
-    return _ok(
-        await _svc(db, request, user).purchase_package(tenant_id, package_id, payload), request
+    # MODULE-L5-30: same fix as tenant_router.tenant_purchase_package — this
+    # called purchase_package(), which writes to tenant_package_purchases, a
+    # table that was never migrated (every call 500'd). Repointed to the real
+    # assignment mechanism, marking it paid since an admin is recording this
+    # on the tenant's behalf.
+    result = await _svc(db, request, user).create_package_assignment(
+        tenant_id, package_id,
+        payment_reference=payload.get("payment_reference"),
+        is_paid=True,
     )
+    await db.commit()
+    return _ok(result, request)
 
 
 # ══════════════════════════════════════════════════════════════

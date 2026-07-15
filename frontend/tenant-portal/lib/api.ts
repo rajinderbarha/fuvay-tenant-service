@@ -2261,48 +2261,61 @@ export const providerMonetizationApi = {
 };
 
 // ── Sprint 6 — Provider Package API ──────────────────────────────────────────
+// MODULE-L5-30: this used to call /v1/provider/packages and /v1/provider/packages/purchase,
+// which don't exist (live 404s), and initiatePurchase wrote to a table
+// (tenant_package_purchases) that was never migrated. Repointed to the real,
+// tested tenant_router.py endpoints backed by tenant_package_assignments —
+// the same table the admin-approval flow and status check below both use.
 
 export interface ProviderPackage {
   id: string;
-  category_id: string;
-  monetization_model: string;
-  package_type: string;
+  package_id: string;
   name: string;
   slug: string;
   description: string | null;
-  price: string;
+  package_type: string;
+  plan_level: string | null;
+  is_active: boolean;
+  price: number;
   currency: string;
   billing_cycle: string | null;
   validity_days: number | null;
   trial_days: number | null;
-  security_deposit_amount: string;
-  included_credit_amount: string;
-  included_lead_credits: number;
-  staff_limit: number | null;
-  course_limit: number | null;
-  property_limit: number | null;
-  lead_limit: number | null;
-  appointment_limit: number | null;
+  security_deposit_amount: number;
+  included_credit_amount: number;
+  lead_credits: number | null;
+  vertical_type: string | null;
   is_featured: boolean;
   is_recommended: boolean;
-  is_active: boolean;
+  is_popular: boolean;
   display_order: number;
+  features: Record<string, unknown>;
+}
+
+export interface TenantPackagePurchase {
+  id: string;
+  tenant_id: string;
+  package_id: string;
+  package_type: string;
+  status: string;
+  purchase_status: string;
+  package_name: string;
+  price_amount: string;
+  security_deposit_amount: string;
+  included_spendable_credits: string;
+  selected_at: string | null;
+  paid_at: string | null;
+  approved_at: string | null;
+  activated_at: string | null;
+  starts_at: string | null;
+  expires_at: string | null;
 }
 
 export interface ProviderPackageStatus {
-  tenant_id: string;
-  active_purchases: Array<{
-    id: string;
-    package_id: string;
-    package_type: string;
-    purchase_status: string;
-    payment_status: string;
-    amount_paid: string;
-    starts_at: string | null;
-    expires_at: string | null;
-  }>;
-  lead_credit_balance: number;
-  lead_credit_lifetime_purchased: number;
+  has_active_package: boolean;
+  active_package: TenantPackagePurchase | null;
+  all_purchases: TenantPackagePurchase[];
+  total: number;
 }
 
 export interface PackageAssignmentSummary {
@@ -2320,20 +2333,13 @@ export interface PackageAssignmentSummary {
 
 export const providerPackageApi = {
   browse: () =>
-    apiFetch<{ packages: ProviderPackage[]; category_id: string | null; monetization_model: string | null }>(
-      "/v1/provider/packages"
-    ),
+    apiFetch<{ available_packages: ProviderPackage[]; total: number }>("/v1/tenant/packages/available"),
   status: () => apiFetch<ProviderPackageStatus>("/v1/provider/packages/status"),
   packageSummary: () => apiFetch<PackageAssignmentSummary>("/v1/provider/onboarding/package-summary"),
-  initiatePurchase: (packageId: string, paymentMethod?: string) =>
-    apiFetch<{ id: string; purchase_status: string; payment_status: string }>(
-      "/v1/provider/packages/purchase",
-      { method: "POST", body: JSON.stringify({ package_id: packageId, payment_method: paymentMethod }) }
-    ),
-  cancelPurchase: (purchaseId: string, reason?: string) =>
-    apiFetch<{ cancelled: boolean }>(
-      `/v1/provider/packages/purchases/${purchaseId}/cancel`,
-      { method: "POST", body: JSON.stringify({ reason }) }
+  initiatePurchase: (packageId: string, paymentReference?: string) =>
+    apiFetch<TenantPackagePurchase>(
+      `/v1/tenant/packages/${packageId}/purchase`,
+      { method: "POST", body: JSON.stringify({ payment_reference: paymentReference }) }
     ),
 };
 

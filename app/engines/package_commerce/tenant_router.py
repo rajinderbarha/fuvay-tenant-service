@@ -114,8 +114,23 @@ async def tenant_purchase_package(
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_tenant_owner),
 ) -> dict:
+    # MODULE-L5-30: this used to call purchase_package(), which writes a
+    # TenantPackagePurchase row into `tenant_package_purchases` — a table that
+    # was never migrated (does not exist in the database), so every call 500'd.
+    # The real, tested, symmetric mechanism is the P1 assignment lifecycle
+    # (create_package_assignment now / admin activate_tenant_package_assignment
+    # on approval), which is what tenant_package_assignments-backed status
+    # checks (get_packages_status) actually read. Previously that mechanism was
+    # only ever invoked inline during initial public registration — an already
+    # onboarded tenant had no way at all to buy an additional/renewal package.
     tid = _tenant_id(user)
-    return _ok(await _svc(db, request, user).purchase_package(tid, package_id, payload), request)
+    result = await _svc(db, request, user).create_package_assignment(
+        tid, package_id,
+        payment_reference=payload.get("payment_reference"),
+        is_paid=bool(payload.get("mark_paid")),
+    )
+    await db.commit()
+    return _ok(result, request)
 
 
 # ══════════════════════════════════════════════════════════════

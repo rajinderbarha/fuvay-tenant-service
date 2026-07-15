@@ -6,6 +6,7 @@ import { financeApi, providerPackageApi } from "../../../lib/api";
 import type { CreditPackage, WalletBalance, ProviderPackage } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { useRazorpayCheckout } from "../../../hooks/useRazorpayCheckout";
+import { useTenant } from "../../../hooks/useTenant";
 import { Package, Wallet, Zap, Star, CheckCircle, Clock } from "lucide-react";
 
 const RAZORPAY_KEY = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? "";
@@ -25,6 +26,8 @@ const BILLING_LABELS: Record<string, string> = {
 };
 
 export default function PackagesPage() {
+  const { vertical } = useTenant();
+
   // Category-specific packages (Sprint 6 system)
   const categoryPkgs = useApi(useCallback(() => providerPackageApi.browse(), []));
   const myStatus     = useApi(useCallback(() => providerPackageApi.status(), []));
@@ -62,12 +65,12 @@ export default function PackagesPage() {
     notify(`${pkg.name} purchased! Wallet credited.`);
   });
 
-  // Category package purchase (creates pending purchase; manual payment flow)
+  // Category package purchase (creates pending assignment; awaits admin approval)
   async function handleCategoryPurchase(pkg: ProviderPackage) {
     setPurchasing(pkg.id);
     try {
-      await providerPackageApi.initiatePurchase(pkg.id, "manual");
-      notify(`Purchase initiated for "${pkg.name}". Our team will contact you to complete payment.`);
+      await providerPackageApi.initiatePurchase(pkg.id);
+      notify(`Purchase initiated for "${pkg.name}". Awaiting admin approval.`);
       myStatus.refetch();
     } catch (e: unknown) {
       notify(e instanceof Error ? e.message : "Purchase failed", false);
@@ -76,15 +79,15 @@ export default function PackagesPage() {
     }
   }
 
-  const model = categoryPkgs.data?.monetization_model;
-  const isHomeService = model === "credit_wallet_commission";
-  const hasActivePurchase = (myStatus.data?.active_purchases ?? []).length > 0;
-  const leadBalance = myStatus.data?.lead_credit_balance ?? 0;
+  const isHomeService = vertical === "home_services";
+  const activePurchases = myStatus.data?.all_purchases ?? [];
+  const hasActivePurchase = myStatus.data?.has_active_package ?? false;
+  const leadBalance = 0; // lead-credit balance is not part of the real status response
 
   const bal: WalletBalance | undefined = wallet.data ?? undefined;
 
   // Use category packages if available, otherwise fall back to legacy
-  const showCategoryPackages = (categoryPkgs.data?.packages ?? []).length > 0;
+  const showCategoryPackages = (categoryPkgs.data?.available_packages ?? []).length > 0;
 
   return (
     <TenantLayout activeNav="packages">
@@ -160,7 +163,7 @@ export default function PackagesPage() {
                 <p style={{ fontSize:11, fontWeight:700, textTransform:"uppercase",
                   letterSpacing:"0.06em", color:"var(--text-tertiary)", margin:0 }}>Active</p>
                 <p style={{ fontSize:13, fontWeight:700, color:"#059669", margin:"2px 0 0" }}>
-                  {myStatus.data!.active_purchases.length} active plan{myStatus.data!.active_purchases.length > 1 ? "s" : ""}
+                  {activePurchases.length} plan{activePurchases.length > 1 ? "s" : ""}
                 </p>
               </div>
             </div>
@@ -175,13 +178,13 @@ export default function PackagesPage() {
             Active Purchases
           </h3>
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {myStatus.data!.active_purchases.map(p => (
+            {activePurchases.map(p => (
               <div key={p.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 14px",
                 background:"var(--surface)", borderRadius:10, border:"1px solid var(--border)" }}>
                 <CheckCircle size={14} style={{ color:"#059669", flexShrink:0 }}/>
                 <div style={{ flex:1 }}>
                   <p style={{ margin:0, fontSize:13, fontWeight:500, color:"var(--text-primary)" }}>
-                    {TYPE_LABELS[p.package_type] ?? p.package_type}
+                    {p.package_name} — {TYPE_LABELS[p.package_type] ?? p.package_type}
                   </p>
                   {p.expires_at && (
                     <p style={{ margin:0, fontSize:11, color:"var(--text-tertiary)" }}>
@@ -189,7 +192,9 @@ export default function PackagesPage() {
                     </p>
                   )}
                 </div>
-                <Badge variant="success" size="sm">Active</Badge>
+                <Badge variant={p.status === "active" ? "success" : "warning"} size="sm">
+                  {p.status}
+                </Badge>
               </div>
             ))}
           </div>
@@ -208,7 +213,7 @@ export default function PackagesPage() {
             </div>
           ) : (
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:16, marginBottom:32 }}>
-              {categoryPkgs.data!.packages.map(pkg => {
+              {categoryPkgs.data!.available_packages.map(pkg => {
                 const color = TYPE_COLORS[pkg.package_type] ?? "#64748b";
                 const isPurchasing = purchasing === pkg.id;
                 return (
@@ -258,17 +263,8 @@ export default function PackagesPage() {
                         {Number(pkg.included_credit_amount) > 0 && (
                           <IncludeRow icon="💳" text={`₹${Number(pkg.included_credit_amount).toLocaleString("en-IN")} wallet credits`}/>
                         )}
-                        {pkg.included_lead_credits > 0 && (
-                          <IncludeRow icon="⭐" text={`${pkg.included_lead_credits} lead credits`}/>
-                        )}
-                        {pkg.staff_limit != null && (
-                          <IncludeRow icon="👥" text={`Up to ${pkg.staff_limit} staff`}/>
-                        )}
-                        {pkg.course_limit != null && (
-                          <IncludeRow icon="📚" text={`Up to ${pkg.course_limit} courses`}/>
-                        )}
-                        {pkg.property_limit != null && (
-                          <IncludeRow icon="🏠" text={`Up to ${pkg.property_limit} properties`}/>
+                        {pkg.lead_credits != null && pkg.lead_credits > 0 && (
+                          <IncludeRow icon="⭐" text={`${pkg.lead_credits} lead credits`}/>
                         )}
                         {pkg.trial_days != null && pkg.trial_days > 0 && (
                           <IncludeRow icon="⏱" text={`${pkg.trial_days}-day free trial`}/>
