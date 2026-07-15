@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { LoginScreen }     from "../screens/LoginScreen";
 import { JobDetailScreen } from "../screens/JobDetailScreen";
 import { ChatRoomScreen }  from "../screens/ChatRoomScreen";
+import { NotificationsScreen } from "../screens/NotificationsScreen";
 import { TabNavigator }    from "./TabNavigator";
 import { theme } from "../styles/theme";
 
@@ -41,6 +42,12 @@ export function AppNavigator() {
                 headerTintColor:theme.colors.textPrimary,
                 headerTitleStyle:{ fontWeight:"700" },
               })}
+            />
+            <Stack.Screen name="Notifications" component={NotificationsScreen}
+              options={{ headerShown:true, title:"Notifications",
+                headerStyle:{ backgroundColor:theme.colors.surface },
+                headerTintColor:theme.colors.textPrimary,
+                headerTitleStyle:{ fontWeight:"700" } }}
             />
           </>
         ) : (

@@ -115,6 +115,18 @@ export interface ChatMessage {
 }
 export interface ChatThreadListResponse { items:ChatThread[]; total:number; }
 export interface ChatMessageListResponse{ items:ChatMessage[]; total:number; }
+// MODULE-L5-37: in-app notifications. The staff app had no notification
+// surface at all -- job-assignment/booking notifications raised server-side
+// (MODULE-L5-25/etc.) were never fetched or shown on mobile, so a technician
+// had no way to learn a job was assigned to them except by polling the Jobs
+// tab. Real endpoints: /v1/staff/notifications*.
+export interface StaffNotification {
+  id:string; notification_type:string; title:string; body:string|null;
+  action_url:string|null; action_label:string|null;
+  source_record_type:string|null; source_record_id:string|null;
+  severity:string; read_status:string; read_at:string|null; created_at:string;
+}
+export interface NotificationListResponse { items:StaffNotification[]; total:number; unread_count:number|null; }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authApi = {
@@ -212,5 +224,13 @@ export const chatApi = {
     apiFetch<ChatMessage>(`/v1/staff/chat/threads/${threadId}/messages`,
       { method:"POST", body:JSON.stringify({ message_text:messageText, message_type:"text" }) }),
   markRead:    (threadId:string) => apiFetch<{ messages_marked_read:number }>(`/v1/staff/chat/threads/${threadId}/read`, { method:"POST" }),
+};
+
+// ── Notifications (MODULE-L5-37) ────────────────────────────────────────────────
+export const notificationsApi = {
+  list:        (limit=30) => apiFetch<NotificationListResponse>(`/v1/staff/notifications?limit=${limit}`),
+  unreadCount: () => apiFetch<{ unread_count:number }>(`/v1/staff/notifications/unread-count`),
+  markRead:    (id:string) => apiFetch<StaffNotification>(`/v1/staff/notifications/${id}/read`, { method:"POST" }),
+  markAllRead: () => apiFetch<{ marked_read:number }>(`/v1/staff/notifications/mark-all-read`, { method:"POST" }),
 };
 

@@ -2,7 +2,7 @@ import React, { useCallback } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { useApi } from "../hooks/useApi";
-import { jobsApi } from "../lib/api";
+import { jobsApi, notificationsApi } from "../lib/api";
 import { JobStatusBadge } from "../components/JobStatusBadge";
 import { StatCard } from "../components/StatCard";
 import { Skeleton } from "../components/Skeleton";
@@ -25,6 +25,10 @@ const ACTIVE_STATUSES = [
 export function HomeScreen({ navigation }: Props) {
   const { user } = useAuth();
   const jobs     = useApi(useCallback(() => jobsApi.myJobs(), []));
+  // MODULE-L5-37: surface the unread-notification count as a bell badge so a
+  // technician actually sees a newly-assigned job instead of having to poll.
+  const unread   = useApi(useCallback(() => notificationsApi.unreadCount(), []));
+  const unreadCount = unread.data?.unread_count ?? 0;
 
   const allJobs  = jobs.data?.jobs ?? [];
   const active   = allJobs.find(j => ACTIVE_STATUSES.includes(j.status));
@@ -40,8 +44,18 @@ export function HomeScreen({ navigation }: Props) {
           <Text style={s.greeting}>{greeting},</Text>
           <Text style={s.name}>{user?.full_name?.split(" ")[0] ?? "Staff"} 👋</Text>
         </View>
-        <View style={s.avatar}>
-          <Text style={s.avatarText}>{user?.full_name?.[0] ?? "S"}</Text>
+        <View style={{ flexDirection:"row", alignItems:"center", gap:12 }}>
+          <TouchableOpacity onPress={() => navigation.navigate("Notifications" as never)} style={s.bell}>
+            <Text style={{ fontSize:22 }}>🔔</Text>
+            {unreadCount > 0 && (
+              <View style={s.badge}>
+                <Text style={s.badgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <View style={s.avatar}>
+            <Text style={s.avatarText}>{user?.full_name?.[0] ?? "S"}</Text>
+          </View>
         </View>
       </View>
 
@@ -115,6 +129,10 @@ const s = StyleSheet.create({
   avatar:       { width:44, height:44, borderRadius:22, backgroundColor:theme.colors.brand,
                   alignItems:"center", justifyContent:"center" },
   avatarText:   { fontSize:theme.font.size.xl, fontWeight:"700", color:"#fff" },
+  bell:         { width:44, height:44, alignItems:"center", justifyContent:"center" },
+  badge:        { position:"absolute", top:4, right:4, minWidth:18, height:18, borderRadius:9,
+                  backgroundColor:theme.colors.danger, alignItems:"center", justifyContent:"center", paddingHorizontal:4 },
+  badgeText:    { fontSize:9, fontWeight:"800", color:"#fff" },
   statsRow:     { flexDirection:"row", gap:10 },
   activeCard:   { borderLeftWidth:4, borderLeftColor:theme.colors.accent, paddingLeft:14 },
   jobNumber:    { fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary },
