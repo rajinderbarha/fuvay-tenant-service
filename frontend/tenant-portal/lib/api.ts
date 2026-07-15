@@ -505,7 +505,14 @@ export const staffApi = {
   get:            (id: string) => apiFetch<StaffMember>(`/v1/auth/users/${id}`),
   updateSchedule: (id: string, workingHours: WorkingHours) =>
     apiFetch<StaffMember>(`/v1/auth/staff/${id}/schedule`, { method:"PUT", body:JSON.stringify({ working_hours: workingHours }) }),
-  getPerformance: (id: string) => apiFetch<StaffPerformance>(`/v1/ds/staff/${id}/performance`),
+  // MODULE-L5-40: real route is /v1/ds/tenants/{tenant_id}/staff/{staff_id}/score
+  // (the old /v1/ds/staff/{id}/performance 404'd). A 404 here is legitimate
+  // "no score computed yet" (staff has had no job close) -- the page shows
+  // that as an empty perf state, not a broken call.
+  getPerformance: (id: string) => {
+    const tid = getTenantId();
+    return apiFetch<StaffPerformance>(`/v1/ds/tenants/${tid}/staff/${id}/score`);
+  },
   getLocation:    (id: string) => {
     const tid = getTenantId();
     return apiFetch<StaffLocation>(`/v1/geo/tenants/${tid}/staff/${id}/location`);
@@ -1558,7 +1565,16 @@ export interface StaffListResponse  { staff:StaffMember[]; total:number; }
 export interface UserDetail { user_id:string; email:string; full_name:string; phone?:string; role:string; tenant_id?:string; is_active:boolean; is_verified:boolean; is_mfa_enabled:boolean; last_login_at?:string; created_at:string; }
 export interface UserListResponse { users:UserDetail[]; total:number; }
 export interface WorkingHours { [day:string]:{ start:string; end:string; is_working:boolean } }
-export interface StaffPerformance { staff_id:string; composite_score:number; signals:Record<string,number>; job_count:number; avg_rating:number; dispute_rate:number; on_time_rate:number; }
+// MODULE-L5-40: was {signals, job_count, avg_rating, dispute_rate,
+// on_time_rate} against a route (/v1/ds/staff/{id}/performance) that doesn't
+// exist. Corrected to the real get_staff_score shape + route
+// (/v1/ds/tenants/{tenant_id}/staff/{staff_id}/score).
+export interface StaffPerformance {
+  staff_id:string; tenant_id:string; composite_score:number; rank:number|null;
+  signal_values:Record<string,number>; jobs_completed:number;
+  avg_customer_rating:number; sla_adherence_rate:number;
+  observation_mode:boolean; computed_at:string;
+}
 export interface StaffLocation { staff_id:string; lat:number; lng:number; last_seen_at:string; accuracy_m?:number; }
 export interface Customer     { id:string; name:string; phone?:string; email?:string; health_band:string; health_score:number; total_jobs:number; total_spend:number; ltv_band?:string; last_job_at?:string; created_at:string; }
 export interface CustomerListResponse { customers:Customer[]; total:number; has_next:boolean; next_cursor?:string; }

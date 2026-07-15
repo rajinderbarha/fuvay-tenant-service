@@ -153,7 +153,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                     { label:"Rating",      v: s.rating     != null ? `★ ${s.rating.toFixed(1)}` : "—"   },
                     { label:"Jobs Today",  v: s.jobs_today != null ? String(s.jobs_today)         : "—"   },
                     { label:"Perf. Score", v: p ? `${p.composite_score.toFixed(1)}/100`           : "…"   },
-                    { label:"On-time",     v: p ? fmt(p.on_time_rate)                              : "…"   },
+                    { label:"On-time",     v: p ? `${p.sla_adherence_rate.toFixed(0)}%`            : "…"   },
                   ].map(m => (
                     <div key={m.label} style={{ padding:"8px 14px", borderRadius:10,
                       background:"var(--surface-sunken)", textAlign:"center", minWidth:80 }}>
@@ -207,7 +207,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                     </span>
                   </div>
                   {/* Signal bars */}
-                  {Object.entries(p.signals).map(([key, val]) => {
+                  {Object.entries(p.signal_values).map(([key, val]) => {
                     const pct = Math.min(100, Math.max(0, Number(val)));
                     const barColor = pct >= 75 ? "var(--success)" : pct >= 50 ? "var(--warning)" : "var(--danger)";
                     return (
@@ -230,9 +230,9 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                   {/* Stats row */}
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginTop:4 }}>
                     {[
-                      { label:"Jobs Done",    v: String(p.job_count)            },
-                      { label:"Avg Rating",   v: p.avg_rating.toFixed(1)        },
-                      { label:"Dispute Rate", v: fmt(p.dispute_rate)            },
+                      { label:"Jobs Done",    v: String(p.jobs_completed)                          },
+                      { label:"Avg Rating",   v: p.avg_customer_rating.toFixed(1)                  },
+                      { label:"Rank",         v: p.rank != null ? `#${p.rank}` : "—"               },
                     ].map(m => (
                       <div key={m.label} style={{ padding:"8px 10px", borderRadius:8,
                         background:"var(--surface-sunken)", textAlign:"center" }}>

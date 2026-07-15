@@ -64,9 +64,9 @@ export function ProfileScreen() {
       : p && (
         <View style={s.statsRow}>
           <StatCard label="Score" value={`${p.composite_score.toFixed(0)}/100`} accent={theme.colors.accent} />
-          <StatCard label="Rating" value={`★ ${p.avg_rating.toFixed(1)}`}       accent={theme.colors.warning} />
-          <StatCard label="Jobs"   value={String(p.job_count)}                                                 />
-          <StatCard label="On-time" value={`${(p.on_time_rate*100).toFixed(0)}%`} accent={theme.colors.success} />
+          <StatCard label="Rating" value={`★ ${p.avg_customer_rating.toFixed(1)}`} accent={theme.colors.warning} />
+          <StatCard label="Jobs"   value={String(p.jobs_completed)}                                            />
+          <StatCard label="On-time" value={`${p.sla_adherence_rate.toFixed(0)}%`} accent={theme.colors.success} />
         </View>
       )}
 
@@ -74,7 +74,7 @@ export function ProfileScreen() {
       {p && (
         <Card>
           <Text style={[gs.label, { marginBottom:12 }]}>Performance Breakdown</Text>
-          {Object.entries(p.signals).map(([key, val]) => {
+          {Object.entries(p.signal_values).map(([key, val]) => {
             const pct  = Math.min(100, Math.max(0, Number(val)));
             const barC = pct>=75?theme.colors.success:pct>=50?theme.colors.warning:theme.colors.danger;
             return (

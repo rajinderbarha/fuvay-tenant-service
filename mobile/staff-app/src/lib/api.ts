@@ -56,9 +56,15 @@ export interface StaffUser {
   working_hours?: WorkingHours;
 }
 export interface WorkingHours { [day:string]: { start:string; end:string; is_working:boolean } }
+// MODULE-L5-40: was {signals, job_count, avg_rating, dispute_rate,
+// on_time_rate} against /v1/ds/staff/{id}/performance, a route that doesn't
+// exist (404). Corrected to the real get_staff_score shape + route
+// (/v1/ds/tenants/{tenant_id}/staff/{staff_id}/score).
 export interface StaffPerformance {
-  staff_id:string; composite_score:number; signals:Record<string,number>;
-  job_count:number; avg_rating:number; dispute_rate:number; on_time_rate:number;
+  staff_id:string; tenant_id:string; composite_score:number; rank:number|null;
+  signal_values:Record<string,number>; jobs_completed:number;
+  avg_customer_rating:number; sla_adherence_rate:number;
+  observation_mode:boolean; computed_at:string;
 }
 // MODULE-L5-36: this modeled a flat field_ops-style Job (customer_name/phone/
 // address inline, job_value, closing_notes, payment fields) -- but field_ops'
@@ -197,7 +203,14 @@ export const jobsApi = {
 // ── Staff ─────────────────────────────────────────────────────────────────────
 export const staffApi = {
   get:            async () => { const id = await getStaffId(); return apiFetch<StaffUser>(`/v1/staff/${id}`); },
-  performance:    async () => { const id = await getStaffId(); return apiFetch<StaffPerformance>(`/v1/ds/staff/${id}/performance`); },
+  // MODULE-L5-40: real route is /v1/ds/tenants/{tenant_id}/staff/{staff_id}/score
+  // (old /v1/ds/staff/{id}/performance 404'd). A 404 here is a legitimate
+  // "no score computed yet" state, handled by the Profile screen.
+  performance:    async () => {
+    const id = await getStaffId();
+    const tenantId = await getTenantId();
+    return apiFetch<StaffPerformance>(`/v1/ds/tenants/${tenantId}/staff/${id}/score`);
+  },
   updateSchedule: async (wh:WorkingHours) => {
     const id = await getStaffId();
     return apiFetch<StaffUser>(`/v1/staff/${id}/schedule`, { method:"PUT", body:JSON.stringify({ working_hours:wh }) });
