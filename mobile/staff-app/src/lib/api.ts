@@ -75,8 +75,18 @@ export interface Job {
 }
 export interface JobListResponse     { jobs:Job[]; total:number; has_next:boolean; next_cursor?:string; }
 export interface JobHistoryResponse  { history:{ status:string; changed_at:string; notes?:string }[]; }
-export interface CommissionRecord    { id:string; job_id:string; job_number?:string; amount:number; rate:number; job_value:number; deducted_at:string; }
-export interface EarningsSummary     { total_earned:number; this_month:number; pending_payout:number; jobs_completed:number; }
+// MODULE-L5-33: this used to model staff earnings as a gig-worker payout
+// ledger (total_earned / pending_payout / a list of commission deductions),
+// none of which exist on the backend -- ServiceOS's real commission model
+// charges the TENANT per job, not the technician (see
+// field_ops/service.py:get_staff_earnings, which documents itself as "not a
+// payout ledger; a tenant runs its own payroll, this just shows job value
+// handled"). This now matches the real, only-existing endpoint's shape.
+export interface EarningsSummary {
+  jobs_completed_total:number; job_value_total:number;
+  jobs_completed_this_month:number; job_value_this_month:number;
+  average_rating:number|null;
+}
 export interface ChatRoom            { room_id:string; job_id?:string; job_number?:string; participant_name:string; last_message?:string; last_message_at?:string; unread_count:number; }
 export interface ChatMessage         { message_id:string; room_id:string; sender_id:string; sender_name?:string; content:string; message_type:string; sent_at:string; is_read:boolean; }
 export interface ChatRoomListResponse{ rooms:ChatRoom[]; has_next:boolean; }
@@ -139,14 +149,14 @@ export const chatApi = {
 };
 
 // ── Earnings ──────────────────────────────────────────────────────────────────
+// MODULE-L5-33: /v1/staff/{id}/earnings/summary and the paginated
+// /v1/staff/{id}/earnings list don't exist -- every call 404'd. The one real
+// endpoint is GET /v1/jobs/staff/{staff_id}/earnings (field_ops/router.py),
+// a completed-jobs-value summary, not a commission-deduction ledger.
 export const earningsApi = {
   summary: async () => {
     const id = await getStaffId();
-    return apiFetch<EarningsSummary>(`/v1/staff/${id}/earnings/summary`);
-  },
-  commissions: async (limit=20, cursor?:string) => {
-    const id = await getStaffId();
-    const qs = cursor ? `?limit=${limit}&cursor=${cursor}` : `?limit=${limit}`;
-    return apiFetch<{ records:CommissionRecord[]; has_next:boolean }>(`/v1/staff/${id}/earnings${qs}`);
+    const tenantId = await getTenantId();
+    return apiFetch<EarningsSummary>(`/v1/jobs/staff/${id}/earnings?tenant_id=${tenantId}`);
   },
 };

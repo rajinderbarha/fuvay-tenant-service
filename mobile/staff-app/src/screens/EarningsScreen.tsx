@@ -1,80 +1,57 @@
 import React, { useCallback } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useApi } from "../hooks/useApi";
-import { earningsApi, type CommissionRecord } from "../lib/api";
+import { earningsApi } from "../lib/api";
 import { StatCard } from "../components/StatCard";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
 
+// MODULE-L5-33: rewired to the one real backend endpoint
+// (GET /v1/jobs/staff/{staff_id}/earnings) -- a completed-jobs-value
+// summary, not a payout ledger. ServiceOS charges the tenant commission per
+// job, not the technician, so there is no "total earned / pending payout /
+// commission deductions" concept to show; this screen no longer pretends
+// there is one.
 export function EarningsScreen() {
-  const summary     = useApi(useCallback(() => earningsApi.summary(),      []));
-  const commissions = useApi(useCallback(() => earningsApi.commissions(30), []));
+  const summary = useApi(useCallback(() => earningsApi.summary(), []));
 
-  const fmt     = (n:number) => `₹${n.toLocaleString("en-IN")}`;
-  const fmtDate = (d:string) => new Date(d).toLocaleDateString("en-IN",{ day:"numeric", month:"short" });
-
-  function renderRecord({ item:r }: { item:CommissionRecord }) {
-    return (
-      <View style={s.row}>
-        <View style={{ flex:1 }}>
-          <Text style={s.jobNum}>{r.job_number ?? r.job_id.slice(0,8)}</Text>
-          <Text style={s.date}>Deducted {fmtDate(r.deducted_at)} · Rate: {(r.rate*100).toFixed(0)}%</Text>
-        </View>
-        <View style={{ alignItems:"flex-end" }}>
-          <Text style={s.amount}>-{fmt(r.amount)}</Text>
-          <Text style={s.jobVal}>of {fmt(r.job_value)}</Text>
-        </View>
-      </View>
-    );
-  }
+  const fmt = (n:number) => `₹${n.toLocaleString("en-IN")}`;
 
   return (
-    <View style={gs.screen}>
-      {/* Summary */}
+    <ScrollView style={gs.screen} contentContainerStyle={{ paddingBottom:32 }}>
       <View style={s.summaryWrap}>
         {summary.loading ? (
           <Skeleton height={120} />
         ) : (
           <>
             <View style={s.totalBox}>
-              <Text style={s.totalLabel}>Total Earned (Lifetime)</Text>
-              <Text style={s.totalValue}>{summary.data ? fmt(summary.data.total_earned) : "—"}</Text>
+              <Text style={s.totalLabel}>Job Value Handled (Lifetime)</Text>
+              <Text style={s.totalValue}>{summary.data ? fmt(summary.data.job_value_total) : "—"}</Text>
             </View>
             <View style={s.statsRow}>
-              <StatCard label="This Month" value={summary.data ? fmt(summary.data.this_month) : "—"}
+              <StatCard label="This Month" value={summary.data ? fmt(summary.data.job_value_this_month) : "—"}
                 accent={theme.colors.success} />
-              <StatCard label="Pending" value={summary.data ? fmt(summary.data.pending_payout) : "—"}
+              <StatCard label="Jobs Done" value={String(summary.data?.jobs_completed_total ?? "—")} />
+              <StatCard label="Avg Rating"
+                value={summary.data?.average_rating != null ? summary.data.average_rating.toFixed(1) : "—"}
                 accent={theme.colors.warning} />
-              <StatCard label="Jobs Done" value={String(summary.data?.jobs_completed ?? "—")} />
             </View>
           </>
         )}
       </View>
 
-      {/* Commission records */}
-      <Text style={[gs.label, { paddingHorizontal:theme.spacing.base, marginTop:4 }]}>Commission Deductions</Text>
-      {commissions.loading ? (
-        <View style={{ padding:theme.spacing.base, gap:10 }}>
-          {[...Array(5)].map((_,i) => <Skeleton key={i} height={56} />)}
-        </View>
-      ) : (
-        <FlatList
-          data={commissions.data?.records ?? []}
-          renderItem={renderRecord}
-          keyExtractor={r => r.id}
-          onRefresh={() => { summary.refetch(); commissions.refetch(); }}
-          refreshing={commissions.loading}
-          contentContainerStyle={{ paddingBottom:32 }}
-          ItemSeparatorComponent={() => <View style={gs.sep} />}
-          ListEmptyComponent={
-            <View style={{ alignItems:"center", paddingTop:48, gap:10 }}>
-              <Text style={{ fontSize:40 }}>💰</Text>
-              <Text style={{ color:theme.colors.textTertiary }}>No commissions recorded yet</Text>
-            </View>
-          }
-        />
-      )}
-    </View>
+      <Text style={[gs.label, { paddingHorizontal:theme.spacing.base, marginTop:16 }]}>This Month</Text>
+      <View style={{ paddingHorizontal:theme.spacing.base, paddingTop:8 }}>
+        <Text style={s.note}>
+          {summary.data
+            ? `${summary.data.jobs_completed_this_month} job${summary.data.jobs_completed_this_month === 1 ? "" : "s"} completed this month.`
+            : "—"}
+        </Text>
+        <Text style={[s.note, { marginTop:8, color:theme.colors.textTertiary }]}>
+          Payout and commission are handled by your employer, not this app.
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -84,9 +61,5 @@ const s = StyleSheet.create({
   totalLabel: { fontSize:theme.font.size.sm, color:"rgba(255,255,255,0.65)", fontWeight:"600", textTransform:"uppercase", letterSpacing:0.6 },
   totalValue: { fontSize:theme.font.size.huge, fontWeight:"800", color:"#fff" },
   statsRow:   { flexDirection:"row", gap:10 },
-  row:        { flexDirection:"row", alignItems:"center", padding:14, backgroundColor:theme.colors.surface, gap:10 },
-  jobNum:     { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
-  date:       { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:3 },
-  amount:     { fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.dangerText },
-  jobVal:     { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
+  note:       { fontSize:theme.font.size.base, color:theme.colors.textPrimary },
 });
