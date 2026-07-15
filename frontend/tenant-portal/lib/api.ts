@@ -1281,18 +1281,21 @@ export const appointmentApi = {
     apiFetch<Appointment>(`/v1/appointments/${appointmentId}/confirm`, { method:"POST" }),
   getAppointment: (appointmentId:string) =>
     apiFetch<Appointment>(`/v1/appointments/${appointmentId}`),
+  // MODULE-L5-42: real routes carry staff_id/customer_id in the PATH
+  // (/v1/appointments/staff/{id}, /v1/appointments/customers/{id}); the old
+  // /staff?... and /customer?... 404'd.
   listByStaff: (staffId:string, status?:string, cursor?:string) => {
     const tid = getTenantId();
-    const q = new URLSearchParams({ tenant_id:tid, staff_id:staffId });
+    const q = new URLSearchParams({ tenant_id:tid });
     if (status) q.set("status", status);
     if (cursor) q.set("cursor", cursor);
-    return apiFetch<AppointmentListResponse>(`/v1/appointments/staff?${q}`);
+    return apiFetch<AppointmentListResponse>(`/v1/appointments/staff/${staffId}?${q}`);
   },
   listByCustomer: (customerId:string, cursor?:string) => {
     const tid = getTenantId();
-    const q = new URLSearchParams({ tenant_id:tid, customer_id:customerId });
+    const q = new URLSearchParams({ tenant_id:tid });
     if (cursor) q.set("cursor", cursor);
-    return apiFetch<AppointmentListResponse>(`/v1/appointments/customer?${q}`);
+    return apiFetch<AppointmentListResponse>(`/v1/appointments/customers/${customerId}?${q}`);
   },
   cancelAppointment: (appointmentId:string, reason?:string) =>
     apiFetch<Appointment>(`/v1/appointments/${appointmentId}/cancel`, { method:"POST", body:JSON.stringify({ reason }) }),
@@ -1303,23 +1306,32 @@ export const appointmentApi = {
     apiFetch<Appointment>(`/v1/appointments/${appointmentId}/no-show`, { method:"POST" }),
   getHistory: (appointmentId:string) =>
     apiFetch<AppointmentHistoryResponse>(`/v1/appointments/${appointmentId}/history`),
-  getAvailableSlots: (staffId:string, date:string, durationMinutes?:number) => {
+  // MODULE-L5-42: real route /v1/appointments/staff/{id}/slots?date=&tenant_id=
+  // (no duration_minutes param); old /slots/available 404'd.
+  getAvailableSlots: (staffId:string, date:string) => {
     const tid = getTenantId();
-    const q = new URLSearchParams({ tenant_id:tid, staff_id:staffId, date });
-    if (durationMinutes) q.set("duration_minutes", String(durationMinutes));
-    return apiFetch<AppointmentSlotsResponse>(`/v1/appointments/slots/available?${q}`);
+    const q = new URLSearchParams({ tenant_id:tid, date });
+    return apiFetch<AppointmentSlotsResponse>(`/v1/appointments/staff/${staffId}/slots?${q}`);
   },
-  blockCalendar: (staffId:string, startAt:string, endAt:string, reason?:string) => {
+  // MODULE-L5-42: real route POST /v1/appointments/staff/{id}/calendar/block
+  // ?tenant_id=, body {block_date, start_time, end_time, block_type, reason,
+  // is_full_day}; old /calendar/block with start_at/end_at 404'd.
+  blockCalendar: (staffId:string, blockDate:string, startTime:string, endTime:string, reason?:string) => {
     const tid = getTenantId();
-    return apiFetch<CalendarBlock>("/v1/appointments/calendar/block", { method:"POST", body:JSON.stringify({
-      tenant_id:tid, staff_id:staffId, start_at:startAt, end_at:endAt, reason }) });
+    return apiFetch<CalendarBlock>(`/v1/appointments/staff/${staffId}/calendar/block?tenant_id=${tid}`, {
+      method:"POST", body:JSON.stringify({
+        block_date:blockDate, start_time:startTime, end_time:endTime, block_type:"leave", reason }) });
   },
+  // MODULE-L5-42: real route DELETE /v1/appointments/calendar/blocks/{id}
+  // (plural "blocks"); old singular 404'd.
   unblockCalendar: (blockId:string) =>
-    apiFetch<{ block_id:string; removed:boolean }>(`/v1/appointments/calendar/block/${blockId}`, { method:"DELETE" }),
+    apiFetch<{ block_id:string; removed:boolean }>(`/v1/appointments/calendar/blocks/${blockId}`, { method:"DELETE" }),
+  // MODULE-L5-42: real route POST /v1/appointments/staff/{id}/working-hours
+  // ?tenant_id=; old /working-hours 404'd.
   setWorkingHours: (staffId:string, workingHours:Record<string,{ start:string; end:string; is_working:boolean }>) => {
     const tid = getTenantId();
-    return apiFetch<StaffWorkingHoursResponse>("/v1/appointments/working-hours", { method:"POST", body:JSON.stringify({
-      tenant_id:tid, staff_id:staffId, working_hours:workingHours }) });
+    return apiFetch<StaffWorkingHoursResponse>(`/v1/appointments/staff/${staffId}/working-hours?tenant_id=${tid}`, {
+      method:"POST", body:JSON.stringify({ working_hours:workingHours }) });
   },
 };
 
