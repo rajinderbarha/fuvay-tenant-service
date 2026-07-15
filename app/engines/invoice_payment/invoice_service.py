@@ -394,6 +394,23 @@ class ServiceInvoiceService:
         res = await db.execute(q)
         return [inv.to_dict() for inv in res.scalars().all()]
 
+    async def list_customer_invoices(
+        self, db: AsyncSession, customer_id: str, status: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> list[dict]:
+        """A customer's own invoices, customer-safe (no wallet/commission).
+
+        MODULE-L5-17/18: the customer invoice router had detail/receipt/confirm but
+        no list, so the customer had no invoice history from the canonical engine.
+        """
+        limit = min(limit, 200)
+        q = select(ServiceInvoice).where(ServiceInvoice.customer_id == uuid.UUID(customer_id))
+        if status:
+            q = q.where(ServiceInvoice.status == status)
+        q = q.order_by(ServiceInvoice.created_at.desc()).limit(limit).offset(offset)
+        res = await db.execute(q)
+        return [inv.to_customer_dict() for inv in res.scalars().all()]
+
     async def list_all_invoices(
         self, db: AsyncSession, tenant_id: str | None = None,
         status: str | None = None, limit: int = 100, offset: int = 0,

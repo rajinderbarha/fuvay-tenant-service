@@ -29,6 +29,20 @@ def _raise_4xx(exc: ValueError):
     raise ServiceOSException(code, code.replace("_", " ").title(), status_code=status)
 
 
+@customer_invoice_router.get("")
+async def customer_list_invoices(
+    r: Request = None,
+    status: str | None = None,
+    page: int = 1, limit: int = 50,
+    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    """The customer's own invoice history (customer-safe view)."""
+    offset = max(0, (max(1, page) - 1) * limit)
+    data = await inv_svc.list_customer_invoices(
+        db, str(user.user_id), status=status, limit=limit, offset=offset)
+    return ok({"invoices": data}, _rid(r), "customer_list_invoices")
+
+
 @customer_invoice_router.get("/{invoice_id}")
 async def customer_get_invoice(
     invoice_id: str, r: Request = None,
