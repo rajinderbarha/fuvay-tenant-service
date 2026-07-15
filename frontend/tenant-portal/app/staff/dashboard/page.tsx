@@ -4,7 +4,7 @@ import { StaffLayout } from "../../../components/layout/StaffLayout";
 import { Card, StatCard, Skeleton, EmptyState, Badge } from "../../../components/shared/ui";
 import { useApi } from "../../../hooks/useApi";
 import { useStaffContextValue } from "../../../hooks/useStaffContext";
-import { staffSelfApi, tenantSetupApi, getTenantId } from "../../../lib/api";
+import { staffSelfApi, tenantSetupApi, homeServiceStaffJobsApi } from "../../../lib/api";
 import { ClipboardList, Wrench, MapPin, Clock, FileText, Bell, CheckCircle2, AlertTriangle } from "lucide-react";
 
 export default function StaffDashboardPage() {
@@ -22,10 +22,11 @@ export default function StaffDashboardPage() {
  * layout's own /v1/auth/me call immediately after login. */
 function StaffDashboardContent() {
   const ctx = useStaffContextValue();
-  const tenantId = getTenantId() || "";
 
   const skills   = useApi(useCallback(() => staffSelfApi.getMySkills(), []));
-  const jobs     = useApi(useCallback(() => tenantId ? staffSelfApi.getMyJobs(tenantId) : Promise.resolve({ jobs: [], has_next: false, next_cursor: null }), [tenantId]), [tenantId]);
+  // MODULE-L5-38: repointed from the dead field_ops /v1/staff/me/jobs to the
+  // real /v1/staff/service-jobs list (see /staff/jobs page).
+  const jobs     = useApi(useCallback(() => homeServiceStaffJobsApi.list(), []));
   const notifs   = useApi(useCallback(() => staffSelfApi.getNotifications(), []));
   const areas    = useApi(useCallback(() => staffSelfApi.getServiceAreas(), []));
   const status   = useApi(useCallback(() => tenantSetupApi.getStatus(), []));
@@ -64,16 +65,16 @@ function StaffDashboardContent() {
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
         <Card>
-          <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Today's Work Shell</h3>
+          <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Assigned Work</h3>
           {jobs.loading ? <Skeleton height={100}/> : jobCount === 0 ? (
             <EmptyState icon={<ClipboardList/>} title="No assigned work yet."
-              description="New assigned jobs will appear here when booking assignment runtime is enabled."/>
+              description="New jobs assigned to you will appear here."/>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {jobs.data!.jobs.map(j => (
-                <div key={j.job_id} style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{j.service_category || j.job_type || "Job"}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{j.status}</div>
+                <div key={j.id} style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{j.job_number || `Job ${j.id.slice(0, 8)}`}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{[j.city, j.status].filter(Boolean).join(" · ")}</div>
                 </div>
               ))}
             </div>

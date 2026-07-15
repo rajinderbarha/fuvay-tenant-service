@@ -3988,11 +3988,49 @@ export interface PartsRequestItem {
   created_at: string; updated_at: string;
 }
 
+// MODULE-L5-38: home_service_assignment's staff_router wraps its outcomes in
+// a non-standard envelope rather than HTTP status codes -- a controlled error
+// (caught ValueError) is {success:false, error:{code,message}} and
+// accept/reject's success case is {success:true, data:{...}} (a second data
+// layer over apiFetch's own json.data unwrap). get/list success cases are the
+// bare object. This unwraps all three into a value or a thrown Error, matching
+// the same fix made in the staff-app mobile client (MODULE-L5-36).
+function unwrapStaffJobResult<T>(raw: unknown): T {
+  if (raw && typeof raw === "object" && "success" in raw) {
+    const w = raw as { success: boolean; error?: { code: string; message: string }; data?: T };
+    if (!w.success) throw new Error(w.error?.message ?? w.error?.code ?? "Action failed");
+    return w.data as T;
+  }
+  return raw as T;
+}
+
+export interface HomeServiceJobBookingSummary {
+  id: string; booking_number: string; customer_name: string | null;
+  city: string | null; zipcode: string | null;
+  preferred_date: string | null; preferred_time_window: string | null;
+  issue_summary: string | null;
+}
+export interface HomeServiceJobAssignmentSummary {
+  id: string; job_id: string; booking_id: string; assigned_staff_member_id: string;
+  assignment_status: string; assignment_type: string; rejection_reason: string | null;
+  scheduled_date: string | null; scheduled_time_window: string | null;
+}
+export interface HomeServiceJobDetail {
+  job: HomeServiceJobItem;
+  assignment: HomeServiceJobAssignmentSummary | null;
+  booking: HomeServiceJobBookingSummary | null;
+}
+
 export const homeServiceStaffJobsApi = {
   list: () => apiFetch<{ jobs: HomeServiceJobItem[]; count: number }>("/v1/staff/service-jobs"),
-  get: (jobId: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}`),
-  accept: (jobId: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/accept`, { method: "POST", body: "{}" }),
-  reject: (jobId: string, reason: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  get: async (jobId: string) =>
+    unwrapStaffJobResult<HomeServiceJobDetail>(await apiFetch<unknown>(`/v1/staff/service-jobs/${jobId}`)),
+  accept: async (jobId: string) =>
+    unwrapStaffJobResult<{ job_id: string; status: string }>(
+      await apiFetch<unknown>(`/v1/staff/service-jobs/${jobId}/accept`, { method: "POST", body: "{}" })),
+  reject: async (jobId: string, reason: string) =>
+    unwrapStaffJobResult<{ job_id: string; status: string }>(
+      await apiFetch<unknown>(`/v1/staff/service-jobs/${jobId}/reject`, { method: "POST", body: JSON.stringify({ reason }) })),
   onTheWay: (jobId: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/on-the-way`, { method: "POST" }),
   reachedSite: (jobId: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/reached-site`, { method: "POST" }),
   startInspection: (jobId: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/start-inspection`, { method: "POST" }),

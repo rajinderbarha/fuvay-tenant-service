@@ -4,34 +4,40 @@ import Link from "next/link";
 import { StaffLayout } from "../../../components/layout/StaffLayout";
 import { Card, StatCard, Badge, Skeleton, EmptyState } from "../../../components/shared/ui";
 import { useApi } from "../../../hooks/useApi";
-import { staffSelfApi, getTenantId } from "../../../lib/api";
+import { homeServiceStaffJobsApi } from "../../../lib/api";
 import { ClipboardList } from "lucide-react";
 
+// MODULE-L5-38: this page (and the detail + dashboard below) called
+// staffSelfApi.getMyJobs -> /v1/staff/me/jobs, the dead field_ops staff
+// router whose `jobs` table has 0 rows platform-wide -- a technician logging
+// into the web portal saw zero jobs and all-disabled actions with stale
+// "not certified yet" copy. Repointed to the real, live-verified
+// home_service_assignment + execution pipeline (/v1/staff/service-jobs),
+// the same one the staff-app mobile was moved to in MODULE-L5-36.
+const ACTIVE_STATUSES = new Set([
+  "accepted", "on_the_way", "reached_site", "inspection_started",
+  "inspection_done", "quote_required", "service_started", "work_done",
+]);
 const TABS = [
-  { id: "assigned", label: "Assigned", status: "assigned" },
-  { id: "scheduled", label: "Scheduled", status: "scheduled" },
-  { id: "pending", label: "Pending Acceptance", status: "pending_acceptance" },
-  { id: "completed", label: "Completed", status: "completed" },
-  { id: "cancelled", label: "Cancelled", status: "cancelled" },
+  { id: "assigned", label: "Assigned", match: (s: string) => s === "assigned" },
+  { id: "active", label: "Active", match: (s: string) => ACTIVE_STATUSES.has(s) },
+  { id: "completed", label: "Completed", match: (s: string) => s === "completed" },
+  { id: "cancelled", label: "Cancelled", match: (s: string) => s === "cancelled" || s === "failed" },
 ] as const;
 
 export default function StaffJobsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("assigned");
-  const tenantId = getTenantId() || "";
-  const activeStatus = TABS.find(t => t.id === tab)!.status;
 
-  const jobs = useApi(
-    useCallback(() => (tenantId ? staffSelfApi.getMyJobs(tenantId, activeStatus) : Promise.resolve({ jobs: [], has_next: false, next_cursor: null })), [tenantId, activeStatus]),
-    [tenantId, activeStatus]
-  );
-  const list = jobs.data?.jobs ?? [];
+  const jobs = useApi(useCallback(() => homeServiceStaffJobsApi.list(), []));
+  const match = TABS.find(t => t.id === tab)!.match;
+  const list = (jobs.data?.jobs ?? []).filter(j => match(j.status));
 
   return (
     <StaffLayout activeNav="jobs">
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Assigned Work</h1>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
-          Jobs assigned to you. Job execution runtime (start, on-the-way, in-progress, completion, payment) is not certified for this app yet.
+          Jobs assigned to you. Open a job to accept it and run it through to completion.
         </p>
       </div>
 
@@ -60,26 +66,25 @@ export default function StaffJobsPage() {
           </div>
         ) : list.length === 0 ? (
           <EmptyState icon={<ClipboardList/>} title="No jobs in this category yet."
-            description="New assigned jobs will appear here when booking assignment runtime is enabled."/>
+            description="New jobs assigned to you will appear here."/>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                {["Job #", "Service", "City", "Status", "Scheduled", ""].map(h => (
+                {["Job #", "City", "Status", "Scheduled", ""].map(h => (
                   <th key={h} style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {list.map(j => (
-                <tr key={j.job_id} style={{ borderBottom: "1px solid var(--border-subtle, var(--border))" }}>
-                  <td style={{ padding: "10px 16px" }}>{j.job_number || j.job_id.slice(0, 8)}</td>
-                  <td style={{ padding: "10px 16px" }}>{j.service_category || j.job_type || "—"}</td>
-                  <td style={{ padding: "10px 16px" }}>{j.city || "—"}</td>
+                <tr key={j.id} style={{ borderBottom: "1px solid var(--border-subtle, var(--border))" }}>
+                  <td style={{ padding: "10px 16px" }}>{j.job_number || j.id.slice(0, 8)}</td>
+                  <td style={{ padding: "10px 16px" }}>{[j.city, j.zipcode].filter(Boolean).join(", ") || "—"}</td>
                   <td style={{ padding: "10px 16px" }}><Badge variant="info" size="sm">{j.status}</Badge></td>
-                  <td style={{ padding: "10px 16px", color: "var(--text-tertiary)" }}>{j.scheduled_at ? new Date(j.scheduled_at).toLocaleString() : "—"}</td>
+                  <td style={{ padding: "10px 16px", color: "var(--text-tertiary)" }}>{j.scheduled_date ? `${j.scheduled_date}${j.scheduled_time_window ? ` · ${j.scheduled_time_window}` : ""}` : "—"}</td>
                   <td style={{ padding: "10px 16px" }}>
-                    <Link href={`/staff/jobs/${j.job_id}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--accent, #2563eb)" }}>View</Link>
+                    <Link href={`/staff/jobs/${j.id}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--accent, #2563eb)" }}>View</Link>
                   </td>
                 </tr>
               ))}

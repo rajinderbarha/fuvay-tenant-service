@@ -56,7 +56,12 @@ export default function StaffHomeServiceJobDetailPage() {
     { onSuccess: () => { job.refetch(); } },
   );
 
-  const j = job.data;
+  // MODULE-L5-38: GET /v1/staff/service-jobs/{id} returns {job, assignment,
+  // booking}, not a flat job -- this page previously read job.data.status /
+  // .job_number / etc. directly, which were all undefined at runtime (blank
+  // job number, undefined status -> no action ever offered). The api client's
+  // .get() type was corrected to HomeServiceJobDetail; derive the job from it.
+  const j = job.data?.job;
   const nextAction = j ? NEXT_ACTION[j.status] : undefined;
   const canRequestParts = j && ["inspection_started", "inspection_done", "service_started", "quote_required"].includes(j.status);
   const canComplete = j && ["service_started", "work_done", "quote_required"].includes(j.status);
