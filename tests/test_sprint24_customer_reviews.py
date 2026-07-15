@@ -65,6 +65,10 @@ def _make_db(result_value=None, scalar_value=None):
     db.add    = MagicMock()
     db.flush  = AsyncMock()
     db.commit = AsyncMock()
+    # MODULE-L5-22: submit_review now notifies the provider, resolving the tenant
+    # owner via db.get. Return None so the notify step finds no recipient and
+    # no-ops (default AsyncMock would return a truthy mock -> bad UUID).
+    db.get    = AsyncMock(return_value=None)
     return db
 
 

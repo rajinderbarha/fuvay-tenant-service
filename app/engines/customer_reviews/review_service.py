@@ -112,6 +112,9 @@ class ReviewService:
         await db.flush()
         await self._log_event(db, review.id, tenant_id, ACTOR_CUSTOMER, customer_id,
                               EVT_REVIEW_SUBMITTED, None, {"status": initial_status}, request_id)
+        # MODULE-L5-22: tell the provider a review came in (was silent).
+        from app.engines.customer_reviews.notifications import notify_provider_new_review
+        await notify_provider_new_review(db, review)
         await db.commit()
 
         if initial_status == STATUS_APPROVED:
@@ -279,6 +282,12 @@ class ReviewService:
         await db.flush()
         await self._log_event(db, review_id, tenant_id, ACTOR_PROVIDER, replied_by_user_id,
                               EVT_REPLY_SUBMITTED, None, {"status": initial_status}, request_id)
+        # MODULE-L5-22: if the reply is live immediately (no moderation), tell the
+        # customer their provider responded. If it needs moderation, the customer
+        # is told on approval instead (see approve_reply).
+        if initial_status == REPLY_APPROVED:
+            from app.engines.customer_reviews.notifications import notify_customer_review_reply
+            await notify_customer_review_reply(db, review)
         await db.commit()
         return reply
 
@@ -296,6 +305,10 @@ class ReviewService:
         await db.flush()
         await self._log_event(db, review_id, reply.tenant_id, ACTOR_ADMIN, admin_user_id,
                               EVT_REPLY_APPROVED, {"status": REPLY_PENDING}, {"status": REPLY_APPROVED}, request_id)
+        # MODULE-L5-22: the reply is now live — tell the customer.
+        review = await self._get_review(db, review_id)
+        from app.engines.customer_reviews.notifications import notify_customer_review_reply
+        await notify_customer_review_reply(db, review)
         await db.commit()
         return reply
 
