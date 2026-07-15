@@ -691,7 +691,10 @@ class CustomerCreditService:
             select(CustomerServiceCredit).where(CustomerServiceCredit.id == credit_id))
         if not credit:
             raise ServiceOSException("NOT_FOUND", "Credit not found.")
-        if customer_id and credit.customer_id != customer_id:
+        # customer_id arrives as a str from require_customer; comparing a str to a
+        # UUID is always unequal in Python, so the owner was wrongly 404'd. Compare
+        # as strings so ownership actually matches.
+        if customer_id and str(credit.customer_id) != str(customer_id):
             raise ServiceOSException("NOT_FOUND", "Credit not found.")
 
         ledger = (await self.db.execute(
