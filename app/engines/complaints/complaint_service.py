@@ -548,6 +548,13 @@ class ComplaintService:
         await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
                               EVT_RESOLUTION_PROPOSED, None, None, None, {"type": resolution_type},
                               request_id=request_id)
+        # MODULE-L5-24: it is now the customer's move (accept/reject) — tell them,
+        # or the complaint silently waits on someone who doesn't know it's on them.
+        from app.engines.complaints.notifications import notify_customer_complaint
+        await notify_customer_complaint(
+            db, complaint, notification_type="complaint.resolution_proposed",
+            title="A resolution was proposed for your complaint",
+            body="Your provider or our team proposed a resolution. Review and accept or decline it.")
         await db.commit()
         return resolution
 
@@ -566,6 +573,11 @@ class ComplaintService:
                                reason=reason, request_id=request_id)
         await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
                               EVT_COMPLAINT_REJECTED, None, None, None, {"reason": reason}, request_id=request_id)
+        from app.engines.complaints.notifications import notify_customer_complaint
+        await notify_customer_complaint(
+            db, complaint, notification_type="complaint.rejected",
+            title="Your complaint was closed",
+            body=f"After review, your complaint was closed: {reason}", severity="warning")
         await db.commit()
         return complaint
 
@@ -584,6 +596,11 @@ class ComplaintService:
                                reason=reason, request_id=request_id)
         await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
                               EVT_COMPLAINT_RESOLVED, None, None, None, None, request_id=request_id)
+        from app.engines.complaints.notifications import notify_customer_complaint
+        await notify_customer_complaint(
+            db, complaint, notification_type="complaint.resolved",
+            title="Your complaint has been resolved",
+            body="Our team marked your complaint as resolved. Tap to view the details.")
         await db.commit()
         return complaint
 
