@@ -2,7 +2,7 @@
 import React from "react";
 import {
   LayoutDashboard, UserCircle, Wrench, MapPin, Clock, FileText,
-  ClipboardList, Bell, ShieldCheck, History, Settings, LogOut,
+  ClipboardList, Bell, ShieldCheck, History, Settings, LogOut, MessageSquare,
 } from "lucide-react";
 import { useStaffContext, StaffContextProvider } from "../../hooks/useStaffContext";
 import { Skeleton, Badge } from "../shared/ui";
@@ -17,6 +17,7 @@ const NAV: NavItem[] = [
   { id: "service-areas",  href: "/staff/service-areas",      label: "Service Areas",     icon: <MapPin size={16}/> },
   { id: "availability",   href: "/staff/availability",       label: "Availability",      icon: <Clock size={16}/> },
   { id: "jobs",           href: "/staff/jobs",                label: "Assigned Work",     icon: <ClipboardList size={16}/> },
+  { id: "chat",           href: "/staff/chat",                label: "Messages",          icon: <MessageSquare size={16}/> },
   { id: "documents",      href: "/staff/documents",          label: "Documents",         icon: <FileText size={16}/> },
   { id: "notifications",  href: "/staff/notifications",      label: "Notifications",     icon: <Bell size={16}/> },
   { id: "activity",       href: "/staff/activity",           label: "Activity",          icon: <History size={16}/> },

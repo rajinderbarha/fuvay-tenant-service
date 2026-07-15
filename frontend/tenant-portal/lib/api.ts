@@ -3892,6 +3892,30 @@ export interface StaffSkillEntry {
   can_receive_assignment: boolean; category_id: string;
 }
 
+// MODULE-L5-19: staff chat — the technician messaging the customer on a job.
+// staff_chat_router (/v1/staff/chat) existed but had no staff UI at all.
+export interface StaffChatThread {
+  id: string; thread_number: string; tenant_id?: string | null;
+  record_type: string; record_id: string; status: string;
+  last_message_at?: string | null; created_at: string;
+}
+export interface StaffChatMessage {
+  id: string; thread_id: string; sender_type: string;
+  message_text?: string | null; message_type: string;
+  delivery_status: string; created_at: string;
+}
+export const staffChatApi = {
+  listThreads: () =>
+    apiFetch<{ items: StaffChatThread[] }>("/v1/staff/chat/threads").then(d => d.items ?? []),
+  listMessages: (threadId: string) =>
+    apiFetch<{ items: StaffChatMessage[] }>(`/v1/staff/chat/threads/${threadId}/messages`).then(d => d.items ?? []),
+  sendMessage: (threadId: string, text: string) =>
+    apiFetch<StaffChatMessage>(`/v1/staff/chat/threads/${threadId}/messages`, {
+      method: "POST", body: JSON.stringify({ message_text: text, message_type: "text" }) }),
+  markRead: (threadId: string) =>
+    apiFetch(`/v1/staff/chat/threads/${threadId}/read`, { method: "POST", body: "{}" }),
+};
+
 export const staffSelfApi = {
   // Skills & assigned services — reuses the real provider/team-members
   // endpoint, filtered client-side to the logged-in technician's own row
