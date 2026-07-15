@@ -3877,17 +3877,10 @@ export const tenantPricingApi = {
 // the backend route itself requires it as a required query param (jobs list),
 // in which case the backend silently overrides it with the JWT's real value
 // (see PHASE_7_STAFF_APP_BUG_FIX_REPORT.md bug #1).
-export interface StaffJobShellItem {
-  job_id: string; job_number?: string; booking_id?: string | null;
-  status: string; job_type?: string; service_category?: string | null;
-  service_type?: string | null; city?: string | null; zipcode?: string | null;
-  created_at: string; scheduled_at?: string | null;
-}
-export interface StaffJobShellDetail extends StaffJobShellItem {
-  customer_name?: string | null; customer_phone?: string | null;
-  customer_address?: string | null; notes?: string | null;
-  checklist?: { step: string; completed: boolean }[];
-}
+// MODULE-L5-38: StaffJobShellItem/StaffJobShellDetail + staffSelfApi.getMyJobs/
+// getJobDetail (which called the dead field_ops /v1/staff/me/jobs, 0 rows
+// platform-wide) were removed -- every staff job surface now uses the real
+// homeServiceStaffJobsApi (/v1/staff/service-jobs). See the staff job pages.
 export interface StaffNotification {
   id: string; title?: string; body?: string; type?: string;
   is_read: boolean; created_at: string;
@@ -3939,13 +3932,8 @@ export const staffSelfApi = {
   // read-only for this role).
   getServiceAreas: () => apiFetch<{ areas: Record<string, unknown>[]; total: number }>("/v1/tenant/service-areas"),
 
-  // Assigned work / job list shell (field_ops staff router)
-  getMyJobs: (tenantId: string, status?: string) => {
-    const qs = new URLSearchParams({ tenant_id: tenantId, ...(status ? { status } : {}) });
-    return apiFetch<{ jobs: StaffJobShellItem[]; has_next: boolean; next_cursor: string | null }>(
-      `/v1/staff/me/jobs?${qs.toString()}`);
-  },
-  getJobDetail: (jobId: string) => apiFetch<StaffJobShellDetail>(`/v1/staff/me/jobs/${jobId}`),
+  // MODULE-L5-38: getMyJobs/getJobDetail removed -- they called the dead
+  // field_ops /v1/staff/me/jobs. Staff jobs now use homeServiceStaffJobsApi.
 
   // Notifications
   getNotifications: () => apiFetch<{ items: StaffNotification[]; total: number; unread_count: number | null }>("/v1/staff/notifications"),
@@ -3965,10 +3953,9 @@ export const staffSelfApi = {
 };
 
 // ── HS8B — Home Services Job Execution (real, live-verified APIs) ───────────
-// Distinct from staffSelfApi above (which talks to the disconnected,
-// explicitly-uncertified generic /v1/staff/me/jobs system). These call the
-// real home_service_assignment + execution engines fixed and live-verified
-// in HS8/HS8B.
+// The real home_service_assignment + execution engines (fixed and
+// live-verified in HS8/HS8B). As of MODULE-L5-38 these are the ONLY staff job
+// APIs; the old disconnected field_ops /v1/staff/me/jobs client was removed.
 export interface HomeServiceJobItem {
   id: string; job_number: string; booking_id: string; customer_id: string;
   tenant_id: string; category_id: string; offering_id: string;
