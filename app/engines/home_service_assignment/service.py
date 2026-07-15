@@ -331,6 +331,16 @@ class HomeServiceJobAssignmentService:
             request_id=request_id,
         )
 
+        # MODULE-L5-25: tell the technician they have a new job. assign_job only
+        # emitted an internal audit event, so a staff member was given work and
+        # never told — the whole point of an assignment is that they act on it.
+        # (service_jobs.assigned_staff_id = users.id, so the staff id is the
+        # recipient user id directly.)
+        await self._notify_staff_assigned(
+            job=job, staff_member_id=staff_member_id, tenant_id=tenant_id,
+            scheduled_date=scheduled_date, scheduled_time_window=scheduled_time_window,
+            reassigned=bool(old_status))
+
         return {
             "job_id":                  str(job_id),
             "assignment_id":           str(assignment.id),
@@ -340,6 +350,31 @@ class HomeServiceJobAssignmentService:
             "scheduled_date":          scheduled_date.isoformat() if scheduled_date else None,
             "scheduled_time_window":   scheduled_time_window,
         }
+
+    async def _notify_staff_assigned(
+        self, *, job, staff_member_id: uuid.UUID, tenant_id: uuid.UUID,
+        scheduled_date: date | None, scheduled_time_window: str | None,
+        reassigned: bool,
+    ) -> None:
+        from app.engines.platform_notifications.models import InAppNotification
+        when = ""
+        if scheduled_date:
+            when = f" for {scheduled_date.isoformat()}"
+            if scheduled_time_window:
+                when += f" ({scheduled_time_window})"
+        verb = "reassigned to you" if reassigned else "assigned to you"
+        self.db.add(InAppNotification(
+            user_id=staff_member_id,
+            tenant_id=tenant_id,
+            notification_type="job_assigned",
+            title="New job assigned to you" if not reassigned else "A job was reassigned to you",
+            body=f"A service job has been {verb}{when}. Tap to view the details and accept it.",
+            action_url=f"/staff/jobs/{job.id}",
+            action_label="View job",
+            source_record_type="service_jobs",
+            source_record_id=job.id,
+            severity="info",
+        ))
 
     async def reassign_job(
         self,
