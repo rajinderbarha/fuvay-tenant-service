@@ -3881,9 +3881,15 @@ export const tenantPricingApi = {
 // getJobDetail (which called the dead field_ops /v1/staff/me/jobs, 0 rows
 // platform-wide) were removed -- every staff job surface now uses the real
 // homeServiceStaffJobsApi (/v1/staff/service-jobs). See the staff job pages.
+// MODULE-L5-39: this modeled `is_read` (boolean) + `type`, but the real
+// InAppNotification.to_dict() returns `read_status` ("read"|"unread") and
+// `notification_type` -- so the unread badge/highlight never matched and the
+// title fell back to "Notification". Corrected to the real shape.
 export interface StaffNotification {
-  id: string; title?: string; body?: string; type?: string;
-  is_read: boolean; created_at: string;
+  id: string; notification_type: string; title: string; body: string | null;
+  action_url: string | null; action_label: string | null;
+  source_record_type: string | null; source_record_id: string | null;
+  severity: string; read_status: string; read_at: string | null; created_at: string;
 }
 export interface StaffSkillEntry {
   id: string; full_name: string; skills: string[] | null;
@@ -3937,8 +3943,10 @@ export const staffSelfApi = {
 
   // Notifications
   getNotifications: () => apiFetch<{ items: StaffNotification[]; total: number; unread_count: number | null }>("/v1/staff/notifications"),
-  markRead: (id: string) => apiFetch<{ marked: boolean }>(`/v1/staff/notifications/${id}/mark-read`, { method: "POST" }),
-  markAllRead: () => apiFetch<{ marked: number }>("/v1/staff/notifications/mark-all-read", { method: "POST" }),
+  // MODULE-L5-39: the real route is /{id}/read, not /{id}/mark-read (404'd);
+  // mark-all-read returns {marked_read}, not {marked}.
+  markRead: (id: string) => apiFetch<StaffNotification>(`/v1/staff/notifications/${id}/read`, { method: "POST" }),
+  markAllRead: () => apiFetch<{ marked_read: number }>("/v1/staff/notifications/mark-all-read", { method: "POST" }),
 
   // Documents — no dedicated staff document endpoint exists yet
   // (confirmed absent in Phase 7 research; see PHASE_7B remaining blockers).

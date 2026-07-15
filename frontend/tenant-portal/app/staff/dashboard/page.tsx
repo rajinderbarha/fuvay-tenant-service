@@ -34,7 +34,7 @@ function StaffDashboardContent() {
   const jobCount = jobs.data?.jobs.length ?? 0;
   const skillCount = skills.data?.skills?.length ?? 0;
   const areaCount = areas.data?.total ?? 0;
-  const unread = notifs.data?.unread_count ?? notifs.data?.items.filter(n => !n.is_read).length ?? 0;
+  const unread = notifs.data?.unread_count ?? notifs.data?.items.filter(n => n.read_status !== "read").length ?? 0;
 
   const readonlyStatus = status.data as Record<string, unknown> | null;
   const bookable = !!readonlyStatus?.bookable;

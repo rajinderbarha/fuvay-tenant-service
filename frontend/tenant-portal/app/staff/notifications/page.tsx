@@ -13,7 +13,11 @@ export default function StaffNotificationsPage() {
   const markReadAction = useAction((id: string) => staffSelfApi.markRead(id), { onSuccess: () => notifs.refetch() });
   const markAllAction = useAction(() => staffSelfApi.markAllRead(), { onSuccess: () => notifs.refetch() });
 
-  const items = (notifs.data?.items ?? []).filter(n => filter === "all" || !n.is_read);
+  // MODULE-L5-39: the real notification shape uses read_status ("read"/
+  // "unread") + notification_type, not is_read/type. mark-read also hit a
+  // 404 route (/mark-read vs /read) -- fixed in staffSelfApi.
+  const isUnread = (n: { read_status: string }) => n.read_status !== "read";
+  const items = (notifs.data?.items ?? []).filter(n => filter === "all" || isUnread(n));
 
   return (
     <StaffLayout activeNav="notifications">
@@ -63,16 +67,16 @@ export default function StaffNotificationsPage() {
               <div key={n.id} style={{
                 display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12,
                 padding: "12px 16px", borderBottom: "1px solid var(--border)",
-                background: n.is_read ? "transparent" : "var(--accent-subtle, rgba(37,99,235,0.06))",
+                background: isUnread(n) ? "var(--accent-subtle, rgba(37,99,235,0.06))" : "transparent",
               }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{n.title || n.type || "Notification"}</div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{n.title || n.notification_type || "Notification"}</div>
                   {n.body && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{n.body}</div>}
                   <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>{new Date(n.created_at).toLocaleString()}</div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {!n.is_read && <Badge variant="info" size="sm">New</Badge>}
-                  {!n.is_read && (
+                  {isUnread(n) && <Badge variant="info" size="sm">New</Badge>}
+                  {isUnread(n) && (
                     <Btn size="sm" variant="secondary" onClick={() => markReadAction.execute(n.id)}>Mark read</Btn>
                   )}
                 </div>
