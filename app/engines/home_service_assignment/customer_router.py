@@ -118,6 +118,9 @@ async def get_booking(
         "payment_mode":           price_snapshot.get("payment_mode", "customer_pays_provider_directly"),
     }
     if job:
+        # MODULE-L5-16: expose job_id so the app can reach the job's work quotes
+        # (customer quote approval) — it was loaded here but never returned.
+        data["job_id"]                = str(job.id)
         data["job_status"]            = job.status
         data["scheduled_date"]        = job.scheduled_date.isoformat() if job.scheduled_date else None
         data["scheduled_time_window"] = job.scheduled_time_window

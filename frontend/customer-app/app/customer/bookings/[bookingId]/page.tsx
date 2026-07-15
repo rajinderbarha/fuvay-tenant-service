@@ -34,6 +34,17 @@ export default function BookingDetailPage() {
           {detail.selected_price_amount && <div><strong>Price:</strong> ₹{detail.selected_price_amount} ({detail.selected_price_option})</div>}
           <div><strong>Payment:</strong> Customer Pays Provider Directly</div>
           {detail.address && <div><strong>Address:</strong> {detail.address.address_line1}, {detail.city}</div>}
+          {/* MODULE-L5-16: work quotes for this job (approve/reject). Only when a
+              job exists — the provider sends quotes against the job. */}
+          {detail.job_id && (
+            <Link
+              href={`/customer/bookings/${bookingId}/quotes?job_id=${detail.job_id}`}
+              className="co-btn-secondary"
+              style={{ textAlign: "center" }}
+            >
+              Work Quotes
+            </Link>
+          )}
           {/* MODULE-L5-14: message the provider about this booking. The customer
               had no chat surface at all though customer_chat_router exists. */}
           {detail.status !== "cancelled" && (
