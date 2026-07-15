@@ -82,6 +82,33 @@ async def customer_payment_status(
     return ok(safe, _rid(r), "customer_payment_status")
 
 
+@customer_invoice_router.post("/{invoice_id}/apply-credit")
+async def customer_apply_credit(
+    invoice_id: str, body: dict, r: Request = None,
+    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    """MODULE-L5-28: apply the customer's service credit to this invoice,
+    reducing what they owe. Applied once per invoice (double-apply rejected)."""
+    import uuid
+    from decimal import Decimal, InvalidOperation
+    from app.engines.customer_credits.service import CustomerCreditService
+
+    # Verify ownership up front for a clean 403/404 (the service also checks).
+    try:
+        await inv_svc.get_invoice_for_customer(db, invoice_id, str(user.user_id))
+    except ValueError as exc:
+        _raise_4xx(exc)
+    try:
+        amount = Decimal(str(body.get("credit_amount_to_apply", 0)))
+    except (InvalidOperation, TypeError):
+        raise ServiceOSException("VALIDATION_ERROR", "credit_amount_to_apply must be a number.",
+                                 status_code=422)
+    svc = CustomerCreditService(db, uuid.UUID(str(user.user_id)), request_id=_rid(r))
+    data = await svc.apply_credit_to_invoice(
+        uuid.UUID(str(user.user_id)), uuid.UUID(invoice_id), amount)
+    return ok(data, _rid(r), "customer_apply_credit")
+
+
 @customer_invoice_router.post("/{invoice_id}/confirm-payment")
 async def customer_confirm_payment(
     invoice_id: str, r: Request = None,

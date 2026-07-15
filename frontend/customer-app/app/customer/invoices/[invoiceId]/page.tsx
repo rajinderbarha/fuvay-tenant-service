@@ -8,7 +8,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ErrorBanner from "../../../../components/ErrorBanner";
-import { getInvoice, confirmPayment, Invoice } from "../../../../lib/api/customer-invoices";
+import { getInvoice, confirmPayment, applyCreditToInvoice, Invoice } from "../../../../lib/api/customer-invoices";
+import { getCreditSummary } from "../../../../lib/api/customer-credits";
 
 const money = (v?: string | null, ccy?: string | null) =>
   v == null ? "—" : `${ccy ?? "₹"}${Number(v).toLocaleString()}`;
@@ -19,12 +20,14 @@ export default function CustomerInvoiceDetailPage() {
   const invoiceId = params.invoiceId as string;
 
   const [inv, setInv] = useState<Invoice | null>(null);
+  const [creditBalance, setCreditBalance] = useState(0);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [ok, setOk] = useState<string | null>(null);
 
   const load = useCallback(() => {
     getInvoice(invoiceId).then(setInv).catch(setError);
+    getCreditSummary().then((s) => setCreditBalance(s.active_credit_balance)).catch(() => {});
   }, [invoiceId]);
   useEffect(() => { load(); }, [load]);
 
@@ -37,8 +40,23 @@ export default function CustomerInvoiceDetailPage() {
     } catch (e) { setError(e); } finally { setBusy(false); }
   }
 
+  async function doApplyCredit() {
+    if (!inv) return;
+    const payable = Number(inv.customer_payable_amount);
+    const use = Math.min(creditBalance, payable);
+    setBusy(true); setError(null); setOk(null);
+    try {
+      const res = await applyCreditToInvoice(invoiceId, use);
+      setOk(`Applied ${ccy}${res.credit_applied.toLocaleString()} credit. You now pay ${ccy}${res.new_payable.toLocaleString()}.`);
+      load();
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  }
+
   const paid = inv && ["paid", "payment_collected"].includes(inv.status);
   const ccy = inv?.currency ?? "₹";
+  const creditApplied = inv ? Number(inv.credit_applied_amount ?? 0) : 0;
+  const canApplyCredit = !!inv && !paid && creditApplied === 0 && creditBalance > 0
+    && Number(inv.customer_payable_amount) > 0;
 
   return (
     <div className="co-container">
@@ -70,6 +88,11 @@ export default function CustomerInvoiceDetailPage() {
               <Row label="Subtotal" value={money(inv.subtotal_amount, ccy)} />
               {Number(inv.discount_amount) > 0 && <Row label="Discount" value={`-${money(inv.discount_amount, ccy)}`} />}
               {Number(inv.tax_amount) > 0 && <Row label="Tax" value={money(inv.tax_amount, ccy)} />}
+              {creditApplied > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: "#0a7c3f" }}>
+                  <span>Service credit applied</span><span>-{money(inv.credit_applied_amount, ccy)}</span>
+                </div>
+              )}
             </div>
 
             <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 18,
@@ -77,6 +100,21 @@ export default function CustomerInvoiceDetailPage() {
               <span>You pay</span><span>{money(inv.customer_payable_amount, ccy)}</span>
             </div>
           </div>
+
+          {canApplyCredit && (
+            <div className="co-card" style={{ marginBottom: 12, display: "flex",
+              justifyContent: "space-between", alignItems: "center", background: "#f0fdf4" }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>Use your credit</div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                  You have {ccy}{creditBalance.toLocaleString()} available
+                </div>
+              </div>
+              <button className="co-btn-secondary" disabled={busy} onClick={doApplyCredit}>
+                {busy ? "…" : "Apply credit"}
+              </button>
+            </div>
+          )}
 
           {paid ? (
             <div className="co-card" style={{ textAlign: "center", color: "#0a7c3f", fontWeight: 600 }}>

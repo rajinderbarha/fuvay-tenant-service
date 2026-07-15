@@ -41,6 +41,8 @@ class ServiceInvoice(ServiceOSBase):
     # platform_fee_amount. Commission is charged on total_amount only.
     platform_fee_amount:   Mapped[Decimal]         = mapped_column(Numeric(14,2), nullable=False, default=0)
     customer_payable_amount: Mapped[Decimal]       = mapped_column(Numeric(14,2), nullable=False, default=0)
+    # MODULE-L5-28: service credit the customer applied to reduce what they owe.
+    credit_applied_amount: Mapped[Decimal]         = mapped_column(Numeric(14,2), nullable=False, default=0)
     payment_mode:          Mapped[str]             = mapped_column(String(30), nullable=False, default="onsite")
     payment_status:        Mapped[str]             = mapped_column(String(30), nullable=False, default="pending")
     commission_status:     Mapped[str]             = mapped_column(String(30), nullable=False, default="pending")
@@ -73,6 +75,7 @@ class ServiceInvoice(ServiceOSBase):
             "total_amount":            str(self.total_amount),
             "platform_fee_amount":     str(self.platform_fee_amount),
             "customer_payable_amount": str(self.customer_payable_amount),
+            "credit_applied_amount":   str(self.credit_applied_amount),
             "payment_mode":            self.payment_mode,
             "payment_status":          self.payment_status,
             "commission_status":       self.commission_status,
@@ -100,6 +103,7 @@ class ServiceInvoice(ServiceOSBase):
             "total_amount":            str(self.total_amount),
             "platform_fee_amount":     str(self.platform_fee_amount),
             "customer_payable_amount": str(self.customer_payable_amount),
+            "credit_applied_amount":   str(self.credit_applied_amount),
             "payment_mode":            "Pay provider directly on-site",
             "payment_status":          self.payment_status,
             "issued_at":               self.issued_at.isoformat() if self.issued_at else None,

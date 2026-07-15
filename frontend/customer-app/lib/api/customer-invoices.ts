@@ -37,6 +37,7 @@ export interface Invoice {
   total_amount: string;
   platform_fee_amount: string;
   customer_payable_amount: string;
+  credit_applied_amount?: string;
   payment_mode: string;
   payment_status: string;
   issued_at?: string | null;
@@ -73,6 +74,23 @@ export async function getPaymentStatus(invoiceId: string): Promise<PaymentStatus
 export async function confirmPayment(invoiceId: string): Promise<{ confirmed: boolean }> {
   return apiFetch<{ confirmed: boolean }>(
     `/v1/customer/service-invoices/${invoiceId}/confirm-payment`, { method: "POST", body: "{}" });
+}
+
+export interface ApplyCreditResult {
+  invoice_id: string;
+  original_payable: number;
+  credit_applied: number;
+  new_payable: number;
+  remaining_credit_balance: number;
+}
+
+// MODULE-L5-28: apply the customer's service credit to reduce what they owe.
+export async function applyCreditToInvoice(
+  invoiceId: string, creditAmount: number,
+): Promise<ApplyCreditResult> {
+  return apiFetch<ApplyCreditResult>(
+    `/v1/customer/service-invoices/${invoiceId}/apply-credit`,
+    { method: "POST", body: JSON.stringify({ credit_amount_to_apply: creditAmount }) });
 }
 
 export async function getReceipt(invoiceId: string): Promise<Invoice> {

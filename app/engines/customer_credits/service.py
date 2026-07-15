@@ -876,6 +876,111 @@ class CustomerCreditService:
                 sum(_two(c.remaining_amount) for c in credits)),
         }
 
+    async def _consume_credits(self, customer_id: uuid.UUID, credit_apply_amount: Decimal,
+                               *, reference_type: str, reference_id: uuid.UUID,
+                               credit_ref_id: str) -> tuple[Decimal, Decimal, str]:
+        """Draw `credit_apply_amount` from the customer's live credits, oldest
+        (soonest-expiring) first, writing a ledger entry per credit touched.
+
+        Returns (actually_applied, remaining_balance, credit_number_of_first_used).
+        Shared by the booking and invoice apply paths so both deduct identically.
+        """
+        now = _utcnow()
+        credits = (await self.db.execute(
+            select(CustomerServiceCredit).where(
+                CustomerServiceCredit.customer_id == customer_id,
+                CustomerServiceCredit.status.in_(["active", "partially_used"]),
+                CustomerServiceCredit.valid_from <= now,
+            ).where(
+                (CustomerServiceCredit.expires_at == None) |   # noqa: E711
+                (CustomerServiceCredit.expires_at > now)
+            ).order_by(CustomerServiceCredit.expires_at.asc().nullslast(),
+                       CustomerServiceCredit.created_at.asc())
+        )).scalars().all()
+
+        remaining_to_apply = _two(credit_apply_amount)
+        actually_applied = Decimal("0")
+        for credit in credits:
+            if remaining_to_apply <= Decimal("0"):
+                break
+            apply_from_this = min(remaining_to_apply, _two(credit.remaining_amount))
+            if apply_from_this <= Decimal("0"):
+                continue
+            credit.remaining_amount -= apply_from_this
+            credit.updated_at = now
+            credit.status = "used" if credit.remaining_amount == Decimal("0") else "partially_used"
+            if credit.status == "used":
+                credit.used_at = now
+            self.db.add(CustomerCreditLedger(
+                customer_credit_id=credit.id, customer_id=customer_id,
+                transaction_type=credit.status,
+                amount=-apply_from_this, balance_after=credit.remaining_amount,
+                description=(f"ServiceOS credit applied to {reference_type}. "
+                             f"Amount to collect is reduced by ₹{float(apply_from_this):,.0f}."),
+                reference_type=reference_type, reference_id=reference_id, created_at=now,
+            ))
+            self._audit(f"{reference_type}.customer_credit_applied",
+                        customer_id=customer_id, amount=apply_from_this,
+                        metadata_json={"credit_number": credit.credit_number, credit_ref_id: str(reference_id)})
+            remaining_to_apply -= apply_from_this
+            actually_applied += apply_from_this
+
+        remaining_balance = sum(_two(c.remaining_amount) for c in credits)
+        return actually_applied, _two(remaining_balance), (credits[0].credit_number if credits else "")
+
+    async def apply_credit_to_invoice(self, customer_id: uuid.UUID, invoice_id: uuid.UUID,
+                                      credit_apply_amount: Decimal) -> dict:
+        """Apply the customer's service credit to an issued invoice, reducing what
+        they pay the provider.
+
+        The invoice's own customer_payable_amount is the sole source of truth for
+        the amount owed. Credit is applied ONCE per invoice: a second call is
+        rejected, so a retry (or a double-tap) can never double-spend the credit —
+        the flaw the booking-based path had.
+        """
+        from app.engines.invoice_payment.models import ServiceInvoice
+
+        inv = (await self.db.execute(
+            select(ServiceInvoice).where(ServiceInvoice.id == invoice_id))).scalar_one_or_none()
+        if not inv:
+            raise NotFoundException("Invoice", str(invoice_id))
+        if str(inv.customer_id) != str(customer_id):
+            raise ServiceOSException("PERMISSION_DENIED", "This invoice does not belong to you.")
+        if inv.status in ("cancelled", "void"):
+            raise ServiceOSException("INVALID_STATE", "This invoice is not payable.")
+        if inv.payment_status in ("collected", "paid"):
+            raise ServiceOSException("INVALID_STATE", "This invoice is already paid.")
+        if _two(inv.credit_applied_amount) > Decimal("0"):
+            raise ServiceOSException("CREDIT_ALREADY_APPLIED",
+                                     "Credit has already been applied to this invoice.")
+
+        payable = _two(inv.customer_payable_amount)
+        credit_apply_amount = _two(credit_apply_amount)
+        if credit_apply_amount <= Decimal("0"):
+            raise ServiceOSException("VALIDATION_ERROR", "credit_amount_to_apply must be > 0.")
+        if credit_apply_amount > payable:
+            raise ServiceOSException(
+                "VALIDATION_ERROR",
+                "Credit cannot exceed the amount payable. Payable amount cannot be negative.")
+
+        applied, remaining_balance, _ = await self._consume_credits(
+            customer_id, credit_apply_amount,
+            reference_type="invoice", reference_id=invoice_id, credit_ref_id="invoice_id")
+
+        inv.credit_applied_amount = applied
+        inv.customer_payable_amount = _two(payable - applied)
+        inv.updated_at = _utcnow()
+        await self.db.commit()
+
+        return {
+            "success": True,
+            "invoice_id": str(invoice_id),
+            "original_payable": float(payable),
+            "credit_applied": float(applied),
+            "new_payable": float(inv.customer_payable_amount),
+            "remaining_credit_balance": float(remaining_balance),
+        }
+
     # ── Tenant penalties ───────────────────────────────────────────────────
 
     async def list_penalties(self, tenant_id: uuid.UUID | None = None,
