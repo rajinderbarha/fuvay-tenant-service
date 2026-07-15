@@ -1,29 +1,44 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useApi } from "../hooks/useApi";
 import { jobsApi, type Job } from "../lib/api";
 import { JobStatusBadge } from "../components/JobStatusBadge";
-import { SlaTimer } from "../components/SlaTimer";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
+// MODULE-L5-36: rewired from the dead field_ops job list to the real
+// service_jobs list (GET /v1/staff/service-jobs). That endpoint has no
+// server-side status filter or pagination -- it returns every job assigned
+// to the caller in one call -- so tabs filter client-side here instead. No
+// service_type/customer_name/address/job_value/SLA fields exist on this
+// job shape; only what ServiceJob itself stores is shown.
 const TABS = [
-  { key:"",           label:"All"         },
-  { key:"assigned",   label:"Assigned"    },
-  { key:"in_progress",label:"In Progress" },
-  { key:"completed",  label:"Completed"   },
-  { key:"cancelled",  label:"Cancelled"   },
+  { key:"",           label:"All"       },
+  { key:"assigned",   label:"Assigned"  },
+  { key:"active",     label:"Active"    },
+  { key:"completed",  label:"Completed" },
+  { key:"cancelled",  label:"Cancelled" },
 ] as const;
+
+const ACTIVE_STATUSES = new Set([
+  "accepted","on_the_way","reached_site","inspection_started",
+  "inspection_done","quote_required","service_started","work_done",
+]);
 
 type Props = { navigation: NativeStackNavigationProp<never> };
 
 export function JobsListScreen({ navigation }: Props) {
   const [activeTab, setActiveTab] = useState("");
 
-  const jobs = useApi(
-    useCallback(() => jobsApi.myJobs({ limit:"30", ...(activeTab ? { status:activeTab } : {}) }), [activeTab])
-  );
+  const jobs = useApi(useCallback(() => jobsApi.myJobs(), []));
+
+  const filtered = useMemo(() => {
+    const all = jobs.data?.jobs ?? [];
+    if (!activeTab) return all;
+    if (activeTab === "active") return all.filter(j => ACTIVE_STATUSES.has(j.status));
+    return all.filter(j => j.status === activeTab);
+  }, [jobs.data, activeTab]);
 
   const fmt = (d:string) => new Date(d).toLocaleDateString("en-IN",{ day:"numeric", month:"short" });
 
@@ -34,25 +49,15 @@ export function JobsListScreen({ navigation }: Props) {
         <View style={s.jobTop}>
           <View style={{ flex:1 }}>
             <Text style={s.jobNum}>{j.job_number}</Text>
-            <Text style={s.service}>{j.service_type} · {j.city}</Text>
+            {j.city && <Text style={s.service}>{j.city}{j.zipcode ? `, ${j.zipcode}` : ""}</Text>}
           </View>
           <JobStatusBadge status={j.status} size="sm" />
         </View>
-        <Text style={s.customer}>{j.customer_name ?? "—"}</Text>
-        {j.customer_address && (
-          <Text style={s.address} numberOfLines={1}>📍 {j.customer_address}</Text>
-        )}
-        {j.sla_minutes != null && j.minutes_in_status != null
-          && ["in_progress","arrived","en_route","quality_check"].includes(j.status) && (
-          <View style={{ marginTop:8 }}>
-            <SlaTimer slaMinutes={j.sla_minutes} minutesInStatus={j.minutes_in_status} />
-          </View>
+        {j.scheduled_date && (
+          <Text style={s.address}>🗓 {j.scheduled_date}{j.scheduled_time_window ? ` · ${j.scheduled_time_window}` : ""}</Text>
         )}
         <View style={s.jobBottom}>
           <Text style={s.date}>{fmt(j.created_at)}</Text>
-          {j.job_value != null && (
-            <Text style={s.value}>₹{j.job_value.toLocaleString("en-IN")}</Text>
-          )}
         </View>
       </TouchableOpacity>
     );
@@ -78,7 +83,7 @@ export function JobsListScreen({ navigation }: Props) {
         </View>
       ) : (
         <FlatList
-          data={jobs.data?.jobs ?? []}
+          data={filtered}
           renderItem={renderJob}
           keyExtractor={j => j.id}
           contentContainerStyle={{ padding:theme.spacing.base, gap:10, paddingBottom:32 }}

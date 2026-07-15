@@ -4,7 +4,6 @@ import { useAuth } from "../context/AuthContext";
 import { useApi } from "../hooks/useApi";
 import { jobsApi } from "../lib/api";
 import { JobStatusBadge } from "../components/JobStatusBadge";
-import { SlaTimer } from "../components/SlaTimer";
 import { StatCard } from "../components/StatCard";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
@@ -12,12 +11,23 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 type Props = { navigation: NativeStackNavigationProp<never> };
 
+// MODULE-L5-36: rewired from the dead field_ops job list to the real
+// service_jobs list. That list endpoint returns only job_number/status/
+// city/scheduled_date/timestamps -- no customer name/phone/address or SLA
+// timer fields (ServiceJob has neither; those require a separate per-job
+// detail fetch that joins the booking). No per-item detail fetch is done
+// here to keep the home screen a single cheap list call.
+const ACTIVE_STATUSES = [
+  "accepted","on_the_way","reached_site","inspection_started",
+  "inspection_done","quote_required","service_started","work_done",
+];
+
 export function HomeScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const jobs     = useApi(useCallback(() => jobsApi.myJobs({ limit:"20" }), []));
+  const jobs     = useApi(useCallback(() => jobsApi.myJobs(), []));
 
   const allJobs  = jobs.data?.jobs ?? [];
-  const active   = allJobs.find(j => ["accepted","en_route","arrived","in_progress","quality_check","parts_required","parts_sourced","resumed"].includes(j.status));
+  const active   = allJobs.find(j => ACTIVE_STATUSES.includes(j.status));
   const today    = allJobs.filter(j => new Date(j.created_at).toDateString() === new Date().toDateString());
   const done     = today.filter(j => j.status === "completed").length;
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening";
@@ -53,22 +63,11 @@ export function HomeScreen({ navigation }: Props) {
             <Text style={s.jobNumber}>{active.job_number}</Text>
             <JobStatusBadge status={active.status} />
           </View>
-          <Text style={s.serviceType}>{active.service_type}</Text>
-          <Text style={s.customer}>{active.customer_name ?? "—"}</Text>
-          {active.customer_address && (
-            <Text style={s.address} numberOfLines={1}>📍 {active.customer_address}</Text>
-          )}
-          {active.sla_minutes != null && active.minutes_in_status != null && (
-            <View style={{ marginTop:10 }}>
-              <SlaTimer slaMinutes={active.sla_minutes} minutesInStatus={active.minutes_in_status} />
-            </View>
+          {active.city && <Text style={s.address}>📍 {active.city}{active.zipcode ? `, ${active.zipcode}` : ""}</Text>}
+          {active.scheduled_date && (
+            <Text style={s.address}>🗓 {active.scheduled_date}{active.scheduled_time_window ? ` · ${active.scheduled_time_window}` : ""}</Text>
           )}
           <View style={s.actionRow}>
-            {active.customer_phone && (
-              <View style={s.actionBtn}>
-                <Text style={s.actionText}>📱 Call Customer</Text>
-              </View>
-            )}
             <View style={[s.actionBtn, s.actionBtnPrimary]}>
               <Text style={[s.actionText, { color:"#fff" }]}>View Job →</Text>
             </View>
@@ -91,8 +90,8 @@ export function HomeScreen({ navigation }: Props) {
           onPress={() => navigation.navigate("JobDetail" as never, { jobId:j.id } as never)}
           activeOpacity={0.85}>
           <View style={{ flex:1 }}>
-            <Text style={s.jobNumber}>{j.job_number} · {j.service_type}</Text>
-            <Text style={s.customer}>{j.customer_name ?? "—"}</Text>
+            <Text style={s.jobNumber}>{j.job_number}</Text>
+            <Text style={s.customer}>{j.city ?? "—"}</Text>
           </View>
           <JobStatusBadge status={j.status} size="sm" />
         </TouchableOpacity>

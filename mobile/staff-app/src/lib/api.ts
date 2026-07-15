@@ -60,21 +60,41 @@ export interface StaffPerformance {
   staff_id:string; composite_score:number; signals:Record<string,number>;
   job_count:number; avg_rating:number; dispute_rate:number; on_time_rate:number;
 }
+// MODULE-L5-36: this modeled a flat field_ops-style Job (customer_name/phone/
+// address inline, job_value, closing_notes, payment fields) -- but field_ops'
+// `jobs` table has zero rows platform-wide (confirmed via direct query).
+// Every real job lives in `service_jobs` (home_service_assignment +
+// execution engines), which has a narrower shape (no phone number or price
+// exposed to staff at all -- ServiceJob itself has neither, and the safe
+// booking view deliberately excludes pricing/contact details from staff
+// visibility) and requires a separate assignment-timeline vs execution-
+// lifecycle action set. Rewired the whole job surface to the real engines.
 export interface Job {
-  id:string; job_number:string; tenant_id:string;
-  customer_name?:string; customer_phone?:string; customer_address?:string;
-  customer_lat?:number;  customer_lng?:number;
-  status:string; service_type:string; city:string;
-  assigned_staff_id?:string;
+  id:string; job_number:string; booking_id:string; tenant_id:string|null;
+  customer_id:string|null; assigned_staff_id:string|null;
+  scheduled_date:string|null; scheduled_time_window:string|null;
+  city:string|null; zipcode:string|null;
+  status:string; assignment_status:string; failure_reason:string|null;
+  completion_data:Record<string, unknown>|null;
   created_at:string; updated_at:string;
-  sla_minutes?:number; minutes_in_status?:number;
-  job_value?:number; notes?:string; closing_notes?:string;
-  quoted_price?:number; customer_credit_applied?:number; payable_to_provider?:number;
-  payment_collection_mode?:"customer_pays_provider_directly"; platform_payment_collected?:boolean;
-  amount_collected?:number; payment_recorded?:boolean;
 }
-export interface JobListResponse     { jobs:Job[]; total:number; has_next:boolean; next_cursor?:string; }
-export interface JobHistoryResponse  { history:{ status:string; changed_at:string; notes?:string }[]; }
+export interface JobAssignment {
+  id:string; job_id:string; booking_id:string; assigned_staff_member_id:string;
+  assignment_status:string; assignment_type:string; rejection_reason:string|null;
+  scheduled_date:string|null; scheduled_time_window:string|null;
+}
+export interface BookingSummary {
+  id:string; booking_number:string; customer_name:string|null;
+  city:string|null; zipcode:string|null;
+  preferred_date:string|null; preferred_time_window:string|null;
+  issue_summary:string|null;
+}
+export interface JobDetail { job:Job; assignment:JobAssignment|null; booking:BookingSummary|null; }
+export interface JobListResponse { jobs:Job[]; count:number; }
+export interface ExecutionEvent {
+  id:string; job_id:string; event_type:string;
+  old_status:string|null; new_status:string|null; notes:string|null; actor_role:string|null;
+}
 // MODULE-L5-33: this used to model staff earnings as a gig-worker payout
 // ledger (total_earned / pending_payout / a list of commission deductions),
 // none of which exist on the backend -- ServiceOS's real commission model
@@ -118,41 +138,60 @@ export const authApi = {
 };
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
+// MODULE-L5-36: home_service_assignment's staff_router wraps every outcome
+// in its own envelope rather than using real HTTP status codes: an error
+// (caught ValueError) becomes {success:false, error:{code,message}}, and
+// accept/reject's success case becomes {success:true, data:{...}} -- a
+// second data layer on top of apiFetch's own `json.data` unwrap. get_thread's
+// success case has neither key (the detail object itself). This unwraps all
+// three shapes into one consistent value or a thrown ServiceOSError.
+function _unwrapAssignmentResult<T>(raw: unknown): T {
+  if (raw && typeof raw === "object" && "success" in raw) {
+    const wrapped = raw as { success:boolean; error?:{ code:string; message:string }; data?:T };
+    if (!wrapped.success) throw new ServiceOSError(wrapped.error!.code, wrapped.error!.message);
+    return wrapped.data as T;
+  }
+  return raw as T;
+}
+
 export const jobsApi = {
-  // MODULE-L5-35: GET /v1/jobs 422s with TENANT_REQUIRED for any non-
-  // super_admin caller that omits tenant_id -- the router gates on its mere
-  // presence before the service ever runs (which then re-derives both
-  // tenant_id and staff scoping from the authenticated actor and ignores
-  // whatever the client sent for a staff/technician role). Also the query
-  // param is `staff_id`, not `assigned_staff_id` -- the wrong name was
-  // silently dropped by the server rather than erroring.
-  myJobs: async (params?: Partial<{ status:string; limit:string; cursor:string }>) => {
-    const id = await getStaffId();
-    const tenantId = await getTenantId();
-    const qs = new URLSearchParams({
-      ...(params ?? {}),
-      ...(id ? { staff_id:id } : {}),
-      ...(tenantId ? { tenant_id:tenantId } : {}),
-    }).toString();
-    return apiFetch<JobListResponse>(`/v1/jobs?${qs}`);
-  },
-  get:          (id:string) => apiFetch<Job>(`/v1/jobs/${id}`),
-  history:      (id:string) => apiFetch<JobHistoryResponse>(`/v1/jobs/${id}/history`),
-  // MODULE-L5-35: the router reads body["to_status"] (required -- a KeyError
-  // on any missing key, since it indexes the raw dict rather than calling
-  // .get()), not "status"; every status-transition attempt from this app
-  // crashed the request. "notes" is also wrong -- the service param is
-  // "reason".
-  updateStatus: (id:string, status:string, notes?:string) =>
-    apiFetch<Job>(`/v1/jobs/${id}/status`, { method:"PUT", body:JSON.stringify({ to_status:status, reason:notes }) }),
-  // MODULE-L5-35: the router reads body.get("closure_notes"), not
-  // "closing_notes" -- this didn't crash (a safe .get()) but silently
-  // dropped every closing note the technician typed.
-  close: (id:string, notes:string) =>
-    apiFetch<Job>(`/v1/jobs/${id}/close`, { method:"POST", body:JSON.stringify({ closure_notes:notes }) }),
-  recordPayment: (id:string, amount:number, paymentMethod:string, notes?:string) =>
-    apiFetch<Record<string, unknown>>(`/v1/jobs/${id}/record-payment`,
-      { method:"POST", body:JSON.stringify({ amount, payment_method:paymentMethod, notes }) }),
+  // MODULE-L5-36: rewired from the dead field_ops /v1/jobs* surface to the
+  // real, live /v1/staff/service-jobs (home_service_assignment for list/
+  // detail/accept/reject/assignment-timeline; execution for the post-accept
+  // work lifecycle below).
+  myJobs: () => apiFetch<JobListResponse>(`/v1/staff/service-jobs`),
+  get: async (id:string) =>
+    _unwrapAssignmentResult<JobDetail>(await apiFetch<unknown>(`/v1/staff/service-jobs/${id}`)),
+  accept: async (id:string) =>
+    _unwrapAssignmentResult<{ job_id:string; status:string }>(
+      await apiFetch<unknown>(`/v1/staff/service-jobs/${id}/accept`, { method:"POST" })),
+  reject: async (id:string, reason:string) =>
+    _unwrapAssignmentResult<{ job_id:string; status:string }>(
+      await apiFetch<unknown>(`/v1/staff/service-jobs/${id}/reject`, { method:"POST", body:JSON.stringify({ reason }) })),
+  assignmentTimeline: (id:string) =>
+    apiFetch<{ items:unknown[] }>(`/v1/staff/service-jobs/${id}/assignment-timeline`),
+
+  // Execution lifecycle (app/engines/execution/home_service_router.py) --
+  // real work-in-progress steps between "accepted" and "completed".
+  onTheWay:          (id:string) => apiFetch<Job>(`/v1/staff/service-jobs/${id}/on-the-way`, { method:"POST" }),
+  reachedSite:       (id:string) => apiFetch<Job>(`/v1/staff/service-jobs/${id}/reached-site`, { method:"POST" }),
+  startInspection:   (id:string) => apiFetch<Job>(`/v1/staff/service-jobs/${id}/start-inspection`, { method:"POST" }),
+  completeInspection:(id:string) => apiFetch<Job>(`/v1/staff/service-jobs/${id}/complete-inspection`, { method:"POST" }),
+  startService:      (id:string) => apiFetch<Job>(`/v1/staff/service-jobs/${id}/start-service`, { method:"POST" }),
+  workDone:          (id:string) => apiFetch<Job>(`/v1/staff/service-jobs/${id}/work-done`, { method:"POST" }),
+  // Single validated completion action -- replaces the old separate
+  // "close job" + "record payment" flow. work_summary and collected_amount
+  // are both required by the service layer (WORK_SUMMARY_REQUIRED /
+  // COLLECTED_AMOUNT_REQUIRED if missing).
+  complete: (id:string, workSummary:string, collectedAmount:number) =>
+    apiFetch<Job>(`/v1/staff/service-jobs/${id}/complete`, {
+      method:"POST",
+      body:JSON.stringify({
+        work_summary:workSummary, collected_amount:collectedAmount,
+        payment_mode:"customer_pays_provider_directly",
+      }),
+    }),
+  timeline: (id:string) => apiFetch<{ items:ExecutionEvent[] }>(`/v1/staff/service-jobs/${id}/timeline`),
 };
 
 // ── Staff ─────────────────────────────────────────────────────────────────────
