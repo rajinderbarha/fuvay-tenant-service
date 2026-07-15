@@ -165,11 +165,26 @@ export async function getCustomerBookingTracking(bookingId: string): Promise<any
   return apiFetch(`/v1/customer/bookings/${bookingId}/tracking`);
 }
 
-/** No dedicated cancel-booking endpoint was found wired under
- *  /v1/customer/bookings/{id}/cancel in home_service_assignment/customer_router.py
- *  (only booking-draft cancel exists, pre-confirmation). Documented as a gap. */
-export async function cancelCustomerBooking(_bookingId: string, _payload?: { reason?: string }): Promise<never> {
-  throw new Error("Cancel-after-confirmation is not wired to a real backend endpoint yet. See CUSTOMER_FRONTEND_01_REMAINING_BLOCKERS.md.");
+// MODULE-L5-29: cancel-after-confirmation is now wired to a real endpoint
+// (home_service_assignment customer_cancel_booking). Only allowed before real
+// work has progressed (pending_assignment/assigned/accepted/scheduled) — a
+// 409 means the job is too far along and the customer should raise a
+// complaint instead.
+export async function cancelCustomerBooking(
+  bookingId: string, payload: { reason: string },
+): Promise<{ booking_id: string; job_id: string; status: string }> {
+  return apiFetch(`/v1/customer/bookings/${bookingId}/cancel`, {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+
+export async function rescheduleCustomerBooking(
+  bookingId: string,
+  payload: { scheduled_date: string; scheduled_time_window?: string; reason: string },
+): Promise<{ booking_id: string; job_id: string; scheduled_date: string; scheduled_time_window: string | null }> {
+  return apiFetch(`/v1/customer/bookings/${bookingId}/reschedule`, {
+    method: "POST", body: JSON.stringify(payload),
+  });
 }
 
 // ── Review (real: POST/GET /v1/customer/bookings/{id}/rating) ────────────────

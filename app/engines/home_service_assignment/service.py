@@ -17,6 +17,7 @@ from app.engines.home_service_assignment.constants import (
     ASSIGN_TYPE_MANUAL,
     EVENT_ASSIGNMENT_CREATED, EVENT_ASSIGNMENT_REASSIGNED, EVENT_ASSIGNMENT_CANCELLED,
     EVENT_TECHNICIAN_ACCEPTED, EVENT_TECHNICIAN_REJECTED, EVENT_JOB_SCHEDULED,
+    EVENT_CUSTOMER_CANCELLED, EVENT_CUSTOMER_RESCHEDULED,
     ELIGIBLE_DESIGNATIONS,
     ERR_JOB_NOT_FOUND, ERR_JOB_CANCELLED, ERR_JOB_COMPLETED,
     ERR_ASSIGNMENT_NOT_FOUND, ERR_ACCESS_DENIED, ERR_INVALID_STATUS,
@@ -25,6 +26,8 @@ from app.engines.home_service_assignment.constants import (
     ERR_REASON_REQUIRED, ERR_REASSIGN_NOT_ALLOWED, ERR_CANCEL_NOT_ALLOWED,
     ERR_STAFF_JOB_NOT_ASSIGNED, ERR_STAFF_JOB_ALREADY_ACCEPTED,
     ERR_STAFF_JOB_ALREADY_REJECTED,
+    ERR_BOOKING_NOT_FOUND, ERR_RESCHEDULE_NOT_ALLOWED,
+    CUSTOMER_CANCELLABLE_JOB_STATUSES,
 )
 from app.engines.home_service_assignment.models import (
     ServiceJobAssignment, ServiceJobAssignmentEvent,
@@ -439,6 +442,141 @@ class HomeServiceJobAssignmentService:
 
         return {"job_id": str(job_id), "assignment_status": JOB_ASSIGN_UNASSIGNED,
                 "status": JOB_STATUS_PENDING_ASSIGNMENT}
+
+    # ── Customer self-service cancel/reschedule ──────────────────────────────
+    # MODULE-L5-29: previously a customer had no way to cancel or reschedule a
+    # CONFIRMED booking at all — cancel_draft only covered pre-confirmation
+    # drafts, and BOOKING_STATUS_CANCELLED/JOB_STATUS_CANCELLED existed as
+    # constants but nothing in the live app ever wrote them for a real booking.
+    # A customer whose plans changed had no path except contacting support to
+    # get an admin to force-void the job.
+
+    async def _load_booking_and_job(self, booking_id: uuid.UUID, customer_id: uuid.UUID):
+        from app.engines.final_records.models import ServiceBooking, ServiceJob
+        booking = (await self.db.execute(
+            select(ServiceBooking).where(ServiceBooking.id == booking_id)
+        )).scalars().first()
+        if not booking:
+            raise ValueError(ERR_BOOKING_NOT_FOUND)
+        if str(booking.customer_id) != str(customer_id):
+            raise ValueError(ERR_ACCESS_DENIED)
+        job = (await self.db.execute(
+            select(ServiceJob).where(ServiceJob.booking_id == booking_id)
+        )).scalars().first()
+        return booking, job
+
+    async def customer_cancel_booking(
+        self, booking_id: uuid.UUID, customer_id: uuid.UUID,
+        reason: str, request_id: str | None = None,
+    ) -> dict:
+        if not reason or not reason.strip():
+            raise ValueError(ERR_REASON_REQUIRED)
+        booking, job = await self._load_booking_and_job(booking_id, customer_id)
+        if not job:
+            raise ValueError(ERR_JOB_NOT_FOUND)
+        if job.status not in CUSTOMER_CANCELLABLE_JOB_STATUSES:
+            # Work has progressed far enough (quote approved / invoiced /
+            # completed / already terminal) that a bare cancel is unsafe —
+            # the customer must raise a complaint instead so a human resolves
+            # any money already owed.
+            raise ValueError(ERR_CANCEL_NOT_ALLOWED)
+
+        old_job_status = job.status
+        job.status = JOB_STATUS_CANCELLED
+        job.updated_at = _utcnow()
+
+        assignment = await self._current_assignment(job.id)
+        if assignment and assignment.assignment_status != ASSIGN_STATUS_ACCEPTED:
+            assignment.is_current = False
+            assignment.assignment_status = ASSIGN_STATUS_CANCELLED
+            assignment.cancelled_at = _utcnow()
+        await self.db.flush()
+
+        await self._sync_booking(booking.id, JOB_ASSIGN_CANCELLED, JOB_STATUS_CANCELLED)
+
+        await self._emit_event(
+            job_id=job.id, booking_id=booking.id, tenant_id=job.tenant_id,
+            event_type=EVENT_CUSTOMER_CANCELLED,
+            actor_user_id=customer_id, actor_role="customer",
+            old_value={"status": old_job_status}, new_value={"status": JOB_STATUS_CANCELLED},
+            reason=reason, request_id=request_id,
+        )
+        await self._notify_booking_change(
+            booking=booking, job=job, title="Booking cancelled by customer",
+            body=f"The customer cancelled booking {booking.booking_number}. Reason: {reason}",
+            notif_type="booking.cancelled")
+        await self.db.commit()
+
+        return {"booking_id": str(booking_id), "job_id": str(job.id),
+                "status": JOB_STATUS_CANCELLED, "reason": reason}
+
+    async def customer_reschedule_booking(
+        self, booking_id: uuid.UUID, customer_id: uuid.UUID,
+        scheduled_date: date, scheduled_time_window: str | None,
+        reason: str, request_id: str | None = None,
+    ) -> dict:
+        if not reason or not reason.strip():
+            raise ValueError(ERR_REASON_REQUIRED)
+        booking, job = await self._load_booking_and_job(booking_id, customer_id)
+        if not job:
+            raise ValueError(ERR_JOB_NOT_FOUND)
+        if job.status not in CUSTOMER_CANCELLABLE_JOB_STATUSES:
+            raise ValueError(ERR_RESCHEDULE_NOT_ALLOWED)
+
+        old_date = job.scheduled_date.isoformat() if job.scheduled_date else None
+        job.scheduled_date = scheduled_date
+        job.scheduled_time_window = scheduled_time_window
+        job.updated_at = _utcnow()
+        booking.preferred_date = scheduled_date
+        booking.preferred_time_window = scheduled_time_window
+        await self.db.flush()
+
+        await self._emit_event(
+            job_id=job.id, booking_id=booking.id, tenant_id=job.tenant_id,
+            event_type=EVENT_CUSTOMER_RESCHEDULED,
+            actor_user_id=customer_id, actor_role="customer",
+            old_value={"scheduled_date": old_date},
+            new_value={"scheduled_date": scheduled_date.isoformat(),
+                       "scheduled_time_window": scheduled_time_window},
+            reason=reason, request_id=request_id,
+        )
+        await self._notify_booking_change(
+            booking=booking, job=job, title="Customer requested a reschedule",
+            body=(f"Booking {booking.booking_number} was rescheduled to "
+                  f"{scheduled_date.isoformat()}{f' ({scheduled_time_window})' if scheduled_time_window else ''}. "
+                  f"Reason: {reason}"),
+            notif_type="booking.rescheduled")
+        await self.db.commit()
+
+        return {"booking_id": str(booking_id), "job_id": str(job.id),
+                "scheduled_date": scheduled_date.isoformat(),
+                "scheduled_time_window": scheduled_time_window}
+
+    async def _notify_booking_change(self, *, booking, job, title: str, body: str,
+                                     notif_type: str) -> None:
+        """Best-effort: tell the provider owner + assigned technician. Never
+        blocks the cancel/reschedule itself on a notification failure."""
+        try:
+            from app.engines.platform_notifications.models import InAppNotification
+            recipients: set[str] = set()
+            if job.tenant_id:
+                from app.engines.tenant_engine.models import Tenant
+                tenant = await self.db.get(Tenant, job.tenant_id)
+                owner_id = getattr(tenant, "owner_user_id", None) if tenant else None
+                if owner_id:
+                    recipients.add(str(owner_id))
+            if job.assigned_staff_id:
+                recipients.add(str(job.assigned_staff_id))
+            for rid in recipients:
+                self.db.add(InAppNotification(
+                    user_id=uuid.UUID(rid), tenant_id=job.tenant_id,
+                    notification_type=notif_type, title=title, body=body,
+                    action_url="/service-jobs", action_label="View jobs",
+                    source_record_type="service_bookings", source_record_id=booking.id,
+                    severity="warning",
+                ))
+        except Exception:
+            pass
 
     async def technician_accept_job(
         self,

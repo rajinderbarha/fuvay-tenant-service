@@ -276,3 +276,75 @@ async def get_booking_rating(
             "created_at": review.created_at.isoformat() if review.created_at else None,
         },
     }, _RID(r), "assignment")
+
+
+# MODULE-L5-29: a customer had no way to cancel or reschedule a CONFIRMED
+# booking at all — only a pre-confirmation draft could be cancelled. Once a
+# booking existed, the only escape hatch was an admin force-void. These wire
+# the real, already-existing cancellable-status guard in the assignment engine.
+
+def _cancel_reschedule_error(exc: ValueError):
+    from app.exceptions import ServiceOSException
+    code = str(exc)
+    status_map = {
+        "JOB_ASSIGNMENT_BOOKING_NOT_FOUND": 404,
+        "JOB_ASSIGNMENT_JOB_NOT_FOUND": 404,
+        "JOB_ASSIGNMENT_ACCESS_DENIED": 403,
+        "JOB_ASSIGNMENT_REASON_REQUIRED": 422,
+        "JOB_ASSIGNMENT_CANCEL_NOT_ALLOWED": 409,
+        "JOB_ASSIGNMENT_RESCHEDULE_NOT_ALLOWED": 409,
+    }
+    raise ServiceOSException(code, code.replace("_", " ").title(),
+                             status_code=status_map.get(code, 422))
+
+
+@router.post("/{booking_id}/cancel", response_model=ApiResponse)
+async def cancel_booking(
+    booking_id: uuid.UUID,
+    body: dict,
+    r:    Request      = ...,
+    user: UserContext  = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+):
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    try:
+        result = await HomeServiceJobAssignmentService(db).customer_cancel_booking(
+            booking_id=booking_id, customer_id=uuid.UUID(user.user_id),
+            reason=body.get("reason", ""), request_id=_RID(r),
+        )
+    except ValueError as exc:
+        _cancel_reschedule_error(exc)
+    return ok(result, _RID(r), "assignment")
+
+
+@router.post("/{booking_id}/reschedule", response_model=ApiResponse)
+async def reschedule_booking(
+    booking_id: uuid.UUID,
+    body: dict,
+    r:    Request      = ...,
+    user: UserContext  = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+):
+    import datetime as _dt
+    from app.exceptions import ServiceOSException
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    raw_date = body.get("scheduled_date")
+    if not raw_date:
+        raise ServiceOSException("VALIDATION_ERROR", "scheduled_date is required.", status_code=422)
+    try:
+        scheduled_date = _dt.date.fromisoformat(raw_date)
+    except ValueError:
+        raise ServiceOSException("VALIDATION_ERROR", "scheduled_date must be YYYY-MM-DD.", status_code=422)
+
+    try:
+        result = await HomeServiceJobAssignmentService(db).customer_reschedule_booking(
+            booking_id=booking_id, customer_id=uuid.UUID(user.user_id),
+            scheduled_date=scheduled_date,
+            scheduled_time_window=body.get("scheduled_time_window"),
+            reason=body.get("reason", ""), request_id=_RID(r),
+        )
+    except ValueError as exc:
+        _cancel_reschedule_error(exc)
+    return ok(result, _RID(r), "assignment")
