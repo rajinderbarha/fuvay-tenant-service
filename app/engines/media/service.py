@@ -13,6 +13,12 @@ from app.cloudinary_client import is_configured as cloudinary_configured, build_
 logger = structlog.get_logger("media.service")
 utcnow = lambda: datetime.now(timezone.utc)
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB default
+# Storage quota is enforced per the tenant's chosen package for every vertical
+# EXCEPT home services, which is exempt (unlimited). A non-home-services tenant
+# with no package limit set falls back to this default.
+DEFAULT_STORAGE_QUOTA_GB = 10
+EXEMPT_VERTICALS = {"home_services"}
+_GB = 1024 * 1024 * 1024
 
 
 class MediaService:
@@ -29,6 +35,26 @@ class MediaService:
                 "scan_status": f.scan_status, "signed_url": signed_url,
                 "created_at": f.created_at.isoformat()}
 
+    async def _effective_storage_quota_bytes(self, tenant_id: uuid.UUID) -> int | None:
+        """The tenant's storage cap in bytes, or None when it is exempt.
+
+        Home services is exempt (no cap). Every other vertical is capped by its
+        chosen package's quota — tenant_limits.max_storage_gb, which the package
+        engine writes on package approval. A non-exempt tenant with no explicit
+        limit falls back to DEFAULT_STORAGE_QUOTA_GB.
+        """
+        from app.engines.tenant_engine.models import Tenant, TenantLimits
+
+        vertical = await self.db.scalar(select(Tenant.vertical).where(Tenant.id == tenant_id))
+        if (vertical or "").strip().lower() in EXEMPT_VERTICALS:
+            return None
+
+        limits = await self.db.scalar(
+            select(TenantLimits).where(TenantLimits.tenant_id == tenant_id))
+        gb = float(limits.max_storage_gb) if limits and limits.max_storage_gb is not None \
+            else DEFAULT_STORAGE_QUOTA_GB
+        return int(gb * _GB)
+
     async def initiate_upload(self, tenant_id: uuid.UUID, file_name: str,
                                mime_type: str, size_bytes: int,
                                entity_type: str | None, entity_id: str | None) -> dict:
@@ -36,16 +62,19 @@ class MediaService:
             raise ServiceOSException("VALIDATION_ERROR",
                 f"File exceeds maximum size of {MAX_FILE_SIZE_BYTES // (1024*1024)}MB.")
 
-        # Check quota (5GB default per tenant)
-        quota_r = await self.db.execute(select(func.sum(MediaFile.size_bytes)).where(
-            MediaFile.tenant_id == tenant_id, MediaFile.is_deleted == False))
-        used = quota_r.scalar_one_or_none() or 0
-        quota_bytes = 5 * 1024 * 1024 * 1024
-        if used + size_bytes > quota_bytes:
-            raise ServiceOSException("PLAN_LIMIT_EXCEEDED",
-                "Storage quota exceeded.",
-                context={"used_gb": round(used/1024**3, 2),
-                         "quota_gb": quota_bytes // 1024**3})
+        # Storage quota is package-based per the tenant's vertical. Home services
+        # is exempt (unlimited); every other vertical is capped by the chosen
+        # package's quota (tenant_limits.max_storage_gb, applied on approval).
+        quota_bytes = await self._effective_storage_quota_bytes(tenant_id)
+        if quota_bytes is not None:
+            quota_r = await self.db.execute(select(func.sum(MediaFile.size_bytes)).where(
+                MediaFile.tenant_id == tenant_id, MediaFile.is_deleted == False))
+            used = quota_r.scalar_one_or_none() or 0
+            if used + size_bytes > quota_bytes:
+                raise ServiceOSException("PLAN_LIMIT_EXCEEDED",
+                    "Storage quota exceeded. Upgrade your package for more storage.",
+                    context={"used_gb": round(used / _GB, 2),
+                             "quota_gb": round(quota_bytes / _GB, 2)})
 
         storage_key = f"tenants/{tenant_id}/{secrets.token_hex(8)}/{file_name}"
         expires_at = utcnow() + timedelta(hours=1)
@@ -143,9 +172,16 @@ class MediaService:
             MediaFile.tenant_id == tenant_id, MediaFile.is_deleted == False))
         row = r.one()
         used = row[0] or 0; file_count = row[1]
-        quota = 5 * 1024 * 1024 * 1024
+        # Same package-based / home-services-exempt rule as enforcement.
+        quota = await self._effective_storage_quota_bytes(tenant_id)
+        if quota is None:
+            return {"tenant_id": str(tenant_id),
+                    "used_bytes": used, "used_gb": round(used / _GB, 3),
+                    "quota_bytes": None, "quota_gb": None, "unlimited": True,
+                    "usage_pct": 0.0, "file_count": file_count, "alert": False}
         return {"tenant_id": str(tenant_id),
-                "used_bytes": used, "used_gb": round(used/1024**3, 3),
-                "quota_bytes": quota, "quota_gb": quota//1024**3,
-                "usage_pct": round(used/quota*100, 1), "file_count": file_count,
-                "alert": used/quota > 0.85}
+                "used_bytes": used, "used_gb": round(used / _GB, 3),
+                "quota_bytes": quota, "quota_gb": round(quota / _GB, 2), "unlimited": False,
+                "usage_pct": round(used / quota * 100, 1) if quota else 0.0,
+                "file_count": file_count,
+                "alert": bool(quota) and used / quota > 0.85}
