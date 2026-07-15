@@ -463,11 +463,15 @@ def test_enterprise_router_tags_set():
 # ── Phase 7: Export row limit enforcement ─────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_export_row_limit_blocked_when_too_large():
+async def test_export_row_limit_queues_pending_for_async_worker():
+    # MODULE-L5-31: a large estimated_row_count used to fail the job closed
+    # (EXPORT_ASYNC_REQUIRED) even after the real async export worker
+    # (app/jobs/export_worker.py) was built and could safely process it —
+    # every resource query is itself capped at 5000 rows regardless of the
+    # caller's estimate. Large exports must now queue as pending like any
+    # other export, not fail permanently before ever reaching the worker.
     from app.engines.enterprise_grid.services import ExportService
-    from app.engines.enterprise_grid.constants import (
-        ENTERPRISE_SYNC_EXPORT_ROW_LIMIT, EXPORT_FAILED, ERR_EXPORT_ASYNC_REQUIRED,
-    )
+    from app.engines.enterprise_grid.constants import ENTERPRISE_SYNC_EXPORT_ROW_LIMIT, EXPORT_PENDING
     from app.engines.enterprise_grid.models import EnterpriseExportJob
 
     svc = ExportService()
@@ -485,8 +489,8 @@ async def test_export_row_limit_blocked_when_too_large():
                 estimated_row_count=ENTERPRISE_SYNC_EXPORT_ROW_LIMIT + 1,
             )
 
-    assert job.status == EXPORT_FAILED
-    assert ERR_EXPORT_ASYNC_REQUIRED in job.failure_reason
+    assert job.status == EXPORT_PENDING
+    assert job.failure_reason is None
 
 
 @pytest.mark.asyncio

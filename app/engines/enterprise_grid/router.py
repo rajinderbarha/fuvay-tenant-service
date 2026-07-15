@@ -40,7 +40,7 @@ from app.engines.enterprise_grid.filter_registry import EnterpriseFilterRegistry
 from app.engines.enterprise_grid.query_service import EnterpriseListQueryService
 from app.engines.enterprise_grid.services import SavedViewService, ColumnPreferenceService, ExportService
 from app.engines.enterprise_grid.constants import (
-    ENTERPRISE_SYNC_EXPORT_ROW_LIMIT, SCOPE_PROVIDER,
+    SCOPE_PROVIDER,
     ERR_EXPORT_FIELD_NOT_ALLOWED, ERR_EXPORT_JOB_NOT_FOUND, ERR_EXPORT_JOB_ACCESS_DENIED,
     ERR_EXPORT_CONCURRENT_JOB_LIMIT, ERR_EXPORT_TENANT_CONCURRENT_LIMIT,
     ERR_EXPORT_IDEMPOTENCY_CONFLICT, ERR_EXPORT_FIELD_LIMIT,
@@ -138,9 +138,10 @@ class ResetColumnPrefsIn(BaseModel):
 class CreateExportIn(BaseModel):
     """Request a CSV/XLSX export for a grid resource.
 
-    If estimated_row_count > 5000 the job is created with status=failed
-    and failure_reason includes EXPORT_ASYNC_REQUIRED. Async worker support
-    is a carry-forward TODO.
+    Every export job is queued as pending and processed by the async export
+    worker (app/jobs/export_worker.py); every resource query is itself capped
+    at 5000 rows, so estimated_row_count has no bearing on whether the job
+    can be processed.
     """
     resource_key:         str      = Field(..., description="Registry resource key")
     filters:              dict     = Field({}, description="Filters to apply (same as grid)")
@@ -148,11 +149,8 @@ class CreateExportIn(BaseModel):
     export_format:        str      = Field("csv", description="csv | xlsx")
     estimated_row_count:  Optional[int] = Field(
         None, ge=0,
-        description=(
-            f"Caller-estimated row count. Exports above "
-            f"{ENTERPRISE_SYNC_EXPORT_ROW_LIMIT} rows receive "
-            f"status=failed with EXPORT_ASYNC_REQUIRED."
-        ),
+        description="Caller-estimated row count. Informational only — every "
+                    "resource query is capped at 5000 rows regardless.",
     )
 
 
@@ -417,9 +415,9 @@ Standard query parameters accepted by all enterprise list endpoints:
 `SAVED_VIEW_NOT_FOUND`, `SAVED_VIEW_ACCESS_DENIED`, `SAVED_VIEW_INVALID_FILTER`,
 `SAVED_VIEW_INVALID_COLUMNS`, `SAVED_VIEW_DUPLICATE_NAME`,
 `COLUMN_PREFERENCE_INVALID`, `COLUMN_PREFERENCE_ACCESS_DENIED`,
-`EXPORT_NOT_ALLOWED`, `EXPORT_FIELD_NOT_ALLOWED`, `EXPORT_TOO_LARGE`,
-`EXPORT_ASYNC_REQUIRED`, `EXPORT_JOB_NOT_FOUND`, `EXPORT_JOB_ACCESS_DENIED`,
-`EXPORT_GENERATION_FAILED`.
+`EXPORT_NOT_ALLOWED`, `EXPORT_FIELD_NOT_ALLOWED`,
+`EXPORT_JOB_NOT_FOUND`, `EXPORT_JOB_ACCESS_DENIED`,
+`EXPORT_GENERATION_FAILED`, `EXPORT_GENERATOR_UNAVAILABLE`, `EXPORT_FORMAT_UNSUPPORTED`.
 """
 
 
@@ -429,9 +427,8 @@ Standard query parameters accepted by all enterprise list endpoints:
     summary="Request a CSV/XLSX export job",
     description=(
         "Creates an export job for the given resource with applied filters and columns. "
-        "If `estimated_row_count` is provided and exceeds 5000, the job is created with "
-        "status=failed and EXPORT_ASYNC_REQUIRED in the failure_reason "
-        "(async worker is a carry-forward TODO). "
+        "The job is queued as pending and processed asynchronously by the export "
+        "worker; poll GET /exports/{id} for status and the download file_url. "
         "Provider exports are always tenant-scoped; admin tenant_id filter is optional.\n\n"
         + _EXPORT_STANDARD_RESPONSE
     ),
@@ -544,7 +541,7 @@ async def list_exports(
     description=(
         "Returns the current status of an export job. "
         "When status=completed, file_url is populated. "
-        "When status=failed, failure_reason explains why (e.g. EXPORT_ASYNC_REQUIRED)."
+        "When status=failed, failure_reason explains why (e.g. EXPORT_GENERATOR_UNAVAILABLE)."
     ),
 )
 async def get_export(
@@ -565,9 +562,8 @@ async def get_export(
     tags=["Enterprise Exports"],
     summary="Retry a failed export job",
     description=(
-        "Resets a failed or expired export job back to pending status. "
-        "Note: if the job failed with EXPORT_ASYNC_REQUIRED, it will fail again "
-        "until an async worker is implemented."
+        "Resets a failed or expired export job back to pending status for the "
+        "async export worker to pick up again."
     ),
 )
 async def retry_export(

@@ -13,13 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.enterprise_grid.constants import (
     VIS_PRIVATE, VIS_TENANT_SHARED, VIS_ADMIN_SHARED,
     EXPORT_PENDING, EXPORT_COMPLETED, EXPORT_FAILED,
-    EXPORT_EXPIRY_HOURS, MAX_EXPORT_ROWS, ENTERPRISE_SYNC_EXPORT_ROW_LIMIT,
+    EXPORT_EXPIRY_HOURS, MAX_EXPORT_ROWS,
     ERR_SAVED_VIEW_NOT_FOUND, ERR_SAVED_VIEW_ACCESS_DENIED,
     ERR_SAVED_VIEW_INVALID_FILTER, ERR_SAVED_VIEW_INVALID_COLUMNS,
     ERR_SAVED_VIEW_DUPLICATE_NAME,
     ERR_COLUMN_PREFERENCE_INVALID,
     ERR_EXPORT_NOT_ALLOWED, ERR_EXPORT_FIELD_NOT_ALLOWED,
-    ERR_EXPORT_TOO_LARGE, ERR_EXPORT_ASYNC_REQUIRED,
     ERR_EXPORT_JOB_NOT_FOUND,
     ERR_EXPORT_JOB_ACCESS_DENIED, ERR_EXPORT_GENERATION_FAILED,
     ERR_EXPORT_CONCURRENT_JOB_LIMIT, ERR_EXPORT_TENANT_CONCURRENT_LIMIT,
@@ -435,22 +434,19 @@ class ExportService:
                     f"for this tenant, maximum concurrent is {EXPORT_MAX_CONCURRENT_JOBS_PER_TENANT}"
                 )
 
-        # enforce sync export row limit
-        too_large       = (
-            estimated_row_count is not None
-            and estimated_row_count > ENTERPRISE_SYNC_EXPORT_ROW_LIMIT
-        )
-        if too_large:
-            status         = EXPORT_FAILED
-            failure_reason = (
-                f"Async export worker required for exports larger than "
-                f"{ENTERPRISE_SYNC_EXPORT_ROW_LIMIT} rows "
-                f"(estimated: {estimated_row_count}). "
-                f"Error: {ERR_EXPORT_ASYNC_REQUIRED}"
-            )
-        else:
-            status         = EXPORT_PENDING
-            failure_reason = None
+        # MODULE-L5-31: this used to fail the job closed with
+        # EXPORT_ASYNC_REQUIRED whenever estimated_row_count exceeded
+        # ENTERPRISE_SYNC_EXPORT_ROW_LIMIT (5000), on the assumption that no
+        # async worker existed yet to process it. A real async worker
+        # (app/jobs/export_worker.py, started in main.py's lifespan) was
+        # built afterward and every adapter query is itself capped at
+        # MAX_EXPORT_ROWS=5000 (resource_adapters.py), so there is no longer
+        # any size an estimated_row_count could name that the worker can't
+        # safely handle -- the old gate just permanently failed large,
+        # perfectly processable requests before they ever reached the
+        # worker's pending-job queue. Every job now queues as pending.
+        status         = EXPORT_PENDING
+        failure_reason = None
 
         job = EnterpriseExportJob(
             requested_by_user_id = user_id,
