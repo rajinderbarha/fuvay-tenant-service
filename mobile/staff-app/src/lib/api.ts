@@ -119,17 +119,37 @@ export const authApi = {
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
 export const jobsApi = {
+  // MODULE-L5-35: GET /v1/jobs 422s with TENANT_REQUIRED for any non-
+  // super_admin caller that omits tenant_id -- the router gates on its mere
+  // presence before the service ever runs (which then re-derives both
+  // tenant_id and staff scoping from the authenticated actor and ignores
+  // whatever the client sent for a staff/technician role). Also the query
+  // param is `staff_id`, not `assigned_staff_id` -- the wrong name was
+  // silently dropped by the server rather than erroring.
   myJobs: async (params?: Partial<{ status:string; limit:string; cursor:string }>) => {
     const id = await getStaffId();
-    const qs = new URLSearchParams({ ...(params ?? {}), ...(id ? { assigned_staff_id:id } : {}) }).toString();
+    const tenantId = await getTenantId();
+    const qs = new URLSearchParams({
+      ...(params ?? {}),
+      ...(id ? { staff_id:id } : {}),
+      ...(tenantId ? { tenant_id:tenantId } : {}),
+    }).toString();
     return apiFetch<JobListResponse>(`/v1/jobs?${qs}`);
   },
   get:          (id:string) => apiFetch<Job>(`/v1/jobs/${id}`),
   history:      (id:string) => apiFetch<JobHistoryResponse>(`/v1/jobs/${id}/history`),
+  // MODULE-L5-35: the router reads body["to_status"] (required -- a KeyError
+  // on any missing key, since it indexes the raw dict rather than calling
+  // .get()), not "status"; every status-transition attempt from this app
+  // crashed the request. "notes" is also wrong -- the service param is
+  // "reason".
   updateStatus: (id:string, status:string, notes?:string) =>
-    apiFetch<Job>(`/v1/jobs/${id}/status`, { method:"PUT", body:JSON.stringify({ status, notes }) }),
+    apiFetch<Job>(`/v1/jobs/${id}/status`, { method:"PUT", body:JSON.stringify({ to_status:status, reason:notes }) }),
+  // MODULE-L5-35: the router reads body.get("closure_notes"), not
+  // "closing_notes" -- this didn't crash (a safe .get()) but silently
+  // dropped every closing note the technician typed.
   close: (id:string, notes:string) =>
-    apiFetch<Job>(`/v1/jobs/${id}/close`, { method:"POST", body:JSON.stringify({ closing_notes:notes }) }),
+    apiFetch<Job>(`/v1/jobs/${id}/close`, { method:"POST", body:JSON.stringify({ closure_notes:notes }) }),
   recordPayment: (id:string, amount:number, paymentMethod:string, notes?:string) =>
     apiFetch<Record<string, unknown>>(`/v1/jobs/${id}/record-payment`,
       { method:"POST", body:JSON.stringify({ amount, payment_method:paymentMethod, notes }) }),
