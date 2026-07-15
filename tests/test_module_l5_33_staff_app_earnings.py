@@ -1,19 +1,16 @@
 """MODULE-L5-33 — staff-app mobile EarningsScreen called endpoints that don't
 exist and modeled a payout ledger the backend never implemented.
 
-Investigation (part of the MODULE-L5-00-004 gap-register item, "staff_app_mobile
-least-certified surface") found mobile/staff-app/src/lib/api.ts's earningsApi
-called /v1/staff/{id}/earnings/summary and /v1/staff/{id}/earnings -- neither
-exists; every call 404'd. The screen also modeled "total earned / pending
-payout / commission deductions" -- a gig-worker payout ledger concept that
-has no backend counterpart: ServiceOS charges the TENANT commission per job,
-not the technician (FieldOpsService.get_staff_earnings documents itself as
-"not a payout ledger; a tenant runs its own payroll, this just shows job
-value handled").
-
-Fix: rewired to the one real endpoint (GET /v1/jobs/staff/{staff_id}/earnings,
-requires tenant_id query param) and rewrote EarningsScreen to show only the
-real fields the backend actually returns.
+Superseded by MODULE-L5-36: the L5-33 fix rewired EarningsScreen to the one
+real field_ops endpoint that existed (GET /v1/jobs/staff/{staff_id}/earnings),
+but MODULE-L5-36 later confirmed field_ops' `jobs` table has 0 rows
+platform-wide -- that "real" endpoint would always report zero for every
+job a technician actually does. There is also no job-value/price field
+reachable by staff anywhere on the real ServiceJob pipeline (the safe
+booking view deliberately excludes pricing from staff visibility). Rewired
+again to derive real completed-job counts from the live
+/v1/staff/service-jobs list (the same one JobsListScreen uses) and dropped
+the fabricated job-value/rating stats rather than show fake zeros.
 """
 from __future__ import annotations
 
@@ -23,24 +20,15 @@ API_TS = Path("mobile/staff-app/src/lib/api.ts")
 SCREEN_TSX = Path("mobile/staff-app/src/screens/EarningsScreen.tsx")
 
 
-def test_earnings_api_targets_the_real_endpoint():
+def test_dead_field_ops_earnings_endpoint_no_longer_called():
     src = API_TS.read_text(encoding="utf-8")
-    assert "/v1/jobs/staff/" in src
-    assert "/staff/${id}/earnings/summary" not in src
-    # the paginated commission-list endpoint never existed; must not be called
-    assert "commissions:" not in src.split("export const earningsApi")[1].split("};")[0]
+    assert "/v1/jobs/staff/" not in src
+    assert "earningsApi" not in src
 
 
-def test_earnings_summary_passes_tenant_id():
-    src = API_TS.read_text(encoding="utf-8")
-    block = src.split("export const earningsApi")[1]
-    assert "tenant_id=" in block
-    assert "getTenantId" in block
-
-
-def test_earnings_screen_no_longer_renders_fictional_payout_fields():
+def test_earnings_screen_derives_from_the_real_jobs_list():
     src = SCREEN_TSX.read_text(encoding="utf-8")
-    for fictional_field in ("total_earned", "pending_payout", "commissions.data"):
+    assert "jobsApi.myJobs" in src
+    for fictional_field in ("total_earned", "pending_payout", "job_value_total",
+                            "job_value_this_month", "average_rating", "earningsApi"):
         assert fictional_field not in src, f"{fictional_field} is not a real backend field"
-    for real_field in ("job_value_total", "jobs_completed_total", "job_value_this_month"):
-        assert real_field in src

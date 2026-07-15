@@ -1,63 +1,28 @@
-"""MODULE-L5-35 — staff-app mobile jobsApi had three confirmed mismatches
-against the real field_ops backend.
+"""MODULE-L5-35 — staff-app mobile jobsApi had confirmed mismatches against
+the field_ops backend (missing tenant_id, wrong body field names on
+status/close).
 
-Continuation of MODULE-L5-00-004 (staff_app_mobile least-certified surface),
-following MODULE-L5-33 (earnings) and MODULE-L5-34 (chat).
+Superseded by MODULE-L5-36: field_ops was subsequently confirmed to be dead
+scaffolding (0 rows platform-wide) and the entire jobsApi surface was
+rewired to the real service_jobs pipeline (see
+tests/test_module_l5_36_staff_app_service_jobs.py for current source-level
+assertions). The field_ops-specific fixes this file asserted (myJobs
+tenant_id/staff_id params, updateStatus to_status/reason, close
+closure_notes) no longer apply since those functions don't exist anymore.
 
-1. jobsApi.myJobs() never sent tenant_id. GET /v1/jobs 422s with
-   TENANT_REQUIRED for any non-super_admin caller that omits it (the router
-   gates on its mere presence before the service ever runs, even though the
-   service then re-derives both tenant_id and staff scoping from the
-   authenticated actor for staff/technician roles and ignores whatever the
-   client sent). Verified live: 422 without tenant_id, 200 with it.
-2. The query param name was assigned_staff_id; the real param is staff_id
-   (silently dropped by the server rather than erroring -- moot for staff
-   role since the server always overrides it, but wrong).
-3. jobsApi.updateStatus() sent {status, notes}; the router does
-   `body["to_status"]` (a raw dict index, not .get() -- KeyError on any
-   request missing that exact key) and reads body.get("reason"), not
-   "notes". Every status-transition attempt from this app would raise.
-4. jobsApi.close() sent {closing_notes}; the router reads
-   body.get("closure_notes") -- didn't crash (safe .get()) but silently
-   dropped every closing note the technician typed.
-
-Fix: corrected all four in mobile/staff-app/src/lib/api.ts.
+The live backend behavior confirmed here (GET /v1/jobs, field_ops' own list
+endpoint, still 422s TENANT_REQUIRED without tenant_id) remains true of that
+endpoint in isolation and is kept as a historical confirmation, though the
+mobile app itself no longer calls it.
 """
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
 
-API_TS = Path("mobile/staff-app/src/lib/api.ts")
 BASE = "http://localhost:8000"
 STAFF_EMAIL = "staff@serviceos.local"
 PASSWORD = "Password123!"
-
-
-def _job_block(src: str) -> str:
-    block = src.split("export const jobsApi")[1].split("\n};")[0]
-    return "\n".join(l for l in block.splitlines() if not l.strip().startswith("//"))
-
-
-def test_myjobs_sends_tenant_id_and_correct_staff_param():
-    block = _job_block(API_TS.read_text(encoding="utf-8"))
-    assert "getTenantId" in block
-    assert "staff_id:id" in block
-    assert "assigned_staff_id" not in block
-
-
-def test_update_status_uses_the_real_field_names():
-    block = _job_block(API_TS.read_text(encoding="utf-8"))
-    assert "to_status:status" in block
-    assert "reason:notes" in block
-
-
-def test_close_uses_the_real_field_name():
-    block = _job_block(API_TS.read_text(encoding="utf-8"))
-    assert "closure_notes:notes" in block
-    assert "closing_notes:notes" not in block
 
 
 async def _login(email):
@@ -67,7 +32,7 @@ async def _login(email):
 
 
 class TestLive:
-    async def test_jobs_list_422s_without_tenant_id_and_succeeds_with_it(self):
+    async def test_field_ops_jobs_list_422s_without_tenant_id_and_succeeds_with_it(self):
         tok = await _login(STAFF_EMAIL)
         if not tok:
             pytest.skip("staff login unavailable")

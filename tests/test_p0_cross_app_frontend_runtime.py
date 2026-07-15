@@ -110,25 +110,34 @@ def test_admin_api_types_have_payment_breakdown_fields():
 
 # ── Staff app (React Native) ────────────────────────────────────────────────
 
+# MODULE-L5-36: the staff app's job surface was repointed from the dead
+# field_ops engine (0 rows platform-wide) to the real service_jobs pipeline.
+# Payment collection is no longer a separate "Record Payment" + "Close Job"
+# flow with a fictional payable_to_provider breakdown (field_ops shapes that
+# never populated); it's the real backend's single validated `complete`
+# action, which takes work_summary + collected_amount together.
+
 def test_staff_app_has_payment_recording_form():
     src = _read("mobile/staff-app/src/screens/JobDetailScreen.tsx")
-    assert "Payment Collection" in src
-    assert "Record Payment Collected" in src
-    assert "Collect From Customer" in src
-    assert "Amount collected must match payable-to-provider amount" in src
+    # the collected amount is captured in the Complete modal
+    assert "Amount Collected" in src
+    assert "collectedAmount" in src
+    assert "Complete Job" in src
     assert "Payout" not in src and "Withdraw" not in src and "Cash Wallet" not in src
 
 
-def test_staff_app_completion_requires_payment_when_owed():
+def test_staff_app_completion_records_work_summary_and_amount():
     src = _read("mobile/staff-app/src/screens/JobDetailScreen.tsx")
-    assert "Record the payment collected before closing this job" in src
+    assert "Work summary and amount collected are both required" in src
+    assert "handleComplete" in src
 
 
-def test_staff_app_api_client_has_record_payment():
+def test_staff_app_api_client_has_complete_action():
     src = _read("mobile/staff-app/src/lib/api.ts")
-    assert "recordPayment:" in src
-    assert "/record-payment" in src
-    assert "payable_to_provider?:number" in src
+    assert "complete:" in src
+    assert "/complete" in src
+    assert "collected_amount" in src
+    assert "work_summary" in src
 
 
 # ── Customer app (React Native) ─────────────────────────────────────────────

@@ -95,18 +95,6 @@ export interface ExecutionEvent {
   id:string; job_id:string; event_type:string;
   old_status:string|null; new_status:string|null; notes:string|null; actor_role:string|null;
 }
-// MODULE-L5-33: this used to model staff earnings as a gig-worker payout
-// ledger (total_earned / pending_payout / a list of commission deductions),
-// none of which exist on the backend -- ServiceOS's real commission model
-// charges the TENANT per job, not the technician (see
-// field_ops/service.py:get_staff_earnings, which documents itself as "not a
-// payout ledger; a tenant runs its own payroll, this just shows job value
-// handled"). This now matches the real, only-existing endpoint's shape.
-export interface EarningsSummary {
-  jobs_completed_total:number; job_value_total:number;
-  jobs_completed_this_month:number; job_value_this_month:number;
-  average_rating:number|null;
-}
 // MODULE-L5-34: this modeled a richer chat concept (room_id, participant_name,
 // last_message preview, unread_count) than the real staff chat backend
 // (app/engines/platform_notifications, built in MODULE-L5-19) provides --
@@ -226,15 +214,3 @@ export const chatApi = {
   markRead:    (threadId:string) => apiFetch<{ messages_marked_read:number }>(`/v1/staff/chat/threads/${threadId}/read`, { method:"POST" }),
 };
 
-// ── Earnings ──────────────────────────────────────────────────────────────────
-// MODULE-L5-33: /v1/staff/{id}/earnings/summary and the paginated
-// /v1/staff/{id}/earnings list don't exist -- every call 404'd. The one real
-// endpoint is GET /v1/jobs/staff/{staff_id}/earnings (field_ops/router.py),
-// a completed-jobs-value summary, not a commission-deduction ledger.
-export const earningsApi = {
-  summary: async () => {
-    const id = await getStaffId();
-    const tenantId = await getTenantId();
-    return apiFetch<EarningsSummary>(`/v1/jobs/staff/${id}/earnings?tenant_id=${tenantId}`);
-  },
-};

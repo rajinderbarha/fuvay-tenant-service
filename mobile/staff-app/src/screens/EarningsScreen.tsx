@@ -1,54 +1,55 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useApi } from "../hooks/useApi";
-import { earningsApi } from "../lib/api";
+import { jobsApi } from "../lib/api";
 import { StatCard } from "../components/StatCard";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
 
-// MODULE-L5-33: rewired to the one real backend endpoint
-// (GET /v1/jobs/staff/{staff_id}/earnings) -- a completed-jobs-value
-// summary, not a payout ledger. ServiceOS charges the tenant commission per
-// job, not the technician, so there is no "total earned / pending payout /
-// commission deductions" concept to show; this screen no longer pretends
-// there is one.
+// MODULE-L5-36: the MODULE-L5-33 fix rewired this to
+// GET /v1/jobs/staff/{staff_id}/earnings -- a REAL endpoint, but one that
+// counts field_ops' `Job` model, which is dead scaffolding with 0 rows
+// platform-wide (see MODULE-L5-36). It would always report zero for every
+// real job a technician actually does. There is no job-value/price field
+// anywhere reachable by staff on the real ServiceJob pipeline (deliberately
+// -- the safe booking view excludes pricing from staff visibility), so
+// "earnings" in the money sense isn't something this screen can show
+// honestly yet. Rewired to derive real completed-job counts from the same
+// live /v1/staff/service-jobs list the Jobs tab uses, and dropped the
+// fabricated job-value/rating stats rather than show fake zeros.
 export function EarningsScreen() {
-  const summary = useApi(useCallback(() => earningsApi.summary(), []));
+  const jobs = useApi(useCallback(() => jobsApi.myJobs(), []));
 
-  const fmt = (n:number) => `₹${n.toLocaleString("en-IN")}`;
+  const stats = useMemo(() => {
+    const all = jobs.data?.jobs ?? [];
+    const completed = all.filter(j => j.status === "completed");
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+    const thisMonth = completed.filter(j => new Date(j.created_at) >= monthStart);
+    return { total: completed.length, thisMonth: thisMonth.length };
+  }, [jobs.data]);
 
   return (
     <ScrollView style={gs.screen} contentContainerStyle={{ paddingBottom:32 }}>
       <View style={s.summaryWrap}>
-        {summary.loading ? (
+        {jobs.loading ? (
           <Skeleton height={120} />
         ) : (
           <>
             <View style={s.totalBox}>
-              <Text style={s.totalLabel}>Job Value Handled (Lifetime)</Text>
-              <Text style={s.totalValue}>{summary.data ? fmt(summary.data.job_value_total) : "—"}</Text>
+              <Text style={s.totalLabel}>Jobs Completed (Lifetime)</Text>
+              <Text style={s.totalValue}>{String(stats.total)}</Text>
             </View>
             <View style={s.statsRow}>
-              <StatCard label="This Month" value={summary.data ? fmt(summary.data.job_value_this_month) : "—"}
-                accent={theme.colors.success} />
-              <StatCard label="Jobs Done" value={String(summary.data?.jobs_completed_total ?? "—")} />
-              <StatCard label="Avg Rating"
-                value={summary.data?.average_rating != null ? summary.data.average_rating.toFixed(1) : "—"}
-                accent={theme.colors.warning} />
+              <StatCard label="This Month" value={String(stats.thisMonth)} accent={theme.colors.success} />
+              <StatCard label="Assigned" value={String((jobs.data?.jobs ?? []).length)} />
             </View>
           </>
         )}
       </View>
 
-      <Text style={[gs.label, { paddingHorizontal:theme.spacing.base, marginTop:16 }]}>This Month</Text>
-      <View style={{ paddingHorizontal:theme.spacing.base, paddingTop:8 }}>
-        <Text style={s.note}>
-          {summary.data
-            ? `${summary.data.jobs_completed_this_month} job${summary.data.jobs_completed_this_month === 1 ? "" : "s"} completed this month.`
-            : "—"}
-        </Text>
-        <Text style={[s.note, { marginTop:8, color:theme.colors.textTertiary }]}>
-          Payout and commission are handled by your employer, not this app.
+      <View style={{ paddingHorizontal:theme.spacing.base, paddingTop:16 }}>
+        <Text style={[s.note, { color:theme.colors.textTertiary }]}>
+          Payout, commission, and job value are handled by your employer, not this app.
         </Text>
       </View>
     </ScrollView>
