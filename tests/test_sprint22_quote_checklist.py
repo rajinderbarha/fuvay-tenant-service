@@ -134,6 +134,10 @@ def _mock_db(*execute_results):
     db.refresh  = AsyncMock()
     db.add      = MagicMock()
     db.delete   = AsyncMock()
+    # MODULE-L5-21: quote transitions now fire best-effort notifications, which
+    # look up the tenant owner / assigned staff via db.get. Return None so the
+    # notify step finds no recipients and no-ops in these unit tests.
+    db.get      = AsyncMock(return_value=None)
     return db
 
 

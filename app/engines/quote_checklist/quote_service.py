@@ -314,6 +314,10 @@ class ServiceJobQuoteService:
             old_status=old_status, new_status=QS_SENT_TO_CUSTOMER,
             request_id=request_id,
         )
+        # MODULE-L5-21: tell the customer a quote is waiting, or the job silently
+        # stalls at "awaiting quote approval" with the customer never informed.
+        from app.engines.quote_checklist.notifications import notify_customer_quote_sent
+        await notify_customer_quote_sent(db, q)
         await db.commit()
         await db.refresh(q)
         return q.to_dict()
@@ -354,6 +358,8 @@ class ServiceJobQuoteService:
             old_status=old_status, new_status=QS_CUSTOMER_APPROVED,
             request_id=request_id,
         )
+        from app.engines.quote_checklist.notifications import notify_provider_quote_decision
+        await notify_provider_quote_decision(db, q, "approved")
         await db.commit()
         await db.refresh(q)
         return q.to_dict()
@@ -389,6 +395,8 @@ class ServiceJobQuoteService:
             old_status=old_status, new_status=QS_CUSTOMER_REJECTED,
             reason=reason, request_id=request_id,
         )
+        from app.engines.quote_checklist.notifications import notify_provider_quote_decision
+        await notify_provider_quote_decision(db, q, "rejected")
         await db.commit()
         await db.refresh(q)
         return q.to_dict()
@@ -418,6 +426,8 @@ class ServiceJobQuoteService:
             old_status=old_status, new_status=QS_REVISION_REQUESTED,
             reason=reason, request_id=request_id,
         )
+        from app.engines.quote_checklist.notifications import notify_provider_quote_decision
+        await notify_provider_quote_decision(db, q, "revision")
         await db.commit()
         await db.refresh(q)
         return q.to_dict()
