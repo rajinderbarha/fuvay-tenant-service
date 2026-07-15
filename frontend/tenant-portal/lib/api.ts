@@ -1324,50 +1324,64 @@ export const appointmentApi = {
 };
 
 // ── Inventory Engine ──────────────────────────────────────────────────────────
+// MODULE-L5-41: rewired to the real inventory engine routes. Previously the
+// entire client called a nonexistent URL scheme (/v1/inventory/items,
+// /stock/receive, /stock/balance, /stock/low, /stock/replenish,
+// /reservations/{id}/confirm) -- every call 404'd. Real routes carry
+// tenant_id + item_id + location_id in the PATH (not query/body) for most
+// operations; reservation confirm/release identify the reservation by
+// job_id+item_id+location_id in the BODY, not a reservation_id in the path.
 export const inventoryApi = {
   createItem: (name:string, sku:string, unit:string, unitCost:number, category?:string, minQuantity=0) => {
     const tid = getTenantId();
-    return apiFetch<InventoryItem>("/v1/inventory/items", { method:"POST", body:JSON.stringify({
-      tenant_id:tid, name, sku, unit, unit_cost:unitCost, category, min_quantity:minQuantity }) });
+    return apiFetch<InventoryItem>(`/v1/inventory/tenants/${tid}/items`, { method:"POST", body:JSON.stringify({
+      name, sku, unit, unit_cost:unitCost, category, min_quantity:minQuantity }) });
   },
   getItem: (itemId:string) =>
     apiFetch<InventoryItem>(`/v1/inventory/items/${itemId}`),
-  listItems: (cursor?:string, category?:string) => {
+  listItems: (cursor?:string) => {
     const tid = getTenantId();
-    const q = new URLSearchParams({ tenant_id:tid });
+    const q = new URLSearchParams();
     if (cursor) q.set("cursor", cursor);
-    if (category) q.set("category", category);
-    return apiFetch<InventoryItemList>(`/v1/inventory/items?${q}`);
+    const qs = q.toString();
+    return apiFetch<InventoryItemList>(`/v1/inventory/tenants/${tid}/items${qs ? `?${qs}` : ""}`);
   },
   receiveStock: (itemId:string, locationId:string, quantity:number, notes?:string) => {
     const tid = getTenantId();
-    return apiFetch<StockTransaction>("/v1/inventory/stock/receive", { method:"POST", body:JSON.stringify({
-      tenant_id:tid, item_id:itemId, location_id:locationId, quantity, notes }) });
+    return apiFetch<StockTransaction>(`/v1/inventory/items/${itemId}/locations/${locationId}/receive`, {
+      method:"POST", body:JSON.stringify({ tenant_id:tid, quantity, notes }) });
   },
   getBalance: (itemId:string, locationId:string) =>
-    apiFetch<StockBalance>(`/v1/inventory/stock/balance?item_id=${itemId}&location_id=${locationId}`),
+    apiFetch<StockBalance>(`/v1/inventory/items/${itemId}/locations/${locationId}/balance`),
   listTransactions: (itemId:string, locationId:string, cursor?:string) => {
-    const q = new URLSearchParams({ item_id:itemId, location_id:locationId });
+    const q = new URLSearchParams();
     if (cursor) q.set("cursor", cursor);
-    return apiFetch<StockTransactionList>(`/v1/inventory/stock/transactions?${q}`);
+    const qs = q.toString();
+    return apiFetch<StockTransactionList>(`/v1/inventory/items/${itemId}/locations/${locationId}/transactions${qs ? `?${qs}` : ""}`);
   },
   createReservation: (itemId:string, locationId:string, jobId:string, quantity:number) => {
     const tid = getTenantId();
     return apiFetch<StockReservation>("/v1/inventory/reservations", { method:"POST", body:JSON.stringify({
       tenant_id:tid, item_id:itemId, location_id:locationId, job_id:jobId, quantity }) });
   },
-  confirmReservation: (reservationId:string) =>
-    apiFetch<StockReservation>(`/v1/inventory/reservations/${reservationId}/confirm`, { method:"POST" }),
-  releaseReservation: (reservationId:string) =>
-    apiFetch<{ reservation_id:string; released:boolean }>(`/v1/inventory/reservations/${reservationId}/release`, { method:"POST" }),
+  confirmReservation: (jobId:string, itemId:string, locationId:string) => {
+    const tid = getTenantId();
+    return apiFetch<{ confirmed:boolean; quantity:number; job_id:string }>("/v1/inventory/reservations/confirm", {
+      method:"POST", body:JSON.stringify({ job_id:jobId, item_id:itemId, location_id:locationId, tenant_id:tid }) });
+  },
+  releaseReservation: (jobId:string, itemId:string, locationId:string) => {
+    const tid = getTenantId();
+    return apiFetch<{ released:boolean; quantity:number }>("/v1/inventory/reservations/release", {
+      method:"POST", body:JSON.stringify({ job_id:jobId, item_id:itemId, location_id:locationId, tenant_id:tid }) });
+  },
   getLowStock: () => {
     const tid = getTenantId();
-    return apiFetch<LowStockList>(`/v1/inventory/stock/low?tenant_id=${tid}`);
+    return apiFetch<LowStockList>(`/v1/inventory/tenants/${tid}/low-stock`);
   },
-  replenish: (itemId:string, quantityRequested:number, notes?:string) => {
+  replenish: (itemId:string, quantityRequested:number) => {
     const tid = getTenantId();
-    return apiFetch<ReplenishResult>("/v1/inventory/stock/replenish", { method:"POST", body:JSON.stringify({
-      tenant_id:tid, item_id:itemId, quantity_requested:quantityRequested, notes }) });
+    return apiFetch<ReplenishResult>(`/v1/inventory/tenants/${tid}/items/${itemId}/replenish`, {
+      method:"POST", body:JSON.stringify({ quantity:quantityRequested }) });
   },
 };
 
@@ -2091,15 +2105,23 @@ export interface CalendarBlock { block_id:string; staff_id:string; tenant_id:str
 export interface StaffWorkingHoursResponse { staff_id:string; tenant_id:string; working_hours:Record<string,{ start:string; end:string; is_working:boolean }>; }
 
 // ── Phase 9 — Inventory types ─────────────────────────────────────────────────
-export interface InventoryItem { item_id:string; tenant_id:string; name:string; sku:string; category?:string; unit:string; unit_cost:number; min_quantity:number; is_active:boolean; created_at:string; }
-export interface InventoryItemList { items:InventoryItem[]; has_next:boolean; next_cursor?:string; }
-export interface StockBalance { item_id:string; location_id:string; quantity:number; reserved_qty:number; available:number; matches:boolean; ledger_sum:number; }
-export interface StockTransaction { txn_id:string; txn_type:string; quantity:number; balance_before:number; balance_after:number; job_id?:string; notes?:string; created_at:string; }
-export interface StockTransactionList { transactions:StockTransaction[]; has_next:boolean; next_cursor?:string; }
-export interface LowStockItem { item_id:string; name:string; current_quantity:number; reserved_qty:number; min_quantity:number; shortfall:number; }
+// MODULE-L5-41: these interfaces (and the inventoryApi below) were written
+// against a URL scheme + response shapes that don't exist -- the real
+// inventory engine (app/engines/inventory/router.py) uses
+// /v1/inventory/tenants/{tid}/items, /items/{id}/locations/{loc}/*, etc.,
+// and returns available_qty/current_qty/deficit, not available/
+// current_quantity/shortfall. Corrected to the real service dict outputs.
+// list_items returns only a subset of item fields (no category/unit_cost),
+// so those are optional here.
+export interface InventoryItem { item_id:string; name:string; sku:string; unit:string; min_quantity:number; category?:string|null; unit_cost?:number; }
+export interface InventoryItemList { items:InventoryItem[]; has_next:boolean; next_cursor?:string|null; }
+export interface StockBalance { item_id:string; location_id:string; quantity:number; reserved_qty:number; available_qty:number; min_quantity:number; below_minimum:boolean; reconciliation_ok:boolean; }
+export interface StockTransaction { txn_id:string; txn_type:string; quantity:number; balance_before:number; balance_after:number; job_id?:string|null; notes?:string|null; created_at:string; }
+export interface StockTransactionList { transactions:StockTransaction[]; has_next:boolean; next_cursor?:string|null; }
+export interface LowStockItem { item_id:string; name:string; current_qty:number; min_quantity:number; deficit:number; }
 export interface LowStockList { items:LowStockItem[]; total:number; }
-export interface ReplenishResult { item_id:string; quantity_requested:number; message:string; }
-export interface StockReservation { reservation_id:string; item_id:string; location_id:string; job_id:string; quantity:number; status:string; reserved_at:string; expires_at?:string; }
+export interface ReplenishResult { item_id:string; quantity_requested:number; status:string; message:string; }
+export interface StockReservation { reservation_id:string; job_id:string; quantity:number; expires_at?:string; }
 
 // ── Geo Zones — Tenant Service Coverage (via /v1/geo) ────────────────────────
 export const serviceAreaApi = {

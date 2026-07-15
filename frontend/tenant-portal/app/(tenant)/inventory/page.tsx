@@ -186,7 +186,7 @@ export default function InventoryPage() {
                     <span style={{ fontSize:11, color:"var(--text-tertiary)" }}>{item.sku}</span>
                   </div>
                   <p style={{ margin:"0 0 6px", fontSize:12, color:"var(--text-secondary)" }}>
-                    {item.category ?? "—"} · {item.unit} · ₹{item.unit_cost}
+                    {item.category ?? "—"} · {item.unit}{item.unit_cost != null ? ` · ₹${item.unit_cost}` : ""}
                   </p>
                   <p style={{ margin:0, fontSize:11, color:"var(--text-tertiary)" }}>
                     Min qty: {item.min_quantity}
@@ -224,7 +224,7 @@ export default function InventoryPage() {
                       {[
                         ["On Hand", balance.data.quantity],
                         ["Reserved", balance.data.reserved_qty],
-                        ["Available", balance.data.available],
+                        ["Available", balance.data.available_qty],
                       ].map(([label, val]) => (
                         <div key={label as string} style={{ background:"var(--surface)",
                           border:"1px solid var(--border)", borderRadius:10, padding:"14px 16px",
@@ -337,15 +337,15 @@ export default function InventoryPage() {
                       {item.name}
                     </p>
                     <p style={{ margin:0, fontSize:12, color:"var(--text-secondary)" }}>
-                      On hand: <strong>{item.current_quantity}</strong> · Reserved: {item.reserved_qty} ·
-                      Min: {item.min_quantity} · Shortfall: <strong style={{ color:"#ef4444" }}>{item.shortfall}</strong>
+                      On hand: <strong>{item.current_qty}</strong> ·
+                      Min: {item.min_quantity} · Shortfall: <strong style={{ color:"#ef4444" }}>{item.deficit}</strong>
                     </p>
                   </div>
-                  <button onClick={() => replenish(item.item_id, item.shortfall)} disabled={replenishing}
+                  <button onClick={() => replenish(item.item_id, item.deficit)} disabled={replenishing}
                     style={{ padding:"7px 14px", borderRadius:8, border:"none",
                       background:"var(--accent)", color:"white", fontWeight:600, fontSize:12,
                       cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
-                    {replenishing ? "…" : `Request +${item.shortfall}`}
+                    {replenishing ? "…" : `Request +${item.deficit}`}
                   </button>
                 </div>
               ))}
