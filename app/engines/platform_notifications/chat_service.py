@@ -28,7 +28,7 @@ from app.engines.platform_notifications.constants import (
     ERR_CHAT_MESSAGE_NOT_FOUND, ERR_CHAT_CANNOT_SEND,
 )
 from app.engines.platform_notifications.models import (
-    ChatThread, ChatThreadParticipant, ChatMessage, ChatMessageRead,
+    ChatThread, ChatThreadParticipant, ChatMessage, ChatMessageRead, InAppNotification,
 )
 
 log = structlog.get_logger("chat_service")
@@ -377,8 +377,54 @@ class ChatMessageService:
         )
         db.add(msg)
         thread.last_message_at = utcnow()
+        await self._notify_other_participants(db, thread, actor_user_id, actor_type, message_text)
         await db.commit()
         return msg
+
+    async def _notify_other_participants(
+        self, db: AsyncSession, thread: ChatThread, sender_user_id: uuid.UUID,
+        sender_type: str, message_text: str | None,
+    ) -> None:
+        """Raise an in-app notification for every active participant except the
+        sender, so a new message actually reaches the other side.
+
+        The chat engine's docstring promised this but never did it — a customer's
+        message never alerted the provider (or vice versa), so the recipient only
+        saw it if they happened to open the thread. Each notification deep-links to
+        the recipient's own chat surface.
+        """
+        rows = (await db.execute(
+            select(ChatThreadParticipant).where(
+                ChatThreadParticipant.thread_id == thread.id,
+                ChatThreadParticipant.left_at == None,  # noqa: E711
+            )
+        )).scalars().all()
+        preview = (message_text or "Sent an attachment").strip()
+        if len(preview) > 140:
+            preview = preview[:137] + "…"
+        sender_label = {"customer": "customer", "provider": "provider",
+                        "staff": "technician", "admin": "support"}.get(sender_type, sender_type)
+        for p in rows:
+            if str(p.user_id) == str(sender_user_id):
+                continue
+            if p.participant_type == "customer":
+                url = f"/customer/chat/{thread.id}"
+            elif p.participant_type == "staff":
+                url = f"/staff/chat/{thread.id}"
+            else:
+                url = f"/provider/chat/{thread.id}"
+            db.add(InAppNotification(
+                user_id=p.user_id,
+                tenant_id=thread.tenant_id,
+                notification_type="chat.message",
+                title=f"New message from {sender_label}",
+                body=preview,
+                action_url=url,
+                action_label="Open chat",
+                source_record_type="chat_thread",
+                source_record_id=thread.id,
+                severity="info",
+            ))
 
     async def list_messages(
         self,

@@ -405,7 +405,12 @@ async def test_chat_message_send_creates_message(user_id, tenant_id):
     thread_r.scalars = MagicMock(return_value=MagicMock(first=MagicMock(return_value=thread)))
     part_r = MagicMock()
     part_r.scalars = MagicMock(return_value=MagicMock(first=MagicMock(return_value=participant)))
-    db.execute = AsyncMock(side_effect=[thread_r, part_r])
+    # send_message now also notifies the other participants, which runs one more
+    # execute (the participant list). The sender is the sole participant here, so
+    # the notify loop skips it and adds nothing.
+    notify_r = MagicMock()
+    notify_r.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[participant])))
+    db.execute = AsyncMock(side_effect=[thread_r, part_r, notify_r])
 
     def _set_id(obj):
         obj.id = uuid.uuid4()
