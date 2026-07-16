@@ -585,6 +585,25 @@ function OnboardingChecklistTab({ catId }: { catId: string }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* MODULE-L5-44: investigated whether /v1/admin/onboarding/templates*
+          could be repointed to a real endpoint (same audit that found
+          L5-39..43). Confirmed the backing feature (OnboardingChecklistTemplate
+          model/table -- checklist_key/item_type/completion_source/
+          required_engine_key) no longer exists anywhere in the codebase or
+          database; the only adjacent real table (master_checklist_items) is a
+          different concept (generic workflow-step checklist items, not
+          onboarding-approval gates with evaluators) and would misrepresent
+          the feature if silently substituted. Rather than fabricate a fix,
+          this tab now says so honestly instead of letting every action
+          404 silently. */}
+      <div style={{ padding: "10px 16px", borderRadius: 10, background: "rgba(217,119,6,0.08)",
+        border: "1px solid rgba(217,119,6,0.25)", fontSize: 13, color: "#b45309" }}>
+        Onboarding checklist template management is not available in this build.
+        The backing feature was removed from the backend (no matching table or
+        endpoints remain); this tab cannot list, create, or edit templates
+        until it is rebuilt. Contact engineering before relying on it.
+      </div>
+
       {toast && (
         <div style={{ padding: "10px 16px", borderRadius: 10, background: "rgba(5,150,105,0.08)",
           border: "1px solid rgba(5,150,105,0.25)", fontSize: 13, color: "#059669" }}>{toast}</div>
@@ -594,7 +613,7 @@ function OnboardingChecklistTab({ catId }: { catId: string }) {
         <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
           {templates.data?.count ?? 0} template{templates.data?.count !== 1 ? "s" : ""} in this category
         </p>
-        <Btn size="sm" variant="primary" onClick={openCreate}>
+        <Btn size="sm" variant="primary" onClick={openCreate} disabled>
           <Plus size={13}/> Add Item
         </Btn>
       </div>
