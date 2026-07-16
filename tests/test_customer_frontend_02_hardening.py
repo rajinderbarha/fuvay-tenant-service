@@ -15,8 +15,14 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "frontend", "customer-app")
 
+# "Withdraw" alone was removed -- it's a substring of two legitimate,
+# unrelated, already-shipped features (MODULE-L5-02 "Withdraw complaint",
+# MODULE-L5-15 DPDP "Withdraw" a privacy consent), neither of which is
+# financial jargon. "Withdrawable Balance" below is the precise phrase that
+# actually matters for the wallet/finance-leakage concern this test guards
+# against.
 FORBIDDEN_LABELS = [
-    "Cash Wallet", "Wallet Balance", "Withdraw", "Withdrawable Balance",
+    "Cash Wallet", "Wallet Balance", "Withdrawable Balance",
     "Tenant Payout", "Provider Earnings Wallet", "Escrow",
     "Platform Collected Service Payment", "Provider Cash Balance",
     "Credit Wallet Health", "Platform Pay Now", "Online Payment Required",

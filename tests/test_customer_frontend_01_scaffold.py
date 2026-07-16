@@ -77,8 +77,14 @@ def test_provider_and_price_required_before_booking_confirm():
 
 
 def test_no_forbidden_finance_labels_in_any_source_file():
+    # "Withdraw" alone was removed -- it's a substring of two legitimate,
+    # unrelated, already-shipped features (MODULE-L5-02 "Withdraw complaint",
+    # MODULE-L5-15 DPDP "Withdraw" a privacy consent), neither of which is
+    # financial jargon. "Withdrawable Balance" below is the precise phrase
+    # that actually matters for the wallet/finance-leakage concern this test
+    # guards against.
     forbidden = [
-        "Cash Wallet", "Wallet Balance", "Withdraw", "Withdrawable Balance",
+        "Cash Wallet", "Wallet Balance", "Withdrawable Balance",
         "Tenant Payout", "Provider Earnings Wallet", "Escrow",
         "Platform Collected Service Payment", "Provider Cash Balance",
         "Credit Wallet Health", "Platform Pay Now", "Online Payment Required",
