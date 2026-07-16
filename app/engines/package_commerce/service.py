@@ -1003,11 +1003,11 @@ class PackageCommerceService:
 
     async def _count_storage_used(self, tenant_id: uuid.UUID) -> float:
         try:
-            from app.engines.media.models import TenantMedia
+            from app.engines.media.models import MediaFile
             from sqlalchemy import func
             r = await self.db.execute(
-                select(func.coalesce(func.sum(TenantMedia.file_size_bytes), 0))
-                .where(TenantMedia.tenant_id == tenant_id)
+                select(func.coalesce(func.sum(MediaFile.size_bytes), 0))
+                .where(MediaFile.tenant_id == tenant_id)
             )
             total_bytes = r.scalar_one() or 0
             return total_bytes / (1024 ** 3)
