@@ -23,17 +23,19 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 
 async def _get_db():
-    from app.database import AsyncSessionLocal
-    async with AsyncSessionLocal() as db:
+    from app.database import get_session_factory
+    session_factory = get_session_factory()
+    async with session_factory() as db:
         yield db
 
 
 async def dispatch_pending(limit: int = 100) -> dict:
     """Process pending outbox records. Safe to run repeatedly."""
-    from app.database import AsyncSessionLocal
+    from app.database import get_session_factory
     from app.engines.platform_notifications.notification_service import NotificationService
     svc = NotificationService()
-    async with AsyncSessionLocal() as db:
+    session_factory = get_session_factory()
+    async with session_factory() as db:
         result = await svc.dispatch_pending(db, limit=limit)
     log.info("jobs.dispatch_pending.done", **result)
     return result
@@ -41,10 +43,11 @@ async def dispatch_pending(limit: int = 100) -> dict:
 
 async def retry_failed(limit: int = 50) -> dict:
     """Re-queue failed outbox records within retry limit."""
-    from app.database import AsyncSessionLocal
+    from app.database import get_session_factory
     from app.engines.platform_notifications.notification_service import NotificationService
     svc = NotificationService()
-    async with AsyncSessionLocal() as db:
+    session_factory = get_session_factory()
+    async with session_factory() as db:
         result = await svc.retry_failed(db, limit=limit)
     log.info("jobs.retry_failed.done", **result)
     return result
@@ -52,12 +55,13 @@ async def retry_failed(limit: int = 50) -> dict:
 
 async def cleanup_expired(days: int = 30) -> dict:
     """Clean up old processed notification events (non-destructive: marks expired)."""
-    from app.database import AsyncSessionLocal
+    from app.database import get_session_factory
     from app.engines.platform_notifications.models import NotificationOutbox
     from app.engines.platform_notifications.constants import DELIVERY_DELIVERED, DELIVERY_SKIPPED
     cutoff = utcnow() - timedelta(days=days)
     deleted = 0
-    async with AsyncSessionLocal() as db:
+    session_factory = get_session_factory()
+    async with session_factory() as db:
         r = await db.execute(
             select(NotificationOutbox).where(
                 NotificationOutbox.created_at < cutoff,
