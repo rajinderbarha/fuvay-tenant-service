@@ -5381,7 +5381,10 @@ export const adminBookabilityApi = {
     if (params?.search)      q.set("search",      params.search);
     if (params?.page)        q.set("page",        String(params.page));
     if (params?.page_size)   q.set("page_size",   String(params.page_size));
-    return apiFetch<{ providers: ProviderVisibilityStatus[]; count: number; page: number; page_size: number }>(
+    // MODULE-L5-43: the real endpoint returns {providers, total} -- no
+    // count/page/page_size (it also has no page/search param support
+    // server-side; only is_bookable/is_visible/category_id/limit are read).
+    return apiFetch<{ providers: ProviderVisibilityStatus[]; total: number }>(
       `/v1/admin/bookability/providers${q.toString() ? "?" + q.toString() : ""}`
     );
   },
@@ -5417,8 +5420,26 @@ export const adminBookabilityApi = {
       `/v1/admin/bookability/providers/${tenantId}/audit-logs?${q.toString()}`
     );
   },
-  bulkRefresh: () =>
-    apiFetch<{ refreshed: number; errors: string[] }>(`/v1/admin/bookability/bulk-refresh`, { method: "POST" }),
+  // MODULE-L5-43: /v1/admin/bookability/bulk-refresh doesn't exist -- the
+  // backend only has a per-tenant refresh endpoint. Implemented client-side:
+  // list every provider (capped at the endpoint's max limit of 200) then
+  // refresh each in turn, aggregating counts/errors into the same shape the
+  // page already expects.
+  bulkRefresh: async () => {
+    const list = await apiFetch<{ providers: ProviderVisibilityStatus[]; total: number }>(
+      "/v1/admin/bookability/providers?limit=200");
+    const errors: string[] = [];
+    let refreshed = 0;
+    for (const p of list.providers) {
+      try {
+        await apiFetch(`/v1/admin/bookability/providers/${p.tenant_id}/refresh`, { method: "POST" });
+        refreshed += 1;
+      } catch (e) {
+        errors.push(`${p.tenant_id}: ${e instanceof Error ? e.message : "failed"}`);
+      }
+    }
+    return { refreshed, errors };
+  },
   listRules: (params?: { category_id?: string; include_inactive?: boolean }) => {
     const q = new URLSearchParams();
     if (params?.category_id)        q.set("category_id",        params.category_id);

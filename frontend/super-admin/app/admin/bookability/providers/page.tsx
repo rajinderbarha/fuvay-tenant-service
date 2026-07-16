@@ -67,7 +67,10 @@ export default function BookabilityProvidersPage() {
     useCallback(() => adminBookabilityApi.bulkRefresh(), [])
   );
 
-  const total      = providers.data?.count ?? 0;
+  // MODULE-L5-43: the real /v1/admin/bookability/providers response is
+  // {providers, total} -- there is no count/page/page_size on it (the
+  // backend also has no page/search param support; it only accepts limit).
+  const total      = providers.data?.total ?? 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const rows: ProviderVisibilityStatus[] = providers.data?.providers ?? [];
   const sum: BookabilitySummary | null = summary.data ?? null;
