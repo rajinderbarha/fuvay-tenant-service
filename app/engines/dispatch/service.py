@@ -173,9 +173,36 @@ class DispatchService:
             except Exception as e:
                 logger.warning("dispatch.chat_create_failed", error=str(e))
 
+        # MODULE-L5-47: tell the staff member they've been dispatched a job.
+        # dispatch_job only ever set Job.assigned_staff_id and logged an
+        # internal event -- no user-facing notification existed, so a staff
+        # member had no way to learn about a new dispatch except by polling.
+        # Same bug class as MODULE-L5-25 (home_service_assignment), but this
+        # is a separate, live, actually-wired engine that fix never touched.
+        if assigned_staff:
+            await self._notify_staff_dispatched(
+                job_id=job_id, staff_id=assigned_staff, tenant_id=tenant_id, reassigned=False)
+
         logger.info("dispatch.dispatched", job_id=job_id, mode=mode,
                     staff=str(assigned_staff) if assigned_staff else None)
         return {**self._rec_dict(rec), "idempotent": False}
+
+    async def _notify_staff_dispatched(self, *, job_id: str, staff_id: uuid.UUID,
+                                        tenant_id: uuid.UUID, reassigned: bool) -> None:
+        from app.engines.platform_notifications.models import InAppNotification
+        verb = "reassigned to you" if reassigned else "assigned to you"
+        self.db.add(InAppNotification(
+            user_id=staff_id,
+            tenant_id=tenant_id,
+            notification_type="job_assigned",
+            title="A job was reassigned to you" if reassigned else "New job assigned to you",
+            body=f"A job has been {verb} via dispatch. Tap to view the details and accept it.",
+            action_url=f"/staff/jobs/{job_id}",
+            action_label="View job",
+            source_record_type="service_jobs",
+            source_record_id=uuid.UUID(job_id) if isinstance(job_id, str) else job_id,
+            severity="info",
+        ))
 
     async def get_dispatch_record(self, job_id: str) -> dict:
         r = await self.db.execute(select(DispatchRecord).where(DispatchRecord.job_id == job_id))
@@ -244,6 +271,10 @@ class DispatchService:
         self.db.add(DispatchEscalationLog(
             job_id=job_id, tenant_id=rec.tenant_id, staff_id=new_staff_id,
             attempt_no=rec.escalation_count + 1, outcome="reassigned", reason=reason))
+
+        await self._notify_staff_dispatched(
+            job_id=job_id, staff_id=new_staff_id, tenant_id=rec.tenant_id, reassigned=True)
+
         return {**self._rec_dict(rec), "previous_staff_id": str(old_staff) if old_staff else None}
 
     async def get_dispatch_queue(self, tenant_id: uuid.UUID) -> dict:
