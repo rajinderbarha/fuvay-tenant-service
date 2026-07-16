@@ -324,6 +324,17 @@ class TenantService:
         self.db.add(TenantBilling(tenant_id=tenant.id, billing_email=req.owner_email,
             security_deposit_amount=float(SECURITY_DEPOSIT_BY_PLAN[plan])))
         self.db.add(TenantLimits(tenant_id=tenant.id, **limits_config))
+        # MODULE-L5-46: this is the canonical tenant-signup path
+        # (OnboardingRequest -> activate) and never created a
+        # TenantSettings row (table tenant_operational_settings, holding
+        # commission_rate/timezone/currency/notification toggles) --
+        # confirmed via direct query that no tenant activated through it has
+        # one. Distinct from the per-schema "tenant_settings" key-value table
+        # provision_tenant() creates below (a different, Settings-Engine
+        # concept with the same name). Package-based commission overrides
+        # (MODULE-L5-45) and the tenant-settings fallback tier of commission
+        # resolution (MODULE-L5-32) both depend on this row existing.
+        self.db.add(TenantSettings(tenant_id=tenant.id))
         for engine_id in req.engines_to_enable:
             self.db.add(TenantEngine(tenant_id=tenant.id, engine_id=engine_id, is_enabled=True,
                 config=req.engine_configs.get(engine_id, {}), activated_at=utcnow(),

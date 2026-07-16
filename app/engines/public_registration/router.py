@@ -31,7 +31,7 @@ from app.exceptions import ServiceOSException
 from app.schemas.base import ApiResponse, ok
 from app.redis_client import get_redis
 from app.engines.auth.utils import hash_password
-from app.engines.tenant_engine.models import Tenant, TenantLimits
+from app.engines.tenant_engine.models import Tenant, TenantLimits, TenantSettings
 from app.engines.tenant_engine.constants import PLAN_LIMITS, TRIAL_DAYS
 from app.engines.auth.models import User
 from app.twilio_client import send_sms, verify_send, verify_check, is_verify_configured
@@ -413,6 +413,14 @@ async def complete_registration(
             max_engines         = limits_cfg["max_engines"],
             max_customers       = limits_cfg["max_customers"],
         ))
+
+        # MODULE-L5-46: this is the actual public self-signup flow and never
+        # created a TenantSettings row (table tenant_operational_settings,
+        # holding commission_rate/timezone/currency/notification toggles) --
+        # every tenant that signed up through it had no row for the platform
+        # commission-rate fallback (MODULE-L5-32) or package-based commission
+        # overrides (MODULE-L5-45) to ever apply to.
+        db.add(TenantSettings(tenant_id=tenant.id))
 
         # 4. Create subscription (trial period)
         from app.engines.subscription.service import SubscriptionService

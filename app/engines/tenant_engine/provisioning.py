@@ -126,88 +126,93 @@ async def provision_tenant(
 
 
 async def _create_tenant_tables(db: AsyncSession, schema: str) -> None:
-    """Create tenant-scoped tables. Each engine will add its own tables in later phases."""
-    tables_sql = f"""
-    -- Tenant settings (used by Settings Engine)
-    CREATE TABLE IF NOT EXISTS "{schema}".tenant_settings (
-        key VARCHAR(100) PRIMARY KEY,
-        value JSONB NOT NULL DEFAULT '{{}}',
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
+    """Create tenant-scoped tables. Each engine will add its own tables in later phases.
 
-    -- Service catalog (used by Pricing Engine + Field Ops + Booking)
-    CREATE TABLE IF NOT EXISTS "{schema}".services (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        name VARCHAR(255) NOT NULL,
-        category VARCHAR(100),
-        has_types BOOLEAN DEFAULT FALSE,
-        has_brands BOOLEAN DEFAULT FALSE,
-        duration_minutes INTEGER DEFAULT 60,
-        is_active BOOLEAN DEFAULT TRUE,
-        sort_order INTEGER DEFAULT 0,
-        meta JSONB DEFAULT '{{}}',
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    -- Service types (e.g., Window/Split for AC)
-    CREATE TABLE IF NOT EXISTS "{schema}".service_types (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        service_id UUID NOT NULL REFERENCES "{schema}".services(id) ON DELETE CASCADE,
-        type_name VARCHAR(100) NOT NULL,
-        sort_order INTEGER DEFAULT 0,
-        is_active BOOLEAN DEFAULT TRUE
-    );
-
-    -- Notification templates
-    CREATE TABLE IF NOT EXISTS "{schema}".notification_templates (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        event_type VARCHAR(100) NOT NULL UNIQUE,
-        title_template TEXT NOT NULL,
-        body_template TEXT NOT NULL,
-        channels JSONB DEFAULT '["push"]',
-        is_active BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    -- SLA configuration
-    CREATE TABLE IF NOT EXISTS "{schema}".sla_config (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        service_category VARCHAR(100) DEFAULT 'default',
-        sla_hours INTEGER NOT NULL DEFAULT 4,
-        escalation_hours INTEGER DEFAULT 6,
-        auto_close_after_hours INTEGER DEFAULT 48,
-        require_before_photo BOOLEAN DEFAULT TRUE,
-        require_after_photo BOOLEAN DEFAULT TRUE,
-        require_customer_approval BOOLEAN DEFAULT TRUE,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    -- Service zones
-    CREATE TABLE IF NOT EXISTS "{schema}".service_zones (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        zone_name VARCHAR(100) NOT NULL,
-        zipcodes JSONB DEFAULT '[]',
-        zone_multiplier DECIMAL(4,2) DEFAULT 1.00,
-        travel_surcharge DECIMAL(10,2) DEFAULT 0.00,
-        is_active BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    -- Staff (populated by Auth Engine when staff logs in)
-    CREATE TABLE IF NOT EXISTS "{schema}".staff_profiles (
-        user_id UUID PRIMARY KEY,
-        zone_id UUID REFERENCES "{schema}".service_zones(id),
-        skills JSONB DEFAULT '[]',
-        brand_certifications JSONB DEFAULT '[]',
-        is_available BOOLEAN DEFAULT TRUE,
-        rating DECIMAL(3,2) DEFAULT 0.00,
-        jobs_completed INTEGER DEFAULT 0,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
+    MODULE-L5-46: this used to send all CREATE TABLE statements as one
+    semicolon-joined string to a single db.execute(text(...)) call. asyncpg
+    prepares every statement it's given, and refuses to prepare a string
+    containing multiple commands ("cannot insert multiple commands into a
+    prepared statement") -- so this raised on every single call, meaning
+    activate_tenant (the real tenant-activation endpoint) could never
+    complete for ANY tenant. Each CREATE TABLE must be sent as its own
+    execute() call.
     """
-    await db.execute(text(tables_sql))
+    statements = [
+        # Tenant settings (used by Settings Engine)
+        f"""CREATE TABLE IF NOT EXISTS "{schema}".tenant_settings (
+            key VARCHAR(100) PRIMARY KEY,
+            value JSONB NOT NULL DEFAULT '{{}}',
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        # Service catalog (used by Pricing Engine + Field Ops + Booking)
+        f"""CREATE TABLE IF NOT EXISTS "{schema}".services (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name VARCHAR(255) NOT NULL,
+            category VARCHAR(100),
+            has_types BOOLEAN DEFAULT FALSE,
+            has_brands BOOLEAN DEFAULT FALSE,
+            duration_minutes INTEGER DEFAULT 60,
+            is_active BOOLEAN DEFAULT TRUE,
+            sort_order INTEGER DEFAULT 0,
+            meta JSONB DEFAULT '{{}}',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        # Service types (e.g., Window/Split for AC)
+        f"""CREATE TABLE IF NOT EXISTS "{schema}".service_types (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            service_id UUID NOT NULL REFERENCES "{schema}".services(id) ON DELETE CASCADE,
+            type_name VARCHAR(100) NOT NULL,
+            sort_order INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT TRUE
+        )""",
+        # Notification templates
+        f"""CREATE TABLE IF NOT EXISTS "{schema}".notification_templates (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            event_type VARCHAR(100) NOT NULL UNIQUE,
+            title_template TEXT NOT NULL,
+            body_template TEXT NOT NULL,
+            channels JSONB DEFAULT '["push"]',
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        # SLA configuration
+        f"""CREATE TABLE IF NOT EXISTS "{schema}".sla_config (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            service_category VARCHAR(100) DEFAULT 'default',
+            sla_hours INTEGER NOT NULL DEFAULT 4,
+            escalation_hours INTEGER DEFAULT 6,
+            auto_close_after_hours INTEGER DEFAULT 48,
+            require_before_photo BOOLEAN DEFAULT TRUE,
+            require_after_photo BOOLEAN DEFAULT TRUE,
+            require_customer_approval BOOLEAN DEFAULT TRUE,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        # Service zones
+        f"""CREATE TABLE IF NOT EXISTS "{schema}".service_zones (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            zone_name VARCHAR(100) NOT NULL,
+            zipcodes JSONB DEFAULT '[]',
+            zone_multiplier DECIMAL(4,2) DEFAULT 1.00,
+            travel_surcharge DECIMAL(10,2) DEFAULT 0.00,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        # Staff (populated by Auth Engine when staff logs in)
+        f"""CREATE TABLE IF NOT EXISTS "{schema}".staff_profiles (
+            user_id UUID PRIMARY KEY,
+            zone_id UUID REFERENCES "{schema}".service_zones(id),
+            skills JSONB DEFAULT '[]',
+            brand_certifications JSONB DEFAULT '[]',
+            is_available BOOLEAN DEFAULT TRUE,
+            rating DECIMAL(3,2) DEFAULT 0.00,
+            jobs_completed INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+    ]
+    for stmt in statements:
+        await db.execute(text(stmt))
 
 
 async def _seed_service_catalog(
