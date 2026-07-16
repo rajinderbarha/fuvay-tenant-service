@@ -114,8 +114,7 @@ class BackendToolExecutor:
     ) -> dict:
         """Return active offerings for a category from real DB."""
         try:
-            from app.engines.admin_catalog.models import ServiceCategory
-            from app.engines.customer_flow.models import MasterOffering
+            from app.engines.admin_catalog.models import ServiceCategory, MasterOffering
 
             cat_q = select(ServiceCategory).where(
                 and_(
@@ -231,11 +230,11 @@ class BackendToolExecutor:
     ) -> dict:
         """Check if a service is available in a city using real geo zone data."""
         try:
-            from app.engines.geo.models import GeoZone
-            q = select(GeoZone).where(
+            from app.engines.serviceability.models import TenantServiceArea
+            q = select(TenantServiceArea).where(
                 and_(
-                    GeoZone.is_active == True,
-                    GeoZone.city.ilike(f"%{city}%"),
+                    TenantServiceArea.is_active == True,
+                    TenantServiceArea.city.ilike(f"%{city}%"),
                 )
             ).limit(5)
             rows = (await self.db.execute(q)).scalars().all()
@@ -243,7 +242,7 @@ class BackendToolExecutor:
                 return {
                     "city":      city,
                     "available": True,
-                    "zones":     [r.name for r in rows],
+                    "zones":     [r.zone_name or r.city for r in rows],
                     "message":   f"Great news! We serve {city}.",
                 }
             return {
