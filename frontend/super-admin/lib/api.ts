@@ -2703,11 +2703,26 @@ export const staffApi = {
     apiFetch<StaffList>(`/v1/auth/staff?tenant_id=${tenantId}&limit=${limit}`),
   adminList: (tenantId: string, limit = 100) =>
     apiFetch<AdminStaffList>(`/v1/auth/users?role=staff&tenant_id=${tenantId}&limit=${limit}`),
+  // MODULE-L5-43: "/v1/auth/admin/staff/invite" doesn't exist (real route is
+  // /v1/auth/staff/invite, no "admin" segment) -- fixed the URL, though this
+  // method has zero callers anywhere in this app and the real endpoint scopes
+  // to the CALLER's own tenant_id (not the tenantId argument), so it's not
+  // usable by a super_admin caller as written even now; left uncalled rather
+  // than redesigned.
   invite: (tenantId: string, data: InviteStaffPayload) =>
     apiFetch<{ invite_id: string; email: string; role: string; expires_at: string }>(
-      `/v1/auth/admin/staff/invite?tenant_id=${tenantId}`, { method: "POST", body: JSON.stringify(data) }),
-  deactivate: (userId: string) =>
-    apiFetch<{ message: string }>(`/v1/auth/admin/staff/${userId}/deactivate`, { method: "POST" }),
+      `/v1/auth/staff/invite?tenant_id=${tenantId}`, { method: "POST", body: JSON.stringify(data) }),
+  // MODULE-L5-43: "/v1/auth/admin/staff/{id}/deactivate" doesn't exist, AND
+  // the tenant-scoped /v1/auth/staff/{id}/deactivate (auth/router.py) always
+  // 403s for a super_admin caller -- it hard-requires the caller's OWN
+  // tenant_id, which a super_admin token never carries. The real super_admin-
+  // usable endpoint is /v1/admin/platform-users/{id}/deactivate
+  // (platform_users_router.py, require_platform_mutate), which takes a
+  // {reason, revoke_sessions} body (both default).
+  deactivate: (userId: string, reason?: string) =>
+    apiFetch<{ user_id: string; is_active: boolean; account_status: string; sessions_revoked: number; message: string }>(
+      `/v1/admin/platform-users/${userId}/deactivate`, {
+        method: "POST", body: JSON.stringify({ reason: reason ?? "Deactivated by admin", revoke_sessions: true }) }),
   resendInvite: (userId: string) =>
     apiFetch<void>(`/v1/auth/staff/${userId}/invite/resend`, { method: "POST" }),
 };
