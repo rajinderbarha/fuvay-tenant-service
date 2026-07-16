@@ -976,17 +976,30 @@ class PackageCommerceService:
         return PLATFORM_DEFAULT_COMMISSION_RATE, None
 
     async def _apply_storage_quota(self, tenant_id: uuid.UUID, quota_gb: Decimal) -> None:
+        # MODULE-L5-45: this only ever updated an existing TenantLimits row --
+        # no tenant in the platform has one (tenant onboarding never creates
+        # it), so this silently did nothing for every tenant, ever. Create
+        # the row (with model defaults for every other limit) if missing.
         limits = await self._get_tenant_limits(tenant_id)
         if limits:
             limits.max_storage_gb = int(quota_gb)
+        else:
+            self.db.add(TenantLimits(tenant_id=tenant_id, max_storage_gb=int(quota_gb)))
+        await self.db.flush()
 
     async def _apply_commission_rate(self, tenant_id: uuid.UUID, rate: Decimal) -> None:
+        # MODULE-L5-45: same missing-row bug as _apply_storage_quota above --
+        # no tenant has a TenantSettings row, so this always silently no-op'd.
         r = await self.db.execute(
             select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
         )
         settings = r.scalar_one_or_none()
+        rate_fraction = float(rate / Decimal("100"))
         if settings:
-            settings.commission_rate = float(rate / Decimal("100"))
+            settings.commission_rate = rate_fraction
+        else:
+            self.db.add(TenantSettings(tenant_id=tenant_id, commission_rate=rate_fraction))
+        await self.db.flush()
 
     async def _count_storage_used(self, tenant_id: uuid.UUID) -> float:
         try:
@@ -1597,6 +1610,23 @@ class PackageCommerceService:
         assignment.starts_at   = now
         assignment.expires_at  = expires_at
         await self.db.flush()
+
+        # MODULE-L5-45: storage quota and commission rate were only ever
+        # applied from the dead purchase_package()/TenantPackagePurchase path
+        # (unreachable since MODULE-L5-30 repointed the purchase endpoints to
+        # this assignment flow, and never live-reachable before that either
+        # since that table was never migrated). This is the real, live
+        # activation path and never called either helper -- every tenant
+        # approved through it kept whatever quota/commission they already had
+        # regardless of the package they actually bought. media/service.py's
+        # own docstring assumes this already happens ("tenant_limits.max_storage_gb,
+        # which the package engine writes on package approval").
+        if assignment.package_id:
+            pkg = await self._load_package(assignment.package_id)
+            if pkg.storage_quota_gb is not None:
+                await self._apply_storage_quota(tenant_id, pkg.storage_quota_gb)
+            if pkg.commission_rate is not None:
+                await self._apply_commission_rate(tenant_id, pkg.commission_rate)
 
         # Add spendable wallet credits if package includes them (ONLY after approval)
         credits_added = Decimal("0.00")
