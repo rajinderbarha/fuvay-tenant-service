@@ -70,12 +70,31 @@ export default function AdminMarketingAssetsPage() {
 
   return (
     <div style={{ padding: "24px 32px", maxWidth: 1280, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* MODULE-L5-44: investigated (same audit that found L5-39..43) whether
+          /v1/admin/marketing/assets* could be repointed to a real endpoint.
+          MarketingAsset's fields (campaign_id, admin_notes, rejection_reason,
+          publish_url, publish_proof_url) don't match any real table --
+          marketing_post_assets (the only "asset" table) is a child-of-post AI
+          generation record with no campaign_id/admin approval fields at all.
+          The real admin marketing system is entirely posts-based
+          (/v1/admin/marketing/posts, approve/reject/schedule/publish-now).
+          This asset/campaign-approval concept was superseded, not renamed --
+          rather than fabricate a fix, this page says so honestly. */}
+      <div style={{ padding: "10px 16px", borderRadius: 10, background: "rgba(217,119,6,0.08)",
+        border: "1px solid rgba(217,119,6,0.25)", fontSize: 13, color: "#b45309" }}>
+        This page is not available in this build. The "marketing asset"
+        approval workflow it assumes was superseded by the posts-based
+        marketing system (Campaigns → Posts, with approve/reject/schedule);
+        no backing table or endpoint for assets remains. Use the Posts admin
+        surface instead.
+      </div>
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)" }}>Marketing Assets</h1>
           <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>Review and approve provider marketing assets.</p>
         </div>
-        <Btn onClick={() => refetch()}>Refresh</Btn>
+        <Btn onClick={() => refetch()} disabled>Refresh</Btn>
       </div>
 
       <Card>

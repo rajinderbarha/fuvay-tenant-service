@@ -90,6 +90,24 @@ export default function AdminMarketingTemplatesPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* MODULE-L5-44: investigated (same audit that found L5-39..43) whether
+          /v1/admin/marketing/templates* could be repointed to a real
+          endpoint. MarketingTemplate's fields (template_key, channel,
+          title_template, body_template, variables, is_ai_enabled,
+          requires_admin_approval) don't match the real
+          marketing_content_templates table (vertical_key, post_type,
+          prompt_template, caption_structure, hashtag_set_json, cta) exposed
+          at /v1/admin/marketing/content-templates -- a genuinely different
+          template concept, not a rename. Rather than fabricate a fix, this
+          page says so honestly instead of a silently-broken CRUD UI. */}
+      <div style={{ padding: "10px 16px", borderRadius: 10, background: "rgba(217,119,6,0.08)",
+        border: "1px solid rgba(217,119,6,0.25)", fontSize: 13, color: "#b45309" }}>
+        This page is not available in this build. The template concept it
+        assumes (channel/title/body placeholders) does not match the real
+        content-templates system (prompt/caption/hashtag based); no backing
+        endpoint for this exact shape remains.
+      </div>
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Marketing Templates</h1>
@@ -99,7 +117,7 @@ export default function AdminMarketingTemplatesPage() {
           <Btn variant="ghost" onClick={() => setIncludeInactive(v => !v)}>
             {includeInactive ? "Hide Inactive" : "Show Inactive"}
           </Btn>
-          <Btn onClick={() => { setForm(BLANK_FORM); setCreateModal(true); }}>
+          <Btn onClick={() => { setForm(BLANK_FORM); setCreateModal(true); }} disabled>
             <Plus size={14} /> New Template
           </Btn>
         </div>
