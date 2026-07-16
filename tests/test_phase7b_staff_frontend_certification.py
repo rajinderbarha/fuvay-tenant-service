@@ -106,29 +106,37 @@ def test_activity_page_is_honest_gap_not_fabricated_data():
     assert "not yet available" in src
 
 
-# ── Job list/detail: forbidden runtime actions never wired to mutations ────
-FORBIDDEN_ACTIONS = [
-    "Start Job", "On The Way", "In Progress", "Complete Job",
-    "Collect Payment", "Confirm Payment", "Deduct Credits",
+# ── MODULE-L5-38: job list/detail runtime actions are now REAL and wired ───
+# This Phase 7B suite originally certified that these actions were shown as
+# disabled placeholders because nothing real existed to wire them to yet.
+# MODULE-L5-38 (part of the L5-29..46 sweep) found the real, live
+# home_service_assignment + execution engines already existed and repointed
+# these pages to them -- accept/reject/on-the-way/.../complete are now real,
+# live-verified mutations (see tests/test_module_l5_38_tenant_portal_staff_jobs.py),
+# not a "forbidden, not certified" shell. The premise of the old assertions
+# is obsolete; updated to assert the real lifecycle is wired instead of
+# asserting it's fictionally disabled.
+REAL_JOB_ACTIONS = [
+    "accept", "reject", "onTheWay", "reachedSite", "startInspection",
+    "completeInspection", "startService", "markWorkDone", "complete",
 ]
 
 
-def test_job_detail_shows_forbidden_actions_as_disabled_not_wired():
+def test_job_detail_wires_the_real_lifecycle_actions():
     src = STAFF_PAGES["jobs_detail"].read_text(encoding="utf-8")
-    for action in FORBIDDEN_ACTIONS:
-        assert action in src, f"expected {action} to be listed (disabled) in job detail shell"
-    assert "Not certified in this phase" in src
-    assert "disabled" in src
+    for action in REAL_JOB_ACTIONS:
+        assert action in src, f"expected real action {action} to be wired in job detail"
+    assert "Not certified in this phase" not in src
 
 
-def test_job_pages_have_no_payment_or_completion_mutation_calls():
+def test_job_pages_use_the_real_service_jobs_api():
     for name in ("jobs_list", "jobs_detail"):
-        src = STAFF_PAGES[name].read_text(encoding="utf-8")
-        assert "startJob" not in src
-        assert "completeJob" not in src
-        assert "collectPayment" not in src
-        assert "confirmPayment" not in src
-        assert "deductCredit" not in src
+        live = "\n".join(l for l in STAFF_PAGES[name].read_text(encoding="utf-8").splitlines()
+                         if not l.strip().startswith("//") and not l.strip().startswith("*"))
+        assert "homeServiceStaffJobsApi" in live
+        assert "staffSelfApi.getMyJobs" not in live
+        assert "staffSelfApi.getJobDetail" not in live
+        assert "deductCredit" not in live
 
 
 # ── Forbidden finance/wallet labels never appear in any staff page ─────────
