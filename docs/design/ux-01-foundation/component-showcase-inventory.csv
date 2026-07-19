@@ -1,0 +1,20 @@
+component,states_covered_in_showcase,tested_in_vitest
+Button,"primary,secondary,tertiary,ghost,destructive,link,loading,disabled",yes
+StatusBadge,"known statuses (active/pending/approved/rejected/cancelled/in_progress/expired),unknown fallback",yes
+Input,"default,required,error,success,disabled",no
+Textarea,"warning with long text",no
+Select,"default with placeholder",no
+Card,"with title+actions,padding=none",no
+Modal,"open,footer actions,long text body",yes
+Drawer,"open,detail content",no
+Tooltip,"hover/focus reveal",no
+Alert,"success,warning,danger with dismiss",no
+Toast,"fire via pushToast, auto-dismiss",no
+Skeleton,"text width,block radius",no
+Spinner,"default",no
+EmptyState,"title+description+primary action",yes
+ErrorState,"title+description+retry action",no
+PermissionDeniedState,"title+description",no
+PageShell/PageHeader/Section,"title+description+actions,wrapping",no
+DataTable,"populated+sortable,loading,empty,error,mobile-card fallback",no
+ThemeProvider/useTheme,"light default,toggle,persistence",yes

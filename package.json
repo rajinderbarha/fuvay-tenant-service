@@ -1,0 +1,10 @@
+{
+  "name": "serviceos-frontend-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend/packages/*",
+    "frontend/super-admin",
+    "frontend/tenant-portal"
+  ]
+}
