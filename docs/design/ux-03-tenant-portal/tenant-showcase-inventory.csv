@@ -1,0 +1,30 @@
+route,covers,states_covered
+/dev/ux-03,index of all examples,n/a
+/dev/ux-03/dashboard-pre-approval,pre-approval dashboard variant,default
+/dev/ux-03/dashboard-approved,approved-business dashboard variant,default
+/dev/ux-03/setup-wizard,first-time setup wizard,step navigation + blocked/optional steps
+/dev/ux-03/profile-under-review,business profile,under_review state
+/dev/ux-03/profile-changes-requested,business profile,changes_requested state with change list
+/dev/ux-03/team-list,team members list,searchable list, mixed statuses
+/dev/ux-03/team-staff-detail,TeamMemberDetail pattern,staff role
+/dev/ux-03/team-technician-detail,TeamMemberDetail pattern,technician role with extra sections
+/dev/ux-03/permission-editor,StaffPermission editor,granted/denied/not-granted states
+/dev/ux-03/booking-list,Booking (field_ops.Job) pipeline list,default
+/dev/ux-03/job-list,ServiceJob pipeline list,default
+/dev/ux-03/job-detail,Job Detail sections (overview/customer/assignment/quote/parts/finance/activity),default
+/dev/ux-03/dispatch-workspace,Assignment/Dispatch OperationalWorkspace,default
+/dev/ux-03/parts-approval,PartsRequest approval (ServiceJob-only),disabled-action mock state
+/dev/ux-03/package-credits,Package/Credit/Commission/Deposit separation,default
+/dev/ux-03/finance-history,Finance transaction ledger,default
+/dev/ux-03/security-deposit,Security Deposit status + history,held state
+/dev/ux-03/pricing,Pricing with platform min/max,below-minimum flagged row
+/dev/ux-03/service-areas,Service Areas coverage,covered/conflict states + readiness tag
+/dev/ux-03/customers-complaints,Customer list (masked PII) + Complaints,default
+/dev/ux-03/compliance,Compliance requirement/status/history,expiring_soon + under_review states
+/dev/ux-03/media,Media asset management,default (no signed URLs shown)
+/dev/ux-03/settings,Business settings with save-bar,dirty/unsaved-change state
+/dev/ux-03/audit-activity,Tenant-scoped audit feed,default
+/dev/ux-03/read-only-restricted,Read-only + permission-denied treatments,restricted + read-only
+
+## Not yet built this phase (deferred — see deferred-items.md)
+Multi-service setup wizard (dedicated route beyond the generic SetupWizard demo), Quote/Checklist dedicated showcase, dark-mode-specific route variants, mobile/tablet-specific route variants, long-localized-text route variant.
