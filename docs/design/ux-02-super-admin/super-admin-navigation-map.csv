@@ -1,0 +1,15 @@
+group,item_id,label,route,canonical_roles,readiness,mobile_behavior
+overview,ux02-dashboard,Dashboard,/admin/dashboard,"super_admin,admin_operations,admin_finance,admin_security,admin_readonly",MOCK_DESIGN_ONLY,collapsed_summary
+overview,ux02-search,Global Search,#,"super_admin,admin_operations,admin_finance,admin_security,admin_readonly",API_CONTRACT_REQUIRED,hidden_on_mobile
+tenants,ux02-tenant-list,Tenant List,/admin/tenants,"super_admin,admin_operations,admin_readonly",READ_ONLY_READY,full
+tenants,ux02-tenant-360,Tenant 360,/admin/tenants/[id],"super_admin,admin_operations,admin_readonly",MOCK_DESIGN_ONLY,collapsed_summary
+tenants,ux02-verification,Verification Review,/admin/onboarding/providers,"super_admin,admin_operations",MOCK_DESIGN_ONLY,collapsed_summary
+operations,ux02-ops-bookings,Bookings,/admin/bookings,"super_admin,admin_operations,admin_readonly",READ_ONLY_READY,full
+catalog,ux02-catalog,Catalog,/admin/catalog,"super_admin,admin_operations,admin_readonly",READ_ONLY_READY,full
+commerce,ux02-finance,Finance Summary,/admin/finance,"super_admin,admin_finance,admin_readonly",MOCK_DESIGN_ONLY,collapsed_summary
+trust,ux02-compliance-list,Compliance Cases,/admin/compliance,"super_admin,admin_operations,admin_security,admin_readonly",MOCK_DESIGN_ONLY,full
+trust,ux02-compliance-detail,Compliance Case Detail,/admin/compliance/[id],"super_admin,admin_operations,admin_security",MOCK_DESIGN_ONLY,collapsed_summary
+security,ux02-security-list,Security Observations,/admin/security,"super_admin,admin_security,admin_readonly",SECURITY_CONTRACT_PENDING,full
+platform,ux02-platform-settings,Platform Settings,/admin/settings,super_admin,PRODUCT_DECISION_REQUIRED,collapsed_summary
+audit,ux02-audit-explorer,Audit Explorer,/admin/audit-logs,"super_admin,admin_security,admin_readonly",MOCK_DESIGN_ONLY,collapsed_summary
+support,ux02-support,Refund Requests,/admin/refund-requests,"super_admin,admin_operations,admin_finance",PRODUCTION_READY,full

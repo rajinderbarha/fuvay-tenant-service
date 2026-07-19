@@ -1,0 +1,9 @@
+canonical_area,duplicate_or_satellite_areas,recommended_action
+brands,"brand-requests, types-brands, service-setup/brands",MERGE into a single Brands area with tabs for requests/types
+checklists,checklist-templates,MERGE into one Checklists area
+pricing,"pricing-rules, pricing-tiers",MERGE into Pricing area with sub-tabs
+reviews,"rating-summaries, review-flags, review-policies, review-replies",MERGE into Reviews area with sub-tabs (Flags, Policies, Replies, Ratings)
+analytics,"intelligence, reports",MERGE into a single Analytics & Reports area
+finance,financial-events,MERGE financial-events as a Finance sub-tab
+catalog,"catalog-module, master-services, service-groups",MERGE into Catalog area with sub-tabs
+workflows,workflow-templates,MERGE templates as a Workflows sub-tab

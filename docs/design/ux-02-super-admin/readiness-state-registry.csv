@@ -1,0 +1,22 @@
+item,type,readiness,notes
+Role Dashboard composition,page,MOCK_DESIGN_ONLY,fixture data + recharts; no live metrics API wired
+Global Search / Command Palette,feature,API_CONTRACT_REQUIRED,no unified search endpoint exists yet
+Tenant List,page,READ_ONLY_READY,admin_catalog/tenant_service supports read today; bulk actions are design-only
+Tenant 360,page,MOCK_DESIGN_ONLY,composed from multiple engines; several sections have no confirmed endpoint
+Verification Review Workspace,page,MOCK_DESIGN_ONLY,onboarding engine exists but document-preview contract unconfirmed
+Compliance Case List,page,MOCK_DESIGN_ONLY,compliance/enterprise_service exists; UI contract not yet mapped
+Compliance Case Detail + resolution workflow,page,MOCK_DESIGN_ONLY,resolution workflow has no confirmed write endpoint
+Security Observations List,page,SECURITY_CONTRACT_PENDING,detection pipeline coverage is partial; status language must stay conservative
+Audit Explorer,page,MOCK_DESIGN_ONLY,audit logging exists for some engines only; not a unified feed
+Finance Summary,page,MOCK_DESIGN_ONLY,must not expose payout/withdrawal UI (canonical rule)
+Platform Configuration pattern,page,PRODUCT_DECISION_REQUIRED,no decision yet on which settings get a real write path
+Bulk action pattern,pattern,MOCK_DESIGN_ONLY,impact preview/confirmation only, no mutation wired
+Filter + saved view system,pattern,MOCK_DESIGN_ONLY,saved views are not persisted anywhere
+Enterprise list page pattern,pattern,READ_ONLY_READY,reusable shell; readiness of each instance depends on its data source
+Enterprise detail page pattern,pattern,READ_ONLY_READY,reusable shell; same caveat
+Review/approval workspace pattern,pattern,MOCK_DESIGN_ONLY,decision buttons do not call a backend endpoint
+Refund Requests (existing route),page,PRODUCTION_READY,backed by complaints/refund_service per recent MODULE-L5 work
+Trust & Quality console (existing route),page,PRODUCTION_READY,built and live-verified in MODULE-L5-12
+Provider Wallets (existing route),page,PRODUCT_DECISION_REQUIRED,name suggests payout concept; needs canonical-rule review before redesign
+Marketing area (existing route),page,PRODUCT_DECISION_REQUIRED,prior audit (MODULE-L5-44) found genuine feature gaps, not just naming
+Dev showcase routes (/dev/ux-02/*),page,NOT_APPLICABLE,dev-only, never shown to real users, no readiness claim needed
