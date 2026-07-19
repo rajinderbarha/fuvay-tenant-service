@@ -1,12 +1,42 @@
 # Known Limitations
 
-1. **`npm install` was severely network-flaky in this sandbox** — repeated
-   `ERR_SSL_CIPHER_OPERATION_FAILED` errors against registry.npmjs.org
-   (an OpenSSL/Node TLS issue unrelated to this codebase). Installs
-   eventually succeeded via repeated retries; see `build-report.md` and
-   `frontend-test-report.md` for what ran to completion. If this recurs for
-   the next engineer, retrying `npm install --workspaces
-   --include-workspace-root` a handful of times has reliably worked.
+1. **`npm install` could not be completed in this sandbox after ~35+ retry
+   attempts spanning roughly an hour of wall-clock time.** Two distinct,
+   compounding failures were observed on essentially every attempt:
+   - `ERR_SSL_CIPHER_OPERATION_FAILED` /
+     `Provider routines:ossl_gcm_stream_update:cipher operation failed`
+     (`ciphercommon_gcm.c:325`) while streaming large package tarballs
+     (`next`, `vitest`, `jsdom`, `@testing-library/*`) from
+     `registry.npmjs.org` — an OpenSSL 3.x/Node GCM-cipher streaming bug,
+     unrelated to this codebase, that corrupts big HTTPS response bodies
+     partway through.
+   - `EPERM`/`ENOTEMPTY` file-lock errors (`operation not permitted,
+     unlink/rmdir ...`) while npm tried to clean up the partial extraction
+     from the previous failed attempt — consistent with an active
+     file-system scanner (antivirus/Defender) holding a lock on
+     newly-written large `.js` files in `node_modules/next/dist/**` at the
+     exact moment npm tries to delete/replace them. One file
+     (`app-page-turbo-experimental.runtime.dev.js`) was observed locked
+     even against a direct `rm`, confirming this isn't npm-internal.
+   - Net effect: progress was real but non-monotonic — `next` fully
+     installed for `tenant-portal` at one point, then got corrupted again
+     on a later attempt when the SSL/lock failure hit mid-extraction on a
+     shared/hoisted dependency. As of the last attempt, `node_modules/react`,
+     `node_modules/vitest`, `node_modules/typescript`, and the
+     `@serviceos/design-system` workspace symlinks were still missing at
+     the point this was written up — `tsc`, `vitest run`, and `next build`
+     could not be run for real. See `frontend-test-report.md` and
+     `build-report.md` for the concrete "not run" status.
+   - What was tried: plain retry (~15x), `--no-audit --no-fund`,
+     `--prefer-offline`, `--network-concurrency=1`, `--fetch-retries`/
+     `--fetch-retry-mintimeout` tuning, `npm cache clean --force` (itself
+     failed with the same EPERM pattern), manually deleting the locked
+     file/directory and retrying. None produced a clean, complete install.
+   - If this recurs: this looks like an environment/sandbox issue (AV +
+     Node OpenSSL interaction on Windows), not something fixable from the
+     repo. Retrying outside this sandbox, or with real-time AV scanning
+     exclusions for the repo's `node_modules`, would be the next thing to
+     try.
 2. **Only a partial component test suite** — 6 test files covering tokens,
    theme persistence, Button, Modal focus-trap, StatusBadge fallback, and
    EmptyState. Input/Select/Textarea/Card/Drawer/Tooltip/Alert/Toast/

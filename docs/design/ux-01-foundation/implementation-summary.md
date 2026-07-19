@@ -31,5 +31,9 @@ and the 12 "may-skip" detail-spec docs (content folded into the specs kept).
 See `deferred-items.md`.
 
 ## Final status
-**DESIGN_FOUNDATION_PARTIAL** — see `approval-gate.md` for the honest
-breakdown of what is proven vs. best-effort.
+**FRONTEND_BUILD_BLOCKED** — all code/docs are complete, but `npm install`
+never reached a stable state in this sandbox after 35+ retries (OpenSSL
+GCM cipher-stream failures + antivirus file-locking on large package
+extraction), so `tsc`/`vitest run`/`next build` could not be proven to pass.
+See `approval-gate.md`, `build-report.md`, `frontend-test-report.md`, and
+`known-limitations.md` for full detail.
