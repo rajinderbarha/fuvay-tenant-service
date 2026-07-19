@@ -10,9 +10,17 @@ import Link from "next/link";
 const EXAMPLES: { href: string; label: string }[] = [
   { href: "/dev/ux-04/command-center", label: "Operations Command Center (role-sensitive action queue)" },
   { href: "/dev/ux-04/booking-list", label: "Booking + Job List (pipeline-aware, combined view)" },
+  { href: "/dev/ux-04/booking-detail", label: "Booking Detail (both pipelines, no field conversion)" },
   { href: "/dev/ux-04/job-detail", label: "Job Detail Workspace (ServiceJob — status/quote/checklist/parts/credit/comms)" },
+  { href: "/dev/ux-04/status-transition", label: "Status Transition Workspace (standalone)" },
   { href: "/dev/ux-04/assignment-workspace", label: "Assignment / Dispatch Workspace" },
   { href: "/dev/ux-04/parts-approval", label: "Parts Request Approval (ServiceJob-only, provider-side)" },
+  { href: "/dev/ux-04/complaints", label: "Complaint Case + Dispute Presentation" },
+  { href: "/dev/ux-04/media", label: "Operational Media / Evidence Gallery" },
+  { href: "/dev/ux-04/sla-risk", label: "SLA / Risk States Gallery" },
+  { href: "/dev/ux-04/operational-exceptions", label: "Operational Exception Presentation" },
+  { href: "/dev/ux-04/staff-home", label: "Staff Operational Home (canonical staff role)" },
+  { href: "/dev/ux-04/read-only", label: "Read-Only / Restricted Action States" },
 ];
 
 export default function Ux04ShowcaseIndex() {
