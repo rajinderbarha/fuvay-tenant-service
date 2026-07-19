@@ -4,7 +4,7 @@ import React, { useId, useState } from "react";
 
 export interface TooltipProps {
   label: string;
-  children: React.ReactElement;
+  children: React.ReactElement<{ "aria-describedby"?: string }>;
   side?: "top" | "bottom";
 }
 

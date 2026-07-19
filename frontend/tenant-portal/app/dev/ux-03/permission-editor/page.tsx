@@ -1,3 +1,4 @@
+"use client";
 import { PageShell, PageHeader } from "@serviceos/design-system";
 import { PermissionEditor } from "../../../../components/ux03/widgets/PermissionEditor";
 import { FIXTURE_TEAM_MEMBERS } from "../../../../lib/ux03/fixtures";
