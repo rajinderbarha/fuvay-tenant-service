@@ -1,0 +1,85 @@
+route,inferred_purpose,nav_group_today,duplicate_of,classification,notes
+/account,account landing,more,,KEEP_AND_REDESIGN,Consolidate under Setup and Profile in UX03 IA
+/account/credits,customer-style credits view under tenant account,more,/finance/usage-credit-ledger,MERGE,Naming overlaps with tenant finance credit ledger; verify which is canonical before merging
+/account/privacy,DPDP privacy requests,more,,KEEP_AND_REDESIGN,
+/account/privacy/requests,privacy request list,more,,KEEP_AND_REDESIGN,
+/account/privacy/requests/[id],privacy request detail,more,,KEEP_AND_REDESIGN,
+/activity,tenant activity feed,more,,KEEP_AND_REDESIGN,Maps to UX03 Audit Activity group; must stay tenant-scoped
+/ai-chat,AI chat assistant,(unlisted in nav-config),,DEVELOPMENT_ONLY,Not present in TENANT_NAV_GROUPS; verify if shipped feature or dev tool
+/analytics,analytics landing,insights,,KEEP_AND_REDESIGN,
+/analytics/alerts,analytics alerts,insights,,KEEP_AND_REDESIGN,
+/analytics/complaints,complaints analytics,insights,/reviews /provider/complaints,SPLIT,Analytics view vs operational complaint list — keep distinct, cross-link
+/analytics/financial,financial analytics,insights,/finance,SPLIT,Analytics/insight view vs finance operational pages — keep distinct
+/analytics/quality,quality analytics,insights,,KEEP_AND_REDESIGN,
+/analytics/staff,staff analytics,insights,/provider/staff,SPLIT,Analytics view vs team roster — keep distinct
+/appointments,appointments list,operations,/bookings /service-jobs,PRODUCT_DECISION_REQUIRED,Third booking-shaped route; must confirm which pipeline (or none) this maps to before any merge
+/bookings,booking list (Booking->field_ops.Job pipeline),operations,,KEEP_AND_REDESIGN,Canonical booking-pipeline surface
+/bookings/[id],booking detail,operations,,KEEP_AND_REDESIGN,
+/catalog,service catalog (short path),(unlisted),/provider/services /services,MERGE,Three catalog-shaped routes; pick one canonical + redirect others
+/chat,tenant chat,engagement,/provider/chat,MERGE,Duplicate chat surfaces
+/customers,customer list,engagement,,KEEP_AND_REDESIGN,
+/customers/[id],customer detail,engagement,,KEEP_AND_REDESIGN,
+/dashboard,tenant dashboard,overview,,KEEP_AND_REDESIGN,Target for UX03 configurable pre-approval/approved dashboard
+/dispatch,dispatch/assignment,operations,,KEEP_AND_REDESIGN,Target for UX03 OperationalWorkspace pattern
+/documents,document library,more,,KEEP_AND_REDESIGN,
+/finance,finance landing,finance,,KEEP_AND_REDESIGN,
+/finance/package,package + credit view,finance,/packages /account/credits,MERGE,Confirm single canonical package/credit surface
+/finance/security-deposit,security deposit,finance,,KEEP_AND_REDESIGN,Must stay visually separate from credit/package
+/finance/usage-credit-ledger,credit transaction history,finance,,KEEP_AND_REDESIGN,
+/insights,insights landing,insights,/analytics,MERGE,Overlaps with /analytics landing; confirm canonical
+/inventory,inventory/parts,(unlisted),/provider/service-options,PRODUCT_DECISION_REQUIRED,Verify relationship to PartsRequest/ServiceJob model
+/jobs,job list (short path),operations,/service-jobs,MERGE,Two job-list routes; TENANT_PATH_TO_NAV_ID already maps both to same nav id — confirm one is canonical
+/jobs/[id],job detail (short path),operations,/service-jobs/[id],MERGE,
+/marketing,marketing landing,engagement,/provider/marketing,MERGE,
+/marketing/campaign-impact,campaign impact,engagement,,KEEP_AND_REDESIGN,Out of UX-03 core scope (not in required nav groups) — DEVELOPMENT_ONLY pending product confirmation
+/marketing/visibility,visibility settings,engagement,,DEVELOPMENT_ONLY,Same as above
+/media,media management,(unlisted),,KEEP_AND_REDESIGN,Target for UX03 Media group
+/notifications,notifications,more,/provider/notifications /staff/notifications,MERGE,Three notification surfaces across tenant/provider/staff namespaces
+/onboarding-status,onboarding status,more,/provider/status,MERGE,
+/packages,package browsing,(unlisted),/finance/package,MERGE,
+/profile,business profile,setup,,KEEP_AND_REDESIGN,Target for UX03 Business Profile page
+/provider/availability,technician/team availability,setup,,KEEP_AND_REDESIGN,
+/provider/chat,provider chat,engagement,/chat,MERGE,
+/provider/complaints,complaint list,(unlisted),/reviews,MERGE,
+/provider/complaints/[complaint_id],complaint detail,(unlisted),,KEEP_AND_REDESIGN,
+/provider/compliance,compliance,more,,KEEP_AND_REDESIGN,Target for UX03 Compliance group
+/provider/compliance/requests/[id],compliance submission detail,more,,KEEP_AND_REDESIGN,
+/provider/customer-price-preview,price preview,(unlisted),/provider/pricing,SPLIT,Customer-facing preview vs tenant pricing editor — keep distinct
+/provider/marketing,provider marketing,(unlisted),/marketing,MERGE,
+/provider/notifications,provider notifications,(unlisted),/notifications,MERGE,
+/provider/offerings,service offerings,(unlisted),/provider/services /catalog,MERGE,
+/provider/pricing,pricing management,(unlisted),,KEEP_AND_REDESIGN,Target for UX03 Pricing page — platform min/max must stay visible
+/provider/refund-requests,refund requests,(unlisted),,KEEP_AND_REDESIGN,Provider-side proposal only — no dispute-adjudication authority
+/provider/reviews,reviews,(unlisted),/reviews,MERGE,
+/provider/reviews/staff-summary,staff review summary,(unlisted),/analytics/staff,SPLIT,
+/provider/reviews/summary,review summary,(unlisted),,KEEP_AND_REDESIGN,
+/provider/rework-requests,rework requests,(unlisted),,KEEP_AND_REDESIGN,
+/provider/service-areas,service areas,setup,/service-areas /setup/service-coverage /provider/service-coverage,MERGE,Four service-area-shaped routes; frozen-slice geo authorization applies to all
+/provider/service-coverage,service coverage,setup,,MERGE,see above
+/provider/service-invoices,service invoices,finance,,KEEP_AND_REDESIGN,No payout/withdrawal UI — presentation only
+/provider/service-options,service options,(unlisted),/inventory,PRODUCT_DECISION_REQUIRED,
+/provider/service-setup,service setup wizard,(unlisted),/tenant/setup/services,MERGE,Target for UX03 multi-service setup wizard pattern
+/provider/services,service catalog,(unlisted),/catalog /services,MERGE,
+/provider/staff,staff + technician roster,team,/staff /users,MERGE,Canonical candidate for UX03 unified Team Members list
+/provider/status,setup checklist,setup,/onboarding-status,MERGE,
+/provider/subscription-status,subscription/package status,(unlisted),/finance/package,MERGE,
+/provider/team-members,team members (alt path),(unlisted),/provider/staff,MERGE,Same concept as /provider/staff under a different path
+/provider/wallet,wallet,(unlisted),/wallet /finance/usage-credit-ledger,PRODUCT_DECISION_REQUIRED,"""Wallet"" naming risks implying payout capability the platform does not provide — needs product review, not just a merge"
+/reports,reports,insights,,KEEP_AND_REDESIGN,
+/reviews,customer reviews/complaints,engagement,/provider/reviews /provider/complaints,MERGE,
+/service-areas,service areas (short path),(unlisted),/provider/service-areas,MERGE,
+/service-jobs,ServiceJob list,operations,/jobs,MERGE,Canonical ServiceJob-pipeline surface — must not merge with Booking pipeline
+/service-jobs/[id],ServiceJob detail,operations,/jobs/[id],MERGE,
+/service-jobs/[id]/execution,job execution view,operations,,KEEP_AND_REDESIGN,
+/service-jobs/[id]/quotes,job quotes,operations,,KEEP_AND_REDESIGN,Target for UX03 Quote pattern
+/services,service catalog (short path),(unlisted),/catalog /provider/services,MERGE,
+/settings,tenant settings,more,,KEEP_AND_REDESIGN,Target for UX03 save-bar settings pattern
+/settings/engines,engine-level settings,more,,DEVELOPMENT_ONLY,Verify if internal/dev-only or real tenant-facing settings
+/setup/checklist,setup checklist,(unlisted),/provider/status,MERGE,
+/setup/service-coverage,service coverage setup,(unlisted),/provider/service-coverage,MERGE,
+/staff,staff roster (short path),(unlisted),/provider/staff,MERGE,
+/staff/[id],staff detail,(unlisted),,KEEP_AND_REDESIGN,Target for UX03 TeamMemberDetail pattern
+/tenant/setup/availability,availability setup step,(unlisted),/provider/availability,MERGE,
+/tenant/setup/services,services setup step,(unlisted),/provider/service-setup,MERGE,
+/users,user list,(unlisted),/provider/staff /staff,MERGE,
+/wallet,wallet (short path),(unlisted),/provider/wallet,PRODUCT_DECISION_REQUIRED,see /provider/wallet note

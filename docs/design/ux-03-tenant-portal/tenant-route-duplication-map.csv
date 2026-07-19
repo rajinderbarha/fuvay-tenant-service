@@ -1,0 +1,13 @@
+concept,duplicate_routes,recommended_canonical,note
+Job / Service Job list+detail,"/jobs, /jobs/[id], /service-jobs, /service-jobs/[id]",/service-jobs (+[id]),TENANT_PATH_TO_NAV_ID already aliases /jobs to the same nav id as /service-jobs
+Service catalog,"/catalog, /services, /provider/services, /provider/offerings",/provider/services,nav-config's TENANT_PATH_TO_NAV_ID already routes catalog/inventory/media toward provider-services
+Service areas / coverage,"/service-areas, /provider/service-areas, /provider/service-coverage, /setup/service-coverage",/provider/service-areas,frozen-slice geo authorization applies uniformly regardless of which route is canonical
+Staff/team roster,"/staff, /users, /provider/staff, /provider/team-members",/provider/staff,already the canonical nav-config target ("provider-staff")
+Package/credit,"/packages, /finance/package, /provider/subscription-status, /account/credits",/finance/package,keep security deposit and commission separate even after consolidation
+Wallet,"/wallet, /provider/wallet",PRODUCT_DECISION_REQUIRED,naming itself risks implying payout/settlement capability the platform does not offer — needs a product decision, not a silent rename
+Chat,"/chat, /provider/chat",/chat,
+Notifications,"/notifications, /provider/notifications, /staff/notifications (staff app namespace)",/notifications,staff app namespace is a distinct portal area, not merged here
+Reviews/complaints,"/reviews, /provider/reviews, /provider/complaints",/reviews (list) + /provider/complaints/[complaint_id] (detail),
+Setup checklist/status,"/provider/status, /onboarding-status, /setup/checklist",/provider/status,
+Service setup wizard,"/provider/service-setup, /tenant/setup/services",/provider/service-setup,target for the UX03 multi-service SetupWizard pattern
+Availability setup,"/provider/availability, /tenant/setup/availability",/provider/availability,
