@@ -1,0 +1,38 @@
+area,action,readiness,note
+Dashboard,view pre-approval snapshot,MOCK_DESIGN_ONLY,fixture-backed
+Dashboard,view approved-business snapshot,MOCK_DESIGN_ONLY,fixture-backed; recharts widgets are illustrative
+Setup Wizard,save/resume draft,MOCK_DESIGN_ONLY,no backend draft-persistence endpoint confirmed
+Setup Wizard,submit for review,API_CONTRACT_REQUIRED,admin_catalog/tenant_service onboarding endpoint exists server-side but full contract not verified end-to-end this phase
+Business Profile,view sections,READ_ONLY_READY,admin_catalog/tenant_service backs real tenant fields
+Business Profile,edit sections,API_CONTRACT_REQUIRED,per-section mutation contracts not individually verified
+Team,list members,READ_ONLY_READY,auth/service staff listing
+Team,invite member,API_CONTRACT_REQUIRED,
+Team,edit StaffPermission,API_CONTRACT_REQUIRED,real table (StaffPermission) exists; UI mutation flow not wired this phase
+Service Catalog,view services,READ_ONLY_READY,catalog engine
+Service Catalog,multi-service setup wizard,MOCK_DESIGN_ONLY,
+Pricing,view platform min/max + tenant price,MOCK_DESIGN_ONLY,fixture-backed
+Pricing,edit tenant price,API_CONTRACT_REQUIRED,
+Service Areas,view coverage,READ_ONLY_READY,
+Service Areas,mutate zones,PRODUCT_DECISION_REQUIRED,geo authorization only closed for a frozen slice per task brief
+Bookings,view list/detail,READ_ONLY_READY,booking engine (field_ops.Job pipeline)
+Bookings,cancel/reschedule,PRODUCT_DECISION_REQUIRED,canonical pipeline resolution explicitly unresolved per task brief
+Jobs,view list/detail,READ_ONLY_READY,field_ops engine (ServiceJob pipeline)
+Jobs,cancel/reschedule,PRODUCT_DECISION_REQUIRED,same as above
+Dispatch,view technician availability,MOCK_DESIGN_ONLY,
+Dispatch,assign/reassign,API_CONTRACT_REQUIRED,field_ops:jobs:assign permission exists; UI mutation not wired
+Quotes,view,MOCK_DESIGN_ONLY,
+Quotes,create/edit,API_CONTRACT_REQUIRED,field_ops:quotes:manage permission exists
+Parts Requests,view,MOCK_DESIGN_ONLY,
+Parts Requests,approve/reject/mark-installed,API_CONTRACT_REQUIRED,provider-side only; inventory:items:write permission exists
+Package/Credits,view balance,READ_ONLY_READY,finance_hub
+Finance History,view transactions,READ_ONLY_READY,finance_hub ledger
+Security Deposit,view status/history,READ_ONLY_READY,finance_hub deposit
+Customers,view list/detail (masked PII),READ_ONLY_READY,
+Complaints,view + propose response,READ_ONLY_READY,provider proposal only, no adjudication authority
+Compliance,view requirement/status,READ_ONLY_READY,
+Compliance,submit document,API_CONTRACT_REQUIRED,
+Media,view assets,READ_ONLY_READY,storage keys/signed URLs never exposed
+Media,upload/replace,API_CONTRACT_REQUIRED,N01 media-integrity backlog open (see known-limitations.md)
+Settings,view sections,READ_ONLY_READY,
+Settings,edit sections,PRODUCT_DECISION_REQUIRED,varies per section; not individually confirmed
+Audit Activity,view tenant-scoped feed,MOCK_DESIGN_ONLY,audit logging has partial coverage per UX-02 findings
