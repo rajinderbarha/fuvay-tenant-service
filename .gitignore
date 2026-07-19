@@ -55,3 +55,4 @@ db/*.tmp
 db/*.log.txt
 db/pg_log.txt
 db/pglog.txt
+frontend/super-admin/tsconfig.tsbuildinfo
