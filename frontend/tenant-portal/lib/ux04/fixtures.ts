@@ -20,6 +20,7 @@ import type {
   DisputeView,
   OperationalExceptionView,
   SLAStateView,
+  InspectionView,
 } from "./types";
 import { FIXTURE_COMPLAINTS, FIXTURE_MEDIA_ASSETS } from "../ux03/fixtures";
 
@@ -355,3 +356,15 @@ export const slaGalleryFixture: SLAStateView[] = [
   { state: "waiting_on_platform", label: "Waiting on platform", deadlineAt: null, explanation: "Dispute under platform review." },
   { state: "product_decision_blocked", label: "Product decision blocked", deadlineAt: null, explanation: "No confirmed SLA rule exists for this workflow yet." },
 ];
+
+export const inspectionFixture: InspectionView = {
+  serviceJobId: "sj_7001",
+  customerReportedIssue: "Washing machine drains slowly and makes a grinding noise on spin cycle.",
+  findings: "Drain pump bearing worn; debris lodged in impeller housing.",
+  observations: ["Grinding noise confirmed on spin cycle", "Drain time approx. 3x longer than expected"],
+  photos: [],
+  recommendedWork: ["Replace drain pump", "Clear impeller housing debris"],
+  requiredParts: [{ name: "Drain pump (OEM)", qty: 1 }],
+  quoteRequired: true,
+  checklistStatus: "in_progress",
+};

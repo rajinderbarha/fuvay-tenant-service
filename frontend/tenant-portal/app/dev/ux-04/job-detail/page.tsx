@@ -8,6 +8,7 @@ import { ChecklistProgress } from "../../../../components/ux04/ChecklistProgress
 import { PartsRequestSummary } from "../../../../components/ux04/PartsRequestSummary";
 import { CreditCommissionSummary } from "../../../../components/ux04/CreditCommissionSummary";
 import { CustomerCommunicationTimeline } from "../../../../components/ux04/CustomerCommunicationTimeline";
+import { InvoicePaymentSummary } from "../../../../components/ux04/InvoicePaymentSummary";
 import { jobDetailFixture } from "../../../../lib/ux04/fixtures";
 
 const SERVICE_JOB_STATUSES = ["quoted", "scheduled", "in_progress", "awaiting_parts", "completed"];
@@ -53,6 +54,11 @@ export default function JobDetailWorkspace() {
       <section style={{ marginTop: "1.5rem" }}>
         <h2 style={{ fontSize: "0.9375rem" }}>Parts requests</h2>
         {v.partsRequests.map((pr) => <PartsRequestSummary key={pr.request.id} view={pr} />)}
+      </section>
+
+      <section style={{ marginTop: "1.5rem" }}>
+        <h2 style={{ fontSize: "0.9375rem" }}>Invoice / on-site payment</h2>
+        {v.invoice && <InvoicePaymentSummary invoice={v.invoice} />}
       </section>
 
       <section style={{ marginTop: "1.5rem" }}>
