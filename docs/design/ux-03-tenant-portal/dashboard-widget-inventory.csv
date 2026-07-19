@@ -1,0 +1,11 @@
+widget,variant,data_source,implemented_this_phase
+Profile completion %,pre-approval,TenantProfileFixture.completionPct,yes (bar)
+Document status,pre-approval,fixture note,yes (static text)
+Package/deposit readiness,pre-approval,fixture note,yes (static text)
+Review status banner,both,ReviewStateBanner,yes
+Business snapshot,approved,TenantProfileFixture,yes
+Action center,approved,PartsRequest + Complaint counts,yes (static text)
+Operations overview chart,approved,ServiceJobFixture status counts,no — noted as recharts TODO, not rendered as a live chart this phase
+Finance overview,approved,PackageCreditFixture + SecurityDepositFixture,yes
+Business health,approved,fixture note (on-time %/rating),yes (static text)
+Recent activity,approved,AuditEventFixture,yes
