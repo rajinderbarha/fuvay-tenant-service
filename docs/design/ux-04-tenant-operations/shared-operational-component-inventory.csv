@@ -1,0 +1,18 @@
+component,file,status,used_in
+SLAIndicator,components/ux04/SLAIndicator.tsx,BUILT,"command-center, booking-list, job-detail"
+JobStatusTimeline,components/ux04/JobStatusTimeline.tsx,BUILT,job-detail
+OperationalActionQueue,components/ux04/OperationalActionQueue.tsx,BUILT,command-center
+AssignmentCandidateCard,components/ux04/AssignmentCandidateCard.tsx,BUILT,assignment-workspace
+QuoteSummary,components/ux04/QuoteSummary.tsx,BUILT,job-detail
+ChecklistProgress,components/ux04/ChecklistProgress.tsx,BUILT,job-detail
+PartsRequestSummary,components/ux04/PartsRequestSummary.tsx,BUILT,"job-detail, parts-approval"
+CreditCommissionSummary,components/ux04/CreditCommissionSummary.tsx,BUILT,job-detail
+CustomerCommunicationTimeline,components/ux04/CustomerCommunicationTimeline.tsx,BUILT,job-detail
+OperationalRiskBanner,components/ux04/OperationalRiskBanner.tsx,BUILT_NOT_EMBEDDED,none — component exists, no page wires it in yet
+PipelineBadge,components/ux03/widgets/PipelineBadge.tsx,REUSED_FROM_UX03,"booking-list, job-detail"
+NextActionPanel,not built,DEFERRED,n/a
+EntityLinkCard,not built,DEFERRED,n/a — EntityLinkView type exists, no card component
+ActivityTimeline,not built,DEFERRED,n/a — AuditEventFixture[] reused raw in job-detail fixture, no dedicated component
+EvidenceGallery,not built,DEFERRED,n/a
+WorkflowReadinessState,not built,DEFERRED,n/a — ReadinessTag (UX-03) covers the dev-only variant; no production-facing equivalent built
+PaymentRecordSummary,not built,DEFERRED,n/a — InvoiceView type exists, no component

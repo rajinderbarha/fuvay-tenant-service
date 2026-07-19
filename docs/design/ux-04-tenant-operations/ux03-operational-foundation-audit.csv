@@ -1,0 +1,18 @@
+route_or_component,area,classification,notes
+app/dev/ux-03/booking-list,booking,REUSE,combined into UX-04 booking-list showcase pattern
+app/dev/ux-03/job-list,job,REUSE,pattern reused for UX-04 job rows in booking-list showcase
+app/dev/ux-03/job-detail,job detail,EXTEND,UX-04 job-detail workspace extends this with SLA/status-transition/comms sections
+app/dev/ux-03/dispatch-workspace,assignment,EXTEND,UX-04 assignment-workspace adds workload/skill/brand/warnings fields
+app/dev/ux-03/parts-approval,parts,EXTEND,UX-04 parts-approval adds ActionPermissionView-driven approve/reject gating
+app/dev/ux-03/package-credits,credit/commission,EXTEND,UX-04 CreditCommissionSummary adds per-job estimate + duplicate-deduction guard note
+app/dev/ux-03/finance-history,finance,DEVELOPMENT_ONLY,not rebuilt this pass; fixtures reusable for a future UX-04 finance history route
+app/dev/ux-03/security-deposit,deposit,DEVELOPMENT_ONLY,not rebuilt this pass; kept separate from credit/commission per hard constraint
+app/dev/ux-03/customers-complaints,complaints,DEVELOPMENT_ONLY,ComplaintDetailView/DisputeView typed but no UX-04 showcase route built this pass
+app/dev/ux-03/compliance,compliance,DEVELOPMENT_ONLY,ComplianceSubmissionView typed but no UX-04 showcase route built this pass
+app/dev/ux-03/media,media,DEVELOPMENT_ONLY,MediaAssetFixture reused directly in JobDetailView.media; no dedicated gallery route built this pass
+app/dev/ux-03/audit-activity,activity,REUSE,AuditEventFixture reused directly in JobDetailView.activity
+components/ux03/widgets/PipelineBadge,pipeline identity,REUSE,used unmodified in every UX-04 booking/job row
+components/ux03/widgets/ReadinessTag,dev metadata,REUSE,available for UX-04 showcase pages; not yet added to the 6 built routes
+components/ux03/patterns/TenantDetailPage,detail layout,REFACTOR_CANDIDATE,UX-04 job-detail workspace uses a bespoke sticky layout instead — PRODUCT_DECISION_REQUIRED whether to converge
+booking exception resolution engine,exceptions,PRODUCT_DECISION_REQUIRED,stays non-production per hard constraint; OperationalRiskBanner is explanation-only
+cancel/reschedule action,booking+job,PRODUCT_DECISION_REQUIRED,remains unresolved_mock_only in all UX-04 fixtures
