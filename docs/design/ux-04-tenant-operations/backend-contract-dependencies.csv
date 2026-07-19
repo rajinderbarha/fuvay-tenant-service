@@ -1,0 +1,11 @@
+view_model,depends_on_backend,confirmed_this_pass,notes
+JobListItemView/JobDetailView,ServiceJob status enum,NO,job-list-specification.md flags the literal enum as unverified against the brief's richer lifecycle list
+BookingListItemView/BookingDetailView,field_ops.Job status enum,NO,reused UX-03 fixture enum unchanged; not re-verified
+PartsRequestView,PartsRequest model + approval permission,NO,reused UX-03 fixture shape; real permission_key not re-derived
+QuoteView,quote_checklist engine quote model,NO,reused UX-03 fixture shape only
+ChecklistView,quote_checklist engine checklist model,NO,reused UX-03 fixture shape only
+CreditCommissionView,package_commerce credit/commission model,NO,reused UX-03 fixture shape only
+InvoiceView,invoice_payment engine,NO,new type this pass, no backend model cross-check performed
+ComplaintDetailView/DisputeView,complaints engine + platform dispute authority,NO,reused UX-03 ComplaintFixture only
+ComplianceSubmissionView,compliance engine,NO,reused UX-03 ComplianceItemFixture only
+SLAStateView,no backend SLA model found/confirmed,NO,entirely typed-fixture; PRODUCT_DECISION_REQUIRED whether a real SLA engine exists
