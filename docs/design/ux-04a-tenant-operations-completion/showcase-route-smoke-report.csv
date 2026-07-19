@@ -1,0 +1,17 @@
+route,http_status,application_error_marker_count
+/dev/ux-04,308(redirect-self),0
+/dev/ux-04/command-center,200,0
+/dev/ux-04/booking-list,200,0
+/dev/ux-04/booking-detail,200,0
+/dev/ux-04/job-detail,200,0
+/dev/ux-04/status-transition,200,0
+/dev/ux-04/assignment-workspace,200,0
+/dev/ux-04/parts-approval,200,0
+/dev/ux-04/complaints,200,0
+/dev/ux-04/media,200,0
+/dev/ux-04/sla-risk,200,0
+/dev/ux-04/operational-exceptions,200,0
+/dev/ux-04/staff-home,200,0
+/dev/ux-04/read-only,200,0
+/dev/ux-04/inspection,200,0
+/dev/ux-04/checklist-execution,200,0
