@@ -19,6 +19,7 @@
     "incremental": true,
     "module": "esnext",
     "esModuleInterop": true,
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
