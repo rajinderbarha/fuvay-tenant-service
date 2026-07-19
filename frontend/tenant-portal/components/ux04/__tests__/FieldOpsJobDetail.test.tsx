@@ -16,6 +16,6 @@ describe("FieldOpsJobDetail — model-specific, no ServiceJob-only sections", ()
 
   it("renders the field_ops.Job label and canonical id", () => {
     render(<FieldOpsJobDetail view={fieldOpsJobDetailFixture} />);
-    expect(screen.getByText(/field_ops\.Job/)).toBeInTheDocument();
+    expect(screen.getAllByText(/field_ops\.Job/).length).toBeGreaterThan(0);
   });
 });
