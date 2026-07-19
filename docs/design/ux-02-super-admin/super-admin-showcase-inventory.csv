@@ -1,0 +1,13 @@
+route,demonstrates,readiness
+/dev/ux-02,showcase index (not linked from production nav),NOT_APPLICABLE
+/dev/ux-02/dashboard,RoleDashboard across all 5 canonical roles,MOCK_DESIGN_ONLY
+/dev/ux-02/tenants,Tenant List (enterprise list pattern),READ_ONLY_READY
+/dev/ux-02/tenants/[id],Tenant 360 (enterprise detail pattern, 15 sections),MOCK_DESIGN_ONLY
+/dev/ux-02/verification,Verification Review Workspace (review/approval pattern),MOCK_DESIGN_ONLY
+/dev/ux-02/compliance,Compliance Case List (enterprise list pattern reuse),MOCK_DESIGN_ONLY
+/dev/ux-02/compliance/[id],Compliance Case Detail (detail + review/approval pattern reuse),MOCK_DESIGN_ONLY
+/dev/ux-02/security,Security Observations (enterprise list pattern reuse; careful status language),SECURITY_CONTRACT_PENDING
+/dev/ux-02/audit,Audit Explorer (redacted JSON viewer),MOCK_DESIGN_ONLY
+/dev/ux-02/finance,Finance presentation (package credit vs job payments),MOCK_DESIGN_ONLY
+/dev/ux-02/settings,Platform configuration layout pattern,PRODUCT_DECISION_REQUIRED
+/dev/ux-02/states,"Loading/empty/error/restricted/long-text states, light+dark",NOT_APPLICABLE
