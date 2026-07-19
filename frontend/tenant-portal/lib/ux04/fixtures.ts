@@ -21,6 +21,9 @@ import type {
   OperationalExceptionView,
   SLAStateView,
   InspectionView,
+  FieldOpsJobDetailView,
+  PartsRequestListItemView,
+  JobProvenance,
 } from "./types";
 import { FIXTURE_COMPLAINTS, FIXTURE_MEDIA_ASSETS } from "../ux03/fixtures";
 
@@ -367,4 +370,85 @@ export const inspectionFixture: InspectionView = {
   requiredParts: [{ name: "Drain pump (OEM)", qty: 1 }],
   quoteRequired: true,
   checklistStatus: "in_progress",
+};
+
+/** UX-04B additions. */
+
+export const fieldOpsJobDetailFixture: FieldOpsJobDetailView = {
+  meta: { readiness: "MOCK_DESIGN_ONLY", sourceAdapter: "ux04FieldOpsJobAdapter.getFieldOpsJobDetail", lastRefreshedAt: now },
+  job: bookingListFixture[0].booking,
+  sla: bookingListFixture[0].sla,
+  timeline: [
+    { id: "aefo_1", at: "2026-07-18T09:00:00Z", actorName: "System", actorRole: "tenant_owner", action: "booking confirmed", resource: "field_ops.Job:fo_job_4471", result: "success" },
+    { id: "aefo_2", at: "2026-07-19T07:50:00Z", actorName: "Ananya Rao", actorRole: "tenant_owner", action: "assigned staff", resource: "field_ops.Job:fo_job_4471", result: "success" },
+  ],
+  activity: [
+    { id: "aefo_3", at: "2026-07-19T07:50:00Z", actorName: "Ananya Rao", actorRole: "tenant_owner", action: "assign", resource: "field_ops.Job:fo_job_4471", result: "success" },
+  ],
+  notes: ["Customer requested a morning slot; confirmed for 13:00 IST window."],
+  actions: [{ actionKey: "field_ops:jobs:assign", available: true, reason: null }],
+};
+
+export const partsRequestListFixture: PartsRequestListItemView[] = [
+  {
+    meta: { readiness: "MOCK_DESIGN_ONLY", sourceAdapter: "ux04PartsAdapter.listPartsRequestsList", lastRefreshedAt: now },
+    request: partsRequestFixture.request,
+    technicianName: "Deepak R.",
+    serviceJobLabel: "Washing Machine Repair — sj_7001",
+    installationState: "installed",
+    lastActivityAt: "2026-07-19T08:45:00Z",
+    actions: [{ actionKey: "field_ops:jobs:read", available: true, reason: null }],
+  },
+  {
+    meta: { readiness: "MOCK_DESIGN_ONLY", sourceAdapter: "ux04PartsAdapter.listPartsRequestsList", lastRefreshedAt: now },
+    request: {
+      id: "pr_302",
+      serviceJobId: "sj_7002",
+      requestedByTechnicianId: "tech_4",
+      items: [{ id: "part_2", name: "Geyser thermostat", qty: 1, unitCost: 420 }],
+      status: "requested",
+      decidedByStaffId: null,
+      decidedAt: null,
+    },
+    technicianName: "Sana K.",
+    serviceJobLabel: "Geyser Installation — sj_7002",
+    installationState: "not_applicable",
+    lastActivityAt: "2026-07-18T15:00:00Z",
+    actions: [{ actionKey: "inventory:items:approve", available: true, reason: null }],
+  },
+  {
+    meta: { readiness: "MOCK_DESIGN_ONLY", sourceAdapter: "ux04PartsAdapter.listPartsRequestsList", lastRefreshedAt: now },
+    request: {
+      id: "pr_303",
+      serviceJobId: "sj_7003",
+      requestedByTechnicianId: "tech_14",
+      items: [{ id: "part_3", name: "Fridge compressor relay", qty: 1, unitCost: 260 }],
+      status: "rejected",
+      decidedByStaffId: "staff_22",
+      decidedAt: "2026-07-17T12:00:00Z",
+    },
+    technicianName: "Sana K.",
+    serviceJobLabel: "Fridge Repair — sj_7003",
+    installationState: "not_applicable",
+    lastActivityAt: "2026-07-17T12:00:00Z",
+    actions: [{ actionKey: "inventory:items:approve", available: false, reason: "Already decided — approve/reject is a one-time action." }],
+  },
+];
+
+export const partsRequestListEmptyFixture: PartsRequestListItemView[] = [];
+
+export const jobProvenanceFixture: JobProvenance = {
+  source: {
+    sourceModel: "service_booking",
+    // Provisional id: UX-03's fixture layer has no distinct ServiceBooking
+    // record. Rather than reuse the ServiceJob id (which would silently
+    // conflate the two), this pass derives a clearly-labeled, distinctly
+    // prefixed provisional id so the two are never presented as the same
+    // value. See servicebooking-provenance-contract.md.
+    sourceBookingId: "svcbk_provisional_7001",
+    resultingModel: "service_job",
+    resultingServiceJobId: "sj_7001",
+  },
+  sourceAdapter: "ux04ProvenanceAdapter.getJobProvenance",
+  serviceJobOnlySections: ["quote", "checklist", "partsRequests", "invoice", "creditCommission"],
 };

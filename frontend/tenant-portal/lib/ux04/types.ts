@@ -139,6 +139,54 @@ export interface JobDetailView {
 }
 
 // ---------------------------------------------------------------------------
+// UX-04B: field_ops.Job detail (distinct from ServiceJob's JobDetailView —
+// field_ops.Job has NO quote/checklist/parts/invoice/credit concept, so
+// this view model deliberately does not carry those fields at all, rather
+// than carrying them as always-null).
+// ---------------------------------------------------------------------------
+
+export interface FieldOpsJobDetailView {
+  meta: OperationalViewMeta;
+  job: BookingFixture; // pipeline: "booking_field_ops"; field_ops.Job canonicalId
+  sla: SLAStateView;
+  timeline: AuditEventFixture[];
+  activity: AuditEventFixture[];
+  notes: string[];
+  actions: ActionPermissionView[];
+}
+
+// ---------------------------------------------------------------------------
+// UX-04B: ServiceBooking provenance contract. Every ServiceJob-pipeline view
+// that presents "where this job came from" must use this explicit type
+// rather than re-using ServiceJobFixture fields to stand in for the source
+// booking — ServiceBooking id and ServiceJob id must never be substituted
+// for each other or silently merged into one id.
+// ---------------------------------------------------------------------------
+
+export interface SourceBookingReference {
+  /** Always "service_booking" for this pipeline's source entity — distinct
+   * from the resulting "service_job" model. Never "booking_field_ops". */
+  sourceModel: "service_booking";
+  /** The ServiceBooking's own id. NEVER equal to, derived from, or
+   * substituted with the resulting ServiceJob's id, even though UX-03's
+   * fixture layer currently has no distinct ServiceBooking record to draw
+   * this from — see servicebooking-provenance-contract.md for how this
+   * pass derives a provisional, clearly-labeled id instead of reusing the
+   * ServiceJob id. */
+  sourceBookingId: string;
+  resultingModel: "service_job";
+  resultingServiceJobId: string;
+}
+
+export interface JobProvenance {
+  source: SourceBookingReference;
+  sourceAdapter: string;
+  /** Sections that are ServiceJob-only and must never appear on a
+   * field_ops.Job / Booking view. */
+  serviceJobOnlySections: string[];
+}
+
+// ---------------------------------------------------------------------------
 // Status transition
 // ---------------------------------------------------------------------------
 
@@ -263,6 +311,19 @@ export interface PartsRequestView {
   meta: OperationalViewMeta;
   request: PartsRequestFixture; // serviceJobId-scoped only — never field_ops.Job
   actions: ActionPermissionView[]; // approve/reject/mark-installed = provider-side only
+}
+
+/** UX-04B: one row in the Parts Request list. Adds list-only presentation
+ * fields (technician/part/last-activity labels, installation state) on top
+ * of the shared PartsRequestView — never a separate PartsRequest model. */
+export interface PartsRequestListItemView {
+  meta: OperationalViewMeta;
+  request: PartsRequestFixture;
+  technicianName: string;
+  serviceJobLabel: string;
+  installationState: "not_installed" | "installed" | "not_applicable";
+  lastActivityAt: string;
+  actions: ActionPermissionView[];
 }
 
 // ---------------------------------------------------------------------------

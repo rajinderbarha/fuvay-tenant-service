@@ -16,6 +16,8 @@ const EXAMPLES: { href: string; label: string }[] = [
   { href: "/dev/ux-04/status-transition", label: "Status Transition Workspace (standalone)" },
   { href: "/dev/ux-04/assignment-workspace", label: "Assignment / Dispatch Workspace" },
   { href: "/dev/ux-04/parts-approval", label: "Parts Request Approval (ServiceJob-only, provider-side)" },
+  { href: "/dev/ux-04/parts-list", label: "Parts Request List (multi/empty/loading/error states)" },
+  { href: "/dev/ux-04/field-ops-job-detail", label: "field_ops.Job Detail (distinct model-specific page)" },
   { href: "/dev/ux-04/checklist-execution", label: "Checklist — Technician Execution (distinct from provider review)" },
   { href: "/dev/ux-04/complaints", label: "Complaint Case + Dispute Presentation" },
   { href: "/dev/ux-04/media", label: "Operational Media / Evidence Gallery" },
