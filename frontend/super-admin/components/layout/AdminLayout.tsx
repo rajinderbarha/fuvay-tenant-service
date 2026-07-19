@@ -24,7 +24,7 @@ import {
   Search, Zap, LogOut, Tag, CalendarDays, UserCheck, Wrench, LayoutGrid, Cpu, Layers, FolderTree,
   Megaphone, Package, ScrollText, ListChecks, BarChart3, MapPin,
   HelpCircle, Sliders, GitBranch, Image, AlertOctagon, Globe,
-  FlaskConical, PercentSquare,
+  FlaskConical, PercentSquare, FileText as FileTextIcon,
 } from "lucide-react";
 import { verticalCatalogApi, type EffectiveMenu } from "../../lib/api";
 import { useTheme } from "../../hooks/useTheme";
@@ -120,6 +120,13 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "hs-service-areas", href: "/admin/home-services/service-areas", label: "Service Areas / Zones", icon: <MapPin size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/>, requiredPermission: "finance.completed_job_deduction_rules.read" },
       { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      // Phase 2A Slice 2 nav reconciliation: page existed and was fully
+      // built (adminBookabilityApi-backed) but had zero sidebar entry —
+      // confirmed orphaned in the Phase 1 frontend audit and still true.
+      // Grouped here (not a new top-level section) since it's Home
+      // Services matching/bookability diagnostics, same as the two items
+      // above it.
+      { id: "bookability", href: "/admin/bookability/providers", label: "Provider Bookability", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
@@ -132,6 +139,21 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "finance-topups",   href: "/admin/finance/topups",    label: "Credit Top-ups",  icon: <Tag size={16}/>,          requiredPermission: "finance:topups:read" },
       { id: "finance-claims",   href: "/admin/finance/claims",    label: "Warranty Claims", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "finance-payouts",  href: "/admin/finance/payouts",   label: "Payouts",         icon: <ScrollText size={16}/>,   requiredPermission: SUPER_ADMIN_ONLY },
+      // Phase 2A Slice 2 nav reconciliation: these 5 pages existed and were
+      // fully built but had zero sidebar entry (confirmed orphaned in the
+      // Phase 1 frontend audit, still true in current source). Phase 1A's
+      // final-page-disposition-matrix.csv calls for these to eventually
+      // become DETAIL_TABs of one consolidated Finance Hub workspace —
+      // that tab-consolidation is explicitly out of scope for this slice
+      // ("no broad page consolidation"), so they are restored here as
+      // plain sidebar entries under Finance (their approved parent group)
+      // rather than left unreachable. True tab consolidation remains
+      // deferred — see deferred-items.md.
+      { id: "finance-service-invoices",   href: "/admin/service-invoices",   label: "Service Invoices",   icon: <FileTextIcon size={16}/>, requiredPermission: "finance:hub:read" },
+      { id: "finance-provider-wallets",   href: "/admin/provider-wallets",   label: "Provider Wallets",   icon: <Banknote size={16}/>,     requiredPermission: "finance:hub:read" },
+      { id: "finance-commission-records", href: "/admin/commission-records", label: "Commission Records", icon: <PercentSquare size={16}/>, requiredPermission: "finance:hub:read" },
+      { id: "finance-payments",           href: "/admin/payments",           label: "Payments",           icon: <Tag size={16}/>,          requiredPermission: "finance:hub:read" },
+      { id: "finance-financial-events",   href: "/admin/financial-events",   label: "Financial Events",   icon: <ScrollText size={16}/>,   requiredPermission: "finance:hub:read" },
       { id: "compliance",       href: "/admin/compliance",        label: "Compliance",      icon: <ClipboardCheck size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },

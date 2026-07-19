@@ -460,11 +460,18 @@ export default function PlatformUsersPage() {
     [q, roleFilter, statusFilter, mfaFilter, scopeFilter, inactiveDaysMin]);
   const invites = useApi(useCallback(() => invitesModal ? platformUsersApi.listInvites() : Promise.resolve({ invites: [], total: 0 }), [invitesModal]), [invitesModal]);
 
-  const [inv, setInv] = useState({ full_name: "", email: "", phone: "", platform_role: "platform_admin", access_scope: "operations", require_mfa: true, invite_expiry_days: 7 });
+  // Phase 2A Slice 2: default/reset state previously referenced
+  // "platform_admin" — a placeholder role removed by FINAL-L5-05N that
+  // does not appear in PLATFORM_ROLES above (only the 5 real canonical
+  // admin roles do). A <select> bound to an unmatched value renders
+  // blank/unselected, so a user who never touches the dropdown would
+  // submit an invalid platform_role. Defaults to the least-privileged
+  // real role instead.
+  const [inv, setInv] = useState({ full_name: "", email: "", phone: "", platform_role: "admin_readonly", access_scope: "operations", require_mfa: true, invite_expiry_days: 7 });
   const invite = useAction(async () => {
     await platformUsersApi.invite(inv);
     setInviteModal(false);
-    setInv({ full_name: "", email: "", phone: "", platform_role: "platform_admin", access_scope: "operations", require_mfa: true, invite_expiry_days: 7 });
+    setInv({ full_name: "", email: "", phone: "", platform_role: "admin_readonly", access_scope: "operations", require_mfa: true, invite_expiry_days: 7 });
     await Promise.all([users.refetch(), summary.refetch()]);
     notify("Invitation sent.");
   });

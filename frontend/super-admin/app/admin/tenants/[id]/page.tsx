@@ -1230,7 +1230,12 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
   const [userName,      setUserName]      = useState("");
   const [userEmail,     setUserEmail]     = useState("");
   const [userPhone,     setUserPhone]     = useState("");
-  const [userRole,      setUserRole]      = useState("tenant_manager");
+  // Phase 2A Slice 2: default was "tenant_manager", a placeholder role not
+  // in app.core.permissions.ROLE_PERMISSIONS or this endpoint's (now fixed)
+  // VALID_TENANT_ROLES -- a user created with it got silently zero
+  // permissions forever. "staff" is the real, enforced role for a
+  // non-owner tenant-side user.
+  const [userRole,      setUserRole]      = useState("staff");
   // Sprint 4 — Add Service Area modal state
   const [addAreaOpen,   setAddAreaOpen]   = useState(false);
   const [areaCity,      setAreaCity]      = useState("");
@@ -3114,10 +3119,12 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             <select value={userRole} onChange={e => setUserRole(e.target.value)}
               style={{ width:"100%", height:38, padding:"0 12px", border:"1px solid var(--border)", borderRadius:10,
                 background:"var(--surface)", color:"var(--text-primary)", fontSize:13, outline:"none" }}>
+              {/* Phase 2A Slice 2: "Manager"/"Finance"/"Support" options
+                  removed -- they posted role values ("tenant_manager" etc.)
+                  that don't exist in the real 10-role RBAC set and left the
+                  created user with zero enforced permissions. */}
               <option value="tenant_owner">Owner</option>
-              <option value="tenant_manager">Manager</option>
-              <option value="tenant_finance">Finance</option>
-              <option value="tenant_support">Support</option>
+              <option value="staff">Staff</option>
             </select>
           </div>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:4 }}>
@@ -3127,7 +3134,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
               if (res !== null) {
                 users.refetch();
                 setAddUserOpen(false);
-                setUserName(""); setUserEmail(""); setUserPhone(""); setUserRole("tenant_manager");
+                setUserName(""); setUserEmail(""); setUserPhone(""); setUserRole("staff");
                 notify(`User "${userName}" added. Temp password: ${(res as { temp_password?: string }).temp_password ?? "—"}`);
               }
             }}>Add User</Btn>
