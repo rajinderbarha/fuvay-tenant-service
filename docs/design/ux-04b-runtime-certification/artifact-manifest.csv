@@ -1,0 +1,19 @@
+path,kind
+frontend/tenant-portal/app/dev/ux-04/field-ops-job-detail/page.tsx,dev-showcase(new)
+frontend/tenant-portal/app/dev/ux-04/parts-list/page.tsx,dev-showcase(new)
+frontend/tenant-portal/app/dev/ux-04/parts-approval/page.tsx,dev-showcase(fixed)
+frontend/tenant-portal/app/dev/ux-04/page.tsx,dev-showcase(index, extended)
+frontend/tenant-portal/components/ux04/FieldOpsJobDetail.tsx,source(new)
+frontend/tenant-portal/components/ux04/PartsRequestList.tsx,source(new)
+frontend/tenant-portal/lib/ux04/types.ts,source(extended: FieldOpsJobDetailView/SourceBookingReference/JobProvenance/PartsRequestListItemView)
+frontend/tenant-portal/lib/ux04/fixtures.ts,source(extended)
+frontend/tenant-portal/package.json,toolchain(react version fix + playwright/axe deps)
+frontend/tenant-portal/vitest.config.ts,test-infra(dedupe)
+frontend/tenant-portal/playwright.config.ts,test-infra(new)
+frontend/tenant-portal/browser-tests/smoke.spec.ts,test(new)
+frontend/tenant-portal/browser-tests/keyboard-a11y.spec.ts,test(new)
+frontend/tenant-portal/lib/ux04/__tests__/provenance.test.ts,test(new)
+frontend/tenant-portal/components/ux04/__tests__/FieldOpsJobDetail.test.tsx,test(new)
+frontend/tenant-portal/components/ux04/__tests__/PartsRequestList.test.tsx,test(new)
+docs/design/ux-04b-runtime-certification/*.md,documentation
+docs/design/ux-04b-runtime-certification/*.csv,documentation

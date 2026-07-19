@@ -1,0 +1,10 @@
+test_file,tests,category
+lib/ux04/__tests__/domain-preservation.test.ts,4,domain preservation
+components/ux04/__tests__/PartsRequestSummary.test.tsx,4,"authorization presentation, no-install-authority"
+components/ux04/__tests__/ChecklistProgress.test.tsx,2,"workflow behavior, security/privacy"
+components/ux04/__tests__/CustomerCommunicationTimeline.test.tsx,2,security/privacy
+components/ux04/__tests__/StatusTransitionPanel.test.tsx,3,workflow behavior
+components/ux04/__tests__/CreditCommissionSummary.test.tsx,2,workflow behavior
+components/ux04/__tests__/EvidenceGallery.test.tsx,2,"security/privacy, UI states"
+components/ux04/__tests__/ComplaintWorkspace.test.tsx,3,authorization presentation
+components/ux04/__tests__/SLAIndicator.test.tsx,2,"workflow behavior, UI states"

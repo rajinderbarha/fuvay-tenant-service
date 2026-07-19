@@ -1,0 +1,7 @@
+metric,ux04a,ux04b,delta
+vitest test files (tenant-portal),14,17,+3
+vitest tests (tenant-portal),39,53,+14
+vitest failing tests,4,0,-4
+playwright test files,0,2,+2
+playwright tests (per-project),0,29,+29
+playwright total executions (x3 projects),0,87,+87
