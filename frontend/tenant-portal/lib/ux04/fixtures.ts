@@ -16,7 +16,12 @@ import type {
   InvoiceView,
   CreditCommissionView,
   CommunicationEventView,
+  ComplaintDetailView,
+  DisputeView,
+  OperationalExceptionView,
+  SLAStateView,
 } from "./types";
+import { FIXTURE_COMPLAINTS, FIXTURE_MEDIA_ASSETS } from "../ux03/fixtures";
 
 const now = "2026-07-19T09:00:00Z";
 
@@ -279,3 +284,74 @@ export const jobDetailFixture: JobDetailView = {
   ],
   actions: [{ actionKey: "field_ops:jobs:transition", available: true, reason: null }],
 };
+
+/** UX-04A additions. */
+
+export const complaintDetailFixture: ComplaintDetailView = {
+  meta: { readiness: "MOCK_DESIGN_ONLY", sourceAdapter: "ux04ComplaintAdapter.getComplaint", lastRefreshedAt: now },
+  complaint: FIXTURE_COMPLAINTS[0],
+  customerStatement: "The technician quoted ₹1700 but I was charged extra for a part I never approved.",
+  relatedEntity: { kind: "service_job", id: "sj_2202", label: "Service Job sj_2202", href: "/dev/ux-04/job-detail" },
+  evidence: FIXTURE_MEDIA_ASSETS.slice(0, 1),
+  timeline: [
+    { at: "2026-07-18T15:00:00Z", actor: "Customer", note: "Filed complaint about unapproved parts charge.", customerVisible: true },
+    { at: "2026-07-18T16:10:00Z", actor: "Ananya Rao", note: "Reviewing invoice line items internally before responding.", customerVisible: false },
+  ],
+  internalNotes: ["Check parts-request approval timestamp against quote revision 1."],
+  assignedStaffId: "staff_22",
+};
+
+export const disputeFixture: DisputeView = {
+  id: "dsp_1",
+  customerId: "cust_2",
+  relatedEntity: { kind: "invoice", id: "sj_2202", label: "Invoice — Service Job sj_2202", href: "/dev/ux-04/job-detail" },
+  amountContextLabel: "₹950 parts charge in dispute",
+  reason: "Customer states the drain-pump replacement was never verbally approved.",
+  evidence: FIXTURE_MEDIA_ASSETS.slice(0, 1),
+  status: "under_platform_review",
+  tenantResponse: "Technician recorded verbal approval in the job notes at 09:12; no written confirmation exists.",
+  timeline: [
+    { at: "2026-07-18T15:00:00Z", event: "Dispute opened by customer" },
+    { at: "2026-07-19T09:00:00Z", event: "Tenant response submitted" },
+  ],
+  decision: null,
+};
+
+export const operationalExceptionsFixture: OperationalExceptionView[] = [
+  {
+    kind: "no_technician_available",
+    affectedWorkflow: "Assignment — Plumbing Repair (bk_1002)",
+    explanation: "No technician with a plumbing skill tag is available in the covered zone for the requested slot.",
+    safeActions: ["Widen the requested time window", "Escalate to a neighboring zone's staff pool"],
+    escalationPath: "Contact platform operations if no staff becomes available within 24h.",
+    productDecisionState: "PRODUCT_DECISION_REQUIRED",
+  },
+  {
+    kind: "low_credit",
+    affectedWorkflow: "Credit & Commission — package credit balance",
+    explanation: "Package credit balance is projected to fall below the commission owed on open jobs this cycle.",
+    safeActions: ["Review open job commission estimates", "Top up package credit before cycle end"],
+    escalationPath: null,
+    productDecisionState: "NOT_APPLICABLE",
+  },
+  {
+    kind: "invalid_transition",
+    affectedWorkflow: "Status transition — Service Job sj_7002",
+    explanation: "An out-of-sequence transition was requested and rejected by the repository-backed state machine.",
+    safeActions: ["Retry the correct next-step transition"],
+    escalationPath: null,
+    productDecisionState: "NOT_APPLICABLE",
+  },
+];
+
+export const slaGalleryFixture: SLAStateView[] = [
+  { state: "on_track", label: "On track", deadlineAt: null, explanation: "No deadline risk currently detected." },
+  { state: "approaching_deadline", label: "Approaching deadline", deadlineAt: "2026-07-19T13:00:00Z", explanation: "Scheduled slot begins in under 4 hours." },
+  { state: "at_risk", label: "At risk", deadlineAt: "2026-07-20T10:00:00Z", explanation: "No staff assigned within 24h of scheduled slot." },
+  { state: "breached", label: "Breached", deadlineAt: "2026-07-19T00:00:00Z", explanation: "24h approval window passed." },
+  { state: "blocked", label: "Blocked", deadlineAt: null, explanation: "Blocked pending an operational exception being cleared." },
+  { state: "waiting_on_customer", label: "Waiting on customer", deadlineAt: null, explanation: "Quote awaiting customer approval." },
+  { state: "waiting_on_provider", label: "Waiting on provider", deadlineAt: null, explanation: "Parts request awaiting provider-side approval." },
+  { state: "waiting_on_platform", label: "Waiting on platform", deadlineAt: null, explanation: "Dispute under platform review." },
+  { state: "product_decision_blocked", label: "Product decision blocked", deadlineAt: null, explanation: "No confirmed SLA rule exists for this workflow yet." },
+];
