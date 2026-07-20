@@ -1,0 +1,19 @@
+screen,reachable_via_production_nav,uses_new_customer_design,old_scaffold_detected,real_backend_data,notes
+Login,yes (Stack root when logged out),yes,no,yes (real /v1/auth/login),"Custom brand hero + sheet form, screenshot r4-01-login.png"
+Customer Home,yes (Tab: Home),yes,no,partial,"Real greeting/name, real category grid; recent-bookings/active-job data real but this round did not re-verify their exact field mapping (Round 2 fix); screenshot r4-02-home.png"
+Category listing,yes (inside chat booking flow),yes,no,yes (real GET /v1/customer/categories - 14 real categories),"Rendered as the chat booking flow's category picker, not a separate top-level screen -- see customer-information-architecture.md for why; screenshot r4-08-categories.png"
+Service/offering listing,yes (inside chat booking flow),yes,no,yes (real GET .../offerings),screenshot r4-09-offerings.png
+Service detail,NOT SEPARATELY BUILT,n/a,n/a,n/a,"No standalone service-detail screen exists yet -- offering selection goes straight from list to issue/address collection. Real gap, not a scaffold-design issue."
+Chat entry,yes (Tab: AI Chat),yes,no,yes (real POST /v1/customer/ai-chat/sessions),screenshot r4-05-chat-tab.png / r4-06-chat-session.png
+Language selector,yes (inside Chat, chat-scoped only),yes,no,n/a (client-side registry),"Searchable modal, 14 real BCP-47 languages; screenshot r4-07-language-selector.png"
+Chat conversation,yes (Tab: AI Chat),yes,no,yes (real DeepSeek session/message contract),"Message bubbles use the new design; actual model replies untested (placeholder API key) -- see deepseek-conversation-contract.md"
+Service option cards,yes (inside booking flow),yes,no,yes,Same picker UI as category/offering listing
+Address selection,PARTIAL,yes,no,no (one-off text entry, not saved-address picker),"Real /v1/customers/me/addresses exists (Round 1) but not yet wired into the chat booking flow -- deferred, documented in deferred-items.md"
+Serviceability result,yes (inside booking flow),yes,no,yes (real POST .../serviceability-check),"NOW REAL AND POSITIVE for Ludhiana/ac_repair after this round's seed; screenshot r4-11-serviceability-price.png"
+Price presentation,yes (inside booking flow),yes,no,yes (real POST .../price-estimate; display_price shown verbatim),screenshot r4-11-serviceability-price.png (₹82 real value)
+Booking review,PARTIAL,yes,no,yes (price shown; category/offering/issue/address shown),"Review step exists in DeepSeekChatScreen but does not yet show schedule/SLA/provider/bargain/media-count fields per Workstream 7's full spec -- see known-limitations.md"
+Booking confirmation,BLOCKED THIS ROUND,n/a,n/a,n/a,"Confirm call itself fails with a real backend error (FINAL_DRAFT_NOT_READY) because match-and-price/BargainRule prerequisite is missing -- see round4-implementation-summary.md. No confirmation screen was reached to audit."
+Bookings list,yes (Tab: Bookings),PARTIAL -- see known-limitations,UNVERIFIED THIS ROUND,unverified this round,"screenshot r4-03-bookings.png shows the tab renders without crashing; this round did not verify whether BookingsListScreen's remaining typecheck errors (Pattern A, api.ts field mismatch) manifest as a broken/empty UI at runtime -- flagged for next round, NOT claimed clean"
+Booking detail,NOT VERIFIED THIS ROUND,unverified,unverified,unverified,"BookingDetailScreen.tsx has the most typecheck errors (19) of any screen in the app -- this round did not open it in the browser to check for a runtime crash analogous to the AppNavigator/TabNavigator bugs found in Round 3. This is a real, explicit gap, not a clean bill of health."
+Notifications,NOT VERIFIED THIS ROUND,unverified,unverified,unverified,Not visited this round
+Profile,yes (Tab: Profile),yes,no,partial,"screenshot r4-04-profile.png; ProfileScreen.tsx has 12 typecheck errors (stale CustomerUser fields) -- rendered without an observed crash in this round's brief visit, but not verified for correct data display"

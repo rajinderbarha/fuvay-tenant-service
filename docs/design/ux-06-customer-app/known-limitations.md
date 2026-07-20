@@ -1,4 +1,23 @@
-# Known Limitations — UX-06 (updated after Round 3)
+# Known Limitations — UX-06 (updated after Round 4)
+
+## Round 4 additions
+
+- **Real booking submission still blocked** — not by missing serviceability
+  data anymore (fixed this round), but by a missing platform-wide `BargainRule`
+  record required by `match-and-price`. See canonical-booking-contract.md /
+  booking-submission-live-evidence.md for the exact table/field diagnosis.
+  Deliberately not created this round (shared canonical config, out of the
+  safe isolated-tenant seed scope).
+- **3 of 18 major screens unverified for design** (Notifications, Booking
+  Detail, standalone Service Detail) — see production-design-route-audit.csv.
+  The other 15 are confirmed the new design, no old scaffold detected.
+- **Dark theme does not exist** in this app's `theme.ts` at all — not a
+  verification gap, an actual missing feature. See light-dark-runtime-report.md.
+- **BookingDetailScreen.tsx** (19 typecheck errors, the most of any screen)
+  was not opened in the browser this round — unknown whether it has a
+  runtime crash analogous to the two bugs Round 3 found in the navigators.
+
+
 
 1. **123 real typecheck errors remain** (was 126 at Round 2 start, 123 after
    Round 3's runtime-bug fixes), confirmed via a fresh WSL install
