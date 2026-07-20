@@ -7,7 +7,7 @@ import { LoginScreen }     from "../screens/LoginScreen";
 import { JobDetailScreen } from "../screens/JobDetailScreen";
 import { ChatRoomScreen }  from "../screens/ChatRoomScreen";
 import { NotificationsScreen } from "../screens/NotificationsScreen";
-import { TabNavigator }    from "./TabNavigator";
+import { RoleAwareTabNavigator } from "./ux05/RoleAwareTabNavigator";
 import { theme } from "../styles/theme";
 
 const Stack = createNativeStackNavigator();
@@ -27,7 +27,11 @@ export function AppNavigator() {
         {user ? (
           // ── Authenticated stack ─────────────────────────────────────────
           <>
-            <Stack.Screen name="Tabs"      component={TabNavigator} />
+            {/* UX-05: role-aware tab set replaces the single undifferentiated
+                TabNavigator -- see navigation/ux05/RoleAwareTabNavigator.tsx.
+                TabNavigator itself is left in place (not deleted) in case
+                anything else still imports it directly. */}
+            <Stack.Screen name="Tabs"      component={RoleAwareTabNavigator} />
             <Stack.Screen name="JobDetail" component={JobDetailScreen}
               options={{ headerShown:true, title:"Job Detail",
                 headerStyle:{ backgroundColor:theme.colors.surface },
