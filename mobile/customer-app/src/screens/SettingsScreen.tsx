@@ -1,89 +1,44 @@
-import React, { useCallback, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
-import { useApi, useAction } from "../hooks/useApi";
-import { settingsApi, type CustomerSettings } from "../lib/api";
+import React from "react";
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { Card } from "../components/Card";
 import { Button } from "../components/Button";
-import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
 
-const LANGUAGES = [
-  { code:"en", label:"English" }, { code:"hi", label:"हिंदी" },
-  { code:"mr", label:"मराठी" },  { code:"ta", label:"தமிழ்" },
-  { code:"te", label:"తెలుగు" },
-] as const;
-
+/**
+ * UX-06 ROUND 2 correction:
+ *
+ * 1. The prior scaffold's app-wide "Language" chip selector (English/Hindi/
+ *    Marathi/Tamil/Telugu, saved via a fake /v1/settings/{id}/preferences
+ *    endpoint) has been REMOVED, not just re-pointed. Per the UX-06 brief's
+ *    hard language-architecture rule, ordinary app screens stay in a single
+ *    base language permanently — an app-wide language selector here would be a
+ *    direct violation. Multilingual behavior belongs exclusively inside the
+ *    DeepSeek chat (see chat-language-selection.md).
+ * 2. No confirmed real request/response schema for saving notification
+ *    preferences was found this round (GET /v1/customer/notifications/preferences
+ *    exists but its PUT/POST counterpart and exact field shape weren't verified),
+ *    so the notification toggles are shown as an honest "coming soon" note
+ *    rather than wired to a guessed endpoint.
+ * 3. Sign out (real, uses AuthContext.logout -> POST /v1/auth/logout) and the
+ *    static Privacy/Terms links are kept — no backend contract needed for those.
+ */
 export function SettingsScreen() {
   const { logout } = useAuth();
-  const settings  = useApi(useCallback(() => settingsApi.get(), []));
-  const saveAction = useAction(useCallback((s: Partial<CustomerSettings>) => settingsApi.update(s), []));
-
-  const d = settings.data;
-  const [notifs,  setNotifs]  = useState<CustomerSettings["notifications"] | null>(null);
-  const [lang,    setLang]    = useState<string | null>(null);
-  const [saved,   setSaved]   = useState(false);
-
-  const N  = notifs ?? d?.notifications ?? { bookings:true, job_updates:true, promotions:false, sms:true, whatsapp:true };
-  const L  = lang   ?? d?.language ?? "en";
-
-  function toggle(key: keyof typeof N) {
-    setNotifs({ ...N, [key]: !N[key] });
-    setSaved(false);
-  }
-
-  async function handleSave() {
-    const res = await saveAction.execute({ notifications: N, language: L as CustomerSettings["language"] });
-    if (res) { setSaved(true); setTimeout(() => setSaved(false), 2500); settings.refetch(); }
-  }
 
   return (
     <ScrollView style={gs.screen} contentContainerStyle={s.content}>
-
-      {/* Notification preferences */}
       <Text style={gs.sectionTitle}>Notification Preferences</Text>
-      <Card style={{ padding:0, overflow:"hidden" }}>
-        {settings.loading ? <Skeleton height={200}/> : ([
-          { key:"bookings",    label:"Booking updates",       sub:"Confirmation, reschedule, cancellation" },
-          { key:"job_updates", label:"Job & technician alerts",sub:"En route, arrived, completed" },
-          { key:"promotions",  label:"Offers & promotions",    sub:"Discounts and seasonal deals" },
-          { key:"sms",         label:"SMS notifications",      sub:"Critical alerts via SMS" },
-          { key:"whatsapp",    label:"WhatsApp messages",      sub:"Job updates on WhatsApp" },
-        ] as const).map((row, i, arr) => (
-          <View key={row.key} style={[s.settingRow, i<arr.length-1&&{borderBottomWidth:1,borderBottomColor:theme.colors.border}]}>
-            <View style={{ flex:1 }}>
-              <Text style={s.rowLabel}>{row.label}</Text>
-              <Text style={s.rowSub}>{row.sub}</Text>
-            </View>
-            <Switch
-              value={N[row.key]} onValueChange={() => toggle(row.key)}
-              trackColor={{ true:theme.colors.accent, false:theme.colors.border }}
-              thumbColor={theme.colors.surface}
-            />
-          </View>
-        ))}
-      </Card>
+      <View style={s.comingSoon}>
+        <Text style={{fontSize:28}}>🚧</Text>
+        <Text style={s.comingSoonTitle}>Notification settings are coming soon</Text>
+      </View>
 
-      {/* Language */}
-      <Text style={[gs.sectionTitle,{marginTop:8}]}>Language</Text>
-      <Card>
-        <View style={{ flexDirection:"row", flexWrap:"wrap", gap:8 }}>
-          {LANGUAGES.map(l => (
-            <TouchableOpacity key={l.code} onPress={() => { setLang(l.code); setSaved(false); }} activeOpacity={0.8}
-              style={[s.langChip, L===l.code && s.langChipActive]}>
-              <Text style={[s.langText, L===l.code && s.langTextActive]}>{l.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Card>
-
-      {/* Privacy & account */}
       <Text style={[gs.sectionTitle,{marginTop:8}]}>Privacy & Account</Text>
       <Card style={{ padding:0, overflow:"hidden" }}>
         {[
           { label:"Privacy Policy",       icon:"🔒", onPress: () => {} },
           { label:"Terms of Service",     icon:"📄", onPress: () => {} },
-          { label:"Data & Privacy",       icon:"🛡️", onPress: () => {} },
           { label:"Delete Account",       icon:"⚠️", onPress: () =>
             Alert.alert("Delete Account","This will permanently delete your account and all data. This cannot be undone.",[
               {text:"Cancel",style:"cancel"},
@@ -101,12 +56,6 @@ export function SettingsScreen() {
         ))}
       </Card>
 
-      {/* Save + sign out */}
-      <Button
-        label={saved ? "✓ Saved!" : saveAction.loading ? "Saving…" : "Save Settings"}
-        variant={saved?"success":"primary"} size="lg" fullWidth
-        loading={saveAction.loading} onPress={handleSave}
-      />
       <Button label="Sign Out" variant="danger" size="md" fullWidth
         onPress={()=>Alert.alert("Sign Out","Are you sure?",[
           {text:"Cancel",style:"cancel"},
@@ -121,10 +70,6 @@ const s = StyleSheet.create({
   content:      { padding:theme.spacing.base, gap:12, paddingBottom:40 },
   settingRow:   { flexDirection:"row", alignItems:"center", gap:12, padding:14 },
   rowLabel:     { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
-  rowSub:       { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:2 },
-  langChip:     { paddingHorizontal:14, paddingVertical:8, borderRadius:theme.radius.full,
-                  borderWidth:1, borderColor:theme.colors.border, backgroundColor:theme.colors.surfaceSunken },
-  langChipActive:{ borderColor:theme.colors.brand, backgroundColor:theme.colors.brand },
-  langText:     { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary },
-  langTextActive:{ color:"#fff" },
+  comingSoon:   { alignItems:"center", gap:8, padding:20, backgroundColor:theme.colors.surfaceSunken, borderRadius:theme.radius.lg },
+  comingSoonTitle:{ fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary, textAlign:"center" },
 });

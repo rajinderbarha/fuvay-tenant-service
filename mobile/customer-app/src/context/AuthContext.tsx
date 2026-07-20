@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children:React.ReactNode }) {
     await AsyncStorage.multiSet([
       [STORAGE_KEYS.token,      token],
       [STORAGE_KEYS.customerId, customer.id],
-      [STORAGE_KEYS.name,       customer.name],
+      [STORAGE_KEYS.name,       customer.full_name],
       [STORAGE_KEYS.phone,      customer.phone ?? ""],
       [STORAGE_KEYS.email,      customer.email ?? ""],
     ]);

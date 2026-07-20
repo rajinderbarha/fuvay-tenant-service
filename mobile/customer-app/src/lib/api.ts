@@ -63,8 +63,9 @@ async function apiFetch<T>(path:string, options:RequestInit={}, skipAuth=false):
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+// full_name (not "name") confirmed real field, app/dependencies/auth.py UserContext.
 export interface CustomerUser {
-  id:string; name:string; phone?:string; email?:string;
+  id:string; full_name:string; phone?:string; email?:string;
 }
 export interface ServiceCategory {
   category_slug:string; name:string; category_type?:string; icon?:string; description?:string;
@@ -73,8 +74,13 @@ export interface Booking {
   id:string; booking_number?:string; service_type?:string; scheduled_at?:string; status:string;
   created_at:string; notes?:string;
 }
-export interface Job {
-  id:string; job_number?:string; status:string; service_type?:string; created_at:string; updated_at?:string;
+// Real field_ops.Job shape, confirmed from app/engines/field_ops/service.py::_job_dict
+// (Booking->field_ops.Job pipeline, read-only for customers, GET /v1/customer/jobs*).
+export interface FieldOpsJob {
+  job_id:string; job_number:string; status:string; job_type?:string;
+  title?:string; description?:string; service_type_id?:string; service_category?:string;
+  booking_id?:string; assigned_staff_id?:string|null; customer_id?:string|null;
+  city?:string; zipcode?:string; estimated_price?:number|null; created_at?:string;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -113,12 +119,21 @@ export const bookingsApi = {
   cancelEndpointExists: true as const,
 };
 
-// ── Service jobs (ServiceBooking→ServiceJob pipeline) ──────────────────────────
-// Real: /v1/customer/jobs*, /v1/customer/service-jobs/{id}/tracking
-export const serviceJobsApi = {
-  list:      () => apiFetch<{ items:Job[]; total:number }>("/v1/customer/jobs"),
-  get:       (id:string) => apiFetch<Job>(`/v1/customer/jobs/${id}`),
-  progress:  (id:string) => apiFetch<unknown>(`/v1/customer/jobs/${id}/progress`),
+// ── field_ops.Job (Booking→field_ops.Job pipeline, read-only for customers) ────
+// Real, confirmed from app/engines/field_ops/customer_router.py + service.py:
+//   GET /v1/customer/jobs              -> { jobs: FieldOpsJob[], has_next, next_cursor }
+//   GET /v1/customer/jobs/{id}         -> FieldOpsJob
+//   GET /v1/customer/jobs/{id}/progress -> { job_id, booking_id, status, progress_steps,
+//                                             assigned_staff:{name,phone}|null, ... }
+// Note: this is NOT the ServiceBooking->ServiceJob pipeline (there is no unified
+// customer-facing "ServiceJob list" route found this round beyond
+// /v1/customer/service-jobs/{id}/tracking, which is detail/tracking-only, and
+// /v1/customer/my-activity which aggregates across pipelines read-only).
+export const fieldOpsJobsApi = {
+  list:      (limit=50) => apiFetch<{ jobs:FieldOpsJob[]; has_next:boolean; next_cursor?:string }>(`/v1/customer/jobs?limit=${limit}`),
+  get:       (id:string) => apiFetch<FieldOpsJob>(`/v1/customer/jobs/${id}`),
+  progress:  (id:string) => apiFetch<{ job_id:string; booking_id?:string; status:string; progress_steps?:unknown;
+                                        assigned_staff?:{ name:string; phone?:string } | null; city?:string; zipcode?:string }>(`/v1/customer/jobs/${id}/progress`),
   tracking:  (id:string) => apiFetch<unknown>(`/v1/customer/service-jobs/${id}/tracking`),
 };
 
@@ -225,11 +240,37 @@ export const serviceCreditApi = {
 };
 
 // ── DeepSeek conversational booking (AI chat) ───────────────────────────────────
-// Real, verified: POST /v1/customer/ai-chat/sessions (create), POST .../messages (send),
-// GET .../messages (history), POST .../close. Backend proxies DeepSeek — no key in app.
-// A second, separate /v1/ai/chat + /v1/ai/chat/meta generic endpoint also exists in the
-// live backend (not session-based) — NOT used here; the session-based customer engine
-// is the correct contract for a stateful, language-aware booking conversation.
+// Real, verified live end-to-end this round (2026-07-20) via source read of
+// app/engines/ai_conversation/{customer_router,service}.py + live curl probes
+// against the running backend:
+//   POST /v1/customer/ai-chat/sessions            -> 200, real AIConversationSession row
+//   POST /v1/customer/ai-chat/sessions/{id}/messages -> 200, real DeepSeek tool-call loop
+//     ran (tools_called included get_service_categories/get_category_offerings/
+//     get_service_faqs), fell back to a safe "having trouble" reply because this dev
+//     environment's DEEPSEEK_API_KEY is a placeholder — that's an environment/infra
+//     limitation, not a contract gap. Response shape is EXACTLY
+//     { reply, tools_called, intent, session } — confirmed both from source
+//     (service.send_message docstring) and the live JSON body.
+// Body handling in the router is `body.get("message")` (no strict Pydantic model),
+// so unknown fields are silently accepted and ignored — there is NO backend field
+// for conversation language (grepped the whole ai_conversation package for
+// language/lang_code/locale — nothing). Sending a language_code field would do
+// nothing. Language selection is therefore implemented client-side only: the
+// selected language is stored as local session metadata and folded into the
+// message TEXT itself as an explicit instruction (see chatLanguagePrefix below),
+// never as a fake structured field pretending the backend honors it.
+//
+// A second, newer "Sprint 29" engine also exists live at /v1/customer/ai/sessions
+// (app/engines/ai_conversation/sprint29_customer_router.py) — adds rate limiting,
+// strict session-ownership checks, reset/handoff/draft-status. It requires a real
+// authenticated customer (get_current_user, not optional) so it could not be probed
+// anonymously this round. It calls the SAME service.send_message() and therefore
+// returns the SAME { reply, tools_called, intent, session } shape. Sprint 29 is the
+// more production-appropriate choice (ownership + rate limiting) once real customer
+// auth is wired up end-to-end; Sprint 15 (used below) works anonymously today which
+// is what let this round confirm the contract live without seeded test credentials.
+// Switching the base path from "ai-chat" to "ai" is a one-line change once a real
+// customer login is available to test against sprint29's stricter auth.
 export interface AISession {
   id: string;
   session_key?: string;
@@ -253,16 +294,24 @@ export interface AISendResponse {
   intent?: string;
   session: AISession;
 }
+/** Chat-only language selection, per the UX-06 language-architecture rule.
+ * BCP-47 code + names; NOT sent as a structured field (backend ignores it) —
+ * folded into the outgoing message text instead. See createChatMessageText below. */
+export interface ChatLanguage { code: string; englishName: string; nativeName: string; dir: "ltr" | "rtl"; }
+export function withLanguageInstruction(message: string, language?: ChatLanguage | null): string {
+  if (!language || language.code === "en") return message;
+  return `[Respond only in ${language.englishName} (${language.nativeName}), language code ${language.code}.] ${message}`;
+}
 export const aiConversationApi = {
-  createSession: (categoryId?: string, language?: { code:string; name:string }) =>
+  createSession: (categoryId?: string) =>
     apiFetch<AISession>("/v1/customer/ai-chat/sessions", {
       method: "POST",
-      body: JSON.stringify({ category_id: categoryId, language_code: language?.code, language_name: language?.name }),
+      body: JSON.stringify({ category_id: categoryId }),
     }),
-  sendMessage: (sessionId: string, message: string, language?: { code:string; name:string }) =>
+  sendMessage: (sessionId: string, message: string, language?: ChatLanguage | null) =>
     apiFetch<AISendResponse>(`/v1/customer/ai-chat/sessions/${sessionId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ message, language_code: language?.code, language_name: language?.name }),
+      body: JSON.stringify({ message: withLanguageInstruction(message, language) }),
     }),
   getMessages: (sessionId: string) =>
     apiFetch<{ messages: AISessionMessage[]; total: number }>(
