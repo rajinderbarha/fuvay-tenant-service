@@ -72,22 +72,48 @@ Verified by reading `package.json` directly (not assumed):
   this environment due to the sudo/system-dependency blocker above — this is an environment limitation, not a
   code defect, and is now precisely diagnosed rather than ambiguous.
 
-## What was actually run and verified in WSL (cumulative, Rounds 1–3)
+## WSL verification setup (Round 4) — Chromium unblocked via root, real runtime bug found and fixed
+The Round 3 blocker (`sudo -n true` → password required under the `admin` WSL user) was resolved exactly as the
+coordinator suggested: this project's WSL Debian instance has a **root** user (used throughout this whole
+project's earlier npm/apt work) that needs no `sudo` at all. Switching to `wsl -d Debian -u root -- ...` for the
+Chromium-dependency step:
+- `npx playwright install --with-deps chromium` (as root) succeeded immediately — every required library
+  (`libnss3`, `libatk1.0-0`, `libatk-bridge2.0-0`, `libcups2`, `libdrm2`, `libxkbcommon0`, `libcairo2`, etc.) was
+  already present system-wide; `admin` simply lacked permission to act on that, not a missing-package issue.
+- Headless Chromium then launched successfully (`--no-sandbox`) and loaded the live Expo web bundle.
+- **First real run found a genuine, previously-undetected bug**: a `pageerror` —
+  `Incompatible React versions: react 19.2.0, react-dom 19.2.3`. Root cause: Round 1's forced
+  `react@19.2.0` (via `--legacy-peer-deps` over `react-native@0.85.0`'s real `^19.2.3` peer requirement) was
+  never actually compatible with the `react-dom@19.2.3` Round 2 installed — invisible to `tsc`/`jest`/RNTL, only
+  surfaced as a real browser runtime error. **Fixed**: bumped `react`/`react-dom`/`react-test-renderer` to
+  `19.2.3` in lockstep; `npm ls` now shows a clean tree with zero `invalid` warnings; `npx jest` re-confirmed
+  35/35 passing after the fix. See `runtime-test-report.md` for the full account.
+- Re-ran the smoke check after the fix: **zero page/console errors**, Login screen renders correctly, confirmed
+  in both `light` and `dark` browser color-scheme contexts (see `light-dark-theme-report.md` for why the visual
+  result is identical in both — no dark palette exists to switch to, this only proves nothing crashes).
+- Re-ran once more after this round's further changes (NetworkStatusBanner wired into the shell, 8
+  accessibility-attribute additions, new `SystemStatesShowcaseScreen`): still **zero errors**.
+- Confirmed (again, definitively) that a backgrounded Metro process does not survive between separate `wsl.exe`
+  invocations in this environment, root or not — every real check had to run as one continuous `wsl` call.
+
+## What was actually run and verified in WSL (cumulative, Rounds 1–4)
 - `npm install --legacy-peer-deps` — real, succeeded: 850 packages (Round 1) + 19 for react-dom/react-native-web
-  (Round 2) + playwright (Round 3, `--no-save`, not committed to package.json since it's a one-off verification
-  tool, not an app dependency) (see `staff-technician-build-report.md`).
-- `npx tsc --noEmit` — real, re-run fresh at the end of Round 3 against the full current `src/` tree: **15
-  errors**, same count and pattern as Round 2 plus 2 new instances of the identical pre-existing pattern in
-  this round's new files (`CurrentJobScreen.tsx`, one more `AppNavigator.tsx` line) — zero errors in any
-  UX-05-specific business-logic module (see `typecheck-report.md`).
-- `npx jest` (full suite) — real, re-run fresh at the end of Round 3: **35/35 passing**, 6 suites (see
+  (Round 2) + playwright (Round 3/4, `--no-save`) + the react/react-dom/react-test-renderer version-fix
+  reinstall (Round 4) (see `staff-technician-build-report.md`).
+- `npx tsc --noEmit` — real, re-run fresh at the end of Round 4: **19 errors**, same pre-existing pattern class
+  as every prior round (14 pre-existing + 5 new occurrences of the identical existing pattern across Rounds
+  2–3's new files) — zero errors in any UX-05-specific business-logic module, and this round's a11y/theme/
+  NetworkStatusBanner changes added zero new errors (see `typecheck-report.md`).
+- `npx jest` (full suite) — real, re-run fresh at the end of Round 4: **35/35 passing**, 6 suites (see
   `unit-component-test-report.md`).
-- Expo web bundle build — real, verified this round (see above): HTTP 200, 3.1MB, contains this round's actual
-  compiled source.
+- Expo web bundle build — real, proven end-to-end every round since Round 3.
+- **Headless-browser runtime smoke check — real, completed, unblocked this round** (see above and
+  `runtime-test-report.md`): zero errors after a real bug fix, re-confirmed after further changes.
 
 ## Not attempted / explicit boundary
 - Native emulator/simulator: not available in this WSL setup (no GUI/emulator), consistent with the brief's expectation.
-- A completed headless-browser (Playwright) *runtime* smoke test (loading the page and checking for console
-  errors): blocked by a specific, diagnosed, reproducible missing-sudo-access issue (see above) — the bundle
-  build itself is proven to work; only the final "load it in a real browser and watch for errors" step could
-  not run in this particular WSL image.
+- Deep-linking directly to an authenticated route (e.g. a dev showcase) in the browser smoke check — no
+  `linking` config exists in `NavigationContainer`, and reaching authenticated screens requires a real login
+  this environment doesn't have a backend for. Only the unauthenticated Login screen was verified in-browser.
+- No interaction testing (typing/tapping) or visual/screenshot comparison — this was a load-and-observe-errors
+  smoke check only.

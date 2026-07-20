@@ -17,21 +17,28 @@ backgrounded shell session:
 This proves the Expo web **build/bundle pipeline works end-to-end** for the current state of the app, including
 everything built across all three UX-05 rounds.
 
-## Playwright headless-browser runtime check (Round 3 — attempted, specific blocker found)
-Installed Playwright 1.61.1 and downloaded Chromium (177 MiB) successfully. Launching headless Chromium against
-the live bundle failed with `SIGSEGV`. Root cause: the OS-level shared-library dependencies headless Chrome
-needs are not installed in this WSL image, and installing them
-(`npx playwright install-deps` / equivalent `apt-get`) requires `sudo`; `sudo -n true` returns
-`sudo: a password is required` in this environment, i.e. passwordless sudo is not configured here. This is a
-concrete, reproducible, diagnosed environment limitation — not a code defect, and not an ambiguous "it didn't
-work." The runtime smoke check (loading the page in a real browser and checking for console errors) could not
-be completed; the build step it depends on is proven to work.
+## Playwright headless-browser runtime check (Round 3 — blocked; Round 4 — unblocked, real bug found and fixed)
+Round 3: installed Playwright 1.61.1 and downloaded Chromium (177 MiB) successfully under the `admin` WSL user.
+Launching headless Chromium against the live bundle failed with `SIGSEGV` — `sudo -n true` confirmed
+passwordless sudo wasn't available to install the missing OS shared libraries, a concrete diagnosed blocker.
+
+Round 4: switched to the WSL Debian instance's **root** user (`wsl -d Debian -u root`), which needs no `sudo` at
+all. `npx playwright install --with-deps chromium` as root found every required library already installed
+system-wide. Headless Chromium launched successfully. The **first real run found a genuine bug**: a page error —
+`Incompatible React versions: react 19.2.0, react-dom 19.2.3` — caused by Round 1's forced `react@19.2.0`
+(via `--legacy-peer-deps`, overriding `react-native@0.85.0`'s real `^19.2.3` peer requirement) never actually
+matching the `react-dom@19.2.3` Round 2 installed. This was invisible to `tsc`/`jest`/RNTL and only surfaced as
+a real browser runtime error — exactly the kind of defect headless-browser verification exists to catch.
+**Fixed**: bumped `react`/`react-dom`/`react-test-renderer` to `19.2.3` in lockstep. Re-ran the smoke check:
+**zero page/console errors**, Login screen renders correctly, confirmed in both light and dark browser
+color-scheme contexts, and again after this round's further changes (NetworkStatusBanner wiring, a11y fixes,
+new showcase). See `runtime-test-report.md` for the full account.
 
 ## Native runtime (emulator/simulator)
 Not available in this WSL setup (no GUI/emulator), consistent with the brief's expectation. Not attempted.
 
 ## Overall
-Dependency resolution, typecheck, unit/component tests, and the Expo-web bundle build are all proven real and
-working end-to-end in WSL against this round's actual source. The one verification step not completed is the
-final headless-browser runtime load, blocked by a specific, diagnosed, non-code environment issue (missing sudo
-access to install Chromium's system dependencies).
+Dependency resolution, typecheck, unit/component tests, the Expo-web bundle build, AND the headless-browser
+runtime load are now all proven real and working end-to-end in WSL against the current source — including
+catching and fixing one genuine bug (`react`/`react-dom` version mismatch) that no other verification layer in
+this project (typecheck, unit tests) was capable of catching.
