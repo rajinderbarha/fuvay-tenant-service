@@ -65,6 +65,7 @@ export function DeepSeekChatScreen({ navigation }: Props) {
   const [issueText, setIssueText]     = useState("");
   const [addressText, setAddressText] = useState("");
   const [cityText, setCityText]       = useState("");
+  const [brands, setBrands]           = useState<{ brand_id:string; name:string }[]>([]);
 
   const startSession = useCallback(async () => {
     setStarting(true); setError(null);
@@ -131,17 +132,66 @@ export function DeepSeekChatScreen({ navigation }: Props) {
       dispatch({ type:"DRAFT_STARTED", draft });
       dispatch({ type:"SET_ISSUE", issueDescription: issueText });
       dispatch({ type:"SET_ADDRESS", addressLine: addressText, city: cityText });
-      await homeServiceDraftApi.updateFields(draft.id, {
-        issue_description: issueText, address_line: addressText, city: cityText,
-      });
-      const svc = await homeServiceDraftApi.serviceabilityCheck(draft.id);
-      dispatch({ type:"SERVICEABILITY_RESULT", serviceable: svc.serviceable, message: svc.message, draftStatus: svc.draft_status });
-      if (svc.serviceable) {
-        const price = await homeServiceDraftApi.priceEstimate(draft.id);
-        dispatch({ type:"PRICE_RESULT", priceSnapshot: price.price_snapshot ?? null, draftStatus: price.draft_status });
+      // UX-06 Round 5 correction: real draft fields are `issue_summary`/
+      // `issue_details` and a UUID `brand_id` -- NOT `issue_description`/
+      // `address_line` (those were silently ignored by the real backend,
+      // which only merges recognized keys — see bargain-contract-audit.md).
+      // Brand is required for offerings with is_brand_required=true (real
+      // for ac_repair) — fetched here using the draft's real MasterService
+      // offering_id, then the customer must pick one before continuing.
+      const brandRes = await catalogApi.brandsForService(draft.offering_id ?? "");
+      setBrands(brandRes.brands);
+      if (brandRes.brands.length > 0) {
+        setFlowLoading(false);
+        return; // wait for pickBrand() to continue the sequence
       }
+      await homeServiceDraftApi.updateFields(draft.id, { issue_summary: issueText, city: cityText });
+      await runServiceabilityThroughMatching(draft.id);
     } catch (e:unknown) {
       setFlowError(e instanceof Error ? e.message : "Could not process your request. Please try again.");
+    } finally { setFlowLoading(false); }
+  }
+
+  async function pickBrand(brandId: string) {
+    if (!booking.draft) return;
+    dispatch({ type:"SET_BRAND", brandId });
+    setFlowLoading(true); setFlowError(null);
+    try {
+      await homeServiceDraftApi.updateFields(booking.draft.id, {
+        issue_summary: issueText, city: cityText, brand_id: brandId,
+      });
+      await runServiceabilityThroughMatching(booking.draft.id);
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not process your request. Please try again.");
+    } finally { setFlowLoading(false); }
+  }
+
+  // Shared continuation: serviceability -> price-estimate -> match-and-price.
+  // Real backend calls only; match-and-price is honestly allowed to fail
+  // (see bargain-contract-audit.md) rather than being worked around.
+  async function runServiceabilityThroughMatching(draftId: string) {
+    const svc = await homeServiceDraftApi.serviceabilityCheck(draftId);
+    dispatch({ type:"SERVICEABILITY_RESULT", serviceable: svc.serviceable, message: svc.message, draftStatus: svc.draft_status });
+    if (svc.serviceable) {
+      const price = await homeServiceDraftApi.priceEstimate(draftId);
+      dispatch({ type:"PRICE_RESULT", priceSnapshot: price.price_snapshot ?? null, draftStatus: price.draft_status });
+      try {
+        const match = await homeServiceDraftApi.matchAndPrice(draftId);
+        dispatch({ type:"MATCH_AND_PRICE_RESULT", priceOptions: match });
+      } catch {
+        dispatch({ type:"MATCH_AND_PRICE_UNAVAILABLE" });
+      }
+    }
+  }
+
+  async function selectPriceTier(tier: "low"|"mid"|"high") {
+    if (!booking.draft) return;
+    setFlowLoading(true); setFlowError(null);
+    try {
+      await homeServiceDraftApi.confirmPriceChoice(booking.draft.id, tier);
+      dispatch({ type:"TIER_SELECTED", tier });
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not select this price option. Please try again.");
     } finally { setFlowLoading(false); }
   }
 
@@ -152,13 +202,15 @@ export function DeepSeekChatScreen({ navigation }: Props) {
       // Idempotency-Key: the draft ID itself is a stable, real, caller-owned
       // key — a retry of this exact call (e.g. after a network blip) hits the
       // same key and the backend's ConfirmationLockService returns the
-      // existing booking instead of creating a duplicate (confirmed real via
-      // app/engines/final_records/{confirm_router,idempotency}.py).
+      // existing booking instead of creating a duplicate. UX-06 Round 5:
+      // corrected to the real customer-facing confirm route (see api.ts's
+      // bookingConfirmApi comment / bargain-contract-audit.md for why the
+      // Round 3/4 route was wrong).
       const result = await bookingConfirmApi.confirmHomeServiceBooking(booking.draft.id, booking.draft.id);
       if (!result.booking_number) throw new Error("Booking confirmation did not return a booking reference.");
       dispatch({ type:"SUBMITTED", bookingNumber: result.booking_number, jobNumber: result.job_number });
     } catch (e:unknown) {
-      setFlowError(e instanceof Error ? e.message : "Booking could not be confirmed. Please try again.");
+      setFlowError(e instanceof Error ? e.message : "This service isn't available for booking in your area just yet. Please check back soon.");
     } finally { setFlowLoading(false); }
   }
 
@@ -265,15 +317,51 @@ export function DeepSeekChatScreen({ navigation }: Props) {
               <Text style={s.priceText} testID="booking-price">
                 {booking.priceSnapshot.display_price ?? `₹${booking.priceSnapshot.final_price}`}
               </Text>
-              <TouchableOpacity style={s.startBtn} onPress={confirmBooking} disabled={flowLoading} testID="chat-confirm-booking">
-                <Text style={s.startBtnText}>{flowLoading ? "Confirming…" : "Confirm Booking"}</Text>
-              </TouchableOpacity>
+
+              {/* UX-06 Round 5, Workstream 4: honest bargain-available vs
+                  bargain-unavailable presentation — never expose internal
+                  floor/rule/error-code jargon either way. */}
+              {booking.step === "not_yet_bookable" ? (
+                <Text style={s.body} testID="booking-not-bookable">
+                  This service isn't available for booking in your area just yet.
+                  Please check back soon.
+                </Text>
+              ) : booking.priceOptions && !booking.selectedTier ? (
+                <View style={{ gap:8 }}>
+                  <Text style={s.body}>Choose an option to continue:</Text>
+                  {(["low","mid","high"] as const).map(tier => (
+                    <TouchableOpacity key={tier} style={s.tierBtn} onPress={()=>selectPriceTier(tier)}
+                      disabled={flowLoading} testID={`booking-tier-${tier}`}>
+                      <Text style={s.tierBtnText}>
+                        {tier === "mid" ? "Continue with this price" : tier === "low" ? "Lower estimate" : "Premium option"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : booking.selectedTier ? (
+                <TouchableOpacity style={s.startBtn} onPress={confirmBooking} disabled={flowLoading} testID="chat-confirm-booking">
+                  <Text style={s.startBtnText}>{flowLoading ? "Confirming…" : "Confirm Booking"}</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={s.body}>Checking availability…</Text>
+              )}
+              <Text style={s.onSiteNote}>You pay the technician on-site — ServiceOS does not process this payment.</Text>
             </View>
           ) : booking.step === "serviceability_checked" || booking.serviceable === false ? (
             <View style={{ gap:14, padding:16 }}>
               <Text style={s.body} testID="booking-serviceability">{booking.serviceabilityMessage}</Text>
               {flowLoading && <Text style={s.body}>Loading price…</Text>}
             </View>
+          ) : booking.draft && brands.length > 0 && !booking.brandId ? (
+            <FlatList
+              data={brands} keyExtractor={b=>b.brand_id}
+              ListHeaderComponent={<Text style={[s.title,{padding:16}]}>Select your appliance brand</Text>}
+              renderItem={({item}) => (
+                <TouchableOpacity style={s.langRow} onPress={()=>pickBrand(item.brand_id)} testID={`brand-${item.brand_id}`}>
+                  <Text style={s.langRowNative}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
           ) : booking.offering ? (
             <View style={{ gap:12, padding:16 }}>
               <Text style={s.title}>Tell us more</Text>
@@ -324,6 +412,10 @@ const s = StyleSheet.create({
   title:  { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary, textAlign:"center" },
   body:   { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, textAlign:"center", lineHeight:20 },
   priceText: { fontSize:theme.font.size.xxxl, fontWeight:"800", color:theme.colors.brand, textAlign:"center" },
+  tierBtn: { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
+             padding:14, backgroundColor:theme.colors.surfaceSunken },
+  tierBtnText: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary, textAlign:"center" },
+  onSiteNote: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, textAlign:"center" },
   errorText: { color:theme.colors.dangerText, fontSize:theme.font.size.sm, textAlign:"center", paddingHorizontal:16 },
   startBtn: { backgroundColor:theme.colors.brand, borderRadius:theme.radius.lg, paddingVertical:14, paddingHorizontal:28 },
   startBtnText: { color:"#fff", fontWeight:"700", fontSize:theme.font.size.base, textAlign:"center" },

@@ -117,6 +117,13 @@ export const catalogApi = {
   categoryOfferings: (categorySlug:string) =>
     apiFetch<{ items:ServiceOffering[]; total:number }>(
       `/v1/customer/categories/${encodeURIComponent(categorySlug)}/offerings`),
+  // Real: GET /v1/customer/catalog/brands?master_service_id=... -> real brand
+  // options for a service that requires one (confirmed real this round while
+  // fixing the booking-draft required-fields contract — see
+  // bargain-contract-audit.md).
+  brandsForService: (masterServiceId:string) =>
+    apiFetch<{ brands:{ brand_id:string; name:string; display_name:string }[]; total:number }>(
+      `/v1/customer/catalog/brands?master_service_id=${encodeURIComponent(masterServiceId)}`),
 };
 
 // ── Bookings (Booking→field_ops.Job pipeline) ───────────────────────────────────
@@ -388,25 +395,32 @@ export const homeServiceDraftApi = {
 };
 
 export interface BookingConfirmationResult {
-  record_type: "booking";
+  record_type?: "booking";
   booking_id: string;
   booking_number: string;
   job_id?: string;
   job_number?: string;
-  status: string;
+  status?: string;
   idempotent: boolean;
-  message: string;
+  message?: string;
 }
 export const bookingConfirmApi = {
-  // Real idempotent confirmation — an Idempotency-Key header is sent on every
-  // call (a stable, caller-generated key, e.g. the draft_id itself) so a
-  // network retry can never create a duplicate booking; confirmed real via
-  // app/engines/final_records/confirm_router.py (Header(None, alias=
-  // "Idempotency-Key"), backed by a real ConfirmationLockService).
+  // UX-06 ROUND 5 CORRECTION: the real, correct customer-facing confirm
+  // endpoint is POST /v1/customer/home-services/booking-drafts/{id}/confirm
+  // (app/engines/home_service_booking/customer_router.py), NOT
+  // /v1/customer/confirm/home-service-booking/{id} (final_records/
+  // confirm_router.py) which Rounds 3/4 used. The home_service_booking route
+  // calls mark_ready_for_confirmation() THEN finalize() in one request; the
+  // final_records route only calls finalize(), which requires the draft to
+  // ALREADY be in "ready_for_confirmation" status -- a precondition only the
+  // first route can establish. This was a real client-side routing mistake,
+  // documented in bargain-contract-audit.md. Idempotent via a real
+  // Idempotency-Key header (same ConfirmationLockService either way).
   confirmHomeServiceBooking: (draftId: string, idempotencyKey: string) =>
-    apiFetch<BookingConfirmationResult>(`/v1/customer/confirm/home-service-booking/${draftId}`, {
+    apiFetch<BookingConfirmationResult>(`/v1/customer/home-services/booking-drafts/${draftId}/confirm`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify({ customer_confirmation: true }),
+      // confirm_draft takes no body params (confirmed: no Pydantic model
+      // declared on the route) -- omitted rather than sending an unused field.
     }),
 };
