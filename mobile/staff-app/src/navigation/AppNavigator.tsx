@@ -12,6 +12,9 @@ import { PartsRequestShowcaseScreen } from "../screens/ux05/PartsRequestShowcase
 import { InspectionChecklistShowcaseScreen } from "../screens/ux05/InspectionChecklistShowcaseScreen";
 import { JobNotesMediaShowcaseScreen } from "../screens/ux05/JobNotesMediaShowcaseScreen";
 import { StaffPartsApprovalShowcaseScreen } from "../screens/ux05/StaffPartsApprovalShowcaseScreen";
+import { CurrentJobScreen } from "../screens/ux05/CurrentJobScreen";
+import { QuoteShowcaseScreen } from "../screens/ux05/QuoteShowcaseScreen";
+import { OfflineStatesShowcaseScreen } from "../screens/ux05/OfflineStatesShowcaseScreen";
 import { theme } from "../styles/theme";
 
 const Stack = createNativeStackNavigator();
@@ -70,6 +73,12 @@ export function AppNavigator() {
               options={{ headerShown:true, title:"Dev: Notes & Media" }} />
             <Stack.Screen name="ShowcaseStaffPartsApproval" component={StaffPartsApprovalShowcaseScreen}
               options={{ headerShown:true, title:"Dev: Staff Parts Approval" }} />
+            <Stack.Screen name="CurrentJob" component={CurrentJobScreen}
+              options={{ headerShown:true, title:"Current Job" }} />
+            <Stack.Screen name="ShowcaseQuote" component={QuoteShowcaseScreen}
+              options={{ headerShown:true, title:"Dev: Quote" }} />
+            <Stack.Screen name="ShowcaseOfflineStates" component={OfflineStatesShowcaseScreen}
+              options={{ headerShown:true, title:"Dev: Offline States" }} />
           </>
         ) : (
           // ── Unauthenticated ─────────────────────────────────────────────

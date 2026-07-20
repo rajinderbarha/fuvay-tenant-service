@@ -7,7 +7,10 @@ import { StatCard } from "../components/StatCard";
 import { Card } from "../components/Card";
 import { Button } from "../components/Button";
 import { Skeleton } from "../components/Skeleton";
+import { AvailabilityControl } from "../components/ux05/AvailabilityControl";
+import { deriveRole } from "../lib/ux05/permissions";
 import { theme, gs } from "../styles/theme";
+import type { AvailabilityView } from "../types/ux05";
 
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] as const;
 const DAY_LABEL: Record<string,string> = { monday:"Mon", tuesday:"Tue", wednesday:"Wed",
@@ -25,6 +28,8 @@ export function ProfileScreen() {
 
   const s2 = staff.data;
   const p  = performance.data;
+  const role = user ? deriveRole(user) : "technician";
+  const [workStatus, setWorkStatus] = useState<AvailabilityView["workStatus"]>("available");
 
   function openSchedule() {
     const wh = s2?.working_hours ?? {};
@@ -55,9 +60,36 @@ export function ProfileScreen() {
         <View style={{ flex:1 }}>
           <Text style={s.name}>{user?.full_name ?? "Staff"}</Text>
           <Text style={s.phone}>{staff.data?.phone ?? "—"}</Text>
-          <Text style={s.skills}>{staff.data?.specialisations.join(" · ") ?? "—"}</Text>
+          {/* Canonical role only -- staff|technician, from the same
+              fail-closed deriveRole() used everywhere else. Designation is
+              descriptive display text derived from specialisations, never
+              used for any authorization decision. */}
+          <Text style={s.roleTag}>{role === "staff" ? "Staff" : "Technician"}</Text>
         </View>
       </View>
+
+      {/* Assigned services (real -- from StaffUser.specialisations) */}
+      <Card style={{ gap:8 }}>
+        <Text style={gs.label}>Assigned Services</Text>
+        <Text style={s.skills}>{staff.data?.specialisations?.join(" · ") || "—"}</Text>
+        <Text style={[gs.label, { marginTop:8 }]}>Assigned Areas · Certifications · Supported Brands</Text>
+        <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- no live endpoint carries area/certification/supported-brand data on StaffUser today.</Text>
+      </Card>
+
+      {/* Availability (workstream 21) */}
+      <AvailabilityControl
+        availability={{
+          meta:{readiness:"mock_design_only"}, workStatus,
+          accountStatus: s2?.status ?? "unknown", currentJobStatus: null,
+        }}
+        onChange={setWorkStatus}
+      />
+
+      {/* Recent activity -- MOCK_DESIGN_ONLY, no live activity-feed endpoint */}
+      <Card style={{ gap:6 }}>
+        <Text style={gs.label}>Recent Activity</Text>
+        <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- no live per-staff activity-feed endpoint exists yet.</Text>
+      </Card>
 
       {/* Performance stats */}
       {performance.loading ? <Skeleton height={80} />
@@ -177,4 +209,6 @@ const s = StyleSheet.create({
   skills:    { fontSize:theme.font.size.xs, color:theme.colors.accent, marginTop:4 },
   statsRow:  { flexDirection:"row", gap:10 },
   statusDot: { width:8, height:8, borderRadius:4 },
+  roleTag:   { fontSize:theme.font.size.xs, fontWeight:"700", color:theme.colors.accent, marginTop:4, textTransform:"uppercase" },
+  mockNote:  { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
 });
