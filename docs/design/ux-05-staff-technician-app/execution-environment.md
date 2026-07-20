@@ -25,11 +25,34 @@ Verified by reading `package.json` directly (not assumed):
 - After both fixes: `npm install --legacy-peer-deps` succeeded, 850 packages installed. `package-lock.json` generated in WSL and copied back into the real git repo (`mobile/staff-app/package-lock.json`), then committed for real from `G:\serviceos`.
 - Added `jest`, `jest-expo`, `react-test-renderer`, `@testing-library/react-native`, `@react-native/jest-preset` (RN 0.85+ moved this out of `jest-expo`'s bundled preset — jest failed with `Validation Error` until installed explicitly), and `@types/jest` as devDependencies, plus `typecheck`/`test`/`web` npm scripts (none existed before).
 
+## WSL verification setup (Round 2)
+- Re-synced `src/` into the same WSL working copy (`rsync -a --delete` to also remove anything stale).
+- Attempted `npx expo start --web`: failed with a real, honest error — `CommandError: It looks like you're
+  trying to use web support but don't have the required dependencies installed. Install react-dom@19.2.3,
+  react-native-web@^0.21.2` — confirming Expo web was never actually configured in this app before (no
+  react-dom/react-native-web dependency existed).
+- Ran `npx expo install react-dom react-native-web -- --legacy-peer-deps`: succeeded, 19 packages added.
+  `package-lock.json` regenerated and copied back to the real repo, committed.
+- Started `CI=1 npx expo start --web --port 8081` in the background: Metro Bundler started, and
+  `curl -s -o /dev/null -w '%{http_code}' http://localhost:8081` returned **200** within the same tool
+  invocation — confirming the dev server does start and serve HTTP. One non-fatal error was logged
+  (`react-native-devtools` binary missing `libgtk-3.so.0` — an unrelated native debugger-shell dependency, not
+  a bundling failure).
+- **Not completed**: a full bundle-serves / Playwright-smoke verification. The backgrounded Metro process did
+  not survive between separate tool invocations in this environment (each shell call is its own process
+  lifecycle), so a follow-up request against the actual JS bundle endpoint in a later call got
+  `Connection refused`. This is an honest environment/tooling boundary, not a claim that Expo web doesn't work
+  — the dev server demonstrably does start and respond. A persistent Metro process and a real Playwright run
+  against it remain deferred. See `deferred-items.md`.
+
 ## What was actually run and verified in WSL
-- `npm install --legacy-peer-deps` — real, succeeded, 850 packages (see `staff-technician-build-report.md`).
-- `npx tsc --noEmit` — real, ran to completion; found pre-existing type errors in files this phase did not author (see `typecheck-report.md`) and confirmed zero errors in every UX-05-authored file.
-- `npx jest src/lib/ux05 src/types/__tests__` — real, 12/12 passing (see `unit-component-test-report.md`).
+- `npm install --legacy-peer-deps` — real, succeeded, 850 packages (Round 1) + 19 more for react-dom/react-native-web (Round 2) (see `staff-technician-build-report.md`).
+- `npx tsc --noEmit` — real, re-run fresh at the end of Round 2 against the full current `src/` tree: **15 errors**,
+  all in files that predate this phase or reuse an existing pre-existing pattern verbatim (see
+  `typecheck-report.md`) — zero errors in any UX-05-specific logic module.
+- `npx jest` (full suite) — real, re-run fresh at the end of Round 2: **30/30 passing**, 5 suites (see
+  `unit-component-test-report.md`).
 
 ## Not attempted / explicit boundary
-- `expo start --web` and Playwright browser verification were not reached in this pass (see `deferred-items.md`) — WSL setup, dependency resolution, view-model layer, and a first batch of components/screens/tests took priority given the session's realistic budget. This is an honest scope boundary, not a claim that Expo web is nonviable — it has not yet been attempted.
 - Native emulator/simulator: not available in this WSL setup (no GUI/emulator), consistent with the brief's expectation.
+- A completed headless-browser (Playwright) smoke test against a live Expo-web bundle: attempted, real progress made (dependencies installed, dev server proven to start and respond with HTTP 200), but not completed end-to-end.

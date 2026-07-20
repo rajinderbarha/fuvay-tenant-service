@@ -1,23 +1,32 @@
-# Known Limitations (this pass)
+# Known Limitations (through Round 2)
 
-- **Navigation/IA was not yet extended.** `TabNavigator`/`AppNavigator` still reflect the pre-existing single
-  undifferentiated tab set (Home/Jobs/Chat/Earnings/Profile). The role-aware nav (Technician 5-tab / Staff 5-tab
-  with "More") described in the IA workstream is designed in `src/types/ux05.ts` (`role`, `StaffHomeView` vs
-  `TechnicianHomeView`) but not wired into a live navigator in this pass.
-- **Home/My Work/Schedule/Staff Work Queue screens were not rebuilt.** The typed view models, permission helpers,
-  and shared components (`PipelineBadge`, `NextActionBar`, `PermissionRestrictedState`,
-  `PartsRequestStatusCard`) exist and are tested/typechecked, but only one showcase screen
-  (`PartsRequestShowcaseScreen`) was built consuming them.
-- **Inspection / checklist / quote workflows** have no live backend endpoint (see
-  `backend-contract-blockers.md`) and no showcase screen was built for them this pass — only their view-model
-  types exist.
-- **Expo web + Playwright verification was not attempted.** Verification in this pass was `tsc --noEmit` +
-  `jest` only.
-- **Most of the 72-file documentation set was not written.** This pass produced the highest-leverage subset
-  (execution environment, real-evidence corrections, role/permission contracts, offline matrix, readiness
-  registry, blockers, this file, and the closing reports). See `deferred-items.md` for the explicit list of
-  what remains.
-- **Pre-existing type errors** (see `typecheck-report.md`) in files this phase did not author were found but not
-  fixed — fixing them was judged out of this pass's scope (they predate UX-05 and are unrelated to the mobile
-  role/pipeline/parts work requested), but they are now visible for the first time because `typecheck` was not a
-  configured script before this pass.
+- **Home screens are not yet recomposed.** `HomeScreen` (technician) is unchanged from before UX-05.
+  `StaffHomeScreen` (new) is an honest MOCK_DESIGN_ONLY placeholder — no live staff work-queue-summary endpoint
+  exists to populate the real priorities workstream 4 describes (action queue, unassigned jobs, SLA risks, etc.).
+- **My Work grouping logic exists and is tested but is not wired into the UI yet.** `src/lib/ux05/myWork.ts`
+  (`classifyJob`/`groupJobs`/`filterJobs`) is real and has 7 passing tests; `JobsListScreen` still uses its
+  original flat status-tab filter rather than these groupings. `WorkItemCard` (built) is the intended row
+  component once this wiring happens.
+- **Staff Work Queue / More / Parts Approval are all correctly restricted, but that also means they show almost
+  nothing today.** This is intentional (fail-closed `deriveRole()` defaults every real account to `technician`,
+  and no live StaffPermission endpoint exists), not a half-built feature — see `staff-parts-approval.md` and
+  `staffpermission-presentation.md`.
+- **Quote presentation and Availability control were not built at all this round** — typed in `types/ux05.ts`
+  from Round 1, no component or screen exists yet.
+- **NextActionBar and NotificationCard exist but are unused** — `JobDetailScreen` and `NotificationsScreen`
+  retain their own pre-existing inline rendering rather than being refactored onto the new shared components,
+  to keep the diff to those two real, live screens smaller and lower-risk this round.
+- **Expo web verification is real but incomplete.** The Metro dev server was proven to start and respond HTTP
+  200 in WSL; a full JS-bundle-serves + Playwright smoke check was not completed due to a background-process
+  lifecycle limitation in this tool environment (see `execution-environment.md` for the exact detail) — not a
+  claim that Expo web is broken, just that the check wasn't finished.
+- **Draft persistence (offline-draft-safe) is not implemented anywhere** — `InspectionChecklistShowcaseScreen`
+  and `JobNotesMediaShowcaseScreen` hold state in `useState` only; a real app restart loses all draft progress.
+  This is disclosed, not silently implied as solved by the "draft_only" category in `offline-operation-matrix.csv`
+  (that CSV documents the *intended* offline category, not a claim that persistence is built).
+- **Pre-existing type errors** (see `typecheck-report.md`) remain unfixed — 14 predate this phase, 1 new
+  occurrence in `ScheduleScreen.tsx` reuses an existing codebase pattern verbatim rather than introducing a new
+  bug class. Fixing the shared `useApi`/`useAction` generic-inference root cause was judged out of scope (touches
+  a hook every existing screen depends on, no dedicated regression coverage exists for it).
+- **Most of the 72-file documentation set remains unwritten** (31 of 72 done through Round 2) — see
+  `deferred-items.md` for the itemized list.
