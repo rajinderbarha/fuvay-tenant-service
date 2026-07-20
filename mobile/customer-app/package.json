@@ -7,7 +7,9 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "lint": "eslint src --ext .ts,.tsx"
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
   },
   "dependencies": {
     "expo": "~56.0.12",
@@ -29,7 +31,25 @@
   "devDependencies": {
     "@babel/core": "^7.27.0",
     "@types/react": "~19.2.0",
-    "@types/react-native": "^0.74.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "jest": "^29.7.0",
+    "jest-expo": "~56.0.0",
+    "@testing-library/react-native": "^12.9.0",
+    "react-test-renderer": "19.2.0",
+    "@types/jest": "^29.5.14",
+    "@react-native/jest-preset": "*"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)"
+    ],
+    "setupFiles": [
+      "./jest.setup.js"
+    ],
+    "testTimeout": 10000
+  },
+  "overrides": {
+    "react-test-renderer": "19.2.0"
   }
 }
