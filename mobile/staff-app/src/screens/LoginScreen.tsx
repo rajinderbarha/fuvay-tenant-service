@@ -7,14 +7,14 @@ export function LoginScreen() {
   const [phone,    setPhone]    = useState("");
   const [password, setPassword] = useState("");
   const [loading,  setLoading]  = useState(false);
-  const { login, error } = useAuth();
+  const { login, error, sessionExpired, clearSessionExpired } = useAuth();
 
   async function handleLogin() {
     if (!phone.trim() || !password.trim()) {
       Alert.alert("Missing fields", "Please enter phone and password."); return;
     }
     setLoading(true);
-    try { await login(phone.trim(), password); }
+    try { await login(phone.trim(), password); clearSessionExpired(); }
     catch { /* error shown via useAuth().error */ }
     finally { setLoading(false); }
   }
@@ -31,6 +31,11 @@ export function LoginScreen() {
 
       <View style={s.form}>
         <Text style={s.formTitle}>Sign In</Text>
+        {sessionExpired && !error && (
+          <View style={s.sessionBanner}>
+            <Text style={s.sessionText}>Your session has ended. Please sign in again.</Text>
+          </View>
+        )}
         {error && (
           <View style={s.errorBanner}>
             <Text style={s.errorText}>{error}</Text>
@@ -78,6 +83,9 @@ const s = StyleSheet.create({
   errorBanner:{ backgroundColor:theme.colors.dangerBg, borderRadius:theme.radius.md, padding:12,
                 borderWidth:1, borderColor:theme.colors.dangerBorder },
   errorText:  { fontSize:theme.font.size.sm, color:theme.colors.dangerText },
+  sessionBanner:{ backgroundColor:theme.colors.warningBg, borderRadius:theme.radius.md, padding:12,
+                borderWidth:1, borderColor:theme.colors.warningBorder },
+  sessionText:{ fontSize:theme.font.size.sm, color:theme.colors.warningText },
   fieldGroup: { gap:6 },
   fieldLabel: { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary },
   input:      { height:48, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,

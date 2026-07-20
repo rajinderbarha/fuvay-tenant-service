@@ -23,6 +23,11 @@ export class ServiceOSError extends Error {
     public code:        string,
     message:            string,
     public resolution?: string,
+    // UX-05 Round 7: real HTTP status, so callers can distinguish a genuine
+    // 401 (session expired / token invalid) from other failures without
+    // guessing from the error message. Used by AuthContext to set a real
+    // sessionExpired flag -- not fabricated, driven by the actual response.
+    public status?:      number,
   ) { super(message); this.name = "ServiceOSError"; }
 }
 
@@ -42,7 +47,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}, skipAuth = f
   if (!res.ok) {
     let err: { error_code?:string; message?:string; resolution?:string } = {};
     try { err = await res.json(); } catch { err.error_code = "HTTP_ERROR"; err.message = `HTTP ${res.status}`; }
-    throw new ServiceOSError(err.error_code ?? "API_ERROR", err.message ?? "Request failed.", err.resolution);
+    throw new ServiceOSError(err.error_code ?? "API_ERROR", err.message ?? "Request failed.", err.resolution, res.status);
   }
   const json = await res.json();
   return json.data as T;
