@@ -1,8 +1,8 @@
 # UX-05 Implementation Summary
 
 Branch `design/ux-05-staff-technician-app`, based on UX-04B `7488335`. Target: `mobile/staff-app/` (Expo ~56,
-React Native 0.85, React 19.2, React Navigation v7). Three rounds of work so far, all partial, all honestly
-reported.
+React Native 0.85, React 19.2.3, React Navigation v7). Four rounds of work, all partial, all honestly reported.
+Round 4 is intended as the last round for now, per the coordinator's framing.
 
 ## Round 1 (commits `4bb1db9`..`afaf478`)
 Fixed two real WSL npm-install blockers, produced the app's first lockfile, added a test/typecheck toolchain,
@@ -15,39 +15,45 @@ new real `ScheduleScreen`; new honestly-labeled MOCK_DESIGN_ONLY Staff screens; 
 4 dev showcase routes; Expo web dependencies installed and dev-server-responds proven; 18 more tests (30 total);
 ~13 more docs (31 of 72).
 
-## Round 3 (this update)
-1. **`HomeScreen` recomposed for real** on `groupJobs()` — Active Job / new "Needs Your Action" section / Today's
-   Schedule all use the same classification `JobsListScreen` uses.
-2. **`myWork.ts` wired into `JobsListScreen`'s actual render** — tabs are now `All/Current/Today/Upcoming/
-   Needs Action/Completed`, filtering calls the real tested function directly.
-3. **Current Job mode** (`CurrentJobScreen`) — focused single-job screen, sticky `NextActionBar`, reuses the real
-   transitions state machine, wired into `AppNavigator`.
-4. **Quote presentation** (`QuoteShowcaseScreen`) — confirmed via full re-read of `lib/api.ts` that no quote
-   endpoint exists; built view-only, `MOCK_DESIGN_ONLY`, no approve/finalize affordance in the view model at all.
-5. **Availability control** (`AvailabilityControl`) — confirmed no live work-status endpoint; renders 4 statuses
-   as local state with account/job status shown as visibly distinct fields; wired into extended `ProfileScreen`.
-6. **`ProfileScreen` extended**: role/designation tag, real Assigned Services, honestly-labeled MOCK areas/
-   certifications/recent-activity, `AvailabilityControl`.
-7. **2 more dev showcases**: Quote, Offline States (6 scenarios using real `NetworkStatusBanner`/
-   `PermissionRestrictedState`) — 7 of ~30 original targets now built.
-8. **Expo web + Playwright retried properly** (continuous backgrounded shell session, not split across calls):
-   bundle build proven real end-to-end (HTTP 200, 3.1MB, contains this round's actual compiled source);
-   Playwright installed, Chromium downloaded, runtime launch hit one specific diagnosed blocker (missing sudo
-   access for Chromium's system dependencies) — documented precisely rather than left ambiguous.
-9. **5 more tests (35 total)**: `AvailabilityControl` interaction + distinct-field assertions,
-   `NetworkStatusBanner` state-driven rendering (including the "renders nothing when nothing's wrong" case).
-10. **Fresh re-verification this round**: `npx jest` → 35/35 passing; `npx tsc --noEmit` → 19 errors, all
-    pre-existing pattern (14 pre-existing + 5 new occurrences of the identical existing pattern), zero new
-    business-logic errors.
-11. **6 more doc files** (37 of 72 total).
+## Round 3 (commits `2785719`-era..`bac223f`)
+`HomeScreen`/`JobsListScreen` recomposed on real `groupJobs()`; Current Job mode; Quote presentation and
+Availability control (both confirmed MOCK_DESIGN_ONLY via full `lib/api.ts` re-read); Profile extended;
+2 more showcases (7 total); Expo web bundle build proven real end-to-end (HTTP 200, 3.1MB, verified real
+compiled source); Playwright installed, Chromium downloaded, runtime launch blocked by a diagnosed
+missing-sudo issue under the `admin` WSL user; 5 more tests (35 total); 6 more docs (37 of 72).
 
-## What's still deferred
+## Round 4 (commits `db987f8`..`b32316b`) — this update, likely final for now
+1. **Chromium/Playwright runtime check unblocked and completed for real.** Switched to the WSL Debian root user
+   (needs no sudo) per the coordinator's correct diagnosis. Chromium's system deps were already present;
+   headless Chromium launched successfully. **Found and fixed a genuine bug**: `react@19.2.0` vs
+   `react-dom@19.2.3` version mismatch causing a real page error — bumped both (+`react-test-renderer`) to
+   `19.2.3` in lockstep. Re-ran the smoke check: zero page/console errors, confirmed in light and dark browser
+   color schemes, and again after this round's further changes. See `runtime-test-report.md`.
+2. **Real accessibility pass** (fixes, not a plan): 4 sub-44pt touch targets fixed, `accessibilityRole`/
+   `accessibilityLabel` added to 8 components, `NotificationCard`'s unread status now conveyed beyond color
+   alone, `PermissionRestrictedState`'s decorative icon hidden from screen readers. See `accessibility-report.md`.
+3. **Real theme pass**: 2 hardcoded `#fff` literals found and fixed (should use `theme.colors.textInverse`).
+   Honest finding: this app has no dark theme at all — verified, documented, not fabricated as solved. See
+   `light-dark-theme-report.md`.
+4. **`NetworkStatusBanner` wired into production** via a new `useNetworkStatus` hook (real on Expo web,
+   honestly native-incomplete), mounted once in `AppNavigator` above every screen.
+5. **1 more dev showcase**: `SystemStatesShowcaseScreen` (Session Expired, Tenant Suspended, Read-only,
+   Restricted) — 8 of ~30 original targets now built.
+6. **Fresh re-verification this round**: `npx jest` → 35/35 passing; `npx tsc --noEmit` → 19 errors, unchanged
+   pre-existing pattern, zero new errors from this round's changes; `git diff --stat` non-change check re-confirmed empty.
+7. **4 more doc files** (`accessibility-report.md`, `light-dark-theme-report.md`, `runtime-test-report.md`, plus
+   updates to `execution-environment.md`/`staff-technician-build-report.md`/`deferred-items.md`/
+   `known-limitations.md`/`approval-gate.md`) — ~41 of 72 total.
+
+## What's still deferred (for a potential future UX-05B pass)
 See `deferred-items.md` and `known-limitations.md`: `StaffHomeScreen`/`StaffWorkQueueScreen` need a real backend
-endpoint (a genuine contract gap, not closeable from the frontend alone), `NotificationCard`/`NextActionBar`
-wiring into the two remaining pre-existing screens, `NetworkStatusBanner` wiring into production screens, draft
-persistence, a11y/theme/localization workstreams, the Playwright runtime check (build proven, browser-load
-blocked by environment), ~35 remaining doc files, and ~23 more showcase screens.
+endpoint (a genuine contract gap), a real dark theme (palette + `useColorScheme` wiring — a separate, sizable
+workstream), native network detection (needs a NetInfo/expo-network dependency decision), draft persistence,
+`NextActionBar`/`NotificationCard` wiring into the two remaining pre-existing screens, ~22 more showcase
+screens, ~31 more doc files, a systematic focus-order/text-scaling/screen-reader audit, and localization testing
+(English/Hindi/Punjabi — not attempted in any round).
 
 ## Final status
-**STAFF_TECHNICIAN_APP_DESIGN_PARTIAL** — real, verified, committed partial progress across three rounds; not a
-complete design phase. See `approval-gate.md`.
+**STAFF_TECHNICIAN_APP_DESIGN_PARTIAL** — real, verified, committed partial progress across four rounds,
+including a full working verification pipeline (install → typecheck → tests → build → real browser runtime)
+that caught and fixed a genuine bug. Not a complete design phase. See `approval-gate.md`.
