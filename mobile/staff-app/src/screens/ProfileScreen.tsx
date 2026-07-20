@@ -8,6 +8,7 @@ import { Card } from "../components/Card";
 import { Button } from "../components/Button";
 import { Skeleton } from "../components/Skeleton";
 import { AvailabilityControl } from "../components/ux05/AvailabilityControl";
+import { ThemeToggle } from "../components/ux05/ThemeToggle";
 import { deriveRole } from "../lib/ux05/permissions";
 import { theme, gs } from "../styles/theme";
 import type { AvailabilityView } from "../types/ux05";
@@ -90,6 +91,13 @@ export function ProfileScreen() {
         <Text style={gs.label}>Recent Activity</Text>
         <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- no live per-staff activity-feed endpoint exists yet.</Text>
       </Card>
+
+      {/* UX-05 Round 5: real theme preference control -- writes through
+          useAppTheme(), persists to AsyncStorage. The rest of this screen
+          still uses the static light-only theme import (a real, disclosed
+          gap -- see light-dark-theme-report.md); ThemeToggle itself is
+          fully reactive. */}
+      <ThemeToggle />
 
       {/* Performance stats */}
       {performance.loading ? <Skeleton height={80} />
@@ -203,7 +211,7 @@ const s = StyleSheet.create({
                borderRadius:theme.radius.lg, padding:theme.spacing.base, ...theme.shadow.sm },
   avatar:    { width:58, height:58, borderRadius:29, backgroundColor:theme.colors.brand,
                alignItems:"center", justifyContent:"center" },
-  avatarText:{ fontSize:theme.font.size.xxl, fontWeight:"800", color:"#fff" },
+  avatarText:{ fontSize:theme.font.size.xxl, fontWeight:"800", color:theme.colors.textInverse },
   name:      { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary },
   phone:     { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, marginTop:2 },
   skills:    { fontSize:theme.font.size.xs, color:theme.colors.accent, marginTop:4 },

@@ -17,6 +17,7 @@ import { CurrentJobScreen } from "../screens/ux05/CurrentJobScreen";
 import { QuoteShowcaseScreen } from "../screens/ux05/QuoteShowcaseScreen";
 import { OfflineStatesShowcaseScreen } from "../screens/ux05/OfflineStatesShowcaseScreen";
 import { SystemStatesShowcaseScreen } from "../screens/ux05/SystemStatesShowcaseScreen";
+import { ThemeShowcaseScreen } from "../screens/ux05/ThemeShowcaseScreen";
 import { NetworkStatusBanner } from "../components/ux05/NetworkStatusBanner";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 
@@ -102,6 +103,8 @@ export function AppNavigator() {
               options={{ headerShown:true, title:"Dev: Offline States" }} />
             <Stack.Screen name="ShowcaseSystemStates" component={SystemStatesShowcaseScreen}
               options={{ headerShown:true, title:"Dev: System States" }} />
+            <Stack.Screen name="ShowcaseTheme" component={ThemeShowcaseScreen}
+              options={{ headerShown:true, title:"Dev: Theme" }} />
           </>
         ) : (
           // ── Unauthenticated ─────────────────────────────────────────────
