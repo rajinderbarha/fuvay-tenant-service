@@ -1,33 +1,36 @@
-# Known Limitations (through Round 3)
+# Known Limitations (through Round 4 — intended as the last round for now)
 
 - **`StaffHomeScreen`/`StaffWorkQueueScreen` remain honest placeholders.** No live staff work-queue-summary
-  endpoint exists (confirmed across all three rounds) — this is a genuine backend-contract gap, not a frontend
-  omission; nothing more can be built here without either a real endpoint or an explicit product decision.
-- **`NotificationCard` and `NextActionBar` are built but only partially wired.** `NextActionBar` is used in the
-  new `CurrentJobScreen` but not in `JobDetailScreen` (kept as its own inline action grid, unchanged, to avoid
-  touching the one screen with the real, money-touching `complete` action more than necessary this round).
-  `NotificationCard` is unused — `NotificationsScreen` keeps its own pre-existing renderer.
-- **`NetworkStatusBanner` is demonstrated in a dev showcase but not wired into any production screen.** No real
-  network-state detection (e.g. `NetInfo`) is wired up anywhere in the app; the banner takes a fixture
-  `OfflineSyncStateView` in its showcase.
+  endpoint exists (confirmed across all four rounds) — a genuine backend-contract gap, not a frontend omission.
+- **`NextActionBar` is wired into `CurrentJobScreen` but not `JobDetailScreen`** (kept as its own inline action
+  grid, unchanged, to avoid touching the one screen with the real, money-touching `complete` action more than
+  necessary). `NotificationCard` is built but `NotificationsScreen` keeps its own pre-existing renderer.
+- **This app has no dark theme at all** — a real, pre-existing (not UX-05-introduced) characteristic, confirmed
+  by direct inspection (`theme.ts` is one fixed palette; zero `useColorScheme`/`Appearance` usage anywhere).
+  UX-05's own components don't hardcode colors that would fight a future dark palette (2 real violations found
+  and fixed this round), but building an actual second palette + OS-theme wiring is a real, separate,
+  not-yet-started workstream for a future pass.
+- **`useNetworkStatus` (new this round) is real on Expo web, not on native.** `navigator.onLine` +
+  `online`/`offline` window events work in a real browser (verified via Playwright); React Native on iOS/Android
+  has neither — the hook will always report "online" on a native build until a
+  `@react-native-community/netinfo` (or `expo-network`) dependency is added, a real dependency decision not made
+  this round.
 - **Draft persistence remains unimplemented** everywhere it's mentioned (Inspection/Checklist, Notes/Media,
-  Quote) — all `useState`-only, lost on unmount. Disclosed consistently since Round 2.
-- **Playwright *runtime* verification hit a specific, real, diagnosed blocker this round.** The Expo web
-  **build** (Metro bundling) is proven to work end-to-end — verified HTTP 200 + a real 3.1MB bundle containing
-  this round's actual compiled source. The **runtime** check (load the bundle in an actual browser, watch for
-  console errors) could not run: headless Chromium crashes with `SIGSEGV` because required OS shared libraries
-  aren't installed in this WSL image, and installing them needs `sudo`, which requires a password not available
-  here (`sudo -n true` → `sudo: a password is required`). This is a diagnosed environment constraint specific to
-  this WSL image, not a claim about the app's correctness in a real browser.
-- **Pre-existing type errors remain unfixed** (19 total now — 14 pre-existing before UX-05, 5 new occurrences of
-  the identical existing `useCallback`/`useAction`/screen-prop-typing pattern reused verbatim in this round's new
-  files). See `typecheck-report.md` for the itemized, re-verified-fresh list. Fixing the shared
-  `hooks/useApi.ts` generic-inference root cause remains out of scope (touches a hook every existing screen
-  depends on, no dedicated regression coverage exists for it).
-- **Most of the 72-file documentation set remains unwritten** (37 of 72 done through Round 3).
-- **~23 of the original ~30 dev-showcase-screen targets remain unbuilt** (7 built so far: Parts Request,
-  Inspection & Checklist, Notes & Media, Staff Parts Approval, Quote, Offline States, plus Current Job as a
-  semi-production screen). Session-expired/tenant-suspended/light-dark-theme/large-text-accessibility dedicated
-  showcases were not built as separate screens.
+  Quote) — all `useState`-only, lost on unmount.
+- **No focus-order audit, no text-scaling stress test, no live screen-reader session** were performed — the
+  accessibility pass fixed concrete, verifiable gaps (touch targets, missing labels/roles, color-only status)
+  but did not attempt these harder-to-verify-without-a-device checks. See `accessibility-report.md`.
+- **Pre-existing type errors remain unfixed** (19 total — 14 pre-existing before UX-05, 5 new occurrences of the
+  identical existing `useCallback`/`useAction`/screen-prop-typing pattern reused verbatim in new files across
+  Rounds 2–3; Round 4 added zero new occurrences). Fixing the shared `hooks/useApi.ts` generic-inference root
+  cause remains out of scope.
+- **Most of the 72-file documentation set remains unwritten** (~41 of 72 done through Round 4).
+- **~22 of the original ~30 dev-showcase-screen targets remain unbuilt** (8 built: Parts Request, Inspection &
+  Checklist, Notes & Media, Staff Parts Approval, Quote, Offline States, System States, plus Current Job as a
+  semi-production screen). Light/dark-theme-examples and large-text/accessibility dedicated showcases were not
+  built as separate screens.
+- **Lint** — `eslint` script exists, still not executed (no config exists, confirmed `NOT_CONFIGURED` since Round 1).
+- **Deep-linking into authenticated routes was never verified in-browser** — no `linking` config exists in
+  `NavigationContainer`; only the unauthenticated Login screen was confirmed to render error-free via Playwright.
 - **Staff Work Queue / More / Parts Approval remain correctly restricted, showing almost nothing** — intentional
   (fail-closed `deriveRole()` + no live StaffPermission endpoint), not a half-built feature.
