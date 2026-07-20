@@ -4,17 +4,17 @@ import { useAuth } from "../context/AuthContext";
 import { theme } from "../styles/theme";
 
 export function LoginScreen() {
-  const [phone,    setPhone]    = useState("");
+  const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [loading,  setLoading]  = useState(false);
   const { login, error, sessionExpired, clearSessionExpired } = useAuth();
 
   async function handleLogin() {
-    if (!phone.trim() || !password.trim()) {
-      Alert.alert("Missing fields", "Please enter phone and password."); return;
+    if (!email.trim() || !password.trim()) {
+      Alert.alert("Missing fields", "Please enter email and password."); return;
     }
     setLoading(true);
-    try { await login(phone.trim(), password); clearSessionExpired(); }
+    try { await login(email.trim(), password); clearSessionExpired(); }
     catch { /* error shown via useAuth().error */ }
     finally { setLoading(false); }
   }
@@ -42,11 +42,11 @@ export function LoginScreen() {
           </View>
         )}
         <View style={s.fieldGroup}>
-          <Text style={s.fieldLabel}>Phone Number</Text>
+          <Text style={s.fieldLabel}>Email</Text>
           <TextInput
-            style={s.input} value={phone} onChangeText={setPhone}
-            placeholder="+91 9876543210" placeholderTextColor={theme.colors.textTertiary}
-            keyboardType="phone-pad" autoComplete="tel" returnKeyType="next"
+            style={s.input} value={email} onChangeText={setEmail}
+            placeholder="you@example.com" placeholderTextColor={theme.colors.textTertiary}
+            keyboardType="email-address" autoComplete="email" autoCapitalize="none" returnKeyType="next"
           />
         </View>
         <View style={s.fieldGroup}>

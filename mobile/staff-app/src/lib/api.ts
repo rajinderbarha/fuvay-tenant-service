@@ -15,7 +15,6 @@ export const STORAGE_KEYS = {
   staffId:  "serviceos_staff_id",
   tenantId: "serviceos_tenant_id",
   name:     "serviceos_staff_name",
-  phone:    "serviceos_staff_phone",
 } as const;
 
 export class ServiceOSError extends Error {
@@ -140,10 +139,25 @@ export interface StaffNotification {
 export interface NotificationListResponse { items:StaffNotification[]; total:number; unread_count:number|null; }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+// UX-05B FIX 1: the app previously called POST /v1/auth/staff/login with
+// {phone,password} -- that route does not exist (405, not in the OpenAPI
+// spec) and predates all UX-05 work (traced to baseline commit 36efe8d).
+// The real, confirmed-live contract is POST /v1/auth/login with
+// {email,password}, the same endpoint the super-admin/tenant-portal web
+// apps already use. It returns {access_token, refresh_token, user:{...},
+// tenant:{...}}, not {access_token, staff:StaffUser}.
+export interface AuthLoginUser {
+  id:string; user_id:string; email:string; phone:string|null;
+  full_name:string; role:string; tenant_id:string|null; is_active:boolean;
+}
+export interface AuthLoginResponse {
+  access_token:string; refresh_token:string; user:AuthLoginUser;
+  tenant:{ id:string; name:string } | null;
+}
 export const authApi = {
-  login:  (phone:string, password:string) =>
-    apiFetch<{ access_token:string; refresh_token:string; staff:StaffUser }>(
-      "/v1/auth/staff/login", { method:"POST", body:JSON.stringify({ phone, password }) }, true),
+  login:  (email:string, password:string) =>
+    apiFetch<AuthLoginResponse>(
+      "/v1/auth/login", { method:"POST", body:JSON.stringify({ email, password }) }, true),
   me:     () => apiFetch<StaffUser>("/v1/auth/me"),
   logout: () => apiFetch<void>("/v1/auth/logout", { method:"POST" }),
 };

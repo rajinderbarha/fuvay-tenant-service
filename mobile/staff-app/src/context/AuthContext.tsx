@@ -5,7 +5,7 @@ import { authApi, clearSession, ServiceOSError, STORAGE_KEYS, type StaffUser } f
 interface AuthCtx {
   user:     StaffUser | null;
   loading:  boolean;
-  login:    (phone:string, password:string) => Promise<void>;
+  login:    (email:string, password:string) => Promise<void>;
   logout:   () => Promise<void>;
   error:    string | null;
   // UX-05 Round 7: real session-expiry signal, driven by an actual 401 from
@@ -43,15 +43,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  async function login(phone: string, password: string) {
+  async function login(email: string, password: string) {
     setError(null);
     try {
-      const { access_token, staff } = await authApi.login(phone, password);
+      // UX-05B FIX 1: real /v1/auth/login response is {access_token,
+      // refresh_token, user:{id,email,full_name,role,tenant_id,phone,...}},
+      // not {access_token, staff:StaffUser}. specialisations/status/rating
+      // aren't returned by this endpoint (they never were on /v1/auth/*) --
+      // defaulted here the same way the pre-existing /v1/auth/me path did.
+      const { access_token, user: authUser } = await authApi.login(email, password);
+      const staff: StaffUser = {
+        id: authUser.id, full_name: authUser.full_name,
+        phone: authUser.phone ?? undefined, email: authUser.email,
+        specialisations: [], status: authUser.is_active ? "active" : "inactive",
+        tenant_id: authUser.tenant_id ?? undefined,
+      };
       await AsyncStorage.multiSet([
         [STORAGE_KEYS.token,    access_token],
         [STORAGE_KEYS.staffId,  staff.id],
         [STORAGE_KEYS.name,     staff.full_name],
-        [STORAGE_KEYS.phone,    staff.phone ?? ""],
         [STORAGE_KEYS.tenantId, staff.tenant_id ?? ""],
       ]);
       setUser(staff);
