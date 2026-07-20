@@ -23,7 +23,9 @@ const STATE_COLOR: Record<string,{bg:string;text:string}> = {
 export function PartsRequestStatusCard({ item }: { item:PartsRequestStatusView }) {
   const c = STATE_COLOR[item.state];
   return (
-    <View style={[gs.card, s.card]} testID="parts-request-status-card">
+    <View style={[gs.card, s.card]} testID="parts-request-status-card"
+      accessibilityRole="summary"
+      accessibilityLabel={`${item.partName}, quantity ${item.quantity}, status ${STATE_LABEL[item.state]}`}>
       <View style={s.row}>
         <Text style={s.name}>{item.partName} × {item.quantity}</Text>
         <View style={[s.badge, { backgroundColor:c.bg }]}>

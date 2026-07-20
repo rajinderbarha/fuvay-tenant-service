@@ -10,8 +10,10 @@ import { theme, gs } from "../../styles/theme";
  */
 export function PermissionRestrictedState({ reason }: { reason?:string }) {
   return (
-    <View style={[gs.card, s.wrap]} testID="permission-restricted-state">
-      <Text style={s.icon}>🔒</Text>
+    <View style={[gs.card, s.wrap]} testID="permission-restricted-state"
+      accessibilityRole="alert"
+      accessibilityLabel={`Restricted. ${reason ?? "You do not have permission to view this."}`}>
+      <Text style={s.icon} accessibilityElementsHidden importantForAccessibility="no">🔒</Text>
       <Text style={s.title}>Restricted</Text>
       <Text style={s.reason}>{reason ?? "You do not have permission to view this."}</Text>
     </View>

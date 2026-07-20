@@ -8,7 +8,10 @@ import type { MyWorkItemView } from "../../types/ux05";
 export function WorkItemCard({ item, onPress }: { item:MyWorkItemView; onPress:() => void }) {
   const j = item.job;
   return (
-    <TouchableOpacity style={[gs.card, s.card]} activeOpacity={0.85} onPress={onPress} testID="work-item-card">
+    <TouchableOpacity style={[gs.card, s.card]} activeOpacity={0.85} onPress={onPress} testID="work-item-card"
+      accessibilityRole="button"
+      accessibilityLabel={`Job ${j.job_number}${j.city ? `, ${j.city}` : ""}, status ${j.status.replace(/_/g," ")}`}>
+
       <View style={s.top}>
         <View style={{ flex:1 }}>
           <Text style={s.jobNum}>{j.job_number}</Text>

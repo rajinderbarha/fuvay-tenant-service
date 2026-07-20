@@ -11,7 +11,12 @@ export function NotificationCard({ item, onPress }: { item:NotificationView; onP
   const n = item.notification;
   const unread = n.read_status !== "read";
   return (
-    <TouchableOpacity style={[s.row, unread && s.rowUnread]} activeOpacity={0.85} onPress={onPress} testID="notification-card">
+    <TouchableOpacity style={[s.row, unread && s.rowUnread]} activeOpacity={0.85} onPress={onPress} testID="notification-card"
+      accessibilityRole="button"
+      accessibilityLabel={`${unread ? "Unread. " : ""}${n.title}`}
+      accessibilityState={{ selected: unread }}>
+      {/* status-beyond-color: unread is also conveyed in the accessibility
+          label text above, not solely by the dot's fill color */}
       <View style={[s.dot, { backgroundColor: unread ? PRIORITY_COLOR[item.priority] : "transparent", borderColor:PRIORITY_COLOR[item.priority] }]} />
       <View style={{ flex:1 }}>
         <Text style={[s.title, unread && s.titleUnread]}>{n.title}</Text>

@@ -6,7 +6,10 @@ import type { ScheduleItemView } from "../../types/ux05";
 
 export function ScheduleCard({ item, onPress }: { item:ScheduleItemView; onPress:() => void }) {
   return (
-    <TouchableOpacity style={[gs.card, s.card]} activeOpacity={0.85} onPress={onPress} testID="schedule-card">
+    <TouchableOpacity style={[gs.card, s.card]} activeOpacity={0.85} onPress={onPress} testID="schedule-card"
+      accessibilityRole="button"
+      accessibilityLabel={`${item.timeWindow ?? "No time set"}, job ${item.job.job_number}${item.hasConflict ? ", schedule conflict" : ""}`}>
+
       <View style={s.row}>
         <Text style={s.time}>{item.timeWindow ?? "No time set"}</Text>
         {item.hasConflict && <Text style={s.conflict}>⚠ Conflict</Text>}

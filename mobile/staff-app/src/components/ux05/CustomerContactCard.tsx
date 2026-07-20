@@ -19,12 +19,18 @@ export function CustomerContactCard({ contact, onMessage }: { contact:CustomerCo
       {contact.issueSummary && <Text style={s.issue}>{contact.issueSummary}</Text>}
       <View style={s.actions}>
         {contact.callSupported ? (
-          <TouchableOpacity style={s.actionBtn}><Text style={s.actionText}>📞 Call</Text></TouchableOpacity>
+          <TouchableOpacity style={s.actionBtn} accessibilityRole="button" accessibilityLabel="Call customer">
+            <Text style={s.actionText}>📞 Call</Text>
+          </TouchableOpacity>
         ) : (
-          <View style={[s.actionBtn, s.disabled]}><Text style={s.disabledText}>📞 Call unavailable</Text></View>
+          <View style={[s.actionBtn, s.disabled]} accessibilityRole="text" accessibilityLabel="Call unavailable for this job">
+            <Text style={s.disabledText}>📞 Call unavailable</Text>
+          </View>
         )}
         {contact.messageSupported && (
-          <TouchableOpacity style={s.actionBtn} onPress={onMessage}><Text style={s.actionText}>💬 Message</Text></TouchableOpacity>
+          <TouchableOpacity style={s.actionBtn} onPress={onMessage} accessibilityRole="button" accessibilityLabel="Message customer">
+            <Text style={s.actionText}>💬 Message</Text>
+          </TouchableOpacity>
         )}
       </View>
     </View>
@@ -36,7 +42,8 @@ const s = StyleSheet.create({
   name:        { fontSize:theme.font.size.lg, fontWeight:"700", color:theme.colors.textPrimary },
   issue:       { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
   actions:     { flexDirection:"row", gap:10, marginTop:6 },
-  actionBtn:   { flex:1, height:40, borderRadius:theme.radius.md, borderWidth:1, borderColor:theme.colors.border,
+  // UX-05 Round 4 a11y pass: 40pt -> 44pt to meet the minimum touch-target size.
+  actionBtn:   { flex:1, height:44, borderRadius:theme.radius.md, borderWidth:1, borderColor:theme.colors.border,
                  alignItems:"center", justifyContent:"center" },
   actionText:  { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary },
   disabled:    { backgroundColor:theme.colors.surfaceSunken },

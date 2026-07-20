@@ -21,8 +21,14 @@ export function AddressCard({ contact }: { contact:CustomerContactView }) {
       <Text style={gs.label}>Service Address</Text>
       <Text style={s.address}>📍 {addressLine}</Text>
       <View style={s.actions}>
-        <TouchableOpacity style={s.actionBtn} onPress={navigate}><Text style={s.actionText}>🧭 Navigate</Text></TouchableOpacity>
-        <TouchableOpacity style={s.actionBtn} onPress={copy}><Text style={s.actionText}>📋 Copy</Text></TouchableOpacity>
+        <TouchableOpacity style={s.actionBtn} onPress={navigate}
+          accessibilityRole="button" accessibilityLabel={`Navigate to ${addressLine}`}>
+          <Text style={s.actionText}>🧭 Navigate</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.actionBtn} onPress={copy}
+          accessibilityRole="button" accessibilityLabel={`Copy address ${addressLine}`}>
+          <Text style={s.actionText}>📋 Copy</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -32,7 +38,8 @@ const s = StyleSheet.create({
   card:      { gap:8 },
   address:   { fontSize:theme.font.size.base, color:theme.colors.textPrimary },
   actions:   { flexDirection:"row", gap:10, marginTop:6 },
-  actionBtn: { flex:1, height:40, borderRadius:theme.radius.md, borderWidth:1, borderColor:theme.colors.border,
+  // UX-05 Round 4 a11y pass: 40pt -> 44pt to meet the minimum touch-target size.
+  actionBtn: { flex:1, height:44, borderRadius:theme.radius.md, borderWidth:1, borderColor:theme.colors.border,
                alignItems:"center", justifyContent:"center" },
   actionText:{ fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary },
 });
