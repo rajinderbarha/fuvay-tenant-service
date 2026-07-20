@@ -45,14 +45,49 @@ Verified by reading `package.json` directly (not assumed):
   — the dev server demonstrably does start and respond. A persistent Metro process and a real Playwright run
   against it remain deferred. See `deferred-items.md`.
 
-## What was actually run and verified in WSL
-- `npm install --legacy-peer-deps` — real, succeeded, 850 packages (Round 1) + 19 more for react-dom/react-native-web (Round 2) (see `staff-technician-build-report.md`).
-- `npx tsc --noEmit` — real, re-run fresh at the end of Round 2 against the full current `src/` tree: **15 errors**,
-  all in files that predate this phase or reuse an existing pre-existing pattern verbatim (see
-  `typecheck-report.md`) — zero errors in any UX-05-specific logic module.
-- `npx jest` (full suite) — real, re-run fresh at the end of Round 2: **30/30 passing**, 5 suites (see
+## WSL verification setup (Round 3) — Expo web bundle + Playwright, real progress and a specific reproducible blocker
+- Restarted Metro (`CI=1 npx expo start --web --port 8082`) as a backgrounded process kept alive within one
+  continuous shell session (not split across separate tool invocations this time, per the coordinator's
+  instruction). Within that same session:
+  - `curl http://localhost:8082` → **200**.
+  - `curl 'http://localhost:8082/index.bundle?platform=web&dev=true'` → **200**, **3,117,007 bytes** written to
+    disk. Inspected the bundle directly: it contains real, compiled UX-05 source (confirmed by grepping for
+    `NetworkStatusBanner` and finding the actual component's compiled `StyleSheet.create` object and
+    `$RefreshReg$` registration inside it) — i.e. the Metro bundler successfully compiles this round's new
+    navigation/screens/components into a servable web bundle, not just the pre-existing code.
+  - This is materially stronger evidence than Round 2 (which only got an HTTP 200 on the root page, not a
+    verified real bundle).
+- Installed Playwright (`npm install --no-save playwright`, real: 1.61.1) and downloaded Chromium
+  (`npx playwright install chromium`, real: 177 MiB, completed).
+- **Reproducible blocker found and documented, not worked around**: launching headless Chromium against the
+  live bundle failed with `SIGSEGV` (Chrome crashes on start). Root cause isolated: Playwright's Chromium
+  needs OS-level shared libraries (the standard headless-Chrome dependency set — nss/gtk/etc.) that are not
+  installed in this WSL image. The fix (`npx playwright install-deps` / `apt-get install ...`) requires `sudo`,
+  and `sudo -n true` in this environment returns `sudo: a password is required` — i.e. passwordless sudo is not
+  configured, so this specific blocker cannot be resolved non-interactively in this environment. This is the
+  exact reproducible blocker, stated precisely rather than left as "Playwright didn't work."
+- Net result: the Expo-web **build/bundle pipeline is proven to work end-to-end** for this app's real current
+  source, including everything built across all three rounds of UX-05. The **headless-browser runtime smoke
+  test** (actually loading the bundle in a browser and checking for console errors) could not be completed in
+  this environment due to the sudo/system-dependency blocker above — this is an environment limitation, not a
+  code defect, and is now precisely diagnosed rather than ambiguous.
+
+## What was actually run and verified in WSL (cumulative, Rounds 1–3)
+- `npm install --legacy-peer-deps` — real, succeeded: 850 packages (Round 1) + 19 for react-dom/react-native-web
+  (Round 2) + playwright (Round 3, `--no-save`, not committed to package.json since it's a one-off verification
+  tool, not an app dependency) (see `staff-technician-build-report.md`).
+- `npx tsc --noEmit` — real, re-run fresh at the end of Round 3 against the full current `src/` tree: **15
+  errors**, same count and pattern as Round 2 plus 2 new instances of the identical pre-existing pattern in
+  this round's new files (`CurrentJobScreen.tsx`, one more `AppNavigator.tsx` line) — zero errors in any
+  UX-05-specific business-logic module (see `typecheck-report.md`).
+- `npx jest` (full suite) — real, re-run fresh at the end of Round 3: **35/35 passing**, 6 suites (see
   `unit-component-test-report.md`).
+- Expo web bundle build — real, verified this round (see above): HTTP 200, 3.1MB, contains this round's actual
+  compiled source.
 
 ## Not attempted / explicit boundary
 - Native emulator/simulator: not available in this WSL setup (no GUI/emulator), consistent with the brief's expectation.
-- A completed headless-browser (Playwright) smoke test against a live Expo-web bundle: attempted, real progress made (dependencies installed, dev server proven to start and respond with HTTP 200), but not completed end-to-end.
+- A completed headless-browser (Playwright) *runtime* smoke test (loading the page and checking for console
+  errors): blocked by a specific, diagnosed, reproducible missing-sudo-access issue (see above) — the bundle
+  build itself is proven to work; only the final "load it in a real browser and watch for errors" step could
+  not run in this particular WSL image.

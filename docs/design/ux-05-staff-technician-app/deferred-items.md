@@ -41,30 +41,60 @@
     errors, zero new business-logic errors) both re-run from a clean sync, not restated from memory.
 20. ~13 more documentation files this round (see below) — 31 of 72 total.
 
+**Round 3 (this update):**
+21. **HomeScreen recomposed for real** on top of `groupJobs()` — Active Job / Needs Your Action (new section,
+    real `assigned`/`quote_required` group) / Today's Schedule all now use the same classification `JobsListScreen`
+    uses, closing the "Home and My Work could disagree" gap. Pending-parts/checklist-progress shown as an
+    honest `MOCK_DESIGN_ONLY` placeholder (no aggregation endpoint exists).
+22. **`myWork.ts` wired into `JobsListScreen`'s actual render** — tabs changed from the old ad-hoc
+    `All/Assigned/Active/Completed/Cancelled` to `All/Current/Today/Upcoming/Needs Action/Completed`, filtering
+    now calls `groupJobs()` directly instead of a separate inline filter.
+23. **Current Job mode** (`CurrentJobScreen`, new) — focused single-job view, sticky `NextActionBar`, real
+    customer-contact/address, reuses the real transitions state machine (redirects to `JobDetailScreen`'s modal
+    for the two actions needing extra input rather than reimplementing them).
+24. **Quote presentation** (`QuoteShowcaseScreen`, new) — confirmed via full re-read of `lib/api.ts` that no
+    quote endpoint exists anywhere; built as a view-only `MOCK_DESIGN_ONLY` fixture with no approve/finalize
+    affordance at all (enforced by omission from the view model, not a runtime check).
+25. **Availability control** (`AvailabilityControl`, new component) — confirmed no live work-status endpoint
+    exists; renders 4 selectable statuses as local state, with account-status and job-status shown as visibly
+    distinct fields. Wired into the extended `ProfileScreen`.
+26. **Profile screen extended** — role/designation tag, real Assigned Services (from `StaffUser.specialisations`,
+    already-fetched data), honestly-labeled `MOCK_DESIGN_ONLY` areas/certifications/recent-activity sections,
+    `AvailabilityControl`.
+27. **2 more dev showcases**: `QuoteShowcaseScreen`, `OfflineStatesShowcaseScreen` (6 offline/sync scenarios using
+    the real `NetworkStatusBanner` + `PermissionRestrictedState` components, not one-off mockups) — 7 of ~30
+    original showcase targets now built (up from 4).
+28. **Expo web bundle build proven real, end-to-end**: HTTP 200 + 3.1MB bundle verified to contain this round's
+    actual compiled source. Playwright headless-runtime check attempted with a specific, diagnosed, reproducible
+    blocker found (missing sudo access to install Chromium's system dependencies) rather than an ambiguous
+    failure — see `execution-environment.md` and `staff-technician-build-report.md`.
+29. **5 more tests (35 total)**: `AvailabilityControl` chip-press behavior + distinct-field rendering,
+    `NetworkStatusBanner` online-idle-silent / offline-message / sync-pending-count.
+30. Fresh re-verification at the end of Round 3: `npx jest` (35/35) and `npx tsc --noEmit` (19 errors, all
+    pre-existing pattern, zero new business-logic errors) both re-run from a clean sync.
+31. 6 more documentation files this round (see below).
+
 ## Not done (explicit gaps, not silently dropped)
-- Home screens (Technician `HomeScreen` / `StaffHomeScreen`) are not yet recomposed to the priorities described
-  in workstream 4 (current/next job, checklist progress, pending parts counts for technician;
-  action-queue/SLA-risk for staff) — `HomeScreen` is unchanged from pre-UX-05, `StaffHomeScreen` is a placeholder.
-- `JobsListScreen` (My Work) is not wired to `myWork.ts`'s grouping logic yet — the logic is real and tested, the
-  screen still uses its old flat status-tab filter.
 - `NotificationsScreen` is not wired to `NotificationCard` (still uses its own inline row renderer).
-- `NextActionBar` is built but not wired into `JobDetailScreen` (which retains its own inline action-button grid).
-- Current Job mode (a distinct focused single-job screen, workstream 9) was not built — `JobDetailScreen` remains
-  the only job-focused screen.
-- Quote presentation (workstream 17) — no component or screen built (no backend endpoint at all).
-- Availability control (workstream 21) — `AvailabilityView` is typed, no component/screen built.
-- Profile screen not extended with role/designation display (workstream 22).
-- Offline UI states beyond the documented matrix + `NetworkStatusBanner` component (built but not wired into
-  any screen) — workstream 23 not substantially advanced this round.
+- `NextActionBar` is not wired into `JobDetailScreen` (which retains its own inline action-button grid) — it IS
+  wired into the new `CurrentJobScreen`.
+- `StaffHomeScreen`/`StaffWorkQueueScreen` remain honest placeholders (no live staff work-queue endpoint exists
+  to populate real content — this cannot be closed without a backend contract, not a frontend gap).
+- Offline UI states now have a showcase (`OfflineStatesShowcaseScreen`) but `NetworkStatusBanner` still isn't
+  wired into any *production* screen (only shown in the dev showcase).
 - Light/dark theme audit, accessibility audit, localization testing (workstreams 29–31) — not attempted.
 - Lint run — `eslint` script exists, still not executed (no config exists, confirmed `NOT_CONFIGURED` in Round 1).
 - Most non-regression/build reports for other apps (workstream 36) beyond the backend/frontend allow-list check.
-- ~41 of the 72 doc files remain unwritten.
+- Playwright *runtime* smoke test — build pipeline proven, actual browser-load check blocked by a specific
+  diagnosed environment issue (see above), not completed.
+- ~35 of the 72 doc files remain unwritten (37 of 72 done as of this round).
+- Still not built at all: ~23 of the original ~30 showcase-screen targets, most a11y/theme/localization work,
+  session-expired/tenant-suspended dedicated screens (only referenced conceptually in the offline showcase).
 
-## Why the cut was made here, not elsewhere (Round 2)
-Given the coordinator's priority order, the highest-value additions this round were: (1) make the role-aware
-navigation *actually load* (not just typed), since every other screen's reachability depends on it; (2) prove
-the two most complex pieces of new business logic (My Work grouping, checklist validation) with real tests
-rather than only UI; (3) extend the *real* Job Detail screen (not just showcases) since it's the one screen a
-real technician actually uses daily; (4) attempt Expo web honestly rather than skip it, even though it wasn't
-completed end-to-end. This remains a partial delivery — reported as `STAFF_TECHNICIAN_APP_DESIGN_PARTIAL`.
+## Why the cut was made here, not elsewhere (Round 3)
+Followed the coordinator's explicit priority order: close the two flagged "logic built but not wired" gaps first
+(Home, My Work) since those are the screens a real technician actually opens most; build Current Job mode next
+since it was the most-requested missing screen; cover Quote/Availability/Profile since they were fully
+unaddressed; retry Expo web/Playwright properly (continuous backgrounded session) since Round 2 left that
+ambiguous, and this round got a real, specific, diagnosed answer instead. This remains a partial delivery —
+reported as `STAFF_TECHNICIAN_APP_DESIGN_PARTIAL`.
