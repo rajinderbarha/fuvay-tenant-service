@@ -46,7 +46,7 @@ export function AvailabilityControl({ availability, onChange }: {
           <Text style={s.distinctLabel}>Current job status: <Text style={s.distinctValue}>{availability.currentJobStatus}</Text></Text>
         )}
       </View>
-      <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- no live work-status endpoint exists; selection is local-state only.</Text>
+      <Text style={s.mockNote}>Your status is saved on this device for now — syncing with your team isn't available yet.</Text>
     </View>
   );
 }

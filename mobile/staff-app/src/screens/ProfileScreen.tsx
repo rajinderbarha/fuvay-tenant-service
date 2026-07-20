@@ -83,7 +83,7 @@ export function ProfileScreen() {
         <Text style={[gs.label, { color:colors.textTertiary }]}>Assigned Services</Text>
         <Text style={s.skills}>{staff.data?.specialisations?.join(" · ") || "—"}</Text>
         <Text style={[gs.label, { marginTop:8, color:colors.textTertiary }]}>Assigned Areas · Certifications · Supported Brands</Text>
-        <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- no live endpoint carries area/certification/supported-brand data on StaffUser today.</Text>
+        <Text style={s.mockNote}>Not available yet — your assigned areas, certifications, and supported brands aren't tracked here yet.</Text>
       </Card>
 
       {/* Availability (workstream 21) */}
@@ -98,7 +98,7 @@ export function ProfileScreen() {
       {/* Recent activity -- MOCK_DESIGN_ONLY, no live activity-feed endpoint */}
       <Card style={{ gap:6 }}>
         <Text style={[gs.label, { color:colors.textTertiary }]}>Recent Activity</Text>
-        <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- no live per-staff activity-feed endpoint exists yet.</Text>
+        <Text style={s.mockNote}>Your activity history isn't available yet — check back soon.</Text>
       </Card>
 
       {/* Real theme preference control -- writes through useAppTheme(),
