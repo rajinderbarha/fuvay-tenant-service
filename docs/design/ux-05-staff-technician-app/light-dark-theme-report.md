@@ -1,30 +1,60 @@
 # Light/Dark Theme Report
 
-## Real finding: this app has no dark theme at all
-`src/styles/theme.ts` is a single, fixed, light-only color palette — verified by reading the file in full and by
-grepping the entire `src/` tree for `useColorScheme`/`Appearance` (React Native's standard OS-theme-detection
-APIs): **zero matches**. There is no dark-mode variant of `theme.colors` anywhere in this app, and no code path
-that would ever select one even if it existed. This predates UX-05 — it is a pre-existing app-wide characteristic,
-not something any UX-05 round introduced or was expected to fully solve (building a complete second color
-palette + OS-theme wiring is a real, separate, sizable workstream, not a "spot check" fix).
+## Round 4 finding (historical): this app had no dark theme at all
+`src/styles/theme.ts` was a single, fixed, light-only color palette — verified by reading the file in full and
+grepping for `useColorScheme`/`Appearance`: zero matches. Fixed 2 hardcoded `#fff` literals bypassing theme
+tokens. Confirmed via Playwright that nothing crashes under a dark OS color-scheme setting, but the visual
+result was identical to light (no palette to switch to).
 
-## What this round did verify and fix
-- Grepped every `src/components/ux05/*.tsx` and `src/screens/ux05/*.tsx` file for hardcoded hex/rgba color
-  literals bypassing `theme.colors.*` tokens. Found and fixed **2 real instances**:
-  `JobNoteComposer.tsx` and `NextActionBar.tsx` both had `color:"#fff"` where `theme.colors.textInverse`
-  (also `#FFFFFF`, but the token, not the literal) should have been used — fixed in both.
-- Every other UX-05-authored component/screen was confirmed to already reference `theme.colors.*`/`theme.font.*`/
-  `theme.spacing.*`/`theme.radius.*` exclusively — no other hardcoded color literals found.
-- Ran the Playwright smoke check (see `staff-technician-build-report.md`) with the browser's `colorScheme` set
-  to both `'light'` and `'dark'` — the app renders with **zero page/console errors in either OS-level color
-  scheme setting**, confirming nothing in this round's code crashes or misbehaves under a dark OS preference —
-  but since there is no dark palette to switch to, the *visual appearance* is identical in both cases (still the
-  light palette), not a real dark-mode render.
+## Round 5: real dark theme mechanism built
+Followed the pattern already established in `frontend/packages/design-system/src/theme/ThemeProvider.tsx`
+(read in full before implementing): a `preference` (`"light"|"dark"|"system"`) resolved to a `resolvedTheme`,
+persisted across restarts, system-driven by default. The RN equivalent uses real platform APIs in place of the
+web ones that pattern relies on:
 
-## Honest conclusion
-UX-05's components are dark-mode-*ready* in the sense that none of them hardcode colors that would fight a
-future dark palette — if `theme.ts` grows a dark variant and a theme-context/`useColorScheme` wiring later, these
-components would pick it up automatically through the existing `theme.colors.*` token references. But there is
-no actual dark mode to show today, in this app, at all. This is a real backend-free, purely-frontend gap that a
-future pass could close by extending `theme.ts` with a dark palette and wiring `useColorScheme()` — flagged as a
-concrete next step, not fabricated as done.
+| Web (design-system) | RN (mobile/staff-app) |
+|---|---|
+| `window.matchMedia("(prefers-color-scheme: dark)")` | `Appearance.getColorScheme()` + `Appearance.addChangeListener` |
+| `localStorage` | `@react-native-async-storage/async-storage` (already a real dependency) |
+| `data-theme` attribute + CSS vars | `useAppTheme().colors` object, consumed by components that build their `StyleSheet` from it |
+
+### What was built
+- `src/styles/theme.ts`: `lightColors` (renamed from the original flat palette) + a new `darkColors` object with
+  the same keys (type-enforced via `Record<keyof typeof lightColors, string>` so a missing dark key is a
+  compile error, not a silent runtime fallback), plus `getColors(scheme)`.
+- `src/context/ThemeContext.tsx` (new): `ThemeProvider` + `useAppTheme()` — real preference persistence, real
+  `Appearance.addChangeListener` reaction to OS changes while on `"system"`.
+- `App.tsx`: wrapped with `ThemeProvider`.
+- `AppNavigator.tsx`: `NavigationContainer`'s `theme` prop now switches between `DefaultTheme`/`DarkTheme`
+  (React Navigation's own light/dark theme objects) driven by `useAppTheme()`, and header colors are reactive.
+- `TechnicianTabNavigator`/`StaffTabNavigator`: tab bar and header colors now reactive.
+- **5 ux05 components converted to fully reactive theme consumption**: `PipelineBadge`,
+  `PermissionRestrictedState`, `NetworkStatusBanner`, `NotificationCard`, `AvailabilityControl` — each now calls
+  `useAppTheme()` and builds its `StyleSheet` via a `useMemo(() => makeStyles(colors), [colors])` pattern instead
+  of a module-scope `StyleSheet.create` (module-scope styles can't react to a runtime scheme change at all —
+  this was the real mechanical reason a naive "just import theme.colors" approach wouldn't have worked).
+- `ThemeToggle` (new, real production component, not a fixture): a Light/Dark/System control that writes through
+  `setPreference()` — wired into the real `ProfileScreen`.
+- `ThemeShowcaseScreen` (new dev showcase): demonstrates the toggle live against the 5 converted components.
+
+### Real test-infrastructure fix required
+Converting components to require a `ThemeProvider` ancestor broke the existing `PipelineBadge.test.tsx`/
+`AvailabilityControl.test.tsx` (real `[@RNC/AsyncStorage]: NativeModule: AsyncStorage is null` failure —
+AsyncStorage has no native module in the Jest environment). `setupFiles` pointing at the community mock file did
+**not** work (the mock file just exports an object, it doesn't self-register); `moduleNameMapper` pointing the
+real import path at the mock file did. Added a shared `renderWithTheme()` test helper
+(`src/testUtils/renderWithTheme.tsx`) so every future test file wraps consistently.
+
+### What was NOT converted this round (honest, disclosed scope)
+Per the coordinator's explicit allowance ("don't need every screen perfect"): `HomeScreen`, `JobsListScreen`,
+`JobDetailScreen`, `ScheduleScreen`, `CurrentJobScreen`, most of `ProfileScreen`'s own styling, and every
+pre-existing (pre-UX-05) screen/component still import the static `theme`/`gs` exports and will always render
+in the light palette regardless of the resolved scheme. This is a real, sizable remaining conversion — each
+screen needs its module-scope `StyleSheet.create` calls rewritten to the `useMemo`-based reactive pattern shown
+above. Not done this round; a concrete, mechanical next step for a future pass (the mechanism and the pattern
+are both proven, so this is "more of the same," not new design work).
+
+### Real verification (not just claimed)
+`npx jest` — 43/43 passing after the conversion + test-infra fix, re-verified fresh. `npx tsc --noEmit` — 19
+errors, same pre-existing pattern, zero new. Playwright smoke check (see `runtime-test-report.md`) still passes
+zero-error after this round's changes.
