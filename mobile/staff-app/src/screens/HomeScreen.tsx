@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { useApi } from "../hooks/useApi";
@@ -7,6 +7,7 @@ import { JobStatusBadge } from "../components/JobStatusBadge";
 import { StatCard } from "../components/StatCard";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
+import { useAppTheme } from "../context/ThemeContext";
 import { groupJobs } from "../lib/ux05/myWork";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -25,7 +26,11 @@ type Props = { navigation: NativeStackNavigationProp<never> };
 // My Work uses, so a technician sees the identical job as their active
 // job on both Home and My Work. "Jobs needing action" is a real group
 // (assigned/quote_required), not a fabricated one.
+//
+// UX-05 Round 7: converted to reactive theme colors (useAppTheme()).
 export function HomeScreen({ navigation }: Props) {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
   const jobs     = useApi(useCallback(() => jobsApi.myJobs(), []));
   // MODULE-L5-37: surface the unread-notification count as a bell badge so a
@@ -43,7 +48,7 @@ export function HomeScreen({ navigation }: Props) {
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <ScrollView style={gs.screen} contentContainerStyle={s.content}>
+    <ScrollView style={[gs.screen, { backgroundColor:colors.bg }]} contentContainerStyle={s.content}>
       {/* Header */}
       <View style={s.header}>
         <View>
@@ -51,7 +56,8 @@ export function HomeScreen({ navigation }: Props) {
           <Text style={s.name}>{user?.full_name?.split(" ")[0] ?? "Staff"} 👋</Text>
         </View>
         <View style={{ flexDirection:"row", alignItems:"center", gap:12 }}>
-          <TouchableOpacity onPress={() => navigation.navigate("Notifications" as never)} style={s.bell}>
+          <TouchableOpacity onPress={() => navigation.navigate("Notifications" as never)} style={s.bell}
+            accessibilityRole="button" accessibilityLabel={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}>
             <Text style={{ fontSize:22 }}>🔔</Text>
             {unreadCount > 0 && (
               <View style={s.badge}>
@@ -68,15 +74,15 @@ export function HomeScreen({ navigation }: Props) {
       {/* Stats row */}
       <View style={s.statsRow}>
         <StatCard label="Today" value={String(today.length)} sub="jobs assigned" />
-        <StatCard label="Done"  value={String(done)}         sub="completed" accent={theme.colors.success} />
-        <StatCard label="Rating" value={user?.rating ? `★ ${user.rating.toFixed(1)}` : "—"} sub="avg score" accent={theme.colors.warning} />
+        <StatCard label="Done"  value={String(done)}         sub="completed" accent={colors.success} />
+        <StatCard label="Rating" value={user?.rating ? `★ ${user.rating.toFixed(1)}` : "—"} sub="avg score" accent={colors.warning} />
       </View>
 
       {/* Active job */}
-      <Text style={gs.label}>Active Job</Text>
+      <Text style={[gs.label, { color:colors.textTertiary }]}>Active Job</Text>
       {jobs.loading ? <Skeleton height={120} style={{ marginBottom:16 }} />
       : active ? (
-        <TouchableOpacity style={[gs.card, s.activeCard]}
+        <TouchableOpacity style={[s.card, s.activeCard]}
           onPress={() => navigation.navigate("JobDetail" as never, { jobId:active.id } as never)}
           activeOpacity={0.9}>
           <View style={[gs.row, { justifyContent:"space-between", marginBottom:10 }]}>
@@ -89,12 +95,12 @@ export function HomeScreen({ navigation }: Props) {
           )}
           <View style={s.actionRow}>
             <View style={[s.actionBtn, s.actionBtnPrimary]}>
-              <Text style={[s.actionText, { color:"#fff" }]}>View Job →</Text>
+              <Text style={[s.actionText, { color:colors.textInverse }]}>View Job →</Text>
             </View>
           </View>
         </TouchableOpacity>
       ) : (
-        <View style={[gs.card, s.noActive]}>
+        <View style={[s.card, s.noActive]}>
           <Text style={s.noActiveIcon}>✅</Text>
           <Text style={s.noActiveText}>No active job right now</Text>
           <Text style={s.noActiveSub}>Check your Jobs tab for upcoming assignments</Text>
@@ -104,9 +110,9 @@ export function HomeScreen({ navigation }: Props) {
       {/* Jobs needing action (real group -- assigned/quote_required) */}
       {!jobs.loading && needsAction.length > 0 && (
         <>
-          <Text style={[gs.label, { marginTop:8 }]}>Needs Your Action</Text>
+          <Text style={[gs.label, { marginTop:8, color:colors.textTertiary }]}>Needs Your Action</Text>
           {needsAction.map(j => (
-            <TouchableOpacity key={j.id} style={[gs.card, s.jobRow, s.needsActionCard]}
+            <TouchableOpacity key={j.id} style={[s.card, s.jobRow, s.needsActionCard]}
               onPress={() => navigation.navigate("JobDetail" as never, { jobId:j.id } as never)}
               activeOpacity={0.85}>
               <View style={{ flex:1 }}>
@@ -120,11 +126,11 @@ export function HomeScreen({ navigation }: Props) {
       )}
 
       {/* Upcoming jobs */}
-      <Text style={[gs.label, { marginTop:8 }]}>Today's Schedule</Text>
+      <Text style={[gs.label, { marginTop:8, color:colors.textTertiary }]}>Today's Schedule</Text>
       {jobs.loading ? (
         <>{[...Array(3)].map((_,i) => <Skeleton key={i} height={64} style={{ marginBottom:8 }} />)}</>
       ) : today.map(j => (
-        <TouchableOpacity key={j.id} style={[gs.card, s.jobRow]}
+        <TouchableOpacity key={j.id} style={[s.card, s.jobRow]}
           onPress={() => navigation.navigate("JobDetail" as never, { jobId:j.id } as never)}
           activeOpacity={0.85}>
           <View style={{ flex:1 }}>
@@ -136,7 +142,7 @@ export function HomeScreen({ navigation }: Props) {
       ))}
 
       {!jobs.loading && today.length===0 && (
-        <View style={[gs.card, { alignItems:"center", paddingVertical:24 }]}>
+        <View style={[s.card, { alignItems:"center", paddingVertical:24 }]}>
           <Text style={s.noActiveSub}>No more jobs scheduled for today</Text>
         </View>
       )}
@@ -145,43 +151,45 @@ export function HomeScreen({ navigation }: Props) {
           per-job checklist/parts-summary endpoint exists yet (see
           backend-contract-blockers.md). Shown as a disclosed placeholder
           rather than a fabricated count. */}
-      <View style={[gs.card, s.mockRow]}>
+      <View style={[s.card, s.mockRow]}>
         <Text style={s.mockText}>Pending parts &amp; checklist progress: not yet available (no live summary endpoint).</Text>
       </View>
     </ScrollView>
   );
 }
 
-const s = StyleSheet.create({
-  content:      { padding:theme.spacing.base, gap:12, paddingBottom:32 },
-  header:       { flexDirection:"row", justifyContent:"space-between", alignItems:"center",
-                  paddingTop:8, paddingBottom:4 },
-  greeting:     { fontSize:theme.font.size.base, color:theme.colors.textSecondary },
-  name:         { fontSize:theme.font.size.xxxl, fontWeight:"800", color:theme.colors.textPrimary },
-  avatar:       { width:44, height:44, borderRadius:22, backgroundColor:theme.colors.brand,
-                  alignItems:"center", justifyContent:"center" },
-  avatarText:   { fontSize:theme.font.size.xl, fontWeight:"700", color:"#fff" },
-  bell:         { width:44, height:44, alignItems:"center", justifyContent:"center" },
-  badge:        { position:"absolute", top:4, right:4, minWidth:18, height:18, borderRadius:9,
-                  backgroundColor:theme.colors.danger, alignItems:"center", justifyContent:"center", paddingHorizontal:4 },
-  badgeText:    { fontSize:9, fontWeight:"800", color:"#fff" },
-  statsRow:     { flexDirection:"row", gap:10 },
-  activeCard:   { borderLeftWidth:4, borderLeftColor:theme.colors.accent, paddingLeft:14 },
-  jobNumber:    { fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary },
-  serviceType:  { fontSize:theme.font.size.lg, fontWeight:"700", color:theme.colors.textPrimary, marginBottom:3 },
-  customer:     { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
-  address:      { fontSize:theme.font.size.sm, color:theme.colors.textTertiary, marginTop:4 },
-  actionRow:    { flexDirection:"row", gap:10, marginTop:14 },
-  actionBtn:    { flex:1, height:38, borderRadius:theme.radius.md, borderWidth:1,
-                  borderColor:theme.colors.border, alignItems:"center", justifyContent:"center" },
-  actionBtnPrimary:{ backgroundColor:theme.colors.brand, borderColor:"transparent" },
-  actionText:   { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary },
-  noActive:     { alignItems:"center", paddingVertical:32, gap:6 },
-  noActiveIcon: { fontSize:36 },
-  noActiveText: { fontSize:theme.font.size.lg, fontWeight:"600", color:theme.colors.textPrimary },
-  noActiveSub:  { fontSize:theme.font.size.sm, color:theme.colors.textTertiary },
-  jobRow:       { flexDirection:"row", alignItems:"center", gap:12 },
-  needsActionCard:{ borderLeftWidth:4, borderLeftColor:theme.colors.warning, paddingLeft:10 },
-  mockRow:      { paddingVertical:14 },
-  mockText:     { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, textAlign:"center" },
-});
+function makeStyles(colors: ReturnType<typeof import("../styles/theme").getColors>) {
+  return StyleSheet.create({
+    content:      { padding:theme.spacing.base, gap:12, paddingBottom:32 },
+    header:       { flexDirection:"row", justifyContent:"space-between", alignItems:"center",
+                    paddingTop:8, paddingBottom:4 },
+    greeting:     { fontSize:theme.font.size.base, color:colors.textSecondary },
+    name:         { fontSize:theme.font.size.xxxl, fontWeight:"800", color:colors.textPrimary },
+    avatar:       { width:44, height:44, borderRadius:22, backgroundColor:colors.brand,
+                    alignItems:"center", justifyContent:"center" },
+    avatarText:   { fontSize:theme.font.size.xl, fontWeight:"700", color:colors.textInverse },
+    bell:         { width:44, height:44, alignItems:"center", justifyContent:"center" },
+    badge:        { position:"absolute", top:4, right:4, minWidth:18, height:18, borderRadius:9,
+                    backgroundColor:colors.danger, alignItems:"center", justifyContent:"center", paddingHorizontal:4 },
+    badgeText:    { fontSize:9, fontWeight:"800", color:colors.textInverse },
+    statsRow:     { flexDirection:"row", gap:10 },
+    card:         { backgroundColor:colors.surface, borderRadius:theme.radius.lg, padding:theme.spacing.base, ...theme.shadow.sm },
+    activeCard:   { borderLeftWidth:4, borderLeftColor:colors.accent, paddingLeft:14 },
+    jobNumber:    { fontSize:theme.font.size.base, fontWeight:"700", color:colors.textPrimary },
+    customer:     { fontSize:theme.font.size.sm, color:colors.textSecondary },
+    address:      { fontSize:theme.font.size.sm, color:colors.textTertiary, marginTop:4 },
+    actionRow:    { flexDirection:"row", gap:10, marginTop:14 },
+    actionBtn:    { flex:1, height:38, borderRadius:theme.radius.md, borderWidth:1,
+                    borderColor:colors.border, alignItems:"center", justifyContent:"center" },
+    actionBtnPrimary:{ backgroundColor:colors.brand, borderColor:"transparent" },
+    actionText:   { fontSize:theme.font.size.sm, fontWeight:"600", color:colors.textPrimary },
+    noActive:     { alignItems:"center", paddingVertical:32, gap:6 },
+    noActiveIcon: { fontSize:36 },
+    noActiveText: { fontSize:theme.font.size.lg, fontWeight:"600", color:colors.textPrimary },
+    noActiveSub:  { fontSize:theme.font.size.sm, color:colors.textTertiary },
+    jobRow:       { flexDirection:"row", alignItems:"center", gap:12 },
+    needsActionCard:{ borderLeftWidth:4, borderLeftColor:colors.warning, paddingLeft:10 },
+    mockRow:      { paddingVertical:14 },
+    mockText:     { fontSize:theme.font.size.xs, color:colors.textTertiary, textAlign:"center" },
+  });
+}

@@ -5,6 +5,7 @@ import { jobsApi, type Job } from "../lib/api";
 import { JobStatusBadge } from "../components/JobStatusBadge";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
+import { useAppTheme } from "../context/ThemeContext";
 import { groupJobs, type MyWorkGroupKey } from "../lib/ux05/myWork";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -32,6 +33,8 @@ const TABS: Array<{ key:MyWorkGroupKey; label:string }> = [
 type Props = { navigation: NativeStackNavigationProp<never> };
 
 export function JobsListScreen({ navigation }: Props) {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const [activeTab, setActiveTab] = useState<MyWorkGroupKey>("all");
 
   const jobs = useApi(useCallback(() => jobsApi.myJobs(), []));
@@ -66,7 +69,7 @@ export function JobsListScreen({ navigation }: Props) {
   }
 
   return (
-    <View style={gs.screen}>
+    <View style={[gs.screen, { backgroundColor:colors.bg }]}>
       {/* Tab bar */}
       <View style={s.tabs}>
         {TABS.map(t => (
@@ -103,25 +106,27 @@ export function JobsListScreen({ navigation }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  tabs:        { flexDirection:"row", backgroundColor:theme.colors.surface, borderBottomWidth:1,
-                 borderBottomColor:theme.colors.border, paddingHorizontal:4 },
-  tab:         { flex:1, alignItems:"center", paddingVertical:12, borderBottomWidth:2,
-                 borderBottomColor:"transparent" },
-  tabActive:   { borderBottomColor:theme.colors.brand },
-  tabText:     { fontSize:theme.font.size.xs, fontWeight:"600", color:theme.colors.textSecondary },
-  tabTextActive:{ color:theme.colors.brand },
-  jobCard:     { backgroundColor:theme.colors.surface, borderRadius:theme.radius.lg, padding:14,
-                 ...theme.shadow.sm },
-  jobTop:      { flexDirection:"row", alignItems:"flex-start", gap:10, marginBottom:6 },
-  jobNum:      { fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary },
-  service:     { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, marginTop:2 },
-  customer:    { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
-  address:     { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:3 },
-  jobBottom:   { flexDirection:"row", justifyContent:"space-between", marginTop:10 },
-  date:        { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
-  value:       { fontSize:theme.font.size.sm, fontWeight:"700", color:theme.colors.successText },
-  empty:       { alignItems:"center", paddingTop:80, gap:10 },
-  emptyIcon:   { fontSize:48 },
-  emptyText:   { fontSize:theme.font.size.base, color:theme.colors.textTertiary },
-});
+function makeStyles(colors: ReturnType<typeof import("../styles/theme").getColors>) {
+  return StyleSheet.create({
+    tabs:        { flexDirection:"row", backgroundColor:colors.surface, borderBottomWidth:1,
+                   borderBottomColor:colors.border, paddingHorizontal:4 },
+    tab:         { flex:1, alignItems:"center", paddingVertical:12, borderBottomWidth:2,
+                   borderBottomColor:"transparent" },
+    tabActive:   { borderBottomColor:colors.brand },
+    tabText:     { fontSize:theme.font.size.xs, fontWeight:"600", color:colors.textSecondary },
+    tabTextActive:{ color:colors.brand },
+    jobCard:     { backgroundColor:colors.surface, borderRadius:theme.radius.lg, padding:14,
+                   ...theme.shadow.sm },
+    jobTop:      { flexDirection:"row", alignItems:"flex-start", gap:10, marginBottom:6 },
+    jobNum:      { fontSize:theme.font.size.base, fontWeight:"700", color:colors.textPrimary },
+    service:     { fontSize:theme.font.size.sm, color:colors.textSecondary, marginTop:2 },
+    customer:    { fontSize:theme.font.size.sm, color:colors.textSecondary },
+    address:     { fontSize:theme.font.size.xs, color:colors.textTertiary, marginTop:3 },
+    jobBottom:   { flexDirection:"row", justifyContent:"space-between", marginTop:10 },
+    date:        { fontSize:theme.font.size.xs, color:colors.textTertiary },
+    value:       { fontSize:theme.font.size.sm, fontWeight:"700", color:colors.successText },
+    empty:       { alignItems:"center", paddingTop:80, gap:10 },
+    emptyIcon:   { fontSize:48 },
+    emptyText:   { fontSize:theme.font.size.base, color:colors.textTertiary },
+  });
+}
