@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { useApi } from "../hooks/useApi";
 import { staffApi, type WorkingHours } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -47,6 +47,19 @@ export function ProfileScreen() {
     DAYS.forEach(d => { init[d] = wh[d] ?? { start:"09:00", end:"18:00", is_working:d!=="sunday" }; });
     setLocalHours(init);
     setEditingSchedule(true);
+  }
+
+  function handleSignOutPress() {
+    // web: Alert.alert has no real react-native-web implementation, so use
+    // the real browser confirm() dialog instead. native: unchanged Alert.alert.
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm("Sign Out\n\nAre you sure?")) logout();
+      return;
+    }
+    Alert.alert("Sign Out", "Are you sure?", [
+      { text:"Cancel", style:"cancel" },
+      { text:"Sign Out", style:"destructive", onPress: logout },
+    ]);
   }
 
   async function saveSchedule() {
@@ -200,13 +213,18 @@ export function ProfileScreen() {
         </Card>
       )}
 
-      {/* Logout */}
-      <Button label="Sign Out" variant="danger" size="lg" onPress={() => {
-        Alert.alert("Sign Out", "Are you sure?", [
-          { text:"Cancel", style:"cancel" },
-          { text:"Sign Out", style:"destructive", onPress: logout },
-        ]);
-      }} fullWidth />
+      {/* Logout.
+          UX-05C: React Native's Alert.alert has no real implementation on
+          react-native-web (it silently no-ops there) -- Alert.alert(...)
+          with a button list is a real, confirmed-live dead end on the web
+          build specifically: tapping "Sign Out" opened no dialog and never
+          called logout() at all (confirmed via a real headless-browser
+          Playwright run showing zero /v1/auth/logout requests and the token
+          still present in localStorage after the click). Native iOS/Android
+          builds were never affected (Alert.alert is real there). Fixed with
+          a Platform.OS branch: web uses window.confirm (real on web),
+          native keeps the original Alert.alert flow unchanged. */}
+      <Button label="Sign Out" variant="danger" size="lg" onPress={handleSignOutPress} fullWidth />
     </ScrollView>
   );
 }
