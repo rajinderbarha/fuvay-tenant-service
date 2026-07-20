@@ -124,6 +124,16 @@ export const catalogApi = {
   brandsForService: (masterServiceId:string) =>
     apiFetch<{ brands:{ brand_id:string; name:string; display_name:string }[]; total:number }>(
       `/v1/customer/catalog/brands?master_service_id=${encodeURIComponent(masterServiceId)}`),
+  // Real: GET /v1/customer/categories/{category_slug}/offerings/{offering_slug}
+  // -> full offering detail incl. required_fields -- used by the new
+  // standalone Service Detail screen (Round 5, Workstream 7).
+  offeringDetail: (categorySlug:string, offeringSlug:string) =>
+    apiFetch<ServiceOffering & {
+      description?:string; pricing_model?:string; starting_price?:number;
+      visit_fee?:number; requires_type?:boolean; requires_brand?:boolean;
+      requires_address?:boolean; requires_slot?:boolean;
+      category:{ id:string; name:string; slug:string };
+    }>(`/v1/customer/categories/${encodeURIComponent(categorySlug)}/offerings/${encodeURIComponent(offeringSlug)}`),
 };
 
 // ── Bookings (Booking→field_ops.Job pipeline) ───────────────────────────────────

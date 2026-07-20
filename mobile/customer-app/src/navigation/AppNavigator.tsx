@@ -18,6 +18,7 @@ import { ServiceHistoryScreen }    from "../screens/ServiceHistoryScreen";
 import { HelpSupportScreen }       from "../screens/HelpSupportScreen";
 import { PaymentMethodsScreen }    from "../screens/PaymentMethodsScreen";
 import { InvoiceScreen }           from "../screens/InvoiceScreen";
+import { ServiceDetailScreen }     from "../screens/ServiceDetailScreen";
 // UX-06 Round 3 fix: these 3 screens were referenced below (SmartBot/
 // AIAssistant/QuoteApproval routes) with no import anywhere in this file —
 // a pre-existing "Cannot find name" ReferenceError that crashed the whole app
@@ -61,6 +62,8 @@ export function AppNavigator() {
               options={{ ...HDR, title:"Book a Service" }}/>
             <Stack.Screen name="BookingDetail" component={BookingDetailScreen}
               options={{ ...HDR, title:"Booking Details" }}/>
+            <Stack.Screen name="ServiceDetail" component={ServiceDetailScreen}
+              options={{ ...HDR, title:"Service Details" }}/>
             <Stack.Screen name="JobTracking"   component={JobTrackingScreen}
               options={{ ...HDR, title:"Track Technician" }}/>
             <Stack.Screen name="SmartBot" component={SmartBotScreen}

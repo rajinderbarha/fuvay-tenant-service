@@ -14,13 +14,17 @@ const TABS = [
   { key:"cancelled",           label:"Cancelled"},
 ] as const;
 
-type Props = { navigation: NativeStackNavigationProp<never> };
+type RootParamList = { BookingDetail: { bookingId: string } };
+type Props = { navigation: NativeStackNavigationProp<RootParamList> };
 
 export function BookingsListScreen({ navigation }: Props) {
   const [tab, setTab] = useState("");
-  const bookings = useApi(useCallback(
-    () => bookingsApi.list({ limit:"30", ...(tab?{status:tab}:{}) }), [tab]
-  ));
+  // UX-06 Round 5: bookingsApi.list() takes no filter params (real
+  // GET /v1/customer/bookings was never confirmed to support a status query
+  // param) -- filtering client-side over the real returned list instead of
+  // sending an unconfirmed query param.
+  const bookings = useApi(useCallback(() => bookingsApi.list(), []));
+  const filtered = (bookings.data?.items ?? []).filter(b => !tab || b.status === tab);
 
   return (
     <View style={gs.screen}>
@@ -40,11 +44,11 @@ export function BookingsListScreen({ navigation }: Props) {
         </View>
       ) : (
         <FlatList
-          data={bookings.data?.bookings ?? []}
+          data={filtered}
           keyExtractor={b=>b.id}
           renderItem={({item:b})=>(
             <BookingCard booking={b}
-              onPress={()=>navigation.navigate("BookingDetail" as never,{bookingId:b.id} as never)}/>
+              onPress={()=>navigation.navigate("BookingDetail",{bookingId:b.id})}/>
           )}
           contentContainerStyle={{ padding:theme.spacing.base, gap:12, paddingBottom:32 }}
           onRefresh={bookings.refetch} refreshing={bookings.loading}

@@ -383,9 +383,18 @@ export function DeepSeekChatScreen({ navigation }: Props) {
               data={offerings} keyExtractor={o=>o.id}
               ListHeaderComponent={<Text style={[s.title,{padding:16}]}>Choose a service</Text>}
               renderItem={({item}) => (
-                <TouchableOpacity style={s.langRow} onPress={()=>pickOffering(item)} testID={`offering-${item.slug}`}>
-                  <Text style={s.langRowNative}>{item.name}</Text>
-                </TouchableOpacity>
+                <View style={[s.langRow, { flexDirection:"row", alignItems:"center", justifyContent:"space-between" }]}>
+                  <TouchableOpacity style={{ flex:1 }} onPress={()=>pickOffering(item)} testID={`offering-${item.slug}`}>
+                    <Text style={s.langRowNative}>{item.name}</Text>
+                  </TouchableOpacity>
+                  {booking.category && (
+                    <TouchableOpacity
+                      onPress={()=>{ setFlowOpen(false); navigation?.navigate("ServiceDetail", { categorySlug: booking.category!.slug, offeringSlug: item.slug }); }}
+                      testID={`offering-details-${item.slug}`}>
+                      <Text style={{ color:theme.colors.accent, fontSize:theme.font.size.sm }}>Details ⓘ</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
             />
           ) : (

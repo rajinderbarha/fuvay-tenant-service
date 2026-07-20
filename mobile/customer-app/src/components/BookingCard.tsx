@@ -6,33 +6,28 @@ import type { Booking } from "../lib/api";
 
 interface Props { booking:Booking; onPress:()=>void }
 
+// UX-06 Round 5: trimmed to the real Booking shape (id/booking_number/
+// service_type/scheduled_at/status/created_at/notes) -- price_snapshot/
+// tenant_name/assigned_staff were never confirmed real fields (see
+// BookingDetailScreen.tsx's Round 5 rewrite for the same correction).
 export function BookingCard({ booking:b, onPress }:Props) {
-  const date = new Date(b.scheduled_at);
-  const fmt  = date.toLocaleDateString("en-IN",{ weekday:"short", day:"numeric", month:"short" });
-  const time = date.toLocaleTimeString("en-IN",{ hour:"2-digit", minute:"2-digit" });
+  const date = b.scheduled_at ? new Date(b.scheduled_at) : null;
+  const fmt  = date ? date.toLocaleDateString("en-IN",{ weekday:"short", day:"numeric", month:"short" }) : null;
+  const time = date ? date.toLocaleTimeString("en-IN",{ hour:"2-digit", minute:"2-digit" }) : null;
 
   return (
     <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.85}>
       <View style={s.top}>
         <View style={{ flex:1 }}>
-          <Text style={s.serviceType}>{b.service_type}</Text>
-          <Text style={s.meta}>{b.booking_number}{b.tenant_name?` · ${b.tenant_name}`:""}</Text>
+          <Text style={s.serviceType}>{b.service_type ?? "Service"}</Text>
+          <Text style={s.meta}>{b.booking_number}</Text>
         </View>
         <JobStatusBadge status={b.status} size="sm" />
       </View>
-      <View style={s.dateRow}>
-        <Text style={s.dateIcon}>📅</Text>
-        <Text style={s.dateText}>{fmt} at {time}</Text>
-      </View>
-      {b.assigned_staff && (
-        <View style={s.staffRow}>
-          <Text style={s.dateIcon}>👨‍🔧</Text>
-          <Text style={s.staffText}>{b.assigned_staff}</Text>
-        </View>
-      )}
-      {b.price_snapshot && (
-        <View style={s.priceRow}>
-          <Text style={s.price}>₹{b.price_snapshot.final_price.toLocaleString("en-IN")}</Text>
+      {date && (
+        <View style={s.dateRow}>
+          <Text style={s.dateIcon}>📅</Text>
+          <Text style={s.dateText}>{fmt} at {time}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -45,10 +40,6 @@ const s = StyleSheet.create({
   serviceType:{ fontSize:theme.font.size.lg, fontWeight:"700", color:theme.colors.textPrimary },
   meta:     { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:3 },
   dateRow:  { flexDirection:"row", alignItems:"center", gap:6, marginBottom:4 },
-  staffRow: { flexDirection:"row", alignItems:"center", gap:6, marginBottom:4 },
   dateIcon: { fontSize:14 },
   dateText: { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
-  staffText:{ fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
-  priceRow: { marginTop:6, alignItems:"flex-end" },
-  price:    { fontSize:theme.font.size.lg, fontWeight:"800", color:theme.colors.brand },
 });
