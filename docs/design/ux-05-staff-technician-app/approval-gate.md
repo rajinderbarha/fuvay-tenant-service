@@ -1,52 +1,55 @@
 # Approval Gate
 
-Status: **STAFF_TECHNICIAN_APP_DESIGN_PARTIAL** (Round 5)
+Status: **STAFF_TECHNICIAN_APP_DESIGN_PARTIAL** (Round 7)
 
 This phase does NOT certify the full UX-05 brief (~38 workstreams, ~72 docs, full runtime/offline/a11y test
-matrix, 30 showcase screens) as complete. Through five rounds it certifies, with real evidence:
+matrix, 30 showcase screens) as complete. See `workstream-reconciliation.md` for the full 38-item disposition
+table (mirroring UX-04A's pattern). Through seven rounds it certifies, with real evidence:
 
-- A working WSL dependency-install pipeline for `mobile/staff-app`, including Expo-web dependencies, Playwright,
-  and NetInfo.
+- A working WSL dependency-install pipeline, including Expo-web, Playwright, and NetInfo.
 - A typed domain-model foundation reflecting real backend evidence (single live pipeline, real status literals).
 - A fail-closed role/permission presentation layer, unit-tested.
 - Role-aware navigation actually mounted and reachable.
-- Both flagged "logic built but not wired" gaps from Round 2 closed (`HomeScreen`/`JobsListScreen` share one
-  real, tested `groupJobs()` classification).
-- Current Job mode, Quote presentation, Availability control, extended Profile — all built, all honestly labeled
-  `MOCK_DESIGN_ONLY` where no backend support exists (verified by re-reading `lib/api.ts`, not assumed).
-- **The full verification stack works end-to-end, including the browser layer**, re-confirmed after Round 5's
-  changes: install → typecheck → unit/component tests → Expo web bundle build → headless-browser runtime load,
-  zero page/console errors.
-- **A genuine bug was found and fixed via real browser verification** (Round 4): a `react`/`react-dom` version
-  mismatch invisible to every other verification layer.
-- **A real accessibility pass** (Round 4) and **a real theme pass** (Rounds 4–5): Round 4 found the app had no
-  dark theme at all; **Round 5 built the actual mechanism** — a type-safe dark palette, a `ThemeContext` mirroring
-  the web design-system's real `ThemeProvider` pattern (`Appearance` API + AsyncStorage instead of `matchMedia` +
-  `localStorage`), wired into the app shell, both tab navigators, and 5 components, with a real production
-  `ThemeToggle` control.
-- **`NetworkStatusBanner` wired into production**, now backed by real `@react-native-community/netinfo`
-  (investigated and added this round — permissive peer deps, real native+web coverage, not deferred by default).
-- **Real draft persistence** (AsyncStorage-backed `usePersistedDraft`, tested with a genuine restart simulation)
-  wired into one showcase.
-- **A real localization spot-check** with genuine long Hindi/Punjabi sentences across 4 components — no
-  accidental truncation found, one intentional truncation correctly distinguished.
-- 10 of ~30 dev showcase screens built. ~46 of 72 doc files written.
+- Home/My Work/Schedule/Current Job/Notifications all real, wired to live data, and now theme-reactive.
+- Quote/Availability/Inspection/Checklist/Parts/Notes/Media all built, honestly `MOCK_DESIGN_ONLY`, verified
+  against a full `lib/api.ts` re-read rather than assumed.
+- **The full verification stack works end-to-end**, re-confirmed after every round including Round 7: install →
+  typecheck → unit/component tests → Expo web bundle build → headless-browser runtime load, zero errors.
+- **A genuine bug found and fixed via real browser verification** (Round 4).
+- **A real, working dark-theme mechanism** (Round 5), now applied to 9 screens and 7 components (Round 7) —
+  `AppNavigator`, both tab navigators, `HomeScreen`, `JobsListScreen`, `ScheduleScreen`, `CurrentJobScreen`,
+  `ProfileScreen`, `NotificationsScreen`, plus `PipelineBadge`/`PermissionRestrictedState`/`NetworkStatusBanner`/
+  `NotificationCard`/`AvailabilityControl`/`ScheduleCard`/`CustomerContactCard`/`AddressCard`.
+- **Real `NetworkStatusBanner`** backed by `@react-native-community/netinfo` (native + web).
+- **Real draft persistence** with a genuine restart-simulation test.
+- **A real session-expired signal** (Round 7): `ServiceOSError` now carries the actual HTTP status;
+  `AuthContext` sets `sessionExpired` only on a genuine 401; `LoginScreen` shows a real banner driven by it — not
+  a mock trigger.
+- **A formal `frontend-adapter-contract.md`** (Round 7) covering every real and MOCK_DESIGN_ONLY adapter.
+- The language-architecture product correction applied: localization is `NOT_APPLICABLE` for this app, not an
+  open workstream.
+- 12 of ~30 dev showcase screens built. 46 of 72 doc files written.
 - 43/43 tests passing, 19 typecheck errors (all pre-existing pattern, zero new), zero changes outside
-  `mobile/staff-app/` and this doc directory — all re-verified fresh this round, on the correct branch.
+  `mobile/staff-app/` and this doc directory — all re-verified fresh this round.
 
-See `deferred-items.md` and `known-limitations.md` for the full accounting of what remains before a
-`DESIGN_COMPLETE` gate could be claimed: `StaffHomeScreen`/`StaffWorkQueueScreen` need a real backend endpoint
-(a genuine contract gap, not closeable from the frontend alone), broader dark-theme coverage across the
-remaining screens (mechanical, proven pattern, real remaining work), draft persistence in the remaining two
-showcases, the remaining ~20 showcase screens, ~26 more doc files, and a systematic a11y/localization audit
-beyond this round's targeted checks.
+## Why this is not STAFF_TECHNICIAN_APP_DESIGN_COMPLETE
+Per the coordinator's own framing: forcing a completion claim while material frontend-achievable work remains
+would not be honest, even though the two genuine backend-contract blockers (StaffPermission/role endpoint;
+content endpoints for inspection/checklist/quote/parts/notes/media) are correctly out of scope and don't block
+completion by themselves. What genuinely remains, real and frontend-achievable, not backend-blocked:
+- Dark-theme conversion of `JobDetailScreen` (deliberately deferred — it holds the real money-collection modal,
+  and converting it without dedicated regression coverage was judged too risky this round), `LoginScreen`, most
+  dev showcases, and 6 more ux05 components + the pre-existing shared component library
+  (`Card`/`Button`/`StatCard`/`Skeleton`/`JobStatusBadge`).
+- ~18 more showcase screens, ~27 more doc files.
+- Real trigger wiring for tenant-suspended/account-disabled/reauthentication-required (blocked on whether the
+  backend actually has the fields to drive them — not confirmed either way this round, a genuine open question
+  rather than a backend refusal).
 
 ## Recommendation for a future UX-05B pass
-Mirroring how UX-04 → UX-04A → UX-04B worked: this phase's foundation (typed view models, fail-closed role/
-permission layer, working WSL+Playwright verification pipeline, real dark-theme mechanism, real component
-library) is solid and proven across five rounds. A follow-on UX-05B pass should prioritize, in order:
-(1) flagging the two real backend-contract gaps (staff work-queue-summary endpoint, StaffPermission-fetch
-endpoint) to unblock `StaffHomeScreen`/`StaffWorkQueueScreen` for real, (2) converting the remaining screens to
-the proven reactive-theme pattern, (3) wiring draft persistence into the remaining showcases, (4) the remaining
-showcase/doc breadth, (5) a native-device or emulator verification pass if one becomes available in this
-environment.
+This phase's foundation (typed view models, fail-closed role/permission layer, working WSL+Playwright
+verification pipeline, real dark-theme mechanism, real component library, formal adapter contract) is solid and
+proven across seven rounds. A follow-on pass should prioritize: (1) finishing `JobDetailScreen`'s theme
+conversion with real regression testing given its financial-action surface, (2) the remaining showcase/doc
+breadth, (3) investigating whether real tenant-status/account-status fields exist to wire the remaining
+session-state triggers, (4) flagging the two backend-contract gaps to the backend team as concrete asks.
