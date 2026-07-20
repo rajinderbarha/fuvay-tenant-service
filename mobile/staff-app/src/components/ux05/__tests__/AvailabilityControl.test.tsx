@@ -1,5 +1,6 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react-native";
+import { screen, fireEvent } from "@testing-library/react-native";
+import { renderWithTheme as render } from "../../../testUtils/renderWithTheme";
 import { AvailabilityControl } from "../AvailabilityControl";
 import { NetworkStatusBanner } from "../NetworkStatusBanner";
 

@@ -1,13 +1,14 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { theme } from "../../styles/theme";
+import { useAppTheme } from "../../context/ThemeContext";
 import type { NotificationView } from "../../types/ux05";
 
-const PRIORITY_COLOR: Record<string,string> = {
-  high: theme.colors.danger, medium: theme.colors.warning, low: theme.colors.brand,
-};
-
+/** UX-05 Round 5: reactive theme colors -- requires a ThemeProvider ancestor. */
 export function NotificationCard({ item, onPress }: { item:NotificationView; onPress:() => void }) {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
+  const PRIORITY_COLOR: Record<string,string> = { high: colors.danger, medium: colors.warning, low: colors.brand };
   const n = item.notification;
   const unread = n.read_status !== "read";
   return (
@@ -26,11 +27,13 @@ export function NotificationCard({ item, onPress }: { item:NotificationView; onP
   );
 }
 
-const s = StyleSheet.create({
-  row:        { flexDirection:"row", alignItems:"flex-start", gap:12, padding:14, backgroundColor:theme.colors.surface },
-  rowUnread:  { backgroundColor:theme.colors.surfaceSunken },
-  dot:        { width:10, height:10, borderRadius:5, borderWidth:1.5, marginTop:5 },
-  title:      { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
-  titleUnread:{ fontWeight:"800" },
-  body:       { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, marginTop:3 },
-});
+function makeStyles(colors: ReturnType<typeof import("../../styles/theme").getColors>) {
+  return StyleSheet.create({
+    row:        { flexDirection:"row", alignItems:"flex-start", gap:12, padding:14, backgroundColor:colors.surface },
+    rowUnread:  { backgroundColor:colors.surfaceSunken },
+    dot:        { width:10, height:10, borderRadius:5, borderWidth:1.5, marginTop:5 },
+    title:      { fontSize:theme.font.size.base, fontWeight:"600", color:colors.textPrimary },
+    titleUnread:{ fontWeight:"800" },
+    body:       { fontSize:theme.font.size.sm, color:colors.textSecondary, marginTop:3 },
+  });
+}

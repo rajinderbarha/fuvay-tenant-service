@@ -1,9 +1,14 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { theme } from "../../styles/theme";
+import { useAppTheme } from "../../context/ThemeContext";
 import type { OfflineSyncStateView } from "../../types/ux05";
 
+/** UX-05 Round 5: reactive theme colors -- requires a ThemeProvider ancestor
+ * (mounted in App.tsx; also used directly in NavigationContainer). */
 export function NetworkStatusBanner({ state }: { state:OfflineSyncStateView }) {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   if (state.networkState === "online" && state.syncState === "idle") return null;
   const label =
     state.networkState === "offline" ? "You're offline — showing cached work. Status changes, parts requests, and completion require a connection."
@@ -20,8 +25,10 @@ export function NetworkStatusBanner({ state }: { state:OfflineSyncStateView }) {
   );
 }
 
-const s = StyleSheet.create({
-  banner: { backgroundColor:theme.colors.warningBg, borderBottomWidth:1, borderBottomColor:theme.colors.warningBorder,
-            padding:10 },
-  text:   { fontSize:theme.font.size.sm, color:theme.colors.warningText, fontWeight:"600", textAlign:"center" },
-});
+function makeStyles(colors: ReturnType<typeof import("../../styles/theme").getColors>) {
+  return StyleSheet.create({
+    banner: { backgroundColor:colors.warningBg, borderBottomWidth:1, borderBottomColor:colors.warningBorder,
+              padding:10 },
+    text:   { fontSize:theme.font.size.sm, color:colors.warningText, fontWeight:"600", textAlign:"center" },
+  });
+}

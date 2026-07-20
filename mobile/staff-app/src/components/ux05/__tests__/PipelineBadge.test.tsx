@@ -1,5 +1,6 @@
 import React from "react";
-import { render, screen } from "@testing-library/react-native";
+import { screen } from "@testing-library/react-native";
+import { renderWithTheme as render } from "../../../testUtils/renderWithTheme";
 import { PipelineBadge } from "../PipelineBadge";
 import { PermissionRestrictedState } from "../PermissionRestrictedState";
 

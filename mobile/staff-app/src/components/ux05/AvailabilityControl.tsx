@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { theme, gs } from "../../styles/theme";
+import { useAppTheme } from "../../context/ThemeContext";
 import type { AvailabilityView } from "../../types/ux05";
 
 const OPTIONS: Array<{ key:AvailabilityView["workStatus"]; label:string }> = [
@@ -17,19 +18,24 @@ const OPTIONS: Array<{ key:AvailabilityView["workStatus"]; label:string }> = [
  * explicitly labels the other two statuses as distinct, non-invented
  * concepts (account status is real and shown as-is; job status is real and
  * shown as-is; work status is the only MOCK_DESIGN_ONLY piece here).
+ *
+ * UX-05 Round 5: chip/text colors now come from useAppTheme() (reactive
+ * light/dark) -- requires a ThemeProvider ancestor.
  */
 export function AvailabilityControl({ availability, onChange }: {
   availability:AvailabilityView; onChange:(status:AvailabilityView["workStatus"]) => void;
 }) {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   return (
-    <View style={[gs.card, { gap:10 }]} testID="availability-control">
-      <Text style={gs.label}>Work Status</Text>
+    <View style={[gs.card, { backgroundColor:colors.surface, gap:10 }]} testID="availability-control">
+      <Text style={[gs.label, { color:colors.textTertiary }]}>Work Status</Text>
       <View style={s.row}>
         {OPTIONS.map(opt => (
           <TouchableOpacity key={opt.key}
             style={[s.chip, availability.workStatus===opt.key && s.chipActive]}
             onPress={() => onChange(opt.key)}
-            accessibilityRole="button" accessibilityState={{ selected: availability.workStatus===opt.key }}>
+            accessibilityRole="button" accessibilityLabel={opt.label} accessibilityState={{ selected: availability.workStatus===opt.key }}>
             <Text style={[s.chipText, availability.workStatus===opt.key && s.chipTextActive]}>{opt.label}</Text>
           </TouchableOpacity>
         ))}
@@ -45,14 +51,16 @@ export function AvailabilityControl({ availability, onChange }: {
   );
 }
 
-const s = StyleSheet.create({
-  row:          { flexDirection:"row", flexWrap:"wrap", gap:8 },
-  chip:         { paddingHorizontal:14, paddingVertical:10, borderRadius:theme.radius.md, borderWidth:1, borderColor:theme.colors.border, minHeight:44, justifyContent:"center" },
-  chipActive:   { backgroundColor:theme.colors.accentLight, borderColor:theme.colors.accent },
-  chipText:     { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary },
-  chipTextActive:{ color:theme.colors.accent },
-  distinctRow:  { gap:2 },
-  distinctLabel:{ fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
-  distinctValue:{ color:theme.colors.textPrimary, fontWeight:"600" },
-  mockNote:     { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
-});
+function makeStyles(colors: ReturnType<typeof import("../../styles/theme").getColors>) {
+  return StyleSheet.create({
+    row:          { flexDirection:"row", flexWrap:"wrap", gap:8 },
+    chip:         { paddingHorizontal:14, paddingVertical:10, borderRadius:theme.radius.md, borderWidth:1, borderColor:colors.border, minHeight:44, justifyContent:"center" },
+    chipActive:   { backgroundColor:colors.accentLight, borderColor:colors.accent },
+    chipText:     { fontSize:theme.font.size.sm, fontWeight:"600", color:colors.textPrimary },
+    chipTextActive:{ color:colors.accent },
+    distinctRow:  { gap:2 },
+    distinctLabel:{ fontSize:theme.font.size.xs, color:colors.textTertiary },
+    distinctValue:{ color:colors.textPrimary, fontWeight:"600" },
+    mockNote:     { fontSize:theme.font.size.xs, color:colors.textTertiary },
+  });
+}
