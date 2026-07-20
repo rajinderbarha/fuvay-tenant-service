@@ -5,8 +5,7 @@ import { authApi, clearSession, STORAGE_KEYS, type CustomerUser } from "../lib/a
 interface AuthCtx {
   user:     CustomerUser | null;
   loading:  boolean;
-  loginOtp: (phone:string, otp:string, sessionId:string) => Promise<void>;
-  loginEmail:(email:string, password:string) => Promise<void>;
+  login:    (email:string, password:string) => Promise<void>;
   logout:   () => Promise<void>;
   error:    string | null;
   clearError:()=>void;
@@ -37,19 +36,11 @@ export function AuthProvider({ children }: { children:React.ReactNode }) {
     setUser(customer);
   }
 
-  async function loginOtp(phone:string, otp:string, sessionId:string) {
+  async function login(email:string, password:string) {
     setError(null);
     try {
-      const { access_token, customer } = await authApi.verifyOtp(phone, otp, sessionId);
-      await persist(access_token, customer);
-    } catch(e:unknown) { setError(e instanceof Error ? e.message : "OTP verification failed."); throw e; }
-  }
-
-  async function loginEmail(email:string, password:string) {
-    setError(null);
-    try {
-      const { access_token, customer } = await authApi.loginEmail(email, password);
-      await persist(access_token, customer);
+      const { access_token, user } = await authApi.login(email, password);
+      await persist(access_token, user);
     } catch(e:unknown) { setError(e instanceof Error ? e.message : "Login failed."); throw e; }
   }
 
@@ -59,7 +50,7 @@ export function AuthProvider({ children }: { children:React.ReactNode }) {
   }
 
   return (
-    <Ctx.Provider value={{ user, loading, loginOtp, loginEmail, logout, error, clearError:()=>setError(null) }}>
+    <Ctx.Provider value={{ user, loading, login, logout, error, clearError:()=>setError(null) }}>
       {children}
     </Ctx.Provider>
   );
