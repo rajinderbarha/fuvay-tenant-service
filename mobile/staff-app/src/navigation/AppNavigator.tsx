@@ -19,6 +19,7 @@ import { OfflineStatesShowcaseScreen } from "../screens/ux05/OfflineStatesShowca
 import { SystemStatesShowcaseScreen } from "../screens/ux05/SystemStatesShowcaseScreen";
 import { ThemeShowcaseScreen } from "../screens/ux05/ThemeShowcaseScreen";
 import { LocalizationShowcaseScreen } from "../screens/ux05/LocalizationShowcaseScreen";
+import { AccessibilityShowcaseScreen } from "../screens/ux05/AccessibilityShowcaseScreen";
 import { NetworkStatusBanner } from "../components/ux05/NetworkStatusBanner";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 
@@ -108,6 +109,8 @@ export function AppNavigator() {
               options={{ headerShown:true, title:"Dev: Theme" }} />
             <Stack.Screen name="ShowcaseLocalization" component={LocalizationShowcaseScreen}
               options={{ headerShown:true, title:"Dev: Localization" }} />
+            <Stack.Screen name="ShowcaseAccessibility" component={AccessibilityShowcaseScreen}
+              options={{ headerShown:true, title:"Dev: Accessibility" }} />
           </>
         ) : (
           // ── Unauthenticated ─────────────────────────────────────────────

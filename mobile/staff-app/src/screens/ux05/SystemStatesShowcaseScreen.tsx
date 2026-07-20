@@ -6,14 +6,20 @@ import { PermissionRestrictedState } from "../../components/ux05/PermissionRestr
 
 /**
  * Dev-only showcase covering generic system states referenced throughout
- * the brief but not yet built as dedicated production screens: Session
- * Expired, Tenant Suspended, Read-only, Restricted. These are reusable
+ * the brief: Session Expired, Tenant Suspended, Account Disabled,
+ * Reauthentication Required, Read-only, Restricted. These are reusable
  * presentation patterns, not fixtures tied to one workflow -- kept in one
- * showcase rather than four near-identical files.
+ * showcase rather than six near-identical files.
  *
- * None of these are wired to a real trigger (no live session-expiry event,
- * no live tenant-suspension flag) -- all MOCK_DESIGN_ONLY, demonstrating
- * the intended screen content only.
+ * UX-05 Round 7: Session Expired is now a REAL, wired state (see
+ * AuthContext.tsx's sessionExpired, driven by a genuine 401 on the app's
+ * initial /me check) -- the real LoginScreen shows this banner today, not
+ * a mockup. The card below is a static illustration of that same real copy
+ * for showcase-browsing purposes, not a duplicate implementation. Tenant
+ * Suspended / Account Disabled / Reauthentication Required / Read-only /
+ * Restricted remain MOCK_DESIGN_ONLY -- no live tenant-status or
+ * account-status-beyond-`StaffUser.status` field exists to drive them for
+ * real yet.
  */
 export function SystemStatesShowcaseScreen() {
   return (
@@ -21,9 +27,18 @@ export function SystemStatesShowcaseScreen() {
       <View style={[gs.card, s.block]}>
         <Text style={s.icon}>⏱</Text>
         <Text style={s.title}>Session Expired</Text>
-        <Text style={s.body}>Your session has ended for security. Sign in again to continue.</Text>
+        <Text style={s.body}>Your session has ended. Please sign in again.</Text>
         <Button label="Sign In Again" variant="primary" fullWidth onPress={() => {}} />
-        <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- not wired to a real token-expiry event yet.</Text>
+        <Text style={s.realNote}>REAL -- this exact copy is shown on the actual LoginScreen when AuthContext detects a genuine 401 on app start (see AuthContext.tsx).</Text>
+      </View>
+
+      <View style={[gs.card, s.block]}>
+        <Text style={s.icon}>🔐</Text>
+        <Text style={s.title}>Reauthentication Required</Text>
+        <Text style={s.body}>
+          For your security, please confirm your password to continue this action.
+        </Text>
+        <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- no action in this app currently requires step-up reauthentication; no live trigger exists.</Text>
       </View>
 
       <View style={[gs.card, s.block]}>
@@ -34,6 +49,15 @@ export function SystemStatesShowcaseScreen() {
           Contact your administrator for details.
         </Text>
         <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- not wired to a real tenant-status field yet.</Text>
+      </View>
+
+      <View style={[gs.card, s.block]}>
+        <Text style={s.icon}>⛔</Text>
+        <Text style={s.title}>Account Disabled</Text>
+        <Text style={s.body}>
+          Your account has been disabled by your tenant administrator. Contact them to restore access.
+        </Text>
+        <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- StaffUser.status is real (e.g. "active"), but no disabled-account value or 403-on-login path was confirmed against the real backend this round.</Text>
       </View>
 
       <View style={[gs.card, s.block]}>
@@ -61,4 +85,5 @@ const s = StyleSheet.create({
   title2:   { fontSize:theme.font.size.sm, fontWeight:"700", color:theme.colors.textPrimary, padding:theme.spacing.base, paddingBottom:0 },
   body:     { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, textAlign:"center" },
   mockNote: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, textAlign:"center" },
+  realNote: { fontSize:theme.font.size.xs, color:theme.colors.successText, textAlign:"center", fontWeight:"700" },
 });
