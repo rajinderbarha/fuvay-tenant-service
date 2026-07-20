@@ -1,5 +1,22 @@
-# Known Limitations (through Round 8)
+# Known Limitations (through Round 8, + UX-05B finalization)
 
+- **UX-05B FIX 3 investigation: the "Today" filter-tab pointer-event-interception report was a confirmed false
+  alarm, not a real layout bug.** A manual review claimed clicking the "Today" tab on `JobsListScreen` ("My
+  Work") failed in Playwright with "element intercepts pointer events" at a 390px viewport. Investigated live
+  with a real headless-Chromium Playwright session (logged in as `tech2@demo-ac-services.local` against the
+  real backend, real job data). Root cause of the *original* failure: React Navigation's tab navigator keeps
+  the previously-active tab screen (`HomeScreen`) mounted in the DOM (`position:absolute`) underneath the
+  active one, and `HomeScreen` has its own unrelated "Today" stat-card label ("Today · 0 jobs assigned"). A
+  bare `page.getByText("Today", { exact: true })` matches that hidden label *first* in DOM order, before the
+  real, visible `JobsListScreen` tab — so a naive Playwright test clicks the wrong (buried) element and gets an
+  interception error, while a real user's tap (or `page.getByText(...).nth(1)`, confirmed to correctly resolve
+  to the visible tab) lands on the correct, fully-functional tab every time. Re-tested against the exact
+  pre-UX-05B `JobsListScreen.tsx` (`git show a48bb44:...`, no changes): clicking the correctly-disambiguated
+  "Today" tab succeeds with zero interception and correctly filters the job list (a job dated `2026-08-01`
+  disappears from the "Today" view as expected). No code change was made to `JobsListScreen.tsx` — the tab row
+  has no real overlap, z-index, or overflow bug; the "flex:1 six tabs on 390px" layout renders correctly. This
+  is a documented test-methodology finding, not a shipped fix, per the "don't blindly fix nothing that's
+  actually broken" instruction for this task.
 - **Working-tree dependency drift caused a real, independently-caught test-failure incident (Round 7→8).** A
   genuinely fresh `npm install` against the real `G:\serviceos` working tree at one point reproduced 13/43 test
   failures (`react-test-renderer` duplicate-instance bug) because `package.json`/`package-lock.json` had

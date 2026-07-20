@@ -9,8 +9,8 @@ don't exist yet.
 ## Auth / Session — REAL
 | | |
 |---|---|
-| Route | `POST /v1/auth/staff/login`, `GET /v1/auth/me`, `POST /v1/auth/logout` |
-| Request/Response | `{phone,password} -> {access_token,refresh_token,staff:StaffUser}`; `me() -> StaffUser` |
+| Route | `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout` |
+| Request/Response | `{email,password} -> {access_token,refresh_token,user:{id,email,full_name,role,tenant_id,phone,is_active,...},tenant:{...}}`; `me() -> StaffUser` |
 | Role/Permission | None (public login); `me`/`logout` require a bearer token |
 | StaffPermission | N/A |
 | Mutation scope | Session only (token storage in AsyncStorage) |
@@ -19,6 +19,17 @@ don't exist yet.
 | Offline behavior | Login is `online_required`; a cached token allows optimistic `loading` state until `me()` resolves/fails |
 | Retry | None automatic |
 | Readiness | `production_ready` |
+
+**UX-05B FIX 1 correction (this doc previously described a route that never existed).** This section originally
+documented `POST /v1/auth/staff/login` with `{phone,password} -> {access_token,refresh_token,staff:StaffUser}`.
+That route does not exist — confirmed live (`405`, not present in the OpenAPI spec) — and the app's login screen
+was, in reality, completely broken from before UX-05 began (traced via `git blame` to baseline commit `36efe8d`,
+predating all UX-05 work; the same class of "calls a nonexistent endpoint" defect MODULE-L5-33/34/35/36 already
+fixed elsewhere in this app, but login itself was never swept). The real, confirmed-live contract — the same
+`POST /v1/auth/login` endpoint the super-admin and tenant-portal web apps already use — takes `{email,password}`
+and returns `{access_token,refresh_token,user:{...},tenant:{...}}`, unwrapped from a `{data:...}` envelope by the
+existing `apiFetch` helper. `authApi.login`, `AuthContext.login()`, and `LoginScreen.tsx`'s form field were all
+updated to match (email instead of phone). See `prerequisite-bug-fix-report.md` for the fix account and evidence.
 
 ## Home (Technician) — REAL (partial: technician home real, staff home mock)
 | | |

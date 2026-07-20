@@ -23,6 +23,17 @@ describe("AvailabilityControl", () => {
     expect(screen.getByText("active")).toBeTruthy();
     expect(screen.getByText("reached_site")).toBeTruthy();
   });
+
+  // UX-05B FIX 2 regression: this component renders inside production
+  // ProfileScreen (not just dev showcases), so its footnote must be
+  // human-readable copy, never the raw internal readiness-state token.
+  it("never renders the raw MOCK_DESIGN_ONLY token to the user", () => {
+    render(<AvailabilityControl
+      availability={{ meta:{readiness:"mock_design_only"}, workStatus:"available", accountStatus:"active", currentJobStatus:null }}
+      onChange={() => {}}
+    />);
+    expect(screen.queryByText(/MOCK_DESIGN_ONLY/)).toBeNull();
+  });
 });
 
 describe("NetworkStatusBanner", () => {
