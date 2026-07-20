@@ -1,0 +1,22 @@
+dimension,status,evidence
+1_canonical_tenant_provider_mutation_coverage,CERTIFIED (313/313),verify_2f37.py R13/R14/R19/R20
+2_platform_admin_mutation_authorization,PARTIAL/NOT_FULLY_CERTIFIED,platform-admin-mutation-certification.csv
+3_customer_self_service_mutation_authorization,PARTIAL/NOT_FULLY_CERTIFIED,customer-self-service-certification.csv
+4_internal_worker_callback_authorization,PARTIAL/NOT_FULLY_CERTIFIED,internal-worker-callback-certification.csv
+5_service_layer_fail_closed_behavior,CERTIFIED for canonical scope only,service-layer-certification.md
+6_cross_tenant_object_ownership,CERTIFIED for canonical scope (mocked evidence),cross-tenant-runtime-matrix.csv
+7_parent_ownership,CERTIFIED for canonical scope (mocked evidence),verify_2f37.py R10
+8_access_scope_enforcement,CERTIFIED for canonical scope (mocked evidence),access-scope-certification.md
+9_staffpermission_enforcement,CERTIFIED for canonical scope (mocked evidence),staffpermission-certification.md
+10_canonical_role_source_integrity,CERTIFIED (10 roles, no alias found executable in reviewed sources),canonical-role-certification.md
+11_persisted_role_data_integrity,NOT_CERTIFIED,persisted-role-value-audit.csv (2 known invalid accounts, no live DB to scan for others)
+12_demo_account_remediation,BLOCKED,manual-role-confirmation-request.md
+13_migration_144_readiness,BLOCKED,migration-144-readiness-report.md
+14_migration_144_runtime_safety,UNPROVEN (no PostgreSQL),postgres-environment-evidence.md
+15_read_path_tenant_privacy,KNOWN_GAPS_OPEN,read-path-privacy-limitations.md
+16_error_privacy,CERTIFIED for canonical scope only,privacy-error-certification.md
+17_secret_redaction,CERTIFIED for canonical scope only,secret-redaction-certification.md
+18_audit_authority,CERTIFIED for canonical scope only,audit-authority-certification.md
+19_domain_integrity_n01,BLOCKED (SECURITY_CLOSED_DOMAIN_INTEGRITY_BLOCKED),n01-final-limitation-status.md
+20_financial_integrity_payments,UNPROVEN,payments-financial-limitation-status.md
+21_product_policy_completeness,INCOMPLETE (Booking Exception Resolution, cancellation/rescheduling unresolved),final-product-decision-registry.csv

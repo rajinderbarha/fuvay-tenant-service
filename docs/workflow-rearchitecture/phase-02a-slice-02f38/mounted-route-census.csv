@@ -1,0 +1,18 @@
+metric,value,evidence
+total_mounted_routes,2320,"list_routes.py, live route_index() introspection"
+total_mutation_routes_auto_detected,1186,"inventory_mutation_routes.py, dependency-name heuristic classifier"
+canonical_tenant_provider_mutation_denominator,313,"verify_2f37.py R13/R19/R20, independently recomputed"
+auto_classified_PLATFORM_ADMIN_MUTATION,638,inventory_mutation_routes.py
+auto_classified_CUSTOMER_MUTATION,91,inventory_mutation_routes.py
+auto_classified_TENANT_USER_MUTATION,134,inventory_mutation_routes.py
+auto_classified_TENANT_TECHNICIAN_MUTATION,49,inventory_mutation_routes.py
+auto_classified_CALLBACK_OR_WEBHOOK,13,inventory_mutation_routes.py
+auto_classified_UNVERIFIED,261,"inventory_mutation_routes.py -- NOT resolved to one of the 9 required WS2 categories in this slice, see mutation-disposition-census.csv"
+guard_status_PLATFORM_ADMIN_ONLY,487,inventory_mutation_routes.py
+guard_status_TENANT_MUTATION_PERMISSION_SCOPE_AWARE,115,inventory_mutation_routes.py
+guard_status_PERMISSION_ONLY_NOT_SCOPE_AWARE,274,inventory_mutation_routes.py
+guard_status_TENANT_MUTATION_ROLE_SCOPE_AWARE,93,inventory_mutation_routes.py
+guard_status_STAFF_EXECUTION_ROLE_SCOPE_AWARE,58,inventory_mutation_routes.py
+guard_status_CUSTOMER_ROLE_ONLY_NOT_TENANT_SCOPED,31,inventory_mutation_routes.py
+guard_status_PUBLIC_NO_AUTH,39,inventory_mutation_routes.py
+guard_status_AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,89,"inventory_mutation_routes.py -- spot-checked (12 of 89), sampled routes are self-scoped identity operations (auth/logout, auth/me, mfa, ai/chat) where the correct guard is authentication-plus-self-ownership rather than a tenant permission; NOT individually verified for all 89, see mutation-disposition-census.csv"

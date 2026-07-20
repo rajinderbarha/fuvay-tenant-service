@@ -1,0 +1,5 @@
+table_model,column_path,role_value,count,tenant,active_state,source,canonical_validity,required_action
+users,role,tenant_manager,1,demo-ac-services,active,scripts/canonical_seed_final_l5_01.py direct ORM insert,INVALID,MANUAL_ROLE_CONFIRMATION_REQUIRED (see manual-role-confirmation-request.md)
+users,role,tenant_readonly,1,demo-ac-services,active,scripts/canonical_seed_final_l5_01.py direct ORM insert,INVALID,MANUAL_ROLE_CONFIRMATION_REQUIRED (see manual-role-confirmation-request.md)
+users,role,"(10 canonical values)",NOT_MEASURED (no live database),ALL,active,production/dev database,VALID (assumed based on CHECK-constraint-would-reject anything else once applied),N/A
+roles_permissions display catalog,static dict keys (not persisted),"tenant_manager + 5 other non-canonical display names",N/A (not a data row),N/A,is_implemented=false,app/engines/roles_permissions/service.py,NOT A ROLE ASSIGNMENT -- read-only UI catalog entry,none required
