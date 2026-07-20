@@ -8,6 +8,10 @@ import { JobDetailScreen } from "../screens/JobDetailScreen";
 import { ChatRoomScreen }  from "../screens/ChatRoomScreen";
 import { NotificationsScreen } from "../screens/NotificationsScreen";
 import { RoleAwareTabNavigator } from "./ux05/RoleAwareTabNavigator";
+import { PartsRequestShowcaseScreen } from "../screens/ux05/PartsRequestShowcaseScreen";
+import { InspectionChecklistShowcaseScreen } from "../screens/ux05/InspectionChecklistShowcaseScreen";
+import { JobNotesMediaShowcaseScreen } from "../screens/ux05/JobNotesMediaShowcaseScreen";
+import { StaffPartsApprovalShowcaseScreen } from "../screens/ux05/StaffPartsApprovalShowcaseScreen";
 import { theme } from "../styles/theme";
 
 const Stack = createNativeStackNavigator();
@@ -53,6 +57,19 @@ export function AppNavigator() {
                 headerTintColor:theme.colors.textPrimary,
                 headerTitleStyle:{ fontWeight:"700" } }}
             />
+            {/* UX-05 dev-only showcases (workstream 32) -- reachable only by
+                direct navigation.navigate() call, never linked from
+                production nav/tabs. __DEV__-style markers live in each
+                screen's own MOCK_DESIGN_ONLY note, not a route guard, since
+                Expo strips nothing here automatically. */}
+            <Stack.Screen name="ShowcasePartsRequest" component={PartsRequestShowcaseScreen}
+              options={{ headerShown:true, title:"Dev: Parts Request" }} />
+            <Stack.Screen name="ShowcaseInspectionChecklist" component={InspectionChecklistShowcaseScreen}
+              options={{ headerShown:true, title:"Dev: Inspection & Checklist" }} />
+            <Stack.Screen name="ShowcaseJobNotesMedia" component={JobNotesMediaShowcaseScreen}
+              options={{ headerShown:true, title:"Dev: Notes & Media" }} />
+            <Stack.Screen name="ShowcaseStaffPartsApproval" component={StaffPartsApprovalShowcaseScreen}
+              options={{ headerShown:true, title:"Dev: Staff Parts Approval" }} />
           </>
         ) : (
           // ── Unauthenticated ─────────────────────────────────────────────

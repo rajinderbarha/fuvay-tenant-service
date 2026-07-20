@@ -7,8 +7,12 @@ import { JobStatusBadge } from "../components/JobStatusBadge";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
+import { PipelineBadge } from "../components/ux05/PipelineBadge";
+import { CustomerContactCard } from "../components/ux05/CustomerContactCard";
+import { AddressCard } from "../components/ux05/AddressCard";
 import { theme, gs } from "../styles/theme";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { CustomerContactView } from "../types/ux05";
 
 type Params = { jobId:string };
 type Props  = NativeStackScreenProps<{ JobDetail:Params }, "JobDetail">;
@@ -100,11 +104,30 @@ export function JobDetailScreen({ route }: Props) {
               <Text style={s.jobNum}>{j.job_number}</Text>
               <JobStatusBadge status={j.status} />
             </View>
+            <PipelineBadge provenance={{ pipeline:"service_booking_service_job", sourceBookingId:j.booking_id, jobId:j.id, jobModel:"ServiceJob" }} />
             {j.city && <Text style={s.city}>{j.city}{j.zipcode ? `, ${j.zipcode}` : ""}</Text>}
             {j.scheduled_date && (
               <Text style={s.city}>🗓 {j.scheduled_date}{j.scheduled_time_window ? ` · ${j.scheduled_time_window}` : ""}</Text>
             )}
           </Card>
+
+          {/* Customer contact + address (workstream 11) -- built from the
+              same safe booking view already fetched, no new call */}
+          {booking && (() => {
+            const contact: CustomerContactView = {
+              meta: { readiness: "production_ready" },
+              name: booking.customer_name, city: booking.city, zipcode: booking.zipcode,
+              issueSummary: booking.issue_summary, preferredDate: booking.preferred_date,
+              preferredTimeWindow: booking.preferred_time_window,
+              callSupported: false, messageSupported: false,
+            };
+            return (
+              <>
+                <CustomerContactCard contact={contact} />
+                <AddressCard contact={contact} />
+              </>
+            );
+          })()}
 
           {/* Booking info (safe view -- no phone/price exposed to staff) */}
           {booking && (
