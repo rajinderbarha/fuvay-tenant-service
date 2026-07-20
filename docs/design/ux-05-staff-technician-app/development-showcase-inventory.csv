@@ -1,11 +1,18 @@
 showcase,route_name,readiness,covers
 Parts Request (create + track),ShowcasePartsRequest,mock_design_only,workstreams 14/15 -- technician create+track, no approve/reject/install affordance
-Inspection & Checklist,ShowcaseInspectionChecklist,mock_design_only,workstreams 12/13 -- draft editing, pass/fail touch targets, progress bar, required-item completion gate
+Inspection & Checklist,ShowcaseInspectionChecklist,mock_design_only,workstreams 12/13 -- draft editing, pass/fail touch targets, progress bar, required-item completion gate, real AsyncStorage draft persistence (Round 5)
 Job Notes & Media,ShowcaseJobNotesMedia,mock_design_only,workstreams 18/19 -- internal/technician/customer_visible notes, media grid with no storage-key leakage
 Staff Parts Approval,ShowcaseStaffPartsApproval,mock_design_only,workstream 16 -- fail-closed restricted for every current real user
+Current Job,CurrentJob,production_ready (semi-production -- reachable via real navigation, not dev-only-gated),workstream 9 -- focused single-job mode, sticky NextActionBar
+Quote,ShowcaseQuote,mock_design_only,workstream 17 -- view-only, no live quote endpoint exists anywhere in lib/api.ts
+Offline States,ShowcaseOfflineStates,mock_design_only,workstream 23/28 -- 6 real NetworkStatusBanner/PermissionRestrictedState scenarios
+System States,ShowcaseSystemStates,mock_design_only,workstream 28 -- Session Expired/Tenant Suspended/Read-only/Restricted
+Theme,ShowcaseTheme,production_ready (mechanism real; palette coverage partial),workstream 29 -- live Light/Dark/System toggle against 5 reactive components
+Localization,ShowcaseLocalization,mock_design_only (fixture strings; components are real),workstream 31 -- real long Hindi/Punjabi spot-check across 4 components
 
-Not built this pass (deferred, see deferred-items.md): the remaining ~26 showcases from the brief's list of 30
-(Technician Home, Staff Home, My Work, Today Schedule, field_ops.Job Detail [N/A -- no live pipeline, see
-pipeline-aware-job-detail.md], ServiceJob Detail, Current Job, Status Transition, Customer Contact, Notifications,
-Availability, Profile, Offline Cached Work, Sync Pending, Sync Conflict, Read-only, Restricted, Session Expired,
-Tenant Suspended, Long Hindi/Punjabi Content, Large Text/Accessibility, Light/Dark Theme Examples).
+Not built (deferred, see deferred-items.md): ~20 more showcases from the brief's list of ~30 (Technician Home,
+Staff Home, My Work, Today Schedule, field_ops.Job Detail [N/A -- no live pipeline, see
+pipeline-aware-job-detail.md], ServiceJob Detail, Status Transition, Customer Contact [covered partially by
+Localization/Current Job], Notifications, Availability [covered by Theme/Profile's ThemeToggle+AvailabilityControl],
+Profile, Offline Cached Work, Sync Pending, Sync Conflict [both covered by Offline States], Large Text/
+Accessibility [not covered]).

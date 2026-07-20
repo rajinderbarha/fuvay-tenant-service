@@ -1,14 +1,16 @@
 component,path,status,notes
-PipelineBadge,src/components/ux05/PipelineBadge.tsx,production_ready,wired into real JobDetailScreen this round
-PermissionRestrictedState,src/components/ux05/PermissionRestrictedState.tsx,production_ready,presentation only, not itself a security boundary
+PipelineBadge,src/components/ux05/PipelineBadge.tsx,production_ready,wired into real JobDetailScreen; reactive theme colors (Round 5)
+PermissionRestrictedState,src/components/ux05/PermissionRestrictedState.tsx,production_ready,presentation only, not itself a security boundary; reactive theme colors (Round 5)
 NextActionBar,src/components/ux05/NextActionBar.tsx,mock_design_only,built, not yet wired into JobDetailScreen (which has its own inline action grid)
 PartsRequestStatusCard,src/components/ux05/PartsRequestStatusCard.tsx,mock_design_only,used by PartsRequestShowcaseScreen + StaffPartsApprovalShowcaseScreen-adjacent
 WorkItemCard,src/components/ux05/WorkItemCard.tsx,mock_design_only,built, not yet wired into JobsListScreen
 ScheduleCard,src/components/ux05/ScheduleCard.tsx,production_ready,wired into real ScheduleScreen this round
 CustomerContactCard,src/components/ux05/CustomerContactCard.tsx,production_ready,wired into real JobDetailScreen this round
 AddressCard,src/components/ux05/AddressCard.tsx,production_ready (navigate/copy actions are placeholder),wired into real JobDetailScreen this round
-NotificationCard,src/components/ux05/NotificationCard.tsx,mock_design_only,built, not yet wired into NotificationsScreen (which has its own inline row renderer)
-NetworkStatusBanner,src/components/ux05/NetworkStatusBanner.tsx,mock_design_only,built, not yet wired into any screen
+NotificationCard,src/components/ux05/NotificationCard.tsx,mock_design_only,built, not yet wired into NotificationsScreen (which has its own inline row renderer); reactive theme colors (Round 5)
+NetworkStatusBanner,src/components/ux05/NetworkStatusBanner.tsx,production_ready,wired into AppNavigator (real NetInfo-backed hook) this round -- reactive theme colors too
+AvailabilityControl,src/components/ux05/AvailabilityControl.tsx,mock_design_only (no live work-status endpoint),wired into real ProfileScreen; reactive theme colors
+ThemeToggle,src/components/ux05/ThemeToggle.tsx,production_ready,new Round 5 -- real production control wired into ProfileScreen, writes through useAppTheme().setPreference
 ChecklistSection,src/components/ux05/ChecklistSection.tsx,mock_design_only,wired into InspectionChecklistShowcaseScreen
 ChecklistProgress,src/components/ux05/ChecklistSection.tsx,mock_design_only,same file, wired into showcase
 InspectionForm,src/components/ux05/InspectionForm.tsx,mock_design_only,wired into InspectionChecklistShowcaseScreen
