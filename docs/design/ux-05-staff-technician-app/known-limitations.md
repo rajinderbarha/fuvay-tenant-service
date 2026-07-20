@@ -1,5 +1,12 @@
-# Known Limitations (through Round 5)
+# Known Limitations (through Round 8)
 
+- **Working-tree dependency drift caused a real, independently-caught test-failure incident (Round 7→8).** A
+  genuinely fresh `npm install` against the real `G:\serviceos` working tree at one point reproduced 13/43 test
+  failures (`react-test-renderer` duplicate-instance bug) because `package.json`/`package-lock.json` had
+  reverted, uncommitted, to older pre-Round-4 versions outside this agent's commits. Root-caused, fixed (restored
+  from HEAD + added a defensive `overrides` pin), and re-verified with two independent from-scratch installs —
+  see `prerequisite-bug-fix-report.md` entry #3 for the full account. Going forward, every round's final report
+  is based on genuinely fresh-install test numbers, not a possibly-stale local `node_modules`.
 - **`StaffHomeScreen`/`StaffWorkQueueScreen` remain honest placeholders.** No live staff work-queue-summary
   endpoint exists (confirmed across all five rounds) — a genuine backend-contract gap, not a frontend omission.
 - **`NextActionBar` is wired into `CurrentJobScreen` but not `JobDetailScreen`** (kept as its own inline action
