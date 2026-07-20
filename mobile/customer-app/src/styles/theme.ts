@@ -29,6 +29,11 @@ export const theme = {
     // Star rating
     star:         "#F59E0B",
     starEmpty:    "#E2E8F0",
+    // UX-06 Round 3 fix: TabNavigator.tsx referenced these two tokens (a
+    // pre-existing typecheck error, Pattern D in typecheck-error-
+    // classification.md) but they were never defined.
+    tabActive:    "#1E3A5F",
+    tabInactive:  "#94A3B8",
   },
   spacing: { xs:4, sm:8, md:12, base:16, lg:20, xl:24, xxl:32, xxxl:48 },
   font: {

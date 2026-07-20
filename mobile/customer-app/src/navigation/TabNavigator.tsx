@@ -1,7 +1,11 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { HomeScreen }         from "../screens/HomeScreen";
+// UX-06 Round 3 fix: HomeScreen.tsx uses `export default`, not a named export
+// -- this was a pre-existing runtime-breaking bug (React Navigation received
+// `undefined` for the Home tab's component), discovered via a real Playwright
+// browser run against Expo web this round.
+import HomeScreen              from "../screens/HomeScreen";
 import { BookingsListScreen } from "../screens/BookingsListScreen";
 import { DeepSeekChatScreen } from "../screens/DeepSeekChatScreen";
 import { ChatScreen }         from "../screens/ChatScreen";

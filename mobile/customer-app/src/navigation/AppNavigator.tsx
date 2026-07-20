@@ -18,6 +18,15 @@ import { ServiceHistoryScreen }    from "../screens/ServiceHistoryScreen";
 import { HelpSupportScreen }       from "../screens/HelpSupportScreen";
 import { PaymentMethodsScreen }    from "../screens/PaymentMethodsScreen";
 import { InvoiceScreen }           from "../screens/InvoiceScreen";
+// UX-06 Round 3 fix: these 3 screens were referenced below (SmartBot/
+// AIAssistant/QuoteApproval routes) with no import anywhere in this file —
+// a pre-existing "Cannot find name" ReferenceError that crashed the whole app
+// at runtime the moment a logged-in user's stack tried to render (discovered
+// via a real Playwright browser run against Expo web this round). Fixing the
+// missing imports, not touching route structure.
+import { SmartBotScreen }          from "../screens/SmartBotScreen";
+import { AIAssistantScreen }       from "../screens/AIAssistantScreen";
+import { QuoteApprovalScreen }     from "../screens/QuoteApprovalScreen";
 import { TabNavigator }            from "./TabNavigator";
 
 const Stack = createNativeStackNavigator();

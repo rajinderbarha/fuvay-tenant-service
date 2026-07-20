@@ -1,12 +1,18 @@
 # Typecheck Error Classification — UX-06 Round 3
 
 Generated from a fresh WSL install (`rm -rf node_modules`, clean
-`npm install --legacy-peer-deps`) and `npx tsc --noEmit` at commit range
-Round 1→3. **125 total errors**, all in files not touched by this round's
+`npm install --legacy-peer-deps`) and `npx tsc --noEmit`. **Final count this
+round: 123 errors** (started the round at 126, ended at 123 — see "What Round
+3 changed" below), all in files not touched by this round's booking-journey
 work (confirmed: zero errors in `src/lib/api.ts`, `src/lib/chatBookingState.ts`,
 `src/lib/chatLanguages.ts`, `src/screens/DeepSeekChatScreen.tsx`,
 `src/context/AuthContext.tsx`, `src/screens/LoginScreen.tsx`, or any of the 6
-screens fixed in Round 2).
+screens fixed in Round 2). Two of the fixes this round (`AppNavigator.tsx`'s
+missing imports, `TabNavigator.tsx`'s wrong `HomeScreen` import style) were
+NOT cosmetic typecheck cleanup — they were real, pre-existing **runtime-crash
+bugs**, discovered and fixed only because Round 3 ran a real Playwright
+browser session against the app (see round3-runtime-proof-report.md). The
+counts/tables below reflect the state AFTER those fixes.
 
 ## Per-file count
 
@@ -23,14 +29,14 @@ screens fixed in Round 2).
 | `src/screens/SmartBotScreen.tsx` | 5 |
 | `src/screens/AIAssistantScreen.tsx` | 5 |
 | `src/screens/AIChatScreen.tsx` | 4 |
-| `src/navigation/TabNavigator.tsx` | 4 |
 | `src/screens/HomeScreen.tsx` | 3 |
 | `src/screens/BookingsListScreen.tsx` | 3 |
 | `src/screens/NotificationsScreen.tsx` | 2 |
 | `src/screens/AddressBookScreen.tsx` | 2 |
+| `src/navigation/TabNavigator.tsx` | 2 |
 | `src/screens/ServiceHistoryScreen.tsx` | 1 |
 | `src/screens/ReviewScreen.tsx` | 1 |
-| **Total** | **125** |
+| **Total** | **123** |
 
 ## Pattern classification (every error falls into exactly one bucket)
 
@@ -91,17 +97,17 @@ resolved the broader class of this bug in Round 2):
   `QuoteApprovalScreen.tsx:96`, `SmartBotScreen.tsx:281`. **Fix**: type each
   screen's navigation prop against the actual root stack's param list instead
   of `never`.
-- `AppNavigator.tsx:57,59,64` — `Cannot find name 'SmartBotScreen'` /
-  `'AIAssistantScreen'` / `'QuoteApprovalScreen'` — these three screens are
-  referenced in the stack but never imported at the top of the file. Pre-existing
-  scaffold bug, not something any UX-06 round touched or introduced.
+- ~~`AppNavigator.tsx:57,59,64` — `Cannot find name 'SmartBotScreen'` /
+  `'AIAssistantScreen'` / `'QuoteApprovalScreen'`~~ **FIXED this round** — this
+  was not just a typecheck nuisance, it was a real runtime `ReferenceError`
+  that crashed the entire authenticated app the moment it tried to render,
+  discovered via a real Playwright browser run (see
+  round3-runtime-proof-report.md). Fixed by adding the 3 missing imports.
+  `AppNavigator.tsx`'s remaining 8 errors are now all Pattern F (below).
 
-### Pattern D — `theme.ts` missing 2 color tokens (2 errors)
-`TabNavigator.tsx:18` references `theme.colors.tabActive`/`tabInactive`, which
-don't exist in `src/styles/theme.ts`'s color palette. Pre-existing (not
-introduced by Round 3's `TabNavigator.tsx` edit, which only swapped one
-component import). **Fix**: add the two tokens to `theme.ts` — trivial, 2-line
-fix, deferred only because this round's time went to the booking journey.
+### Pattern D — `theme.ts` missing 2 color tokens — **FIXED this round**
+`TabNavigator.tsx` referenced `theme.colors.tabActive`/`tabInactive`, which
+didn't exist in `src/styles/theme.ts`'s color palette. Added both tokens.
 
 ### Pattern E — `Variant` type too narrow for a real UI state (1 error)
 `QuoteApprovalScreen.tsx:197` — passes `"success"` where a component's
@@ -117,11 +123,16 @@ fix mentioned in Pattern C to resolve both at once.
 
 ## What Round 3 changed in this file's numbers
 
-Round 2 ended with 126 errors. Round 3 fixed 2 (the `profileApi.update` Pick
-type using stale `"name"` instead of `"full_name"`, and a `PRICE_RESULT` action
-type mismatch introduced then immediately fixed during `DeepSeekChatScreen`
-development) and added 1 new file (`DeepSeekChatScreen.tsx`, chatBookingState.ts,
-chatLanguages.ts) with **zero** errors — net **125**.
+Round 2 ended with 126 errors. Round 3:
+- Fixed the `profileApi.update` Pick type (stale `"name"` → `"full_name"`).
+- Added `homeServiceDraftApi`/`bookingConfirmApi`/`chatBookingState.ts`/
+  `chatLanguages.ts`/`DeepSeekChatScreen.tsx` with **zero** new errors.
+- Fixed 2 real runtime-crash bugs in `AppNavigator.tsx`/`TabNavigator.tsx`
+  (missing imports, wrong import style) found via a real browser run — these
+  also happened to be counted typecheck errors, so fixing them for runtime
+  correctness also reduced the count.
+- Added 2 real `theme.ts` tokens, resolving `TabNavigator.tsx`'s last 2 errors.
+- Net: **123** (down from 126).
 
 ## Priority for next round
 
