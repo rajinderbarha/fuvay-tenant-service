@@ -1,8 +1,7 @@
 # UX-05 Implementation Summary
 
 Branch `design/ux-05-staff-technician-app`, based on UX-04B `7488335`. Target: `mobile/staff-app/` (Expo ~56,
-React Native 0.85, React 19.2.3, React Navigation v7). Four rounds of work, all partial, all honestly reported.
-Round 4 is intended as the last round for now, per the coordinator's framing.
+React Native 0.85, React 19.2.3, React Navigation v7). Five rounds of work, all partial, all honestly reported.
 
 ## Round 1 (commits `4bb1db9`..`afaf478`)
 Fixed two real WSL npm-install blockers, produced the app's first lockfile, added a test/typecheck toolchain,
@@ -45,15 +44,37 @@ missing-sudo issue under the `admin` WSL user; 5 more tests (35 total); 6 more d
    updates to `execution-environment.md`/`staff-technician-build-report.md`/`deferred-items.md`/
    `known-limitations.md`/`approval-gate.md`) — ~41 of 72 total.
 
+## Round 5 (commits `79d08d2`..`8cbf7a0`) — this update
+1. **Real dark theme mechanism** (the highest-value gap Round 4 found). Read `frontend/packages/design-system`'s
+   `ThemeProvider.tsx` in full first, then built the RN equivalent: `theme.ts` gains a type-safe `darkColors`
+   palette + `getColors(scheme)`; new `ThemeContext.tsx` uses `Appearance` (RN's `matchMedia` equivalent) +
+   AsyncStorage (RN's `localStorage` equivalent) for the same preference/resolvedTheme/persisted/system-driven
+   pattern. Wired into `App.tsx`, `AppNavigator` (React Navigation's own `DefaultTheme`/`DarkTheme`, reactive
+   header colors), both tab navigators, and 5 ux05 components converted to fully reactive `useMemo`-based style
+   building. New `ThemeToggle` (real production control) wired into `ProfileScreen`. Fixed a real
+   AsyncStorage-in-Jest gap (`moduleNameMapper`, not `setupFiles`) surfaced by the conversion.
+2. **`@react-native-community/netinfo` investigated and added for real** (not deferred by default) — permissive
+   peer deps, clean install, real native+web coverage. `useNetworkStatus` rewritten to use it.
+3. **Real draft persistence**: new `usePersistedDraft` hook (AsyncStorage-backed), wired into
+   `InspectionChecklistShowcaseScreen`; 4 tests including a genuine unmount/remount restart simulation.
+4. **Real localization spot-check**: `LocalizationShowcaseScreen` with full-length real Hindi/Punjabi sentences
+   across 4 components; 4 tests distinguishing accidental truncation (none found) from intentional clamping.
+5. **2 more showcases** (`ThemeShowcaseScreen`, `LocalizationShowcaseScreen`) — 10 of ~30 targets total.
+6. **8 more tests (43 total)**; real browser re-verification after all Round 5 changes, zero errors.
+7. **Fresh re-verification**: `npx jest` → 43/43; `npx tsc --noEmit` → 19 errors, unchanged pre-existing
+   pattern, zero new; non-change diff re-confirmed empty on the correct branch.
+8. **5 more doc files** (~46 of 72 total).
+
 ## What's still deferred (for a potential future UX-05B pass)
 See `deferred-items.md` and `known-limitations.md`: `StaffHomeScreen`/`StaffWorkQueueScreen` need a real backend
-endpoint (a genuine contract gap), a real dark theme (palette + `useColorScheme` wiring — a separate, sizable
-workstream), native network detection (needs a NetInfo/expo-network dependency decision), draft persistence,
-`NextActionBar`/`NotificationCard` wiring into the two remaining pre-existing screens, ~22 more showcase
-screens, ~31 more doc files, a systematic focus-order/text-scaling/screen-reader audit, and localization testing
-(English/Hindi/Punjabi — not attempted in any round).
+endpoint (a genuine contract gap), broader dark-theme coverage across the remaining screens (mechanical, proven
+pattern), draft persistence in the remaining two showcases, `NextActionBar`/`NotificationCard` wiring into the
+two remaining pre-existing screens, ~20 more showcase screens, ~26 more doc files, a systematic focus-order/
+text-scaling/screen-reader audit, and full i18n infrastructure (this round only spot-checked long-string
+wrapping, no string catalog/locale-switching exists).
 
 ## Final status
-**STAFF_TECHNICIAN_APP_DESIGN_PARTIAL** — real, verified, committed partial progress across four rounds,
+**STAFF_TECHNICIAN_APP_DESIGN_PARTIAL** — real, verified, committed partial progress across five rounds,
 including a full working verification pipeline (install → typecheck → tests → build → real browser runtime)
-that caught and fixed a genuine bug. Not a complete design phase. See `approval-gate.md`.
+that caught and fixed a genuine bug, and a real, working dark-theme mechanism. Not a complete design phase. See
+`approval-gate.md`.

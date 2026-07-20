@@ -123,9 +123,44 @@ Followed the coordinator's priority order exactly: finish the in-progress theme-
 uncommitted changes), unblock Chromium via the root user (the single highest-value remaining verification gap,
 and it paid off immediately by catching a real bug), do a real accessibility/theme pass rather than more
 documentation, wire the one component that had been "built but not connected to anything real"
-(`NetworkStatusBanner`), and add one more showcase for breadth. This remains a partial delivery, and per the
-coordinator's framing this is intended as the last round for now — see `known-limitations.md` and
-`approval-gate.md` for the honest final accounting for a potential future UX-05B pass.
+(`NetworkStatusBanner`), and add one more showcase for breadth.
+
+**Round 5 (this update):**
+39. **Real dark theme mechanism** — the highest-value gap Round 4 found. `theme.ts` gets a type-safe
+    `darkColors` palette + `getColors(scheme)`; new `ThemeContext.tsx` (`Appearance` API + AsyncStorage
+    persistence, mirroring `frontend/packages/design-system`'s `ThemeProvider` preference/resolvedTheme
+    pattern read in full before implementing). Wired into `App.tsx`, `AppNavigator` (React Navigation's own
+    `DefaultTheme`/`DarkTheme`, reactive header colors), both tab navigators, and 5 ux05 components
+    (`PipelineBadge`, `PermissionRestrictedState`, `NetworkStatusBanner`, `NotificationCard`,
+    `AvailabilityControl`) converted to fully reactive `useMemo`-based style building. New `ThemeToggle` (a
+    real production control, not a fixture) wired into `ProfileScreen`. Found and fixed a real Jest/AsyncStorage
+    gap (`moduleNameMapper`, not `setupFiles`) as a side effect of making tests work with the new requirement.
+40. **`@react-native-community/netinfo` investigated and added for real** — permissive peer deps, installs
+    cleanly, has its own web implementation. `useNetworkStatus` rewritten to use it; closes the
+    "always-online on native" gap from Rounds 4.
+41. **Real draft persistence** — new `usePersistedDraft` hook (AsyncStorage-backed), wired into
+    `InspectionChecklistShowcaseScreen` (both inspection and checklist drafts survive an app restart). 4 tests,
+    including one that genuinely simulates a restart (unmount + remount with the same key).
+42. **Real localization spot-check** — `LocalizationShowcaseScreen` drops full-length real Hindi/Punjabi
+    sentences into 4 components; 4 RNTL tests distinguish accidental truncation (none found) from
+    `NotificationCard`'s intentional 2-line clamp.
+43. **2 more showcases** (`ThemeShowcaseScreen`, `LocalizationShowcaseScreen`) — 10 of ~30 original targets now built.
+44. **8 more tests (43 total)**, plus a real bundle/browser re-verification: Playwright smoke check re-run after
+    all Round 5 changes, still zero page/console errors.
+45. Fresh re-verification: `npx jest` (43/43), `npx tsc --noEmit` (19 errors, unchanged pre-existing pattern,
+    zero new), non-change diff (empty, re-confirmed on the correct branch after the concurrent-process branch
+    incident described in the Round 4→5 transition — see git history for that incident; it never touched this
+    branch).
+46. 5 more documentation files this round.
+
+## Why the cut was made here, not elsewhere (Round 5)
+Followed the coordinator's priority order: (1) the dark-theme mechanism first, since it was explicitly flagged
+as "the most valuable gap" and required understanding the existing web pattern before implementing the RN
+equivalent — the highest-effort, highest-value item; (2) investigated rather than deferred-by-default on NetInfo
+(a concrete ask); (3) draft persistence, a small and genuinely tractable win once identified; (4) a real
+(not fabricated) localization spot-check; (5) breadth (2 more showcases) with remaining room. This remains a
+partial delivery — see `known-limitations.md` and `approval-gate.md` for the accounting toward a potential
+future UX-05B pass.
 
 ## Why the cut was made here, not elsewhere (Round 3, historical)
 Followed the coordinator's explicit priority order: close the two flagged "logic built but not wired" gaps first

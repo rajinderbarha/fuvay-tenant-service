@@ -1,4 +1,4 @@
-# Runtime Test Report (Round 4 — real headless-browser verification, unblocked)
+# Runtime Test Report (Round 4 — real headless-browser verification, unblocked; Round 5 re-verified)
 
 ## What changed from Round 3
 Round 3 got the Expo web *build* pipeline proven (bundle serves, contains real compiled source) but the
@@ -44,6 +44,15 @@ Re-ran the smoke check a final time against the Round 4 build (real network-stat
 `AppNavigator`, new nested `View` wrapper structure, 8 accessibility-attribute additions, new
 `SystemStatesShowcaseScreen` registered): **zero errors**, same clean Login-screen render — confirms none of
 this round's structural/component changes broke the app.
+
+## Round 5 re-verification (after dark-theme mechanism, NetInfo, draft persistence, 2 more showcases)
+Re-ran the same one-shot Metro-start + Playwright smoke check against the Round 5 build (new `ThemeProvider`
+wrapping `App.tsx`, `AppNavigator`'s `NavigationContainer` now driven by a reactive `theme` prop, 5 components
+converted to `useAppTheme()`, new `@react-native-community/netinfo` dependency, new `usePersistedDraft` hook,
+2 new showcase screens registered): **zero page/console errors**, same clean Login-screen render. This is a
+meaningful check specifically for this round because the `ThemeProvider`/`ThemeContext` change touches the
+app's root render tree (every screen is now inside a new context provider) — a mistake there would plausibly
+crash the whole app, and it didn't.
 
 ## What was NOT tested
 - Deep-linking directly to an authenticated route (e.g. a specific dev showcase) via URL was not attempted —
