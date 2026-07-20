@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useApi, useAction } from "../hooks/useApi";
 import { jobsApi } from "../lib/api";
@@ -11,6 +11,7 @@ import { PipelineBadge } from "../components/ux05/PipelineBadge";
 import { CustomerContactCard } from "../components/ux05/CustomerContactCard";
 import { AddressCard } from "../components/ux05/AddressCard";
 import { theme, gs } from "../styles/theme";
+import { useAppTheme } from "../context/ThemeContext";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { CustomerContactView } from "../types/ux05";
 
@@ -39,6 +40,8 @@ const ACTION_FN: Record<JobAction, (jobId:string, arg?:string) => Promise<unknow
 
 export function JobDetailScreen({ route }: Props) {
   const { jobId } = route.params;
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const [rejectModal, setRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [completeModal, setCompleteModal] = useState(false);
@@ -89,13 +92,13 @@ export function JobDetailScreen({ route }: Props) {
   }
 
   if (detail.loading) return (
-    <ScrollView style={gs.screen} contentContainerStyle={{ padding:theme.spacing.base, gap:14 }}>
+    <ScrollView style={[gs.screen, { backgroundColor:colors.bg }]} contentContainerStyle={{ padding:theme.spacing.base, gap:14 }}>
       {[...Array(4)].map((_,i) => <Skeleton key={i} height={80} />)}
     </ScrollView>
   );
 
   return (
-    <ScrollView style={gs.screen} contentContainerStyle={s.content}>
+    <ScrollView style={[gs.screen, { backgroundColor:colors.bg }]} contentContainerStyle={s.content}>
       {j && (
         <>
           {/* Header */}
@@ -187,7 +190,7 @@ export function JobDetailScreen({ route }: Props) {
             <Text style={s.modalTitle}>Reject this job</Text>
             <Text style={s.modalSub}>A reason is required.</Text>
             <TextInput style={s.textarea} value={rejectReason} onChangeText={setRejectReason}
-              placeholder="Why are you rejecting this job?" placeholderTextColor={theme.colors.textTertiary}
+              placeholder="Why are you rejecting this job?" placeholderTextColor={colors.textTertiary}
               multiline numberOfLines={3} textAlignVertical="top" />
             {actionState.error && <Text style={s.errText}>{actionState.error}</Text>}
             <View style={{ gap:10 }}>
@@ -208,11 +211,11 @@ export function JobDetailScreen({ route }: Props) {
             <Text style={s.modalSub}>Work summary and amount collected are both required.</Text>
             <TextInput style={s.textarea} value={workSummary} onChangeText={setWorkSummary}
               placeholder="e.g. AC unit cleaned, filter replaced. Customer satisfied."
-              placeholderTextColor={theme.colors.textTertiary}
+              placeholderTextColor={colors.textTertiary}
               multiline numberOfLines={4} textAlignVertical="top" />
             <TextInput style={s.input} value={collectedAmount} onChangeText={setCollectedAmount}
               placeholder="Amount Collected (₹) *" keyboardType="numeric"
-              placeholderTextColor={theme.colors.textTertiary} />
+              placeholderTextColor={colors.textTertiary} />
             <Text style={s.modalSub}>Payment mode: Customer Pays Provider Directly</Text>
             {completeAction.error && <Text style={s.errText}>{completeAction.error}</Text>}
             <View style={{ gap:10 }}>
@@ -228,24 +231,33 @@ export function JobDetailScreen({ route }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  content:    { padding:theme.spacing.base, gap:12, paddingBottom:32 },
-  jobNum:     { fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary },
-  city:       { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, marginTop:2 },
-  custName:   { fontSize:theme.font.size.lg, fontWeight:"600", color:theme.colors.textPrimary },
-  booking:    { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
-  actionGrid: { flexDirection:"row", flexWrap:"wrap", gap:10 },
-  errText:    { fontSize:theme.font.size.sm, color:theme.colors.dangerText, marginTop:8 },
-  notes:      { fontSize:theme.font.size.base, color:theme.colors.textSecondary, lineHeight:22 },
-  input:        { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
-                  padding:12, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
-                  backgroundColor:theme.colors.surfaceSunken },
-  modalOverlay:{ flex:1, justifyContent:"flex-end", backgroundColor:"rgba(0,0,0,0.45)" },
-  modalSheet:  { backgroundColor:theme.colors.surface, borderTopLeftRadius:24, borderTopRightRadius:24,
-                 padding:24, gap:14, paddingBottom:40 },
-  modalTitle:  { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary },
-  modalSub:    { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
-  textarea:    { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
-                 padding:12, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
-                 minHeight:100, backgroundColor:theme.colors.surfaceSunken },
-});
+// UX-05B FIX 2 (item 2): converted to reactive theme colors, same
+// useMemo(makeStyles(colors)) pattern used by ScheduleScreen/HomeScreen/etc.
+// Deliberately deferred in Round 7 because this screen holds the real
+// money-collection ("Complete Job") modal and needed dedicated regression
+// coverage before touching it -- see
+// src/screens/__tests__/JobDetailScreen.test.tsx for that coverage, added
+// alongside this conversion (not after).
+function makeStyles(colors: ReturnType<typeof import("../styles/theme").getColors>) {
+  return StyleSheet.create({
+    content:    { padding:theme.spacing.base, gap:12, paddingBottom:32 },
+    jobNum:     { fontSize:theme.font.size.base, fontWeight:"700", color:colors.textPrimary },
+    city:       { fontSize:theme.font.size.sm, color:colors.textSecondary, marginTop:2 },
+    custName:   { fontSize:theme.font.size.lg, fontWeight:"600", color:colors.textPrimary },
+    booking:    { fontSize:theme.font.size.xs, color:colors.textTertiary },
+    actionGrid: { flexDirection:"row", flexWrap:"wrap", gap:10 },
+    errText:    { fontSize:theme.font.size.sm, color:colors.dangerText, marginTop:8 },
+    notes:      { fontSize:theme.font.size.base, color:colors.textSecondary, lineHeight:22 },
+    input:        { borderWidth:1, borderColor:colors.border, borderRadius:theme.radius.lg,
+                    padding:12, fontSize:theme.font.size.base, color:colors.textPrimary,
+                    backgroundColor:colors.surfaceSunken },
+    modalOverlay:{ flex:1, justifyContent:"flex-end", backgroundColor:"rgba(0,0,0,0.45)" },
+    modalSheet:  { backgroundColor:colors.surface, borderTopLeftRadius:24, borderTopRightRadius:24,
+                   padding:24, gap:14, paddingBottom:40 },
+    modalTitle:  { fontSize:theme.font.size.xl, fontWeight:"700", color:colors.textPrimary },
+    modalSub:    { fontSize:theme.font.size.sm, color:colors.textSecondary },
+    textarea:    { borderWidth:1, borderColor:colors.border, borderRadius:theme.radius.lg,
+                   padding:12, fontSize:theme.font.size.base, color:colors.textPrimary,
+                   minHeight:100, backgroundColor:colors.surfaceSunken },
+  });
+}
