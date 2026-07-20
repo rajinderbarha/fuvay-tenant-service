@@ -27,7 +27,9 @@
     "react-native-screens": "^4.4.0",
     "react-native-maps": "^1.20.1",
     "react-native-vector-icons": "^10.3.0",
-    "@expo/vector-icons": "^14.1.0"
+    "@expo/vector-icons": "^14.1.0",
+    "react-dom": "19.2.3",
+    "react-native-web": "^0.21.2"
   },
   "devDependencies": {
     "@babel/core": "^7.27.0",
