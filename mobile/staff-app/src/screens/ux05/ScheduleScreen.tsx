@@ -3,6 +3,7 @@ import { FlatList, StyleSheet, Text, View } from "react-native";
 import { useApi } from "../../hooks/useApi";
 import { jobsApi } from "../../lib/api";
 import { theme, gs } from "../../styles/theme";
+import { useAppTheme } from "../../context/ThemeContext";
 import { Skeleton } from "../../components/Skeleton";
 import { ScheduleCard } from "../../components/ux05/ScheduleCard";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -16,8 +17,11 @@ type Props = { navigation: NativeStackNavigationProp<never> };
  * since the backend has no per-day schedule endpoint. Day/Agenda-view
  * toggles from the brief were not built this pass -- Today + Upcoming only
  * (see known-limitations.md).
+ *
+ * UX-05 Round 7: converted to reactive theme colors.
  */
 export function ScheduleScreen({ navigation }: Props) {
+  const { colors } = useAppTheme();
   const jobs = useApi(useCallback(() => jobsApi.myJobs(), []));
 
   const { today, upcoming } = useMemo(() => {
@@ -36,7 +40,7 @@ export function ScheduleScreen({ navigation }: Props) {
   }, [jobs.data]);
 
   if (jobs.loading) return (
-    <View style={{ padding:theme.spacing.base, gap:12 }}>
+    <View style={{ padding:theme.spacing.base, gap:12, backgroundColor:colors.bg, flex:1 }}>
       {[...Array(4)].map((_,i) => <Skeleton key={i} height={80} />)}
     </View>
   );
@@ -48,15 +52,15 @@ export function ScheduleScreen({ navigation }: Props) {
 
   return (
     <FlatList
-      style={gs.screen}
+      style={[gs.screen, { backgroundColor:colors.bg }]}
       contentContainerStyle={{ padding:theme.spacing.base, gap:10, paddingBottom:32 }}
       data={sections.flatMap(sec => [{ header:sec.title, item:null }, ...sec.data.map(item => ({ header:null, item }))])}
       keyExtractor={(row, i) => row.header ?? row.item?.job.id ?? String(i)}
       renderItem={({ item: row }) => row.header
-        ? <Text style={[gs.label, { marginTop:8 }]}>{row.header}</Text>
+        ? <Text style={[gs.label, { marginTop:8, color:colors.textTertiary }]}>{row.header}</Text>
         : <ScheduleCard item={row.item!} onPress={() => navigation.navigate("JobDetail" as never, { jobId:row.item!.job.id } as never)} />
       }
-      ListEmptyComponent={<Text style={{ color:theme.colors.textTertiary, textAlign:"center", marginTop:40 }}>No scheduled jobs</Text>}
+      ListEmptyComponent={<Text style={{ color:colors.textTertiary, textAlign:"center", marginTop:40 }}>No scheduled jobs</Text>}
     />
   );
 }
