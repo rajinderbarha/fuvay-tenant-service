@@ -1,4 +1,10 @@
-# Known Limitations (through Round 8, + UX-05B finalization)
+# Known Limitations (through Round 8, + UX-05B + UX-05C finalization)
+
+- **UX-05C item 4 (showcase-screen breadth) was not advanced this phase.** Given the time this bounded closure
+  phase actually had, priority went to items 1-3 (real login/session/logout proof and the one genuine bug that
+  proof surfaced — Sign Out silently no-op'ing on web — plus the test-flakiness root cause) over adding more
+  dev-only showcase screens. Showcase count remains ~12 of ~30 (`development-showcase-inventory.csv`). Disclosed
+  honestly, not padded.
 
 - **UX-05B scope closure — items 3 and 4 (bulk showcase-screen breadth, remaining ~27 doc files) were not
   substantially advanced this phase.** UX-05B's bounded scope prioritized correctness (product-review fixes),
