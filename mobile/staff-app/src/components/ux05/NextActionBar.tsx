@@ -43,5 +43,5 @@ const s = StyleSheet.create({
   danger:   { backgroundColor:theme.colors.danger },
   secondary:{ backgroundColor:theme.colors.accent },
   disabled: { opacity:0.45 },
-  btnText:  { color:"#fff", fontWeight:"700", fontSize:theme.font.size.md },
+  btnText:  { color:theme.colors.textInverse, fontWeight:"700", fontSize:theme.font.size.md },
 });

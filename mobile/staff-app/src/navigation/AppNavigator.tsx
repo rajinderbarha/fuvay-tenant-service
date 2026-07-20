@@ -15,12 +15,20 @@ import { StaffPartsApprovalShowcaseScreen } from "../screens/ux05/StaffPartsAppr
 import { CurrentJobScreen } from "../screens/ux05/CurrentJobScreen";
 import { QuoteShowcaseScreen } from "../screens/ux05/QuoteShowcaseScreen";
 import { OfflineStatesShowcaseScreen } from "../screens/ux05/OfflineStatesShowcaseScreen";
+import { NetworkStatusBanner } from "../components/ux05/NetworkStatusBanner";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { theme } from "../styles/theme";
 
 const Stack = createNativeStackNavigator();
 
 export function AppNavigator() {
   const { user, loading } = useAuth();
+  // UX-05 Round 4: real network-state banner, mounted once above every
+  // screen so it shows for actual connectivity changes, not just in the
+  // dev showcase. See hooks/useNetworkStatus.ts for the honest native-vs-
+  // web capability boundary (real on Expo web, always-online on native
+  // until a NetInfo dependency is added).
+  const networkStatus = useNetworkStatus();
 
   if (loading) return (
     <View style={{ flex:1, alignItems:"center", justifyContent:"center", backgroundColor:theme.colors.bg }}>
@@ -30,6 +38,9 @@ export function AppNavigator() {
 
   return (
     <NavigationContainer>
+      <View style={{ flex:1 }}>
+        <NetworkStatusBanner state={networkStatus} />
+        <View style={{ flex:1 }}>
       <Stack.Navigator screenOptions={{ headerShown:false }}>
         {user ? (
           // ── Authenticated stack ─────────────────────────────────────────
@@ -85,6 +96,8 @@ export function AppNavigator() {
           <Stack.Screen name="Login" component={LoginScreen} />
         )}
       </Stack.Navigator>
+        </View>
+      </View>
     </NavigationContainer>
   );
 }

@@ -37,7 +37,9 @@ export function JobNoteComposer({ notes, onAdd }: { notes:JobNoteView[]; onAdd:(
       <View style={{ flexDirection:"row", gap:8 }}>
         {(Object.keys(VISIBILITY_LABEL) as JobNoteView["visibility"][]).map(v => (
           <TouchableOpacity key={v} onPress={() => setVisibility(v)}
-            style={[s.visBtn, visibility===v && s.visBtnActive]}>
+            style={[s.visBtn, visibility===v && s.visBtnActive]}
+            accessibilityRole="button" accessibilityLabel={`Set visibility: ${VISIBILITY_LABEL[v]}`}
+            accessibilityState={{ selected: visibility===v }}>
             <Text style={s.visBtnText}>{VISIBILITY_LABEL[v].split(" ")[0]}</Text>
           </TouchableOpacity>
         ))}
@@ -59,7 +61,8 @@ const s = StyleSheet.create({
   visBtnText:   { fontSize:theme.font.size.xs, fontWeight:"600", color:theme.colors.textPrimary },
   input:        { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.md, padding:10,
                   fontSize:theme.font.size.base, color:theme.colors.textPrimary, backgroundColor:theme.colors.surfaceSunken, minHeight:44 },
-  submitBtn:    { height:40, borderRadius:theme.radius.md, backgroundColor:theme.colors.brand, alignItems:"center", justifyContent:"center" },
-  submitText:   { color:"#fff", fontWeight:"700" },
+  // UX-05 Round 4 a11y pass: 40pt -> 44pt to meet the minimum touch-target size.
+  submitBtn:    { height:44, borderRadius:theme.radius.md, backgroundColor:theme.colors.brand, alignItems:"center", justifyContent:"center" },
+  submitText:   { color:theme.colors.textInverse, fontWeight:"700" },
   mockNote:     { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
 });
