@@ -1,0 +1,28 @@
+action_key,readiness,note
+service_job:view_list,production_ready,jobsApi.myJobs is real and live
+service_job:view_detail,production_ready,jobsApi.get is real and live
+service_job:accept,production_ready,jobsApi.accept is real
+service_job:reject,production_ready,jobsApi.reject is real, requires reason
+service_job:on_the_way,production_ready,jobsApi.onTheWay is real
+service_job:reached_site,production_ready,jobsApi.reachedSite is real
+service_job:start_inspection,production_ready,jobsApi.startInspection is real (transition only -- no inspection FORM endpoint exists)
+service_job:complete_inspection,production_ready,jobsApi.completeInspection is real (transition only)
+service_job:start_service,production_ready,jobsApi.startService is real
+service_job:work_done,production_ready,jobsApi.workDone is real
+service_job:complete,production_ready,jobsApi.complete is real, requires work_summary + collected_amount
+inspection:structured_form,api_contract_required,no structured inspection-content endpoint exists -- only a state-transition action
+checklist:execution,api_contract_required,no checklist-content endpoint exists in lib/api.ts
+quote:presentation,api_contract_required,no quote endpoint exists in lib/api.ts
+parts_request:create,api_contract_required,no partsApi export exists -- PartsRequestShowcaseScreen is a local-state design fixture only
+parts_request:track,api_contract_required,same as above
+parts_request:approve,security_contract_pending,staff-only, no endpoint + no confirmed StaffPermission model yet
+staffpermission:fetch,api_contract_required,no endpoint exists to fetch a staff member's real permission grants
+chat:list_threads,production_ready,chatApi.listThreads is real
+chat:send_message,production_ready,chatApi.sendMessage is real
+notifications:list,production_ready,notificationsApi.list is real
+notifications:mark_read,production_ready,notificationsApi.markRead is real
+staff:profile,production_ready,staffApi.get is real
+staff:performance_score,read_only_ready,staffApi.performance is real but 404s legitimately until a score is computed
+staff:earnings,product_decision_required,per MODULE-L5-33 memory, staff-app earnings model is a known open gap -- not re-verified or re-fixed in this pass
+availability:work_status,api_contract_required,no dedicated available/busy/on_job/off_duty endpoint distinct from Job.status found
+role:staff_vs_technician,product_decision_required,StaffUser carries no live role field -- deriveRole() fails closed to technician

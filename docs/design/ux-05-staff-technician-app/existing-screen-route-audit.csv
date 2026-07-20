@@ -1,0 +1,10 @@
+screen,purpose,role_check,staffpermission_use,api_dependency,job_model,disposition,readiness,notes
+LoginScreen,phone+password auth,none (unauthenticated route),none,authApi.login,n/a,KEEP_AND_REDESIGN,production_ready,no session-state screens (expired/disabled/suspended) yet -- see authentication-session-states.md
+HomeScreen,technician daily overview,none (implicit -- every authed user sees same view),none,jobsApi.myJobs + notificationsApi.unreadCount,ServiceJob,KEEP_AND_REDESIGN,production_ready,single undifferentiated home; needs role-aware split per IA doc
+JobsListScreen,list of assigned jobs,none,none,jobsApi.myJobs,ServiceJob,EXTEND,production_ready,needs My Work groupings/filters per spec
+JobDetailScreen,job detail + status transitions + completion,none,none,jobsApi.get/accept/reject/onTheWay/.../complete,ServiceJob,EXTEND,production_ready,real repository-backed transitions; no inspection/checklist/quote/parts sections exist yet (API_CONTRACT_REQUIRED)
+ChatListScreen,staff chat threads,none,none,chatApi.listThreads,n/a,KEEP_AND_REDESIGN,production_ready,fine as-is
+ChatRoomScreen,thread messages,none,none,chatApi.getMessages/sendMessage/markRead,n/a,KEEP_AND_REDESIGN,production_ready,fine as-is
+NotificationsScreen,notification list,none,none,notificationsApi.list/markRead/markAllRead,n/a,KEEP_AND_REDESIGN,production_ready,fine as-is
+EarningsScreen,technician earnings,none,none,unknown -- MODULE-L5-33 memory notes staff-app earnings still points at a dead table,ServiceJob (indirect),PRODUCT_DECISION_REQUIRED,api_contract_required,per memory (MODULE-L5-33/36) earnings/payout data model is an open gap -- did not re-verify in this pass, flagged not re-fixed
+ProfileScreen,profile + performance score,none,none,staffApi.get/performance/updateSchedule,n/a,EXTEND,production_ready,needs designation/role-aware fields per profile-specification.md

@@ -1,0 +1,13 @@
+operation,offline_category,retry_behavior,conflict_behavior,idempotency_requirement,notes
+view_assigned_work,view_cached,n/a (read-only cache),show stale-cached banner if last fetch >5m old,none needed,safe to cache last successful myJobs response
+view_job_address_instructions,view_cached,n/a,stale banner,none,safe cache
+draft_notes,draft_only,queued locally, not auto-sent,none until submitted,client-generated draft id,never auto-replayed on reconnect without explicit user confirm
+draft_checklist_responses,draft_only,queued locally,none until submitted,client-generated draft id,same as notes
+draft_inspection,draft_only,queued locally,none until submitted,client-generated draft id,same as notes
+queue_media_pre_upload,draft_only,manual retry on reconnect,last-write-wins on manual retry,none (no upload attempted while offline),never marked confirmed until backend responds
+status_transition,online_required,blocked while offline; NextActionBar shows disabled + reason,n/a (never attempted offline),backend has no generic status-PUT / no confirmed idempotency key,see JobDetailScreen ACTION_FN -- all real backend calls, no offline queue
+parts_request_submission,online_required,blocked while offline,n/a,unconfirmed -- API_CONTRACT_REQUIRED,no live endpoint exists at all yet (see backend-contract-blockers.md)
+quote_submission,online_required,blocked while offline,n/a,unconfirmed -- API_CONTRACT_REQUIRED,no live endpoint exists
+job_completion,online_required,blocked while offline; work_summary/collected_amount both required server-side,n/a,no idempotency key on jobsApi.complete,never auto-replay a completion call
+assignment_accept_reject,online_required,blocked while offline,n/a,no idempotency key,jobsApi.accept/reject are plain POSTs, no dedupe token
+staff_approval_reject,online_required,blocked while offline (staff-only, not yet built),n/a,unconfirmed,no live endpoint exists
