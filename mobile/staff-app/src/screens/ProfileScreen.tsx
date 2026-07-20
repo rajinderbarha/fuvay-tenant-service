@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { useApi } from "../hooks/useApi";
 import { staffApi, type WorkingHours } from "../lib/api";
@@ -11,13 +11,22 @@ import { AvailabilityControl } from "../components/ux05/AvailabilityControl";
 import { ThemeToggle } from "../components/ux05/ThemeToggle";
 import { deriveRole } from "../lib/ux05/permissions";
 import { theme, gs } from "../styles/theme";
+import { useAppTheme } from "../context/ThemeContext";
 import type { AvailabilityView } from "../types/ux05";
 
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] as const;
 const DAY_LABEL: Record<string,string> = { monday:"Mon", tuesday:"Tue", wednesday:"Wed",
   thursday:"Thu", friday:"Fri", saturday:"Sat", sunday:"Sun" };
 
+// UX-05 Round 7: converted to reactive theme colors (useAppTheme()). `Card`
+// (pre-existing shared component) itself still uses its own static
+// theme.colors.surface background -- a real, disclosed remaining gap (see
+// light-dark-theme-report.md) since converting shared pre-existing
+// components was out of this round's scope; this screen's own colors and
+// its inline row/text colors are all reactive now.
 export function ProfileScreen() {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const { user, logout } = useAuth();
   const [editingSchedule, setEditingSchedule] = useState(false);
   const [localHours, setLocalHours] = useState<WorkingHours>({});
@@ -52,7 +61,7 @@ export function ProfileScreen() {
   }
 
   return (
-    <ScrollView style={gs.screen} contentContainerStyle={s.content}>
+    <ScrollView style={[gs.screen, { backgroundColor:colors.bg }]} contentContainerStyle={s.content}>
       {/* Profile header */}
       <View style={s.header}>
         <View style={s.avatar}>
@@ -71,9 +80,9 @@ export function ProfileScreen() {
 
       {/* Assigned services (real -- from StaffUser.specialisations) */}
       <Card style={{ gap:8 }}>
-        <Text style={gs.label}>Assigned Services</Text>
+        <Text style={[gs.label, { color:colors.textTertiary }]}>Assigned Services</Text>
         <Text style={s.skills}>{staff.data?.specialisations?.join(" · ") || "—"}</Text>
-        <Text style={[gs.label, { marginTop:8 }]}>Assigned Areas · Certifications · Supported Brands</Text>
+        <Text style={[gs.label, { marginTop:8, color:colors.textTertiary }]}>Assigned Areas · Certifications · Supported Brands</Text>
         <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- no live endpoint carries area/certification/supported-brand data on StaffUser today.</Text>
       </Card>
 
@@ -88,46 +97,43 @@ export function ProfileScreen() {
 
       {/* Recent activity -- MOCK_DESIGN_ONLY, no live activity-feed endpoint */}
       <Card style={{ gap:6 }}>
-        <Text style={gs.label}>Recent Activity</Text>
+        <Text style={[gs.label, { color:colors.textTertiary }]}>Recent Activity</Text>
         <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- no live per-staff activity-feed endpoint exists yet.</Text>
       </Card>
 
-      {/* UX-05 Round 5: real theme preference control -- writes through
-          useAppTheme(), persists to AsyncStorage. The rest of this screen
-          still uses the static light-only theme import (a real, disclosed
-          gap -- see light-dark-theme-report.md); ThemeToggle itself is
-          fully reactive. */}
+      {/* Real theme preference control -- writes through useAppTheme(),
+          persists to AsyncStorage. */}
       <ThemeToggle />
 
       {/* Performance stats */}
       {performance.loading ? <Skeleton height={80} />
       : p && (
         <View style={s.statsRow}>
-          <StatCard label="Score" value={`${p.composite_score.toFixed(0)}/100`} accent={theme.colors.accent} />
-          <StatCard label="Rating" value={`★ ${p.avg_customer_rating.toFixed(1)}`} accent={theme.colors.warning} />
+          <StatCard label="Score" value={`${p.composite_score.toFixed(0)}/100`} accent={colors.accent} />
+          <StatCard label="Rating" value={`★ ${p.avg_customer_rating.toFixed(1)}`} accent={colors.warning} />
           <StatCard label="Jobs"   value={String(p.jobs_completed)}                                            />
-          <StatCard label="On-time" value={`${p.sla_adherence_rate.toFixed(0)}%`} accent={theme.colors.success} />
+          <StatCard label="On-time" value={`${p.sla_adherence_rate.toFixed(0)}%`} accent={colors.success} />
         </View>
       )}
 
       {/* Performance signal bars */}
       {p && (
         <Card>
-          <Text style={[gs.label, { marginBottom:12 }]}>Performance Breakdown</Text>
+          <Text style={[gs.label, { marginBottom:12, color:colors.textTertiary }]}>Performance Breakdown</Text>
           {Object.entries(p.signal_values).map(([key, val]) => {
             const pct  = Math.min(100, Math.max(0, Number(val)));
-            const barC = pct>=75?theme.colors.success:pct>=50?theme.colors.warning:theme.colors.danger;
+            const barC = pct>=75?colors.success:pct>=50?colors.warning:colors.danger;
             return (
               <View key={key} style={{ marginBottom:12 }}>
                 <View style={[gs.row, { justifyContent:"space-between", marginBottom:5 }]}>
-                  <Text style={{ fontSize:theme.font.size.sm, color:theme.colors.textSecondary, textTransform:"capitalize" }}>
+                  <Text style={{ fontSize:theme.font.size.sm, color:colors.textSecondary, textTransform:"capitalize" }}>
                     {key.replace(/_/g," ")}
                   </Text>
-                  <Text style={{ fontSize:theme.font.size.sm, fontWeight:"700", color:theme.colors.textPrimary }}>
+                  <Text style={{ fontSize:theme.font.size.sm, fontWeight:"700", color:colors.textPrimary }}>
                     {pct.toFixed(0)}
                   </Text>
                 </View>
-                <View style={{ height:6, backgroundColor:theme.colors.border, borderRadius:3, overflow:"hidden" }}>
+                <View style={{ height:6, backgroundColor:colors.border, borderRadius:3, overflow:"hidden" }}>
                   <View style={{ height:"100%", width:`${pct}%`, backgroundColor:barC, borderRadius:3 }} />
                 </View>
               </View>
@@ -139,9 +145,9 @@ export function ProfileScreen() {
       {/* Schedule */}
       <Card>
         <View style={[gs.row, { justifyContent:"space-between", marginBottom:14 }]}>
-          <Text style={gs.label}>Weekly Schedule</Text>
-          <TouchableOpacity onPress={openSchedule}>
-            <Text style={{ fontSize:theme.font.size.sm, color:theme.colors.accent, fontWeight:"600" }}>
+          <Text style={[gs.label, { color:colors.textTertiary }]}>Weekly Schedule</Text>
+          <TouchableOpacity onPress={openSchedule} accessibilityRole="button" accessibilityLabel="Edit weekly schedule">
+            <Text style={{ fontSize:theme.font.size.sm, color:colors.accent, fontWeight:"600" }}>
               Edit
             </Text>
           </TouchableOpacity>
@@ -151,14 +157,14 @@ export function ProfileScreen() {
           const dh = s2?.working_hours?.[d] ?? { start:"09:00", end:"18:00", is_working:d!=="sunday" };
           return (
             <View key={d} style={[gs.row, { justifyContent:"space-between", paddingVertical:7,
-              borderBottomWidth:1, borderBottomColor:theme.colors.border }]}>
-              <Text style={{ fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary, width:40 }}>
+              borderBottomWidth:1, borderBottomColor:colors.border }]}>
+              <Text style={{ fontSize:theme.font.size.sm, fontWeight:"600", color:colors.textPrimary, width:40 }}>
                 {DAY_LABEL[d]}
               </Text>
-              <Text style={{ fontSize:theme.font.size.sm, color:dh.is_working ? theme.colors.textSecondary : theme.colors.textTertiary, flex:1 }}>
+              <Text style={{ fontSize:theme.font.size.sm, color:dh.is_working ? colors.textSecondary : colors.textTertiary, flex:1 }}>
                 {dh.is_working ? `${dh.start} – ${dh.end}` : "Day off"}
               </Text>
-              <View style={[s.statusDot, { backgroundColor:dh.is_working ? theme.colors.success : theme.colors.border }]} />
+              <View style={[s.statusDot, { backgroundColor:dh.is_working ? colors.success : colors.border }]} />
             </View>
           );
         })}
@@ -167,20 +173,20 @@ export function ProfileScreen() {
       {/* Edit schedule */}
       {editingSchedule && (
         <Card>
-          <Text style={[gs.label, { marginBottom:14 }]}>Edit Schedule</Text>
+          <Text style={[gs.label, { marginBottom:14, color:colors.textTertiary }]}>Edit Schedule</Text>
           {DAYS.map(d => {
             const dh = localHours[d] ?? { start:"09:00", end:"18:00", is_working:true };
             return (
               <View key={d} style={[gs.row, { gap:10, paddingVertical:8,
-                borderBottomWidth:1, borderBottomColor:theme.colors.border }]}>
+                borderBottomWidth:1, borderBottomColor:colors.border }]}>
                 <Switch value={dh.is_working}
                   onValueChange={v => setLocalHours(prev => ({ ...prev, [d]:{ ...dh, is_working:v } }))}
-                  trackColor={{ true:theme.colors.accent }} />
-                <Text style={{ fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary, width:36 }}>
+                  trackColor={{ true:colors.accent }} />
+                <Text style={{ fontSize:theme.font.size.sm, fontWeight:"600", color:colors.textPrimary, width:36 }}>
                   {DAY_LABEL[d]}
                 </Text>
                 {dh.is_working && (
-                  <Text style={{ fontSize:theme.font.size.sm, color:theme.colors.textSecondary }}>
+                  <Text style={{ fontSize:theme.font.size.sm, color:colors.textSecondary }}>
                     {dh.start} – {dh.end}
                   </Text>
                 )}
@@ -205,18 +211,20 @@ export function ProfileScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  content:   { padding:theme.spacing.base, gap:12, paddingBottom:32 },
-  header:    { flexDirection:"row", alignItems:"center", gap:14, backgroundColor:theme.colors.surface,
-               borderRadius:theme.radius.lg, padding:theme.spacing.base, ...theme.shadow.sm },
-  avatar:    { width:58, height:58, borderRadius:29, backgroundColor:theme.colors.brand,
-               alignItems:"center", justifyContent:"center" },
-  avatarText:{ fontSize:theme.font.size.xxl, fontWeight:"800", color:theme.colors.textInverse },
-  name:      { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary },
-  phone:     { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, marginTop:2 },
-  skills:    { fontSize:theme.font.size.xs, color:theme.colors.accent, marginTop:4 },
-  statsRow:  { flexDirection:"row", gap:10 },
-  statusDot: { width:8, height:8, borderRadius:4 },
-  roleTag:   { fontSize:theme.font.size.xs, fontWeight:"700", color:theme.colors.accent, marginTop:4, textTransform:"uppercase" },
-  mockNote:  { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
-});
+function makeStyles(colors: ReturnType<typeof import("../styles/theme").getColors>) {
+  return StyleSheet.create({
+    content:   { padding:theme.spacing.base, gap:12, paddingBottom:32 },
+    header:    { flexDirection:"row", alignItems:"center", gap:14, backgroundColor:colors.surface,
+                 borderRadius:theme.radius.lg, padding:theme.spacing.base, ...theme.shadow.sm },
+    avatar:    { width:58, height:58, borderRadius:29, backgroundColor:colors.brand,
+                 alignItems:"center", justifyContent:"center" },
+    avatarText:{ fontSize:theme.font.size.xxl, fontWeight:"800", color:colors.textInverse },
+    name:      { fontSize:theme.font.size.xl, fontWeight:"700", color:colors.textPrimary },
+    phone:     { fontSize:theme.font.size.sm, color:colors.textSecondary, marginTop:2 },
+    skills:    { fontSize:theme.font.size.xs, color:colors.accent, marginTop:4 },
+    statsRow:  { flexDirection:"row", gap:10 },
+    statusDot: { width:8, height:8, borderRadius:4 },
+    roleTag:   { fontSize:theme.font.size.xs, fontWeight:"700", color:colors.accent, marginTop:4, textTransform:"uppercase" },
+    mockNote:  { fontSize:theme.font.size.xs, color:colors.textTertiary },
+  });
+}
