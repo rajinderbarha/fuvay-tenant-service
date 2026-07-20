@@ -1,0 +1,16 @@
+role,tab,screen_component,new_or_existing,notes
+technician,Home,HomeScreen,existing (extended with PipelineBadge/CustomerContactCard in JobDetail only; Home itself not yet recomposed),technician-only tab set
+technician,My Work,JobsListScreen,existing (groupJobs/classifyJob logic built, not yet wired into this screen's UI -- see known-limitations.md),
+technician,Schedule,ScheduleScreen,new,real jobsApi data, Today/Upcoming only (no Day/Agenda toggle yet)
+technician,Notifications,NotificationsScreen,existing,promoted from stack-only bell icon to a primary tab
+technician,Profile,ProfileScreen,existing,unchanged this pass
+staff,Home,StaffHomeScreen,new,MOCK_DESIGN_ONLY -- no live queue-summary endpoint
+staff,Work,StaffWorkQueueScreen,new,MOCK_DESIGN_ONLY -- no live work-queue endpoint
+staff,Schedule,ScheduleScreen,new (shared with technician),same component, same real data source
+staff,Notifications,NotificationsScreen,existing (shared with technician),
+staff,More,StaffMoreScreen,new,permission-gated entry list, all currently show Restricted (fail-closed, no live permission endpoint)
+both,Job Detail,JobDetailScreen,existing (extended),added PipelineBadge/CustomerContactCard/AddressCard this pass; stack screen, not a tab
+both,Dev: Parts Request,PartsRequestShowcaseScreen,new (dev-only),not linked from any tab/nav -- reached only by direct navigate() call
+both,Dev: Inspection & Checklist,InspectionChecklistShowcaseScreen,new (dev-only),same
+both,Dev: Notes & Media,JobNotesMediaShowcaseScreen,new (dev-only),same
+both,Dev: Staff Parts Approval,StaffPartsApprovalShowcaseScreen,new (dev-only),same; renders PermissionRestrictedState for every current real user (fail-closed)
