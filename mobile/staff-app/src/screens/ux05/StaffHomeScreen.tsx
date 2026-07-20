@@ -25,8 +25,8 @@ export function StaffHomeScreen() {
       <View style={[gs.card, { gap:6 }]}>
         <Text style={gs.label}>Staff Home</Text>
         <Text style={s.note}>
-          MOCK_DESIGN_ONLY: no live staff work-queue-summary endpoint exists yet. This screen shows the intended
-          layout shape but does not fabricate real unassigned/quote-review/parts-approval/SLA-risk counts.
+          Your staff dashboard is coming soon. We're not able to show live counts here yet, so nothing below is
+          real data — check back once this is ready.
         </Text>
       </View>
       {!anyGranted && (

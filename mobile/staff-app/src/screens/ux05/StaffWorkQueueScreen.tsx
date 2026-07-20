@@ -18,7 +18,7 @@ export function StaffWorkQueueScreen() {
   return (
     <ScrollView style={gs.screen} contentContainerStyle={s.content}>
       <View style={[gs.card, { gap:6 }]}>
-        <Text style={s.note}>MOCK_DESIGN_ONLY: intended group structure shown below, no live data source yet.</Text>
+        <Text style={s.note}>Your work queue is coming soon. The categories below show what's planned, but nothing here reflects real, live work yet.</Text>
       </View>
       {GROUPS.map(g => (
         <View key={g} style={[gs.card, s.groupRow]}>
