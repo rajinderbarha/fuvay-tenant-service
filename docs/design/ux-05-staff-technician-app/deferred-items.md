@@ -169,3 +169,23 @@ since it was the most-requested missing screen; cover Quote/Availability/Profile
 unaddressed; retry Expo web/Playwright properly (continuous backgrounded session) since Round 2 left that
 ambiguous, and this round got a real, specific, diagnosed answer instead. This remains a partial delivery —
 reported as `STAFF_TECHNICIAN_APP_DESIGN_PARTIAL`.
+
+## Open backlog ticket — UX05-BL-001 (logged, deliberately not executed this pass)
+
+**Title:** Complete remaining Staff/Technician development showcases
+
+**Scope:** Complete or consolidate the remaining development-only showcase scenarios from the original
+30-screen inventory (~12 of ~30 built as of UX-05C, commit `95fc3ab`).
+
+**Impact:** No known production workflow blocker. Required only for complete design-system demonstration
+and frozen UX-05 artifact compliance — does not affect real technician app use, authentication, or live job
+workflows.
+
+**Priority:** Low.
+
+**Explicitly does not block:** technician application use, authentication, live job workflows, or UX-06
+customer-application work.
+
+**Status:** Open. Logged 2026-07-20 rather than executed, per explicit direction to proceed to UX-06 instead.
+Pick up in a future bounded pass (suggested: UX-05D or folded into general design-system maintenance) whenever
+prioritized — no urgency driving it.
