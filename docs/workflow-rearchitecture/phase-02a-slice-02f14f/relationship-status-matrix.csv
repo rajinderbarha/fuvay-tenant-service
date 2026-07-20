@@ -1,0 +1,18 @@
+model,status,counts_as_relationship,reasoning
+Booking,draft,COUNTS_AS_RELATIONSHIP,no soft-delete/scaffold marker exists; a real row proves genuine tenant contact
+Booking,pending_confirmation,COUNTS_AS_RELATIONSHIP,same reasoning
+Booking,pending,COUNTS_AS_RELATIONSHIP,same reasoning
+Booking,confirmed,COUNTS_AS_RELATIONSHIP,same reasoning (also independently sufficient via booking-referenced mode)
+Booking,rejected,COUNTS_AS_RELATIONSHIP,tenant reviewed and rejected -- still genuine contact
+Booking,converted_to_job,COUNTS_AS_RELATIONSHIP,strongest possible evidence -- already has a Job
+Booking,scheduled,COUNTS_AS_RELATIONSHIP,same reasoning
+Booking,dispatching,COUNTS_AS_RELATIONSHIP,same reasoning
+Booking,in_progress,COUNTS_AS_RELATIONSHIP,same reasoning
+Booking,completed,COUNTS_AS_RELATIONSHIP,same reasoning
+Booking,cancelled,COUNTS_AS_RELATIONSHIP,customer engaged with this tenant even if later cancelled
+Booking,expired,COUNTS_AS_RELATIONSHIP,customer engaged with this tenant even if the booking window lapsed
+Booking,voided,COUNTS_AS_RELATIONSHIP,same reasoning
+field_ops.Job,draft,COUNTS_AS_RELATIONSHIP,no soft-delete/scaffold marker exists on Job either
+field_ops.Job,pending_assignment,COUNTS_AS_RELATIONSHIP,same reasoning
+field_ops.Job,assigned,COUNTS_AS_RELATIONSHIP,same reasoning
+field_ops.Job,(all other real JS.* statuses -- accepted/en_route/arrived/assessment_*/quote_*/work_*/parts_*/checklist_*/quality_*/rework_*/pending_sign_off/signed_off/invoice_generated/payment_pending/paid/completed/converted_to_repair/closed/voided/cancelled),COUNTS_AS_RELATIONSHIP,every real Job row represents a genuine prior tenant/customer engagement regardless of how it concluded

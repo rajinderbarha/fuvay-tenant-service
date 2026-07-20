@@ -1,0 +1,22 @@
+# Actor-to-Booking-Customer Binding
+
+## Proof 1: Customer A's creation event can establish origin only for a Booking whose customer_id is Customer A
+Every query's `.where(...)` clause includes BOTH `Booking.customer_id == customer_id` (or `b.customer_id`/`booking.customer_id` for the single-booking checks) AND `BookingStatusHistory.changed_by == Booking.customer_id`. For a history row belonging to Customer A's own creation event to match, the Booking it's joined to must have `customer_id == A` (from the first filter) AND that same Booking's `customer_id` must equal the row's `changed_by` (from the second filter, added this slice) — which is only true if Customer A's `changed_by` value (their own user ID) equals the Booking's `customer_id`, i.e. Customer A created their own Booking.
+
+## Proof 2: Customer A's history cannot establish origin for Customer B's Booking
+If Customer B's Booking (`customer_id == B`) is joined against Customer A's creation-history row (`changed_by == A`), the new filter `BookingStatusHistory.changed_by == Booking.customer_id` requires `A == B`, which is false — the row is excluded. New test: `test_field_ops_relationship_denies_when_query_scoped_to_target_customer` (via the mocked "no match" path — the SQL-level exclusion cannot be directly executed against a mock, so this is proven by source/query-shape inspection combined with the executed mock test confirming the fail-closed outcome when no match is returned).
+
+## Proof 3: A provider cannot alter booking.customer_id after creation and retain trusted origin
+`Booking.customer_id` is never reassigned anywhere in the codebase — confirmed by `TestBookingCustomerIdImmutability::test_no_writer_ever_reassigns_booking_customer_id`, which greps `app/engines/booking/service.py` for any `b.customer_id = ` or `booking.customer_id = ` assignment (as opposed to a query filter `==`) and asserts none exist. The only appearances of `.customer_id` in that file are query comparisons (`==`) or the one-time constructor argument at creation. Since `customer_id` cannot change, there is no scenario where a provider could create a Booking for Customer A, then later "retarget" it to Customer B while preserving the original creation-history row as if it were trustworthy for B.
+
+## Proof 4: A malformed legacy row with role=customer but a different actor ID fails closed
+This is the same case as Proof 2 — the equality filter `changed_by == Booking.customer_id` excludes any row where the acting user is not literally the Booking's own customer, regardless of what role that acting user held.
+
+## Proof 5: An invalid actor ID fails closed
+An invalid/nonexistent UUID in `changed_by` can only ever satisfy `changed_by == Booking.customer_id` by coincidentally equaling that specific Booking's customer_id — which is not "invalid" in that case, it IS the customer's ID. Any other value fails the equality and is excluded. No separate "is this a real user" check is needed at the SQL level for this specific purpose (see `trusted-customer-creation-predicate.md` for the transitive account-validity argument).
+
+## Proof 6: Customer account state is checked consistently
+The CURRENT customer_id being acted upon (not the historical creation actor) is independently validated for active/non-deleted state by the relevant service method's own dedicated block (e.g. `FieldOpsService.create_job`'s `customer_id` validation, `BookingService.create_booking`'s customer-existence check) — this is unchanged from 2F-15/2F-15A and re-verified via full regression this slice. The HISTORICAL creation actor's account state at the time of the ORIGINAL creation event is not re-verified retroactively (documented in `known-limitations.md`) — this is judged acceptable since the actor was authenticated via `get_current_user` at the time the row was written, and re-validating a historical fact against the CURRENT state of that account would conflate "was this action authorized when it happened" with "is this account still valid today," which are different questions with different remediation paths (the latter being account deactivation, already enforced prospectively for all NEW actions).
+
+## `booking.customer_id` mutability audit result
+**Immutable.** No writer in the codebase ever reassigns `Booking.customer_id` after construction. This closes Workstream 5's conditional requirement ("if booking.customer_id is mutable anywhere ... must be fixed or block closure") — since it is not mutable, no fix or block is required.

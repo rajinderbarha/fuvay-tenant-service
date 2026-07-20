@@ -25,9 +25,27 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 class NotificationService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id; self.actor_id = actor_id; self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-36: set_channel_config accepted a client-supplied
+        tenant_id path param with no comparison to the caller's own
+        tenant. super_admin is exempt (platform-wide)."""
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="notification_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's notification settings.",
+                blocking_rule="notification_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     def _rec_dict(self, n: NotificationRecord) -> dict:
         return {"notification_id": str(n.id), "tenant_id": str(n.tenant_id),
@@ -191,6 +209,7 @@ class NotificationService:
 
     async def set_channel_config(self, tenant_id: uuid.UUID, channel: str,
                                   config: dict, is_enabled: bool) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(NotificationChannelConfig).where(
             NotificationChannelConfig.tenant_id == tenant_id,
             NotificationChannelConfig.channel == channel))

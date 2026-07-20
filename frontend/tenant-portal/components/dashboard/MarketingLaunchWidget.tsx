@@ -44,7 +44,11 @@ export function MarketingLaunchWidget() {
             <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", margin: "2px 0 0" }}>Launch Status</p>
           </div>
         </div>
-        <Link href="/provider/marketing" style={{ textDecoration: "none" }}>
+        {/* Phase 2A Slice 2 nav reconciliation: /marketing is the canonical
+            nav-listed page; /provider/marketing is a confirmed duplicate
+            page with no menu entry (see final-page-disposition-matrix.csv) —
+            this widget previously pointed at the orphaned duplicate. */}
+        <Link href="/marketing" style={{ textDecoration: "none" }}>
           <Btn size="sm" variant="secondary">
             <ExternalLink size={12} /> Details
           </Btn>

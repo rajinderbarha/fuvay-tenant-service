@@ -1,0 +1,24 @@
+mounted_route_or_caller,classification,evidence
+DELETE /v1/webhooks/endpoints/{endpoint_id},Set A,closed this slice
+POST /v1/rag/query,Set A,closed this slice
+POST /v1/security/api-keys/{key_id}/rotate,Set B (added),closed this slice
+POST /v1/security/api-keys/{key_id}/revoke,Set B (added),closed this slice
+POST /v1/documents,Set B (added),closed this slice
+POST /v1/documents/{document_id}/send,Set B (added),closed this slice
+POST /v1/documents/{document_id}/void,Set B (added),closed this slice
+DELETE /v1/rag/knowledge-bases/{kb_id},Set B (added),closed this slice
+POST /v1/rag/knowledge-bases/{kb_id}/documents,Set B (added),closed this slice
+DELETE /v1/rag/documents/{doc_id},Set B (added),closed this slice
+POST /v1/rag/documents/{doc_id}/reindex,Set B (added),closed this slice
+GET /v1/webhooks/endpoints/{endpoint_id} (get_endpoint),Set C (read-only sibling),unchanged
+PUT /v1/webhooks/endpoints/{endpoint_id} (update_endpoint),Set C,unchanged; shares the same pre-existing defect but frozen out of scope
+GET /v1/rag/knowledge-bases/{kb_id} (get_kb),Set C,unchanged; _get_kb (unscoped) still used
+PUT /v1/rag/knowledge-bases/{kb_id} (update_kb),Set C,unchanged; still uses unscoped _get_kb
+POST /v1/rag/search (search_only),Set C,unchanged; still uses unscoped _get_kb
+GET /v1/documents/{document_id} (get_doc),Set C,unchanged
+POST /v1/documents/sign/{token} (record_signature),Separate subsystem,public token-based signing endpoint, not a tenant mutation, out of scope by design
+app/engines/compliance/service.py SecurityService(self.db, actor_id=self.actor_id) construction,Internal trusted caller,calls only revoke_all_sessions -- confirmed unrelated to the 2 closed SecurityService methods
+app/engines/security/admin_service.py SecurityAdminService wrapping SecurityService,Internal trusted caller,always constructed from a require_super_admin-gated route (confirmed); SecurityService.actor_role="super_admin" bypasses the new tenant check cleanly, not a bypass
+app/engines/field_ops/service.py DocumentService(...).generate_document(...) internal caller,Internal trusted caller,updated this slice to pass actor_tenant_id=job.tenant_id explicitly (was previously missing, would have failed closed)
+app/engines/document/router.py record_signature route (public, token-based),Separate/public surface,constructs DocumentService(db=db, actor_ip=...) with no actor context at all; calls only record_signature (untouched, unrelated to the 3 closed methods)
+app/engines/auth/router.py revoke_api_key (AuthService, not SecurityService),Separate subsystem,confirmed different class (AuthService vs SecurityService) backing the separate api_keys table (M01-closed, preserved per M01 non-regression) -- not a bypass

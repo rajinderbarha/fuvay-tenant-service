@@ -1,0 +1,11 @@
+module,cross_tenant,delete_by_id,credential_session,financial_state,bulk_mutation,external_side_effect,customer_data_privacy,audit_compliance,client_asserted_tenant,missing_object_ownership,service_layer_bypass,alternate_route_bypass,internal_caller_exposure,risk_sum,canonical_routes,held_uncertainty,product_blockers,impl_complexity,testability,priority_score,ownership_verified_in_service
+N01_media_assets,1,1,0,0,0,1,2,1,1,1,0,1,1,10,9,3,1,2,3,14,YES - MediaAccessService.assert_can_delete/assert_can_view
+N02_enterprise_grid_views,1,1,0,0,0,1,1,1,0,2,1,0,0,8,6,0,1,1,3,13,not separately verified
+N03_profile_self_service,1,0,1,0,0,0,1,1,0,1,1,0,0,6,4,0,0,1,3,10,not separately verified
+N04_marketing_automation,1,0,0,0,0,2,1,1,0,1,1,0,0,7,3,0,1,1,2,9,not separately verified
+N05_security_deposit,1,0,0,3,0,1,1,2,1,1,0,0,0,10,3,4,2,2,2,10,YES - _assert_owns_tenant_deposit(tid)
+N06_provider_catalog_setup,1,0,0,0,0,0,0,1,0,1,1,0,0,4,4,2,1,1,2,7,not separately verified
+N07_analytics_reports,1,0,0,0,0,1,1,1,0,1,1,0,0,6,1,0,1,1,2,6,not separately verified
+N08_rag_knowledge,1,0,0,0,0,1,1,1,0,1,1,0,0,6,1,4,1,1,2,5,not separately verified
+N09_webhook_integration,2,2,0,0,0,2,0,1,3,2,1,0,0,13,1,0,0,1,3,14,PARTIAL - scoped to the client-asserted tenant only
+N10_geo_zones,3,2,0,0,0,0,0,1,0,3,2,0,0,11,1,2,0,1,3,12,NO - delete_zone(zone_id) has no tenant predicate

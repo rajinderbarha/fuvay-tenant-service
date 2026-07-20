@@ -1,13 +1,31 @@
 import React from "react";
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider } from "./context/AuthContext";
-import { AppNavigator } from "./navigation/AppNavigator";
+import { RootNavigator } from "./navigation/RootNavigator";
+import { AppProviders } from "./app/AppProviders";
+import { useAppBootstrap } from "./app/AppBootstrap";
+import { StartupProvider } from "./app/startup/startup-context";
+import { LoadingIndicator } from "./components/feedback/LoadingIndicator";
+
+function AppContent() {
+  const { isReady } = useAppBootstrap();
+
+  if (!isReady) return <LoadingIndicator variant="screen" label="Starting ServiceOS" />;
+
+  return (
+    <StartupProvider>
+      <AuthProvider>
+        <StatusBar style="auto" />
+        <RootNavigator />
+      </AuthProvider>
+    </StartupProvider>
+  );
+}
 
 export default function App() {
   return (
-    <AuthProvider>
-      <StatusBar style="auto"/>
-      <AppNavigator/>
-    </AuthProvider>
+    <AppProviders>
+      <AppContent />
+    </AppProviders>
   );
 }

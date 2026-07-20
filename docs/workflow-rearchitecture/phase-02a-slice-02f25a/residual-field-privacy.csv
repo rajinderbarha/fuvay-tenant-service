@@ -1,0 +1,24 @@
+route,field,classification,exposed_after,note
+get_aggregate,entity_type,PUBLIC,yes,echoed from the request
+get_aggregate,entity_id,PUBLIC,yes,echoed from the request
+get_aggregate,review_count,TENANT_INTERNAL,yes -- own tenant only,aggregate count
+get_aggregate,avg_composite / avg_* / signal_averages,TENANT_INTERNAL,yes -- own tenant only,aggregate scores
+get_aggregate,reply_rate,TENANT_INTERNAL,yes -- own tenant only,
+get_aggregate,last_computed_at,TENANT_INTERNAL,yes -- own tenant only,
+get_aggregate,tenant_id (column),TENANT_INTERNAL,NO,used as a predicate; never serialized
+get_review_request,review_request_id,TENANT_INTERNAL,yes -- scoped,
+get_review_request,job_id,TENANT_INTERNAL,yes -- scoped,echoed
+get_review_request,status,TENANT_INTERNAL,yes -- scoped,
+get_review_request,expires_at,TENANT_INTERNAL,yes -- scoped,
+get_review_request,review_id,TENANT_INTERNAL,yes -- scoped,links to the review once written
+get_review_request,customer_id (column),CUSTOMER_SELF,NO,predicate only; not serialized
+get_review_request,staff_id (column),PROVIDER_INTERNAL,NO,not serialized
+list_by_customer,review_id / job_id / customer_id,CUSTOMER_SELF,yes -- scoped,
+list_by_customer,tenant_id,TENANT_INTERNAL,yes,pre-existing _review_dict field
+list_by_customer,signals / composite_score / comment,CUSTOMER_SELF,yes -- scoped,
+list_by_customer,status,TENANT_INTERNAL,yes -- scoped,includes flagged/removed states
+list_by_customer,tenant_reply / reply_text / replied_at,TENANT_INTERNAL,yes -- scoped,
+list_by_customer,flagged_reason,MODERATION_PRIVATE,NO,not in _review_dict
+list_by_customer,flagged_by / resolved_by,MODERATION_PRIVATE,NO,not in _review_dict
+list_by_customer,idempotency_key,NEVER_EXPOSE,NO,not in _review_dict
+create_request,review_request_id / job_id / expires_at / status,TENANT_INTERNAL,yes,

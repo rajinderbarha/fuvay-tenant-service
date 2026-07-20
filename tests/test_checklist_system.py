@@ -94,9 +94,12 @@ async def test_convert_to_job_seeds_checklist_from_catalog_template():
                          sla_minutes=None, tags=None, booking_number="BK-001")
     booking_result = MagicMock(); booking_result.scalar_one_or_none.return_value = booking
     no_job_result  = MagicMock(); no_job_result.scalar_one_or_none.return_value  = None
+    creator_result = MagicMock(); creator_result.scalar_one_or_none.return_value = "customer"
     db = make_db()
-    # 1st execute → fetch booking; 2nd execute → FieldJob duplicate check
-    db.execute = AsyncMock(side_effect=[booking_result, no_job_result])
+    # 1st execute → fetch booking; 2nd execute → FieldJob duplicate check;
+    # 3rd execute → Slice 2F-15A creation-actor check ("customer" skips the
+    # independent-relationship-evidence sub-query entirely)
+    db.execute = AsyncMock(side_effect=[booking_result, no_job_result, creator_result])
 
     svc = BookingService(db=db, actor_id=uuid.uuid4(), actor_role="tenant_owner",
                          actor_tenant_id=tid)
@@ -144,8 +147,9 @@ async def test_convert_to_job_no_checklist_key_when_template_empty():
                          sla_minutes=None, tags=None, booking_number="BK-002")
     booking_result = MagicMock(); booking_result.scalar_one_or_none.return_value = booking
     no_job_result  = MagicMock(); no_job_result.scalar_one_or_none.return_value  = None
+    creator_result = MagicMock(); creator_result.scalar_one_or_none.return_value = "customer"
     db = make_db()
-    db.execute = AsyncMock(side_effect=[booking_result, no_job_result])
+    db.execute = AsyncMock(side_effect=[booking_result, no_job_result, creator_result])
 
     svc = BookingService(db=db, actor_id=uuid.uuid4(), actor_role="tenant_owner",
                          actor_tenant_id=tid)

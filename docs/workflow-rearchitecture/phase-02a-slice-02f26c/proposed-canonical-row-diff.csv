@@ -1,0 +1,3 @@
+method,path,proposed_change,persona,behavior,guard,evidence,applied,why_not_applied
+DELETE,/v1/webhooks/endpoints/{endpoint_id},ROW_ADD,TENANT_PROVIDER_MUTATION,DATABASE_MUTATION,require_permission(P.TENANT_UPDATE),WebhookService.delete_endpoint:write; hand-verified in router source,NO,strict edit gate WS9.7 unmet -- 20-route validation sample not run
+DELETE,/v1/geo/zones/{zone_id},ROW_ADD,TENANT_PROVIDER_MUTATION,DATABASE_MUTATION,require_permission(P.TENANT_UPDATE),GeoService.delete_zone:write; hand-verified in router source,NO,strict edit gate WS9.7 unmet -- 20-route validation sample not run

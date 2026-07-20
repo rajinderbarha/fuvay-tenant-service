@@ -1,0 +1,28 @@
+endpoint,api_client_method,application,page,component,control_label,current_visible_roles,current_permission_check,current_access_scope_check,current_disabled_state,current_click_behavior,final_required_visibility,required_change
+provider_issue_invoice,providerInvoiceApi.issue (frontend/tenant-portal/lib/api.ts),tenant-portal,NONE -- no detail page exists,NONE,NONE (method exists but is never called from any component),n/a (dead API client method),n/a,n/a,n/a,n/a (unreachable -- no UI invokes it),tenant_owner only,NONE -- no live control to change; see known-limitations.md
+provider_record_payment,providerInvoiceApi.recordPayment (lib/api.ts),tenant-portal,NONE -- no detail page exists,NONE,NONE,n/a,n/a,n/a,n/a,n/a (unreachable),tenant_owner + canonical staff,NONE -- no live control to change
+staff_create_invoice,staffInvoiceApi.create (lib/api.ts),tenant-portal,NONE -- no page exists,NONE,NONE,n/a,n/a,n/a,n/a,n/a (unreachable),tenant_owner + canonical staff,NONE -- no live control to change
+staff_add_invoice_item,staffInvoiceApi.addItem (lib/api.ts),tenant-portal,NONE -- no page exists,NONE,NONE,n/a,n/a,n/a,n/a,n/a (unreachable),tenant_owner + canonical staff,NONE -- no live control to change
+
+# CENTRAL FINDING (re-verified via direct grep across the entire repository, not
+# assumed): zero React/TSX components anywhere in frontend/tenant-portal,
+# frontend/customer-app, frontend/super-admin, or mobile/staff-app call
+# providerInvoiceApi.issue, providerInvoiceApi.recordPayment,
+# staffInvoiceApi.create, or staffInvoiceApi.addItem. The only file referencing
+# these API client methods at all is lib/api.ts itself (their definitions).
+#
+# The only related, existing UI is
+# app/(tenant)/provider/service-invoices/page.tsx -- a LIST page (EnterpriseDataGrid)
+# with a single row action, "View Invoice", that navigates to
+# /provider/service-invoices/${row.id} -- a route that DOES NOT EXIST in the
+# app directory (no [invoice_id]/page.tsx under provider/service-invoices/).
+# Clicking "View Invoice" today produces a Next.js 404, not an invoice detail
+# page with Issue/Record-Payment/Add-Item controls.
+#
+# This directly contradicts Slice 2F-6/2F-6A's own frontend-exposure-audit.md,
+# which described an "Issue button," "Record payment action," "Create invoice
+# action," and "Add invoice item action" as existing UI controls on a tenant-
+# portal invoice page. That description was incorrect -- inferred from the API
+# client method names and the mounted backend routes, not verified against an
+# actual invoking component. This slice's mission (docs/workflow-rearchitecture/
+# documentation-corrections.md) corrects that record.

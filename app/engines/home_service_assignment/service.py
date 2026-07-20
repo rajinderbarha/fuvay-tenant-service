@@ -583,10 +583,20 @@ class HomeServiceJobAssignmentService:
         job_id:       uuid.UUID,
         staff_id:     uuid.UUID,
         request_id:   str | None = None,
+        tenant_id:    uuid.UUID | None = None,
     ) -> dict:
         job = await self._load_job(job_id)
         if not job:
             raise ValueError(ERR_JOB_NOT_FOUND)
+        # Slice 2F-3B, Workstream 6: explicit tenant defense-in-depth. Before
+        # this fix, isolation relied solely on the assignment-ownership match
+        # below -- correct in practice (a technician's assignment can only
+        # ever reference jobs in their own tenant) but with no redundant
+        # check if that invariant were ever violated upstream. tenant_id is
+        # optional (defaults to None = skip) so this cannot break any
+        # existing internal caller that doesn't pass it.
+        if tenant_id is not None and str(job.tenant_id) != str(tenant_id):
+            raise ValueError(ERR_ACCESS_DENIED)
 
         assignment = await self._current_assignment(job_id)
         if not assignment or str(assignment.assigned_staff_member_id) != str(staff_id):
@@ -629,6 +639,7 @@ class HomeServiceJobAssignmentService:
         staff_id:   uuid.UUID,
         reason:     str,
         request_id: str | None = None,
+        tenant_id:  uuid.UUID | None = None,
     ) -> dict:
         if not reason or not reason.strip():
             raise ValueError(ERR_REASON_REQUIRED)
@@ -636,6 +647,10 @@ class HomeServiceJobAssignmentService:
         job = await self._load_job(job_id)
         if not job:
             raise ValueError(ERR_JOB_NOT_FOUND)
+        # Slice 2F-3B, Workstream 6: explicit tenant defense-in-depth (see
+        # technician_accept_job's identical comment for the full rationale).
+        if tenant_id is not None and str(job.tenant_id) != str(tenant_id):
+            raise ValueError(ERR_ACCESS_DENIED)
 
         assignment = await self._current_assignment(job_id)
         if not assignment or str(assignment.assigned_staff_member_id) != str(staff_id):

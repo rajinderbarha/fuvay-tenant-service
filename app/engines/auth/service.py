@@ -47,6 +47,27 @@ from app.exceptions import ServiceOSException, NotFoundException, PermissionDeni
 from app.redis_client import get_redis, RedisKeys
 
 logger = structlog.get_logger("auth.service")
+
+_PERMISSION_KEYS: frozenset[str] | None = None
+
+
+def _valid_permission_keys() -> frozenset[str]:
+    """Every permission string the platform actually defines.
+
+    Phase 2A Slice 2F-29 (M01): built from the existing registry only -- the
+    `P` constants plus every permission granted by `ROLE_PERMISSIONS`. No
+    permission is created here. Used to reject unknown StaffPermission keys
+    before they are persisted as live overrides.
+    """
+    global _PERMISSION_KEYS
+    if _PERMISSION_KEYS is None:
+        from app.core.permissions import P as _P
+        keys = {v for k, v in vars(_P).items()
+                if not k.startswith("_") and isinstance(v, str)}
+        for granted in ROLE_PERMISSIONS.values():
+            keys.update(g for g in granted if isinstance(g, str))
+        _PERMISSION_KEYS = frozenset(keys)
+    return _PERMISSION_KEYS
 utcnow = lambda: datetime.now(timezone.utc)
 
 # Auth events sensitive enough to also mirror into the cross-engine
@@ -79,7 +100,12 @@ class AuthService:
         return r.scalar_one_or_none()
 
     async def _get_user_by_phone(self, phone: str) -> User | None:
-        r = await self.db.execute(select(User).where(User.phone == phone))
+        # Phone has no DB-level uniqueness constraint, so more than one user
+        # can share a number (e.g. seeded/test accounts); pick the most
+        # recently created rather than letting scalar_one_or_none() crash.
+        r = await self.db.execute(
+            select(User).where(User.phone == phone).order_by(User.created_at.desc()).limit(1)
+        )
         return r.scalar_one_or_none()
 
     async def _is_blacklisted(self, jti: str) -> bool:
@@ -1296,6 +1322,20 @@ class AuthService:
         self, tenant_id: uuid.UUID, inviter_id: uuid.UUID,
         email: str, full_name: str, phone: str | None, permissions: list[str]
     ) -> dict:
+        # Phase 2A Slice 2F-29 (M01): validate permission keys against the real
+        # registry BEFORE any persistence, so an invalid key cannot leave a
+        # half-created user behind. No permission is added; the key must
+        # already exist in the registry.
+        unknown_perms = sorted(p for p in (permissions or [])
+                               if p not in _valid_permission_keys())
+        if unknown_perms:
+            raise ServiceOSException(
+                "VALIDATION_ERROR",
+                f"Unknown permission key(s): {', '.join(unknown_perms)}",
+                resolution="Use a permission key from the platform permission registry.",
+                context={"unknown_permissions": unknown_perms},
+            )
+
         # Check if user already exists
         existing = await self._get_user_by_email(email)
         if existing and existing.tenant_id == tenant_id:
@@ -1336,6 +1376,10 @@ class AuthService:
             logger.warning("auth.staff_usage_increment_failed", error=str(e))
 
         # Set custom permissions
+        # Phase 2A Slice 2F-29 (M01): same registry validation as
+        # update_permissions -- an invitation must not be able to mint a
+        # StaffPermission override for a permission key the platform does not
+        # define. Validated against the existing registry only; nothing added.
         for perm in permissions:
             self.db.add(StaffPermission(
                 user_id=user.id, tenant_id=tenant_id,
@@ -1419,12 +1463,40 @@ class AuthService:
         self, target_user_id: uuid.UUID, tenant_id: uuid.UUID,
         granting_user_id: uuid.UUID, permissions: dict[str, bool]
     ) -> dict:
+        # Phase 2A Slice 2F-29 (M01): a foreign-tenant target must not be
+        # distinguishable from a nonexistent one. The previous
+        # PERMISSION_DENIED("User does not belong to your tenant") confirmed
+        # that the id existed in ANOTHER tenant -- an account-existence oracle
+        # reachable by any principal holding auth:permissions:manage. Now
+        # identical to the pre-existing deactivate_staff behaviour: NotFound.
         user = await self._get_user_by_id(target_user_id)
-        if not user:
+        if not user or user.tenant_id != tenant_id:
             raise NotFoundException("User", str(target_user_id))
-        if user.tenant_id != tenant_id:
-            raise ServiceOSException("PERMISSION_DENIED", "User does not belong to your tenant.")
 
+        # Phase 2A Slice 2F-29 (M01): validate every permission key against the
+        # real registry BEFORE writing. Previously any arbitrary string became a
+        # StaffPermission row, and PermissionChecker.has consults those rows as
+        # overrides -- so an unknown/typo key silently created a live grant (or
+        # a deny that could never be satisfied). No permission is added here;
+        # the key must already exist in the registry.
+        unknown = sorted(k for k in permissions if k not in _valid_permission_keys())
+        if unknown:
+            raise ServiceOSException(
+                "VALIDATION_ERROR",
+                f"Unknown permission key(s): {', '.join(unknown)}",
+                resolution="Use a permission key from the platform permission registry.",
+                context={"unknown_permissions": unknown},
+            )
+
+        # Phase 2A Slice 2F: a "reduction" is any permission that ends up
+        # is_granted=False as a result of this call -- either an existing
+        # True flipping to False, or a brand-new explicit deny row. Slice 2E
+        # found permission changes embedded in the JWT can remain stale in
+        # an already-issued token; Slice 2F closes that for the security-
+        # sensitive direction (reductions) by revoking sessions immediately,
+        # rather than only for role changes as the pre-existing
+        # deactivate_staff method already did.
+        reduced_keys: list[str] = []
         for perm_key, is_granted in permissions.items():
             r = await self.db.execute(
                 select(StaffPermission).where(
@@ -1434,6 +1506,8 @@ class AuthService:
             )
             existing = r.scalar_one_or_none()
             if existing:
+                if existing.is_granted and not is_granted:
+                    reduced_keys.append(perm_key)
                 existing.is_granted = is_granted
             else:
                 self.db.add(StaffPermission(
@@ -1441,19 +1515,64 @@ class AuthService:
                     permission_key=perm_key, is_granted=is_granted,
                     granted_by=granting_user_id,
                 ))
+                if not is_granted:
+                    reduced_keys.append(perm_key)
+
+        sessions_revoked = 0
+        if reduced_keys:
+            active_sessions = await self.db.execute(
+                select(UserSession.id).where(
+                    UserSession.user_id == target_user_id, UserSession.revoked_at == None
+                )
+            )
+            session_ids = [row[0] for row in active_sessions]
+            if session_ids:
+                await self.db.execute(
+                    update(UserSession).where(
+                        UserSession.user_id == target_user_id, UserSession.revoked_at == None
+                    ).values(revoked_at=utcnow(), revocation_reason="permission_reduction")
+                )
+                sessions_revoked = len(session_ids)
+                # Populate the Redis revocation flag get_current_user actually
+                # checks (serviceos:session:revoked:{session_id}) -- setting
+                # only user_sessions.revoked_at (as deactivate_staff already
+                # did, pre-existing) does NOT stop an already-issued JWT from
+                # continuing to authenticate, since get_current_user checks
+                # Redis, not this DB column, at request time. This closes the
+                # exact gap documented in Slice 2D's session-revocation
+                # findings for the permission-reduction case.
+                for sid in session_ids:
+                    try:
+                        await self.redis.setex(
+                            f"serviceos:session:revoked:{sid}",
+                            ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+                            "1",
+                        )
+                    except Exception as e:
+                        logger.warning("auth.session_revocation_redis_failed",
+                                       session_id=str(sid), error=str(e))
 
         await self._audit("staff.permissions_updated", "success",
                           actor_id=granting_user_id, tenant_id=tenant_id,
                           target_id=target_user_id, target_type="user",
-                          metadata={"permissions": permissions})
+                          metadata={"permissions": permissions,
+                                    "reduced_permission_keys": reduced_keys,
+                                    "sessions_revoked": sessions_revoked})
         # Invalidate permission cache
         try:
             await self.redis.delete(f"serviceos:permissions:{target_user_id}")
         except Exception:
             pass
+        message = "Permissions updated."
+        if reduced_keys:
+            message += f" {sessions_revoked} active session(s) revoked immediately due to permission reduction; reauthentication required."
+        else:
+            message += " Takes effect on next token refresh."
         return {"user_id": str(target_user_id),
                 "permissions_updated": len(permissions),
-                "message": "Permissions updated. Takes effect on next token refresh."}
+                "reduced_permission_keys": reduced_keys,
+                "sessions_revoked": sessions_revoked,
+                "message": message}
 
     async def deactivate_staff(self, user_id: uuid.UUID, tenant_id: uuid.UUID,
                                 requesting_user_id: uuid.UUID) -> dict:
@@ -1469,15 +1588,42 @@ class AuthService:
             except Exception as e:
                 logger.warning("auth.staff_usage_decrement_failed", error=str(e))
         # Revoke all sessions
-        await self.db.execute(
-            update(UserSession).where(
+        active_sessions = await self.db.execute(
+            select(UserSession.id).where(
                 UserSession.user_id == user_id, UserSession.revoked_at == None
-            ).values(revoked_at=utcnow())
+            )
         )
+        session_ids = [row[0] for row in active_sessions]
+        sessions_revoked = 0
+        if session_ids:
+            await self.db.execute(
+                update(UserSession).where(
+                    UserSession.user_id == user_id, UserSession.revoked_at == None
+                ).values(revoked_at=utcnow(), revocation_reason="staff_deactivated")
+            )
+            sessions_revoked = len(session_ids)
+            # Phase 2A Slice 2F-1: this method previously only set
+            # user_sessions.revoked_at, which get_current_user does NOT check
+            # at request time -- it checks the Redis flag
+            # (serviceos:session:revoked:{session_id}) instead, so an
+            # already-issued JWT kept authenticating after deactivation. Same
+            # gap and same fix as update_permissions in Slice 2F.
+            for sid in session_ids:
+                try:
+                    await self.redis.setex(
+                        f"serviceos:session:revoked:{sid}",
+                        ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+                        "1",
+                    )
+                except Exception as e:
+                    logger.warning("auth.session_revocation_redis_failed",
+                                   session_id=str(sid), error=str(e))
         await self._audit("staff.deactivated", "success",
                           actor_id=requesting_user_id, tenant_id=tenant_id,
-                          target_id=user_id, target_type="user")
+                          target_id=user_id, target_type="user",
+                          metadata={"sessions_revoked": sessions_revoked})
         return {"user_id": str(user_id), "is_active": False,
+                "sessions_revoked": sessions_revoked,
                 "message": "Staff member deactivated and all sessions revoked."}
 
     # ── Staff Roster (tenant-portal Staff page) ─────────────────────────────────

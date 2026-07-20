@@ -6,7 +6,7 @@ import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission, require_mutation_access_scope
 from app.core.security import get_client_ip, rate_limiter
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
@@ -51,7 +51,7 @@ async def engine_meta() -> dict:
 # ── SECURITY DEPOSIT (5) ──────────────────────────────────────────────────────
 @router.get("/tenants/{tenant_id}/deposit", summary="Get security deposit status", response_model=ApiResponse[dict])
 async def get_deposit(tenant_id: uuid.UUID, r: Request,
-                       u: UserContext = Depends(require_permission(P.TENANT_BILLING_READ)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_BILLING_READ)),
                        s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.get_deposit_status(tenant_id)
     return ok(data, _meta(r).request_id, ENGINE_ID,
@@ -60,7 +60,7 @@ async def get_deposit(tenant_id: uuid.UUID, r: Request,
 
 @router.post("/tenants/{tenant_id}/deposit/initiate", summary="Initiate security deposit payment", response_model=ApiResponse[dict])
 async def initiate_deposit(tenant_id: uuid.UUID, body: DepositInitiateRequest, r: Request,
-                             u: UserContext = Depends(require_permission(P.TENANT_BILLING_MANAGE)),
+                             u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_BILLING_MANAGE)),
                              s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
     await rate_limiter.check_and_raise(f"deposit:{tenant_id}", "auth:password_reset", str(tenant_id))
     data = await s.initiate_deposit(tenant_id, body.gateway)
@@ -76,7 +76,7 @@ async def confirm_deposit(tenant_id: uuid.UUID, body: DepositConfirmRequest, r: 
 @router.get("/tenants/{tenant_id}/deposit/transactions", summary="Deposit ledger (cursor-paginated)", response_model=ApiResponse[dict])
 async def get_deposit_transactions(tenant_id: uuid.UUID, r: Request,
                                     limit: int = Query(50, ge=1, le=200), cursor: str | None = Query(None),
-                                    u: UserContext = Depends(require_permission(P.TENANT_BILLING_READ)),
+                                    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_BILLING_READ)),
                                     s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.get_deposit_transactions(tenant_id, limit, cursor)
     return ok(data, _meta(r).request_id, ENGINE_ID)
@@ -148,7 +148,7 @@ async def get_wallet(tenant_id: uuid.UUID, r: Request,
 
 @router.post("/tenants/{tenant_id}/wallet/purchase/initiate", summary="Initiate credit package purchase", response_model=ApiResponse[dict])
 async def initiate_purchase(tenant_id: uuid.UUID, body: PurchaseInitiateRequest, r: Request,
-                              u: UserContext = Depends(require_permission(P.TENANT_BILLING_MANAGE)),
+                              u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_BILLING_MANAGE)),
                               s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
     await rate_limiter.check_and_raise(f"purchase:{tenant_id}", "auth:otp_send", str(tenant_id))
     data = await s.initiate_purchase(tenant_id, body.package_id, body.gateway)
@@ -397,7 +397,7 @@ async def forfeit_reservation(booking_id: str, r: Request,
 @router.post("/warranty/claims", summary="Submit warranty claim for a completed job", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def submit_claim(body: WarrantyClaimRequest, r: Request,
                         tid: uuid.UUID = Query(..., alias="tenant_id"),
-                        u: UserContext = Depends(get_current_user),
+                        u: UserContext = Depends(require_mutation_access_scope),
                         s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.submit_claim(tid, uuid.UUID(u.user_id), body.job_id, body.claim_type,
                                  body.description, body.media_ids, body.amount_requested)
@@ -454,7 +454,7 @@ async def get_badges(tenant_id: uuid.UUID, r: Request,
 
 @router.post("/tenants/{tenant_id}/badges/recalculate", summary="Force badge recalculation (normally runs daily via Celery)", response_model=ApiResponse[dict])
 async def recalculate_badges(tenant_id: uuid.UUID, r: Request,
-                              u: UserContext = Depends(require_permission(P.TENANT_HEALTH_READ)),
+                              u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                               s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.recalculate_badges(tenant_id)
     return ok(data, _meta(r).request_id, ENGINE_ID)

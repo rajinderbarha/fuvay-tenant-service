@@ -1,0 +1,37 @@
+method,path,principal,expected_status,test
+PUT,/v1/tenants/{tid},read-only staff (customer_support_limited + full permission_overrides grant),403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/suspend,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/reinstate,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/terminate/begin,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/terminate/confirm,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/plan/upgrade,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/plan/downgrade,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/trial/convert,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/engines/engine-x/enable,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/engines/engine-x/disable,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/engines/bulk-enable,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/engines/bulk-disable,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+PUT,/v1/tenants/{tid}/engines/engine-x/config,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/engines/engine-x/config/validate,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+PUT,/v1/tenants/{tid}/feature-flags/flag-x,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+DELETE,/v1/tenants/{tid}/feature-flags/flag-x,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+PUT,/v1/tenants/{tid}/billing/payment-method,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/data/export,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+POST,/v1/tenants/{tid}/data/delete-request,read-only staff,403,test_readonly_scope_rejected_even_with_full_permission_grant
+PUT,/v1/tenants/{tid},tenant_owner (own tenant),not 401/403,test_authorized_owner_not_rejected_by_auth_layer
+POST,/v1/tenants/{tid}/engines/bulk-enable,tenant_owner (own tenant),not 401/403,test_authorized_owner_not_rejected_by_auth_layer
+PUT,/v1/tenants/{tid}/feature-flags/flag-x,tenant_owner (own tenant),not 401/403,test_authorized_owner_not_rejected_by_auth_layer
+PUT,/v1/tenants/{tid}/billing/payment-method,tenant_owner (own tenant),not 401/403,test_authorized_owner_not_rejected_by_auth_layer
+PUT,/v1/tenants/{tid},tenant_owner (cross-tenant path),403,test_cross_tenant_owner_rejected
+POST,/v1/tenants/{tid}/engines/bulk-enable,tenant_owner (cross-tenant path),403,test_cross_tenant_owner_rejected
+PUT,/v1/tenants/{tid}/feature-flags/flag-x,tenant_owner (cross-tenant path),403,test_cross_tenant_owner_rejected
+PUT,/v1/tenants/{tid}/billing/payment-method,tenant_owner (cross-tenant path),403,test_cross_tenant_owner_rejected
+PUT,/v1/tenants/{tid},super_admin (access_scope=customer_support_limited, hypothetical),not 403,test_super_admin_exempt_from_readonly_scope_check
+PUT,/v1/tenants/{tid},anonymous (no token),401,test_unauthenticated_rejected_401
+GET,/v1/tenants/{tid},tenant_owner (own tenant),not 401/403,test_authorized_owner_read_not_rejected_by_auth_layer
+GET,/v1/tenants/{tid}/engines,tenant_owner (own tenant),not 401/403,test_authorized_owner_read_not_rejected_by_auth_layer
+GET,/v1/tenants/{tid}/feature-flags,tenant_owner (own tenant),not 401/403,test_authorized_owner_read_not_rejected_by_auth_layer
+GET,/v1/tenants/{tid},tenant_owner (cross-tenant path),403,test_cross_tenant_read_rejected
+GET,/v1/tenants/{tid}/engines,tenant_owner (cross-tenant path),403,test_cross_tenant_read_rejected
+GET,/v1/tenants/{tid}/feature-flags,tenant_owner (cross-tenant path),403,test_cross_tenant_read_rejected
+GET,/v1/tenants/{tid},read-only tenant_owner (customer_support_limited),not 403 (reads unaffected by mutation-only guard),test_readonly_scope_can_still_read

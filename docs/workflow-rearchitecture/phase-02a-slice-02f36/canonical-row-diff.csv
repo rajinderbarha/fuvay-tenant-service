@@ -1,0 +1,6 @@
+change_type,count,detail
+guard_status_updated,18,Set A rows: AUTHENTICATED_ONLY_NO_PERMISSION_CHECK or ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE -> TENANT_MUTATION_ROLE_SCOPE_AWARE
+rows_added,24,Set B canonical additions, all TENANT_MUTATION_PERMISSION_SCOPE_AWARE or TENANT_MUTATION_ROLE_SCOPE_AWARE (all newly protected in the same slice)
+rows_unchanged,255,every other canonical row (Set C's 5 routes + all prior closures) byte-identical
+total_before,273,
+total_after,297,

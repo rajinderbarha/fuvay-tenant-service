@@ -6,12 +6,35 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from app.dependencies.auth import get_current_user, require_super_admin
+from app.dependencies.auth import get_current_user, require_super_admin, require_customer, UserContext
+from app.core.permissions import require_owner_or_office_staff_mutation
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 from app.engines.execution.coaching_service import CoachingAppointmentExecutionService
 
 _svc = CoachingAppointmentExecutionService()
+
+
+async def require_owner_or_office_staff_read(
+    user: UserContext = Depends(get_current_user),
+) -> UserContext:
+    """Slice 2F-12: read-only counterpart to
+    `require_owner_or_office_staff_mutation` -- same persona set
+    (super_admin/tenant_owner/staff, technician excluded), without the
+    read-only-access-scope deny (a read-only tenant persona must still be
+    able to read). Mirrors the identical fix applied to
+    `execution.real_estate_router` in Slice 2F-11A -- no
+    mobile/technician caller evidence exists anywhere for this module's
+    reads either, so technician is excluded from day one here rather
+    than repeating the same evidence gap and needing a follow-up slice."""
+    from app.exceptions import ServiceOSException
+    if user.role not in ("super_admin", "tenant_owner", "staff"):
+        raise ServiceOSException(
+            error_code="PERMISSION_DENIED",
+            detail=f"Owner or office staff access required. Your role: '{user.role}'.",
+            blocking_rule="required_role: tenant_owner | staff | super_admin",
+        )
+    return user
 
 # ── Staff / Coach router ──────────────────────────────────────────────────────
 staff_router = APIRouter(prefix="/v1/staff/coaching-appointments", tags=["Sprint21-Staff-Coaching"])
@@ -31,7 +54,7 @@ class OptionalNoteBody(BaseModel):
 
 
 @staff_router.post("/{appointment_id}/accept")
-async def staff_accept(appointment_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_accept(appointment_id: uuid.UUID, r: Request, user=Depends(require_owner_or_office_staff_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.accept_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
@@ -39,7 +62,7 @@ async def staff_accept(appointment_id: uuid.UUID, r: Request, user=Depends(get_c
 
 
 @staff_router.post("/{appointment_id}/reject")
-async def staff_reject(appointment_id: uuid.UUID, body: ReasonBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_reject(appointment_id: uuid.UUID, body: ReasonBody, r: Request, user=Depends(require_owner_or_office_staff_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.reject_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
     await db.commit()
@@ -47,7 +70,7 @@ async def staff_reject(appointment_id: uuid.UUID, body: ReasonBody, r: Request, 
 
 
 @staff_router.post("/{appointment_id}/start")
-async def staff_start(appointment_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_start(appointment_id: uuid.UUID, r: Request, user=Depends(require_owner_or_office_staff_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.start_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
@@ -55,7 +78,7 @@ async def staff_start(appointment_id: uuid.UUID, r: Request, user=Depends(get_cu
 
 
 @staff_router.post("/{appointment_id}/complete")
-async def staff_complete(appointment_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_complete(appointment_id: uuid.UUID, r: Request, user=Depends(require_owner_or_office_staff_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.complete_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
@@ -63,7 +86,7 @@ async def staff_complete(appointment_id: uuid.UUID, r: Request, user=Depends(get
 
 
 @staff_router.post("/{appointment_id}/no-show")
-async def staff_no_show(appointment_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_no_show(appointment_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(require_owner_or_office_staff_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.mark_no_show(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
     await db.commit()
@@ -71,7 +94,7 @@ async def staff_no_show(appointment_id: uuid.UUID, body: OptionalNoteBody, r: Re
 
 
 @staff_router.post("/{appointment_id}/request-reschedule")
-async def staff_reschedule(appointment_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_reschedule(appointment_id: uuid.UUID, body: OptionalNoteBody, r: Request, user=Depends(require_owner_or_office_staff_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.request_reschedule(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), notes=body.notes, request_id=rid)
     await db.commit()
@@ -79,7 +102,7 @@ async def staff_reschedule(appointment_id: uuid.UUID, body: OptionalNoteBody, r:
 
 
 @staff_router.post("/{appointment_id}/notes")
-async def staff_add_note(appointment_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_add_note(appointment_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(require_owner_or_office_staff_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.add_note(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(getattr(user, 'staff_member_id', None) or user.user_id)), uuid.UUID(str(user.user_id)), note_text=body.note_text, is_customer_visible=body.is_customer_visible, request_id=rid)
     await db.commit()
@@ -87,7 +110,7 @@ async def staff_add_note(appointment_id: uuid.UUID, body: NoteBody, r: Request, 
 
 
 @staff_router.get("/{appointment_id}/timeline")
-async def staff_timeline(appointment_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_timeline(appointment_id: uuid.UUID, r: Request, user=Depends(require_owner_or_office_staff_read), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.get_timeline(db, appointment_id, uuid.UUID(str(user.tenant_id)))
     return ok(result, rid, "staff-coaching-timeline")
@@ -98,7 +121,7 @@ provider_router = APIRouter(prefix="/v1/provider/coaching-appointments", tags=["
 
 
 @provider_router.post("/{appointment_id}/cancel")
-async def provider_cancel(appointment_id: uuid.UUID, body: ReasonBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def provider_cancel(appointment_id: uuid.UUID, body: ReasonBody, r: Request, user=Depends(require_owner_or_office_staff_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.cancel_appointment(db, appointment_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)), reason=body.reason, actor_role="provider", request_id=rid)
     await db.commit()
@@ -106,7 +129,7 @@ async def provider_cancel(appointment_id: uuid.UUID, body: ReasonBody, r: Reques
 
 
 @provider_router.get("/{appointment_id}/timeline")
-async def provider_timeline(appointment_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def provider_timeline(appointment_id: uuid.UUID, r: Request, user=Depends(require_owner_or_office_staff_read), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.get_timeline(db, appointment_id, uuid.UUID(str(user.tenant_id)))
     return ok(result, rid, "provider-coaching-timeline")
@@ -117,7 +140,7 @@ customer_router = APIRouter(prefix="/v1/customer/coaching-appointments", tags=["
 
 
 @customer_router.get("/{appointment_id}/tracking")
-async def customer_tracking(appointment_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def customer_tracking(appointment_id: uuid.UUID, r: Request, user=Depends(require_customer), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     from sqlalchemy import select
     from app.engines.final_records.models import CoachingAppointment

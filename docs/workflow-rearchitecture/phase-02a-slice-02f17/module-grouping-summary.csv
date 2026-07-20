@@ -1,0 +1,14 @@
+module,router,engine,model_table,total_remaining,protected_this_slice,unprotected,authenticated_only,role_only,permission_only,scope_missing,ownership_missing,tests_present,runtime_verifier_support,estimated_slice_size
+app.engines.platform_notifications.provider_router,provider_notif/chat/audit + staff_notif/chat,platform_notifications,ChatThread/ChatMessage/Notification/PlatformAuditLog,10,0,10,10,0,0,10,unverified (no ownership check visible without a persona gate first),none found for authorization,yes (existing tool classifies AUTHENTICATED_ONLY_NO_PERMISSION_CHECK),MEDIUM (10 routes, single coherent engine, needs persona split provider vs staff vs thread-membership ownership)
+app.engines.compliance.provider_router,provider_router,compliance,ComplianceRequest/ConsentRecord,6,0,6,0,6,0,6,unverified (permission exists but no access-scope/object check confirmed),none found,yes,MEDIUM (6 routes, DPDP-sensitive, needs access-scope + object ownership audit)
+app.engines.media.new_router,new_router,media,MediaAsset (logo/shop-photo/profile-photo),6,0,6,0,6,0,6,unverified,none found,yes,SMALL-MEDIUM (6 routes, straightforward access-scope fix pattern already established elsewhere)
+app.engines.profile.router,provider+staff profile,profile,BusinessProfile/StaffProfile,3,0,3,0,3,0,3,unverified,none found,yes,SMALL (3 routes)
+app.engines.marketing_automation.provider_router,provider_router,marketing_automation,MarketingCampaign/MarketingAsset,3,0,3,3,0,0,3,unverified,none found,yes,SMALL (3 routes)
+app.engines.admin_catalog.brand_provider_router,brand_provider_router,admin_catalog,BrandRequest/SupportedBrand,2,0,2,0,2,0,2,unverified,none found,yes,SMALL (2 routes)
+app.engines.customer_reviews.provider_router,provider_router,customer_reviews,ProviderReviewReply/ReviewFlag,2,0,2,2,0,0,2,unverified,none found,yes,SMALL (2 routes)
+app.engines.analytics.provider_router,provider_router,analytics,AnalyticsReport,1,0,1,1,0,0,1,unverified,none found,yes,SMALL (1 route)
+app.engines.admin_catalog.recommendation_router,recommendation_router,admin_catalog,RecommendationRule,1,0,1,0,1,0,1,unverified,none found,yes,SMALL (1 route)
+app.engines.admin_catalog.service_option_provider_router,service_option_provider_router,admin_catalog,ServiceOption,1,0,1,0,1,0,1,unverified,none found,yes,SMALL (1 route)
+app.engines.package_commerce.tenant_router,tenant_router,package_commerce,TenantPackagePurchase,1,0,1,0,1,0,1,unverified,none found,yes,SMALL (1 route)
+app.engines.invoice_payment.provider_router,provider_router,invoice_payment,ServiceInvoice/ServiceInvoiceItem,4,4,0,n/a,n/a,n/a,n/a,already protected (Slice 2F-6A),yes,DONE -- reclassified this slice, no further work
+app.engines.provider_portal.router,provider_portal.router,provider_portal,n/a (no persistence),1,n/a,0,n/a,n/a,n/a,n/a,false positive -- no work needed,yes,DONE -- removed from canonical CSV this slice

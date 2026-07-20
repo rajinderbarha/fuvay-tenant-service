@@ -1,0 +1,43 @@
+module,route,before,after
+enterprise_grid_saved_views,POST /v1/enterprise/saved-views,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+enterprise_grid_saved_views,PUT /v1/enterprise/saved-views/{view_id},AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+enterprise_grid_saved_views,DELETE /v1/enterprise/saved-views/{view_id},AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+enterprise_grid_saved_views,POST /v1/enterprise/saved-views/{view_id}/set-default,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+enterprise_grid_preferences_exports,PUT /v1/enterprise/column-preferences,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+enterprise_grid_preferences_exports,POST /v1/enterprise/exports,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+admin_catalog_provider_setup,POST /v1/provider/setup/services/{service_id}/supported-options,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE
+admin_catalog_provider_setup,POST /v1/provider/brands/services/{service_id}/supported,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE
+admin_catalog_provider_setup,POST /v1/provider/brands/requests,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE
+admin_catalog_provider_setup,POST /v1/provider/setup/recommendations,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE
+profile_technician_self_service,PUT /v1/provider/business-profile,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE
+profile_technician_self_service,POST /v1/provider/business-profile/submit-review,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE
+profile_technician_self_service,PUT /v1/staff/profile,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE
+profile_universal_self_service,PUT /v1/me/profile,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+marketing_automation_provider,POST /v1/provider/marketing/campaigns/generate-launch,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+marketing_automation_provider,POST /v1/provider/marketing/campaigns/{campaign_id}/submit-review,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+marketing_automation_provider,PUT /v1/provider/marketing/assets/{asset_id}/provider-notes,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+analytics_provider_reports,POST /v1/provider/reports/run,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
+chat,POST /v1/chat/conversations/{conversation_id}/messages,NOT_CANONICAL (held),TENANT_MUTATION_ROLE_SCOPE_AWARE
+inventory,POST /v1/inventory/tenants/{tenant_id}/items,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+inventory,POST /v1/inventory/items/{item_id}/locations/{location_id}/receive,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+inventory,POST /v1/inventory/reservations,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+inventory,POST /v1/inventory/reservations/confirm,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+inventory,POST /v1/inventory/reservations/release,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+appointments,POST /v1/appointments/{appointment_id}/confirm,NOT_CANONICAL (held),TENANT_MUTATION_ROLE_SCOPE_AWARE
+appointments,POST /v1/appointments/{appointment_id}/cancel,NOT_CANONICAL (held),TENANT_MUTATION_ROLE_SCOPE_AWARE
+appointments,POST /v1/appointments/{appointment_id}/reschedule,NOT_CANONICAL (held),TENANT_MUTATION_ROLE_SCOPE_AWARE
+appointments,POST /v1/appointments/{appointment_id}/no-show,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+appointments,POST /v1/appointments/staff/{staff_id}/calendar/block,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+appointments,DELETE /v1/appointments/calendar/blocks/{block_id},NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+appointments,PUT /v1/appointments/staff/{staff_id}/working-hours,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+catalog,POST /v1/catalog,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+catalog,PUT /v1/catalog/{item_id},NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+dispatch,POST /v1/dispatch/jobs/{job_id}/dispatch,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+dispatch,POST /v1/dispatch/jobs/{job_id}/reassign,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+ds,POST /v1/ds/tenants/{tenant_id}/demand/recompute,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+ds,POST /v1/ds/tenants/{tenant_id}/pricing/apply,NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+ds,GET /v1/ds/tenants/{tenant_id}/customers/{customer_id}/ltv,NOT_CANONICAL (held),TENANT_MUTATION_ROLE_SCOPE_AWARE
+ds,POST /v1/ds/tenants/{tenant_id}/customers/{customer_id}/ltv/recompute,NOT_CANONICAL (held),TENANT_MUTATION_ROLE_SCOPE_AWARE
+settings,PUT /v1/settings/tenants/{tenant_id}/{key},NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+settings,DELETE /v1/settings/tenants/{tenant_id}/{key},NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE
+notifications,PUT /v1/notifications/tenants/{tenant_id}/channels/{channel},NOT_CANONICAL (held),TENANT_MUTATION_PERMISSION_SCOPE_AWARE

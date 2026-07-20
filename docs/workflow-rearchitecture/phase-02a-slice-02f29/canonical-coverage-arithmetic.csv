@@ -1,0 +1,12 @@
+metric,value,note
+protected_before,214,
+set_a_routes_closed,12,all 12 earned full protection
+protected_after,226,214 + 12
+denominator_before,259,
+denominator_after,259,unchanged (Set B empty; no route added)
+unprotected_before,45,
+unprotected_after,33,259 - 226
+canonical_hash_before,e7a89231207221aa,
+canonical_hash_after,fbe7cf863afa0d84,
+matrix_hash_before,ee6011f6ce6a97ab,
+matrix_hash_after,753653ed32916f4e,

@@ -1,0 +1,13 @@
+item,value,evidence
+canonical production factory,app.main:create_app(),single FastAPI() construction; `app = create_app()` at module scope
+include_router calls,81,grep -c include_router app/main.py
+conditional / feature-flagged router mounts,0,no include_router appears inside if/try/settings-guarded blocks
+environment-specific mounts,0,none found
+test/dev-only mounts,0,none found
+mounted sub-applications,1,"app.mount('/uploads', StaticFiles) -- static files, no API routes"
+WebSocket routes,0 APIRoute,none present in the APIRoute set
+versioned alternate apps,0,single /v1 surface
+APIRoute objects collected,2315,recursive walk through _IncludedRouter.original_router
+"unique (method,path) excl. HEAD/OPTIONS",2299,deduplicated export
+canonical runtime configuration,"default settings, no feature flags toggled",the sweep imported app.main:app directly
+multiple production configurations,none identified,no conditional mounts to union

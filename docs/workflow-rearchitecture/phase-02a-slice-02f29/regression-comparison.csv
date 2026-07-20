@@ -1,0 +1,7 @@
+suite,result,note
+tests/test_phase2f29_m01_identity_closure.py,43 passed,
+full phase-2F suite,2213 passed 0 failed 0 errors,includes the 43 new M01 tests (pre-slice baseline was 2170)
+verify_m01_2f29.py,27/27 PASS,M01 scope only
+verify_m01_2f29.py --selftest,exit 0,all fixtures fire
+rebaselined current assertions,~25,214->226 / 45->33 / new hashes
+behavioral test updated,1,cross-tenant oracle now NOT_FOUND (stronger)

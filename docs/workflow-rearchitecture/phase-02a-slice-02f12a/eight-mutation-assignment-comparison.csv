@@ -1,0 +1,9 @@
+mutation,allowed_persona,tenant_ownership,assignment_ownership,source_states,result_state,scope,audit_event,notification,caller_evidence,existing_tests,reason_for_difference
+accept,owner/staff (via guard),yes (_get_appt),YES (_assert_staff_owns_appt),confirmed,accepted,assigned-record,appointment_accepted,none,tenant-portal coachingExecutionApi.accept,test_accept_lead-style + 2F-12,execution action -- must be the assigned coach
+reject,owner/staff,yes,YES,confirmed,rejected,assigned-record,appointment_rejected,none,none,test_sprint21 + 2F-12,execution action
+start,owner/staff,yes,YES,accepted/scheduled,started,assigned-record,appointment_started,none,tenant-portal,test_sprint21 + 2F-12,execution action
+complete,owner/staff,yes,YES,started,completed,assigned-record,appointment_completed,none,tenant-portal,test_sprint21 + 2F-12,execution action
+no-show,owner/staff,yes,YES,confirmed/accepted/scheduled/started,no_show,assigned-record,customer_no_show,none,tenant-portal,test_sprint21 + 2F-12,execution action
+request-reschedule,owner/staff,yes,YES,accepted/scheduled,reschedule_requested,assigned-record,reschedule_requested,none,none,test_sprint21 + 2F-12,execution action
+add note,owner/staff,yes,YES,any (no status change),unchanged,assigned-record,consultation_note_added,none,tenant-portal,test_sprint21 + 2F-12,consultation log by the assigned coach
+cancel,owner/staff,yes (_get_appt),NO (deliberate -- no _assert_staff_owns_appt),confirmed/accepted/scheduled,cancelled,BUSINESS-WIDE (tenant-scoped),appointment_cancelled,none,tenant-portal coachingExecutionApi.cancel (no component caller),test_cancel_happy + 2F-12 + 2F-12A,"administrative/business action -- verified business-wide via approved 2F-3B sibling cancel_job (identical no-assignment-check pattern, documented as 'tenant-wide provider action')"

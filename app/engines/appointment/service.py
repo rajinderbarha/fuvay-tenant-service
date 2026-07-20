@@ -38,10 +38,46 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 class AppointmentService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id; self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-36: calendar-block/working-hours mutations accepted a
+        client-supplied tenant_id with no comparison to the caller's own
+        tenant. super_admin is exempt (platform-wide)."""
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="appointment_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's appointments.",
+                blocking_rule="appointment_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
+
+    def _assert_appt_access(self, appt: "Appointment") -> None:
+        """Slice 2F-36: confirm/cancel/reschedule/no-show identify the
+        appointment by ID alone, with no comparison to the caller's tenant
+        or (for customers) their own customer_id -- any authenticated
+        principal could act on any tenant's appointment. Non-oracular:
+        raises the same NotFoundException a genuinely missing appointment
+        would raise, so a foreign appointment cannot be distinguished from
+        a nonexistent one."""
+        if self.actor_role == "super_admin":
+            return
+        if self.actor_role == "customer":
+            if self.actor_id is not None and appt.customer_id == self.actor_id:
+                return
+            raise NotFoundException("Appointment", str(appt.id))
+        if self.actor_tenant_id is not None and appt.tenant_id == self.actor_tenant_id:
+            return
+        raise NotFoundException("Appointment", str(appt.id))
 
     def _appt_num(self) -> str:
         return f"APT-{utcnow().strftime('%Y%m')}-{random.randint(10000,99999)}"
@@ -233,6 +269,7 @@ class AppointmentService:
         r = await self.db.execute(select(Appointment).where(Appointment.id == appointment_id))
         appt = r.scalar_one_or_none()
         if not appt: raise NotFoundException("Appointment", str(appointment_id))
+        self._assert_appt_access(appt)
         if appt.status != AS.HOLD:
             raise ServiceOSException("CONFLICT", f"Appointment is not in hold status (current: {appt.status}).")
         if appt.hold_expires_at and appt.hold_expires_at < utcnow():
@@ -265,6 +302,7 @@ class AppointmentService:
         r = await self.db.execute(select(Appointment).where(Appointment.id == appointment_id))
         appt = r.scalar_one_or_none()
         if not appt: raise NotFoundException("Appointment", str(appointment_id))
+        self._assert_appt_access(appt)
         if appt.status in TERMINAL_APPT_STATUSES:
             raise ServiceOSException("CONFLICT", f"Appointment is already {appt.status}.")
 
@@ -292,6 +330,7 @@ class AppointmentService:
         r = await self.db.execute(select(Appointment).where(Appointment.id == appointment_id))
         appt = r.scalar_one_or_none()
         if not appt: raise NotFoundException("Appointment", str(appointment_id))
+        self._assert_appt_access(appt)
         if appt.status in TERMINAL_APPT_STATUSES:
             raise ServiceOSException("CONFLICT", f"Appointment is already {appt.status}.")
 
@@ -344,6 +383,7 @@ class AppointmentService:
         r = await self.db.execute(select(Appointment).where(Appointment.id == appointment_id))
         appt = r.scalar_one_or_none()
         if not appt: raise NotFoundException("Appointment", str(appointment_id))
+        self._assert_appt_access(appt)
         if appt.status in TERMINAL_APPT_STATUSES:
             raise ServiceOSException("CONFLICT", f"Cannot reschedule a {appt.status} appointment.")
 
@@ -373,6 +413,7 @@ class AppointmentService:
     async def block_calendar_time(self, staff_id: uuid.UUID, tenant_id: uuid.UUID,
                                    block_date: str, start_time: str, end_time: str,
                                    block_type: str, reason: str | None, is_full_day: bool) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         block = StaffCalendarBlock(
             staff_id=staff_id, tenant_id=tenant_id, block_date=block_date,
             start_time=start_time, end_time=end_time, block_type=block_type,
@@ -393,6 +434,10 @@ class AppointmentService:
             StaffCalendarBlock.id == block_id))
         block = r.scalar_one_or_none()
         if not block: raise NotFoundException("CalendarBlock", str(block_id))
+        if self.actor_role != "super_admin" and (
+            self.actor_tenant_id is None or block.tenant_id != self.actor_tenant_id
+        ):
+            raise NotFoundException("CalendarBlock", str(block_id))
         try:
             await self.redis.delete(REDIS_APPT_CALENDAR.format(
                 staff_id=block.staff_id, date=block.block_date))
@@ -404,6 +449,7 @@ class AppointmentService:
     async def set_working_hours(self, staff_id: uuid.UUID, tenant_id: uuid.UUID,
                                  day_of_week: int, start_time: str, end_time: str,
                                  slot_duration: int, buffer_minutes: int) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(StaffWorkingHours).where(
             StaffWorkingHours.staff_id == staff_id, StaffWorkingHours.tenant_id == tenant_id,
             StaffWorkingHours.day_of_week == day_of_week))

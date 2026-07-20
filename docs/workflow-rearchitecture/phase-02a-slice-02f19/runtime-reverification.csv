@@ -1,0 +1,29 @@
+method,path,mounted_confirmed,endpoint_function_confirmed,guard_status_matches_csv,classification
+POST,/v1/provider/brands/requests,YES,YES,YES (PERMISSION_ONLY_NOT_SCOPE_AWARE),GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/brands/services/{service_id}/supported,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+PUT,/v1/provider/business-profile,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/business-profile/submit-review,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/compliance/consents/{consent_type}/withdraw,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/compliance/customer-requests/{request_id}/tenant-response,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/compliance/requests,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/compliance/requests/{request_id}/cancel,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/compliance/requests/{request_id}/generate-export,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/compliance/staff-requests/{request_id}/tenant-response,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+PUT,/v1/provider/marketing/assets/{asset_id}/provider-notes,YES,YES,YES (AUTHENTICATED_ONLY_NO_PERMISSION_CHECK),GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/marketing/campaigns/generate-launch,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/marketing/campaigns/{campaign_id}/submit-review,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/profile/logo,YES,YES,YES (PERMISSION_ONLY_NOT_SCOPE_AWARE),GENUINE_UNPROTECTED_TENANT_MUTATION
+DELETE,/v1/provider/profile/logo,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/profile/shop-photo,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+DELETE,/v1/provider/profile/shop-photo,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/reports/run,YES,YES,YES (AUTHENTICATED_ONLY_NO_PERMISSION_CHECK),GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/reviews/{review_id}/flag,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/reviews/{review_id}/reply,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/setup/recommendations,YES,YES,YES (PERMISSION_ONLY_NOT_SCOPE_AWARE),GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/provider/setup/services/{service_id}/supported-options,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+PUT,/v1/staff/profile,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/staff/profile/photo,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+DELETE,/v1/staff/profile/photo,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+POST,/v1/tenant/packages/{package_id}/purchase,YES,YES,YES,GENUINE_UNPROTECTED_TENANT_MUTATION
+
+Summary: 26/26 rows confirmed mounted, endpoint function confirmed, guard_status matches the canonical CSV exactly (zero drift). All 26 classified GENUINE_UNPROTECTED_TENANT_MUTATION -- zero ALREADY_PROTECTED_STALE_ROW, zero FALSE_POSITIVE_NON_MUTATION, zero CUSTOMER_SELF_SERVICE, zero PLATFORM_ADMIN, zero PLATFORM_INTERNAL, zero DUPLICATE, zero DEPRECATED, zero DISCONNECTED found among the 26. Live app export confirmed 1186 total mounted mutation-shaped routes app-wide (unchanged from 2F-17A's own full sweep), re-run this slice as a spot-check on the 26 target rows only (not a full re-sweep, since 2F-17A's full sweep already proved global completeness and nothing has changed the mounted route set outside platform_notifications since).

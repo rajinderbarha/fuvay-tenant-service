@@ -1,0 +1,4 @@
+module,soft_reference,finding
+commerce (warranty claims),WarrantyClaim.job_id (soft reference, no FK to ServiceJob),"Previously unverified; this slice added an explicit ServiceJob lookup + tenant/customer match before claim creation, closing the soft-reference integrity gap (was inferring 'no dependent objects' from the absence of a hard FK, exactly the anti-pattern the mission warns against)."
+pricing (zones/rules),tenant_id denormalized on ZoneSurcharge/DynamicPricingRule (no cross-check against a parent record),"Now checked directly against the trusted tenant_id on update/delete, closing the previously-nonexistent ownership check."
+payments (payout),PayoutRecord.tenant_id (no FK enforcement observed),"tenant_id is now trusted server-side; the deeper soft-reference gap (no balance ledger to validate the payout amount against) remains open -- see known-limitations.md."

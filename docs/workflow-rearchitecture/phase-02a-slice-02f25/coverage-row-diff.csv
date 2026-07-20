@@ -1,0 +1,6 @@
+method,path,change,before,after,evidence
+POST,/v1/reviews/{review_id}/reply,ROW_ADDED + PROTECTED,(absent from CSV),TENANT_MUTATION_PERMISSION_SCOPE_AWARE,mounted tenant mutation missing from the prefix-based sweep
+POST,/v1/reviews/{review_id}/flag,ROW_ADDED + PROTECTED,(absent from CSV),TENANT_MUTATION_PERMISSION_SCOPE_AWARE,same
+POST,/v1/reviews/requests,ROW_ADDED + PROTECTED,(absent from CSV),TENANT_MUTATION_PERMISSION_SCOPE_AWARE,same
+POST,/v1/reviews/{review_id}/resolve,NOT_ADDED,n/a,n/a,require_super_admin -> PLATFORM_ADMIN_OUTSIDE_XY
+POST,/v1/reviews,NOT_ADDED,n/a,n/a,410 GONE -> DEPRECATED

@@ -1,0 +1,5 @@
+method,path,endpoint_name,module,disposition,evidence
+POST,/v1/provider/home-services/matching-inputs/preview,preview_matching_inputs,app.engines.provider_portal.router,NOT MISSING -- confirmed false positive,already in CONFIRMED_FALSE_POSITIVE_ROUTES since Slice 2F-2; zero db.add/db.commit calls confirmed via direct source read; correctly excluded from the canonical CSV (removed in Slice 2F-17)
+POST,/v1/tenant/catalog/price-options/preview,preview_tenant_price_options,app.engines.admin_catalog.tenant_router,NOT MISSING -- confirmed false positive,already in CONFIRMED_FALSE_POSITIVE_ROUTES since Slice 2F-7; zero persistence confirmed via direct source read; was never added to the canonical CSV in the first place (correctly excluded from the start)
+
+NO GENUINE MISSING TENANT MUTATION WAS FOUND. Both candidate routes surfaced by the full-application cross-check (every /v1/provider/, /v1/staff/, /v1/tenant/ prefixed mutation-method route NOT already present in the canonical CSV) resolved to pre-existing, already-audited false positives. Zero new rows were added to the canonical CSV this slice.

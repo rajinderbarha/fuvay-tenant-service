@@ -1,0 +1,8 @@
+route_function,primary_capability,evidence
+withdraw_consent,CONSENT_WITHDRAWAL,writes a ConsentRecord with action=WITHDRAWN via ComplianceService.record_consent; no request-state involvement
+customer_tenant_response,COMPLIANCE_REQUEST_PROCESS (correspondence),appends to ComplianceRequest.metadata_json[tenant_responses]; does not change request.status
+create_my_request,COMPLIANCE_REQUEST_CREATE,constructs a new ComplianceRequest row via ComplianceEnterpriseService.create_request
+cancel_my_request,COMPLIANCE_REQUEST_CANCEL,sets ComplianceRequest.status=cancelled from a legal source state
+generate_export,EXPORT_REQUEST,creates a ComplianceExport row (status=processing) -- NOT EXPORT_GENERATION_TRIGGER since no worker/generation mechanism is ever invoked or exists to consume it (see compliance-export-worker-discovery.md); classified as the QUEUEING-only capability it actually is, not the capability its name implies
+staff_tenant_response,COMPLIANCE_REQUEST_PROCESS (correspondence),appends to ComplianceRequest.metadata_json[tenant_responses]; clears tenant_action_required
+download_export (alternate-shape mutation, not one of the 6),EXPORT_RETRY (n/a) / read-with-side-effect,not a listed candidate capability verbatim -- classified functionally as a state-mutating read (ready->downloaded transition) reusing the EXPORT_REQUEST family's ownership rules

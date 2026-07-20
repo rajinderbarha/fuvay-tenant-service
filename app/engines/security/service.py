@@ -37,12 +37,31 @@ class SecurityService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
                  actor_id: uuid.UUID | None = None,
                  actor_role: str | None = None,
-                 actor_ip: str | None = None):
+                 actor_ip: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id
         self.actor_role = actor_role
         self.actor_ip = actor_ip
+        # Phase 2A Slice 2F-35: the authoritative tenant of the calling
+        # principal, derived server-side from the token. rotate_api_key/
+        # revoke_api_key MUST scope by this value (never trust a
+        # client-supplied tenant_id as ownership evidence).
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID | None = None) -> uuid.UUID | None:
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="security_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id is not None and requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's API keys.",
+                blocking_rule="security_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     async def _publish(self, event_type: str, tenant_id: str, entity_id: str, payload: dict):
         try:
@@ -173,6 +192,10 @@ class SecurityService:
 
     async def rotate_api_key(self, key_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
         """PROVEN: old key marked ROTATED atomically. New key issued. One transaction."""
+        # Phase 2A Slice 2F-35: tenant_id previously arrived straight from
+        # the request Query param and was never compared to the actor's
+        # own tenant -- verified server-side before the query runs.
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(APIKey).where(
             APIKey.id == key_id, APIKey.tenant_id == tenant_id))
         old_key = r.scalar_one_or_none()
@@ -204,6 +227,8 @@ class SecurityService:
 
     async def revoke_api_key(self, key_id: uuid.UUID, tenant_id: uuid.UUID,
                               reason: str) -> dict:
+        # Phase 2A Slice 2F-35: same cross-tenant fix as rotate_api_key.
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(APIKey).where(
             APIKey.id == key_id, APIKey.tenant_id == tenant_id))
         key = r.scalar_one_or_none()

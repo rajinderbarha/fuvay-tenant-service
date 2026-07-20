@@ -6,7 +6,7 @@ import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission, require_mutation_access_scope
 from app.core.security import get_client_ip
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
@@ -29,7 +29,8 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db),
           u: UserContext = Depends(get_current_user)) -> PricingService:
     return PricingService(db=db, request_id=getattr(r.state, "request_id", "—"),
                            actor_id=uuid.UUID(u.user_id) if u.user_id else None,
-                           actor_role=u.role)
+                           actor_role=u.role,
+                           actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 
 def _req_id(r: Request) -> str:
     return getattr(r.state, "request_id", "—")
@@ -113,7 +114,7 @@ async def get_tenant_price(tenant_id: uuid.UUID, service_type_id: str, r: Reques
              summary="Set service type price — validates floor, versions old price",
              response_model=ApiResponse[dict])
 async def set_tenant_price(tenant_id: uuid.UUID, body: ServicePriceSetRequest, r: Request,
-                            u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                            u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                             s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.set_tenant_price(tenant_id, body.model_dump())
     return ok(data, _req_id(r), ENGINE_ID)
@@ -143,7 +144,7 @@ async def get_brand_adj(tenant_id: uuid.UUID, r: Request,
             summary="Set brand adjustment — versioned, validates platform cap",
             response_model=ApiResponse[dict])
 async def set_brand_adj(tenant_id: uuid.UUID, body: BrandAdjustmentRequest, r: Request,
-                         u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                         u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                          s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.set_brand_adjustment(tenant_id, body.adjustment_pct, body.label, body.reason)
     return ok(data, _req_id(r), ENGINE_ID)
@@ -160,7 +161,7 @@ async def list_zones(tenant_id: uuid.UUID, r: Request,
 @router.post("/tenants/{tenant_id}/zones", summary="Create zone surcharge",
              status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def create_zone(tenant_id: uuid.UUID, body: ZoneCreateRequest, r: Request,
-                       u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.create_zone(tenant_id, body.model_dump())
     return ok(data, _req_id(r), ENGINE_ID)
@@ -177,17 +178,17 @@ async def get_zone(tenant_id: uuid.UUID, zone_id: uuid.UUID, r: Request,
             response_model=ApiResponse[dict])
 async def update_zone(tenant_id: uuid.UUID, zone_id: uuid.UUID, body: ZoneUpdateRequest,
                        r: Request,
-                       u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.update_zone(zone_id, body.model_dump(exclude_none=True))
+    data = await s.update_zone(zone_id, body.model_dump(exclude_none=True), tenant_id=tenant_id)
     return ok(data, _req_id(r), ENGINE_ID)
 
 @router.delete("/tenants/{tenant_id}/zones/{zone_id}", summary="Delete zone surcharge",
                response_model=ApiResponse[dict])
 async def delete_zone(tenant_id: uuid.UUID, zone_id: uuid.UUID, r: Request,
-                       u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.delete_zone(zone_id)
+    data = await s.delete_zone(zone_id, tenant_id=tenant_id)
     return ok(data, _req_id(r), ENGINE_ID)
 
 # ── Dynamic Pricing Rules (6 endpoints) ───────────────────────────────────────
@@ -203,7 +204,7 @@ async def list_rules(tenant_id: uuid.UUID, r: Request,
 @router.post("/tenants/{tenant_id}/rules", summary="Create dynamic pricing rule",
              status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def create_rule(tenant_id: uuid.UUID, body: DynamicRuleCreateRequest, r: Request,
-                       u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.create_rule(tenant_id, body.model_dump())
     return ok(data, _req_id(r), ENGINE_ID,
@@ -222,9 +223,9 @@ async def get_rule(tenant_id: uuid.UUID, rule_id: uuid.UUID, r: Request,
             response_model=ApiResponse[dict])
 async def update_rule(tenant_id: uuid.UUID, rule_id: uuid.UUID, body: DynamicRuleUpdateRequest,
                        r: Request,
-                       u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.update_rule(rule_id, body.model_dump(exclude_none=True))
+    data = await s.update_rule(rule_id, body.model_dump(exclude_none=True), tenant_id=tenant_id)
     return ok(data, _req_id(r), ENGINE_ID)
 
 @router.post("/tenants/{tenant_id}/rules/{rule_id}/activate",
@@ -246,16 +247,16 @@ async def deactivate_rule(tenant_id: uuid.UUID, rule_id: uuid.UUID, r: Request,
 @router.delete("/tenants/{tenant_id}/rules/{rule_id}",
                summary="Delete rule (must be inactive first)", response_model=ApiResponse[dict])
 async def delete_rule(tenant_id: uuid.UUID, rule_id: uuid.UUID, r: Request,
-                       u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.delete_rule(rule_id)
+    data = await s.delete_rule(rule_id, tenant_id=tenant_id)
     return ok(data, _req_id(r), ENGINE_ID)
 
 # ── Price Computation (3 endpoints) ──────────────────────────────────────────
 @router.post("/compute", summary="Compute price — runs full pipeline, stores immutable snapshot",
              response_model=ApiResponse[dict])
 async def compute_price(body: PriceComputeRequest, r: Request,
-                         u: UserContext = Depends(get_current_user),
+                         u: UserContext = Depends(require_mutation_access_scope),
                          s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.compute_and_snapshot(
         body.tenant_id, body.service_type_id, body.service_category,

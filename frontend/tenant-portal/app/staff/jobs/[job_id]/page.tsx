@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { StaffLayout } from "../../../../components/layout/StaffLayout";
 import { Card, Badge, Skeleton } from "../../../../components/shared/ui";
 import { useApi, useAction } from "../../../../hooks/useApi";
-import { homeServiceStaffJobsApi } from "../../../../lib/api";
+import { homeServiceStaffJobsApi, PartsRequestItem } from "../../../../lib/api";
 
 // MODULE-L5-38: repointed from the dead field_ops /v1/staff/me/jobs detail
 // (0 rows, all-actions-disabled with stale "not certified" copy) to the real,
@@ -31,12 +31,45 @@ export default function StaffJobDetailPage() {
   const params = useParams<{ job_id: string }>();
   const jobId = params.job_id;
   const detail = useApi(useCallback(() => homeServiceStaffJobsApi.get(jobId), [jobId]), [jobId]);
+  const partsRequests = useApi(useCallback(() => homeServiceStaffJobsApi.listPartsRequests(jobId), [jobId]), [jobId]);
 
   const [rejectReason, setRejectReason] = useState("");
   const [showReject, setShowReject] = useState(false);
   const [workSummary, setWorkSummary] = useState("");
   const [collected, setCollected] = useState("");
   const [showComplete, setShowComplete] = useState(false);
+
+  // HS8B / Phase 2A — Parts Request creation. Real PartsRequest records only
+  // (service_job_parts_requests); this is NOT a quote line item and must not
+  // be conflated with one (see quote-parts-scope-decision.md).
+  const [showPartsForm, setShowPartsForm] = useState(false);
+  const [partName, setPartName] = useState("");
+  const [partQty, setPartQty] = useState("1");
+  const [partCost, setPartCost] = useState("");
+  const [partReason, setPartReason] = useState("");
+
+  const partsAct = useAction(
+    async (fn: () => Promise<unknown>) => fn(),
+    { onSuccess: () => partsRequests.refetch() },
+  );
+
+  function submitPartsRequest() {
+    const qty = parseInt(partQty, 10);
+    const cost = parseFloat(partCost);
+    if (!partName.trim() || !partReason.trim() || isNaN(qty) || qty < 1 || isNaN(cost)) return;
+    partsAct.execute(() => homeServiceStaffJobsApi.createPartsRequest(jobId, {
+      part_name: partName.trim(), quantity: qty, estimated_cost: cost, reason: partReason.trim(),
+    }));
+    setShowPartsForm(false);
+    setPartName(""); setPartQty("1"); setPartCost(""); setPartReason("");
+  }
+
+  function partsStatusVariant(status: string): "info" | "success" | "danger" | "warning" {
+    if (status.includes("rejected")) return "danger";
+    if (status === "installed") return "success";
+    if (status.includes("approved")) return "warning";
+    return "info";
+  }
 
   const act = useAction(
     async (fn: () => Promise<unknown>) => fn(),
@@ -80,7 +113,10 @@ export default function StaffJobDetailPage() {
   }
 
   return (
-    <StaffLayout activeNav="jobs">
+    <StaffLayout activeNav="jobs" crumbs={[
+      { label: "My Jobs", href: "/staff/jobs" },
+      { label: j ? (j.job_number || `Job ${j.id.slice(0, 8)}`) : "Job" },
+    ]}>
       {detail.loading ? <Skeleton height={300}/> : detail.error ? (
         <Card><p style={{ color: "var(--danger-text)", fontSize: 13 }}>{detail.error}{detail.requestId && ` — Request ID: ${detail.requestId}`}</p></Card>
       ) : j ? (
@@ -165,6 +201,70 @@ export default function StaffJobDetailPage() {
               )}
             </Card>
           </div>
+
+          {/* Phase 2A — Parts Request/Approval. Real PartsRequest records
+              (service_job_parts_requests) only; only shown here because this
+              page always operates on a ServiceJob. Never surfaced for
+              Booking or field_ops Job records — see
+              docs/workflow-rearchitecture/phase-01a/quote-parts-scope-decision.md */}
+          <Card style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Parts Requests</h3>
+              {!showPartsForm && (
+                <button onClick={() => setShowPartsForm(true)}
+                  style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1px solid var(--border)", background: "transparent", cursor: "pointer" }}>
+                  + Request Part
+                </button>
+              )}
+            </div>
+
+            {partsAct.error && <p style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 8 }}>{partsAct.error}</p>}
+
+            {showPartsForm && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
+                <input value={partName} onChange={e => setPartName(e.target.value)} placeholder="Part name (required)"
+                  style={{ width: "100%", padding: 8, fontSize: 13, borderRadius: 8, border: "1px solid var(--border)" }}/>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={partQty} onChange={e => setPartQty(e.target.value)} inputMode="numeric" placeholder="Qty"
+                    style={{ width: 80, padding: 8, fontSize: 13, borderRadius: 8, border: "1px solid var(--border)" }}/>
+                  <input value={partCost} onChange={e => setPartCost(e.target.value)} inputMode="decimal" placeholder="Estimated cost (₹, required)"
+                    style={{ flex: 1, padding: 8, fontSize: 13, borderRadius: 8, border: "1px solid var(--border)" }}/>
+                </div>
+                <textarea value={partReason} onChange={e => setPartReason(e.target.value)} rows={2} placeholder="Reason this part is needed (required)"
+                  style={{ width: "100%", padding: 8, fontSize: 13, borderRadius: 8, border: "1px solid var(--border)" }}/>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={submitPartsRequest} disabled={partsAct.loading || !partName.trim() || !partReason.trim() || !partCost}
+                    style={{ padding: "8px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "none", background: "var(--accent, #2563eb)", color: "#fff", cursor: "pointer" }}>
+                    Submit Request
+                  </button>
+                  <button onClick={() => setShowPartsForm(false)}
+                    style={{ padding: "8px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "1px solid var(--border)", background: "transparent", cursor: "pointer" }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {partsRequests.loading ? <Skeleton height={60}/> : partsRequests.error ? (
+              <p style={{ fontSize: 12, color: "var(--danger-text)" }}>{partsRequests.error}</p>
+            ) : !partsRequests.data?.parts_requests?.length ? (
+              <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No parts requested for this job.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {partsRequests.data.parts_requests.map((pr: PartsRequestItem) => (
+                  <div key={pr.parts_request_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: 10, borderRadius: 8, border: "1px solid var(--border)" }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{pr.part_name} × {pr.quantity}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+                        ₹{pr.estimated_cost.toLocaleString("en-IN")} — {pr.reason}
+                      </div>
+                    </div>
+                    <Badge variant={partsStatusVariant(pr.status)} size="sm">{pr.status.replace(/_/g, " ")}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
         </>
       ) : null}
     </StaffLayout>

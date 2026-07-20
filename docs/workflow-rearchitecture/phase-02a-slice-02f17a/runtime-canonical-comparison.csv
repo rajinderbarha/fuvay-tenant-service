@@ -1,0 +1,12 @@
+check,result
+Canonical tenant CSV rows present at exact runtime method/path,226 of 226 (100%)
+Canonical tenant CSV rows mounted under a different prefix than documented,0
+Canonical tenant CSV rows that are source-only (not actually mounted),0
+Canonical tenant CSV rows that are deprecated,0
+Canonical tenant CSV rows that are disconnected,0
+Canonical tenant CSV rows that are duplicates of each other,0 (test_no_duplicate_rows, re-verified)
+Canonical tenant CSV rows that are false positives,0 (the 1 known false positive, preview_matching_inputs, was already removed in Slice 2F-17)
+Canonical tenant CSV rows persona-correct,226 of 226 (0 customer/admin/internal path prefix found -- misclassified-non-tenant-rows.csv)
+Canonical tenant CSV rows protection-status-correct,226 of 226 (190 protected + 36 unprotected, all runtime-reconfirmed -- see complete-protection-classification.csv)
+Runtime tenant-prefixed routes present in canonical CSV,224 of 226 route-identity-matched entries (the 2 non-matching are the confirmed false positives, correctly excluded)
+Runtime tenant-prefixed routes MISSING from canonical CSV (genuine gap),0

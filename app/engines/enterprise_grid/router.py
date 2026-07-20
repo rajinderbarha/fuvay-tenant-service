@@ -47,7 +47,7 @@ from app.engines.enterprise_grid.constants import (
     ERR_EXPORT_SELECTED_ID_LIMIT, ERR_EXPORT_DATE_RANGE_EXCEEDED,
     EXPORT_IDEMPOTENCY_KEY_MAX_LEN,
 )
-from app.core.permissions import permission_checker
+from app.core.permissions import permission_checker, require_mutation_access_scope
 from app.core.security import rate_limiter
 from app.exceptions import ServiceOSException
 
@@ -231,7 +231,7 @@ async def list_saved_views(
 async def create_saved_view(
     body: CreateSavedViewIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_mutation_access_scope),
     db: AsyncSession = Depends(get_db),
 ):
     view = await _saved_view.create_view(
@@ -274,7 +274,7 @@ async def update_saved_view(
     view_id: uuid.UUID,
     body: UpdateSavedViewIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_mutation_access_scope),
     db: AsyncSession = Depends(get_db),
 ):
     updates = body.model_dump(exclude_none=True)
@@ -291,7 +291,7 @@ async def update_saved_view(
 async def delete_saved_view(
     view_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_mutation_access_scope),
     db: AsyncSession = Depends(get_db),
 ):
     await _saved_view.delete_view(db, view_id, u.user_id, u.tenant_id)
@@ -310,7 +310,7 @@ async def delete_saved_view(
 async def set_default_view(
     view_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_mutation_access_scope),
     db: AsyncSession = Depends(get_db),
 ):
     view = await _saved_view.set_default(db, view_id, u.user_id, u.tenant_id)
@@ -351,7 +351,7 @@ async def get_column_preferences(
 async def save_column_preferences(
     body: SaveColumnPrefsIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_mutation_access_scope),
     db: AsyncSession = Depends(get_db),
 ):
     prefs = await _col_pref.save_preferences(
@@ -437,7 +437,7 @@ Standard query parameters accepted by all enterprise list endpoints:
 async def create_export(
     body: CreateExportIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_mutation_access_scope),
     db: AsyncSession = Depends(get_db),
 ):
     # FINAL-L5-05O/05R: create_export_job previously had zero domain-

@@ -1,0 +1,6 @@
+metric,before_2f22_baseline,after_2f23,new_node_ids,resolved_node_ids,unchanged,verdict
+failing_node_ids,86,86,0,0,86,IDENTICAL -- comm diff both directions empty
+passed,11108,11146,-,-,-,+38 = exactly the 38 new deterministic tests
+errors,111,111,see error-id note,see error-id note,111,count parity; per-ID capture run separately
+skipped,14,14,0,0,14,IDENTICAL
+duration,652.97s,673.80s,-,-,-,comparable

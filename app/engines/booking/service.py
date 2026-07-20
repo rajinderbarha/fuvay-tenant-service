@@ -405,6 +405,26 @@ class BookingService:
                 "address_id, service_id, and job_type are all required to create a booking.",
                 status_code=422)
 
+        # Slice 2F-15: when a tenant_owner supplies customer_id on behalf of a
+        # customer (the router's "assisted booking" override path), that
+        # customer_id was previously accepted with ZERO existence validation
+        # -- an arbitrary/fabricated UUID, or any real customer's ID with no
+        # relationship to this tenant, was silently accepted. This is fixed
+        # by requiring the identifier resolve to a real, active, non-deleted
+        # customer account (mirrors FieldOpsService.create_job's own
+        # customer-validation pattern). The customer's OWN self-booking path
+        # (actor_role == "customer") is unaffected -- customer_id there is
+        # already server-derived from the authenticated principal, never
+        # client-supplied.
+        if self.actor_role != "customer":
+            from app.engines.auth.models import User
+            cr = await self.db.execute(select(User).where(User.id == customer_id))
+            customer_user = cr.scalar_one_or_none()
+            if (not customer_user or customer_user.role != "customer"
+                    or not customer_user.is_active or customer_user.deleted_at is not None):
+                raise ServiceOSException("FOREIGN_CUSTOMER",
+                    "customer_id is not a valid customer account.", status_code=422)
+
         # Step 0 — Server-side serviceability re-match
         from app.engines.serviceability.service import ServiceabilityService
         svcability = ServiceabilityService(self.db, request_id=self.request_id,
@@ -447,6 +467,64 @@ class BookingService:
         zip_val = _zip
         sla_val = best.get("estimated_sla_minutes")
         bp = best.get("base_price")
+
+        # Slice 2F-15: a tenant_owner-assisted booking (customer_id supplied
+        # on behalf of someone else) may only be created for a customer who
+        # already has an established same-tenant relationship -- otherwise a
+        # tenant could "self-mint" a Booking naming ANY real customer whose
+        # address happens to fall in their own service area, then confirm it
+        # themselves (see phase-02a-slice-02f14g's disclosed residual risk),
+        # producing fabricated relationship evidence for field_ops.Job
+        # creation. This reuses the exact qualifying-status/lineage rule
+        # FieldOpsService._assert_tenant_customer_relationship already
+        # applies (confirmed-or-later Booking, or a source-derived Job) --
+        # no new relationship model, migration, or invented provenance marker.
+        # Customer self-booking (actor_role == "customer") is unaffected --
+        # a customer booking themselves for the first time with a tenant is
+        # the legitimate, evidenced "first contact" path this policy exists
+        # to preserve.
+        if self.actor_role != "customer":
+            from app.engines.field_ops.models import Job as FieldOpsJob
+            from sqlalchemy import or_
+            QUALIFYING_BOOKING_STATUSES = (
+                BS.CONFIRMED, BS.SCHEDULED, BS.DISPATCHING, BS.IN_PROGRESS,
+                BS.COMPLETED, BS.CONVERTED_TO_JOB,
+            )
+            # Slice 2F-15A: the qualifying Booking must be CUSTOMER-originated
+            # (its own creation-history row shows changed_by_role=="customer"),
+            # not merely qualifying-status -- otherwise a chain of
+            # provider-created assisted bookings could bootstrap each other.
+            # A brand-new assisted booking is never itself in this query (it
+            # doesn't exist yet), so this is inherently independent evidence,
+            # not self-satisfaction. Mirrors
+            # FieldOpsService._assert_tenant_customer_relationship's identical
+            # tightened rule.
+            # Slice 2F-15C: role equality alone is not sufficient -- bind the
+            # creation actor explicitly to this Booking's own customer_id
+            # (changed_by == Booking.customer_id), not merely "a" customer.
+            rel_br = await self.db.execute(
+                select(Booking.id)
+                .join(BookingStatusHistory, BookingStatusHistory.booking_id == Booking.id)
+                .where(
+                    Booking.tenant_id == tenant_id, Booking.customer_id == customer_id,
+                    Booking.status.in_(QUALIFYING_BOOKING_STATUSES),
+                    BookingStatusHistory.from_status.is_(None),
+                    BookingStatusHistory.changed_by_role == "customer",
+                    BookingStatusHistory.changed_by == Booking.customer_id,
+                ).limit(1))
+            has_relationship = rel_br.scalar_one_or_none() is not None
+            if not has_relationship:
+                rel_jr = await self.db.execute(select(FieldOpsJob.id).where(
+                    FieldOpsJob.tenant_id == tenant_id, FieldOpsJob.customer_id == customer_id,
+                    or_(FieldOpsJob.booking_id.isnot(None), FieldOpsJob.parent_job_id.isnot(None))
+                ).limit(1))
+                has_relationship = rel_jr.scalar_one_or_none() is not None
+            if not has_relationship:
+                raise ServiceOSException("CUSTOMER_TENANT_RELATIONSHIP_REQUIRED",
+                    "This customer has no existing relationship with your tenant. "
+                    "An assisted booking can only be created for a customer who "
+                    "already has a confirmed booking or job with your tenant.",
+                    status_code=422)
         estimated_price_val = Decimal(str(bp)) if bp is not None else None
         matching_snap = [
             {k: v for k, v in m.items() if k in (
@@ -833,6 +911,61 @@ class BookingService:
         if existing_r.scalar_one_or_none():
             raise ServiceOSException("JOB_ALREADY_EXISTS_FOR_BOOKING",
                 "A job already exists for this booking.", status_code=409)
+
+        # Slice 2F-15A: a Booking's own CONFIRMED status is not, by itself,
+        # sufficient authority to convert -- if this Booking was
+        # provider-created (not the customer), converting it must be backed
+        # by INDEPENDENT prior relationship evidence (excluding this same
+        # Booking), otherwise a legacy or fabricated provider-created Booking
+        # could convert into a real field_ops.Job with no genuine customer
+        # participation anywhere in the chain. Customer-created Bookings
+        # convert under the tenant's already-established provider authority,
+        # unchanged. The creation actor's role is read from
+        # BookingStatusHistory's creation row (from_status IS NULL) -- an
+        # existing field, not a new column.
+        # Slice 2F-15C: bind the creation actor explicitly to THIS booking's
+        # own customer_id (changed_by == b.customer_id) -- role equality
+        # alone does not prove the actor and the booking's customer are the
+        # same person. Filtered in SQL (scalar_one_or_none match-or-None) to
+        # keep the same query interface as every other provenance check.
+        creator_r = await self.db.execute(
+            select(BookingStatusHistory.id).where(
+                BookingStatusHistory.booking_id == b.id,
+                BookingStatusHistory.from_status.is_(None),
+                BookingStatusHistory.changed_by_role == "customer",
+                BookingStatusHistory.changed_by == b.customer_id).limit(1))
+        creator_is_customer_originated = creator_r.scalar_one_or_none() is not None
+        if not creator_is_customer_originated:
+            from app.engines.field_ops.models import Job as _FieldJob
+            QUALIFYING_BOOKING_STATUSES = (
+                BS.CONFIRMED, BS.SCHEDULED, BS.DISPATCHING, BS.IN_PROGRESS,
+                BS.COMPLETED, BS.CONVERTED_TO_JOB,
+            )
+            indep_br = await self.db.execute(
+                select(Booking.id)
+                .join(BookingStatusHistory, BookingStatusHistory.booking_id == Booking.id)
+                .where(
+                    Booking.tenant_id == b.tenant_id, Booking.customer_id == b.customer_id,
+                    Booking.id != b.id,
+                    Booking.status.in_(QUALIFYING_BOOKING_STATUSES),
+                    BookingStatusHistory.from_status.is_(None),
+                    BookingStatusHistory.changed_by_role == "customer",
+                    BookingStatusHistory.changed_by == Booking.customer_id,
+                ).limit(1))
+            has_independent = indep_br.scalar_one_or_none() is not None
+            if not has_independent:
+                from sqlalchemy import or_ as _or_
+                indep_jr = await self.db.execute(select(_FieldJob.id).where(
+                    _FieldJob.tenant_id == b.tenant_id, _FieldJob.customer_id == b.customer_id,
+                    _FieldJob.booking_id != str(b.id),
+                    _or_(_FieldJob.booking_id.isnot(None), _FieldJob.parent_job_id.isnot(None)),
+                ).limit(1))
+                has_independent = indep_jr.scalar_one_or_none() is not None
+            if not has_independent:
+                raise ServiceOSException("CUSTOMER_TENANT_RELATIONSHIP_REQUIRED",
+                    "This booking cannot be converted without independent, "
+                    "established relationship evidence for this customer.",
+                    status_code=422)
 
         # Validate staff if provided
         if assigned_staff_id:

@@ -419,6 +419,25 @@ async def test_create_user_invalid_role():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("placeholder_role", [
+    "tenant_manager", "tenant_staff_admin", "tenant_finance", "tenant_support",
+])
+async def test_create_user_rejects_former_placeholder_roles(placeholder_role):
+    """Phase 2A Slice 2: these 4 strings were removed from VALID_TENANT_ROLES
+    -- they don't exist in app.core.permissions.ROLE_PERMISSIONS, so a user
+    created with one silently got zero enforced permissions forever. This
+    locks that regression closed."""
+    from app.exceptions import ServiceOSException
+    db = _make_db()
+    tenant = _make_tenant()
+    db.execute.return_value = _scalar_result(tenant)
+    svc = await _make_svc(db)
+    with pytest.raises(ServiceOSException) as exc:
+        await svc.create_user(tenant.id, {"name": "Test", "email": "t@t.com", "role": placeholder_role})
+    assert "TENANT_USER_ROLE_INVALID" == exc.value.error_code
+
+
+@pytest.mark.asyncio
 async def test_create_user_duplicate_email():
     from app.exceptions import ServiceOSException
     db = _make_db()
@@ -431,7 +450,10 @@ async def test_create_user_duplicate_email():
     svc = await _make_svc(db)
     with pytest.raises(ServiceOSException) as exc:
         await svc.create_user(tenant.id, {
-            "name": "Test", "email": "taken@t.com", "role": "tenant_manager"
+            # Phase 2A Slice 2: "tenant_manager" was removed from
+            # VALID_TENANT_ROLES (it's a placeholder role with no real
+            # RBAC entry) -- "staff" is the real non-owner tenant role.
+            "name": "Test", "email": "taken@t.com", "role": "staff"
         })
     assert "TENANT_USER_ALREADY_EXISTS" == exc.value.error_code
 

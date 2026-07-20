@@ -1,0 +1,18 @@
+endpoint_name,role_dependency,access_scope_aware,tenant_ownership,lead_assignment_ownership,state_validation,verification_level
+agent_accept,require_owner_or_office_staff_mutation,yes (denies customer_support_limited),tenant_id filter in _get_lead,_assert_agent_owns_lead,LEAD_TRANSITIONS via _set_status,SLICE_2F11_VERIFIED
+agent_reject,require_owner_or_office_staff_mutation,yes,same,same,same + reason required,SLICE_2F11_VERIFIED
+agent_mark_contacted,require_owner_or_office_staff_mutation,yes,same,same,same,SLICE_2F11_VERIFIED
+agent_follow_up,require_owner_or_office_staff_mutation,yes,same,same,same,SLICE_2F11_VERIFIED
+agent_plan_site_visit,require_owner_or_office_staff_mutation,yes,same,same,same,SLICE_2F11_VERIFIED
+agent_complete_site_visit,require_owner_or_office_staff_mutation,yes,same,same,same,SLICE_2F11_VERIFIED
+agent_qualify,require_owner_or_office_staff_mutation,yes,same,same,same,SLICE_2F11_VERIFIED
+agent_disqualify,require_owner_or_office_staff_mutation,yes,same,same,same + reason required,SLICE_2F11_VERIFIED
+agent_convert,require_owner_or_office_staff_mutation,yes,same,same,same,SLICE_2F11_VERIFIED
+agent_close_lost,require_owner_or_office_staff_mutation,yes,same,same,same + reason required,SLICE_2F11_VERIFIED
+agent_add_note,require_owner_or_office_staff_mutation,yes,same,same,n/a (append-only),SLICE_2F11_VERIFIED
+agent_timeline,require_staff_or_above,no (read, not gated on access_scope),tenant_id filter,n/a (read),n/a,SLICE_2F11_VERIFIED
+provider_timeline,require_staff_or_above,no,tenant_id filter,n/a,n/a,SLICE_2F11_VERIFIED
+provider_notes,require_staff_or_above,no,tenant_id filter,n/a,n/a,SLICE_2F11_VERIFIED
+customer_tracking,require_customer,n/a (customer route),n/a,customer_id filter (inline query),n/a,SLICE_2F11_VERIFIED
+admin_timeline,require_super_admin,n/a (platform),n/a,n/a,n/a,unmodified
+admin_notes,require_super_admin,n/a,n/a,n/a,n/a,unmodified

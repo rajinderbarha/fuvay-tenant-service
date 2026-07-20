@@ -1,0 +1,21 @@
+# Pre-existing files that predate CUSTOMER-L5-00's formatting gate. Excluded
+# here (not reformatted) to avoid a large whitespace-only diff over working
+# code with no independent test coverage — see docs/customer-app/known-gaps.md.
+# New code under src/design-system, src/api, src/storage, src/observability,
+# src/config, src/state, src/components/{primitives,forms,feedback,layout},
+# src/app, src/localization, src/navigation/route-*.ts, src/testing is
+# formatted and enforced normally.
+node_modules
+.expo
+dist
+src/screens/**
+src/context/**
+src/hooks/useApi.ts
+src/lib/**
+src/styles/**
+src/components/Button.tsx
+src/components/Card.tsx
+src/components/Skeleton.tsx
+src/components/StarRating.tsx
+src/components/JobStatusBadge.tsx
+src/components/BookingCard.tsx

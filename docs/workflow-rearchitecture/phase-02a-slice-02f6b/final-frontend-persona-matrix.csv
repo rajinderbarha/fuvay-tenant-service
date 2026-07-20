@@ -1,0 +1,18 @@
+capability,tenant_owner,staff,technician,read_only,customer_guest,helper_function,backend_endpoint
+Issue invoice,Allowed,Denied,Denied,Denied,Denied,canIssueProviderInvoice(role accessScope),provider_issue_invoice
+Create invoice,Allowed,Allowed,Denied,Denied,Denied,canManageProviderInvoices(role accessScope),staff_create_invoice
+Add invoice item,Allowed,Allowed,Denied,Denied,Denied,canManageProviderInvoices(role accessScope),staff_add_invoice_item
+Record on-site payment,Allowed,Allowed,Denied,Denied,Denied,canManageProviderInvoices(role accessScope),provider_record_payment
+
+# staff means the canonical `staff` role only -- no office_staff/manager/tenant_manager
+#   alias was introduced. Technician is denied on all 4 despite otherwise being a
+#   "staff-adjacent" role in other modules (e.g. ServiceJob execution) -- this module's
+#   backend policy (Slice 2F-6A) explicitly excludes technician for all 4 capabilities.
+# Every "Allowed" cell additionally requires a mutation-capable access scope (i.e.
+#   getAccessScope() !== "customer_support_limited") -- encoded directly inside both
+#   helper functions (canManageProviderInvoices / canIssueProviderInvoice).
+# Unknown roles (any string other than "tenant_owner"/"staff", and not the special
+#   "role === undefined" loading-state case inherited from the pre-existing
+#   isTenantOwnerRole convention) fail closed -- both helpers return false.
+# No live UI component currently calls either helper -- see frontend-caller-inventory.csv
+#   for why (no mutation control exists yet for any of the 4 capabilities in any app).

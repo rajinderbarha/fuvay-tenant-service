@@ -1,0 +1,3 @@
+method,path,endpoint,module,guard_status,change,applied
+DELETE,/v1/webhooks/endpoints/{endpoint_id},delete_endpoint,app.engines.webhook.router,PERMISSION_ONLY_NOT_SCOPE_AWARE,ROW_ADDED,YES
+DELETE,/v1/geo/zones/{zone_id},delete_zone,app.engines.geo.router,PERMISSION_ONLY_NOT_SCOPE_AWARE,ROW_ADDED,YES

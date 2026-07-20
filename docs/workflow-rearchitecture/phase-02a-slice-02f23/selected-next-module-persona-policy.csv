@@ -1,0 +1,10 @@
+principal,submit_reply,flag_review,basis
+tenant_owner,PERMIT,PERMIT,owns the business voice and moderation posture
+super_admin,PERMIT (explicit),PERMIT (explicit),shared dependency convention
+staff,PRODUCT DECISION (recommend PERMIT via require_technician-equivalent if product agrees),PRODUCT DECISION,replying to reviews is plausibly delegated; NOT decided in 2F-23
+technician,DENY (recommended),DENY (recommended),field execution persona; no brand-voice authority
+customer,DENY,DENY on the PROVIDER route,a customer must never post as the provider; customers flag via their own customer route
+guest / unauthenticated,DENY,DENY,no authentication
+read-only tenant access_scope,DENY,DENY,mutation-capable scope required
+cross-tenant principal,DENY,DENY,object ownership must be enforced (currently ABSENT on flag_review)
+unknown role / unknown scope,DENY,DENY,fail closed

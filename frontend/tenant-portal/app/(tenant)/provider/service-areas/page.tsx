@@ -5,6 +5,7 @@ import {
   providerServiceAreasApi, tenantSetupApi, providerStatusApi,
   type ProviderServiceArea, type ProviderServiceAreaPayload, type AreaType,
   type ServiceAreaValidationResult,
+  getUserRole, isTenantOwnerRole, isTenantReadOnly,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import {
@@ -819,10 +820,18 @@ export default function ProviderServiceAreasPage() {
   const limitReached = list.length >= maxAreas;
   const slotsUsedPct = maxAreas > 0 ? (list.length / maxAreas) * 100 : 0;
 
-  // Permission-aware — matches backend's require_permission(P.TENANT_SERVICE_AREA_*) gate.
-  // No granular permissions array is returned by /v1/auth/me today, so these
-  // default to true for any authenticated tenant user (see Remaining Blockers).
-  const canCreate = true, canUpdate = true, canDelete = true, canSetPrimary = true;
+  // Slice 2F-7: TENANT_SERVICE_AREA_CREATE/UPDATE/DELETE are granted only to
+  // tenant_owner in ROLE_PERMISSIONS (re-verified against
+  // app/core/permissions.py -- staff/technician hold only the READ
+  // permission), and the backend now additionally rejects a read-only
+  // access_scope via require_tenant_mutation_permission. These previously
+  // defaulted to `true` for any authenticated tenant user -- corrected to
+  // match the actual backend-enforced policy using the existing role/
+  // access-scope helpers (no new permissions array needed).
+  const isOwner = isTenantOwnerRole(getUserRole());
+  const mutationAllowed = isOwner && !isTenantReadOnly();
+  const canCreate = mutationAllowed, canUpdate = mutationAllowed,
+        canDelete = mutationAllowed, canSetPrimary = mutationAllowed;
 
   // Filtered list
   const filtered = list.filter(a => {

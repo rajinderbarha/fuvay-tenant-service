@@ -1,0 +1,10 @@
+category,baseline_2f35,final_2f36,delta,detail
+collected_total,2378,2418,+40,all from tests/test_phase2f36_enterprise_tenant_admin_operational_batch.py (new file)
+added_node_ids,0,40,+40,TestScopeGuardsLive(1);TestTrustedTenantHelpers(16);TestChatParticipantCheck(3);TestAppointmentOwnership(5);TestEnterpriseGridSetDefaultOwnership(1);TestNoBypassOfClosedRoutes(1);TestSetBAdjudication(4);TestCanonicalClosure(5);TestM01N01GeoAnd2F35NonRegression(4)
+removed_node_ids,0,0,0,none
+renamed_node_ids,0,0,0,none
+rebaselined_assertions,n/a,16,n/a,pre-existing historical test files (2F-14A/17A/19/21/23/25/25A/26/26B/26C/26D/26E/26F/26G/26H/27/27A/28/29/30/31/31A/33/35) whose inline live-canonical-CSV literals were updated in place from 273/252/21 to 297/294/3; see documentation-corrections.md
+passed,2378,2418,+40,
+failed,0,0,0,
+errors,0,0,0,
+environmental_exclusions,0,0,0,none

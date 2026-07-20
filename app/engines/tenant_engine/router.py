@@ -10,7 +10,7 @@ import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.core.security import get_client_ip
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
@@ -267,7 +267,7 @@ async def get_tenant(tenant_id: uuid.UUID, request: Request,
 @router.put("/{tenant_id}", summary="Update tenant profile",
             response_model=ApiResponse[dict])
 async def update_tenant(tenant_id: uuid.UUID, request: Request,
-                         user: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                         user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -337,7 +337,7 @@ async def check_limit(tenant_id: uuid.UUID, limit_type: str, request: Request,
              summary="[Admin] Suspend tenant — invalidates all sessions",
              response_model=ApiResponse[dict])
 async def suspend_tenant(tenant_id: uuid.UUID, request: Request,
-                          user: UserContext = Depends(require_permission(P.TENANT_SUSPEND)),
+                          user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SUSPEND)),
                           svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -351,7 +351,7 @@ async def suspend_tenant(tenant_id: uuid.UUID, request: Request,
              summary="[Admin] Reinstate a suspended tenant",
              response_model=ApiResponse[dict])
 async def reinstate_tenant(tenant_id: uuid.UUID, request: Request,
-                            user: UserContext = Depends(require_permission(P.TENANT_REINSTATE)),
+                            user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_REINSTATE)),
                             svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -367,7 +367,7 @@ async def reinstate_tenant(tenant_id: uuid.UUID, request: Request,
              summary="[Admin] Begin 14-day termination warning period",
              response_model=ApiResponse[dict])
 async def begin_termination(tenant_id: uuid.UUID, request: Request,
-                             user: UserContext = Depends(require_permission(P.TENANT_TERMINATE)),
+                             user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_TERMINATE)),
                              svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -380,7 +380,7 @@ async def begin_termination(tenant_id: uuid.UUID, request: Request,
              summary="[Admin] Confirm and execute termination",
              response_model=ApiResponse[dict])
 async def confirm_termination(tenant_id: uuid.UUID, request: Request,
-                               user: UserContext = Depends(require_permission(P.TENANT_TERMINATE)),
+                               user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_TERMINATE)),
                                svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.confirm_termination(tenant_id)
@@ -392,7 +392,7 @@ async def confirm_termination(tenant_id: uuid.UUID, request: Request,
              summary="Upgrade tenant plan (immediate)",
              response_model=ApiResponse[dict])
 async def upgrade_plan(tenant_id: uuid.UUID, request: Request,
-                        user: UserContext = Depends(require_permission(P.TENANT_PLAN_MANAGE)),
+                        user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_PLAN_MANAGE)),
                         svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -408,7 +408,7 @@ async def upgrade_plan(tenant_id: uuid.UUID, request: Request,
              summary="Downgrade tenant plan (deferred to billing cycle end)",
              response_model=ApiResponse[dict])
 async def downgrade_plan(tenant_id: uuid.UUID, request: Request,
-                          user: UserContext = Depends(require_permission(P.TENANT_PLAN_MANAGE)),
+                          user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_PLAN_MANAGE)),
                           svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -421,7 +421,7 @@ async def downgrade_plan(tenant_id: uuid.UUID, request: Request,
              summary="Convert trial to paid subscription",
              response_model=ApiResponse[dict])
 async def convert_trial(tenant_id: uuid.UUID, request: Request,
-                         user: UserContext = Depends(require_permission(P.TENANT_PLAN_MANAGE)),
+                         user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_PLAN_MANAGE)),
                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.convert_trial(tenant_id)
@@ -449,7 +449,7 @@ async def list_engines(tenant_id: uuid.UUID, request: Request,
              summary="Enable a plugin engine for this tenant (checks dependency graph)",
              response_model=ApiResponse[dict])
 async def enable_engine(tenant_id: uuid.UUID, engine_id: str, request: Request,
-                         user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
+                         user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_ENGINES_MANAGE)),
                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.enable_engine(tenant_id, engine_id)
@@ -461,7 +461,7 @@ async def enable_engine(tenant_id: uuid.UUID, engine_id: str, request: Request,
              summary="Disable a plugin engine (checks for dependents first)",
              response_model=ApiResponse[dict])
 async def disable_engine(tenant_id: uuid.UUID, engine_id: str, request: Request,
-                          user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
+                          user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_ENGINES_MANAGE)),
                           svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.disable_engine(tenant_id, engine_id)
@@ -473,7 +473,7 @@ async def disable_engine(tenant_id: uuid.UUID, engine_id: str, request: Request,
              summary="Enable multiple engines in one atomic call",
              response_model=ApiResponse[dict])
 async def bulk_enable(tenant_id: uuid.UUID, request: Request,
-                       user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
+                       user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_ENGINES_MANAGE)),
                        svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -486,7 +486,7 @@ async def bulk_enable(tenant_id: uuid.UUID, request: Request,
              summary="Disable multiple engines in one call",
              response_model=ApiResponse[dict])
 async def bulk_disable(tenant_id: uuid.UUID, request: Request,
-                        user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
+                        user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_ENGINES_MANAGE)),
                         svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -511,7 +511,7 @@ async def get_engine_config(tenant_id: uuid.UUID, engine_id: str, request: Reque
             summary="Update engine configuration (validates schema before saving)",
             response_model=ApiResponse[dict])
 async def update_engine_config(tenant_id: uuid.UUID, engine_id: str, request: Request,
-                                user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
+                                user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_ENGINES_MANAGE)),
                                 svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -524,7 +524,7 @@ async def update_engine_config(tenant_id: uuid.UUID, engine_id: str, request: Re
              summary="Validate engine config without saving",
              response_model=ApiResponse[dict])
 async def validate_engine_config(tenant_id: uuid.UUID, engine_id: str, request: Request,
-                                  user: UserContext = Depends(require_permission(P.TENANT_ENGINES_MANAGE)),
+                                  user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_ENGINES_MANAGE)),
                                   svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -553,7 +553,7 @@ async def list_feature_flags(tenant_id: uuid.UUID, request: Request,
             summary="Set a feature flag override for this tenant",
             response_model=ApiResponse[dict])
 async def set_feature_flag(tenant_id: uuid.UUID, flag_key: str, request: Request,
-                            user: UserContext = Depends(require_permission(P.TENANT_FLAGS_MANAGE)),
+                            user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_FLAGS_MANAGE)),
                             svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -566,7 +566,7 @@ async def set_feature_flag(tenant_id: uuid.UUID, flag_key: str, request: Request
                summary="Remove a feature flag override (reverts to platform default)",
                response_model=ApiResponse[dict])
 async def delete_feature_flag(tenant_id: uuid.UUID, flag_key: str, request: Request,
-                               user: UserContext = Depends(require_permission(P.TENANT_FLAGS_MANAGE)),
+                               user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_FLAGS_MANAGE)),
                                svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.delete_feature_flag(tenant_id, flag_key)
@@ -606,7 +606,7 @@ async def get_billing(tenant_id: uuid.UUID, request: Request,
             summary="Update the payment method / gateway customer ID",
             response_model=ApiResponse[dict])
 async def update_payment_method(tenant_id: uuid.UUID, request: Request,
-                                 user: UserContext = Depends(require_permission(P.TENANT_BILLING_MANAGE)),
+                                 user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_BILLING_MANAGE)),
                                  svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
@@ -648,7 +648,7 @@ async def trigger_dunning(tenant_id: uuid.UUID, request: Request,
              summary="Request a full data export (async — returns job_id for polling)",
              status_code=status.HTTP_202_ACCEPTED, response_model=ApiResponse[dict])
 async def request_data_export(tenant_id: uuid.UUID, request: Request,
-                               user: UserContext = Depends(require_permission(P.TENANT_DATA_EXPORT)),
+                               user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_DATA_EXPORT)),
                                svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     data = await svc.request_data_export(tenant_id)
@@ -672,7 +672,7 @@ async def get_export_status(tenant_id: uuid.UUID, job_id: str, request: Request,
              summary="Request GDPR data deletion — anonymizes PII, retains financial records",
              response_model=ApiResponse[dict])
 async def gdpr_deletion(tenant_id: uuid.UUID, request: Request,
-                         user: UserContext = Depends(require_permission(P.TENANT_DATA_DELETE)),
+                         user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_DATA_DELETE)),
                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()

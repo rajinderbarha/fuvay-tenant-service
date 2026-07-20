@@ -1,0 +1,40 @@
+field,value
+method,POST
+mounted_path,/v1/tenant/packages/{package_id}/purchase
+route_name,tenant_purchase_package
+endpoint_function,tenant_purchase_package
+source_file,app/engines/package_commerce/tenant_router.py
+router_prefix,(none -- absolute paths declared per-route)
+request_schema,TenantPackagePurchaseRequest (NEW in 2F-22; was untyped `payload: dict`)
+response_schema,_ok() envelope: success/data/request_id/engine_id
+path_parameters,package_id: uuid.UUID
+query_parameters,none
+body_fields,"NONE -- extra='forbid' (was: mark_paid, payment_reference, plus any arbitrary key)"
+acting_persona,tenant_owner (super_admin also admitted by the shared dependency)
+authentication_dependency,require_tenant_owner_mutation (supersedes require_tenant_owner)
+permission_dependency,"none -- role-based, consistent with all /v1/tenant/* routers"
+mutation_scope_dependency,require_tenant_owner_mutation (denies read-only access_scope)
+tenant_source,SERVER -- _tenant_id(user) from JWT claim; never body
+actor_source,SERVER -- user.user_id via _svc()
+package_source,"path parameter, resolved via _load_package (active + not soft-deleted)"
+price_source,SERVER -- pkg.package_price (ServicePackage record)
+currency_source,SERVER -- ServicePackage.currency (default INR); never client
+mark_paid_behavior,REMOVED in 2F-22. Was: bool(payload.get('mark_paid')) -> is_paid
+payment_reference_behavior,REMOVED in 2F-22. Was: stored verbatim as payment_reference_id
+purchase_model,TenantPackageAssignment (tenant_package_assignments)
+package_assignment_model,TenantPackageAssignment
+subscription_model,NONE -- no subscription model exists in this flow
+wallet_ledger_model,TenantWallet via ledger.credit_wallet -- NOT touched by this route
+credit_model,included_spendable_credits snapshot; issued only at activation
+entitlement_model,storage_quota_gb / commission_rate applied only at activation
+invoice_payment_model,NONE reached by this route
+activation_behavior,NONE -- starts_at/expires_at remain NULL until admin approval
+expiry_behavior,computed at activation from validity_days snapshot
+audit_behavior,_pkg_audit('tenant.package_selected')
+notification_behavior,none emitted by this route
+commit_behavior,await db.commit() after service returns; validation precedes persistence
+alternate_routes,admin_router.admin_purchase_package; public_registration signup path
+frontend_caller,frontend/tenant-portal/lib/api.ts providerPackageApi.initiatePurchase
+current_protection,TENANT_MUTATION_ROLE_SCOPE_AWARE (was ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE)
+required_protection,MET
+verification_level,VERIFIED -- runtime + source + 50 deterministic tests

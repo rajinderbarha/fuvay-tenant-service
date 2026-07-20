@@ -344,7 +344,10 @@ class TestSprint24ReviewService:
         review = _make_review(status="approved")
         existing_reply = MagicMock()
 
-        with patch.object(svc, "_get_review", AsyncMock(return_value=review)):
+        # Slice 2F-24: submit_reply now resolves the review through the central
+        # fail-closed scoped lookup instead of the unscoped `_get_review`, so
+        # the double is patched on the new helper. Test intent unchanged.
+        with patch.object(svc, "_get_review_scoped", AsyncMock(return_value=review)):
             db.execute = AsyncMock(return_value=MagicMock(
                 **{"scalars.return_value.first.return_value": existing_reply}
             ))
@@ -358,7 +361,9 @@ class TestSprint24ReviewService:
         db  = _make_db(scalar_value=None)
         review = _make_review(status="approved")
 
-        with patch.object(svc, "_get_review", AsyncMock(return_value=review)), \
+        # Slice 2F-24: patched on `_get_review_scoped` (the new central
+        # fail-closed lookup) rather than `_get_review`. Test intent unchanged.
+        with patch.object(svc, "_get_review_scoped", AsyncMock(return_value=review)), \
              patch.object(svc, "_get_policy", AsyncMock(return_value=None)), \
              patch.object(svc, "_log_event", AsyncMock()):
             # Don't patch ReviewReply class — let a real instance be created
@@ -372,9 +377,17 @@ class TestSprint24ReviewService:
         from app.engines.customer_reviews.constants import ERR_REVIEW_NOT_FOUND
         svc = self._svc()
         db  = _make_db()
-        with patch.object(svc, "_get_review", AsyncMock(side_effect=ValueError(ERR_REVIEW_NOT_FOUND))):
+        # Slice 2F-24: flag_review now resolves the review through the central
+        # scoped lookup, and a scope is mandatory -- an unscoped call fails
+        # closed with PERMISSION_DENIED before any lookup happens. The call
+        # therefore supplies a customer scope (the customer flag path), and the
+        # double is patched on the new helper. Test intent -- a review that
+        # cannot be resolved raises REVIEW_NOT_FOUND -- is unchanged.
+        with patch.object(svc, "_get_review_scoped",
+                          AsyncMock(side_effect=ValueError(ERR_REVIEW_NOT_FOUND))):
             with pytest.raises(ValueError, match=ERR_REVIEW_NOT_FOUND):
-                await svc.flag_review(db, _uuid(), _uuid(), "customer", "spam")
+                await svc.flag_review(db, _uuid(), _uuid(), "customer", "spam",
+                                      customer_id=_uuid())
 
 
 # ════════════════════════════════════════════════════════════════════════════════

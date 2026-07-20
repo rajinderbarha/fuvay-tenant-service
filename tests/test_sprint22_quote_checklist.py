@@ -571,12 +571,16 @@ class TestChecklists:
         from app.engines.quote_checklist.checklist_service import ServiceChecklistService
         svc = ServiceChecklistService()
         cl = _mock_checklist()
+        job = MagicMock(tenant_id=TENANT_ID)
         db = MagicMock()
         db.flush  = AsyncMock()
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
         db.add    = MagicMock()
-        db.execute = AsyncMock(return_value=_scalars_result([]))
+        # Slice 2F-16: create_checklist now looks up and validates the parent
+        # Job (tenant ownership) before creating the checklist -- 1st execute
+        # is that job lookup.
+        db.execute = AsyncMock(side_effect=[_scalars_result([job]), _scalars_result([])])
         result = await svc.create_checklist(
             db, str(JOB_ID), str(BOOKING_ID), str(TENANT_ID),
             "inspection", None, str(USER_ID), None,

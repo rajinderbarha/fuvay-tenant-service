@@ -3,11 +3,12 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_mutation_access_scope
 from app.core.security import get_client_ip
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.compliance.service import ComplianceService
+from app.exceptions import ServiceOSException
 from app.schemas.base import ApiResponse, ok
 
 logger = structlog.get_logger("compliance.router")
@@ -94,11 +95,20 @@ async def withdraw_consent(r: Request,
              status_code=status.HTTP_201_CREATED,
              response_model=ApiResponse[dict])
 async def request_deletion(r: Request,
-                            u: UserContext = Depends(get_current_user),
+                            u: UserContext = Depends(require_mutation_access_scope),
                             s: ComplianceService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
+    # Slice 2F-37: user_id was fully client-supplied with no comparison to
+    # the caller's own identity, letting any authenticated user request
+    # erasure of another user's data. Self-service only, except
+    # super_admin (administrative/on-behalf-of processing).
+    requested_user_id = uuid.UUID(body["user_id"])
+    if u.role != "super_admin" and str(requested_user_id) != str(u.user_id):
+        raise ServiceOSException("PERMISSION_DENIED",
+            "You can only request erasure of your own data.",
+            blocking_rule="compliance_deletion_self_only")
     return ok(await s.request_deletion(
-        uuid.UUID(body["user_id"]),
+        requested_user_id,
         uuid.UUID(body["tenant_id"]) if body.get("tenant_id") else None,
         body.get("request_reason")), _rid(r), ENGINE_ID)
 
@@ -151,11 +161,17 @@ async def get_retention_policies(r: Request,
              status_code=status.HTTP_201_CREATED,
              response_model=ApiResponse[dict])
 async def request_export(r: Request,
-                          u: UserContext = Depends(get_current_user),
+                          u: UserContext = Depends(require_mutation_access_scope),
                           s: ComplianceService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
+    # Slice 2F-37: same self-service ownership fix as request_deletion.
+    requested_user_id = uuid.UUID(body["user_id"])
+    if u.role != "super_admin" and str(requested_user_id) != str(u.user_id):
+        raise ServiceOSException("PERMISSION_DENIED",
+            "You can only request an export of your own data.",
+            blocking_rule="compliance_export_self_only")
     return ok(await s.request_export(
-        uuid.UUID(body["user_id"]),
+        requested_user_id,
         uuid.UUID(body["tenant_id"]) if body.get("tenant_id") else None,
         body.get("data_categories", []),
         body.get("export_format", "json")), _rid(r), ENGINE_ID)

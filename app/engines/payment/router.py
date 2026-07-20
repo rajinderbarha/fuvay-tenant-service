@@ -4,7 +4,7 @@ from decimal import Decimal
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.payment.service import PaymentService
@@ -16,7 +16,8 @@ router = APIRouter(prefix="/v1/payments", tags=["Payment Engine"])
 ENGINE_ID = "payment"
 def _svc(r: Request, db: AsyncSession=Depends(get_db), u: UserContext=Depends(get_current_user)):
     return PaymentService(db=db, request_id=getattr(r.state,"request_id","—"),
-                           actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role)
+                           actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role,
+                           actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 @router.get("/meta", tags=["Engine Registry"])
 async def engine_meta() -> dict:
@@ -88,7 +89,7 @@ async def list_invoices(tenant_id: uuid.UUID, r: Request, limit: int=Query(50,ge
                          s: PaymentService=Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.list_invoices(tenant_id, limit, cursor), _rid(r), ENGINE_ID)
 @router.post("/tenants/{tenant_id}/payout", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
-async def request_payout(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(require_permission(P.TENANT_BILLING_MANAGE)),
+async def request_payout(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_BILLING_MANAGE)),
                           s: PaymentService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.request_payout(tenant_id, Decimal(str(body["amount"])), body.get("bank_account",{})), _rid(r), ENGINE_ID)

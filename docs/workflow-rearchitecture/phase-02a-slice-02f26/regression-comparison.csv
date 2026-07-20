@@ -1,0 +1,7 @@
+metric,true_baseline_2f25a_run2,run_1,run_2,new,resolved,unchanged,verdict
+failing node IDs,7,7,7,0,0,7,IDENTICAL across baseline and both runs
+error node IDs,0,0,0,0,0,0,IDENTICAL
+passed,11460,11503,11503,-,-,-,+43 = 42 new tests + 1 (2f17a assertion widened to a GET-inclusive walk)
+skipped,22,21,21,-,-,-,-1: the 2F-25A docs-guard test now runs (its docs dir exists)
+duration,639.80s,585.72s,565.16s,-,-,-,stable
+CONTAMINATED baseline (discarded),20 failed,-,-,-,-,-,invalidated by my own concurrent CSV write; see environment-test-evidence.md

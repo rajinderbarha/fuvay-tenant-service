@@ -1,0 +1,12 @@
+scenario,expected_behavior,mechanism,test
+Client pre-populates claim during upload,claim field ignored/stripped before persistence,MediaAssetService._strip_claim_key (this slice) -- also structurally impossible today since the live upload route never forwards extra_metadata at all,test_upload_strips_client_supplied_claim_key
+Client changes claim through media update,no generic update route exists to attempt this through,claim-writer-audit.csv confirms no writer besides upload (create) and replace_asset (carry-forward) touches metadata_json,n/a -- structurally absent, confirmed by audit not by a negative test (there is no route to test against)
+Client deletes claim,no delete-claim capability exists anywhere,same as above,n/a -- structurally absent
+Client replaces Thread A with Thread B (attach-time),rejected,chat_service._validate_attachments's claimed_thread_id != thread.id check (2F-18C, re-verified with FOR UPDATE this slice),test_cross_job_reuse_within_same_customer_rejected (2F-18C, re-passing this slice)
+Client submits malformed claim (attach-time -- not directly possible via client input, but a corrupted DB row is simulated),fails closed,non-dict metadata_json / non-UUID claim value both raise before persistence (this slice),test_non_dict_metadata_json_fails_closed / test_malformed_claim_value_fails_closed
+Client submits cross-tenant thread claim,rejected,validate_thread_access's tenant-match branch denies (2F-18A, unchanged) -- the claimed thread's tenant must match to even resolve at retrieval time,covered by 2F-18C's retrieval-time thread-authority tests
+Worker metadata update after claim,not applicable -- no worker writer exists,claim-writer-audit.csv,n/a -- structurally absent
+Admin metadata update after claim,not applicable -- no admin metadata-update route exists,claim-writer-audit.csv,n/a -- structurally absent
+Repeated same-thread claim,idempotent -- explicitly allowed,chat_service's claim-application pass only writes when chat_thread_id is None; a matching existing claim is a no-op success,test_reuse_within_same_thread_allowed (2F-18C, re-passing this slice)
+Repeated different-thread claim,fails,same mechanism as "Client replaces Thread A with Thread B" above,test_cross_job_reuse_within_same_customer_rejected
+Replace_asset attempting to swap a claimed chat_attachment's content without thread authority,rejected,MediaAssetService.replace_asset now requires _assert_chat_thread_authority for chat_attachment context (this slice),test_replace_asset_requires_thread_authority_for_claimed_chat_asset

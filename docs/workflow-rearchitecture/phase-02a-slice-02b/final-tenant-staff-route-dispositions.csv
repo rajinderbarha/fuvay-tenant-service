@@ -1,0 +1,38 @@
+app,route,disposition,change_this_slice,verification
+tenant-portal,/dashboard,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/jobs,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/service-jobs,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/service-jobs/[id],CONTEXTUAL_ROUTE,none,SOURCE_VERIFIED
+tenant-portal,/service-jobs/[id]/execution,CONTEXTUAL_ROUTE,Breadcrumb now shows real job number + "Inspection and Quote" step name instead of generic static entry,RUNTIME_VERIFIED (code inspection of new useBreadcrumbOverride call)
+tenant-portal,/service-jobs/[id]/quotes,CONTEXTUAL_ROUTE,none,SOURCE_VERIFIED
+tenant-portal,/bookings,PRIMARY_NAVIGATION,none - kept per Phase 1A reversal (confirmed active use),SOURCE_VERIFIED
+tenant-portal,/appointments,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/staff,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/provider/service-areas,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/finance,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/customers,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/reviews,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/provider/reviews,HIDDEN_BUT_SUPPORTED,none - confirmed zero referrers,SOURCE_VERIFIED
+tenant-portal,/marketing,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/provider/marketing,HIDDEN_BUT_SUPPORTED,none this slice (widget referrer fixed in Slice 2),SOURCE_VERIFIED
+tenant-portal,/chat,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/provider/chat,HIDDEN_BUT_SUPPORTED,none - confirmed zero referrers,SOURCE_VERIFIED
+tenant-portal,/analytics,SECONDARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/reports,SECONDARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/insights,SECONDARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/documents,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/settings,PRIMARY_NAVIGATION,none,SOURCE_VERIFIED
+tenant-portal,/staff/dashboard,PRIMARY_NAVIGATION,Breadcrumb added ("Today"),RUNTIME_VERIFIED
+tenant-portal,/staff/my-work,PRIMARY_NAVIGATION,Breadcrumb added ("My Work"); badge unchanged from Slice 2,RUNTIME_VERIFIED
+tenant-portal,/staff/jobs,PRIMARY_NAVIGATION,Breadcrumb added ("My Jobs"),RUNTIME_VERIFIED
+tenant-portal,/staff/jobs/[job_id],CONTEXTUAL_ROUTE,Breadcrumb added with real job number ("My Jobs > {job_number}"),RUNTIME_VERIFIED
+tenant-portal,/staff/home-services/jobs,HIDDEN_BUT_SUPPORTED,none - confirmed duplicate, not consolidated this slice,SOURCE_VERIFIED (unchanged from Slice 1 finding)
+tenant-portal,/staff/profile,PRIMARY_NAVIGATION,Breadcrumb added,RUNTIME_VERIFIED
+tenant-portal,/staff/skills,DETAIL_TAB (contextual to Profile),Breadcrumb added ("Profile > Skills & Services"),RUNTIME_VERIFIED
+tenant-portal,/staff/service-areas,DETAIL_TAB (contextual to Profile),Breadcrumb added,RUNTIME_VERIFIED
+tenant-portal,/staff/availability,DETAIL_TAB (contextual to Profile),Breadcrumb added,RUNTIME_VERIFIED
+tenant-portal,/staff/chat,PRIMARY_NAVIGATION,Breadcrumb added ("Messages"),RUNTIME_VERIFIED
+tenant-portal,/staff/documents,ADVANCED_SETTINGS,Breadcrumb added,RUNTIME_VERIFIED
+tenant-portal,/staff/notifications,PRIMARY_NAVIGATION,Breadcrumb added,RUNTIME_VERIFIED
+tenant-portal,/staff/activity,ADVANCED_SETTINGS,Breadcrumb added,RUNTIME_VERIFIED
+tenant-portal,/staff/security/sessions,ADVANCED_SETTINGS,Breadcrumb added,RUNTIME_VERIFIED

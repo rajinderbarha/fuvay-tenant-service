@@ -1,0 +1,11 @@
+scenario,provably_authorized,classification,test
+Customer A claims own asset into Thread A1 (Customer A's own thread),YES,CUSTOMER_SELECTS_OWN_THREAD,test_customer_first_claim_own_upload_allowed
+Customer A claims own asset into Thread A2 (also Customer A's own thread),YES (same mechanism -- customer_id match is per-thread, not per-Job),CUSTOMER_SELECTS_OWN_THREAD,covered by same mechanism as above (thread.customer_id gate applies identically regardless of which of the customer's own threads)
+Staff claims a Customer-A-owned asset into Thread A1,YES,OWNER_STAFF_SELECTS_COMPATIBLE_CUSTOMER_THREAD,test_office_staff_first_claim_unaffected_by_technician_rule
+Staff claims a Customer-A-owned asset into Thread A2,YES (same mechanism),OWNER_STAFF_SELECTS_COMPATIBLE_CUSTOMER_THREAD,same as above -- office persona is not Job-scoped
+A1 technician claims OWN upload into Thread A1 (their assigned Job),YES,ASSIGNED_TECHNICIAN_SELECTS_ASSIGNED_JOB_THREAD + UPLOADER_SELECTS_AUTHORIZED_THREAD,test_technician_can_first_claim_own_upload
+A1 technician claims OWN upload into Thread A2 (NOT their assigned Job),NO -- denied before the first-use question is reached,validate_thread_access denies A1 technician access to A2's thread entirely (2F-18A, unchanged),covered by 2F-18A's existing technician-assignment test suite
+A1 technician claims an UNOWNED asset (not their upload) into Thread A1,NO,AMBIGUOUS_CONTEXT_REJECTED (THIS SLICE),test_technician_cannot_first_claim_unowned_asset
+A2 technician claims into Thread A1,NO -- denied before the first-use question is reached,validate_thread_access denies (2F-18A, unchanged),covered by 2F-18A's existing technician-assignment test suite
+Removed participant claims any asset,NO -- denied before the first-use question is reached,validate_thread_access denies removed participants (2F-18A, unchanged),covered by 2F-18A's existing participant-removal test suite
+Unauthorized user races an authorized user for the same asset,at most one different-thread claim succeeds,resolved by the atomic SELECT ... FOR UPDATE lock (THIS SLICE),see atomic-claiming.md

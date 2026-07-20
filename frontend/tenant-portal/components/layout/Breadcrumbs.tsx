@@ -1,8 +1,19 @@
 /**
  * Sprint 34K — Breadcrumbs component for Tenant Portal.
+ *
+ * Phase 2A Slice 2B: added an optional context-based override so a
+ * contextual detail page (e.g. a specific ServiceJob) can inject its real
+ * entity name ("Job SJ-2049") into the breadcrumb trail, reconstructing
+ * correct deep-link context — without every such page needing its own
+ * layout wrapper. TenantLayout renders <Breadcrumbs/> automatically via
+ * app/(tenant)/layout.tsx, so a page several levels below it has no direct
+ * prop channel; this context is that channel, mirroring the existing
+ * AdminMenuRefreshCtx pattern already used in the super-admin app for the
+ * same "page needs to talk up to its auto-mounted shell" problem.
  */
 "use client";
 
+import { createContext, useContext, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { resolveTenantPageMeta } from "../../lib/page-registry";
 
@@ -10,6 +21,26 @@ export interface BreadcrumbItem {
   label: string;
   href?: string;
 }
+
+const BreadcrumbOverrideCtx = createContext<(crumbs: BreadcrumbItem[] | null) => void>(() => {});
+
+/** Call from a contextual detail page (inside TenantLayout's children) to
+ * override the auto-resolved breadcrumb with one that includes the real
+ * record — e.g. `useBreadcrumbOverride(job ? [{label:"Jobs",href:"/jobs"},
+ * {label:"Service Job "+job.job_number}] : null)`. Pass `null` to fall back
+ * to the static page-registry resolution (e.g. while the record is still
+ * loading, rather than showing a wrong or empty trail). */
+export function useBreadcrumbOverride(crumbs: BreadcrumbItem[] | null) {
+  const setOverride = useContext(BreadcrumbOverrideCtx);
+  const key = crumbs ? JSON.stringify(crumbs) : null;
+  useEffect(() => {
+    setOverride(crumbs);
+    return () => setOverride(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+}
+
+export { BreadcrumbOverrideCtx };
 
 interface BreadcrumbsProps {
   crumbs?: BreadcrumbItem[];

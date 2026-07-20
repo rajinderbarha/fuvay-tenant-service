@@ -13,11 +13,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, update, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import require_tenant_owner, get_current_user, UserContext
+from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
-from app.core.permissions import P, require_tenant_mutation_permission
+from app.core.permissions import P, require_tenant_mutation_permission, require_tenant_owner_mutation
 
 router = APIRouter(prefix="/v1/provider", tags=["Provider Portal"])
 
@@ -91,7 +91,7 @@ async def create_team_member(
     payload: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -150,7 +150,7 @@ async def update_team_member(
     payload: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -165,8 +165,12 @@ async def update_team_member(
     params["tid"] = str(tid)
     await db.execute(text(f"UPDATE provider_team_members SET {sets}, updated_at=now() WHERE id=:id AND tenant_id=:tid"), params)
     await db.commit()
-    row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id"), {"id": str(member_id)})
-    return ok(dict(row.fetchone()._mapping), request_id=rid)
+    row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
+                            {"id": str(member_id), "tid": str(tid)})
+    fetched = row.fetchone()
+    if fetched is None:
+        raise HTTPException(404, "Team member not found")
+    return ok(dict(fetched._mapping), request_id=rid)
 
 
 @router.delete("/team-members/{member_id}")
@@ -174,7 +178,7 @@ async def delete_team_member(
     member_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -190,35 +194,76 @@ async def delete_team_member(
 async def activate_team_member(
     member_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     await db.execute(text("UPDATE provider_team_members SET status='active', updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(member_id), "tid": str(tid)})
     await db.commit()
-    row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id"), {"id": str(member_id)})
-    return ok(dict(row.fetchone()._mapping), request_id=rid)
+    row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
+                            {"id": str(member_id), "tid": str(tid)})
+    fetched = row.fetchone()
+    if fetched is None:
+        raise HTTPException(404, "Team member not found")
+    return ok(dict(fetched._mapping), request_id=rid)
 
 
 @router.post("/team-members/{member_id}/deactivate")
 async def deactivate_team_member(
     member_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
+    member_row = await db.execute(
+        text("SELECT user_id FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
+        {"id": str(member_id), "tid": str(tid)}
+    )
+    member = member_row.fetchone()
+    if member is None:
+        raise HTTPException(404, "Team member not found")
     await db.execute(text("UPDATE provider_team_members SET status='inactive', updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(member_id), "tid": str(tid)})
+    if member.user_id:
+        # Slice 2F-2, Workstream 6: a deactivated team member's linked login
+        # (provider_team_members.user_id) must have its sessions revoked --
+        # the same DB+Redis pattern proven for AuthService.deactivate_staff
+        # in Slice 2F/2F-1. Without this, an already-issued JWT for the
+        # deactivated member keeps authenticating until natural expiry.
+        from app.engines.auth.models import UserSession
+        from app.engines.auth.constants import ACCESS_TOKEN_EXPIRE_MINUTES
+        from app.redis_client import get_redis
+        from app.models.base import utcnow
+        active_sessions = await db.execute(
+            select(UserSession.id).where(UserSession.user_id == member.user_id, UserSession.revoked_at.is_(None))
+        )
+        session_ids = [row[0] for row in active_sessions]
+        if session_ids:
+            await db.execute(
+                update(UserSession).where(
+                    UserSession.user_id == member.user_id, UserSession.revoked_at.is_(None)
+                ).values(revoked_at=utcnow(), revocation_reason="team_member_deactivated")
+            )
+            redis = get_redis()
+            for sid in session_ids:
+                try:
+                    await redis.setex(f"serviceos:session:revoked:{sid}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, "1")
+                except Exception:
+                    pass
     await db.commit()
-    row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id"), {"id": str(member_id)})
-    return ok(dict(row.fetchone()._mapping), request_id=rid)
+    row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
+                            {"id": str(member_id), "tid": str(tid)})
+    fetched = row.fetchone()
+    if fetched is None:
+        raise HTTPException(404, "Team member not found")
+    return ok(dict(fetched._mapping), request_id=rid)
 
 
 @router.post("/team-members/{member_id}/create-login")
 async def create_member_login(
     member_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     return ok({"member_id": str(member_id), "credentials": None}, request_id=rid)
@@ -246,7 +291,7 @@ async def list_availability(
 async def create_availability(
     payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -304,7 +349,7 @@ async def get_availability(
 async def update_availability(
     rule_id: uuid.UUID, payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -332,15 +377,19 @@ async def update_availability(
         params["tid"] = str(tid)
         await db.execute(text(f"UPDATE provider_availability_rules SET {sets}, updated_at=now() WHERE id=:id AND tenant_id=:tid"), params)
         await db.commit()
-    row = await db.execute(text("SELECT * FROM provider_availability_rules WHERE id=:id"), {"id": str(rule_id)})
-    return ok(dict(row.fetchone()._mapping), request_id=rid)
+    row = await db.execute(text("SELECT * FROM provider_availability_rules WHERE id=:id AND tenant_id=:tid"),
+                            {"id": str(rule_id), "tid": str(tid)})
+    fetched = row.fetchone()
+    if fetched is None:
+        raise HTTPException(404, "Availability rule not found")
+    return ok(dict(fetched._mapping), request_id=rid)
 
 
 @router.delete("/availability/{rule_id}")
 async def delete_availability(
     rule_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -395,7 +444,7 @@ def _validate_exception_payload(payload: dict) -> None:
 async def create_availability_exception(
     payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -424,7 +473,7 @@ async def create_availability_exception(
 async def update_availability_exception(
     exception_id: uuid.UUID, payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -457,7 +506,7 @@ async def update_availability_exception(
 async def delete_availability_exception(
     exception_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -506,7 +555,7 @@ def _validate_booking_window(payload: dict) -> None:
 async def update_booking_window(
     payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -643,7 +692,7 @@ _PRESET_DEFS: dict[str, dict] = {
 async def apply_availability_preset(
     preset_key: str, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     """Idempotent preset apply — deletes any existing matching rules first, then
     creates one rule per day.  Safe to call multiple times without duplicates."""
@@ -691,7 +740,7 @@ async def apply_availability_preset(
 async def delete_availability_preset(
     preset_key: str, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     """Delete all rules that match the given preset pattern for this tenant."""
     tid = _tid(user)
@@ -794,7 +843,7 @@ async def list_enabled_offerings(
 async def enable_offering(
     payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -835,7 +884,7 @@ async def get_enabled_offering(
 async def update_enabled_offering(
     offering_id: uuid.UUID, payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
@@ -848,50 +897,62 @@ async def update_enabled_offering(
         params.update({"id": str(offering_id), "tid": str(tid)})
         await db.execute(text(f"UPDATE provider_enabled_offerings SET {sets}, updated_at=now() WHERE id=:id AND tenant_id=:tid"), params)
         await db.commit()
-    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id"), {"id": str(offering_id)})
-    return ok(dict(row.fetchone()._mapping), request_id=rid)
+    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
+    fetched = row.fetchone()
+    if fetched is None:
+        raise HTTPException(404, "Offering not found")
+    return ok(dict(fetched._mapping), request_id=rid)
 
 
 @router.post("/offerings/enabled/{offering_id}/activate")
 async def activate_offering(
     offering_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     await db.execute(text("UPDATE provider_enabled_offerings SET is_enabled=true, is_active=true, status='active', updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
     await db.commit()
-    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id"), {"id": str(offering_id)})
-    return ok(dict(row.fetchone()._mapping), request_id=rid)
+    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
+    fetched = row.fetchone()
+    if fetched is None:
+        raise HTTPException(404, "Offering not found")
+    return ok(dict(fetched._mapping), request_id=rid)
 
 
 @router.post("/offerings/enabled/{offering_id}/deactivate")
 async def deactivate_offering(
     offering_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     await db.execute(text("UPDATE provider_enabled_offerings SET is_enabled=false, is_active=false, status='inactive', updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
     await db.commit()
-    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id"), {"id": str(offering_id)})
-    return ok(dict(row.fetchone()._mapping), request_id=rid)
+    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
+    fetched = row.fetchone()
+    if fetched is None:
+        raise HTTPException(404, "Offering not found")
+    return ok(dict(fetched._mapping), request_id=rid)
 
 
 @router.post("/offerings/enabled/{offering_id}/refresh-readiness")
 async def refresh_offering_readiness(
     offering_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     await db.execute(text("UPDATE provider_enabled_offerings SET readiness_status='pending', updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
     await db.commit()
-    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id"), {"id": str(offering_id)})
-    return ok(dict(row.fetchone()._mapping), request_id=rid)
+    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
+    fetched = row.fetchone()
+    if fetched is None:
+        raise HTTPException(404, "Offering not found")
+    return ok(dict(fetched._mapping), request_id=rid)
 
 
 # ── Provider Status (Sprint 12) ────────────────────────────────────────────────
@@ -1076,7 +1137,7 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
 async def refresh_provider_status(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     """HS4B fix — real computation replacing the previous no-op stub.
     Computes bookability/visibility from real tenant setup data and
@@ -1357,7 +1418,7 @@ async def get_onboarding_items(
 async def refresh_onboarding(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     return ok({"refreshed": True}, request_id=rid)

@@ -1,0 +1,21 @@
+method,path,endpoint,repository_boundary,reason_for_exclusion
+POST,/v1/provider/brands/requests,create_brand_request,app.engines.admin_catalog.brand_provider_router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/provider/brands/services/{service_id}/supported,set_supported_brands,app.engines.admin_catalog.brand_provider_router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+PUT,/v1/provider/business-profile,update_business_profile,app.engines.profile.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/provider/business-profile/submit-review,submit_business_profile_for_review,app.engines.profile.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+PUT,/v1/staff/profile,update_staff_profile,app.engines.profile.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+PUT,/v1/me/profile,update_my_profile,app.engines.profile.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+PUT,/v1/provider/marketing/assets/{asset_id}/provider-notes,update_asset_provider_notes,app.engines.marketing_automation.provider_router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/provider/marketing/campaigns/generate-launch,generate_launch_campaign,app.engines.marketing_automation.provider_router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/provider/marketing/campaigns/{campaign_id}/submit-review,submit_campaign_review,app.engines.marketing_automation.provider_router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/provider/reports/run,provider_run_report,app.engines.analytics.provider_router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/provider/setup/recommendations,provider_setup_recommendations,app.engines.admin_catalog.recommendation_router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/provider/setup/services/{service_id}/supported-options,set_supported_options,app.engines.admin_catalog.service_option_provider_router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/rag/query,query,app.engines.rag.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/enterprise/saved-views,create_saved_view,app.engines.enterprise_grid.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+PUT,/v1/enterprise/saved-views/{view_id},update_saved_view,app.engines.enterprise_grid.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+DELETE,/v1/enterprise/saved-views/{view_id},delete_saved_view,app.engines.enterprise_grid.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/enterprise/saved-views/{view_id}/set-default,set_default_view,app.engines.enterprise_grid.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+PUT,/v1/enterprise/column-preferences,save_column_preferences,app.engines.enterprise_grid.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/enterprise/exports,create_export,app.engines.enterprise_grid.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+DELETE,/v1/webhooks/endpoints/{endpoint_id},delete_endpoint,app.engines.webhook.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope

@@ -1,0 +1,13 @@
+service_method,requires_tenant_context,db_scoped_by_tenant,trusts_request_dto,fails_closed,evidence
+AuthService.revoke_api_key,yes,yes,no,yes,ApiKey.tenant_id == tenant_id in WHERE
+AuthService.update_api_key,yes,yes,no,yes,ApiKey.tenant_id == tenant_id in WHERE
+AuthService.create_api_key,yes,yes,no,yes,tenant_id/created_by are parameters from token
+AuthService.update_permissions,yes,yes,no,yes,user.tenant_id != tenant_id -> NotFound
+AuthService.deactivate_staff,yes,yes,no,yes,user.tenant_id != tenant_id -> NotFound
+AuthService.invite_staff,yes,yes,no,yes,tenant_id parameter from token
+AuthService.impersonate,no (platform),yes,no,yes,super_admin enforced; target resolved server-side
+AuthService.update_profile,n/a (self-scoped),scoped to passed user_id,no,yes,"user_id comes from the token, never the body"
+AuthService.change_password,n/a (self-scoped),scoped to passed user_id,no,yes,"user_id comes from the token, never the body"
+AuthService.change_password_required,n/a (self-scoped),scoped to passed user_id,no,yes,"user_id comes from the token, never the body"
+AuthService.confirm_mfa,n/a (self-scoped),scoped to passed user_id,no,yes,"user_id comes from the token, never the body"
+AuthService.disable_mfa,n/a (self-scoped),scoped to passed user_id,no,yes,"user_id comes from the token, never the body"

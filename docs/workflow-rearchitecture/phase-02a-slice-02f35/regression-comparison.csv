@@ -1,0 +1,10 @@
+category,baseline_2f34,final_2f35,delta,detail
+collected_total,2344,2378,+34,all from tests/test_phase2f35_critical_authorization_batch.py (new file)
+added_node_ids,0,34,+34,TestScopeGuardsLive(1);TestWebhookTenantAuthority(3);TestRagTenantAuthority(7);TestSecurityTenantAuthority(4);TestDocumentTenantAuthority(5);TestNonOracularResponses(2);TestNoBypassOfClosedRoutes(4);TestSetBAdjudication(2);TestCanonicalClosure(3);TestM01N01GeoNonRegression(3)
+removed_node_ids,0,0,0,none
+renamed_node_ids,0,0,0,none
+rebaselined_assertions,n/a,18,n/a,pre-existing historical test files whose inline live-canonical-CSV literals (264/241/23) were updated in place to (273/252/21); see documentation-corrections.md
+passed,2344,2378,+34,
+failed,0,0,0,
+errors,0,0,0,
+environmental_exclusions,0,0,0,none

@@ -163,8 +163,9 @@ async def test_convert_to_job_uses_catalog_job_type_when_present():
     )
     no_job_result = MagicMock(); no_job_result.scalar_one_or_none.return_value = None
     booking_result = MagicMock(); booking_result.scalar_one_or_none.return_value = booking
+    creator_result = MagicMock(); creator_result.scalar_one_or_none.return_value = "customer"
     db = make_db()
-    db.execute = AsyncMock(side_effect=[booking_result, no_job_result])
+    db.execute = AsyncMock(side_effect=[booking_result, no_job_result, creator_result])
 
     # Capture objects added to db
     added_objects = []
@@ -218,8 +219,9 @@ async def test_convert_to_job_falls_back_gracefully_with_no_catalog_entry():
     )
     no_job_result = MagicMock(); no_job_result.scalar_one_or_none.return_value = None
     booking_result = MagicMock(); booking_result.scalar_one_or_none.return_value = booking
+    creator_result = MagicMock(); creator_result.scalar_one_or_none.return_value = "customer"
     db = make_db()
-    db.execute = AsyncMock(side_effect=[booking_result, no_job_result])
+    db.execute = AsyncMock(side_effect=[booking_result, no_job_result, creator_result])
 
     added_objects = []
     db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))

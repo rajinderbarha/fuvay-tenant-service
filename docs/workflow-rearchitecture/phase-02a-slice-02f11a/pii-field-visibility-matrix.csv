@@ -1,0 +1,14 @@
+field,source_model,visibility_classification,enforcement_mechanism
+customer_snapshot,RealEstateLead,CUSTOMER_SELF_VISIBLE + TENANT_OWNER_VISIBLE + CANONICAL_STAFF_VISIBLE,customer_tracking's customer_id filter (customer side) / no route exposes raw lead.to_dict() to staff in this router (staff only see timeline/notes, not the lead snapshot itself)
+requirement_snapshot,RealEstateLead,same as customer_snapshot,same
+budget_min/budget_max/rent_min/rent_max,RealEstateLead,same as customer_snapshot,same
+city/locality/zipcode/property_type,RealEstateLead,same as customer_snapshot,same
+agent_id,RealEstateLead,TENANT_OWNER_VISIBLE + CANONICAL_STAFF_VISIBLE,not returned by any read route's to_dict() in this router except indirectly via RealEstateLeadExecutionEvent.assigned_agent_id (not included in its to_dict() either -- confirmed absent)
+status,RealEstateLead / RealEstateLeadExecutionEvent,TENANT_OWNER_VISIBLE + CANONICAL_STAFF_VISIBLE + CUSTOMER_SELF_VISIBLE,returned in lead.to_dict() (customer) and old_status/new_status in event.to_dict() (staff)
+note_text,RealEstateLeadNote,TENANT_OWNER_VISIBLE + CANONICAL_STAFF_VISIBLE + CUSTOMER_SELF_VISIBLE (only if is_customer_visible),get_notes(customer_only=True) filters for the customer path; provider_notes returns all notes for the tenant (correct, business-side read)
+is_customer_visible,RealEstateLeadNote,PROVIDER_INTERNAL (the flag itself; not shown to customer, only used to filter),returned in provider_notes'/admin's to_dict(), not returned to customer (customer only ever receives already-filtered notes, never the flag's raw value in a way that would reveal internal notes exist)
+event_type/old_status/new_status,RealEstateLeadExecutionEvent,TENANT_OWNER_VISIBLE + CANONICAL_STAFF_VISIBLE + PLATFORM_ONLY (admin),never returned to customer (customer_tracking never calls get_timeline at all)
+notes (execution event notes field),RealEstateLeadExecutionEvent,TENANT_OWNER_VISIBLE + CANONICAL_STAFF_VISIBLE,free-text staff commentary; not returned to customer
+actor_role,RealEstateLeadExecutionEvent,TENANT_OWNER_VISIBLE + CANONICAL_STAFF_VISIBLE,hardcoded "agent" for all events in this module; not customer-visible
+created_by_user_id,RealEstateLeadNote,MUST_BE_REDACTED (from responses) -- confirmed already absent from to_dict(),RealEstateLeadNote.to_dict() does not include this field at all
+customer_id/tenant_id (raw UUIDs),RealEstateLead,TENANT_OWNER_VISIBLE + CANONICAL_STAFF_VISIBLE + CUSTOMER_SELF_VISIBLE (own IDs only),returned in lead.to_dict() -- IDs, not sensitive contact info, acceptable for the record's own owner/tenant

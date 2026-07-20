@@ -1,0 +1,9 @@
+service,method,alternate_callers_found,finding
+ChatService,send_message,none,"only called from app/engines/chat/router.py's own send_message handler"
+InventoryService,"create_item, receive_stock, create_reservation, confirm_reservation, release_reservation",none (same-named methods exist in ServiceCatalogService and CommerceService -- distinct classes, resolved by qualified-name inspection),no bypass
+AppointmentService,"confirm_hold, cancel_appointment, reschedule_appointment, mark_no_show, block_calendar_time, unblock_calendar_time, set_working_hours",none (execution.coaching_router has same-named but distinct methods on a different service),no bypass
+ServiceCatalogService,"create_item, update_item",none,no bypass
+DispatchService,"dispatch_job, reassign_job",none,no bypass
+DSService,"trigger_recompute, apply_pricing_recommendation, get_customer_ltv, recompute_ltv",none (field_ops internal caller uses update_staff_signal only),no bypass
+SettingsService,"set_tenant_setting, delete_tenant_setting",none (booking/dispatch internal callers use resolve() only),no bypass
+NotificationService,set_channel_config,none (platform_notifications.NotificationService is a distinct class),no bypass

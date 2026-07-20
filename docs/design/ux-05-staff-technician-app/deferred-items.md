@@ -91,7 +91,43 @@
 - Still not built at all: ~23 of the original ~30 showcase-screen targets, most a11y/theme/localization work,
   session-expired/tenant-suspended dedicated screens (only referenced conceptually in the offline showcase).
 
-## Why the cut was made here, not elsewhere (Round 3)
+**Round 4 (this update, likely final for now):**
+32. **Chromium/Playwright runtime blocker resolved** — switched to the WSL Debian root user (needs no sudo),
+    installed Chromium's system deps successfully, and ran a real headless-browser smoke check. Found and fixed
+    a genuine, previously-undetected bug (`react`/`react-dom` version mismatch causing a real page error) —
+    exactly the kind of defect no other verification layer (typecheck, unit tests) in this project could catch.
+    Re-confirmed zero errors after the fix, in both light and dark browser color schemes, and again after this
+    round's further changes. See `runtime-test-report.md`.
+33. **Real accessibility pass** (not a plan): fixed 4 sub-44pt touch targets (`Button` "sm", `AddressCard`,
+    `CustomerContactCard`, `JobNoteComposer` action buttons), added `accessibilityRole`/`accessibilityLabel` to
+    8 components, improved `NotificationCard`'s unread-status to be conveyed beyond color alone, hid
+    `PermissionRestrictedState`'s decorative icon from screen readers. See `accessibility-report.md`.
+34. **Real theme pass**: found and fixed 2 hardcoded `#fff` color literals (should have used
+    `theme.colors.textInverse`) in `JobNoteComposer`/`NextActionBar`. Confirmed via grep that every other
+    UX-05-authored file already uses theme tokens exclusively. **Honest finding**: this app has no dark theme
+    at all (verified — `theme.ts` is a single fixed palette, zero `useColorScheme`/`Appearance` usage anywhere)
+    — this predates UX-05 and is a real, separate, sizable future workstream, not something "spot-checked" into
+    existence. See `light-dark-theme-report.md`.
+35. **`NetworkStatusBanner` wired into production** — new `useNetworkStatus` hook (real on Expo web via
+    `navigator.onLine`/online-offline events, honestly documented as always-online on native until a NetInfo
+    dependency is added) mounted once in `AppNavigator` above every screen, not just shown in the dev showcase.
+36. **1 more dev showcase**: `SystemStatesShowcaseScreen` (Session Expired, Tenant Suspended, Read-only,
+    Restricted) — 8 of ~30 original showcase targets now built.
+37. Fresh re-verification at the end of Round 4: `npx jest` (35/35) and `npx tsc --noEmit` (19 errors, unchanged
+    pre-existing pattern, zero new errors from this round's changes) both re-run from a clean sync.
+38. 4 more documentation files this round (`accessibility-report.md`, `light-dark-theme-report.md`,
+    `runtime-test-report.md`, plus updates to `execution-environment.md`/`staff-technician-build-report.md`).
+
+## Why the cut was made here, not elsewhere (Round 4)
+Followed the coordinator's priority order exactly: finish the in-progress theme-fix work first (don't lose
+uncommitted changes), unblock Chromium via the root user (the single highest-value remaining verification gap,
+and it paid off immediately by catching a real bug), do a real accessibility/theme pass rather than more
+documentation, wire the one component that had been "built but not connected to anything real"
+(`NetworkStatusBanner`), and add one more showcase for breadth. This remains a partial delivery, and per the
+coordinator's framing this is intended as the last round for now — see `known-limitations.md` and
+`approval-gate.md` for the honest final accounting for a potential future UX-05B pass.
+
+## Why the cut was made here, not elsewhere (Round 3, historical)
 Followed the coordinator's explicit priority order: close the two flagged "logic built but not wired" gaps first
 (Home, My Work) since those are the screens a real technician actually opens most; build Current Job mode next
 since it was the most-requested missing screen; cover Quote/Availability/Profile since they were fully

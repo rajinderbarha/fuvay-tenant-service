@@ -1,0 +1,8 @@
+guard_status,count,classification,note
+TENANT_MUTATION_PERMISSION_SCOPE_AWARE,(see canonical CSV),FULLY_PROTECTED,permission + access-scope aware
+TENANT_MUTATION_ROLE_SCOPE_AWARE,(see canonical CSV),FULLY_PROTECTED,role + access-scope aware
+STAFF_EXECUTION_ROLE_SCOPE_AWARE,(see canonical CSV),FULLY_PROTECTED,staff execution surface
+PERMISSION_ONLY_NOT_SCOPE_AWARE,(see canonical CSV),PERMISSION_WITHOUT_MUTATION_SCOPE,permission held; read-only access_scope not denied
+ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,(see canonical CSV),ROLE_ONLY,role checked; scope not
+AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,(see canonical CSV),AUTHENTICATION_ONLY,bare get_current_user
+UNKNOWN_PROTECTION / UNVERIFIED,0,FORBIDDEN AT CLOSURE,verifier fails if any row carries these

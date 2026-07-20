@@ -19,10 +19,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "master_data_audit_log",
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True, server_default=sa.text("now()")),
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_columns = {col["name"] for col in inspector.get_columns("master_data_audit_log")}
+    if "updated_at" not in existing_columns:
+        op.add_column(
+            "master_data_audit_log",
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True, server_default=sa.text("now()")),
+        )
 
 
 def downgrade() -> None:

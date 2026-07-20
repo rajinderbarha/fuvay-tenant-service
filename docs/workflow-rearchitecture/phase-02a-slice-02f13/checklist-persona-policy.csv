@@ -1,0 +1,6 @@
+capability,tenant_owner,canonical_staff,technician,customer,super_admin,classification,evidence
+Template create/update/delete,allowed (has FIELD_OPS_CHECKLIST_MANAGE),denied by default (needs StaffPermission override) -- and if granted now tenant-scoped by the IDOR fix,denied (no permission),denied (no permission),allowed (P.ALL),TENANT_OWNER_ONLY (default),ROLE_PERMISSIONS: FIELD_OPS_CHECKLIST_MANAGE only in tenant_owner bundle
+Template item add/update/delete,allowed,denied by default (override-only, tenant-scoped),denied,denied,allowed,TENANT_OWNER_ONLY (default),same permission gate
+Template reads (list/get/items),allowed,denied by default (override-only, tenant-scoped -- list_items now ownership-checked),denied,denied,allowed,TENANT_OWNER_ONLY (default) -- read,require_permission (reads not scope-blocked)
+Read-only tenant_owner (customer_support_limited) mutation,DENIED (fixed this slice),DENIED,DENIED,DENIED,n/a (super_admin scope-exempt),n/a,require_tenant_mutation_permission access-scope deny
+Job checklist execution / verification / customer decision,UNSUPPORTED in this router,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED_CAPABILITY,lives in field_ops.service.py/staff_router (out of scope)

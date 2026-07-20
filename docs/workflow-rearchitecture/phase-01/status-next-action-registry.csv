@@ -1,0 +1,20 @@
+record_type,current_status,user_facing_status,blocking_issue,responsible_role,recommended_next_action,available_actions,sla_state,required_permission,destination_workspace,confirmation_required,verification
+Tenant,pending_review,Under Review,awaiting document/profile completeness,tenant_owner,complete profile/documents,edit profile; submit documents,none,tenant self,Business Onboarding wizard,no,SOURCE_VERIFIED
+Tenant,pending_review,Awaiting Admin Approval,awaiting admin decision,super_admin,review and decide,approve; request changes; reject,SOURCE_INFERRED - no deadline field confirmed,require_permission(tenant approve),Business Approval workspace,yes,SOURCE_INFERRED
+Tenant,verified,Approved - Activation Pending,package/deposit not yet set,tenant_owner,select package,select package; pay deposit,none,tenant self,Finance > Package,no,SOURCE_VERIFIED
+Tenant,active,Active,none,-,-,view,none,-,Dashboard,no,SOURCE_VERIFIED
+Tenant,suspended,Suspended,admin action or policy violation,super_admin,review and reactivate,reactivate; terminate,none,require_super_admin,Business detail,yes,SOURCE_VERIFIED
+ServiceJob,draft,Booking In Progress,customer has not confirmed,customer,complete booking form,confirm; cancel,none,customer self,Booking flow,no,SOURCE_VERIFIED
+ServiceJob,matched/assigned,Provider Assigned,none,technician,start job,on-the-way,none,technician self,My Jobs,no,RUNTIME_VERIFIED
+ServiceJob,(no match found),Finding a Provider,no provider matched,super_admin/tenant_owner,expand area or retry matching,retry matching; expand area; contact customer,SLA-at-risk if pending too long,require_permission(ops),Booking Exception workspace,no,SOURCE_INFERRED
+ServiceJob,on_the_way,Technician En Route,none,technician,arrive,mark arrived,none,technician self,My Jobs,no,SOURCE_VERIFIED
+ServiceJob,inspection,Inspecting,none,technician,complete inspection or flag quote,complete inspection; flag parts/quote,none,technician self,Inspection,no,SOURCE_VERIFIED
+ServiceJob,quote_required,Awaiting Customer Approval,customer has not approved additional cost,customer,approve/reject quote,approve; reject; request revision,SOURCE_INFERRED,customer self,Quote Decision,yes,RUNTIME_VERIFIED
+ServiceJob,in_progress,Work In Progress,none,technician,complete work,mark work done,none,technician self,My Jobs,no,SOURCE_VERIFIED
+ServiceJob,completed,Completed,none,customer,review,leave review; view invoice,none,customer self,My Bookings,no,RUNTIME_VERIFIED
+Complaint,open,New Complaint,awaiting admin/provider response,super_admin/tenant_owner,propose resolution,propose; escalate,SLA loop active (L5-02),require_permission(complaints),Complaint workspace,yes,RUNTIME_VERIFIED
+Complaint,proposed,Awaiting Customer Decision,customer has not responded,customer,accept/reject proposal,accept; reject,SLA loop active,customer self,Complaint detail,yes,RUNTIME_VERIFIED
+Complaint,resolved/rejected,Closed,none,-,-,view,none,-,Complaint detail,no,SOURCE_VERIFIED
+UsageCreditLedger,balance_low,Low Credit Balance,tenant matching may be restricted,tenant_owner,top up credits,top up,SOURCE_VERIFIED (HS9 low-credit policy),tenant self,Finance > Usage Credits,no,RUNTIME_VERIFIED
+TenantPackageAssignment,pending,Package Selected - Awaiting Activation,none typically,tenant_owner,await admin/system activation,view,none,tenant self,Finance > Package,no,SOURCE_VERIFIED
+ReworkRequest,requested,Rework Requested,technician not yet scheduled,tenant_owner,schedule rework,schedule; reject,SOURCE_INFERRED,require_permission(complaints),Complaint/Rework workspace,yes,SOURCE_VERIFIED

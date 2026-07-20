@@ -1,0 +1,38 @@
+role,nav_item,disposition,pages_consolidated_in,primary_action,notes
+super_admin,Home,PRIMARY_NAVIGATION,dashboard,view risk summary,unchanged from Phase 1
+super_admin,My Work,PRIMARY_NAVIGATION,new aggregation page,resolve item,new - see my-work-contract.md
+super_admin,Businesses,PRIMARY_NAVIGATION,tenants; tenants/onboarding+onboarding/providers (merged); packages; trust-quality,approve/reject/suspend,onboarding pages merged into one Approval workspace (DETAIL_TAB structure)
+super_admin,Services,PRIMARY_NAVIGATION,verticals; categories; pricing-tiers+location-mapping+pricing/*(tabs); home-services/*(workspace),publish/edit,pricing pages become DETAIL_TAB of one Pricing workspace
+super_admin,Operations,PRIMARY_NAVIGATION,home-services/service-jobs (canonical ServiceJob view); bookings (legacy Booking view - CONFIRMED still actively used, see booking-job-canonical-decision.md); customers; staff; complaints*,reassign/escalate/close,bookings page KEPT not retired - verification pass found active production callers; shown as a labeled secondary tab, not merged, until backend adapter exists
+super_admin,Customers,SECONDARY_NAVIGATION (folded into Operations for now pending volume),customers; reviews (pending review decision),view,kept distinct only if customer volume warrants separate nav later
+super_admin,Finance,PRIMARY_NAVIGATION,finance (home)+usage-credits+deposits+topups+claims+payouts+service-invoices+provider-wallets+commission-records+financial-events (all DETAIL_TAB),adjust/approve,10 pages -> 1 workspace with tabs; deposits tab BLOCKED pending Decision on security deposit replacement
+super_admin,Governance,PRIMARY_NAVIGATION,security; users; users/roles; users/permissions; audit-logs; engines; workflow-templates; compliance (moved here from Finance),grant/revoke/export,compliance regrouped out of Finance per Phase 1 recommendation
+super_admin,Reports,PRIMARY_NAVIGATION,analytics+reports+intelligence+marketing (merged as saved views),export,4 pages -> 1 with saved-view tabs
+super_admin,Settings,PRIMARY_NAVIGATION,media; settings; notifications/settings,configure,
+super_admin,(real-estate/coaching modules),HIDDEN_BUT_SUPPORTED,real-estate/*; coaching/*,n/a,not in default nav until verticals launch; still reachable
+super_admin,(ai/ai-chat),CONTEXTUAL_ROUTE,ai; ai-chat,n/a,surfaced only from within a job/thread context once chat domain decision (Decision 4) is applied; not top-level nav
+super_admin,(bookability),DETAIL_TAB,bookability,n/a,folded into Provider Matching diagnostics tab under Services > Home Services workspace
+tenant_owner,Home,PRIMARY_NAVIGATION,dashboard,go to next setup step,includes onboarding checklist
+tenant_owner,My Work,PRIMARY_NAVIGATION,new aggregation page,resolve item,new
+tenant_owner,Jobs,PRIMARY_NAVIGATION,jobs+bookings+appointments+service-jobs (shown as labeled sub-tabs of one Jobs workspace, NOT merged into one list - verification confirmed all 3 underlying systems are actively used for different current screens),view/assign,see booking-job-canonical-decision.md - true single-list merge requires a backend read-aggregation BFF not yet built
+tenant_owner,Services,PRIMARY_NAVIGATION,profile(setup fields)+provider/service-areas+tenant/setup/services+provider/service-coverage+tenant/setup/availability (WORKFLOW_STEP of one wizard); provider/pricing (DETAIL_TAB advanced),publish,wizard per provider-setup-final-contract.md
+tenant_owner,Team,PRIMARY_NAVIGATION,provider/staff+provider/team-members (merged),invite,
+tenant_owner,Customers,PRIMARY_NAVIGATION,customers(list)+reviews(primary, /provider/reviews RETIREd as duplicate)+provider/complaints+chat(primary, /provider/chat RETIREd as duplicate)+marketing(primary, /provider/marketing RETIREd as duplicate),reply/resolve,4 duplicate nav entries retired
+tenant_owner,Business,PRIMARY_NAVIGATION,profile+documents+provider/compliance+onboarding-status (DETAIL_TAB of Business 360),submit/edit,see page-consolidation-plan.md
+tenant_owner,Credits,PRIMARY_NAVIGATION,finance/package+finance/usage-credit-ledger+finance/security-deposit(BLOCKED)+wallet (DETAIL_TAB),purchase/topup,
+tenant_owner,Settings,PRIMARY_NAVIGATION,settings+settings/engines+account,save,
+tenant_owner,(insights),SECONDARY_NAVIGATION,analytics+reports+insights (merged),view,demoted from its own top-level slot to a Reports link under Home, per approved nav list (Reports not in tenant_owner's 9-item target list)
+staff,(same shell as tenant_owner, permission-filtered),PRIMARY_NAVIGATION,subset per permission,assign/update,Provider Manager target list: Home/My Work/Jobs/Team/Quotes/Customers/Business
+staff,Quotes,PRIMARY_NAVIGATION,new dedicated nav item (was buried in Jobs),approve/route to customer,elevated to its own item per spec's Provider Manager target nav
+technician,Today,PRIMARY_NAVIGATION,staff/dashboard,start next job,
+technician,My Jobs,PRIMARY_NAVIGATION,staff/jobs (primary, staff/home-services/jobs RETIREd as confirmed duplicate),advance status,
+technician,Inspection and Quote,PRIMARY_NAVIGATION,job-detail inspection+quote+parts-request tabs (merged),submit findings/flag quote/request parts,"Parts Request/Approval is a REAL confirmed workflow (PartsRequest model + live endpoints) - surfaced as a panel within this nav item, not a separate top-level item, per quote-parts-scope-decision.md (corrected from initial draft)
+technician,Work Completion,PRIMARY_NAVIGATION,job-detail completion tab,submit proof,
+technician,Profile,PRIMARY_NAVIGATION,staff/profile+staff/skills+staff/service-areas+staff/availability (DETAIL_TAB); staff/documents+staff/security/sessions+staff/activity+staff/notifications (ADVANCED_SETTINGS),edit,mobile app parity gap tracked in backend-blockers.md
+customer,Home,PRIMARY_NAVIGATION,Home screen,select category,unchanged
+customer,Book,PRIMARY_NAVIGATION,BookingAssistant..BookingSuccess,confirm booking,unchanged
+customer,My Bookings,PRIMARY_NAVIGATION,BookingsList+BookingDetail+Tracking,view/cancel/reschedule,unchanged
+customer,Quotes,PRIMARY_NAVIGATION,QuoteDecision,decide,fix bargain-api /v1 prefix per Phase 1 finding
+customer,Finance,PRIMARY_NAVIGATION,invoice+credit screens,pay/apply credit,
+customer,Profile,PRIMARY_NAVIGATION,Profile+Sessions+Authentication,edit/export/delete,
+customer,(legacy 19-screen stack),HIDDEN_BUT_SUPPORTED,LegacyApp nested stack,n/a,not in primary nav (already true today); consolidation tracked as future work, not a Phase 2 nav decision

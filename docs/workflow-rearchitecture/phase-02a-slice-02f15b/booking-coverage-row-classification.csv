@@ -1,0 +1,5 @@
+module,total_mutation_rows,tenant_provider_mutations,platform_internal_mutations,false_positive_mutations,customer_self_service_dual_count,protected,denominator_included
+app.engines.booking.router,11,9,1,1,3 (subset of the 9 -- not additional),10 of 10 denominator-included rows,10 (9 tenant + 1 platform; false-positive excluded)
+app.engines.field_ops.router,28,28,0,0,0,28,28
+app.engines.field_ops.staff_router,6,6,0,0,0,6,6
+GLOBAL (canonical CSV),220,,,,,179,220

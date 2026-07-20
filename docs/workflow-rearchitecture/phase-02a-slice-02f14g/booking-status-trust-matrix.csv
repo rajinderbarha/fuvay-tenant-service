@@ -1,0 +1,14 @@
+status,creation_actor,customer_participation,provider_can_create,can_be_abandoned,can_be_rejected,can_be_cancelled,can_be_expired,service_customer_final,already_converted,proves_relationship,disposition
+draft,customer or tenant_owner,not required for tenant_owner path,yes,yes,no (must move to pending states first),yes,no,no,no,no -- reachable without ever reaching CONFIRMED,NON_QUALIFYING_DRAFT
+pending_confirmation,customer or tenant_owner,not required for tenant_owner path,yes,yes,yes,yes,yes,no,no,no -- this is the exact bootstrap vector closed this slice,NON_QUALIFYING_DRAFT
+pending,customer or tenant_owner,not required for tenant_owner path,yes,yes,yes,yes,yes,no,no,no,NON_QUALIFYING_DRAFT
+confirmed,tenant_owner (via confirm_booking),structurally requires passing through tenant_owner's own confirm step,yes (confirm is unilateral -- see known-limitations.md),no,no (terminal from here per transition graph for rejection),yes,no,yes,no,YES (qualifies),QUALIFYING_HISTORICAL_RELATIONSHIP
+rejected,tenant_owner (via reject_booking),no,yes,no,n/a (this IS the rejected state),no,no,yes,no,no -- reached only from pending states, never proves confirmation,NON_QUALIFYING_REJECTED
+converted_to_job,tenant_owner (via Booking.convert_to_job),requires prior CONFIRMED,no (system transition only, from convert_to_job),no,no,no,no,yes,yes,YES (strongest evidence -- already has a Job),QUALIFYING_HISTORICAL_RELATIONSHIP
+scheduled,tenant_owner,requires prior CONFIRMED (only reachable from confirmed),no,no,no,yes,no,yes,no,YES,QUALIFYING_HISTORICAL_RELATIONSHIP
+dispatching,tenant_owner/system,requires prior CONFIRMED->SCHEDULED,no,no,no,yes,no,yes,no,YES,QUALIFYING_HISTORICAL_RELATIONSHIP
+in_progress,tenant_owner/system,requires prior CONFIRMED->SCHEDULED->DISPATCHING,no,no,no,yes,no,yes,no,YES,QUALIFYING_HISTORICAL_RELATIONSHIP
+completed,tenant_owner/system,requires the full confirmed pipeline,no,no,no,no,no,yes,no,YES,QUALIFYING_HISTORICAL_RELATIONSHIP
+cancelled,tenant_owner or customer,ambiguous -- reachable from ANY prior state including non-confirmed ones,yes,no,n/a,n/a (terminal),no,yes,no,no -- current status alone cannot prove prior confirmation (would require a BookingStatusHistory query, not implemented this slice),NON_QUALIFYING_INVALID (ambiguous provenance)
+expired,system,no,no,no,no,no,n/a (terminal),yes,no,no -- reached from pending states without confirmation,NON_QUALIFYING_EXPIRED
+voided,tenant_owner/system,ambiguous,yes,no,no,no,no,yes,no,no -- same ambiguity as cancelled,NON_QUALIFYING_INVALID

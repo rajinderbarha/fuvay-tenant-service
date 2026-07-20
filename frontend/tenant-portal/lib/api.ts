@@ -54,6 +54,86 @@ export function isTenantReadOnly(): boolean {
 export function isTenantOwnerRole(role: string | null | undefined): boolean {
   return role === "tenant_owner" || role === undefined;
 }
+
+/**
+ * Slice 2F-6B: the canonical `staff` role, distinct from `technician`.
+ * `isTenantOwnerRole`'s "role undefined -> treat as owner" loading-state
+ * convention does NOT apply here -- an undefined/unknown role must fail
+ * closed (return false), never be treated as authorized staff.
+ */
+export function isCanonicalStaffRole(role: string | null | undefined): boolean {
+  return role === "staff";
+}
+
+/**
+ * Slice 2F-6B: matches the approved backend persona matrix for the 4
+ * invoice/payment mutations (Slice 2F-6/2F-6A/2F-6B) --
+ * TENANT_OWNER_OR_CANONICAL_STAFF actions (create invoice, add invoice
+ * item, record on-site payment). `technician`, `customer`, `guest`, and
+ * any unrecognized role are all denied (fail closed). A mutation-capable
+ * access scope is also required -- `isTenantReadOnly()` must be false.
+ */
+export function canManageProviderInvoices(
+  role: string | null | undefined,
+  accessScope: string | null | undefined = getAccessScope(),
+): boolean {
+  if (accessScope === "customer_support_limited") return false;
+  return isTenantOwnerRole(role) || isCanonicalStaffRole(role);
+}
+
+/**
+ * Slice 2F-6B: matches the approved backend persona matrix for
+ * provider_issue_invoice -- TENANT_OWNER_ONLY. Staff, technician,
+ * customer, guest, and any unrecognized role are all denied.
+ */
+export function canIssueProviderInvoice(
+  role: string | null | undefined,
+  accessScope: string | null | undefined = getAccessScope(),
+): boolean {
+  if (accessScope === "customer_support_limited") return false;
+  return isTenantOwnerRole(role);
+}
+
+/**
+ * Slice 2F-9B: the exact legal source states from which the backend's
+ * `provider_offer_resolution` permits a transition to
+ * `resolution_proposed` -- derived directly from
+ * `ALLOWED_TRANSITIONS_EXT` in `app/engines/complaints/constants.py`
+ * (STATUS_AWAITING_PROVIDER = "awaiting_provider_response",
+ * STATUS_UNDER_ADMIN_REVIEW = "under_admin_review" are the only two keys
+ * whose transition set contains `resolution_proposed`), proven via the
+ * Slice 2F-9A direct state-matrix tests. Any other status -- including
+ * `open`, `resolution_proposed` itself, `resolved`, `settled`, and the 3
+ * base final statuses -- is rejected server-side with
+ * COMPLAINT_INVALID_STATUS_TRANSITION. Do not add or remove entries here
+ * without a corresponding backend `ALLOWED_TRANSITIONS_EXT` change.
+ */
+export const PROVIDER_RESOLUTION_LEGAL_SOURCE_STATES = [
+  "awaiting_provider_response",
+  "under_admin_review",
+] as const;
+
+/**
+ * Slice 2F-9B: TENANT_OWNER_ONLY, mutation-capable access scope, AND the
+ * complaint must currently be in one of the backend's exact legal source
+ * states for a resolution offer. Complaint/tenant ownership itself is
+ * enforced server-side (the detail page's GET already 403/404s on a
+ * cross-tenant complaint before this helper is ever evaluated), so no
+ * separate tenant-id comparison is done here. Staff, technician,
+ * customer, guest, read-only tenant owners, unknown roles, unknown
+ * access scopes, and missing/unknown statuses all fail closed (return
+ * false).
+ */
+export function canOfferProviderComplaintResolution(
+  role: string | null | undefined,
+  status: string | null | undefined,
+  accessScope: string | null | undefined = getAccessScope(),
+): boolean {
+  if (accessScope === "customer_support_limited") return false;
+  if (!isTenantOwnerRole(role)) return false;
+  if (!status) return false;
+  return (PROVIDER_RESOLUTION_LEGAL_SOURCE_STATES as readonly string[]).includes(status);
+}
 function clearSession() {
   ["serviceos_tenant_token","serviceos_tenant_refresh","serviceos_tenant_id","serviceos_tenant_name",
    "serviceos_tenant_vertical","serviceos_tenant_plan","serviceos_tenant_health","serviceos_user_id",
@@ -4096,6 +4176,33 @@ export const homeServiceStaffJobsApi = {
   // HS8B — single validated completion action
   complete: (jobId: string, body: { work_summary: string; collected_amount: number; payment_mode?: string; technician_note?: string }) =>
     apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(body) }),
+};
+
+// Phase 2A — Technician My Work. Read-only aggregation over ServiceJob +
+// PartsRequest for the logged-in technician (see
+// docs/workflow-rearchitecture/phase-01a/my-work-contract.md). Deliberately
+// scoped to the ServiceJob pipeline only — see booking-job-canonical-decision.md.
+export interface MyWorkItem {
+  id: string; work_type: string; domain: string; category: string; role: string;
+  priority: string; user_facing_title: string; user_facing_description: string;
+  record_type: string; record_id: string; current_status: string; user_facing_status: string;
+  blocking_reason: string | null; responsible_role: string; assigned_user: string | null;
+  created_at: string | null; due_at: string | null; sla_state: string; time_remaining: string | null;
+  recommended_action: string; available_actions: string[]; primary_action: string | null;
+  destination_route: string; required_permission: string; tenant_id: string;
+  metadata: Record<string, unknown>; completed_at: string | null;
+}
+export interface MyWorkResponse {
+  items: MyWorkItem[]; count: number; total_before_filter: number; sources_unavailable: string[];
+}
+export const staffMyWorkApi = {
+  list: (params?: { category?: string; priority?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.category) qs.set("category", params.category);
+    if (params?.priority) qs.set("priority", params.priority);
+    const q = qs.toString();
+    return apiFetch<MyWorkResponse>(`/v1/staff/my-work${q ? `?${q}` : ""}`);
+  },
 };
 
 export const homeServiceProviderJobsApi = {

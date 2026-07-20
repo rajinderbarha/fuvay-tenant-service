@@ -1,0 +1,7 @@
+module,router_file,service_file,set_a_count,set_b_included_count,mounted_confirmed
+platform_commerce_deposit,app/engines/platform_commerce/router.py,app/engines/platform_commerce/service.py,3,0,YES
+pricing,app/engines/pricing/router.py,app/engines/pricing/service.py,0,9,YES
+commerce,app/engines/platform_commerce/router.py,app/engines/platform_commerce/service.py,0,3 (of 4; 1 PLATFORM_ADMIN_EXCLUDE),YES
+payments,app/engines/payment/router.py,app/engines/payment/service.py,0,1,YES
+subscriptions,app/engines/subscription/router.py,app/engines/subscription/service.py,0,1,YES
+compliance,app/engines/compliance/router.py,app/engines/compliance/service.py,0,2,YES

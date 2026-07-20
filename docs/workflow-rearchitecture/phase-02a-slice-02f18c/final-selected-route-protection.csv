@@ -1,0 +1,17 @@
+route_function,accepts_attachment,persists_attachment,exposes_attachment,media_authority_status,technician_status,recipient_status,retrieval_status,fully_protected
+provider_mark_read,no,no,no,n/a,n/a,n/a,n/a,YES
+provider_mark_all_read,no,no,no,n/a,n/a,n/a,n/a,YES
+provider_update_pref,no,no,no,n/a,n/a,n/a,n/a,YES
+provider_create_thread,no,no,no,n/a,n/a,n/a,n/a,YES
+provider_send_message,YES,yes,yes,VERIFIED (view+share+lineage: context+lifecycle+tenant+customer+MediaAccessService+thread-claim, this slice),VERIFIED (n/a -- provider excludes technician at router layer),VERIFIED (retrieval-time equivalence, this slice),VERIFIED (thread-authority + privacy-equivalent errors, this slice),YES
+provider_mark_thread_read,no,no,no,n/a,n/a,n/a,n/a,YES
+staff_mark_read,no,no,no,n/a,n/a,n/a,n/a,YES
+staff_mark_all_read,no,no,no,n/a,n/a,n/a,n/a,YES
+staff_send_message,YES (this slice -- was SILENTLY_IGNORED),yes (this slice),yes (this slice),VERIFIED (same full chain as provider_send_message, this slice),VERIFIED (technician assignment/participant policy applies identically),VERIFIED,VERIFIED,YES
+staff_mark_thread_read,no,no,no,n/a,n/a,n/a,n/a,YES
+
+Fully protected: 10 of 10 selected routes.
+Blocked selected routes: 0.
+Final protected tenant count: 190 (baseline) + 10 (this module) = 200.
+Final remaining unprotected count: 226 - 200 = 26.
+Final remaining module count: unchanged from 2F-18/2F-18A/2F-18B -- 10 non-selected modules, 26 routes, see remaining-module-queue-update.csv.

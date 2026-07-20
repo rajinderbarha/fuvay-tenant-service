@@ -1,0 +1,21 @@
+metric,value,note
+canonical_rows,257,unchanged
+verified,214,unchanged
+unprotected,43,unchanged
+canonical_hash,45244cd9540456db,before==after
+matrix_hash,4c7c3bce02096a43,before==after
+deferred_if_passed,214/259 with 45 unprotected,NOT applied
+population,123,
+burned_1,24,
+burned_2,24,
+burned_3,24,
+overlap,0,
+remaining_eligible,51,all mounted
+fourth_holdout,24,
+fourth_all_field,23/24,required 24/24
+fourth_persona,24/24,
+fourth_direction,24/24,
+fourth_family,24/24,D-07 fixed
+fourth_side_effect,24/24,D-08 fixed
+fourth_action,23/24,NEW defect D-09
+fourth_abstention,24/24,

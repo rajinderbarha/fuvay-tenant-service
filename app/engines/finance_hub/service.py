@@ -294,6 +294,16 @@ class FinanceHubService:
 
     async def approve_deposit(self, deposit_id: uuid.UUID, notes: str | None = None) -> dict:
         d = await self._load_deposit(deposit_id)
+        # Slice 2F-5B: approve_deposit had no final-state check at all, unlike
+        # every other terminal-state mutation in this file (payouts use
+        # _require_status; refund_deposit already blocks re-refunding a
+        # 'refunded' deposit). Without this guard, approving an already-
+        # refunded deposit would reset status back to 'paid' and hold_state
+        # back to 'held' -- illegitimately reversing a refund that already
+        # returned money to the tenant. Mirrors refund_deposit's own guard.
+        if d.status == "refunded":
+            raise ServiceOSException("DEPOSIT_ALREADY_REFUNDED",
+                "This security deposit has already been refunded and cannot be approved.", status_code=409)
         before = self._deposit_dict(d)
         d.status = "paid"; d.hold_state = "held"; d.approved_by = self.actor_id; d.approved_at = utcnow()
         if not d.paid_at: d.paid_at = utcnow()

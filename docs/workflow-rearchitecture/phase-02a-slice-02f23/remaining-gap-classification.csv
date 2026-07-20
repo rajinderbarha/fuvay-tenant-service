@@ -1,0 +1,20 @@
+canonical_row_key,endpoint_function,primary_gap,secondary_gaps,rationale
+CR-01,submit_reply,AUTHENTICATED_ONLY,ALTERNATE_ROUTE_BYPASS,no role or permission check -- any authenticated principal including customer
+CR-02,flag_review,AUTHENTICATED_ONLY,TENANT_OWNERSHIP_WITHOUT_OBJECT_OWNERSHIP,no role or permission check -- any authenticated principal including customer
+MA-01,generate_launch_campaign,AUTHENTICATED_ONLY,none,no role or permission check -- any authenticated principal including customer
+MA-02,submit_campaign_review,AUTHENTICATED_ONLY,STATE_TRANSITION_UNVERIFIED,no role or permission check -- any authenticated principal including customer
+MA-03,update_asset_provider_notes,AUTHENTICATED_ONLY,none,no role or permission check -- any authenticated principal including customer
+AN-01,provider_run_report,AUTHENTICATED_ONLY,READ_PRIVACY_UNVERIFIED,no role or permission check -- any authenticated principal including customer
+ME-01,upload_provider_logo,PERMISSION_WITHOUT_SCOPE,none,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+ME-02,remove_provider_logo,PERMISSION_WITHOUT_SCOPE,none,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+ME-03,upload_provider_shop_photo,PERMISSION_WITHOUT_SCOPE,none,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+ME-04,remove_provider_shop_photo,PERMISSION_WITHOUT_SCOPE,none,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+ME-05,upload_staff_profile_photo,PERMISSION_WITHOUT_SCOPE,none,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+ME-06,remove_staff_profile_photo,PERMISSION_WITHOUT_SCOPE,none,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+PR-01,update_business_profile,PERMISSION_WITHOUT_SCOPE,none,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+PR-02,submit_business_profile_for_review,PERMISSION_WITHOUT_SCOPE,STATE_TRANSITION_UNVERIFIED,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+PR-03,update_staff_profile,PERMISSION_WITHOUT_SCOPE,none,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+BR-01,create_brand_request,PERMISSION_WITHOUT_SCOPE,none,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+BR-02,set_supported_brands,PERMISSION_WITHOUT_SCOPE,PARENT_CHILD_OWNERSHIP_MISSING,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+RC-01,provider_setup_recommendations,PERMISSION_WITHOUT_SCOPE,none,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"
+SO-01,set_supported_options,PERMISSION_WITHOUT_SCOPE,PARENT_CHILD_OWNERSHIP_MISSING,"require_technician admits technician/staff/tenant_owner/super_admin, no access-scope check"

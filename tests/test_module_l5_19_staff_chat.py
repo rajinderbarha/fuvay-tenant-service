@@ -21,8 +21,11 @@ class TestStaffChatSource:
     def test_staff_chat_router_exists_and_is_tenant_scoped(self):
         from app.engines.platform_notifications import provider_router
         # The staff chat list must pass tenant_id (tenant-scoped visibility).
+        # Slice 2F-18A: the literal actor_type is now derived per-caller via
+        # _staff_actor_type(u) (staff vs technician persona split) rather
+        # than a hardcoded RECIP_STAFF constant.
         src = inspect.getsource(provider_router.staff_list_threads)
-        assert "RECIP_STAFF" in src and "_tid(u)" in src
+        assert "_staff_actor_type(u)" in src and "_tid(u)" in src
 
 
 class TestStaffChatLive:

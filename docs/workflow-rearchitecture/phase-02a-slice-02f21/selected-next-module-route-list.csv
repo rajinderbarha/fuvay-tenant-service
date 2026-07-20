@@ -1,0 +1,2 @@
+canonical_row_key,method,path,endpoint_function,module,capability,model_table
+R-27,POST,/v1/tenant/packages/{package_id}/purchase,tenant_purchase_package,app.engines.package_commerce.tenant_router,package_purchase,TenantPackageAssignment

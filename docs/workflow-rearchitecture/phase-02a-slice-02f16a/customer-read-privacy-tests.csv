@@ -1,0 +1,13 @@
+test_record_field,customer_should_see,test
+provider_internal_notes,no,test_get_quote_hides_internal_notes_and_hidden_items_from_customer (2F-16) + test_approve_response_hides_internal_notes / test_reject_response_hides_internal_notes (this slice)
+hidden items (is_customer_visible=False),no,same 2F-16 test + test_customer_total_excludes_hidden_item_amount (this slice)
+internal unit cost / provider margin (represented only via is_customer_visible=False items -- no distinct cost/margin field exists),no,same coverage as hidden items (no separate field to test)
+internal checklist response,n/a -- no customer-facing checklist route exists at all,quote-checklist-module-lineage.md / customer-read-surface-inventory.csv
+provider-only event (item_added/updated/removed, internal approval-step events),no,test_customer_does_not_see_draft_editing_events
+staff identity (raw user ID),no,ServiceJobQuoteEvent.to_dict() never serializes actor_user_id -- confirmed by source read, no field to leak
+technician identity,no,no technician actor concept exists in this module at all (no technician caller -- see technician-assignment-policy.md)
+internal rejection comment,n/a -- rejection_reason is the CUSTOMER's own input on customer_reject; there is no separate internal-only rejection comment field,quote-checklist-model-lineage.md (2F-16)
+audit metadata (request_id, actor_type raw internals),partial -- actor_type ("customer"/"staff" label) is shown; request_id is not included in to_dict() output,ServiceJobQuoteEvent.to_dict() source read
+cross-tenant references,no,get_quote/get_checklist tenant ownership (2F-16) + privacy-equivalent 404 (this slice)
+foreign customer records,no,get_quote customer_id ownership (2F-16) + privacy-equivalent 404 (this slice)
+GET routes mutation check,no mutation occurs,confirmed via source read -- no GET handler in quote_checklist calls db.add/execute(update/delete(...))

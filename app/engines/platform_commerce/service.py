@@ -309,6 +309,7 @@ class CommerceService:
                 "reconciliation_ok": rec["matches"]}
 
     async def initiate_purchase(self, tid, pkg_id, gateway):
+        self._assert_owns_tenant_deposit(tid)
         d = await self._get_or_create_deposit(tid)
         if not d.is_unlocked:
             raise ServiceOSException("SECURITY_DEPOSIT_REQUIRED",
@@ -703,6 +704,16 @@ class CommerceService:
 
     # ── Warranty (6) ───────────────────────────────────────────────────────────
     async def submit_claim(self, tid, cid, job_id, claim_type, description, media_ids, amount):
+        # Slice 2F-37: tid/job_id were previously fully client-supplied
+        # with no proof the job belongs to that tenant or to the claiming
+        # customer -- a caller could file a claim (with a client-supplied
+        # amount_requested) against an arbitrary tenant/job pair. Verify
+        # the parent job before creating the claim.
+        from app.engines.final_records.models import ServiceJob
+        job_r = await self.db.execute(select(ServiceJob).where(ServiceJob.id == job_id))
+        job = job_r.scalar_one_or_none()
+        if not job or job.tenant_id != tid or job.customer_id != cid:
+            raise NotFoundException("Job", str(job_id))
         ex = await self.db.execute(select(WarrantyClaim).where(WarrantyClaim.job_id==job_id))
         if ex.scalar_one_or_none():
             raise ServiceOSException("CONFLICT", f"Claim for job {job_id} already exists.")
@@ -803,6 +814,7 @@ class CommerceService:
             "badge_count": len(active)}
 
     async def recalculate_badges(self, tid):
+        self._assert_owns_tenant_deposit(tid)
         t = await self._get_tenant(tid); earned = []
         if float(t.health_score) >= BADGE_THRESHOLDS["platinum"]["health_score_min"]:
             await self._award_badge(tid, "platinum", {"health_score": float(t.health_score)})

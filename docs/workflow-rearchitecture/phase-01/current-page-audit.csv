@@ -1,0 +1,82 @@
+app,route,page_name,role,nav_location,user_goal,apis_called,actions_available,problems,verification
+super-admin,/admin/dashboard,Dashboard,super_admin,Overview,system health snapshot,adminDashboardApi,view,none major,SOURCE_VERIFIED
+super-admin,/admin/tenants,All Providers,super_admin,Providers,manage tenants,adminTenantApi,view/edit/suspend,none major,SOURCE_VERIFIED
+super-admin,/admin/tenants/onboarding,New Requests,super_admin,Providers,review new tenant signups,adminTenantApi,approve/reject/request-changes,exact gating rules unverified,SOURCE_VERIFIED
+super-admin,/admin/onboarding/providers,Verify & Approve,super_admin,Providers,verification workspace,adminTenantApi,approve/reject,overlaps conceptually with /admin/tenants/onboarding - possible duplicate workspace,SOURCE_INFERRED
+super-admin,/admin/packages,Packages,super_admin,Providers,manage packages,package_commerce admin api,create/edit,,SOURCE_VERIFIED
+super-admin,/admin/trust-quality,Trust & Quality,super_admin,Providers,badges/health/risk,trust_quality admin api,view/configure,,SOURCE_VERIFIED
+super-admin,/admin/bookings,Bookings,super_admin,Operations,legacy booking oversight,booking admin api (legacy engine),view,points at legacy Booking model,SOURCE_VERIFIED
+super-admin,/admin/home-services/service-jobs,Jobs,super_admin,Operations,canonical job oversight,execution admin api,view/reassign,,SOURCE_VERIFIED
+super-admin,/admin/customers,Customers,super_admin,Operations,customer directory,admin customer api,view,,SOURCE_VERIFIED
+super-admin,/admin/staff,Staff,super_admin,Operations,platform staff directory,admin_staff_router,view/edit,,SOURCE_VERIFIED
+super-admin,/admin/reviews,Reviews,super_admin,Operations,moderate reviews,ambiguous - legacy review OR customer_reviews admin api,view/flag/resolve,could be pointing at either of the two live review stacks - needs confirmation,SOURCE_INFERRED
+super-admin,/admin/complaints,Complaints,super_admin,Operations,resolve complaints,complaints admin api,propose/resolve/reject,,SOURCE_VERIFIED
+super-admin,/admin/complaint-policies,Complaint Policies,super_admin,Operations,configure SLA policies,complaints admin api,edit,,SOURCE_VERIFIED
+super-admin,/admin/verticals,Verticals,super_admin,Catalog,manage verticals,vertical_catalog admin api,view/edit,,SOURCE_VERIFIED
+super-admin,/admin/categories,Categories,super_admin,Catalog,manage categories,admin_catalog admin api,CRUD,,SOURCE_VERIFIED
+super-admin,/admin/pricing-tiers,Pricing Tiers,super_admin,Pricing,manage tiers,pricing admin api,CRUD,,SOURCE_VERIFIED
+super-admin,/admin/location-mapping,Location Mapping,super_admin,Pricing,geo price overrides,pricing admin api,CRUD,,SOURCE_VERIFIED
+super-admin,/admin/pricing/provider-overrides,Provider Overrides,super_admin,Pricing,per-provider price overrides,pricing admin api,CRUD,,SOURCE_VERIFIED
+super-admin,/admin/pricing/commission,Commission,super_admin,Pricing,set commission rates,package_commerce admin api,edit,,SOURCE_VERIFIED
+super-admin,/admin/home-services/*,Home Services vertical console (9 pages),super_admin,Home Services,vertical-specific admin,home services admin apis,view/edit,dedicated sub-app duplicating some Operations/Catalog/Pricing nav concepts for one vertical,SOURCE_VERIFIED
+super-admin,/admin/finance,Finance Hub,super_admin,Finance,canonical finance overview,finance_hub admin api,view,,SOURCE_VERIFIED
+super-admin,/admin/finance/usage-credits,Usage Credits,super_admin,Finance,credit ledger,usage_credits admin api,adjust,,SOURCE_VERIFIED
+super-admin,/admin/finance/deposits,Deposits,super_admin,Finance,security deposits,package_commerce (legacy 410 paths),view,underlying endpoints partially deprecated,SOURCE_VERIFIED
+super-admin,/admin/finance/topups,Topups,super_admin,Finance,credit topups,usage_credits admin api,approve,,SOURCE_VERIFIED
+super-admin,/admin/finance/claims,Claims,super_admin,Finance,dispute claims,customer_credits admin api,resolve,,SOURCE_VERIFIED
+super-admin,/admin/finance/payouts,Payouts,super_admin,Finance,provider payouts,invoice_payment admin api,process,,SOURCE_VERIFIED
+super-admin,/admin/compliance,Compliance,super_admin,Finance,DPDP admin console,compliance admin api,view/export,nav-grouped under Finance despite being governance concept,SOURCE_VERIFIED
+super-admin,/admin/marketing,Marketing,super_admin,Marketing & Growth,campaigns,marketing_command_center api,create/edit,,SOURCE_VERIFIED
+super-admin,/admin/notifications,Notifications,super_admin,Marketing & Growth,notification center,platform_notifications admin api,view,,SOURCE_VERIFIED
+super-admin,/admin/notifications/settings,Notification Settings,super_admin,Marketing & Growth,configure templates,notification admin_router (possible dup with platform_notifications templates),edit,potential duplicate template systems,SOURCE_INFERRED
+super-admin,/admin/analytics,Analytics,super_admin,Marketing & Growth,cross-tenant analytics,analytics api,view,,SOURCE_VERIFIED
+super-admin,/admin/reports,Reports,super_admin,Marketing & Growth,reports,reports api,export,NOT in rendered sidebar (nav drift) despite working page,SOURCE_VERIFIED
+super-admin,/admin/intelligence,Intelligence,super_admin,Marketing & Growth,AI insights,intelligenceCmdApi,view,,SOURCE_VERIFIED
+super-admin,/admin/engines,Engines,super_admin,Platform,enable/disable engines,engine_mgmt admin api,toggle,,SOURCE_VERIFIED
+super-admin,/admin/security,Security,super_admin,Platform,security console,auth admin api,view,,SOURCE_VERIFIED
+super-admin,/admin/workflow-templates,Workflow Templates,super_admin,Platform,configure workflows,workflow admin api,edit,,SOURCE_VERIFIED
+super-admin,/admin/audit-logs,Audit Logs,super_admin,Platform,view audit trail,platform_notifications audit api,view,,SOURCE_VERIFIED
+super-admin,/admin/users,Users,super_admin,Platform,platform user mgmt,platform_users_router,CRUD,,SOURCE_VERIFIED
+super-admin,/admin/users/roles,Roles,super_admin,Platform,manage roles,roles_permissions admin api,view (mutations not wired),shows Implemented/Not-Implemented badges honestly,SOURCE_VERIFIED
+super-admin,/admin/users/permissions,Permissions,super_admin,Platform,manage permissions,roles_permissions admin api,view,no real mutation capability yet,SOURCE_VERIFIED
+super-admin,/admin/media,Media,super_admin,Platform,media library,media admin api,view/delete,,SOURCE_VERIFIED
+super-admin,/admin/settings,Settings,super_admin,Platform,platform settings,settings_engine api,edit,,SOURCE_VERIFIED
+super-admin,/admin/ai; /admin/ai-chat,AI / AI Chat,super_admin,(no sidebar entry - drift),AI conversation tools,ai_chat/ai_conversation apis,view,orphaned from nav; overlaps with 3 other chat engines,SOURCE_VERIFIED
+super-admin,/admin/real-estate/*; /admin/coaching/*,Vertical modules,super_admin,(no sidebar entry - drift),manage other verticals,vertical admin apis,limited,many fall back to generic catalog-module placeholder,SOURCE_VERIFIED
+super-admin,/admin/bookability,Bookability,super_admin,(no sidebar entry - drift),matching diagnostics,matching admin api,view,orphaned from nav,SOURCE_VERIFIED
+super-admin,/admin/service-invoices; /admin/provider-wallets; /admin/commission-records; /admin/payments; /admin/financial-events,Finance detail pages,super_admin,(no sidebar entry - drift),detailed finance records,invoice_payment admin api,view,orphaned from nav; functionally overlap with Finance Hub group,SOURCE_VERIFIED
+super-admin,/admin/catalog-module/[key],Generic vertical placeholder,super_admin,(dynamic),stand-in for unbuilt vertical admin UI,none,none,explicit "coming soon" placeholder,SOURCE_VERIFIED
+tenant-portal,/dashboard,Dashboard,tenant_owner,Overview,business status snapshot,dashboard api,view,,SOURCE_VERIFIED
+tenant-portal,/provider/status,Setup Checklist,tenant_owner,Setup,track onboarding completeness,onboarding status api,view,,SOURCE_VERIFIED
+tenant-portal,/profile,Profile,tenant_owner,Setup,edit business profile,tenant profile api,edit,,SOURCE_VERIFIED
+tenant-portal,/provider/service-areas,Service Areas,tenant_owner,Setup,define coverage,service area api,CRUD,,SOURCE_VERIFIED
+tenant-portal,/tenant/setup/services,Service Setup,tenant_owner,Setup,configure services,admin_catalog tenant api,CRUD,part of what should become one guided wizard,SOURCE_VERIFIED
+tenant-portal,/provider/service-coverage,Service Coverage,tenant_owner,Setup,coverage detail,HS5 tenant api,CRUD,overlaps conceptually with /provider/service-areas,SOURCE_INFERRED
+tenant-portal,/tenant/setup/availability,Availability,tenant_owner,Setup,set hours,HS5B tenant api,CRUD,,SOURCE_VERIFIED
+tenant-portal,/provider/staff,Staff,tenant_owner,Team,manage team,staff api,CRUD,,SOURCE_VERIFIED
+tenant-portal,/jobs; /bookings; /appointments; /service-jobs,Jobs/Bookings/Appointments,tenant_owner,Operations,track work,multiple (ServiceJob + legacy Booking apis),view/assign,3-4 overlapping list views for what may be the same underlying concept - needs consolidation,SOURCE_VERIFIED
+tenant-portal,/finance/package; /finance/usage-credit-ledger; /finance/security-deposit,Finance pages,tenant_owner,Finance,manage credits/package,usage_credits + package_commerce tenant api,purchase/topup/view,,SOURCE_VERIFIED
+tenant-portal,/reviews; /provider/reviews,Reviews (two entries),tenant_owner,Engagement,respond to reviews,customer_reviews tenant api,reply,duplicate nav entries pointing at same feature,SOURCE_INFERRED
+tenant-portal,/provider/complaints,Complaints,tenant_owner,Engagement,respond to complaints,complaints tenant api,respond,,SOURCE_VERIFIED
+tenant-portal,/marketing; /provider/marketing,Marketing (two entries),tenant_owner,Engagement,manage campaigns,marketing api,edit,duplicate nav entries,SOURCE_INFERRED
+tenant-portal,/customers,Customers,tenant_owner,Engagement,customer directory,customer api,view,,SOURCE_VERIFIED
+tenant-portal,/chat; /provider/chat,Chat (two entries),tenant_owner,Engagement,message customers/staff,chat/platform_notifications api,message,duplicate nav entries; unclear which chat engine backs each,SOURCE_INFERRED
+tenant-portal,/analytics; /reports; /insights,Insights pages,tenant_owner,Insights,view reports,analytics api,view/export,3 separate entries for similar goal,SOURCE_INFERRED
+tenant-portal,/documents; /provider/compliance; /account/privacy,Compliance pages,tenant_owner,More,manage documents/DPDP,compliance api,submit/export,,SOURCE_VERIFIED
+tenant-portal,/settings; /settings/engines,Settings,tenant_owner,More,configure account/engines,settings api,edit,,SOURCE_VERIFIED
+tenant-portal,/staff/dashboard,Staff Dashboard,technician/staff,Today,daily job queue,staffSelfApi,view,,SOURCE_VERIFIED
+tenant-portal,/staff/jobs; /staff/home-services/jobs,Staff Jobs (two entries),technician,My Jobs,manage assigned jobs,homeServiceStaffJobsApi,accept/reject/execute,confirmed duplicate list surfaces - not yet reconciled,SOURCE_VERIFIED
+tenant-portal,/staff/chat,Staff Chat,technician,Messages,message customer/tenant,staffChatApi,message,,SOURCE_VERIFIED
+tenant-portal,/staff/profile; /staff/skills; /staff/service-areas; /staff/availability,Staff self-service setup,technician,Profile,configure self,staffSelfApi,edit,,SOURCE_VERIFIED
+tenant-portal,/staff/documents; /staff/security/sessions; /staff/activity; /staff/notifications,Staff misc,technician,Profile/More,manage docs/sessions/activity,various,view/edit,not present at all in mobile staff-app (feature parity gap),SOURCE_VERIFIED
+mobile-customer,Home screen,Home,customer,Home,browse categories,home-api,select,,SOURCE_VERIFIED
+mobile-customer,BookingAssistant..BookingSuccess,Booking flow,customer,Book,create booking,draft/media/pricing/matching apis,confirm,,RUNTIME_VERIFIED
+mobile-customer,BookingsList/BookingDetail/Tracking,My Bookings,customer,My Bookings,track/manage,bookings-api,cancel/reschedule,,RUNTIME_VERIFIED
+mobile-customer,QuoteDecision,Quotes,customer,Quotes,approve/reject quote,bargain-api (missing /v1 prefix - verify),decide,inconsistent endpoint prefix vs rest of app,SOURCE_INFERRED
+mobile-customer,LegacyApp (AppNavigator/TabNavigator, 19 screens),Legacy stack,customer,(nested, not primary nav),overlaps Home/Bookings/Chat/Profile,src/screens apis (older),full duplicate feature set,intentional per code comment but real architectural duplication,SOURCE_VERIFIED
+mobile-staff,HomeScreen,Home,technician,Home,daily overview,api.ts,view,,SOURCE_VERIFIED
+mobile-staff,JobsListScreen/JobDetailScreen,Jobs,technician,Jobs,manage assigned jobs,staff service-jobs api,accept/reject/execute,,SOURCE_VERIFIED
+mobile-staff,ChatListScreen/ChatRoomScreen,Chat,technician,Chat,message customer,staff chat api,message,,SOURCE_VERIFIED
+mobile-staff,EarningsScreen,Earnings,technician,Earnings,view earnings,UNVERIFIED endpoint,view,backing endpoint not confirmed in this pass,SOURCE_INFERRED
+mobile-staff,ProfileScreen,Profile,technician,Profile,view/edit profile,staff profile api,edit,narrower than web staff portal - missing skills/service-areas/availability/documents/sessions,SOURCE_VERIFIED
+mobile-staff,NotificationsScreen,Notifications,technician,Notifications,view notifications,staff notifications api,view,,SOURCE_VERIFIED

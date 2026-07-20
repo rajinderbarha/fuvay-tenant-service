@@ -34,17 +34,84 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 class ReviewService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id; self.actor_role = actor_role
+        # Slice 2F-25: the service previously had no notion of the caller's
+        # tenant at all, which is why every tenant-facing method took a
+        # tenant_id from the client (query string or body) and trusted it.
+        self.actor_tenant_id = actor_tenant_id
 
     # ── Helpers ───────────────────────────────────────────────────────────────
     def _assert_owns(self, customer_id: uuid.UUID) -> None:
         """Customers may only act on their own reviews. 404 (not 403) so a
-        customer can't use this to confirm another customer_id exists."""
+        customer can't use this to confirm another customer_id exists.
+
+        Slice 2F-25 — NOTE: this guard only ever fires for `actor_role ==
+        "customer"`. EVERY other role (tenant_owner, staff, technician,
+        super_admin, and any unknown role) passes it unconditionally. It is
+        therefore a customer-self-service guard, NOT a tenancy boundary, and
+        must never be relied on as one. Tenant isolation is enforced by
+        `_scoped_review_query` / `_get_review_scoped` below.
+        """
         if self.actor_role == "customer" and (self.actor_id is None or self.actor_id != customer_id):
             raise NotFoundException("Review", str(customer_id))
+
+    def _effective_tenant(self, requested: uuid.UUID | None) -> uuid.UUID:
+        """Resolve the tenant a read/write may target — fail closed.
+
+        Slice 2F-25. Legacy routes accepted `tenant_id` as a query parameter
+        or body field and passed it straight into the query, so any
+        authenticated principal could enumerate any tenant's reviews by
+        changing one value. The principal's own tenant is now authoritative:
+
+          * platform admin (super_admin) may target an explicit tenant, which
+            is the legitimate cross-tenant surface;
+          * every other principal is pinned to its own tenant, and a
+            mismatching client value is refused rather than silently ignored
+            (silently ignoring it would let a caller believe it had queried a
+            tenant it did not);
+          * a principal with no tenant context fails closed.
+        """
+        if self.actor_role == "super_admin":
+            if requested is None:
+                raise ServiceOSException(
+                    "TENANT_REQUIRED",
+                    "A tenant_id is required for platform-admin review queries.")
+            return requested
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "TENANT_ACCESS_DENIED", "No tenant context for this principal.")
+        if requested is not None and str(requested) != str(self.actor_tenant_id):
+            raise ServiceOSException(
+                "TENANT_ACCESS_DENIED",
+                "Cannot query reviews for another tenant.")
+        return self.actor_tenant_id
+
+    async def _get_review_scoped(self, review_id: uuid.UUID) -> Review:
+        """THE central fail-closed review lookup for the legacy engine.
+
+        Slice 2F-25. `submit_reply` and `flag_review` previously resolved the
+        target with `select(Review).where(Review.id == review_id)` and then
+        mutated it with no ownership comparison at all, so any principal
+        holding the route's (tenant-agnostic) permission could reply to, or
+        flag, a review belonging to any other tenant.
+
+        Ownership is applied as a SQL predicate, so a foreign row is never
+        loaded, and a foreign id is indistinguishable from a missing one.
+        Platform admin is explicitly unscoped -- that is its role.
+        """
+        q = select(Review).where(Review.id == review_id)
+        if self.actor_role != "super_admin":
+            if self.actor_tenant_id is None:
+                raise NotFoundException("Review", str(review_id))
+            q = q.where(Review.tenant_id == self.actor_tenant_id)
+        rv = (await self.db.execute(q)).scalar_one_or_none()
+        if not rv:
+            raise NotFoundException("Review", str(review_id))
+        return rv
 
     def _compute_composite(self, signals: dict) -> float:
         """PROVEN: uses REVIEW_SIGNAL_WEIGHTS whose sum == 1.0."""
@@ -166,14 +233,19 @@ class ReviewService:
 
     # ── Get / List ─────────────────────────────────────────────────────────────
     async def get_review(self, review_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(Review).where(Review.id == review_id))
-        rv = r.scalar_one_or_none()
-        if not rv: raise NotFoundException("Review", str(review_id))
+        # Slice 2F-25: `_assert_owns` only ever fired for actor_role ==
+        # "customer", so every other role could read any review in any tenant.
+        # Tenant scoping is now enforced first; the customer guard is retained
+        # for the customer persona on top of it.
+        rv = await self._get_review_scoped(review_id)
         self._assert_owns(rv.customer_id)
         return self._review_dict(rv)
 
     async def list_by_tenant(self, tenant_id: uuid.UUID, status: str | None,
                               limit: int, cursor: str | None) -> dict:
+        # Slice 2F-25: `tenant_id` arrived from the query string and was used
+        # verbatim, so any authenticated principal could enumerate any tenant.
+        tenant_id = self._effective_tenant(tenant_id)
         q = select(Review).where(Review.tenant_id == tenant_id)            .order_by(Review.created_at.desc())
         if status: q = q.where(Review.status == status)
         if cursor:
@@ -191,6 +263,7 @@ class ReviewService:
 
     async def list_by_staff(self, staff_id: uuid.UUID, tenant_id: uuid.UUID,
                              limit: int, cursor: str | None) -> dict:
+        tenant_id = self._effective_tenant(tenant_id)   # Slice 2F-25
         q = select(Review).where(Review.staff_id == staff_id,
                                   Review.tenant_id == tenant_id,
                                   Review.status == ReviewStatus.PUBLISHED)            .order_by(Review.created_at.desc())
@@ -208,8 +281,24 @@ class ReviewService:
                 "has_next": has_next, "next_cursor": nc}
 
     async def list_by_customer(self, customer_id: uuid.UUID, limit: int, cursor: str | None) -> dict:
+        """Reviews written by one customer.
+
+        Slice 2F-25A: `_assert_owns` guards the customer persona only -- every
+        other role passed it unconditionally, so a tenant principal could
+        enumerate ANY customer's review history across ALL tenants.
+
+        Now: a customer sees its own reviews; any other principal sees only the
+        rows belonging to its own tenant, i.e. reviews that customer left for
+        THAT tenant. Arbitrary cross-tenant customer enumeration is no longer
+        possible, and no new visibility policy was invented -- the tenant
+        simply cannot see beyond its own reviews.
+        """
         self._assert_owns(customer_id)
-        q = select(Review).where(Review.customer_id == customer_id)            .order_by(Review.created_at.desc())
+        q = select(Review).where(Review.customer_id == customer_id)
+        if self.actor_role not in ("customer", "super_admin"):
+            if self.actor_tenant_id is None:
+                raise NotFoundException("Review", str(customer_id))
+            q = q.where(Review.tenant_id == self.actor_tenant_id)            .order_by(Review.created_at.desc())
         if cursor:
             try:
                 c = decode_cursor(cursor)
@@ -225,9 +314,9 @@ class ReviewService:
 
     # ── Tenant reply (ONE only — 409 on second) ────────────────────────────────
     async def submit_reply(self, review_id: uuid.UUID, reply: str) -> dict:
-        r = await self.db.execute(select(Review).where(Review.id == review_id))
-        rv = r.scalar_one_or_none()
-        if not rv: raise NotFoundException("Review", str(review_id))
+        # Slice 2F-25: was a primary-key-only fetch followed by an
+        # unconditional write -- a cross-tenant mutation. Now ownership-scoped.
+        rv = await self._get_review_scoped(review_id)
         if rv.tenant_reply is not None:
             raise ServiceOSException("CONFLICT",
                 "A reply has already been submitted for this review. Only one reply is allowed.",
@@ -241,9 +330,9 @@ class ReviewService:
 
     # ── Moderation ────────────────────────────────────────────────────────────
     async def flag_review(self, review_id: uuid.UUID, reason: str) -> dict:
-        r = await self.db.execute(select(Review).where(Review.id == review_id))
-        rv = r.scalar_one_or_none()
-        if not rv: raise NotFoundException("Review", str(review_id))
+        # Slice 2F-25: was a primary-key-only fetch followed by a status
+        # write -- any authenticated principal could flag any tenant's review.
+        rv = await self._get_review_scoped(review_id)
         if rv.status == ReviewStatus.FLAGGED:
             raise ServiceOSException("CONFLICT", "Review is already flagged.")
         from_s = rv.status
@@ -320,10 +409,27 @@ class ReviewService:
                                          tenant_id=tenant_id, **vals))
 
     async def get_aggregate(self, entity_type: str, entity_id: str) -> dict:
-        """PROVEN: returns pre-computed row — never runs AVG() at read time."""
-        r = await self.db.execute(select(ReviewAggregate).where(
+        """Pre-computed aggregate read — never runs AVG() at read time.
+
+        Slice 2F-25A: this was completely unscoped. `entity_type` is an
+        arbitrary client string and `entity_id` an arbitrary key, so any
+        authenticated principal could read any tenant's or any staff member's
+        aggregate ratings by guessing an id -- a reputation-data oracle.
+
+        `ReviewAggregate` carries a real `tenant_id` column, so the read is now
+        tenant-scoped like every other private read in this engine. It is
+        deliberately NOT treated as a public aggregate: no allow-list of public
+        entity types exists in this model, and inventing one would be new
+        product policy (see aggregate-read-adjudication.md).
+        """
+        q = select(ReviewAggregate).where(
             ReviewAggregate.entity_type == entity_type,
-            ReviewAggregate.entity_id == entity_id))
+            ReviewAggregate.entity_id == entity_id)
+        if self.actor_role != "super_admin":
+            if self.actor_tenant_id is None:
+                raise NotFoundException("ReviewAggregate", entity_id)
+            q = q.where(ReviewAggregate.tenant_id == self.actor_tenant_id)
+        r = await self.db.execute(q)
         agg = r.scalar_one_or_none()
         if not agg:
             return {"entity_type": entity_type, "entity_id": entity_id,
@@ -345,7 +451,57 @@ class ReviewService:
 
     # ── Review requests ────────────────────────────────────────────────────────
     async def create_review_request(self, job_id: str, tenant_id: uuid.UUID,
-                                     customer_id: uuid.UUID, staff_id: uuid.UUID | None) -> dict:
+                                     customer_id: uuid.UUID, staff_id: uuid.UUID | None,
+                                     trusted_internal: bool = False) -> dict:
+        """Create the review request for a closed job.
+
+        Slice 2F-25 pinned `tenant_id` to the principal. Slice 2F-25A adds the
+        parent-ownership proof that pinning alone does NOT give:
+
+        Before 2F-25A the route accepted `job_id` AND `customer_id` from the
+        request body with no verification that the job existed, that it
+        belonged to the caller's tenant, or that the customer was that job's
+        customer. A tenant could therefore mint review requests naming an
+        arbitrary customer against an arbitrary job string.
+
+        The authoritative parent is `field_ops.Job` -- established by the only
+        internal caller (`field_ops.service` on job close, which passes
+        `job.job_number`, `job.tenant_id`, `job.customer_id`). No identifier is
+        adapted between pipelines: this is field_ops.Job/job_number, NOT
+        ServiceJob, Booking or ServiceBooking.
+
+        `trusted_internal=True` is used only by that job-close path, which has
+        already loaded the Job row and therefore holds the authoritative
+        relationship directly.
+        """
+        tenant_id = self._effective_tenant(tenant_id)
+
+        if not trusted_internal:
+            # Resolve the parent Job by its number WITHIN the caller's tenant.
+            # A foreign or non-existent job is indistinguishable (both
+            # JOB_NOT_FOUND), so this cannot be used as a cross-tenant probe.
+            from app.engines.field_ops.models import Job as FieldOpsJob
+            jr = await self.db.execute(select(FieldOpsJob).where(
+                FieldOpsJob.job_number == job_id,
+                FieldOpsJob.tenant_id == tenant_id))
+            job = jr.scalar_one_or_none()
+            if job is None:
+                raise NotFoundException("Job", job_id)
+            if job.customer_id is None:
+                raise ServiceOSException(
+                    "JOB_HAS_NO_CUSTOMER",
+                    "This job has no customer to request a review from.")
+            # Customer is DERIVED from the job, never taken from the client.
+            if customer_id is not None and str(customer_id) != str(job.customer_id):
+                raise ServiceOSException(
+                    "CUSTOMER_MISMATCH",
+                    "The customer does not match this job.")
+            customer_id = job.customer_id
+            staff_id = job.assigned_staff_id
+
+        # Duplicate check runs AFTER ownership, so a foreign job_id can never
+        # reach it -- previously this global lookup leaked the existence of
+        # other tenants' job numbers via the "already_exists" response.
         ex = await self.db.execute(select(ReviewRequest).where(ReviewRequest.job_id == job_id))
         if ex.scalar_one_or_none():
             return {"job_id": job_id, "status": "already_exists", "idempotent": True}
@@ -358,7 +514,27 @@ class ReviewService:
                 "expires_at": req.expires_at.isoformat(), "status": req.status}
 
     async def get_review_request(self, job_id: str) -> dict:
-        r = await self.db.execute(select(ReviewRequest).where(ReviewRequest.job_id == job_id))
+        """Review-request status for a job — relationship scoped.
+
+        Slice 2F-25A: was a bare `job_id` lookup with no scoping at all, so any
+        authenticated principal could read any tenant's request status (and its
+        `review_id`) by guessing a job number.
+
+        Scoping follows the persona: a customer sees only requests addressed to
+        itself; every other principal is confined to its own tenant. Platform
+        admin is explicitly unscoped. Missing and unauthorized are both
+        ReviewRequest-not-found.
+        """
+        q = select(ReviewRequest).where(ReviewRequest.job_id == job_id)
+        if self.actor_role == "customer":
+            if self.actor_id is None:
+                raise NotFoundException("ReviewRequest", job_id)
+            q = q.where(ReviewRequest.customer_id == self.actor_id)
+        elif self.actor_role != "super_admin":
+            if self.actor_tenant_id is None:
+                raise NotFoundException("ReviewRequest", job_id)
+            q = q.where(ReviewRequest.tenant_id == self.actor_tenant_id)
+        r = await self.db.execute(q)
         req = r.scalar_one_or_none()
         if not req: raise NotFoundException("ReviewRequest", job_id)
         return {"review_request_id": str(req.id), "job_id": req.job_id,
@@ -367,6 +543,7 @@ class ReviewService:
 
     async def list_review_requests(self, tenant_id: uuid.UUID, status: str | None,
                                     limit: int, cursor: str | None) -> dict:
+        tenant_id = self._effective_tenant(tenant_id)   # Slice 2F-25
         q = select(ReviewRequest).where(ReviewRequest.tenant_id == tenant_id)            .order_by(ReviewRequest.created_at.desc())
         if status: q = q.where(ReviewRequest.status == status)
         if cursor:
@@ -384,6 +561,7 @@ class ReviewService:
                 "has_next": has_next, "next_cursor": nc}
 
     async def list_recent_reviews(self, tenant_id: uuid.UUID, days: int) -> dict:
+        tenant_id = self._effective_tenant(tenant_id)   # Slice 2F-25
         since = utcnow() - timedelta(days=days)
         r = await self.db.execute(select(Review).where(
             Review.tenant_id == tenant_id, Review.created_at >= since,

@@ -1,0 +1,18 @@
+scenario,before_2f25,after_2f25,outcome_class
+Tenant A flags Tenant B legacy review,SUCCEEDED -- bare auth + PK-only lookup,rejected; foreign row never loaded,TENANT_OWNERSHIP_REJECTED
+Tenant A replies to Tenant B legacy review,SUCCEEDED -- PK-only lookup,rejected,TENANT_OWNERSHIP_REJECTED
+Cross-tenant detail read (non-customer role),SUCCEEDED -- _assert_owns only guards customers,rejected,PRIVACY_SAFE_NOT_FOUND
+Cross-tenant list via ?tenant_id=,SUCCEEDED -- query value used verbatim,refused,TENANT_OWNERSHIP_REJECTED
+Cross-tenant staff list via ?tenant_id=,SUCCEEDED,refused,TENANT_OWNERSHIP_REJECTED
+Cross-tenant request list via path tenant_id,SUCCEEDED,refused,TENANT_OWNERSHIP_REJECTED
+Cross-tenant recent list via path tenant_id,SUCCEEDED,refused,TENANT_OWNERSHIP_REJECTED
+Client tenant substitution on create_request,ACCEPTED from body,refused,TENANT_OWNERSHIP_REJECTED
+Client tenant matching own tenant,accepted,still accepted -- live caller compatibility,ALLOWED
+Customer A reads Customer B review,rejected (_assert_owns),rejected (unchanged),CUSTOMER_OWNERSHIP_REJECTED
+Read-only tenant attempts mutation,permitted (require_permission only),rejected,ACCESS_SCOPE_REJECTED
+Tenant invokes admin resolve,rejected,rejected (unchanged),PERSONA_REJECTED
+Missing vs unauthorized detail,distinguishable,both NotFound,PRIVACY_SAFE_NOT_FOUND
+Arbitrary status mutation,not possible,not possible,STATE_TRANSITION_REJECTED
+POST /v1/reviews create,410,410,DEPRECATED_410
+Aggregate read by entity id,unscoped,unchanged -- see known-limitations,PRODUCT_DECISION_REQUIRED
+Review-request detail by job_id,unscoped,unchanged -- see known-limitations,PRODUCT_DECISION_REQUIRED

@@ -1,0 +1,18 @@
+method,path,module,reason_for_inclusion
+POST,/v1/compliance/deletion-requests,compliance,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+POST,/v1/compliance/portability-requests,compliance,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+POST,/v1/payments/tenants/{tenant_id}/payout,payments,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+PUT,/v1/subscriptions/tenants/{tenant_id}/plan,subscriptions,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+POST,/v1/pricing/tenants/{tenant_id}/prices/set,pricing,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+PUT,/v1/pricing/tenants/{tenant_id}/brand-adjustment,pricing,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+POST,/v1/pricing/tenants/{tenant_id}/zones,pricing,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+PUT,/v1/pricing/tenants/{tenant_id}/zones/{zone_id},pricing,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+DELETE,/v1/pricing/tenants/{tenant_id}/zones/{zone_id},pricing,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+POST,/v1/pricing/tenants/{tenant_id}/rules,pricing,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+PUT,/v1/pricing/tenants/{tenant_id}/rules/{rule_id},pricing,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+DELETE,/v1/pricing/tenants/{tenant_id}/rules/{rule_id},pricing,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+POST,/v1/pricing/compute,pricing,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+POST,/v1/commerce/tenants/{tenant_id}/deposit/admin-adjust,commerce,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+POST,/v1/commerce/tenants/{tenant_id}/wallet/purchase/initiate,commerce,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+POST,/v1/commerce/warranty/claims,commerce,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence
+POST,/v1/commerce/tenants/{tenant_id}/badges/recalculate,commerce,Shares the financial/product-policy domain; PENDING_MODULE_ADJUDICATION until 2F-37 adjudicates from direct source evidence

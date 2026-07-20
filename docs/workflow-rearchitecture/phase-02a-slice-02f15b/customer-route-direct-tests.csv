@@ -1,0 +1,13 @@
+test_case,route,actor,expected_result,test
+correct customer,cancel_booking,customer (own booking),allowed (service ownership check passes),existing _assert_can_access_booking logic (unchanged, re-verified)
+foreign customer,cancel_booking,customer (different customer's booking),denied NotFoundException (404, privacy-safe),existing _assert_can_access_booking logic (unchanged, re-verified)
+tenant owner,cancel_booking,tenant_owner (own tenant's booking),allowed (dual persona),TestCustomerDependencyIndependentOfTenantScope
+canonical staff,add_note,staff (own tenant),allowed (STAFF_EXECUTION_ROLE_SCOPE_AWARE),existing require_staff_or_above_mutation tests (2F-15A)
+read-only tenant owner,cancel_booking,tenant_owner with access_scope=customer_support_limited,denied PERMISSION_DENIED,test_tenant_owner_with_readonly_scope_still_denied
+read-only staff,add_note,staff with access_scope=customer_support_limited,denied (require_staff_or_above_mutation denies read-only tenant scope),2F-15A add-note-authorization.md
+technician,cancel_booking,technician,denied (BOOKING_CANCEL not granted to technician in ROLE_PERMISSIONS),require_permission role-based gate (unchanged)
+guest,cancel_booking,unauthenticated/guest,denied 401/403 (no valid UserContext),get_current_user dependency (unchanged)
+unknown role,cancel_booking,fabricated/undefined role string,denied (require_permission finds no grant for undefined role -- fails closed),require_permission fail-closed behavior (unchanged, pre-existing)
+unknown access scope,cancel_booking,tenant_owner with access_scope="some_new_scope_value",allowed (not in TENANT_READONLY_ACCESS_SCOPES -- only object-ownership gates further),documented in customer-dependency-semantics.md (intentional: only the one known read-only value is denied)
+customer with no tenant mutation scope,cancel_booking,customer (access_scope=None -- customers never carry one),allowed (dependency degenerates to plain permission check),test_customer_user_without_access_scope_passes_tenant_mutation_permission
+customer with malformed/forged tenant context,cancel_booking,customer (access_scope forged to "customer_support_limited"),denied (fail-closed even in this adversarial edge case),test_customer_user_with_forged_readonly_scope_is_denied

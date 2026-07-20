@@ -65,7 +65,30 @@ def _safety_guard() -> None:
 LEGACY_FIXTURE_PASSWORDS = {"admin@serviceos.local": "Password123!"}
 
 
+# Phase 2A Slice 2D — hardening: this script previously created
+# manager@demo-ac-services.local (role='tenant_manager') and
+# readonly@demo-ac-services.local (role='tenant_readonly'), neither of which
+# exists in app.core.permissions.ROLE_PERMISSIONS. Both accounts ended up
+# with zero effective permissions forever, undiscovered until a live
+# database audit in Slice 2B. This raw-SQL seed script bypassed every
+# API-level role validator (VALID_TENANT_ROLES, VALID_PLATFORM_ROLES)
+# entirely, since it is not an API call. This guard closes that gap at the
+# one remaining unvalidated write path.
+CANONICAL_ROLES = {
+    "super_admin", "tenant_owner", "staff", "technician", "customer", "guest",
+    "admin_operations", "admin_finance", "admin_security", "admin_readonly",
+}
+
+
 async def get_or_create_user(db, email, full_name, role, tenant_id=None, platform_role=None, is_active=True):
+    if role not in CANONICAL_ROLES:
+        raise ValueError(
+            f"Refusing to seed {email} with non-canonical role {role!r}. "
+            f"Canonical roles are: {sorted(CANONICAL_ROLES)}. "
+            f"(This guard exists because this exact mistake created 2 confirmed-invalid "
+            f"live accounts before Slice 2D — see docs/workflow-rearchitecture/"
+            f"phase-02a-slice-02d/seed-path-hardening.md)"
+        )
     row = (await db.execute(text("SELECT id FROM users WHERE email = :e"), {"e": email})).first()
     if row:
         print(f"[SKIP]   user {email} (exists)")
@@ -94,14 +117,25 @@ async def run():
 
     async with async_session() as db:
         # ── 1. Platform users ───────────────────────────────────────────────
+        # Phase 2A Slice 2D: the 3 non-super-admin accounts below previously
+        # seeded role="super_admin" for all of them, distinguished only by
+        # the free-text, functionally-dead `platform_role` label — every one
+        # of them was actually a full Platform Super Admin regardless of
+        # name. scripts/seed_admin_roles_final_l5_05l.py was written as a
+        # one-off follow-up fix for exactly this bug; this seed script now
+        # creates the real, distinct, least-privilege roles directly so a
+        # fresh run is correct from the start and that follow-up script
+        # becomes an idempotent no-op rather than a required second step.
         super_admin = await get_or_create_user(db, "admin@serviceos.local", "Platform Super Admin",
                                                 "super_admin", platform_role="super_admin")
         admin_ops = await get_or_create_user(db, "admin.ops@serviceos.local", "Admin Operations User",
-                                              "super_admin", platform_role="operations")
+                                              "admin_operations", platform_role="operations")
         admin_finance = await get_or_create_user(db, "admin.finance@serviceos.local", "Admin Finance User",
-                                                  "super_admin", platform_role="finance")
+                                                  "admin_finance", platform_role="finance")
         admin_readonly = await get_or_create_user(db, "admin.readonly@serviceos.local", "Admin Read Only User",
-                                                   "super_admin", platform_role="read_only")
+                                                   "admin_readonly", platform_role="read_only")
+        admin_security = await get_or_create_user(db, "admin.security@serviceos.local", "Admin Security User",
+                                                   "admin_security", platform_role="security")
 
         # ── 2. Tenant A: Demo AC Services (active, bookable) ────────────────
         trow = (await db.execute(text("SELECT id, status FROM tenants WHERE slug = :s"), {"s": TENANT_SLUG})).first()
@@ -145,13 +179,30 @@ async def run():
             created["tenants"] += 1
             print(f"[CREATE] tenant {TENANT_B_SLUG} (active, isolation test only)")
 
-        # ── 3. Tenant A users: Owner / Manager / Read Only ──────────────────
+        # ── 3. Tenant A users: Owner / Staff ─────────────────────────────────
+        # Phase 2A Slice 2D: the former "Manager" and "Read Only" demo
+        # personas are not seeded here anymore. Slice 2D's tenant-access-model
+        # investigation found:
+        #   - "Manager" (elevated staff permissions) has no safe
+        #     representation today — StaffPermission per-user overrides are
+        #     schema-complete but never wired into UserContext, so there is
+        #     no way to actually grant a staff account manager-shaped extra
+        #     permissions yet (see tenant-access-model.md).
+        #   - "Read Only" has no safe representation at all — the
+        #     access_scope-based mutation guard (require_tenant_mutation_permission)
+        #     is only wired into 2 of ~16 tenant mutation routers, so it
+        #     cannot be trusted as a platform-wide read-only guarantee.
+        # Per Workstream 5's explicit instruction ("read-only demo users must
+        # not be created until the access model is proven"), neither persona
+        # is seeded until that architecture work is done in a future slice.
+        # A plain "staff" demo account is seeded instead, using the real base
+        # staff permission bundle (own-job field-technician-shaped access) —
+        # an honest representation of what "staff" actually grants today,
+        # not a stand-in for "manager".
         owner = await get_or_create_user(db, "owner@demo-ac-services.local", "Tenant Owner",
                                           "tenant_owner", tenant_id=tenant_id)
-        manager = await get_or_create_user(db, "manager@demo-ac-services.local", "Tenant Manager",
-                                            "tenant_manager", tenant_id=tenant_id)
-        readonly = await get_or_create_user(db, "readonly@demo-ac-services.local", "Tenant Read Only",
-                                             "tenant_readonly", tenant_id=tenant_id)
+        staff_demo = await get_or_create_user(db, "staff@demo-ac-services.local", "Tenant Staff",
+                                               "staff", tenant_id=tenant_id)
         await db.execute(text("UPDATE tenants SET owner_user_id=:o WHERE id=:t AND owner_user_id IS NULL"),
                           {"o": str(owner), "t": str(tenant_id)})
 

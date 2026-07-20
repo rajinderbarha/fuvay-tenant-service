@@ -1,0 +1,7 @@
+entity,from_status,to_status,acting_persona,reachable_from_this_router,notes
+InAppNotification.read_status,unread,read,self (owner user),yes (mark_notification_read/mark_all_read),ownership enforced by user_id match; invalid transition (already read -> read) is a safe no-op re-write, not an error
+InAppNotification.read_status,read,archived,n/a,no,no archive route exists on this router
+ChatThread.status,open,closed/archived/blocked,admin only,no,close_thread reachable only via admin_router (require_super_admin); not reachable from provider/staff/customer routers
+ChatMessage.delivery_status,sent,delivered/read/failed,n/a,no,delivery_status is set once at creation (sent) and never transitioned by this router; no read-receipt-driven status update exists (ChatMessageRead is a separate table, not a status flip on the message)
+NotificationEvent.status,created,processed/failed/ignored,internal (fire_event only),no,not reachable from provider_router.py at all -- events are fired by other engines, never by this router
+NotificationOutbox.delivery_status,pending,sent/delivered/failed/skipped/...,internal (dispatch_pending/admin retry),no,not reachable from provider_router.py at all

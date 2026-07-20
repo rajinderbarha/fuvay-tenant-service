@@ -1,0 +1,9 @@
+suite,result,note
+tests/test_phase2f26g_family_precedence_ast_writes.py,38 passed,
+all phase-2F suites (17A/26/26B/26C/26D/26E/26F/26G),"240 passed, 0 failed, 0 errors",zero regressions
+verify_foundation_2f26g.py,exit 1 on N09 only,honest gate failure
+verify_foundation_2f26g.py --selftest,exit 0 -- all fixtures fire,clean state restored
+burned corpus 1 (26D),persona 24/24 direction 24/24,development evidence only
+burned corpus 2 (26E),persona 24/24 direction 24/24,development evidence only
+burned corpus 3 (26F),family 24/24 side_effect 24/24,development evidence only
+fourth holdout,23/24 all-field,required 24/24 -- BLOCKED (new defect D-09)

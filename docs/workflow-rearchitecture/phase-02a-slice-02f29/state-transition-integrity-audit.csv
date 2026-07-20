@@ -1,0 +1,9 @@
+transition,enforced,evidence,status
+revoke already-revoked API key,yes,WHERE revoked_at == None -> NotFound,CONFIRMED
+update revoked API key,yes,WHERE revoked_at == None -> NotFound,CONFIRMED
+deactivate already-inactive staff,partial,was_active tracked; usage decrement guarded,CONFIRMED
+impersonate inactive target,yes,CONFLICT raised,CONFIRMED
+MFA disable requires password + TOTP,yes,body.password + body.code required,CONFIRMED
+permission reduction revokes sessions,yes,reduced_keys -> session revoke + redis flag,CONFIRMED
+unknown permission key persisted,yes (now rejected),registry validation added this slice,CLOSED
+invite with unknown permission leaves partial user,yes (now rejected pre-persistence),validation runs before User creation,CLOSED

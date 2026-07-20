@@ -1,17 +1,58 @@
 "use client";
 import React from "react";
 import {
-  LayoutDashboard, UserCircle, Wrench, MapPin, Clock, FileText,
+  LayoutDashboard, ListChecks, UserCircle, Wrench, MapPin, Clock, FileText,
   ClipboardList, Bell, ShieldCheck, History, Settings, LogOut, MessageSquare,
 } from "lucide-react";
 import { useStaffContext, StaffContextProvider } from "../../hooks/useStaffContext";
 import { Skeleton, Badge } from "../shared/ui";
-import { authApi } from "../../lib/api";
+import { authApi, staffMyWorkApi } from "../../lib/api";
+import { useApi } from "../../hooks/useApi";
+import { Breadcrumbs, type BreadcrumbItem } from "./Breadcrumbs";
 
 type NavItem = { id: string; href: string; label: string; icon: React.ReactNode };
 
+// Phase 2A Slice 2B — the technician shell never rendered breadcrumbs at
+// all (unlike TenantLayout, which uses the shared Breadcrumbs component).
+// Static default per nav section; a page can override via the `crumbs`
+// prop for contextual routes with a real entity (e.g. a specific job) —
+// see /staff/jobs/[job_id]/page.tsx for that usage. Deliberately a
+// separate, technician-specific map rather than reusing
+// lib/page-registry.ts's TENANT_PAGE_REGISTRY: the technician shell's nav
+// labels and hierarchy ("Assigned Work", no parent groups) differ from the
+// tenant-owner shell's, and the brief explicitly warns not to assume the
+// same parent navigation for every role.
+const STAFF_BREADCRUMBS: Record<string, BreadcrumbItem[]> = {
+  "dashboard":     [{ label: "Today" }],
+  "my-work":       [{ label: "My Work" }],
+  "jobs":          [{ label: "My Jobs" }],
+  "profile":       [{ label: "Profile" }],
+  "skills":        [{ label: "Profile", href: "/staff/profile" }, { label: "Skills & Services" }],
+  "service-areas": [{ label: "Profile", href: "/staff/profile" }, { label: "Service Areas" }],
+  "availability":  [{ label: "Profile", href: "/staff/profile" }, { label: "Availability" }],
+  "chat":          [{ label: "Messages" }],
+  "documents":     [{ label: "Profile", href: "/staff/profile" }, { label: "Documents" }],
+  "notifications": [{ label: "Notifications" }],
+  "activity":      [{ label: "Profile", href: "/staff/profile" }, { label: "Activity" }],
+  "sessions":      [{ label: "Profile", href: "/staff/profile" }, { label: "Security / Sessions" }],
+};
+
+// Phase 2A Slice 2 — My Work nav badge. Source: GET /v1/staff/my-work
+// (real, Slice-1-implemented endpoint). Per the approved rule, a failed
+// request must not render as a "0" badge — it renders no badge at all,
+// indistinguishable from "badge feature not present" rather than falsely
+// claiming zero pending items.
+function useMyWorkBadgeCount(): number | null {
+  const work = useApi(React.useCallback(() => staffMyWorkApi.list(), []), []);
+  if (work.error || work.loading || !work.data) return null;
+  return work.data.items.filter(
+    it => it.priority === "urgent" || it.category === "REQUIRES_MY_ACTION",
+  ).length;
+}
+
 const NAV: NavItem[] = [
   { id: "dashboard",      href: "/staff/dashboard",          label: "Dashboard",         icon: <LayoutDashboard size={16}/> },
+  { id: "my-work",        href: "/staff/my-work",            label: "My Work",           icon: <ListChecks size={16}/> },
   { id: "profile",        href: "/staff/profile",            label: "My Profile",        icon: <UserCircle size={16}/> },
   { id: "skills",         href: "/staff/skills",             label: "Skills & Services", icon: <Wrench size={16}/> },
   { id: "service-areas",  href: "/staff/service-areas",      label: "Service Areas",     icon: <MapPin size={16}/> },
@@ -24,8 +65,15 @@ const NAV: NavItem[] = [
   { id: "sessions",       href: "/staff/security/sessions",  label: "Security / Sessions", icon: <ShieldCheck size={16}/> },
 ];
 
-export function StaffLayout({ activeNav, children }: { activeNav: string; children: React.ReactNode }) {
+export function StaffLayout({ activeNav, children, crumbs }: {
+  activeNav: string; children: React.ReactNode;
+  /** Override for contextual routes with a real entity in the breadcrumb
+      trail (e.g. a specific job) — falls back to the static per-section
+      default in STAFF_BREADCRUMBS when omitted. */
+  crumbs?: BreadcrumbItem[];
+}) {
   const ctx = useStaffContext();
+  const myWorkBadgeCount = useMyWorkBadgeCount();
 
   if (ctx.loading) {
     return (
@@ -76,7 +124,13 @@ export function StaffLayout({ activeNav, children }: { activeNav: string; childr
               background: activeNav === item.id ? "var(--brand-muted, rgba(37,99,235,0.08))" : "transparent",
               fontWeight: activeNav === item.id ? 600 : 400,
             }}>
-              {item.icon}{item.label}
+              {item.icon}
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {/* My Work badge: only rendered on real, non-zero, successfully-loaded
+                  counts. Loading/error/zero all render nothing -- never a fake "0". */}
+              {item.id === "my-work" && myWorkBadgeCount !== null && myWorkBadgeCount > 0 && (
+                <Badge variant="warning" size="sm">{myWorkBadgeCount}</Badge>
+              )}
             </a>
           ))}
         </nav>
@@ -101,6 +155,7 @@ export function StaffLayout({ activeNav, children }: { activeNav: string; childr
           <Badge variant="success" size="sm">Active</Badge>
         </header>
         <main style={{ flex: 1, padding: 24, overflow: "auto" }}>
+          <Breadcrumbs crumbs={crumbs ?? STAFF_BREADCRUMBS[activeNav] ?? [{ label: "Today" }]}/>
           <StaffContextProvider value={ctx}>{children}</StaffContextProvider>
         </main>
       </div>

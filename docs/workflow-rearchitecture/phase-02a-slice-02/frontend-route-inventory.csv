@@ -1,0 +1,67 @@
+app,route,menu_entry_before,menu_entry_after,role_access,permission_requirement,reachable,duplicated,dead,canonical_api,disposition,verification
+super-admin,/admin/dashboard,yes (Overview),yes (unchanged),any authenticated admin,"""" (visible to all)",yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/tenants,yes,yes (unchanged),super_admin+,tenant:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/tenants/onboarding,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,possible (see /admin/onboarding/providers),no,yes,PRIMARY_NAVIGATION,SOURCE_INFERRED - possible dup with onboarding/providers not re-investigated this slice
+super-admin,/admin/onboarding/providers,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,possible,no,yes,PRIMARY_NAVIGATION,SOURCE_INFERRED
+super-admin,/admin/packages,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/trust-quality,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/bookings,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no (legacy Booking model - see Phase 1A),no,partial (legacy engine),PRIMARY_NAVIGATION (kept per Phase1A reversal - actively used),SOURCE_VERIFIED
+super-admin,/admin/home-services/service-jobs,yes,yes (unchanged),admin:jobs:read,admin:jobs:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/customers,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/staff,yes,yes (unchanged),staff:read,staff:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/reviews,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes (confirmed /v1/admin/reviews canonical per Phase1A verification),PRIMARY_NAVIGATION,RUNTIME_VERIFIED (Phase1A code read confirmed target)
+super-admin,/admin/complaints,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/complaint-policies,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/verticals,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/categories,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/pricing-tiers,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/location-mapping,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/pricing/provider-overrides,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/pricing/commission,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/home-services/*,yes (9 pages),yes (10 pages - +bookability),super_admin/finance perm,mixed,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/bookability/providers,NO (orphaned),YES - added this slice,super_admin,SUPER_ADMIN_ONLY,yes now,no,no,yes (adminBookabilityApi),PRIMARY_NAVIGATION (FIXED THIS SLICE),RUNTIME_VERIFIED
+super-admin,/admin/finance,yes,yes (unchanged),finance:hub:read,finance:hub:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/finance/usage-credits,yes,yes (unchanged),finance perm,finance.usage_credits.read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/finance/deposits,yes,yes (unchanged),finance perm,finance:deposits:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/finance/topups,yes,yes (unchanged),finance perm,finance:topups:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/finance/claims,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/finance/payouts,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/service-invoices,NO (orphaned),YES - added this slice,finance:hub:read,finance:hub:read,yes now,no,no,yes,PRIMARY_NAVIGATION (FIXED THIS SLICE),RUNTIME_VERIFIED
+super-admin,/admin/provider-wallets,NO (orphaned),YES - added this slice,finance:hub:read,finance:hub:read,yes now,no,no,yes,PRIMARY_NAVIGATION (FIXED THIS SLICE),RUNTIME_VERIFIED
+super-admin,/admin/commission-records,NO (orphaned),YES - added this slice,finance:hub:read,finance:hub:read,yes now,no,no,yes,PRIMARY_NAVIGATION (FIXED THIS SLICE),RUNTIME_VERIFIED
+super-admin,/admin/payments,NO (orphaned),YES - added this slice,finance:hub:read,finance:hub:read,yes now,no,no,yes,PRIMARY_NAVIGATION (FIXED THIS SLICE),RUNTIME_VERIFIED
+super-admin,/admin/financial-events,NO (orphaned),YES - added this slice,finance:hub:read,finance:hub:read,yes now,no,no,yes,PRIMARY_NAVIGATION (FIXED THIS SLICE),RUNTIME_VERIFIED
+super-admin,/admin/compliance,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/marketing,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/notifications,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/notifications/settings,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/analytics,yes,yes (unchanged - Phase1 claim of drift was stale),analytics:dashboard:read,analytics:dashboard:read,yes,no,no,yes,PRIMARY_NAVIGATION,RUNTIME_VERIFIED (reversal of Phase1 finding)
+super-admin,/admin/reports,yes,yes (unchanged - Phase1 claim of drift was stale),analytics:dashboard:read,analytics:dashboard:read,yes,no,no,yes,PRIMARY_NAVIGATION,RUNTIME_VERIFIED (reversal of Phase1 finding)
+super-admin,/admin/intelligence,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/engines,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/security,yes,yes (unchanged),security perm,security:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/workflow-templates,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/audit-logs,yes,yes (unchanged),auth:audit:read,auth:audit:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/users,yes,yes (unchanged),auth:users:read,auth:users:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED (invite-form placeholder-role bug FIXED this slice)
+super-admin,/admin/users/roles,yes,yes (unchanged),platform:roles:read,platform:roles:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/users/permissions,yes,yes (unchanged),platform:permissions:read,platform:permissions:read,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/media,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/settings,yes,yes (unchanged),super_admin,SUPER_ADMIN_ONLY,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+super-admin,/admin/ai,no,no (CORRECT per approved CONTEXTUAL_ROUTE disposition),n/a,n/a,by URL only,no,no,partial (ai_chat engine),HIDDEN_BUT_SUPPORTED (AI chat consolidation deferred per Decision 4),SOURCE_VERIFIED
+super-admin,/admin/ai-chat,no,no (CORRECT - same as above),n/a,n/a,by URL only,no,no,partial,HIDDEN_BUT_SUPPORTED,SOURCE_VERIFIED
+super-admin,/admin/real-estate/*,dynamic (per-vertical),dynamic (unchanged),super_admin,SUPER_ADMIN_ONLY,yes when vertical enabled,no,no,yes,CONTEXTUAL_ROUTE (dynamic vertical injection, not drift),RUNTIME_VERIFIED (reversal of Phase1 finding)
+super-admin,/admin/coaching/*,dynamic,dynamic (unchanged),super_admin,SUPER_ADMIN_ONLY,yes when vertical enabled,no,no,yes,CONTEXTUAL_ROUTE,RUNTIME_VERIFIED
+super-admin,/admin/catalog-module/[key],no menu entry (dynamic placeholder),unchanged,super_admin,n/a,yes (contextual),no,no,n/a (honest placeholder),HIDDEN_BUT_SUPPORTED,SOURCE_VERIFIED
+tenant-portal,/dashboard,yes,yes (unchanged),tenant_owner,n/a,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+tenant-portal,/reviews,yes,yes (unchanged),tenant_owner,n/a,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+tenant-portal,/provider/reviews,NO menu entry,unchanged (still no entry - correctly not surfaced),tenant_owner,n/a,by URL only,yes (dup of /reviews),no,yes,HIDDEN_BUT_SUPPORTED,SOURCE_VERIFIED - confirmed zero other referrers
+tenant-portal,/marketing,yes,yes (unchanged),tenant_owner,n/a,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+tenant-portal,/provider/marketing,NO menu entry,unchanged (no entry),tenant_owner,n/a,by URL only + WAS linked from MarketingLaunchWidget (FIXED this slice),yes (dup of /marketing),no,yes,HIDDEN_BUT_SUPPORTED,RUNTIME_VERIFIED - real broken link found+fixed
+tenant-portal,/chat,yes,yes (unchanged),tenant_owner,n/a,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+tenant-portal,/provider/chat,NO menu entry,unchanged (no entry),tenant_owner,n/a,by URL only,yes (dup of /chat),no,yes,HIDDEN_BUT_SUPPORTED,SOURCE_VERIFIED - confirmed zero other referrers
+tenant-portal,/staff/dashboard,yes,yes (unchanged),technician/staff,n/a,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+tenant-portal,/staff/my-work,yes (added Slice 1),yes (unchanged this slice; badge added),technician/staff,n/a,yes,no,no,yes,PRIMARY_NAVIGATION,RUNTIME_VERIFIED
+tenant-portal,/staff/jobs,yes,yes (unchanged),technician/staff,n/a,yes,no,no,yes,PRIMARY_NAVIGATION,SOURCE_VERIFIED
+tenant-portal,/staff/home-services/jobs,NO menu entry,unchanged (no entry),technician/staff,n/a,by URL only,yes (dup of /staff/jobs),no,yes,HIDDEN_BUT_SUPPORTED,SOURCE_VERIFIED - not re-investigated for other referrers this slice
+tenant-portal,/staff/jobs/[job_id],contextual (from /staff/jobs),unchanged; Parts Request UI added Slice 1,technician,n/a,yes,no,no,yes (ServiceJob only),CONTEXTUAL_ROUTE,RUNTIME_VERIFIED
+tenant-portal,/(tenant)/service-jobs/[id]/execution,contextual,unchanged; Mark Installed button added Slice 1,tenant_owner/staff,n/a,yes,no,no,yes (ServiceJob only),CONTEXTUAL_ROUTE,RUNTIME_VERIFIED

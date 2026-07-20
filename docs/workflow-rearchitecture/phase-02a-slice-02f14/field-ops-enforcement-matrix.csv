@@ -1,0 +1,3 @@
+router,total_routes,fully_protected,unverified,pct,verification_level
+app.engines.field_ops.staff_router,6,6,0,100%,SLICE_2F14_VERIFIED
+app.engines.field_ops.router,28,9,19,32%,SLICE_2F14_VERIFIED (9 in-scope) / OUT_OF_SCOPE (19 distinct capability)

@@ -1,0 +1,5 @@
+capability,storage_key_source,client_authoritative,evidence
+create_api_key (M01, unrelated),n/a,n/a,not in N01 scope
+MediaAssetService uploads (Set A),server-generated in the asset service,NO,not modified this slice; pre-existing
+MediaService.initiate_upload (Set B),"f'tenants/{tenant_id}/{secrets.token_hex(8)}/{file_name}' -- SERVER-GENERATED PATTERN but tenant_id segment is client-asserted",PARTIAL,"the random component is server-generated (secrets.token_hex), but the tenant_id PREFIX embedded in the key is client-asserted; a malicious tenant_id could place a key under another tenant's storage prefix"
+MediaService.delete_file (Set B),resolves storage_key from the loaded MediaFile row,NO (key itself is not client-supplied),CONFIRMED for the delete path specifically

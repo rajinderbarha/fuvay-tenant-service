@@ -1,0 +1,9 @@
+route,state_transition_check,finding
+POST /v1/appointments/{appointment_id}/confirm,"appt.status != HOLD -> CONFLICT; hold_expires_at TTL check",unchanged by this slice; ownership check added ahead of the existing state check
+POST /v1/appointments/{appointment_id}/cancel,"appt.status in TERMINAL_APPT_STATUSES -> CONFLICT",unchanged; ownership check added ahead of the existing state check
+POST /v1/appointments/{appointment_id}/reschedule,"appt.status in TERMINAL_APPT_STATUSES -> CONFLICT",unchanged; ownership check added ahead of the existing state check
+POST /v1/appointments/{appointment_id}/no-show,"appt.status in TERMINAL_APPT_STATUSES -> CONFLICT",unchanged; ownership check added ahead of the existing state check
+POST /v1/dispatch/jobs/{job_id}/dispatch,"idempotent on existing DispatchRecord.job_id (returns existing record unchanged)",unchanged; tenant checks added ahead of the existing idempotency check
+POST /v1/dispatch/jobs/{job_id}/reassign,"no prior-state guard (any DispatchRecord can be reassigned)",pre-existing, not narrowed or widened by this slice
+POST /v1/inventory/reservations/confirm,"StockReservation.status == ACTIVE required (WHERE predicate)",unchanged; tenant predicate added alongside the existing status predicate
+POST /v1/inventory/reservations/release,"StockReservation.status == ACTIVE required (WHERE predicate)",unchanged; tenant predicate added alongside the existing status predicate

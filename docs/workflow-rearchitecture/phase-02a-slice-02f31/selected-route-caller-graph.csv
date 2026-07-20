@@ -1,0 +1,13 @@
+service_method,route_callers,internal_callers,worker_callers
+MediaAssetService.remove_tenant_business_logo,DELETE /v1/provider/profile/logo,none found,none found
+MediaAssetService.remove_tenant_shop_photo,DELETE /v1/provider/profile/shop-photo,none found,none found
+MediaAssetService.remove_user_profile_photo,DELETE /v1/staff/profile/photo,none found,none found
+MediaAssetService.set_user_profile_photo,POST /v1/me/profile-photo,none found,none found
+MediaAssetService.upload_asset,POST /v1/media/upload,none found,none found
+MediaAssetService.replace_asset,POST /v1/media/{media_id}/replace,none found,none found
+MediaAssetService.set_tenant_business_logo,POST /v1/provider/profile/logo,none found,none found
+MediaAssetService.set_tenant_shop_photo,POST /v1/provider/profile/shop-photo,none found,none found
+MediaAssetService.set_user_profile_photo,POST /v1/staff/profile/photo,none found,none found
+MediaService.initiate_upload,POST /v1/media/upload/initiate,none found,none found
+MediaService.confirm_upload,POST /v1/media/upload/{session_id}/confirm,none found,none found
+MediaService.delete_file,DELETE /v1/media/tenants/{tenant_id}/files/{file_id},none found,none found

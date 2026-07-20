@@ -18,10 +18,27 @@ logger = structlog.get_logger("service_catalog.service")
 
 class ServiceCatalogService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db
         self.request_id = request_id
         self.actor_id = actor_id; self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-36: create_item accepted a client-supplied body
+        tenant_id with no comparison to the caller's own tenant."""
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="catalog_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's catalog.",
+                blocking_rule="catalog_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     def _dict(self, item: ServiceCatalogItem) -> dict:
         return {
@@ -60,6 +77,7 @@ class ServiceCatalogService:
                 "define at least one checklist step.")
 
     async def create_item(self, tenant_id: uuid.UUID, data: dict) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         self._validate(data["service_type"], data["pricing_model"],
                         Decimal(str(data["base_price"])) if data.get("base_price") is not None else None,
                         Decimal(str(data["max_price"])) if data.get("max_price") is not None else None,
@@ -126,6 +144,10 @@ class ServiceCatalogService:
         r = await self.db.execute(select(ServiceCatalogItem).where(ServiceCatalogItem.id == item_id))
         item = r.scalar_one_or_none()
         if not item: raise NotFoundException("ServiceCatalogItem", str(item_id))
+        if self.actor_role != "super_admin" and (
+            self.actor_tenant_id is None or item.tenant_id != self.actor_tenant_id
+        ):
+            raise NotFoundException("ServiceCatalogItem", str(item_id))
 
         new_service_type = data.get("service_type", item.service_type)
         new_pricing_model = data.get("pricing_model", item.pricing_model)

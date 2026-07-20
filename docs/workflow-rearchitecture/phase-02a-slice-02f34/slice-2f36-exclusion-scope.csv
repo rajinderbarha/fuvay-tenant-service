@@ -1,0 +1,6 @@
+method,path,endpoint,repository_boundary,reason_for_exclusion
+POST,/v1/rag/query,query,app.engines.rag.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+GET,/v1/commerce/tenants/{tenant_id}/deposit,get_deposit,app.engines.platform_commerce.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+POST,/v1/commerce/tenants/{tenant_id}/deposit/initiate,initiate_deposit,app.engines.platform_commerce.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+GET,/v1/commerce/tenants/{tenant_id}/deposit/transactions,get_deposit_transactions,app.engines.platform_commerce.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope
+DELETE,/v1/webhooks/endpoints/{endpoint_id},delete_endpoint,app.engines.webhook.router,Canonical unprotected route assigned to a different future slice; explicitly out of scope

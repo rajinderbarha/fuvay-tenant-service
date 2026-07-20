@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request
 
 from app.dependencies.auth import UserContext, require_technician
 from app.dependencies.db import get_db
+from app.core.permissions import require_staff_or_above_mutation
 from app.engines.admin_catalog.service_option_service import ServiceOptionService
 from app.schemas.base import ApiResponse, ok
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +40,6 @@ async def get_supported_options(service_id: uuid.UUID, r: Request,
 
 @router.post("/{service_id}/supported-options", response_model=ApiResponse[dict])
 async def set_supported_options(service_id: uuid.UUID, r: Request,
-                                 u: UserContext = Depends(require_technician),
+                                 u: UserContext = Depends(require_staff_or_above_mutation),
                                  s: ServiceOptionService = Depends(_svc)):
     return ok(await s.set_provider_supported_options(service_id, await r.json()), _rid(r))

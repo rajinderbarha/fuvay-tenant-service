@@ -2,7 +2,7 @@
 import uuid
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.dependencies.auth import UserContext
 from app.dependencies.db import get_db
 from app.engines.field_ops.checklist_template_service import ChecklistTemplateService
@@ -40,7 +40,7 @@ async def list_templates(r: Request,
              summary="Step 8: Create a checklist template for a catalog service",
              response_model=ApiResponse[dict])
 async def create_template(r: Request,
-                           u: UserContext = Depends(require_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
+                           u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
                            s: ChecklistTemplateService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.create_template(_tenant_id(u, body.get("tenant_id")), body), _rid(r), ENGINE_ID)
@@ -57,7 +57,7 @@ async def get_template(template_id: uuid.UUID, r: Request,
 @router.put("/{template_id}", summary="Step 8: Update a checklist template",
             response_model=ApiResponse[dict])
 async def update_template(template_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(require_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
+                           u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
                            s: ChecklistTemplateService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.update_template(template_id, body), _rid(r), ENGINE_ID)
@@ -66,7 +66,7 @@ async def update_template(template_id: uuid.UUID, r: Request,
 @router.delete("/{template_id}", summary="Step 8: Soft delete a checklist template",
                response_model=ApiResponse[dict])
 async def delete_template(template_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(require_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
+                           u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
                            s: ChecklistTemplateService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.delete_template(template_id), _rid(r), ENGINE_ID)
 
@@ -83,7 +83,7 @@ async def list_items(template_id: uuid.UUID, r: Request,
              summary="Step 8: Add a checklist item to a template",
              response_model=ApiResponse[dict])
 async def add_item(template_id: uuid.UUID, r: Request,
-                    u: UserContext = Depends(require_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
+                    u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
                     s: ChecklistTemplateService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.add_item(template_id, body), _rid(r), ENGINE_ID)
@@ -92,7 +92,7 @@ async def add_item(template_id: uuid.UUID, r: Request,
 @router.put("/{template_id}/items/{item_id}", summary="Step 8: Update a checklist template item",
             response_model=ApiResponse[dict])
 async def update_item(template_id: uuid.UUID, item_id: uuid.UUID, r: Request,
-                       u: UserContext = Depends(require_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
                        s: ChecklistTemplateService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.update_item(template_id, item_id, body), _rid(r), ENGINE_ID)
@@ -101,6 +101,6 @@ async def update_item(template_id: uuid.UUID, item_id: uuid.UUID, r: Request,
 @router.delete("/{template_id}/items/{item_id}", summary="Step 8: Soft delete a checklist template item",
                response_model=ApiResponse[dict])
 async def delete_item(template_id: uuid.UUID, item_id: uuid.UUID, r: Request,
-                       u: UserContext = Depends(require_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_CHECKLIST_MANAGE)),
                        s: ChecklistTemplateService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.delete_item(template_id, item_id), _rid(r), ENGINE_ID)

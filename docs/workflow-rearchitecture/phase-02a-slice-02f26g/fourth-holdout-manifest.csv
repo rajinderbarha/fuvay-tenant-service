@@ -1,0 +1,25 @@
+stratum,method,path,endpoint,module,selection_reason
+G01_platform_admin_target_tenant,POST,/v1/tenants/{tenant_id}/engines/bulk-disable,bulk_disable,app.engines.tenant_engine.router,G01_platform_admin_target_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G01_platform_admin_target_tenant,POST,/v1/tenants/{tenant_id}/plan/downgrade,downgrade_plan,app.engines.tenant_engine.router,G01_platform_admin_target_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G01_platform_admin_target_tenant,POST,/v1/tenants/{tenant_id}/terminate/begin,begin_termination,app.engines.tenant_engine.router,G01_platform_admin_target_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G01_platform_admin_target_tenant,PUT,/v1/tenants/{tenant_id}/billing/payment-method,update_payment_method,app.engines.tenant_engine.router,G01_platform_admin_target_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G01_platform_admin_target_tenant,PUT,/v1/tenants/{tenant_id}/engines/{engine_id}/config,update_engine_config,app.engines.tenant_engine.router,G01_platform_admin_target_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G07_mutating_get_candidate,GET,/v1/media/signed/{token},resolve_signed_media,app.engines.media.admin_router,G07_mutating_get_candidate; disjoint from 3 burned corpora; frozen pre-verdict
+G08_client_asserted_tenant,DELETE,/v1/settings/tenants/{tenant_id}/{key},delete_tenant,app.engines.settings_engine.router,G08_client_asserted_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G08_client_asserted_tenant,POST,/v1/ds/tenants/{tenant_id}/customers/{customer_id}/ltv/recompute,recompute_ltv,app.engines.data_science.router,G08_client_asserted_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G08_client_asserted_tenant,POST,/v1/geo/tenants/{tenant_id}/zones,create_zone,app.engines.geo.router,G08_client_asserted_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G08_client_asserted_tenant,POST,/v1/pricing/tenants/{tenant_id}/prices/set,set_tenant_price,app.engines.pricing.router,G08_client_asserted_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G08_client_asserted_tenant,PUT,/v1/pricing/tenants/{tenant_id}/brand-adjustment,set_brand_adj,app.engines.pricing.router,G08_client_asserted_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G08_client_asserted_tenant,PUT,/v1/pricing/tenants/{tenant_id}/rules/{rule_id},update_rule,app.engines.pricing.router,G08_client_asserted_tenant; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,DELETE,/v1/media/{media_id},delete_media,app.engines.media.new_router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,DELETE,/v1/rag/knowledge-bases/{kb_id},delete_kb,app.engines.rag.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,POST,/v1/appointments/{appointment_id}/confirm,confirm_hold,app.engines.appointment.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,POST,/v1/auth/logout-all,logout_all,app.engines.auth.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,POST,/v1/auth/sessions/revoke-all-other,revoke_all_other_sessions,app.engines.auth.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,POST,/v1/chat/conversations,create_conversation,app.engines.chat.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,POST,/v1/compliance/deletion-requests,request_deletion,app.engines.compliance.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,POST,/v1/dispatch/jobs/{job_id}/accept,accept_job,app.engines.dispatch.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,POST,/v1/documents/{document_id}/send,send_for_signature,app.engines.document.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,POST,/v1/enterprise/exports/{export_id}/retry,retry_export,app.engines.enterprise_grid.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,POST,/v1/inventory/reservations,create_reservation,app.engines.inventory.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict
+G09_generic_prefix,POST,/v1/media/upload/{session_id}/confirm,confirm_upload,app.engines.media.router,G09_generic_prefix; disjoint from 3 burned corpora; frozen pre-verdict

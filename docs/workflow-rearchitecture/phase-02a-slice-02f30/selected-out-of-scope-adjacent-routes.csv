@@ -1,0 +1,8 @@
+method,path,relationship,exclusion_reason
+GET,/v1/media/signed/{token},"same router, read",read-only; not a canonical mutation
+DELETE,/v1/media/{media_id},"same router, delete",HELD candidate outside the media held set (registered under a different module key); not canonical - do not add
+POST,/v1/security/api-keys/{key_id}/rotate,unrelated subsystem,separate security module
+DELETE,/v1/webhooks/endpoints/{endpoint_id},N09 module,different module; canonical but not selected
+DELETE,/v1/geo/zones/{zone_id},N10 module,different module; canonical but not selected
+PUT,/v1/me/profile,N03 profile module,different module (profile.router)
+PUT,/v1/staff/profile,N03 profile module,different module (profile.router)

@@ -1,0 +1,19 @@
+category,scenario,expected,verified_by
+CUSTOMER SELF-BOOKING,customer_id server-derived,succeeds; customer_id never read from body for this branch,test_customer_self_booking_skips_validation_entirely
+CUSTOMER SELF-BOOKING,request customer substitution,structurally impossible (ternary never evaluates body for customer role),same test
+TENANT-ASSISTED BOOKING,existing same-tenant customer succeeds,succeeds,test_assisted_booking_with_existing_relationship_succeeds
+TENANT-ASSISTED BOOKING,customer known only to another tenant,422 CUSTOMER_TENANT_RELATIONSHIP_REQUIRED,test_bootstrap_attack_no_relationship_rejected (same mechanism -- tenant-scoped query)
+TENANT-ASSISTED BOOKING,completely unrelated customer,422 CUSTOMER_TENANT_RELATIONSHIP_REQUIRED,test_bootstrap_attack_no_relationship_rejected
+TENANT-ASSISTED BOOKING,read-only tenant actor,denied at router (require_tenant_mutation_permission),test_create_booking_uses_tenant_mutation_permission (source-verified wiring) + Slice 2F-14B's established behavioral pattern for the same dependency
+TENANT-ASSISTED BOOKING,technician,denied -- BOOKING_CREATE not granted to technician,ROLE_PERMISSIONS inspection (pre-existing, unchanged)
+TENANT-ASSISTED BOOKING,invalid customer account (foreign/wrong-role/disabled/deleted),422 FOREIGN_CUSTOMER,test_foreign_customer_rejected / test_wrong_role_account_rejected / test_disabled_customer_rejected / test_deleted_customer_rejected
+CONFIRMATION,tenant_owner succeeds,succeeds (pre-existing, unmodified),test_step4_booking.py existing suite, re-verified
+CONFIRMATION,wrong persona (customer),403 CUSTOMER_CANNOT_CONFIRM_BOOKING,pre-existing, unmodified, re-verified
+CONFIRMATION,provider-only self-confirmation cannot manufacture new authority,confirmed -- the exploit is blocked upstream at creation, not at confirmation,provider-self-confirmation-attack.md
+CONFIRMATION,cross-tenant booking,denied via _assert_can_access_booking,pre-existing, unmodified, re-verified
+CONFIRMATION,invalid state,422 BOOKING_INVALID_STATUS_TRANSITION,pre-existing, unmodified, re-verified
+CONFIRMATION,repeated confirmation,422 (booking no longer in legal source states),pre-existing, unmodified, re-verified
+BOOTSTRAP,provider creates and confirms fabricated booking,rejected at creation (step 2 of the chain) -- confirmation never reached,test_bootstrap_attack_no_relationship_rejected
+BOOTSTRAP,subsequent standalone field_ops.Job,remains denied (no qualifying booking/job ever created),provider-self-confirmation-attack.md
+UNKNOWN PERSONA,unknown role/scope,fails closed at router (require_tenant_mutation_permission's existing fail-closed behavior),pre-existing mechanism, re-verified via source inspection
+ROUTER GUARD SOURCE,create_booking/confirm_booking/reject_booking/convert_to_job wiring,require_tenant_mutation_permission present,test_create_booking_uses_tenant_mutation_permission / test_confirm_reject_convert_use_tenant_mutation_permission

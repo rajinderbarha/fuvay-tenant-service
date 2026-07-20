@@ -106,14 +106,17 @@ async def test_create_complaint_sets_sla_deadlines():
     db.add    = lambda obj: saved.append(obj)
     db.flush  = AsyncMock()
     db.commit = AsyncMock()
-    # Mock eligibility check pass
+    customer_id = uuid.uuid4()
+    # Slice 2F-10A: create_complaint now calls the full
+    # ComplaintEligibilityService.check_eligible contract.
     with patch(
         "app.engines.complaints.eligibility_service.ComplaintEligibilityService.check_eligible",
-        new_callable=AsyncMock, return_value=None,
+        new_callable=AsyncMock,
+        return_value={"eligible": True, "reason": None, "reason_code": None, "policy": None},
     ):
         svc = ComplaintService()
         complaint = await svc.create_complaint(
-            db, uuid.uuid4(), uuid.uuid4(), "service_job", uuid.uuid4(),
+            db, customer_id, uuid.uuid4(), "service_job", uuid.uuid4(),
             "service_quality", "The work was not done properly",
             tenant_id=uuid.uuid4(),
         )

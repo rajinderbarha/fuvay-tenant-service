@@ -1,0 +1,6 @@
+route,object,ownership_check_added,non_oracular
+PUT /v1/pricing/tenants/{tenant_id}/zones/{zone_id},ZoneSurcharge,"z.tenant_id != tenant_id -> NotFoundException (previously ZERO tenant check existed at all)",YES
+DELETE /v1/pricing/tenants/{tenant_id}/zones/{zone_id},ZoneSurcharge,"same as update_zone",YES
+PUT /v1/pricing/tenants/{tenant_id}/rules/{rule_id},DynamicPricingRule,"rule.tenant_id != tenant_id -> NotFoundException (previously ZERO tenant check existed at all)",YES
+DELETE /v1/pricing/tenants/{tenant_id}/rules/{rule_id},DynamicPricingRule,"same as update_rule",YES
+POST /v1/commerce/warranty/claims,ServiceJob (parent),"job.tenant_id/customer_id must match -> NotFoundException (previously ZERO parent verification -- any tenant_id/job_id pair with a client-supplied claim amount was accepted)",YES

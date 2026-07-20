@@ -7,6 +7,7 @@ import uuid
 from decimal import Decimal
 
 from app.dependencies.auth import get_current_user, UserContext
+from app.core.permissions import require_tenant_owner_mutation
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.engines.complaints.complaint_service import ComplaintService
@@ -88,7 +89,12 @@ async def respond_to_complaint(
     complaint_id: uuid.UUID,
     body: AddMessageIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    # Slice 2F-9: previously get_current_user only -- any authenticated
+    # user of any role/tenant could respond to any tenant's complaint.
+    # No existing COMPLAINT_* permission exists in the registry; using
+    # the narrowest existing composed dependency (tenant_owner role,
+    # access-scope-aware) rather than inventing a new permission.
+    u: UserContext   = Depends(require_tenant_owner_mutation),
     db: AsyncSession = Depends(get_db),
 ):
     msg = await _complaint.provider_add_response(
@@ -116,7 +122,7 @@ async def offer_resolution(
     complaint_id: uuid.UUID,
     body: OfferResolutionIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_tenant_owner_mutation),
     db: AsyncSession = Depends(get_db),
 ):
     res = await _complaint.provider_offer_resolution(
@@ -177,13 +183,13 @@ async def schedule_rework(
     rework_id: uuid.UUID,
     body: ScheduleReworkIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_tenant_owner_mutation),
     db: AsyncSession = Depends(get_db),
 ):
     rw = await _rework.schedule_rework(db, rework_id, u.user_id,
                                        scheduled_date=body.scheduled_date,
                                        scheduled_time_window=body.scheduled_time_window,
-                                       request_id=_rid(r))
+                                       request_id=_rid(r), tenant_id=u.tenant_id)
     return ok({"id": str(rw.id), "status": rw.status}, _rid(r), "provider.rework.scheduled")
 
 
@@ -191,10 +197,10 @@ async def schedule_rework(
 async def start_rework(
     rework_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_tenant_owner_mutation),
     db: AsyncSession = Depends(get_db),
 ):
-    rw = await _rework.mark_rework_in_progress(db, rework_id, u.user_id)
+    rw = await _rework.mark_rework_in_progress(db, rework_id, u.user_id, tenant_id=u.tenant_id)
     return ok({"id": str(rw.id), "status": rw.status}, _rid(r), "provider.rework.started")
 
 
@@ -203,10 +209,10 @@ async def complete_rework(
     rework_id: uuid.UUID,
     body: ReworkNotesIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_tenant_owner_mutation),
     db: AsyncSession = Depends(get_db),
 ):
-    rw = await _rework.mark_rework_completed(db, rework_id, u.user_id, notes=body.notes, request_id=_rid(r))
+    rw = await _rework.mark_rework_completed(db, rework_id, u.user_id, notes=body.notes, request_id=_rid(r), tenant_id=u.tenant_id)
     return ok({"id": str(rw.id), "status": rw.status}, _rid(r), "provider.rework.completed")
 
 
@@ -229,10 +235,10 @@ async def review_refund(
     refund_id: uuid.UUID,
     body: RefundReviewIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_tenant_owner_mutation),
     db: AsyncSession = Depends(get_db),
 ):
-    rf = await _refund.provider_review_refund(db, refund_id, u.user_id, notes=body.notes, request_id=_rid(r))
+    rf = await _refund.provider_review_refund(db, refund_id, u.user_id, notes=body.notes, request_id=_rid(r), tenant_id=u.tenant_id)
     return ok({"id": str(rf.id), "status": rf.status}, _rid(r), "provider.refund.reviewed")
 
 
@@ -279,7 +285,7 @@ async def submit_ai_answers(
     complaint_id: uuid.UUID,
     body: AIAnswersIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_tenant_owner_mutation),
     db: AsyncSession = Depends(get_db),
 ):
     """MODULE-L5-02 bug #37: the AI settlement session asked the provider
@@ -313,7 +319,7 @@ async def create_settlement_proposal(
     complaint_id: uuid.UUID,
     body: CreateSettlementIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_tenant_owner_mutation),
     db: AsyncSession = Depends(get_db),
 ):
     from app.engines.complaints.constants import ACTOR_PROVIDER
@@ -326,6 +332,7 @@ async def create_settlement_proposal(
         proposal_amount=body.proposal_amount,
         conditions=body.conditions,
         request_id=_rid(r),
+        tenant_id=u.tenant_id,
     )
     return ok(proposal.to_dict(), _rid(r), "provider.settlement.proposal.created")
 
@@ -336,7 +343,7 @@ async def respond_to_settlement(
     proposal_id:  uuid.UUID,
     body: SettlementRespondIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_tenant_owner_mutation),
     db: AsyncSession = Depends(get_db),
 ):
     proposal = await _complaint.tenant_respond_to_settlement(

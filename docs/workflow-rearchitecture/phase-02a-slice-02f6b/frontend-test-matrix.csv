@@ -1,0 +1,31 @@
+persona,scenario,expected,proven_by
+tenant_owner (mutation-capable),canManageProviderInvoices,true,api.persona.test.ts
+tenant_owner (mutation-capable),canIssueProviderInvoice,true,api.persona.test.ts
+staff (mutation-capable),canManageProviderInvoices,true,api.persona.test.ts
+staff (mutation-capable),canIssueProviderInvoice,false (owner-only),api.persona.test.ts
+technician (mutation-capable),canManageProviderInvoices,false,api.persona.test.ts
+technician (mutation-capable),canIssueProviderInvoice,false,api.persona.test.ts
+tenant_owner (read-only access_scope),canManageProviderInvoices,false,api.persona.test.ts
+tenant_owner (read-only access_scope),canIssueProviderInvoice,false,api.persona.test.ts
+staff (read-only access_scope),canManageProviderInvoices,false,api.persona.test.ts
+customer,canManageProviderInvoices,false,api.persona.test.ts
+customer,canIssueProviderInvoice,false,api.persona.test.ts
+guest,canManageProviderInvoices,false,api.persona.test.ts
+guest,canIssueProviderInvoice,false,api.persona.test.ts
+unknown role string,canManageProviderInvoices,false (fail closed),api.persona.test.ts
+unknown role string,canIssueProviderInvoice,false (fail closed),api.persona.test.ts
+
+# NOT TESTED (honest gap, not a false claim): table row actions, detail-page
+#   actions, drawer/modal actions, shared menus, mutation-handler invocation
+#   from a live component, and stale-rendered-state-after-role-change behavior
+#   -- because no such UI component exists anywhere in the repository for any
+#   of the 4 capabilities (see frontend-caller-inventory.csv). These tests
+#   cannot be written against nonexistent components without inventing new
+#   UI, which is explicitly out of scope for this slice ("do not redesign the
+#   invoice interface"). When a detail page is eventually built, these helper
+#   functions are ready to gate its controls, and this same test file should
+#   be extended with component-level tests at that time.
+# Test runner: Node's built-in node:test (no jest/vitest exists in this app --
+#   see known-limitations.md). Executed via a tsc-compile-then-node--test
+#   workaround since npx tsx's on-the-fly execution failed in this environment
+#   due to an unrelated npm cache-cleanup permission issue on Windows.

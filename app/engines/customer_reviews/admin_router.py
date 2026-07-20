@@ -215,7 +215,12 @@ async def get_review(
     u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    review = await _svc.get_review(db, uuid.UUID(review_id))
+    # Slice 2F-24: `get_review` now requires a tenant or customer scope and
+    # fails closed without one. The platform-admin surface is legitimately
+    # cross-tenant (this whole router is `require_super_admin`), so it reads
+    # through the explicitly-unscoped internal helper rather than being handed
+    # a fake scope. The intent is visible at the call site.
+    review = await _svc._get_review(db, uuid.UUID(review_id))
     # Enrich with reply
     reply_res = await db.execute(
         select(ReviewReply).where(ReviewReply.review_id == uuid.UUID(review_id))

@@ -1,0 +1,12 @@
+route,object,ownership_check_added,non_oracular
+DELETE /v1/appointments/calendar/blocks/{block_id},StaffCalendarBlock,"block.tenant_id != actor_tenant_id -> NotFoundException (same as missing)",YES
+PUT /v1/catalog/{item_id},ServiceCatalogItem,"item.tenant_id != actor_tenant_id -> NotFoundException",YES
+POST /v1/dispatch/jobs/{job_id}/reassign,DispatchRecord,"rec.tenant_id != actor_tenant_id -> NotFoundException",YES
+POST /v1/dispatch/jobs/{job_id}/dispatch,Job (parent lookup),"job.tenant_id != tenant_id -> NotFoundException (job existed but belongs to a different tenant)",YES
+POST /v1/appointments/{appointment_id}/confirm,Appointment,"_assert_appt_access: tenant match (staff) or customer_id match (customer) -> NotFoundException",YES
+POST /v1/appointments/{appointment_id}/cancel,Appointment,"same as confirm_hold",YES
+POST /v1/appointments/{appointment_id}/reschedule,Appointment,"same as confirm_hold",YES
+POST /v1/appointments/{appointment_id}/no-show,Appointment,"same as confirm_hold",YES
+POST /v1/inventory/reservations/confirm,StockReservation,"added StockReservation.tenant_id predicate to the lookup query itself (not a post-hoc check)",YES (query returns no row for foreign tenant, same as missing)
+POST /v1/inventory/reservations/release,StockReservation,"same as confirm_reservation",YES
+POST /v1/chat/conversations/{conversation_id}/messages,Conversation,"tenant_id predicate already present in query (pre-existing); customer membership now checked via _require_participant",YES

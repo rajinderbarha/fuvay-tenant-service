@@ -268,7 +268,7 @@ export const quoteApi = {
 };
 
 // ── AI Chat (DeepSeek via backend — key never exposed to app) ─────────────────
-export interface AIChatResponse { reply: string; tools_called: string[]; model: string; }
+// Reuses the AIChatResponse shape declared above (aiChatApi) — identical fields.
 export const aiApi = {
   chat: (message: string, history: { role: string; content: string }[] = []) =>
     apiFetch<AIChatResponse>("/v1/ai/chat", {

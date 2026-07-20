@@ -18,7 +18,7 @@ import { useTenant } from "../../hooks/useTenant";
 import { Toaster, type ToastItem } from "../shared/ui";
 import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
-import { Breadcrumbs } from "./Breadcrumbs";
+import { Breadcrumbs, BreadcrumbOverrideCtx, type BreadcrumbItem } from "./Breadcrumbs";
 import { authApi, providerStatusApi, tenantSetupApi, staffApi, providerServiceAreasApi, usageCreditsApi, entitlementApi } from "../../lib/api";
 import { useApi } from "../../hooks/useApi";
 
@@ -351,6 +351,7 @@ function TenantShellInner({ children, activeNav }: {
   const { theme, toggle } = useTheme();
   const tour   = useTour();
   const tenant = useTenant();
+  const [breadcrumbOverride, setBreadcrumbOverride] = useState<BreadcrumbItem[] | null>(null);
   const [collapsed,    setCollapsed]    = useState(false);
   const [toasts,       setToasts]       = useState<ToastItem[]>([]);
   const [myName,       setMyName]       = useState<string>("");
@@ -559,8 +560,10 @@ function TenantShellInner({ children, activeNav }: {
 
         <main style={{ flex: 1, overflowY: "auto", padding: "28px 32px", background: "var(--bg-gradient)" }}>
           <div style={{ maxWidth: 1440, margin: "0 auto" }}>
-            <Breadcrumbs/>
-            {children}
+            <Breadcrumbs crumbs={breadcrumbOverride ?? undefined}/>
+            <BreadcrumbOverrideCtx.Provider value={setBreadcrumbOverride}>
+              {children}
+            </BreadcrumbOverrideCtx.Provider>
           </div>
         </main>
       </div>

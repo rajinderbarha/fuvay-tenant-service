@@ -1,9 +1,9 @@
 """Review Engine — Router (14 endpoints). Zero inline imports."""
 import uuid
 import structlog
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.review.service import ReviewService
@@ -12,8 +12,14 @@ logger = structlog.get_logger("review.router")
 router = APIRouter(prefix="/v1/reviews", tags=["Review Engine"])
 ENGINE_ID = "review"
 def _svc(r: Request, db: AsyncSession=Depends(get_db), u: UserContext=Depends(get_current_user)):
+    # Slice 2F-25: the service is now constructed WITH the caller's tenant, so
+    # tenant isolation can be enforced server-side. Before this, the service
+    # had no tenant context at all and every tenant-facing method trusted a
+    # client-supplied tenant_id from the query string or request body.
     return ReviewService(db=db, request_id=getattr(r.state,"request_id","—"),
-                          actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role)
+                          actor_id=uuid.UUID(u.user_id) if u.user_id else None,
+                          actor_role=u.role,
+                          actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 
 @router.get("/meta", tags=["Engine Registry"])
@@ -24,17 +30,21 @@ async def engine_meta() -> dict:
                              "precomputed_aggregates","immutable_history",
                              "one_reply_enforcement","moderation","review_requests"]}
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
-async def create_review(r: Request, u: UserContext=Depends(get_current_user),
-                         s: ReviewService=Depends(_svc)) -> ApiResponse[dict]:
-    body = await r.json()
-    # Customers can only review their own jobs — ignore any spoofed customer_id in the body.
-    customer_id = uuid.UUID(u.user_id) if u.role == "customer" else uuid.UUID(body["customer_id"])
-    return ok(await s.create_review(
-        uuid.UUID(body["tenant_id"]), body["job_id"],
-        customer_id,
-        uuid.UUID(body["staff_id"]) if body.get("staff_id") else None,
-        body.get("signals",{}), body.get("comment")), _rid(r), ENGINE_ID)
+@router.post("", status_code=status.HTTP_410_GONE, response_model=None)
+async def create_review(r: Request, u: UserContext=Depends(get_current_user)):
+    """Phase 2A Slice 2 (non-canonical entry restriction): this legacy
+    review engine's `reviews` table was superseded by the `customer_reviews`
+    engine (Sprint 24 / MODULE-L5-13) — job-completion ratings write there,
+    not here. Phase 1A's review-canonical-decision.md confirmed zero
+    frontend callers of this endpoint across all 4 audited apps, so blocking
+    it carries no discovered frontend risk. Kept as a 410 (not deleted)
+    per the "preserve legacy reads, block legacy writes" retirement plan —
+    GET/list/aggregate/flag/resolve on this engine remain unaffected.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail="This endpoint is retired. Reviews are created through the customer_reviews engine.",
+    )
 
 @router.get("/requests", summary="List review requests for tenant (query param version)", response_model=ApiResponse[dict])
 async def list_requests_by_query(r: Request, tenant_id: uuid.UUID=Query(...),
@@ -69,14 +79,19 @@ async def list_by_customer(customer_id: uuid.UUID, r: Request,
 
 @router.post("/{review_id}/reply", summary="One reply only — 409 on second attempt", response_model=ApiResponse[dict])
 async def submit_reply(review_id: uuid.UUID, r: Request,
-                        u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+                        u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                         s: ReviewService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.submit_reply(review_id, body["reply"]), _rid(r), ENGINE_ID)
 
 @router.post("/{review_id}/flag", response_model=ApiResponse[dict])
-async def flag_review(review_id: uuid.UUID, r: Request, u: UserContext=Depends(get_current_user),
+async def flag_review(review_id: uuid.UUID, r: Request,
+                       u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: ReviewService=Depends(_svc)) -> ApiResponse[dict]:
+    # Slice 2F-25: was bare `get_current_user` over a primary-key-only service
+    # lookup -- any authenticated principal could flag any tenant's review.
+    # Now carries the same tenant permission as the sibling reply route, and
+    # ownership is enforced inside the service by `_get_review_scoped`.
     body = await r.json()
     return ok(await s.flag_review(review_id, body.get("reason","Flagged by user")), _rid(r), ENGINE_ID)
 
@@ -94,7 +109,7 @@ async def get_aggregate(entity_type: str, entity_id: str, r: Request,
     return ok(await s.get_aggregate(entity_type, entity_id), _rid(r), ENGINE_ID)
 
 @router.post("/requests", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
-async def create_request(r: Request, u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+async def create_request(r: Request, u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                           s: ReviewService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.create_review_request(body["job_id"], uuid.UUID(body["tenant_id"]),

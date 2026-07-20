@@ -20,9 +20,38 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 class GeoService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id; self.actor_id = actor_id; self.actor_role = actor_role
+        # Phase 2A Slice 2F-33: the authoritative tenant of the calling
+        # principal, derived server-side from the token. Every zone/staff-
+        # location mutation below MUST scope by this value (never trust a
+        # client-supplied tenant_id as ownership evidence) -- a route guard
+        # alone cannot close this, because a direct GeoService call bypasses
+        # the router entirely.
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID | None = None) -> uuid.UUID | None:
+        """Returns the authoritative tenant to scope a mutation by.
+
+        Fails closed unless the caller is platform staff (super_admin) or
+        has a known tenant context. When a client-supplied tenant_id is
+        given, it must match the principal's own tenant -- otherwise this
+        raises the SAME PERMISSION_DENIED regardless of whether the named
+        tenant is real, so this check itself creates no existence oracle.
+        """
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="geo_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id is not None and requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's geography data.",
+                blocking_rule="geo_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     def _haversine(self, lat1: float, lng1: float, lat2: float, lng2: float) -> float:
         r = EARTH_RADIUS_KM
@@ -45,6 +74,11 @@ class GeoService:
 
     # ── Zone CRUD (5 methods) ─────────────────────────────────────────────────
     async def create_zone(self, tenant_id: uuid.UUID, data: dict) -> dict:
+        # Phase 2A Slice 2F-33: tenant_id previously arrived straight from
+        # the request path with no comparison to the calling principal --
+        # any authenticated TENANT_UPDATE holder could create a zone under
+        # an arbitrary tenant_id. Now resolved/verified server-side.
+        tenant_id = self._require_trusted_tenant(tenant_id)
         z = ServiceZone(tenant_id=tenant_id, zone_name=data["zone_name"],
             zone_type=data["zone_type"], identifiers=data.get("identifiers", []),
             center_lat=data.get("center_lat"), center_lng=data.get("center_lng"),
@@ -91,7 +125,18 @@ class GeoService:
         return self._zone_dict(z)
 
     async def delete_zone(self, zone_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(ServiceZone).where(ServiceZone.id == zone_id))
+        # Phase 2A Slice 2F-33: previously queried WHERE id==zone_id ONLY --
+        # zero tenant predicate anywhere, so any TENANT_UPDATE holder in ANY
+        # tenant could deactivate ANY other tenant's zone by ID. The
+        # authoritative tenant is now derived entirely server-side (there is
+        # no client-supplied tenant_id on this route to trust or distrust)
+        # and used to scope the query. Foreign-tenant and missing-zone both
+        # raise the identical NotFoundException -- no existence oracle.
+        tenant_id = self._require_trusted_tenant()
+        q = select(ServiceZone).where(ServiceZone.id == zone_id)
+        if tenant_id is not None:
+            q = q.where(ServiceZone.tenant_id == tenant_id)
+        r = await self.db.execute(q)
         z = r.scalar_one_or_none()
         if not z: raise NotFoundException("ServiceZone", str(zone_id))
         z.is_active = False; z.valid_until = utcnow()
@@ -126,6 +171,13 @@ class GeoService:
     async def update_staff_location(self, staff_id: uuid.UUID, tenant_id: uuid.UUID,
                                      lat: float, lng: float, accuracy_m: float | None,
                                      status: str | None) -> dict:
+        # Phase 2A Slice 2F-33 (Set B TENANT_PROVIDER_MUTATION_ADD): tenant_id
+        # previously arrived straight from the request path with no
+        # comparison to the calling principal -- any authenticated user
+        # (including a tenant-side dispatcher outside the target tenant)
+        # could write GPS coordinates into another tenant's StaffLocation
+        # row. Now resolved/verified server-side.
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(StaffLocation).where(
             StaffLocation.staff_id == staff_id, StaffLocation.tenant_id == tenant_id))
         loc = r.scalar_one_or_none()

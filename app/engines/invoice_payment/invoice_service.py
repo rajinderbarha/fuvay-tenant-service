@@ -16,6 +16,7 @@ from app.engines.invoice_payment.constants import (
     ERR_INVOICE_NOT_FOUND, ERR_INVOICE_ACCESS_DENIED,
     ERR_INVOICE_ALREADY_EXISTS, ERR_INVOICE_INVALID_STATUS,
     ERR_INVOICE_ALREADY_ISSUED, ERR_INVOICE_CANCELLED as CERR,
+    ERR_INVOICE_ITEM_INVALID,
 )
 from app.engines.invoice_payment.models import (
     ServiceInvoice, ServiceInvoiceItem, FinancialEvent,
@@ -126,6 +127,36 @@ class ServiceInvoiceService:
         if res.scalar_one_or_none():
             raise ValueError(ERR_INVOICE_ALREADY_EXISTS)
 
+        # Slice 2F-16: validate the referenced quote BEFORE any persistence --
+        # previously this check (tenant + customer_approved status) happened
+        # AFTER db.add(inv)/db.flush() had already inserted the invoice row,
+        # so a rejected call would still leave a partial INV_DRAFT invoice
+        # behind. Also previously copied line items from ANY quote_id with no
+        # check that the quote belongs to this tenant or is actually
+        # customer_approved -- staff could fabricate an invoice from a
+        # draft/rejected quote, or (if the UUID were known/guessed) a
+        # DIFFERENT tenant's quote entirely.
+        if source == INV_SRC_APPROVED_QUOTE and quote_id:
+            qres = await db.execute(
+                select(ServiceJobQuote).where(ServiceJobQuote.id == uuid.UUID(quote_id))
+            )
+            quote = qres.scalar_one_or_none()
+            if not quote or str(quote.tenant_id) != tenant_id:
+                raise ValueError(ERR_INVOICE_ACCESS_DENIED)
+            # Slice 2F-16A: tenant match alone is not sufficient -- a quote
+            # from a DIFFERENT ServiceJob (or belonging to a different
+            # customer) in the SAME tenant previously passed this check
+            # unnoticed, letting one job's approved quote be copied into an
+            # unrelated job's invoice (or an invoice attributed to the wrong
+            # customer). The quote must belong to the EXACT ServiceJob being
+            # invoiced, and its customer must match that ServiceJob's customer.
+            if quote.job_id != job.id:
+                raise ValueError(ERR_INVOICE_ACCESS_DENIED)
+            if quote.customer_id != job.customer_id:
+                raise ValueError(ERR_INVOICE_ACCESS_DENIED)
+            if quote.status != "customer_approved":
+                raise ValueError(ERR_INVOICE_INVALID_STATUS)
+
         inv = ServiceInvoice(
             id=uuid.uuid4(),
             invoice_number=_invoice_number(),
@@ -145,6 +176,7 @@ class ServiceInvoiceService:
         await db.flush()
 
         # Seed items from approved quote if source = approved_quote
+        # (quote tenant/status already validated above, before persistence)
         if source == INV_SRC_APPROVED_QUOTE and quote_id:
             await self._copy_from_quote(db, inv, quote_id)
         elif source == INV_SRC_BOOKING_BASE:
@@ -254,6 +286,21 @@ class ServiceInvoiceService:
             raise ValueError(ERR_INVOICE_ALREADY_ISSUED)
         qty = Decimal(str(quantity))
         up  = Decimal(str(unit_price))
+        # Slice 2F-6A: previously no validation existed at all -- a negative
+        # quantity or unit_price silently produced a negative line_total that
+        # was summed into whichever item_type bucket the caller chose (e.g.
+        # "part"), letting an ordinary line item masquerade as an undeclared,
+        # unbounded discount. No distinct discount type/flag/bound mechanism
+        # exists anywhere in this file (item_type == "discount" is only a
+        # summing category in _recalculate, not a validated, bounded discount
+        # system), so per policy negative values are rejected outright rather
+        # than treated as an intentional discount. Zero quantity is rejected
+        # (a zero-quantity line has no meaning); zero unit_price is allowed
+        # (a legitimate free/no-charge line item, e.g. warranty part).
+        if qty <= Decimal("0"):
+            raise ValueError(ERR_INVOICE_ITEM_INVALID)
+        if up < Decimal("0"):
+            raise ValueError(ERR_INVOICE_ITEM_INVALID)
         item = ServiceInvoiceItem(
             id=uuid.uuid4(),
             invoice_id=inv.id,

@@ -1,0 +1,13 @@
+{
+  "retry": "Retry",
+  "cancel": "Cancel",
+  "continue": "Continue",
+  "save": "Save",
+  "loading": "Loading",
+  "somethingWentWrong": "Something went wrong",
+  "noResults": "No results",
+  "offline": "Offline",
+  "close": "Close",
+  "required": "Required",
+  "optional": "Optional"
+}

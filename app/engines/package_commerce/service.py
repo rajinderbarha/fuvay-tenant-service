@@ -1498,6 +1498,7 @@ class PackageCommerceService:
         package_id: uuid.UUID,
         payment_reference: str | None = None,
         is_paid: bool = False,
+        payment_authority: str = "unspecified",
     ) -> dict:
         """
         Record a tenant's package selection.  Called at signup (after payment).
@@ -1505,7 +1506,38 @@ class PackageCommerceService:
         starts_at / expires_at remain NULL — they are set only when admin approves.
         Wallet credits are NOT added here.
         Security deposit is recorded but remains non-spendable.
+
+        Slice 2F-22 — `payment_authority` makes the trust boundary for
+        `is_paid=True` explicit at the SERVICE layer, so a router dependency is
+        not the only thing standing between an untrusted caller and a fabricated
+        paid state. Marking an assignment paid asserts money changed hands; only
+        a caller that can actually prove it may do so:
+
+          * "gateway_signature_verified" — public_registration, after
+            `verify_payment_signature()` returned True.
+          * "admin_attestation"          — admin_router, under P.PACKAGES_CREATE;
+            a human admin recording an out-of-band payment on the tenant's behalf.
+          * "tenant_unpaid_request"      — tenant self-service; MUST NOT be paid.
+
+        Any caller passing is_paid=True without one of the two authoritative
+        values fails closed. This is deliberately a hard failure rather than a
+        silent downgrade to unpaid: a caller that believes it recorded a payment
+        must not be left thinking it succeeded.
         """
+        _PAID_AUTHORITIES = {"gateway_signature_verified", "admin_attestation"}
+        if is_paid and payment_authority not in _PAID_AUTHORITIES:
+            raise ServiceOSException(
+                "PAYMENT_AUTHORITY_REQUIRED",
+                "Cannot record a package assignment as paid without an "
+                "authoritative payment source (verified gateway signature or "
+                "admin attestation).")
+        if not is_paid and payment_reference:
+            # An unpaid selection carrying an external transaction reference is
+            # an unverifiable claim; storing it would mislead the admin who
+            # later approves the assignment.
+            raise ServiceOSException(
+                "PAYMENT_REFERENCE_WITHOUT_PAYMENT",
+                "A payment reference cannot be recorded on an unpaid selection.")
         pkg = await self._load_package(package_id)
         if not pkg.is_active:
             raise ServiceOSException("PACKAGE_INACTIVE", "Package is not available.")

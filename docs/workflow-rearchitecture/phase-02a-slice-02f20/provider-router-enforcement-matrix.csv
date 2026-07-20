@@ -1,0 +1,8 @@
+route_function,role_check,mutation_scope_check,tenant_ownership,subject_ownership,sender_derivation,readonly_tenant_denied,unknown_role_denied,unknown_scope_denied,technician_denied,customer_denied,guest_denied,super_admin_explicit
+withdraw_consent,require_tenant_owner_mutation,yes (THIS SLICE),n/a (self-scoped identity, no request object),self-identity only,jwt,yes (THIS SLICE),yes,yes,yes,yes,yes,exempt from access-scope check
+customer_tenant_response,require_tenant_owner_mutation,yes (THIS SLICE),metadata_json[related_tenant_id] match (existing, preserved),parent request subject (read-only),jwt,yes (THIS SLICE),yes,yes,yes,yes,yes,exempt
+create_my_request,require_tenant_owner_mutation,yes (THIS SLICE),metadata_json[tenant_id] set atomically (THIS SLICE),server-derived subject_type/subject_id,jwt,yes (THIS SLICE),yes,yes,yes,yes,yes,exempt
+cancel_my_request,require_tenant_owner_mutation,yes (THIS SLICE),metadata_json[tenant_id] match (existing, preserved),parent request subject (read-only),jwt,yes (THIS SLICE),yes,yes,yes,yes,yes,exempt
+generate_export,require_tenant_owner_mutation,yes (THIS SLICE),metadata_json[tenant_id] match (existing, preserved),parent request subject (copied to export),jwt,yes (THIS SLICE),yes,yes,yes,yes,yes,exempt
+staff_tenant_response,require_tenant_owner_mutation,yes (THIS SLICE),metadata_json[tenant_id] match (existing, preserved),parent request subject (read-only),jwt,yes (THIS SLICE),yes,yes,yes,yes,yes,exempt
+download_export,require_tenant_owner_mutation,yes (THIS SLICE),metadata_json[tenant_id] match via request join (existing, preserved),parent request subject (read-only),jwt,yes (THIS SLICE),yes,yes,yes,yes,yes,exempt

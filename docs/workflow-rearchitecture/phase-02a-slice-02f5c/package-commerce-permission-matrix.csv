@@ -1,0 +1,24 @@
+permission,endpoint,granted_to_admin_finance,granted_to_admin_operations,granted_to_admin_security,granted_to_admin_readonly,super_admin_wildcard,final_classification
+PACKAGES_CREATE,create_package + admin_purchase_package,NO,NO,NO,NO,YES,SUPER_ADMIN_ONLY
+PACKAGES_UPDATE,update_package + create/update/delete_package_feature + create/update/delete_package_limit (7 endpoints),NO,NO,NO,NO,YES,SUPER_ADMIN_ONLY
+PACKAGES_ARCHIVE,delete_package,NO,NO,NO,NO,YES,SUPER_ADMIN_ONLY
+PACKAGES_ACTIVATE,activate_package,NO,NO,NO,NO,YES,SUPER_ADMIN_ONLY
+PACKAGES_DEACTIVATE,deactivate_package,NO,NO,NO,NO,YES,SUPER_ADMIN_ONLY
+PACKAGES_CLONE,clone_package,NO,NO,NO,NO,YES,SUPER_ADMIN_ONLY
+FINANCE_USAGE_CREDITS_TOP_UP,admin_topup_wallet,YES,NO,NO,NO,YES,ADMIN_FINANCE_MUTATION
+FINANCE_USAGE_CREDITS_ADJUST,admin_adjust_wallet,YES,NO,NO,NO,YES,ADMIN_FINANCE_MUTATION
+(none -- require_super_admin role check),admin_deduct_commission + admin_calculate_commission,NO (role check, not permission -- role name alone required),NO,NO,NO,YES,SUPER_ADMIN_ONLY
+
+# Notes:
+# This slice GRANTED NOTHING -- table reflects the pre-existing, re-verified state of
+#   app/core/permissions.py (confirmed via direct grep: P.PACKAGES_CREATE/UPDATE/ARCHIVE/
+#   ACTIVATE/DEACTIVATE/CLONE appear ONLY at their class P definition lines, zero
+#   ROLE_PERMISSIONS references anywhere).
+# admin_finance's grant of FINANCE_USAGE_CREDITS_TOP_UP/ADJUST was established in an
+#   earlier slice (pre-2F-5C) -- re-verified, not newly granted here.
+# admin_operations, admin_security, admin_readonly hold zero PACKAGES_* and zero
+#   FINANCE_USAGE_CREDITS_TOP_UP/ADJUST permissions (confirmed via direct role-bundle read).
+# PACKAGES_READ and PACKAGES_AUDIT_READ (the 2 read permissions used by this module's GET
+#   routes) are granted to admin_finance (PACKAGES_AUDIT_READ only) and to no other
+#   platform role except via P.ALL -- noted for completeness though out of the 20-mutation
+#   scope of this slice.

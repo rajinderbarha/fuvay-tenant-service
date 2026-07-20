@@ -1,0 +1,13 @@
+observation,module,still_present,evidence_this_slice,severity,assigned_slice
+Webhook endpoint deletion with client-asserted tenant authority,webhook_endpoint_management,YES,directly re-inspected app/engines/webhook/router.py + WebhookService this slice,HIGH,2F-35
+Cross-tenant knowledge-base query (rag_query),rag_query,YES -- NEW finding this slice,directly inspected RAGService.query/_get_kb -- zero tenant predicate,HIGH,2F-35
+Session revocation by identifier,not in the 23-route queue,NOT FOUND in current queue,not re-investigated -- likely already closed in an earlier M01/2F-2x slice; flagged for 2F-38 certification review as a final-sweep item,n/a this slice,2F-38 (verification only)
+Separate security API-key subsystem,not in the 23-route queue,PRESERVED,api_keys vs tenant_api_keys tables confirmed still separate (re-checked via M01 non-regression),n/a,preservation only
+Delete-rule/delete-KB/delete-asset/delete-document boundaries,mapped to held-registry "documents" module (3 candidates),held, not canonical,3 held candidates under "documents" assigned to 2F-35 given security-sensitive document-deletion shape,to be confirmed by 2F-35's own inspection,2F-35
+Badge recalculation guarded by read permission,not in the 23-route queue,NOT FOUND,no route matching this pattern in the current 23-route set,n/a,n/a
+Saved-view default ownership (set_default),enterprise_grid_saved_views,YES -- partial gap (found 2F-32, re-confirmed this slice),SavedViewService.set_default never re-checks owner_user_id before mutating is_default,MEDIUM,2F-36
+Enterprise-grid mutations (general),enterprise_grid_saved_views + enterprise_grid_preferences_exports,YES,6 routes total, access-scope guard missing on all,LOW-MEDIUM,2F-36
+Security-deposit mutations,platform_commerce_deposit,YES but narrower than the "financial" label implies,CommerceService._assert_owns_tenant_deposit already blocks cross-tenant access,MEDIUM,2F-37
+Package/credit/commission mutations,mapped to held-registry "commerce"/"pricing" modules,held, not canonical,13 held candidates (commerce=4, pricing=9) assigned to 2F-37,to be confirmed by 2F-37's own inspection,2F-37
+Bulk mutations,create_export (enterprise_grid_preferences_exports),YES,partial per-resource gating already present; route-level guard missing,LOW-MEDIUM,2F-36
+External webhook/provider side effects,platform_commerce_deposit (Razorpay), rag_query (LLM/vector backend),YES,both confirmed to call an external service,MEDIUM,2F-37 / 2F-35 respectively

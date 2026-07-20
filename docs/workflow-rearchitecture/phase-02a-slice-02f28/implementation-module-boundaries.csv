@@ -1,0 +1,12 @@
+module,router,service,models,permissions,route_count,shared_authorization_boundary
+M01_identity_credentials,app.engines.auth.router,AuthService,"User, StaffPermission, ApiKey, MfaSecret","auth:apikeys:manage, auth:staff:invite, auth:staff:manage, auth:permissions:manage, platform:impersonate, (none for password/mfa/me)",12,identity/credential mutation on the caller's own user or a tenant-scoped staff user
+M02_media_assets,app.engines.media.new_router,MediaAssetService/MediaService,"MediaAsset, ProfilePhoto",(none - authenticated/role only),9,media upload/replace/delete on tenant/provider/staff-owned assets
+M03_enterprise_grid_views,app.engines.enterprise_grid.router,EnterpriseGridService,"SavedView, ColumnPreference, ExportJob",(none),6,per-user saved views/exports (self-scoped grid personalization)
+M07_provider_catalog_setup,"app.engines.admin_catalog.{brand,recommendation,service_option}_provider_router",TenantCatalogService/BrandService,"BrandRequest, ServiceSupport, RecommendationRule",(role only),4,provider catalog/brand/recommendation setup requests
+M04_profile_self_service,app.engines.profile.router,ProfileService,"User, ProviderBusinessProfile, StaffProfile",(role only),4,tenant/staff profile self-service
+M05_marketing_automation,app.engines.marketing_automation.provider_router,MarketingAutomationService,"Campaign, MarketingAsset",(none),3,provider marketing campaigns/assets
+M06_security_deposit,app.engines.platform_commerce.router,CommerceService,"SecurityDeposit, DepositTransaction",commerce/deposit permission,3,"tenant security-deposit view/initiate (client-asserted tenant, lazy-create on GET)"
+M08_analytics_reports,app.engines.analytics.provider_router,AnalyticsService,Report,(none),1,provider report run
+M09_rag_knowledge,app.engines.rag.router,RAGService,"KnowledgeBase, Document",(none),1,RAG query (writes a query/usage row)
+M10_webhook_integration,app.engines.webhook.router,WebhookService,WebhookEndpoint,tenant:update,1,webhook endpoint deletion (client-asserted tenant)
+M11_geo_zones,app.engines.geo.router,GeoService,ServiceZone,tenant:update,1,geo service-zone deletion (no tenant scoping)

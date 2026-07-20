@@ -100,11 +100,16 @@ export async function editReview(
   });
 }
 
+// Slice 2F-24: `tenantId` removed. The backend previously took the flag's
+// tenant from this request body, which let the client choose which tenant a
+// moderation record was attributed to. The tenant is now derived server-side
+// from the review itself, and the request schema rejects a `tenant_id` field,
+// so sending it would fail validation. No other field changed.
 export async function flagReview(
-  reviewId: string, reasonCode: string, reasonText?: string, tenantId?: string,
+  reviewId: string, reasonCode: string, reasonText?: string,
 ): Promise<unknown> {
   return apiFetch(`/v1/customer/reviews/${reviewId}/flag`, {
     method: "POST",
-    body: JSON.stringify({ reason_code: reasonCode, reason_text: reasonText, tenant_id: tenantId }),
+    body: JSON.stringify({ reason_code: reasonCode, reason_text: reasonText }),
   });
 }

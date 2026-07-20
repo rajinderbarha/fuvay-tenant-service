@@ -1,0 +1,7 @@
+module,guard_used,admitted_roles_unchanged,tenant_authority_source,object_ownership_check
+platform_commerce_deposit,require_tenant_mutation_permission,YES (same permission as before),CommerceService._assert_owns_tenant_deposit (pre-existing, unchanged),pre-existing
+pricing,require_tenant_mutation_permission / require_mutation_access_scope (compute),YES,PricingService._require_trusted_tenant (new),added tenant ownership check on ZoneSurcharge/DynamicPricingRule (previously ZERO scoping)
+commerce (held),require_tenant_mutation_permission / require_mutation_access_scope,YES,CommerceService._assert_owns_tenant_deposit (existing helper, newly called),added ServiceJob parent-ownership check on warranty claims
+payments,require_tenant_mutation_permission,YES,PaymentService._require_trusted_tenant (new),N/A (create-only); amount validation remains open
+subscriptions,require_tenant_mutation_permission,YES,SubscriptionService._require_trusted_tenant (new),N/A (tenant-scoped row only)
+compliance,require_mutation_access_scope,YES (no role narrowed; self-only ownership added instead),self-only user_id check (new, super_admin exempt),N/A (self-service by construction)

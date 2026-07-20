@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
+from app.core.permissions import require_mutation_access_scope
 from app.engines.analytics.provider_analytics import ProviderAnalyticsService
 from app.engines.analytics.report_service import ReportService
 from app.engines.analytics.constants import SCOPE_PROVIDER, ERR_ANALYTICS_ACCESS_DENIED
@@ -202,7 +203,7 @@ async def provider_list_reports(
 async def provider_run_report(
     body: dict,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_mutation_access_scope),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = _tid(u)

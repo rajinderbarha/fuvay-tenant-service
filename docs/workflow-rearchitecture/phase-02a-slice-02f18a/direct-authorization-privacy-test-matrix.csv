@@ -1,0 +1,25 @@
+principal,scenario,expected_outcome,test
+tenant_owner,provider_* routes,ALLOWED,require_owner_or_office_staff_mutation direct invocation (test_owner_or_office_staff_mutation_admits_tenant_owner)
+technician,provider_* routes,DENIED (role excluded entirely),test_owner_or_office_staff_mutation_rejects_technician
+read-only staff,provider_* routes (mutation),DENIED,test_owner_or_office_staff_mutation_denies_readonly_scope
+prohibited alias (office_staff),provider_* routes,DENIED (fails closed),test_owner_or_office_staff_mutation_rejects_unknown_role
+customer,provider_* routes,DENIED,test_owner_or_office_staff_mutation_rejects_customer
+technician,staff_* routes,ALLOWED (role gate only -- object policy is separate),test_staff_or_technician_only_admits_technician
+tenant_owner,staff_* routes,DENIED,test_staff_or_technician_only_rejects_tenant_owner
+customer,staff_* routes,DENIED,test_staff_or_technician_only_rejects_customer
+prohibited alias (manager),staff_* routes,DENIED,test_staff_or_technician_only_rejects_prohibited_alias
+tenant_owner,customer_* routes,DENIED,test_require_customer_rejects_tenant_owner
+customer,customer_* routes,ALLOWED,test_require_customer_admits_customer
+assigned technician,Job-linked thread (assigned),ALLOWED,test_assigned_technician_allowed
+unassigned technician,Job-linked thread,DENIED,test_unassigned_technician_denied
+technician assigned to another Job,Job-linked thread,DENIED,test_technician_assigned_to_other_job_denied
+active participant technician,non-resolvable-record-type thread,ALLOWED,test_active_participant_technician_allowed_for_unresolvable_record_type
+removed participant technician,non-resolvable-record-type thread,DENIED,test_removed_participant_technician_denied
+same-tenant unrelated technician,Job-linked thread,DENIED,test_technician_tenant_membership_alone_is_not_sufficient
+foreign thread,GET thread,privacy-equivalent 404 (same as missing),test_foreign_tenant_and_missing_thread_share_error_code
+missing thread,GET thread,404,test_foreign_tenant_and_missing_thread_share_error_code
+foreign customer,GET thread,privacy-equivalent 404,test_customer_cannot_read_foreign_thread
+attachment substitution (cross-tenant),send_message,REJECTED,test_cross_tenant_media_asset_rejected
+attachment substitution (nonexistent),send_message,REJECTED,test_nonexistent_media_asset_rejected
+malformed attachment reference,send_message,REJECTED,test_malformed_media_id_rejected
+denied technician access,any mutation,dispatches nothing,no-partial-persistence-delivery-proof.md (all technician-denial tests assert db.add.assert_not_called())

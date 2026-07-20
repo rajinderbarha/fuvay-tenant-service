@@ -1,0 +1,12 @@
+route_function,technician_classification,parent_pipeline,evidence
+staff_list_notifications,TECHNICIAN_DIRECT_RECIPIENT_ONLY,n/a,NotificationService.get_user_notifications filters WHERE user_id=caller
+staff_unread_count,TECHNICIAN_DIRECT_RECIPIENT_ONLY,n/a,same filter
+staff_mark_read,TECHNICIAN_DIRECT_RECIPIENT_ONLY,n/a,mark_notification_read filters WHERE id=... AND user_id=caller
+staff_mark_all_read,TECHNICIAN_DIRECT_RECIPIENT_ONLY,n/a,mark_all_read filters WHERE user_id=caller
+staff_list_threads,TECHNICIAN_ACTIVE_PARTICIPANT_ONLY,n/a (list is participant-row based, not live-assignment based),list_threads' non-tenant-wide branch (technician now excluded from tenant-wide branch, 2F-18A) queries ChatThreadParticipant WHERE user_id=caller AND left_at IS NULL
+staff_get_thread,TECHNICIAN_ASSIGNED_SERVICEJOB_ONLY (falls back to TECHNICIAN_ACTIVE_PARTICIPANT_ONLY for unresolvable record_types),ServiceJob (record_type=service_job) / ServiceJob via ServiceBooking.booking_id (record_type=service_booking),validate_thread_access's RECIP_TECHNICIAN branch -- live assignment lookup via _resolve_job_for_thread
+staff_list_messages,TECHNICIAN_ASSIGNED_SERVICEJOB_ONLY (fallback as above),same as staff_get_thread,same -- list_messages calls validate_thread_access before returning any message
+staff_send_message,TECHNICIAN_ASSIGNED_SERVICEJOB_ONLY (fallback as above),same as staff_get_thread,same -- send_message calls validate_thread_access before persisting
+staff_mark_thread_read,TECHNICIAN_ASSIGNED_SERVICEJOB_ONLY (fallback as above),same as staff_get_thread,same -- mark_thread_read calls validate_thread_access before writing read receipts
+provider_* (all 14 routes),TECHNICIAN_NOT_SUPPORTED,n/a,require_owner_or_office_staff_mutation excludes technician at the router layer -- technician cannot reach any provider_* route at all
+tenant-wide announcement (any route),TENANT_WIDE_TECHNICIAN_ANNOUNCEMENT -- NOT PRESENT,n/a,no announcement capability exists anywhere in this module (confirmed 2F-18, re-confirmed 2F-18A) -- classified TECHNICIAN_NOT_SUPPORTED because the capability itself does not exist, not because technician access to it was denied

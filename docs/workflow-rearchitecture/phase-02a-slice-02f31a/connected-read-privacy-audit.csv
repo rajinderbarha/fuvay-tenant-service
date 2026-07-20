@@ -1,0 +1,7 @@
+read_route,connected_to,privacy_check
+GET /v1/media/tenants/{tenant_id}/files/{file_id},DELETE ...{file_id} (same tenant scoping pattern),query scopes by MediaFile.tenant_id == tenant_id AND id == file_id AND is_deleted == False; foreign/missing both raise NotFoundException (no oracle) -- pre-existing, unmodified by this slice since get_file was not one of the 5 residual routes
+GET /v1/media/tenants/{tenant_id}/files,list_files,scoped by MediaFile.tenant_id == tenant_id; unmodified, out of residual scope, but relies on the same _svc() dependency which now carries actor_tenant_id (available for a future tightening, not required for this slice's 5 routes)
+GET /v1/media/tenants/{tenant_id}/quota,get_storage_quota,scoped by tenant_id argument only (no _require_trusted_tenant call) -- READ route, out of residual mutation scope; flagged in known-limitations.md as a read-side gap worth a future slice, not fixed here since only the 5 named mutation routes were authorized
+GET /v1/media/{media_id},get_media (new_router.py / MediaAssetService),MediaAccessService.assert_can_view called before returning asset data -- pre-existing, unmodified, out of residual scope
+GET /v1/media/{media_id}/view,view_media (new_router.py),routes through MediaAssetService.get_local_file_for_serve / get_asset, both access-checked -- pre-existing, unmodified, out of residual scope
+GET /v1/media/{media_id}/download,download_media (new_router.py),same access-checked path as /view -- pre-existing, unmodified, out of residual scope

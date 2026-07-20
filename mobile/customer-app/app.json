@@ -3,6 +3,7 @@
     "name": "ServiceOS",
     "slug": "serviceos-customer",
     "version": "1.0.0",
+    "scheme": "serviceos",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -29,8 +30,11 @@
     "plugins": [
       "expo-location",
       "expo-notifications",
-      "expo-image-picker"
+      "expo-image-picker",
+      "expo-secure-store",
+      "expo-localization",
+      "expo-font"
     ],
-    "sdkVersion": "56.0.0"
+    "sdkVersion": "54.0.0"
   }
 }

@@ -1,0 +1,14 @@
+module,route_count,tenant_mutations,customer_mutations,platform_admin_mutations,protected,unprotected,primary_gap,cross_tenant_risk,financial_risk,customer_data_risk,lifecycle_risk,destructive_risk,alternate_route_risk,tests,verifier_readiness,product_decision_dependency,estimated_size
+app.engines.platform_notifications.provider_router,10,10,0,0,0,10,AUTHENTICATED_ONLY,HIGH (zero auth -- any authenticated user of any tenant),LOW,MEDIUM (chat content),LOW,LOW,none found,none,ready,none,MEDIUM
+app.engines.compliance.provider_router,6,6,0,0,0,6,PERMISSION_WITHOUT_SCOPE,LOW (permission already restricts role),LOW,HIGH (DPDP data-subject requests),LOW,possible (export generation),none found,none,ready,possible (export rate-limiting),MEDIUM
+app.engines.media.new_router,6,6,0,0,0,6,PERMISSION_WITHOUT_SCOPE,LOW,LOW,LOW,LOW,yes (delete ops),none found,none,ready,none,SMALL-MEDIUM
+app.engines.profile.router,3,3,0,0,0,3,PERMISSION_WITHOUT_SCOPE,LOW,LOW,LOW,LOW,LOW,none found,none,ready,none,SMALL
+app.engines.marketing_automation.provider_router,3,3,0,0,0,3,AUTHENTICATED_ONLY,MEDIUM,LOW-MEDIUM,LOW,LOW,LOW,none found,none,ready,none,SMALL
+app.engines.admin_catalog.brand_provider_router,2,2,0,0,0,2,PERMISSION_WITHOUT_SCOPE,LOW,LOW,LOW,LOW,LOW,none found,none,ready,none,SMALL
+app.engines.customer_reviews.provider_router,2,2,0,0,0,2,AUTHENTICATED_ONLY,MEDIUM,LOW,MEDIUM (public-facing content),LOW,LOW,none found,none,ready,none,SMALL
+app.engines.analytics.provider_router,1,1,0,0,0,1,AUTHENTICATED_ONLY,LOW,LOW,LOW,LOW,LOW,none found,none,ready,none,SMALL
+app.engines.admin_catalog.recommendation_router,1,1,0,0,0,1,PERMISSION_WITHOUT_SCOPE,LOW,LOW,LOW,LOW,LOW,none found,none,ready,none,SMALL
+app.engines.admin_catalog.service_option_provider_router,1,1,0,0,0,1,PERMISSION_WITHOUT_SCOPE,LOW,LOW,LOW,LOW,LOW,none found,none,ready,none,SMALL
+app.engines.package_commerce.tenant_router,1,1,0,0,0,1,PERMISSION_WITHOUT_SCOPE,LOW,MEDIUM (financial),LOW,LOW,possible (entitlement grant),none found,none,ready,possible (purchase semantics),SMALL
+app.engines.invoice_payment.provider_router,4,4,0,0,4,0,n/a -- already protected (Slice 2F-6A),n/a,n/a,n/a,n/a,n/a,n/a,existing,ready,none,DONE
+app.engines.provider_portal.router,1 (false positive),0,0,0,n/a,n/a,FALSE_POSITIVE,n/a,n/a,n/a,n/a,n/a,n/a,existing,ready,none,DONE

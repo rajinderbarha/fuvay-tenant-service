@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { homeServiceExecutionApi, ExecutionEventRecord, ExecutionNoteRecord, PartsRequestRecord, serviceJobAssignmentApi } from "../../../../../lib/api";
+import { useBreadcrumbOverride } from "../../../../../components/layout/Breadcrumbs";
 
 const STATUS_ACTIONS: Record<string, { label: string; action: string }[]> = {
   accepted:          [{ label: "On the Way", action: "on_the_way" }],
@@ -87,7 +88,34 @@ export default function JobExecutionPage() {
     }
   }
 
+  // Phase 2A — the install action existed in the API client but was never
+  // wired to a button on this page; approve/reject worked but an approved
+  // parts request had no way to be marked installed from here.
+  async function handleInstallParts(partsRequestId: string) {
+    setPartsActionLoading(partsRequestId);
+    try {
+      await homeServiceExecutionApi.installParts(jobId, partsRequestId);
+      await loadJob();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to mark parts request installed");
+    } finally {
+      setPartsActionLoading(null);
+    }
+  }
+
   useEffect(() => { loadJob(); }, [jobId]);
+
+  // Phase 2A Slice 2B: reconstructs correct breadcrumb context for a direct
+  // deep link to this job, using the real job number rather than the
+  // generic "Jobs > Service Jobs" static registry entry. Falls back to null
+  // (registry default) while the job is still loading, rather than showing
+  // an empty or wrong entity name.
+  const jobNumber = job ? String((job as { job_number?: string }).job_number ?? jobId.slice(0, 8)) : null;
+  useBreadcrumbOverride(jobNumber ? [
+    { label: "Jobs", href: "/service-jobs" },
+    { label: `Service Job ${jobNumber}`, href: `/service-jobs/${jobId}` },
+    { label: "Inspection and Quote" },
+  ] : null);
 
   async function handleAction(action: string) {
     setActionLoading(true);
@@ -234,6 +262,14 @@ export default function JobExecutionPage() {
                   <button onClick={() => handleRejectParts(pr.parts_request_id)} disabled={partsActionLoading === pr.parts_request_id}
                     style={{ background: "white", color: "#dc2626", border: "1px solid #dc2626", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>
                     Reject
+                  </button>
+                </div>
+              )}
+              {(pr.status === "business_approved" || pr.status === "customer_approved") && (
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button onClick={() => handleInstallParts(pr.parts_request_id)} disabled={partsActionLoading === pr.parts_request_id}
+                    style={{ background: "#2563eb", color: "white", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                    Mark Installed
                   </button>
                 </div>
               )}

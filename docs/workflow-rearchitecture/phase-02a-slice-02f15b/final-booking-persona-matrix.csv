@@ -1,0 +1,12 @@
+method,path,route,persona,dependency,tenant_access_scope_required,customer_ownership_required,included_in_tenant_denominator,included_in_customer_inventory,protected,runtime_verified
+POST,/v1/bookings/preflight,booking_preflight,FALSE_POSITIVE_NON_MUTATION,require_permission(BOOKING_CREATE),no,no,no,no,n/a (not a mutation),EXEMPTED
+POST,/v1/bookings,create_booking,TENANT_PROVIDER_MUTATION,require_tenant_mutation_permission(BOOKING_CREATE),yes,no (tenant side),yes,yes (dual persona),yes,yes
+POST,/v1/bookings/{id}/cancel,cancel_booking,TENANT_PROVIDER_MUTATION,require_tenant_mutation_permission(BOOKING_CANCEL),yes,no (tenant side),yes,yes (dual persona),yes,yes
+POST,/v1/bookings/{id}/confirm,confirm_booking,TENANT_PROVIDER_MUTATION,require_tenant_mutation_permission(BOOKING_MANAGE),yes,no,yes,no,yes,yes
+POST,/v1/bookings/{id}/reject,reject_booking,TENANT_PROVIDER_MUTATION,require_tenant_mutation_permission(BOOKING_MANAGE),yes,no,yes,no,yes,yes
+POST,/v1/bookings/{id}/convert-to-job,convert_to_job,TENANT_PROVIDER_MUTATION,require_tenant_mutation_permission(BOOKING_MANAGE),yes,no,yes,no,yes,yes
+POST,/v1/bookings/{id}/reschedule/request,request_reschedule,TENANT_PROVIDER_MUTATION,require_tenant_mutation_permission(BOOKING_RESCHEDULE),yes,no (tenant side),yes,yes (dual persona),yes,yes
+POST,/v1/bookings/reschedule/{id}/accept,accept_reschedule,TENANT_PROVIDER_MUTATION,require_tenant_mutation_permission(TENANT_UPDATE),yes,no,yes,no,yes,yes
+POST,/v1/bookings/reschedule/{id}/reject,reject_reschedule,TENANT_PROVIDER_MUTATION,require_tenant_mutation_permission(TENANT_UPDATE),yes,no,yes,no,yes,yes
+POST,/v1/bookings/{id}/notes,add_note,TENANT_PROVIDER_MUTATION,require_staff_or_above_mutation,yes,no,yes,no,yes,yes
+POST,/v1/bookings/{id}/void,void_booking,PLATFORM_INTERNAL_MUTATION,require_super_admin,no (super_admin exempt),no,no,no,yes,yes

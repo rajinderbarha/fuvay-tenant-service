@@ -1,0 +1,17 @@
+route,persona,rationale
+provider_cancel_quote,TENANT_PROVIDER_QUOTE_ADMIN,require_owner_or_office_staff_mutation -- no live technician caller found
+staff_create_quote,TENANT_PROVIDER_QUOTE_ADMIN,same
+staff_add_item,TENANT_PROVIDER_QUOTE_ADMIN,same
+staff_update_item,TENANT_PROVIDER_QUOTE_ADMIN,same
+staff_remove_item,TENANT_PROVIDER_QUOTE_ADMIN,same
+staff_send_to_customer,TENANT_PROVIDER_QUOTE_ADMIN,same
+staff_mark_revised,TENANT_PROVIDER_QUOTE_ADMIN,same
+staff_cancel_quote,TENANT_PROVIDER_QUOTE_ADMIN,same
+staff_create_checklist,TENANT_PROVIDER_QUOTE_ADMIN,same
+staff_update_checklist_item,TENANT_PROVIDER_QUOTE_ADMIN,same
+staff_complete_checklist,TENANT_PROVIDER_QUOTE_ADMIN,same
+customer_approve_quote,CUSTOMER_QUOTE_APPROVAL,require_customer + quote.customer_id == caller
+customer_reject_quote,CUSTOMER_QUOTE_REJECTION,require_customer + quote.customer_id == caller
+customer_request_revision,CUSTOMER_QUOTE_CHANGE_REQUEST,require_customer + quote.customer_id == caller
+admin_create_template,PLATFORM_QUOTE_ADMIN,require_super_admin -- genuine platform-only template catalog
+admin_add_template_item,PLATFORM_QUOTE_ADMIN,require_super_admin

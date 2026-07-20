@@ -1,0 +1,9 @@
+rank,router_module,route_count,severity,primary_gap,recommended_slice,readiness
+0 (PROTECTED IN 2F-25),app.engines.review (legacy),3,CLOSED,was cross-tenant mutation IDOR + client tenant authority + read IDOR -- all fixed,2F-25 (DONE),done
+1,app.engines.analytics.provider_router,1,HIGH,AUTHENTICATED_ONLY,next candidate,yes
+2,app.engines.profile.router,3,HIGH,PERMISSION_WITHOUT_SCOPE,next candidate,yes
+3,app.engines.media.new_router,6,MEDIUM,PERMISSION_WITHOUT_SCOPE,bundle with profile.router,yes
+4,app.engines.marketing_automation.provider_router,3,MEDIUM,AUTHENTICATED_ONLY,small future slice,yes
+5,app.engines.admin_catalog.brand_provider_router,2,MEDIUM,PARENT_CHILD_OWNERSHIP_MISSING,bundle catalog,yes
+6,app.engines.admin_catalog.service_option_provider_router,1,MEDIUM,PARENT_CHILD_OWNERSHIP_MISSING,bundle catalog,yes
+7,app.engines.admin_catalog.recommendation_router,1,LOW,PERMISSION_WITHOUT_SCOPE,bundle catalog,yes

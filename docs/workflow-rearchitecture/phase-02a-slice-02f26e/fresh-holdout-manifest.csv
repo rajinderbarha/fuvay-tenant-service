@@ -1,0 +1,25 @@
+stratum,method,path,endpoint,module,selection_reason
+S01_platform_admin_target_tenant,POST,/v1/tenants/{tenant_id}/data/delete-request,gdpr_deletion,app.engines.tenant_engine.router,structural stratum S01_platform_admin_target_tenant; excluded all 24 burned routes; frozen pre-verdict
+S01_platform_admin_target_tenant,POST,/v1/tenants/{tenant_id}/engines/{engine_id}/disable,disable_engine,app.engines.tenant_engine.router,structural stratum S01_platform_admin_target_tenant; excluded all 24 burned routes; frozen pre-verdict
+S01_platform_admin_target_tenant,POST,/v1/tenants/{tenant_id}/reinstate,reinstate_tenant,app.engines.tenant_engine.router,structural stratum S01_platform_admin_target_tenant; excluded all 24 burned routes; frozen pre-verdict
+S01_platform_admin_target_tenant,POST,/v1/tenants/{tenant_id}/trial/convert,convert_trial,app.engines.tenant_engine.router,structural stratum S01_platform_admin_target_tenant; excluded all 24 burned routes; frozen pre-verdict
+S02_tenant_owner,DELETE,/v1/tenant/service-areas/{area_id}/services/{mapping_id},delete_service_mapping,app.engines.serviceability.router,structural stratum S02_tenant_owner; excluded all 24 burned routes; frozen pre-verdict
+S02_tenant_owner,POST,/v1/tenant/service-areas/{area_id}/set-primary,set_primary_tenant_service_area,app.engines.serviceability.router,structural stratum S02_tenant_owner; excluded all 24 burned routes; frozen pre-verdict
+S02_tenant_owner,PUT,/v1/tenant/service-areas/{area_id},update_tenant_service_area,app.engines.serviceability.router,structural stratum S02_tenant_owner; excluded all 24 burned routes; frozen pre-verdict
+S08_mutating_get,GET,/v1/compliance/consent/users/{user_id},list_consents,app.engines.compliance.router,structural stratum S08_mutating_get; excluded all 24 burned routes; frozen pre-verdict
+S08_mutating_get,GET,/v1/ds/tenants/{tenant_id}/demand/forecast,get_forecast,app.engines.data_science.router,structural stratum S08_mutating_get; excluded all 24 burned routes; frozen pre-verdict
+S09_client_target_tenant,DELETE,/v1/pricing/tenants/{tenant_id}/rules/{rule_id},delete_rule,app.engines.pricing.router,structural stratum S09_client_target_tenant; excluded all 24 burned routes; frozen pre-verdict
+S09_client_target_tenant,POST,/v1/commerce/tenants/{tenant_id}/badges/recalculate,recalculate_badges,app.engines.platform_commerce.router,structural stratum S09_client_target_tenant; excluded all 24 burned routes; frozen pre-verdict
+S09_client_target_tenant,POST,/v1/ds/tenants/{tenant_id}/demand/recompute,trigger_recompute,app.engines.data_science.router,structural stratum S09_client_target_tenant; excluded all 24 burned routes; frozen pre-verdict
+S09_client_target_tenant,POST,/v1/inventory/tenants/{tenant_id}/items,create_item,app.engines.inventory.router,structural stratum S09_client_target_tenant; excluded all 24 burned routes; frozen pre-verdict
+S09_client_target_tenant,POST,/v1/pricing/tenants/{tenant_id}/zones,create_zone,app.engines.pricing.router,structural stratum S09_client_target_tenant; excluded all 24 burned routes; frozen pre-verdict
+S10_generic_prefix,DELETE,/v1/auth/sessions/{session_id},revoke_session,app.engines.auth.router,structural stratum S10_generic_prefix; excluded all 24 burned routes; frozen pre-verdict
+S10_generic_prefix,POST,/v1/analytics/events/ingest,ingest_event,app.engines.analytics.router,structural stratum S10_generic_prefix; excluded all 24 burned routes; frozen pre-verdict
+S10_generic_prefix,POST,/v1/appointments/{appointment_id}/reschedule,reschedule,app.engines.appointment.router,structural stratum S10_generic_prefix; excluded all 24 burned routes; frozen pre-verdict
+S10_generic_prefix,POST,/v1/auth/staff/{user_id}/invite/resend,resend_invite,app.engines.auth.router,structural stratum S10_generic_prefix; excluded all 24 burned routes; frozen pre-verdict
+S10_generic_prefix,POST,/v1/commerce/warranty/claims,submit_claim,app.engines.platform_commerce.router,structural stratum S10_generic_prefix; excluded all 24 burned routes; frozen pre-verdict
+S10_generic_prefix,POST,/v1/dispatch/jobs/{job_id}/dispatch,dispatch_job,app.engines.dispatch.router,structural stratum S10_generic_prefix; excluded all 24 burned routes; frozen pre-verdict
+S10_generic_prefix,POST,/v1/enterprise/column-preferences/reset,reset_column_preferences,app.engines.enterprise_grid.router,structural stratum S10_generic_prefix; excluded all 24 burned routes; frozen pre-verdict
+S10_generic_prefix,POST,/v1/inventory/reservations/release,release_reservation,app.engines.inventory.router,structural stratum S10_generic_prefix; excluded all 24 burned routes; frozen pre-verdict
+S10_generic_prefix,POST,/v1/payments/invoices,generate_invoice,app.engines.payment.router,structural stratum S10_generic_prefix; excluded all 24 burned routes; frozen pre-verdict
+S10_generic_prefix,POST,/v1/security/activity/record,record_activity,app.engines.security.router,structural stratum S10_generic_prefix; excluded all 24 burned routes; frozen pre-verdict

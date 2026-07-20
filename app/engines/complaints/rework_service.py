@@ -96,8 +96,9 @@ class ServiceReworkService:
         scheduled_date: str | None = None,
         scheduled_time_window: str | None = None,
         request_id: str = "—",
+        tenant_id: uuid.UUID | None = None,
     ) -> ServiceReworkRequest:
-        rework = await self._get_rework(db, rework_id)
+        rework = await self._get_rework(db, rework_id, tenant_id=tenant_id)
         from datetime import date
         if scheduled_date:
             rework.scheduled_date = date.fromisoformat(scheduled_date)
@@ -107,9 +108,10 @@ class ServiceReworkService:
         return rework
 
     async def mark_rework_in_progress(
-        self, db: AsyncSession, rework_id: uuid.UUID, actor_user_id: uuid.UUID
+        self, db: AsyncSession, rework_id: uuid.UUID, actor_user_id: uuid.UUID,
+        tenant_id: uuid.UUID | None = None,
     ) -> ServiceReworkRequest:
-        rework = await self._get_rework(db, rework_id)
+        rework = await self._get_rework(db, rework_id, tenant_id=tenant_id)
         rework.status = REWORK_IN_PROGRESS
         await db.commit()
         return rework
@@ -121,8 +123,9 @@ class ServiceReworkService:
         actor_user_id: uuid.UUID,
         notes: str | None = None,
         request_id: str = "—",
+        tenant_id: uuid.UUID | None = None,
     ) -> ServiceReworkRequest:
-        rework = await self._get_rework(db, rework_id)
+        rework = await self._get_rework(db, rework_id, tenant_id=tenant_id)
         rework.status       = REWORK_COMPLETED
         rework.completed_at = datetime.now(timezone.utc)
         if notes:
@@ -180,13 +183,24 @@ class ServiceReworkService:
         r = await db.execute(q)
         return r.scalars().all()
 
-    async def get_rework(self, db: AsyncSession, rework_id: uuid.UUID) -> ServiceReworkRequest:
-        return await self._get_rework(db, rework_id)
+    async def get_rework(self, db: AsyncSession, rework_id: uuid.UUID,
+                          tenant_id: uuid.UUID | None = None) -> ServiceReworkRequest:
+        return await self._get_rework(db, rework_id, tenant_id=tenant_id)
 
-    async def _get_rework(self, db: AsyncSession, rework_id: uuid.UUID) -> ServiceReworkRequest:
+    async def _get_rework(self, db: AsyncSession, rework_id: uuid.UUID,
+                           tenant_id: uuid.UUID | None = None) -> ServiceReworkRequest:
+        # Slice 2F-9: previously loaded by rework_id alone -- ANY authenticated
+        # user of any tenant could schedule/start/complete/read another
+        # tenant's rework request just by supplying its ID. When a tenant_id
+        # is provided (the provider-facing callers now always supply the
+        # caller's own principal tenant_id), the loaded row's tenant_id must
+        # match, or the request fails closed with the same not-found error a
+        # genuinely missing row would produce (no existence leakage).
         r = await db.execute(select(ServiceReworkRequest).where(ServiceReworkRequest.id == rework_id))
         rw = r.scalars().first()
         if not rw:
+            raise ValueError(ERR_REWORK_NOT_FOUND)
+        if tenant_id is not None and str(rw.tenant_id) != str(tenant_id):
             raise ValueError(ERR_REWORK_NOT_FOUND)
         return rw
 

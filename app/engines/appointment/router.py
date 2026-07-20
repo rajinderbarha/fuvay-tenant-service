@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_mutation_access_scope, require_tenant_mutation_permission
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.appointment.service import AppointmentService
@@ -17,7 +17,8 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db),
           u: UserContext = Depends(get_current_user)) -> AppointmentService:
     return AppointmentService(db=db, request_id=getattr(r.state,"request_id","—"),
                                actor_id=uuid.UUID(u.user_id) if u.user_id else None,
-                               actor_role=u.role)
+                               actor_role=u.role,
+                               actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 
 @router.get("/meta", tags=["Engine Registry"])
@@ -55,7 +56,7 @@ async def hold_slot(r: Request,
              summary="Confirm hold — permanently books the slot",
              response_model=ApiResponse[dict])
 async def confirm_hold(appointment_id: uuid.UUID, r: Request,
-                        u: UserContext = Depends(get_current_user),
+                        u: UserContext = Depends(require_mutation_access_scope),
                         s: AppointmentService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.confirm_hold(appointment_id), _rid(r), ENGINE_ID)
 
@@ -89,7 +90,7 @@ async def list_by_customer(customer_id: uuid.UUID, r: Request,
 
 @router.post("/{appointment_id}/cancel", response_model=ApiResponse[dict])
 async def cancel_appointment(appointment_id: uuid.UUID, r: Request,
-                              u: UserContext = Depends(get_current_user),
+                              u: UserContext = Depends(require_mutation_access_scope),
                               s: AppointmentService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.cancel_appointment(appointment_id, body.get("reason","Cancelled")),
@@ -99,7 +100,7 @@ async def cancel_appointment(appointment_id: uuid.UUID, r: Request,
              summary="Reschedule — marks current as rescheduled, creates new hold",
              response_model=ApiResponse[dict])
 async def reschedule(appointment_id: uuid.UUID, r: Request,
-                      u: UserContext = Depends(get_current_user),
+                      u: UserContext = Depends(require_mutation_access_scope),
                       s: AppointmentService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.reschedule_appointment(appointment_id, body["new_scheduled_at"]),
@@ -109,7 +110,7 @@ async def reschedule(appointment_id: uuid.UUID, r: Request,
              summary="Mark no-show — updates customer health signal + forfeits reservation",
              response_model=ApiResponse[dict])
 async def mark_no_show(appointment_id: uuid.UUID, r: Request,
-                        u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                        u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                         s: AppointmentService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.mark_no_show(appointment_id), _rid(r), ENGINE_ID)
 
@@ -135,7 +136,7 @@ async def available_slots(staff_id: uuid.UUID, r: Request,
              status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def block_calendar(staff_id: uuid.UUID, r: Request,
                           tenant_id: uuid.UUID = Query(...),
-                          u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                          u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                           s: AppointmentService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.block_calendar_time(staff_id, tenant_id, body["block_date"],
@@ -146,7 +147,7 @@ async def block_calendar(staff_id: uuid.UUID, r: Request,
 @router.delete("/calendar/blocks/{block_id}",
                summary="Unblock calendar time", response_model=ApiResponse[dict])
 async def unblock_calendar(block_id: uuid.UUID, r: Request,
-                            u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                            u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                             s: AppointmentService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.unblock_calendar_time(block_id), _rid(r), ENGINE_ID)
 
@@ -155,7 +156,7 @@ async def unblock_calendar(block_id: uuid.UUID, r: Request,
             response_model=ApiResponse[dict])
 async def set_working_hours(staff_id: uuid.UUID, r: Request,
                              tenant_id: uuid.UUID = Query(...),
-                             u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                             u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                              s: AppointmentService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.set_working_hours(staff_id, tenant_id, body["day_of_week"],

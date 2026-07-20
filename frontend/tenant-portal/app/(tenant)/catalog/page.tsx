@@ -10,7 +10,7 @@
 import React, { useCallback, useState } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { Card, Badge, Btn, Modal, Input, Skeleton } from "../../../components/shared/ui";
-import { catalogApi, masterCatalogApi } from "../../../lib/api";
+import { catalogApi, masterCatalogApi, getUserRole, isTenantOwnerRole, isTenantReadOnly } from "../../../lib/api";
 import type { ServiceCatalogItem, AdminMasterServiceRow } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 
@@ -72,6 +72,11 @@ function AdminCatalogSection() {
 
   const services = available.data?.services ?? [];
   const TYPE_COLOR: Record<string, "warning"|"success"|"info"> = { repair:"warning", service:"success", consultation:"info" };
+  // Slice 2F-8: enable_service/disable_service require TENANT_UPDATE, granted
+  // only to tenant_owner (re-verified against app/core/permissions.py) --
+  // this button previously had no role gate at all, rendering for any
+  // authenticated tenant user regardless of role/access-scope.
+  const canToggle = isTenantOwnerRole(getUserRole()) && !isTenantReadOnly();
 
   return (
     <div>
@@ -107,10 +112,12 @@ function AdminCatalogSection() {
                 Admin base price ₹{svc.base_price.toLocaleString("en-IN")}
                 {svc.visit_fee > 0 && ` · ₹${svc.visit_fee} visit fee`}
               </p>
-              <Btn variant={svc.is_enabled ? "ghost" : "primary"} size="sm"
-                loading={enableAction.loading || disableAction.loading} onClick={() => handleToggle(svc)}>
-                {svc.is_enabled ? "Disable" : "Enable for my business"}
-              </Btn>
+              {canToggle && (
+                <Btn variant={svc.is_enabled ? "ghost" : "primary"} size="sm"
+                  loading={enableAction.loading || disableAction.loading} onClick={() => handleToggle(svc)}>
+                  {svc.is_enabled ? "Disable" : "Enable for my business"}
+                </Btn>
+              )}
             </Card>
           ))}
         </div>

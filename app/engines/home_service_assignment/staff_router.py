@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import require_staff_or_above_mutation
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
@@ -14,6 +15,7 @@ from app.engines.home_service_assignment.service import HomeServiceJobAssignment
 from app.engines.home_service_assignment.constants import (
     ERR_JOB_NOT_FOUND, ERR_STAFF_JOB_NOT_ASSIGNED, ERR_STAFF_JOB_ALREADY_ACCEPTED,
     ERR_STAFF_JOB_ALREADY_REJECTED, ERR_REASON_REQUIRED, ERR_JOB_CANCELLED,
+    ERR_ACCESS_DENIED,
 )
 
 
@@ -59,6 +61,7 @@ _MESSAGES = {
     ERR_STAFF_JOB_ALREADY_REJECTED:  "You have already rejected this job.",
     ERR_REASON_REQUIRED:             "Rejection reason is required.",
     ERR_JOB_CANCELLED:               "This job has been cancelled.",
+    ERR_ACCESS_DENIED:               "Job not found.",
 }
 
 
@@ -109,13 +112,13 @@ async def get_my_job(
 async def accept_job(
     job_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_staff_or_above_mutation),
     db:   AsyncSession = Depends(get_db),
 ):
     staff_id = await _resolve_staff_member_id(user, db)
     svc = HomeServiceJobAssignmentService(db)
     try:
-        result = await svc.technician_accept_job(job_id, staff_id, _RID(r))
+        result = await svc.technician_accept_job(job_id, staff_id, _RID(r), tenant_id=uuid.UUID(str(user.tenant_id)))
         await db.commit()
     except ValueError as exc:
         code = str(exc)
@@ -129,13 +132,13 @@ async def reject_job(
     job_id: uuid.UUID,
     body:   RejectRequest,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_staff_or_above_mutation),
     db:   AsyncSession = Depends(get_db),
 ):
     staff_id = await _resolve_staff_member_id(user, db)
     svc = HomeServiceJobAssignmentService(db)
     try:
-        result = await svc.technician_reject_job(job_id, staff_id, body.reason, _RID(r))
+        result = await svc.technician_reject_job(job_id, staff_id, body.reason, _RID(r), tenant_id=uuid.UUID(str(user.tenant_id)))
         await db.commit()
     except ValueError as exc:
         code = str(exc)

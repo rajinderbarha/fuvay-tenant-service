@@ -1,0 +1,9 @@
+message_visibility,asset_is_public,asset_context,asset_scope_check,combination_allowed,enforcement_mechanism
+thread,false,chat_attachment,tenant/customer match + MediaAccessService pass,YES,default path -- both checks must pass
+thread,true,chat_attachment,none (public bypasses),YES,MediaAccessService.assert_can_view's is_public early-return (existing, reused)
+admin_only,false,chat_attachment,tenant/customer match + MediaAccessService pass,YES (admin sender only -- 2F-18's visibility restriction already limits WHO can set this message visibility),same as thread case; message-level visibility restriction (2F-18) is the actual gate on WHO can send admin_only, not a separate asset rule
+provider_only,false,chat_attachment,tenant/customer match + MediaAccessService pass,YES (admin sender only),same
+customer_only,false,chat_attachment,tenant/customer match + MediaAccessService pass,YES (admin sender only),same
+any,false,provider_document (wrong context),n/a,NO,media_context check (this slice) rejects before persistence regardless of message visibility
+any,false,<unknown/garbage context>,n/a,NO,media_context check (this slice) -- only the literal string "chat_attachment" passes
+any,-,deleted/quarantined,n/a,NO,lifecycle check (this slice) rejects regardless of visibility

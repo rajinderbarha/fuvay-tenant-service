@@ -1,0 +1,17 @@
+test,category,expected,verified_by
+Matching booking + customer + service,BOOKING CONSISTENCY,succeeds,test_matching_booking_customer_service_succeeds
+Customer/booking mismatch,BOOKING CONSISTENCY,422 CUSTOMER_BOOKING_MISMATCH,test_customer_booking_mismatch_rejected
+Service/booking mismatch,BOOKING CONSISTENCY,422 SERVICE_BOOKING_MISMATCH,test_service_booking_mismatch_rejected
+Already-converted booking,BOOKING CONSISTENCY,409 JOB_ALREADY_EXISTS_FOR_BOOKING,test_already_converted_booking_rejected
+Duplicate Job for booking (no converted_job_id yet but a Job row already references it),BOOKING CONSISTENCY,409 JOB_ALREADY_EXISTS_FOR_BOOKING,test_duplicate_job_for_booking_rejected
+Matching parent + customer,PARENT CONSISTENCY,succeeds,test_matching_parent_customer_succeeds
+Customer/parent mismatch,PARENT CONSISTENCY,422 CUSTOMER_PARENT_JOB_MISMATCH,test_customer_parent_mismatch_rejected
+Duplicate repair from same consultation parent,PARENT CONSISTENCY,409 CONSULTATION_ALREADY_CONVERTED,test_duplicate_repair_from_consultation_rejected
+Different repair service from consultation parent,PARENT CONSISTENCY,succeeds (allowed by policy),test_different_repair_service_from_consultation_allowed
+Second non-repair child from same (non-consultation) parent,PARENT CONSISTENCY,succeeds (multiple children allowed),test_second_non_repair_child_from_same_parent_allowed
+Foreign service_type_id,AUTHORIZATION REGRESSION (re-verified, Slice 2F-14C),422 FOREIGN_SERVICE_TYPE,test_foreign_service_type_rejected (2F-14C)
+Foreign parent_job_id,AUTHORIZATION REGRESSION (re-verified, Slice 2F-14C),422 FOREIGN_PARENT_JOB,test_foreign_parent_job_rejected (2F-14C)
+Foreign booking_id,AUTHORIZATION REGRESSION (re-verified, Slice 2F-14C),422 FOREIGN_BOOKING,test_foreign_booking_rejected (2F-14C)
+Foreign customer_id,AUTHORIZATION REGRESSION (re-verified, Slice 2F-14C),422 FOREIGN_CUSTOMER,test_foreign_customer_rejected (2F-14C)
+Tenant owner / read-only tenant owner / staff / technician / customer / cross-tenant / unknown role/scope,AUTHORIZATION REGRESSION (re-verified, Slice 2F-14B router-level tests),denied per Slice 2F-14B's own matrix,tests/test_phase2f14b_field_ops_creation_conversion_quote_authorization.py (re-run, all passing)
+No Job created on any rejected case above,NO PARTIAL PERSISTENCE,db.add not called,test_no_job_created_on_rejection (2F-14C, re-verified); every 2F-14D rejection test asserts via pytest.raises before any success-path assertion

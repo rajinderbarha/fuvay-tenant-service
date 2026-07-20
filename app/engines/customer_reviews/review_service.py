@@ -258,9 +258,13 @@ class ReviewService:
         reply_text: str,
         request_id: str = "—",
     ) -> ReviewReply:
-        review = await self._get_review(db, review_id)
-        if str(review.tenant_id) != str(tenant_id):
-            raise ValueError(ERR_PERMISSION_DENIED)
+        # Slice 2F-24: was a primary-key fetch followed by a manual
+        # `review.tenant_id != tenant_id` comparison. Behaviour is preserved
+        # but routed through the one central scoped lookup, so ownership is a
+        # SQL predicate (the foreign row is never loaded) and a foreign review
+        # id is privacy-equivalent to a missing one -- consistent with
+        # flag_review and the scoped reads.
+        review = await self._get_review_scoped(db, review_id, tenant_id=tenant_id)
 
         existing = await db.execute(select(ReviewReply).where(ReviewReply.review_id == review_id))
         if existing.scalars().first():
@@ -340,14 +344,33 @@ class ReviewService:
         reason_text: str | None = None,
         tenant_id: uuid.UUID | None = None,
         request_id: str = "—",
+        customer_id: uuid.UUID | None = None,
     ) -> ReviewFlag:
-        review = await self._get_review(db, review_id)
+        # Slice 2F-24 — this method previously called `_get_review`, a
+        # primary-key-only lookup, and performed NO ownership check whatsoever.
+        # Combined with a bare-authenticated route it let any authenticated
+        # principal set `status = flagged` on ANY review in ANY tenant.
+        #
+        # Ownership is now proven by the central scoped lookup. The scope comes
+        # from the authenticated principal (the provider route passes its JWT
+        # tenant; the customer route passes its own customer id) -- never from
+        # a client-supplied field. A caller that supplies neither fails closed
+        # inside `_get_review_scoped`.
+        if flagged_by_type not in (ACTOR_PROVIDER, ACTOR_CUSTOMER):
+            # Actor type is server-set by each router; an unknown value means a
+            # caller is trying to attribute the action to a persona it is not.
+            raise ValueError(ERR_PERMISSION_DENIED)
+
+        review = await self._get_review_scoped(
+            db, review_id, tenant_id=tenant_id, customer_id=customer_id,
+        )
         if reason_code not in FLAG_REASONS:
             reason_code = "other"
 
         flag = ReviewFlag(
             review_id          = review_id,
-            tenant_id          = tenant_id,
+            # Always the review's own tenant, never a client-supplied value.
+            tenant_id          = review.tenant_id,
             flagged_by_user_id = flagged_by_user_id,
             flagged_by_type    = flagged_by_type,
             reason_code        = reason_code,
@@ -421,8 +444,28 @@ class ReviewService:
         r = await db.execute(q)
         return r.scalars().all()
 
-    async def get_review(self, db: AsyncSession, review_id: uuid.UUID) -> CustomerReview:
-        return await self._get_review(db, review_id)
+    async def get_review(
+        self,
+        db: AsyncSession,
+        review_id: uuid.UUID,
+        *,
+        tenant_id: uuid.UUID | str | None = None,
+        customer_id: uuid.UUID | str | None = None,
+    ) -> CustomerReview:
+        """Scoped review read (Slice 2F-24).
+
+        Previously an unscoped primary-key fetch, which made both the provider
+        and customer `GET /{review_id}` routes read-IDORs: any authenticated
+        principal could read any review in any tenant, including reviews in
+        `pending`, `hidden`, `rejected` or `deleted` state along with their
+        moderation and rejection reasons.
+
+        A scope is now required. Platform-admin reads, which are legitimately
+        cross-tenant, continue to use `_get_review` directly.
+        """
+        return await self._get_review_scoped(
+            db, review_id, tenant_id=tenant_id, customer_id=customer_id,
+        )
 
     async def get_reply(self, db: AsyncSession, review_id: uuid.UUID) -> ReviewReply | None:
         r = await db.execute(select(ReviewReply).where(ReviewReply.review_id == review_id))
@@ -480,8 +523,58 @@ class ReviewService:
 
     # ── Internal helpers ──────────────────────────────────────────────────────
     async def _get_review(self, db: AsyncSession, review_id: uuid.UUID) -> CustomerReview:
+        """UNSCOPED lookup — primary key only.
+
+        Slice 2F-24: this is NOT an authorization boundary and must never be
+        used to authorize a mutation. It remains for the platform-admin surface
+        (`admin_router`, entirely `require_super_admin`), which is legitimately
+        cross-tenant by design. Every tenant- or customer-facing caller must use
+        `_get_review_scoped` instead.
+        """
         r = await db.execute(select(CustomerReview).where(CustomerReview.id == review_id))
         rv = r.scalars().first()
+        if not rv:
+            raise ValueError(ERR_REVIEW_NOT_FOUND)
+        return rv
+
+    async def _get_review_scoped(
+        self,
+        db: AsyncSession,
+        review_id: uuid.UUID,
+        *,
+        tenant_id: uuid.UUID | str | None = None,
+        customer_id: uuid.UUID | str | None = None,
+    ) -> CustomerReview:
+        """THE central fail-closed scoped review lookup (Slice 2F-24).
+
+        Before this slice each caller improvised: `submit_reply` compared
+        `review.tenant_id` itself, `flag_review` compared nothing at all, and
+        the read routes passed a bare primary key. A review id alone was
+        therefore sufficient authority to flag any review in any tenant.
+
+        Rules:
+          * At least one scope MUST be supplied. Calling with neither is a
+            programming error and raises PERMISSION_DENIED rather than
+            silently degrading to a global (unscoped) query — there is no
+            "tenant_id=None means all tenants" mode.
+          * Scopes are applied as SQL predicates, not post-fetch comparisons,
+            so a row belonging to another tenant or customer is never loaded
+            into memory at all.
+          * A review that does not exist and a review the caller may not touch
+            both raise REVIEW_NOT_FOUND. The caller cannot distinguish them, so
+            the route cannot be used as an existence oracle for other tenants'
+            reviews.
+        """
+        if tenant_id is None and customer_id is None:
+            raise ValueError(ERR_PERMISSION_DENIED)
+
+        q = select(CustomerReview).where(CustomerReview.id == review_id)
+        if tenant_id is not None:
+            q = q.where(CustomerReview.tenant_id == uuid.UUID(str(tenant_id)))
+        if customer_id is not None:
+            q = q.where(CustomerReview.customer_id == uuid.UUID(str(customer_id)))
+
+        rv = (await db.execute(q)).scalars().first()
         if not rv:
             raise ValueError(ERR_REVIEW_NOT_FOUND)
         return rv

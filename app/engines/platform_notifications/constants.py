@@ -13,6 +13,7 @@ ERR_NOTIF_RETRY_NOT_ALLOWED       = "NOTIFICATION_RETRY_NOT_ALLOWED"
 ERR_NOTIF_PREFERENCE_DISABLED     = "NOTIFICATION_PREFERENCE_DISABLED"
 ERR_IN_APP_NOT_FOUND              = "IN_APP_NOTIFICATION_NOT_FOUND"
 ERR_IN_APP_ACCESS_DENIED          = "IN_APP_NOTIFICATION_ACCESS_DENIED"
+ERR_NOTIF_INVALID_PREFERENCE      = "NOTIFICATION_PREFERENCE_INVALID"
 
 # ── Chat error codes ──────────────────────────────────────────────────────────
 ERR_CHAT_THREAD_NOT_FOUND         = "CHAT_THREAD_NOT_FOUND"
@@ -25,6 +26,9 @@ ERR_CHAT_MESSAGE_ACCESS_DENIED    = "CHAT_MESSAGE_ACCESS_DENIED"
 ERR_CHAT_RECORD_ACCESS_DENIED     = "CHAT_RECORD_ACCESS_DENIED"
 ERR_CHAT_RECORD_NOT_FOUND         = "CHAT_RECORD_NOT_FOUND"
 ERR_CHAT_CANNOT_SEND              = "CHAT_CANNOT_SEND"
+ERR_CHAT_INVALID_VISIBILITY       = "CHAT_MESSAGE_INVALID_VISIBILITY"
+ERR_CHAT_ATTACHMENT_NOT_FOUND     = "CHAT_ATTACHMENT_NOT_FOUND"
+ERR_CHAT_ATTACHMENT_ACCESS_DENIED = "CHAT_ATTACHMENT_ACCESS_DENIED"
 
 # ── Audit error codes ─────────────────────────────────────────────────────────
 ERR_AUDIT_LOG_NOT_FOUND           = "AUDIT_LOG_NOT_FOUND"
@@ -60,11 +64,12 @@ CHANNEL_PUSH      = "push"
 ALL_CHANNELS = [CHANNEL_IN_APP, CHANNEL_EMAIL, CHANNEL_SMS, CHANNEL_WHATSAPP, CHANNEL_PUSH]
 
 # ── Recipient types ───────────────────────────────────────────────────────────
-RECIP_CUSTOMER = "customer"
-RECIP_PROVIDER = "provider"
-RECIP_STAFF    = "staff"
-RECIP_ADMIN    = "admin"
-RECIP_SYSTEM   = "system"
+RECIP_CUSTOMER   = "customer"
+RECIP_PROVIDER   = "provider"
+RECIP_STAFF      = "staff"
+RECIP_TECHNICIAN = "technician"
+RECIP_ADMIN      = "admin"
+RECIP_SYSTEM     = "system"
 
 # ── Severity ──────────────────────────────────────────────────────────────────
 SEV_INFO     = "info"

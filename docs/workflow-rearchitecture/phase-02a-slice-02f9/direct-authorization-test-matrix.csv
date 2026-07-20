@@ -1,0 +1,20 @@
+endpoint,tenant_owner,staff,technician,customer,guest,readonly_owner,cross_tenant_service_layer,unauthenticated,super_admin,unknown_role
+respond_to_complaint,PASS,403,403,403,403,403 (access_scope denied),ERR_COMPLAINT_ACCESS_DENIED (pre-existing, re-verified),401,PASS,403 (fail-closed)
+offer_resolution,PASS,403,403,403,403,403,ERR_COMPLAINT_ACCESS_DENIED (pre-existing),401,PASS,403
+schedule_rework,PASS,403,403,403,403,403,ERR_REWORK_NOT_FOUND (NEW -- direct test proof of the fix),401,PASS,403
+start_rework,PASS,403,403,403,403,403,ERR_REWORK_NOT_FOUND (NEW),401,PASS,403
+complete_rework,PASS,403,403,403,403,403,ERR_REWORK_NOT_FOUND (NEW),401,PASS,403
+review_refund,PASS,403,403,403,403,403,ERR_REFUND_NOT_FOUND (NEW),401,PASS,403
+submit_ai_answers,PASS,403,403,403,403,403,ERR_COMPLAINT_ACCESS_DENIED (pre-existing),401,PASS,403
+create_settlement_proposal,PASS,403,403,403,403,403,ERR_COMPLAINT_ACCESS_DENIED (NEW -- now uses provider_get_complaint),401,PASS,403
+respond_to_settlement,PASS,403,403,403,403,403,SETTLEMENT_PROPOSAL_NOT_FOUND (NEW -- foreign proposal_id rejected even with a valid complaint_id),401,PASS,403
+
+# PASS = request passed the authorization gate and reached business logic (a mocked-DB
+#   ValueError/TypeError from a bare MagicMock lookup finding nothing is accepted as
+#   proof of clearing the auth layer, distinguished from a real authorization 403 by
+#   checking the response status/body).
+# cross_tenant_service_layer = direct service-level test proving a genuinely
+#   mismatched tenant_id (or, for respond_to_settlement, a mismatched proposal-to-
+#   complaint linkage) is rejected -- not a source-string assertion.
+# All 9 routes x 10 personas = 90 combinations exercised; 84 total tests in the new
+#   suite (some personas grouped/parametrized rather than 1:1 with this matrix's cells).

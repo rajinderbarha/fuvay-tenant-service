@@ -7,13 +7,24 @@ from fastapi import APIRouter, Depends, Request, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import get_current_user, UserContext, require_staff_or_technician_only
 from app.dependencies.db import get_db
 from app.schemas.base import ok
+from app.core.permissions import require_owner_or_office_staff_mutation
 from app.engines.platform_notifications.notification_service import NotificationService
 from app.engines.platform_notifications.chat_service import ChatThreadService, ChatMessageService
 from app.engines.platform_notifications.audit_service import PlatformAuditLogService
-from app.engines.platform_notifications.constants import RECIP_PROVIDER, RECIP_STAFF
+from app.engines.platform_notifications.constants import RECIP_PROVIDER, RECIP_STAFF, RECIP_TECHNICIAN
+
+# Slice 2F-18: `provider_*` routers are the tenant_owner/office-staff surface
+# (the same persona convention as every other `provider_router.py` in this
+# codebase, e.g. field_ops.router) — narrower than "any authenticated role",
+# which is what `get_current_user` alone allowed. `staff_*` routers are the
+# staff/technician self-service surface (same convention as
+# field_ops.staff_router), narrower still (excludes tenant_owner/super_admin,
+# per require_staff_or_technician_only's own docstring).
+_provider_guard = require_owner_or_office_staff_mutation
+_staff_guard = require_staff_or_technician_only
 
 provider_notif_router = APIRouter(
     prefix="/v1/provider/notifications",
@@ -50,6 +61,17 @@ def _tid(u: UserContext) -> uuid.UUID | None:
     return uuid.UUID(u.tenant_id) if u.tenant_id else None
 
 
+def _staff_actor_type(u: UserContext) -> str:
+    """Slice 2F-18A: staff_chat_router serves both `staff` and `technician`
+    roles (require_staff_or_technician_only admits both), but they are NOT
+    the same persona for chat/thread ownership purposes — a technician gets
+    no tenant-wide access (see chat_service.validate_thread_access's
+    RECIP_TECHNICIAN branch). Distinguish by the caller's real role so the
+    service layer can apply the correct policy instead of treating every
+    staff_chat_router caller as tenant-wide staff."""
+    return RECIP_TECHNICIAN if u.role == "technician" else RECIP_STAFF
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PROVIDER NOTIFICATIONS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -60,7 +82,7 @@ async def provider_list_notifications(
     read_status: Optional[str] = Query(None),
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _notif_svc.get_user_notifications(
@@ -72,7 +94,7 @@ async def provider_list_notifications(
 @provider_notif_router.get("/unread-count", summary="Provider unread notification count")
 async def provider_unread_count(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _notif_svc.get_unread_count(db, uuid.UUID(u.user_id))
@@ -83,7 +105,7 @@ async def provider_unread_count(
 async def provider_mark_read(
     notification_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     notif = await _notif_svc.mark_notification_read(db, uuid.UUID(u.user_id), notification_id)
@@ -93,7 +115,7 @@ async def provider_mark_read(
 @provider_notif_router.post("/mark-all-read", summary="Mark all provider notifications read")
 async def provider_mark_all_read(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _notif_svc.mark_all_read(db, uuid.UUID(u.user_id))
@@ -103,7 +125,7 @@ async def provider_mark_all_read(
 @provider_notif_router.get("/preferences", summary="Get provider notification preferences")
 async def provider_get_prefs(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     prefs = await _notif_svc.get_preferences(db, uuid.UUID(u.user_id))
@@ -120,7 +142,7 @@ class UpdatePrefIn(BaseModel):
 async def provider_update_pref(
     body: UpdatePrefIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     pref = await _notif_svc.update_preference(
@@ -139,7 +161,7 @@ async def provider_list_threads(
     status: Optional[str] = Query(None),
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _thread_svc.list_threads(
@@ -158,7 +180,7 @@ class CreateThreadIn(BaseModel):
 async def provider_create_thread(
     body: CreateThreadIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     thread = await _thread_svc.get_or_create_thread(
@@ -173,7 +195,7 @@ async def provider_create_thread(
 async def provider_get_thread(
     thread_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     thread = await _thread_svc.get_thread(
@@ -188,7 +210,7 @@ async def provider_list_messages(
     r: Request,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _msg_svc.list_messages(
@@ -210,7 +232,7 @@ async def provider_send_message(
     thread_id: uuid.UUID,
     body: SendMsgIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     media_urls = {"media_ids": body.media_ids} if body.media_ids else None
@@ -219,7 +241,7 @@ async def provider_send_message(
         actor_user_id=uuid.UUID(u.user_id), actor_type=RECIP_PROVIDER,
         tenant_id=_tid(u), message_text=body.message_text,
         message_type=body.message_type, visibility=body.visibility,
-        media_urls=media_urls,
+        media_urls=media_urls, actor=u,
     )
     return ok(msg.to_dict(RECIP_PROVIDER), _rid(r), "provider.chat.message.send")
 
@@ -228,7 +250,7 @@ async def provider_send_message(
 async def provider_mark_thread_read(
     thread_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _msg_svc.mark_thread_read(
@@ -248,7 +270,7 @@ async def provider_list_audit(
     action: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _audit_svc.get_audit_logs(
@@ -264,7 +286,7 @@ async def provider_record_timeline(
     resource_type: str,
     resource_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
     items = await _audit_svc.get_record_timeline(
@@ -283,7 +305,7 @@ async def staff_list_notifications(
     read_status: Optional[str] = Query(None),
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_staff_guard),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _notif_svc.get_user_notifications(
@@ -295,7 +317,7 @@ async def staff_list_notifications(
 @staff_notif_router.get("/unread-count", summary="Staff unread notification count")
 async def staff_unread_count(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_staff_guard),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _notif_svc.get_unread_count(db, uuid.UUID(u.user_id))
@@ -306,7 +328,7 @@ async def staff_unread_count(
 async def staff_mark_read(
     notification_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_staff_guard),
     db: AsyncSession = Depends(get_db),
 ):
     notif = await _notif_svc.mark_notification_read(db, uuid.UUID(u.user_id), notification_id)
@@ -316,7 +338,7 @@ async def staff_mark_read(
 @staff_notif_router.post("/mark-all-read", summary="Mark all staff notifications read")
 async def staff_mark_all_read(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_staff_guard),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _notif_svc.mark_all_read(db, uuid.UUID(u.user_id))
@@ -333,11 +355,11 @@ async def staff_list_threads(
     status: Optional[str] = Query(None),
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_staff_guard),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _thread_svc.list_threads(
-        db, uuid.UUID(u.user_id), RECIP_STAFF,
+        db, uuid.UUID(u.user_id), _staff_actor_type(u),
         tenant_id=_tid(u), status=status, limit=limit, offset=offset,
     )
     return ok(result, _rid(r), "staff.chat.threads.list")
@@ -347,11 +369,11 @@ async def staff_list_threads(
 async def staff_get_thread(
     thread_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_staff_guard),
     db: AsyncSession = Depends(get_db),
 ):
     thread = await _thread_svc.get_thread(
-        db, thread_id, uuid.UUID(u.user_id), RECIP_STAFF, _tid(u),
+        db, thread_id, uuid.UUID(u.user_id), _staff_actor_type(u), _tid(u),
     )
     return ok(thread.to_dict(), _rid(r), "staff.chat.thread.get")
 
@@ -362,11 +384,11 @@ async def staff_list_messages(
     r: Request,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_staff_guard),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _msg_svc.list_messages(
-        db, thread_id, uuid.UUID(u.user_id), RECIP_STAFF, _tid(u),
+        db, thread_id, uuid.UUID(u.user_id), _staff_actor_type(u), _tid(u),
         limit=limit, offset=offset,
     )
     return ok(result, _rid(r), "staff.chat.messages.list")
@@ -377,26 +399,34 @@ async def staff_send_message(
     thread_id: uuid.UUID,
     body: SendMsgIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_staff_guard),
     db: AsyncSession = Depends(get_db),
 ):
+    # Slice 2F-18C: media_ids was previously accepted by this schema but
+    # silently dropped (never forwarded) -- SAFE_SUPPORT disposition: now
+    # forwarded through the same validated path provider_send_message uses
+    # (existence/context/lifecycle/tenant/customer/MediaAccessService/
+    # thread-lineage checks), not silently ignored.
+    staff_actor_type = _staff_actor_type(u)
+    media_urls = {"media_ids": body.media_ids} if body.media_ids else None
     msg = await _msg_svc.send_message(
         db=db, thread_id=thread_id,
-        actor_user_id=uuid.UUID(u.user_id), actor_type=RECIP_STAFF,
+        actor_user_id=uuid.UUID(u.user_id), actor_type=staff_actor_type,
         tenant_id=_tid(u), message_text=body.message_text,
         message_type=body.message_type, visibility=body.visibility,
+        media_urls=media_urls, actor=u,
     )
-    return ok(msg.to_dict(RECIP_STAFF), _rid(r), "staff.chat.message.send")
+    return ok(msg.to_dict(staff_actor_type), _rid(r), "staff.chat.message.send")
 
 
 @staff_chat_router.post("/threads/{thread_id}/read", summary="Staff mark thread read")
 async def staff_mark_thread_read(
     thread_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(_staff_guard),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _msg_svc.mark_thread_read(
-        db, thread_id, uuid.UUID(u.user_id), RECIP_STAFF, _tid(u),
+        db, thread_id, uuid.UUID(u.user_id), _staff_actor_type(u), _tid(u),
     )
     return ok({"messages_marked_read": count}, _rid(r), "staff.chat.thread.read")

@@ -41,6 +41,16 @@ class RagKnowledgeBase(ServiceOSBase):
     admin_only: Mapped[bool] = mapped_column(Boolean, default=True)
     sensitive_content: Mapped[bool] = mapped_column(Boolean, default=False)
     allowed_apps_json: Mapped[list] = mapped_column(JSONB, default=list)
+    # Phase 2A Slice 2D: DISPLAY_ONLY, confirmed by exhaustive backend search
+    # (docs/workflow-rearchitecture/phase-02a-slice-02c/intelligence-kb-role-field-decision.md).
+    # This field is stored and echoed back to the admin UI that set it, but
+    # NOTHING in kb_service.py or anywhere else reads it back to gate
+    # retrieval, visibility, or authorization. It is content-targeting
+    # *metadata* only — it must never be treated as an access control. If
+    # real enforcement is ever built, it must go through app.core.permissions
+    # (require_permission/PermissionChecker), not a bespoke check on this
+    # field. See tests/test_phase2d_tenant_access_model.py and
+    # docs/workflow-rearchitecture/phase-02a-slice-02d/intelligence-kb-field-clarification.md.
     allowed_roles_json: Mapped[list] = mapped_column(JSONB, default=list)
     data_sources_json: Mapped[list] = mapped_column(JSONB, default=list)
     safety_rules_json: Mapped[dict] = mapped_column(JSONB, default=dict)

@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_mutation_access_scope
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.engines.chat.service import ChatService
@@ -13,7 +13,8 @@ router = APIRouter(prefix="/v1/chat", tags=["Chat Engine"])
 ENGINE_ID = "chat"
 def _svc(r: Request, db: AsyncSession=Depends(get_db), u: UserContext=Depends(get_current_user)):
     return ChatService(db=db, request_id=getattr(r.state,"request_id","—"),
-                        actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role)
+                        actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role,
+                        actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 
 @router.get("/meta", tags=["Engine Registry"])
@@ -58,7 +59,7 @@ async def list_participants(conversation_id: uuid.UUID, r: Request,
              status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def send_message(conversation_id: uuid.UUID, r: Request,
                         tenant_id: uuid.UUID=Query(...),
-                        u: UserContext=Depends(get_current_user),
+                        u: UserContext=Depends(require_mutation_access_scope),
                         s: ChatService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.send_message(conversation_id, tenant_id,

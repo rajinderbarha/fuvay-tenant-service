@@ -1,0 +1,17 @@
+metric,value,method
+total mounted mutation-method route entries (POST/PUT/PATCH/DELETE),1186,unfiltered `inventory_mutation_routes.walk()` invocation against the fully mounted app (in-process, `app.main.app`)
+guard_status: PLATFORM_ADMIN_ONLY,487,tool-computed from dependency names
+guard_status: PERMISSION_ONLY_NOT_SCOPE_AWARE,321,tool-computed
+guard_status: AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,133,tool-computed
+guard_status: TENANT_MUTATION_ROLE_SCOPE_AWARE,78,tool-computed
+guard_status: TENANT_MUTATION_PERMISSION_SCOPE_AWARE,63,tool-computed
+guard_status: STAFF_EXECUTION_ROLE_SCOPE_AWARE,41,tool-computed
+guard_status: PUBLIC_NO_AUTH,39,tool-computed
+guard_status: CUSTOMER_ROLE_ONLY_NOT_TENANT_SCOPED,24,tool-computed
+canonical tenant CSV rows (226 total),226,`tenant-mutation-endpoint-inventory.csv` row count
+canonical rows confirmed mounted at runtime,226 of 226 (100%),cross-checked by (endpoint_name, module) key against the full runtime export -- zero disconnected rows found
+tenant-prefixed (/v1/provider/, /v1/staff/, /v1/tenant/) routes NOT present in the canonical CSV,2,cross-checked by (endpoint_name, module) key
+of those 2, confirmed pre-existing false positives already exempted,2 of 2,both already in CONFIRMED_FALSE_POSITIVE_ROUTES (added Slices 2F-2 and 2F-7 respectively -- years before this slice)
+genuinely missing tenant mutations discovered,0,see missing-tenant-mutations.csv
+whole-application duplicate (method, path) registrations,3,all under /v1/admin/... (platform-admin), none tenant-facing -- see duplicate-alternate-mount-audit.csv
+canonical CSV rows with a customer/admin/internal path prefix (misclassification check),0,confirms Design A (tenant-only CSV) has zero violations across this initiative's entire history

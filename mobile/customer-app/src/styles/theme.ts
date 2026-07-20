@@ -26,6 +26,9 @@ export const theme = {
     warning:      "#D97706", warningBg:"#FFFBEB", warningText:"#B45309", warningBorder:"#FDE68A",
     danger:       "#DC2626", dangerBg: "#FEF2F2", dangerText: "#B91C1C", dangerBorder: "#FECACA",
     info:         "#0EA5E9", infoBg:   "#F0F9FF", infoText:   "#0369A1", infoBorder:   "#BAE6FD",
+    // Tab bar (referenced by TabNavigator; additive — not previously defined)
+    tabActive:    "#1E3A5F",
+    tabInactive:  "#94A3B8",
     // Star rating
     star:         "#F59E0B",
     starEmpty:    "#E2E8F0",

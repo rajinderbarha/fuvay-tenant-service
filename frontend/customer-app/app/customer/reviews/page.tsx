@@ -69,7 +69,9 @@ export default function CustomerReviewsPage() {
     if (!flagging || !flagReason) return;
     setSaving(true); setError(null);
     try {
-      await flagReview(flagging.id, "other", flagReason, flagging.tenant_id);
+      // Slice 2F-24: tenant argument removed -- the backend derives the flag's
+      // tenant from the review and rejects a client-supplied tenant_id.
+      await flagReview(flagging.id, "other", flagReason);
       setFlagging(null); setFlagReason("");
     } catch (e) { setError(e); } finally { setSaving(false); }
   }

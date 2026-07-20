@@ -1,0 +1,11 @@
+method,path,guard_status,access_scope_enforced,role_enforced,tenant_ownership,object_ownership,tested
+PATCH,/v1/tenant/profile,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES (tenant_owner|super_admin),YES (_tenant_id JWT-derived),n/a,YES
+PATCH,/v1/tenant/settings,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,n/a,YES
+POST,/v1/tenant/users,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,n/a (new row),YES
+POST,/v1/tenant/users/{id}/suspend,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (_load_tenant_user, pre-existing),YES
+POST,/v1/tenant/staff,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,n/a (new row),YES
+POST,/v1/tenant/staff/{id}/deactivate,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (_load_tenant_staff, pre-existing),YES
+PATCH,/v1/tenant/staff/{id}/photo,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (_load_tenant_staff, pre-existing),YES
+POST,/v1/tenant/staff/{id}/lock,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (_can_admin_manage_user, pre-existing),YES (also: crash bug fixed)
+POST,/v1/tenant/staff/{id}/unlock,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (_can_admin_manage_user, pre-existing),YES (also: crash bug fixed)
+POST,/v1/tenant/staff/{id}/sessions/revoke-all,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (_can_admin_manage_user, pre-existing),YES (also: crash bug fixed)

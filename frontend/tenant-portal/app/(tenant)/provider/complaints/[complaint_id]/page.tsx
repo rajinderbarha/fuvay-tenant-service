@@ -24,7 +24,10 @@ import { TenantLayout } from "../../../../../components/layout/TenantLayout";
 import {
   Card, CardHeader, SectionHeader, Btn, Badge, Spinner, Input, Select, Modal,
 } from "../../../../../components/shared/ui";
-import { apiFetch } from "../../../../../lib/api";
+import {
+  apiFetch, getUserRole, isTenantOwnerRole, isTenantReadOnly,
+  canOfferProviderComplaintResolution,
+} from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
 
 type BV = "default" | "success" | "warning" | "danger" | "info" | "muted";
@@ -158,6 +161,34 @@ export default function ProviderComplaintDetailPage() {
   const c = complaint.data ?? {};
   const status = s(c.status);
   const sla = s(c.sla_status);
+  // Slice 2F-9: no COMPLAINT_* permission exists in the registry; the
+  // backend now gates all provider-complaint mutations with
+  // require_tenant_owner_mutation (tenant_owner + mutation-capable
+  // access scope only). These action buttons previously had no role
+  // gate at all.
+  const canMutate = isTenantOwnerRole(getUserRole()) && !isTenantReadOnly();
+  // Slice 2F-9A: respond_to_complaint and offer_resolution are both
+  // rejected by the backend once a complaint reaches a final status
+  // (closed/cancelled/rejected) -- the backend remains authoritative and
+  // still enforces this; this is a minimal UI alignment so the reply and
+  // offer-resolution controls aren't shown as actionable when they will
+  // always fail with COMPLAINT_ALREADY_CLOSED / COMPLAINT_INVALID_STATUS_TRANSITION.
+  const isFinalState = ["closed", "cancelled", "rejected"].includes(status);
+  const canReplyOrOffer = canMutate && !isFinalState;
+  // Slice 2F-9B: replaces the coarser 2F-9A final-state check for the
+  // resolution control specifically -- offer_resolution is legal from
+  // exactly 2 backend states, not merely "not final". See
+  // canOfferProviderComplaintResolution in lib/api.ts.
+  const role = getUserRole();
+  const canOfferResolution = canOfferProviderComplaintResolution(role, status);
+
+  // Slice 2F-9B: if the complaint's status becomes illegal for a
+  // resolution offer while the modal is already open (refetch after
+  // another action, poll, etc.), close it rather than leaving an
+  // active-looking form that would only fail server-side.
+  React.useEffect(() => {
+    if (resOpen && !canOfferResolution) setResOpen(false);
+  }, [resOpen, canOfferResolution]);
 
   if (complaint.loading) {
     return <TenantLayout activeNav="provider"><Spinner /></TenantLayout>;
@@ -182,10 +213,14 @@ export default function ProviderComplaintDetailPage() {
         title={`${s(c.complaint_number) || "Complaint"} — ${s(c.title) || s(c.complaint_type)}`}
         subtitle={s(c.description)}
         actions={
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="secondary" onClick={() => setPropOpen(true)}>Propose settlement</Btn>
-            <Btn onClick={() => setResOpen(true)}>Offer resolution</Btn>
-          </div>
+          canMutate ? (
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="secondary" onClick={() => setPropOpen(true)}>Propose settlement</Btn>
+              {canOfferResolution && (
+                <Btn onClick={() => setResOpen(true)}>Offer resolution</Btn>
+              )}
+            </div>
+          ) : undefined
         }
       />
 
@@ -233,15 +268,19 @@ export default function ProviderComplaintDetailPage() {
               ))}
             </div>
           )}
+          {canReplyOrOffer && (
           <Input label="Reply to customer" rows={3} value={reply} onChange={setReply}
                  placeholder="Explain what you will do to resolve this…" />
+          )}
           {respond.error && <p style={{ color: "var(--danger)", fontSize: 12 }}>{respond.error}</p>}
+          {canReplyOrOffer && (
           <div style={{ marginTop: 10 }}>
             <Btn disabled={!reply.trim() || respond.loading}
                  onClick={() => respond.execute(reply.trim())}>
               {respond.loading ? "Sending…" : "Send reply"}
             </Btn>
           </div>
+          )}
         </Card>
       )}
 
@@ -302,7 +341,7 @@ export default function ProviderComplaintDetailPage() {
                     <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
                       customer: {s(p.customer_response) || "—"} · you: {s(p.tenant_response) || "—"}
                     </div>
-                    {awaitingMe && !mine && (
+                    {awaitingMe && !mine && canMutate && (
                       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                         <Btn size="sm" disabled={respondProposal.loading}
                              onClick={() => respondProposal.execute(s(p.id), "accept")}>Accept</Btn>
@@ -371,7 +410,11 @@ export default function ProviderComplaintDetailPage() {
         </Card>
       )}
 
-      <Modal open={resOpen} onClose={() => setResOpen(false)} title="Offer a resolution">
+      {/* Slice 2F-9B: `open` is additionally gated on canOfferResolution
+          (not just resOpen) -- defense in depth against any stale local
+          state that might otherwise flip resOpen true while the
+          complaint is no longer in a legal source state. */}
+      <Modal open={resOpen && canOfferResolution} onClose={() => setResOpen(false)} title="Offer a resolution">
         <Select label="Resolution type" value={resType} onChange={setResType} options={RESOLUTION_TYPES} />
         <Input label="Description" rows={3} value={resDesc} onChange={setResDesc}
                placeholder="What are you offering the customer?" />
@@ -379,8 +422,8 @@ export default function ProviderComplaintDetailPage() {
           <p style={{ color: "var(--danger)", fontSize: 12 }}>{offerResolution.error}</p>
         )}
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <Btn disabled={!resDesc.trim() || offerResolution.loading}
-               onClick={() => offerResolution.execute()}>
+          <Btn disabled={!resDesc.trim() || offerResolution.loading || !canOfferResolution}
+               onClick={() => { if (canOfferResolution) offerResolution.execute(); }}>
             {offerResolution.loading ? "Offering…" : "Offer resolution"}
           </Btn>
           <Btn variant="ghost" onClick={() => setResOpen(false)}>Cancel</Btn>

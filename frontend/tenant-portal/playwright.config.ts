@@ -14,6 +14,12 @@ export default defineConfig({
     baseURL: "http://localhost:3903",
     trace: "off",
   },
+  webServer: {
+    command: "npx next start -p 3903",
+    url: "http://localhost:3903/dev/ux-04",
+    reuseExistingServer: true,
+    timeout: 60000,
+  },
   projects: [
     { name: "desktop-light", use: { ...devices["Desktop Chrome"], colorScheme: "light", viewport: { width: 1280, height: 800 } } },
     { name: "desktop-dark", use: { ...devices["Desktop Chrome"], colorScheme: "dark", viewport: { width: 1280, height: 800 } } },

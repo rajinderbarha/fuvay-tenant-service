@@ -1,0 +1,14 @@
+metric,value,note
+protected_before,226,
+c_set_a_closed,7,6 role-guarded + 1 self-service formalized
+h_set_b_also_protected,0,none of the 3 added Set B routes earned protection
+protected_after,233,226+7+0
+denominator_before,259,
+a_set_b_added,3,all adjudicated TENANT_PROVIDER_MUTATION_ADD
+denominator_after,262,259+3
+unprotected_before,33,
+unprotected_after,29,262-233
+canonical_hash_before,fbe7cf863afa0d84,
+canonical_hash_after,af8388463ac3dbfa,
+matrix_hash_before,753653ed32916f4e,
+matrix_hash_after,3066e137e9a23c19,

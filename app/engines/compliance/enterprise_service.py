@@ -39,10 +39,25 @@ REQUEST_SLA_HOURS = 72
 
 VALID_SUBJECT_TYPES = {
     "customer", "provider_owner", "tenant_staff", "platform_admin", "guest_user",
+    # Slice 2F-20: provider_router.create_my_request has always constructed
+    # subject_type as "tenant_business" or "tenant_owner" (see
+    # app/engines/compliance/provider_router.py's create_my_request), but
+    # neither value was ever a member of this set -- every tenant-created
+    # compliance request has therefore always failed this validation and
+    # 500'd. Added to make the route this slice hardens actually functional;
+    # not a schema/behavior redesign, just correcting a stale allow-list to
+    # match the vocabulary the router has used all along.
+    "tenant_business", "tenant_owner",
 }
 VALID_REQUEST_TYPES = {
     "right_to_erasure", "data_export", "consent_withdrawal", "consent_update",
     "data_correction", "processing_objection", "grievance",
+    # Slice 2F-20: same defect as VALID_SUBJECT_TYPES above --
+    # provider_router.TENANT_ALLOWED_REQUEST_TYPES has always included these
+    # six values, none of which were ever valid here.
+    "business_data_export", "business_profile_erasure",
+    "owner_data_export", "owner_data_erasure",
+    "staff_data_export", "staff_data_erasure",
 }
 VALID_STATUSES = {
     "draft", "submitted", "identity_verification_pending", "under_review",
@@ -282,6 +297,13 @@ class ComplianceEnterpriseService:
             request_source=data.get("request_source", "admin_created"),
             reason=data.get("reason"),
             admin_notes=data.get("admin_notes"),
+            # Slice 2F-20: metadata_json (which carries tenant ownership for
+            # tenant-created requests, e.g. metadata_json["tenant_id"]) was
+            # previously silently dropped here -- callers had to do a
+            # separate, non-atomic post-creation UPDATE to attach it. Setting
+            # it directly in the INSERT means a request is NEVER persisted
+            # without its tenant-ownership metadata already in place.
+            metadata_json=data.get("metadata_json") or {},
         )
         self.db.add(req)
         await self.db.flush()
@@ -615,8 +637,17 @@ class ComplianceEnterpriseService:
         }
 
     async def revoke_consent(self, user_id: uuid.UUID, consent_type: str,
-                              notes: str | None = None) -> dict:
-        result = await self._base.withdraw_consent(user_id, None, consent_type, "1.0")
+                              notes: str | None = None,
+                              tenant_id: uuid.UUID | None = None) -> dict:
+        # Slice 2F-20: `tenant_id` was previously always hardcoded to None
+        # here regardless of caller -- every consent-withdrawal row ever
+        # written through this method (provider, customer, or admin router)
+        # permanently lost tenant attribution on a legally significant DPDP
+        # record. Callers now pass their own authoritative tenant_id
+        # (server-derived, never client-supplied) explicitly; it remains
+        # None only for callers that genuinely have none (e.g. a customer
+        # withdrawing their own consent, or an admin acting platform-wide).
+        result = await self._base.withdraw_consent(user_id, tenant_id, consent_type, "1.0")
         await self._audit(user_id, "consent.admin_revoked",
                           meta={"consent_type": consent_type, "notes": notes or ""})
         return result

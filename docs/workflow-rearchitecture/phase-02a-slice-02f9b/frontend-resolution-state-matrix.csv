@@ -1,0 +1,17 @@
+status,backend_legal_source_for_resolution,control_visible_tenant_owner_full_access,control_visible_readonly,control_visible_staff,control_visible_technician,control_visible_customer_guest,control_visible_unknown_role
+open,false,false,false,false,false,false,false
+awaiting_provider_response,true,true,false,false,false,false,false
+awaiting_customer_response,false,false,false,false,false,false,false
+under_admin_review,true,true,false,false,false,false,false
+resolution_proposed,false,false,false,false,false,false,false
+rework_approved,false,false,false,false,false,false,false
+refund_requested,false,false,false,false,false,false,false
+refund_approved,false,false,false,false,false,false,false
+refund_recorded,false,false,false,false,false,false,false
+resolved,false,false,false,false,false,false,false
+settled,false,false,false,false,false,false,false
+closed,false,false,false,false,false,false,false
+cancelled,false,false,false,false,false,false,false
+rejected,false,false,false,false,false,false,false
+(missing/null),false,false,false,false,false,false,false
+(unrecognized string),false,false,false,false,false,false,false

@@ -1,0 +1,9 @@
+category,disposition,reasoning
+tenant_id,SERVER_DERIVED_AND_SAFE,pinned to actor_tenant_id for tenant-scoped roles since Slice 2F-14B; unchanged this slice
+service_type_id,FOREIGN_REFERENCE_DEFECT_FIXED,previously validated only conditionally (job_type auto-detect branch); now always tenant + active validated via existing ServiceCatalogService
+parent_job_id,FOREIGN_REFERENCE_DEFECT_FIXED,previously zero validation; now existence + tenant match required
+booking_id,FOREIGN_REFERENCE_DEFECT_FIXED,previously zero validation (not even UUID-cast); now existence + tenant match required against Booking
+customer_id,FOREIGN_REFERENCE_DEFECT_FIXED,previously zero validation; now existence + role=='customer' required against auth.User
+address (free-form dict)/pincode/latitude/longitude,DATABASE_FK_ONLY_BUT_TENANT_SAFE,not a normalized reference -- no FK exists or is needed; values are stored as provided with no cross-tenant read/write implication
+scheduled_at/quoted_price/tags/title/description/service_category/job_type/findings/recommendation/checklist/duration_estimate_minutes,SERVER_DERIVED_AND_SAFE,plain scalar/JSON fields with no cross-tenant ownership implication; job_type additionally enum-validated (pre-existing)
+address_id/zone_id/quote_id/assigned_staff_id/assigned_technician_id/category_id/provider_id/checklist_template_id/schedule-slot_id,UNSUPPORTED_FIELD,not accepted by this route at all -- no field exists in the request schema to classify

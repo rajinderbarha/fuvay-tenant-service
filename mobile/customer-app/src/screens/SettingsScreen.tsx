@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { useApi, useAction } from "../hooks/useApi";
 import { settingsApi, type CustomerSettings } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -15,6 +16,7 @@ const LANGUAGES = [
 ] as const;
 
 export function SettingsScreen() {
+  const navigation = useNavigation<any>();
   const { logout } = useAuth();
   const settings  = useApi(useCallback(() => settingsApi.get(), []));
   const saveAction = useAction(useCallback((s: Partial<CustomerSettings>) => settingsApi.update(s), []));
@@ -113,6 +115,13 @@ export function SettingsScreen() {
           {text:"Sign Out",style:"destructive",onPress:logout},
         ])}
       />
+
+      {/* Development-only — never rendered in a production build (CUSTOMER-L5-00). */}
+      {__DEV__ ? (
+        <Button label="🧪 Design System Showcase (dev)" variant="secondary" size="md" fullWidth
+          onPress={()=>navigation.navigate("DesignSystemShowcase")}
+        />
+      ) : null}
     </ScrollView>
   );
 }

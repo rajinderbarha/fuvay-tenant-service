@@ -1,0 +1,6 @@
+caller,method_called,is_geoservice,trusted_context_supplied,classification
+app/engines/geo/router.py _svc() dependency,GeoService(...) construction,YES,YES -- actor_id/actor_role/actor_tenant_id all passed,Set A/B route handler (only construction site with mutation intent)
+app/engines/booking/service.py:184,GeoService(self.db) then .check_pincode_in_zone(...),YES,NO (positional db-only construction) but method called is READ-ONLY and untouched this slice,Internal trusted caller -- safe (does not reach any mutation method)
+app/engines/location_engine/router.py:135,LocationService.create_zone(...),NO -- different class entirely (LocationService),n/a,Separate subsystem -- not a bypass (confirmed by import + isinstance check in tests/test_phase2f33_geo_zone_closure.py)
+app/engines/pricing/router.py:165,PricingService.create_zone(...),NO -- different class entirely (PricingService),n/a,Separate subsystem -- not a bypass
+app/engines/pricing/router.py:190,PricingService.delete_zone(...),NO -- different class entirely (PricingService),n/a,Separate subsystem -- not a bypass

@@ -1,0 +1,23 @@
+scenario,classification,evidence
+Foreign checklist item ID (item.template_id mismatch),OWNERSHIP_REJECTED,test_foreign_item_under_template_rejected
+Item/checklist parent mismatch,OWNERSHIP_REJECTED,_get_item_for_template item.template_id==template check
+Template from another tenant (mutation),OWNERSHIP_REJECTED,test_staff_cannot_reach_foreign_tenant_template / test_tenant_owner_cannot_reach_foreign_tenant_template
+Template from another tenant (read: get/list_items),OWNERSHIP_REJECTED,test_list_items_enforces_tenant_ownership + get_template via _get_template_for_tenant
+Duplicate active template name,DUPLICATE_REJECTED,create_template 409 CONFLICT guard (test_duplicate_active_template_name_blocked)
+Duplicate item title,DUPLICATE_ALLOWED,no uniqueness on item title (benign; templates may repeat steps)
+Update published template,UNSUPPORTED_CAPABILITY,no publish/immutability concept -- templates editable in place
+Template change after job snapshot creation,IDEMPOTENT (no propagation),job_checklist_items are copied snapshots; delete_template never touches them
+Regenerate checklist after technician progress,UNSUPPORTED_CAPABILITY,no regeneration route here (out-of-scope job surface)
+Duplicate active checklist for one job,UNSUPPORTED_CAPABILITY,no job checklist creation in this router
+Start checklist from illegal job state,UNSUPPORTED_CAPABILITY,no job-checklist start route here
+Complete with required item missing,UNSUPPORTED_CAPABILITY (gate is out-of-scope job surface),existing test_seeded_checklist_blocks_work_complete_until_done (field_ops.service, not this router)
+Technician marks provider-verification field / self-approves,UNSUPPORTED_CAPABILITY,no technician/verification route here; technician denied by permission gate
+Provider approves incomplete checklist,UNSUPPORTED_CAPABILITY,no verification route here
+Repeated checklist completion,UNSUPPORTED_CAPABILITY,no completion route here
+Modify completed checklist,UNSUPPORTED_CAPABILITY,no per-job checklist here; soft-deleted template/item cannot be re-mutated (STATE_TRANSITION_REJECTED for deleted rows)
+Complete job through alternate route without checklist,UNSUPPORTED_CAPABILITY,job completion is out-of-scope; template edits cannot bypass it (no propagation)
+Attach foreign media,UNSUPPORTED_CAPABILITY,no media/evidence in this router
+Reorder with mixed foreign item IDs,UNSUPPORTED_CAPABILITY,no reorder/bulk endpoint
+Concurrent finalization,UNSUPPORTED_CAPABILITY,no finalization here
+Concurrent duplicate template creation,CONCURRENCY_RISK_DOCUMENTED,SELECT-then-INSERT 409 guard (no unique constraint) -- benign catalog duplicate
+Soft-deleted template/item further mutation,STATE_TRANSITION_REJECTED,_get_template_for_tenant/_get_item_for_template reject deleted_at is not None

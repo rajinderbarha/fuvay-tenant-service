@@ -1,0 +1,13 @@
+service_method,route_callers,internal_callers,worker_callers,notes
+AuthService.revoke_api_key,DELETE /v1/auth/api-keys/{key_id},none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.update_api_key,PATCH /v1/auth/api-keys/{key_id},none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.create_api_key,POST /v1/auth/api-keys,none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.change_password_required,POST /v1/auth/change-password-required,none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.impersonate,POST /v1/auth/impersonate,none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.confirm_mfa,POST /v1/auth/mfa/confirm,none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.disable_mfa,POST /v1/auth/mfa/disable,none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.invite_staff,POST /v1/auth/staff/invite,none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.deactivate_staff,POST /v1/auth/staff/{user_id}/deactivate,none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.update_profile,PUT /v1/auth/me,none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.change_password,PUT /v1/auth/password/change,none found,none found,grep of app/ shows the Set A route is the only caller
+AuthService.update_permissions,PUT /v1/auth/staff/{user_id}/permissions,none found,none found,grep of app/ shows the Set A route is the only caller

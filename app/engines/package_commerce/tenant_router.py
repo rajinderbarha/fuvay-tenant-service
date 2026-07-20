@@ -7,8 +7,10 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import require_tenant_owner_mutation
 from app.dependencies.auth import require_tenant_owner, get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.engines.package_commerce.service import PackageCommerceService
@@ -103,16 +105,50 @@ async def tenant_list_purchases(
     return _ok(await _svc(db, request, user).get_tenant_purchases(tid, limit, offset), request)
 
 
+class TenantPackagePurchaseRequest(BaseModel):
+    """Slice 2F-22 — deliberately accepts NO client-supplied fields.
+
+    This body was previously an untyped `payload: dict`, from which the route
+    read two fields that a tenant has no authority to assert:
+
+      * `mark_paid`  -> passed straight through as `is_paid`, which set the
+        assignment to `paid_pending_approval` WITH a `paid_at` timestamp.
+        A tenant could therefore declare its own payment settled without any
+        payment ever occurring (CLIENT_SETTLEMENT_ATTESTATION_TRUSTED).
+      * `payment_reference` -> stored verbatim as `payment_reference_id`,
+        letting a tenant fabricate an external transaction reference to
+        corroborate that false claim.
+
+    Both mattered because `activate_tenant_package_assignment` orders
+    candidates by `paid_at DESC NULLS LAST` -- a self-attested "paid"
+    assignment was actively PREFERRED for activation, and activation is what
+    grants wallet credits, storage quota and commission rate.
+
+    The two legitimate callers that DO set is_paid=True are unaffected and
+    remain correct, because each holds real authority the tenant does not:
+      * public_registration -> only after `verify_payment_signature()` passes
+        (authoritative gateway proof).
+      * admin_router        -> under `P.PACKAGES_CREATE` (admin attestation).
+
+    `extra="forbid"` additionally rejects any monetary/entitlement field a
+    client might try (amount, price, currency, discount, credits, expiry,
+    ...) rather than silently ignoring it, so the request contract cannot be
+    misread as accepting terms the server does not honour. Every such value
+    is server-derived from the ServicePackage record.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+
 @router.post("/v1/tenant/packages/{package_id}/purchase",
              status_code=201,
-             summary="Purchase a package",
+             summary="Request a package (creates an unpaid selection pending admin approval)",
              tags=["Tenant Packages", "Package Purchase"])
 async def tenant_purchase_package(
     package_id: uuid.UUID,
-    payload: dict,
+    payload: TenantPackagePurchaseRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ) -> dict:
     # MODULE-L5-30: this used to call purchase_package(), which writes a
     # TenantPackagePurchase row into `tenant_package_purchases` — a table that
@@ -123,11 +159,19 @@ async def tenant_purchase_package(
     # checks (get_packages_status) actually read. Previously that mechanism was
     # only ever invoked inline during initial public registration — an already
     # onboarded tenant had no way at all to buy an additional/renewal package.
+    # Slice 2F-22: no payment verifier is wired to the ServicePackage /
+    # TenantPackageAssignment flow for a tenant-initiated purchase, so this
+    # route creates ONLY the safe unpaid state the model already supports
+    # (`pending_review`). Payment is established later by an authority that
+    # can actually prove it -- gateway signature (public_registration) or
+    # admin attestation (admin_router). Nothing here activates a package,
+    # issues credits, or writes a paid ledger entry.
     tid = _tenant_id(user)
     result = await _svc(db, request, user).create_package_assignment(
         tid, package_id,
-        payment_reference=payload.get("payment_reference"),
-        is_paid=bool(payload.get("mark_paid")),
+        payment_reference=None,
+        is_paid=False,
+        payment_authority="tenant_unpaid_request",
     )
     await db.commit()
     return _ok(result, request)

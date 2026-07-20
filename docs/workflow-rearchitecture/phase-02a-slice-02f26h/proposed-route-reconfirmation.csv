@@ -1,0 +1,3 @@
+method,path,mounted,genuine_deletion,capability_family,capability_action,persona,object_tenant,ownership_enforced,runtime_staffpermission_eligible,absent_from_canonical,final_protection,applied,blocking_condition
+DELETE,/v1/webhooks/endpoints/{endpoint_id},yes,yes,integration_webhook,delete,TENANT_PROVIDER_MUTATION,client-asserted Query,NO,yes,yes,UNPROTECTED,NO,N09 fifth-holdout 22/24
+DELETE,/v1/geo/zones/{zone_id},yes,yes,geography_serviceability,delete,TENANT_PROVIDER_MUTATION,object row only,NO,yes,yes,UNPROTECTED,NO,N09 fifth-holdout 22/24

@@ -1,0 +1,4 @@
+method,path,endpoint,module,note
+POST,/v1/documents/{document_id}/void,void_document,app.engines.document.router,reserve -- NOT sufficient alone for independent validation
+POST,/v1/security/sessions,create_session,app.engines.security.router,reserve -- NOT sufficient alone for independent validation
+PUT,/v1/subscriptions/tenants/{tenant_id}/plan,update_plan,app.engines.subscription.router,reserve -- NOT sufficient alone for independent validation

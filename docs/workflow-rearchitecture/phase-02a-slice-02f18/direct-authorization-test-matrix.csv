@@ -1,0 +1,16 @@
+principal,route_group,expected_outcome,proof_mechanism
+tenant_owner (own tenant),provider_notif_router / provider_chat_router / provider_audit_router,ALLOWED,require_owner_or_office_staff_mutation admits tenant_owner (existing dependency, reused unchanged)
+canonical staff (own tenant),as above,ALLOWED,require_owner_or_office_staff_mutation admits staff
+read-only tenant_owner (access_scope=customer_support_limited),as above,DENIED,require_owner_or_office_staff_mutation's access-scope check (existing dependency, reused unchanged) -- proven in prior slices' dependency tests, not re-proven here to avoid duplicating existing coverage
+read-only staff,as above,DENIED,same access-scope check
+assigned technician,provider_notif_router / provider_chat_router / provider_audit_router,DENIED,require_owner_or_office_staff_mutation explicitly excludes technician (by design, per its own docstring) -- this is a deliberate persona boundary between provider_* and staff_* routers, not a gap
+unassigned technician,staff_notif_router / staff_chat_router,ALLOWED (tenant-wide, not assignment-limited),documented design choice, see staff-technician-communication-policy.md / known-limitations.md
+correct customer,customer_notif_router / customer_chat_router,ALLOWED,require_customer (fixed this slice)
+foreign customer,customer_notif_router / customer_chat_router,DENIED at object level,require_customer admits role but chat_service.validate_thread_access / mark_notification_read still enforce per-record ownership -- proven by TestChatThreadRecordOwnership
+cross-tenant owner,provider_* / staff_*,DENIED at object level,require_owner_or_office_staff_mutation admits the role but chat_service enforces tenant_id match; canonical role check alone does not grant cross-tenant access
+cross-tenant staff,provider_* / staff_*,DENIED at object level,same as above
+guest,all routes in this module,DENIED,none of the guards admit "guest"; get_current_user itself requires a valid authenticated JWT
+unauthenticated actor,all routes in this module,DENIED (401),get_current_user rejects missing/invalid token before any role dependency runs
+super_admin,provider_* / staff_*,ALLOWED (explicit exemption from access-scope check),require_owner_or_office_staff_mutation exempts super_admin from the readonly access-scope check by name
+invalid role string,all routes in this module,DENIED (fails closed),every guard uses an explicit allow-list (`user.role not in (...)`) -- an unrecognized role value is never admitted
+unknown access_scope,provider_* / staff_*,ALLOWED unless in TENANT_READONLY_ACCESS_SCOPES,by design -- only the specific known readonly scope is denied; this mirrors every other *_mutation guard in the codebase (documented existing behavior, unchanged)

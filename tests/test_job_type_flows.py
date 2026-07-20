@@ -204,8 +204,28 @@ async def test_consultation_quote_approval_spawns_repair_job_with_inherited_data
     quote_result.scalar_one_or_none.return_value = quote
     job_result = MagicMock()
     job_result.scalar_one_or_none.return_value = job
+    # Slice 2F-14C: create_job (invoked internally via
+    # _spawn_repair_from_consultation) now tenant-validates service_type_id
+    # against the catalog before creating the spawned repair job.
+    catalog_result = MagicMock()
+    catalog_result.scalar_one_or_none.return_value = MagicMock(
+        is_active=True, service_type=JobType.REPAIR, estimated_duration_minutes=None,
+        checklist_template=None, pricing_model="post_assessment", base_price=None)
+    # parent_job_id (the consultation job itself) and customer_id (the
+    # consultation's own customer) are also validated by create_job now.
+    parent_job_result = MagicMock()
+    parent_job_result.scalar_one_or_none.return_value = job
+    # Slice 2F-14D: create_job also checks for an existing REPAIR job under
+    # this same consultation parent (mirrors convert_to_repair's own
+    # duplicate-repair guard) -- none exists yet in this test.
+    no_existing_repair_result = MagicMock()
+    no_existing_repair_result.scalar_one_or_none.return_value = None
+    customer_result = MagicMock()
+    customer_result.scalar_one_or_none.return_value = MagicMock(role="customer", is_active=True, deleted_at=None)
     db = MagicMock()
-    db.execute = AsyncMock(side_effect=[quote_result, job_result])
+    db.execute = AsyncMock(side_effect=[quote_result, job_result, catalog_result,
+                                         parent_job_result, no_existing_repair_result,
+                                         customer_result])
     db.flush = AsyncMock()
     # Mimic the ORM's Python-side default for created_at, which a real flush
     # would populate — the mocked session never does.

@@ -1,0 +1,9 @@
+caller,change_required,preserved
+app/engines/webhook/router.py _svc(),YES -- must supply actor_tenant_id,YES -- updated this slice, verified live
+app/engines/rag/router.py _svc(),YES -- must supply actor_tenant_id,YES -- updated this slice, verified live
+app/engines/security/router.py _svc(),YES -- must supply actor_tenant_id,YES -- updated this slice, verified live
+app/engines/document/router.py _svc(),YES -- must supply actor_tenant_id,YES -- updated this slice, verified live
+app/engines/compliance/service.py SecurityService(self.db, actor_id=self.actor_id),NO -- calls only revoke_all_sessions (untouched method),YES -- unmodified, confirmed still functions identically
+app/engines/security/admin_service.py SecurityAdminService,NO -- always super_admin-gated, bypasses the new check cleanly,YES -- unmodified, confirmed still functions identically
+app/engines/field_ops/service.py invoice-generation call site,YES -- must supply actor_tenant_id=job.tenant_id or the call fails closed,YES -- updated this slice
+app/engines/document/router.py record_signature (public token route),NO -- calls only record_signature (untouched method),YES -- unmodified

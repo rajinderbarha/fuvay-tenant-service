@@ -23,6 +23,7 @@ from app.engines.platform_notifications.constants import (
     ERR_NOTIF_TEMPLATE_NOT_FOUND, ERR_NOTIF_OUTBOX_NOT_FOUND,
     ERR_NOTIF_OUTBOX_ACCESS_DENIED, ERR_NOTIF_RETRY_NOT_ALLOWED,
     ERR_IN_APP_NOT_FOUND, ERR_IN_APP_ACCESS_DENIED,
+    ERR_NOTIF_INVALID_PREFERENCE,
     MAX_RETRY_COUNT,
 )
 from app.engines.platform_notifications.models import (
@@ -321,6 +322,10 @@ class NotificationService:
         channel: str,
         is_enabled: bool,
     ) -> NotificationPreference:
+        if channel not in ALL_CHANNELS:
+            raise ValueError(ERR_NOTIF_INVALID_PREFERENCE)
+        if NotificationEventRegistry.get(event_key) is None:
+            raise ValueError(ERR_NOTIF_INVALID_PREFERENCE)
         r = await db.execute(
             select(NotificationPreference).where(
                 NotificationPreference.user_id == user_id,

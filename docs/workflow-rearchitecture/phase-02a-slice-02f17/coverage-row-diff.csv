@@ -1,0 +1,7 @@
+route,action,previous_status,new_status,reason
+preview_matching_inputs,removed from CSV,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK (counted, unprotected),excluded entirely,confirmed false positive since Slice 2F-2 (CONFIRMED_FALSE_POSITIVE_ROUTES), CSV row was stale
+provider_issue_invoice,reclassified,UNVERIFIED (counted, unprotected),TENANT_MUTATION_PERMISSION_SCOPE_AWARE (protected),fixed in Slice 2F-6A -- require_tenant_mutation_permission(FIELD_OPS_INVOICE_GEN) confirmed at runtime
+provider_record_payment,reclassified,UNVERIFIED (counted, unprotected),STAFF_EXECUTION_ROLE_SCOPE_AWARE (protected),fixed in Slice 2F-6A -- require_owner_or_office_staff_mutation confirmed at runtime
+staff_create_invoice,reclassified,UNVERIFIED (counted, unprotected),STAFF_EXECUTION_ROLE_SCOPE_AWARE (protected),fixed in Slice 2F-6A -- require_owner_or_office_staff_mutation confirmed at runtime
+staff_add_invoice_item,reclassified,UNVERIFIED (counted, unprotected),STAFF_EXECUTION_ROLE_SCOPE_AWARE (protected),fixed in Slice 2F-6A -- require_owner_or_office_staff_mutation confirmed at runtime
+(all other 36 rows),unchanged,unprotected,unprotected,runtime-reconfirmed genuinely unprotected -- see remaining-tenant-mutation-routes.csv

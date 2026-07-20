@@ -1,0 +1,15 @@
+test,category,expected,verified_by
+draft/pending/pending_confirmation/rejected/expired/cancelled/voided Booking (7 statuses parametrized),BOOKING PROVENANCE,422 CUSTOMER_TENANT_RELATIONSHIP_REQUIRED,test_low_trust_booking_does_not_establish_relationship
+confirmed/scheduled/dispatching/in_progress/completed/converted_to_job Booking (6 statuses parametrized),BOOKING PROVENANCE,succeeds,test_qualifying_booking_status_establishes_relationship
+generic standalone Job (booking_id and parent_job_id both null),JOB PROVENANCE,422 CUSTOMER_TENANT_RELATIONSHIP_REQUIRED,test_generic_standalone_job_does_not_qualify
+Job with booking_id set,JOB PROVENANCE,succeeds,test_booking_derived_job_qualifies
+Booking query SQL includes status filter,SOURCE VERIFICATION,QUALIFYING_BOOKING_STATUSES present in query construction,test_booking_query_filters_by_qualifying_status
+Job query SQL includes lineage filter,SOURCE VERIFICATION,Job.booking_id.isnot(None) / Job.parent_job_id.isnot(None) present,test_job_query_filters_by_booking_or_parent_lineage
+Booking-referenced create_job mode,REGRESSION (2F-14F),succeeds; no relationship query issued,test_booking_referenced_creation_does_not_query_relationship (re-run, passing)
+Parent-derived create_job mode,REGRESSION (2F-14F),succeeds; no relationship query issued,test_parent_derived_creation_does_not_query_relationship (re-run, passing)
+Customer with prior tenant Booking (CONFIRMED by construction),REGRESSION (2F-14F),succeeds,test_customer_with_prior_tenant_booking_succeeds (re-run, passing, no fixture change needed)
+Customer with prior tenant Job (booking_id-derived by construction),REGRESSION (2F-14F),succeeds,test_customer_with_prior_tenant_job_succeeds (re-run, passing, no fixture change needed)
+Wrong-role/disabled/deleted customer,REGRESSION (2F-14F),422 FOREIGN_CUSTOMER,test_wrong_role_user_rejected_before_relationship_check / test_deactivated_customer_rejected / test_deleted_customer_rejected (re-run, passing)
+field_ops.router route protection,COVERAGE,28/28,coverage-confirmation.md
+field_ops.staff_router route protection,COVERAGE,6/6,coverage-confirmation.md
+Canonical global coverage,COVERAGE,169/210 unchanged,coverage-confirmation.md

@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission, require_mutation_access_scope
 from app.core.security import get_client_ip, rate_limiter
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
@@ -17,9 +17,14 @@ ENGINE_ID = "rag"
 
 def _svc(r: Request, db: AsyncSession = Depends(get_db),
           u: UserContext = Depends(get_current_user)) -> RAGService:
+    # Phase 2A Slice 2F-35: actor_tenant_id is now passed so RAGService can
+    # independently enforce tenant authority on query/delete_kb/
+    # ingest_document/delete_document/reindex_document, rather than
+    # trusting kb_id/doc_id alone.
     return RAGService(db=db, request_id=getattr(r.state, "request_id", "—"),
                        actor_id=uuid.UUID(u.user_id) if u.user_id else None,
-                       actor_role=u.role)
+                       actor_role=u.role,
+                       actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 
 
 def _rid(r: Request) -> str:
@@ -104,7 +109,7 @@ async def update_kb(kb_id: uuid.UUID, r: Request,
                summary="Soft-delete KB — deactivates all chunks",
                response_model=ApiResponse[dict])
 async def delete_kb(kb_id: uuid.UUID, r: Request,
-                     u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                     u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                      s: RAGService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.delete_kb(kb_id)
     return ok(data, _rid(r), ENGINE_ID)
@@ -116,7 +121,7 @@ async def delete_kb(kb_id: uuid.UUID, r: Request,
              status_code=status.HTTP_202_ACCEPTED,
              response_model=ApiResponse[dict])
 async def ingest_document(kb_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                           u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                            s: RAGService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.ingest_document(
@@ -160,7 +165,7 @@ async def get_document(doc_id: uuid.UUID, r: Request,
                summary="Delete document — soft-deletes all chunks from vector store",
                response_model=ApiResponse[dict])
 async def delete_document(doc_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                           u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                            s: RAGService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.delete_document(doc_id)
     return ok(data, _rid(r), ENGINE_ID)
@@ -170,7 +175,7 @@ async def delete_document(doc_id: uuid.UUID, r: Request,
              summary="Reindex — soft-deletes old chunks, re-chunks and re-embeds",
              response_model=ApiResponse[dict])
 async def reindex_document(doc_id: uuid.UUID, r: Request,
-                            u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                            u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                             s: RAGService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.reindex_document(doc_id)
     return ok(data, _rid(r), ENGINE_ID)
@@ -205,7 +210,10 @@ async def get_chunk(chunk_id: uuid.UUID, r: Request,
              summary="Full RAG pipeline — embed → search → generate → store trace. Rate limited.",
              response_model=ApiResponse[dict])
 async def query(r: Request,
-                u: UserContext = Depends(get_current_user),
+                # Phase 2A Slice 2F-35: scope-only guard -- preserves every
+                # previously-admitted role (mixed persona), adds only the
+                # read-only mutation-access-scope rejection.
+                u: UserContext = Depends(require_mutation_access_scope),
                 s: RAGService = Depends(_svc)) -> ApiResponse[dict]:
     await rate_limiter.check_and_raise(
         f"rag_query:{u.tenant_id}", "auth:password_reset",

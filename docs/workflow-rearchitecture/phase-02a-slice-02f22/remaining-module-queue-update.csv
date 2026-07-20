@@ -1,0 +1,10 @@
+rank,router_module,route_count,severity,primary_gap,recommended_slice,implementation_readiness
+0 (PROTECTED IN 2F-22),app.engines.package_commerce.tenant_router,1,CLOSED,was ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE + CLIENT_SETTLEMENT_ATTESTATION_TRUSTED -- both fixed,2F-22 (DONE),done
+1,app.engines.customer_reviews.provider_router,2,MEDIUM,AUTHENTICATED_ONLY,next candidate,yes
+2,app.engines.marketing_automation.provider_router,3,MEDIUM,AUTHENTICATED_ONLY,small future slice,yes
+3,app.engines.media.new_router (profile/logo only),6,LOW,PERMISSION_WITHOUT_SCOPE,small future slice,yes
+4,app.engines.profile.router,3,LOW,PERMISSION_WITHOUT_SCOPE,bundle with media.new_router,yes
+5,app.engines.admin_catalog.brand_provider_router,2,LOW,PARENT_CHILD_OWNERSHIP_MISSING,bundle with catalog routers,yes
+6,app.engines.admin_catalog.recommendation_router,1,LOW,PERMISSION_WITHOUT_SCOPE,bundle with catalog routers,yes
+7,app.engines.admin_catalog.service_option_provider_router,1,LOW,PARENT_CHILD_OWNERSHIP_MISSING,bundle with catalog routers,yes
+8,app.engines.analytics.provider_router,1,LOW,AUTHENTICATED_ONLY,bundle with any small slice,yes

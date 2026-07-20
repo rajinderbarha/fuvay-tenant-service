@@ -5,6 +5,7 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
+from app.core.permissions import require_tenant_mutation_permission, require_owner_or_office_staff_mutation, P
 from app.engines.invoice_payment.invoice_service import ServiceInvoiceService
 from app.engines.invoice_payment.payment_service import ServicePaymentService
 from app.engines.invoice_payment.commission_service import ServiceCommissionService
@@ -25,6 +26,18 @@ staff_invoice_router    = APIRouter(prefix="/v1/staff/service-invoices",    tags
 
 def _rid(r: Request) -> str:
     return getattr(r.state, "request_id", "—")
+
+
+def _raise_4xx(exc: ValueError) -> None:
+    # Slice 2F-6A: staff_create_invoice/staff_add_invoice_item previously had
+    # no ValueError -> HTTP mapping at all, so any domain rejection (including
+    # the new amount/state validation added this slice) would leak as a 500
+    # instead of the correct 4xx -- mirrors the existing mapping already used
+    # by provider_record_payment (MODULE-L5-02 bug #18).
+    code = str(exc)
+    status = 404 if code in ("INVOICE_NOT_FOUND",) else (
+        403 if code in ("INVOICE_ACCESS_DENIED",) else 422)
+    raise ServiceOSException(code, code.replace("_", " ").title(), status_code=status)
 
 
 # ── Provider: list own invoices ────────────────────────────────────────────────
@@ -50,17 +63,42 @@ async def provider_get_invoice(
 @provider_invoice_router.post("/{invoice_id}/issue")
 async def provider_issue_invoice(
     invoice_id: str, r: Request = None,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    # Slice 2F-6: this endpoint had no role/permission guard at all (any
+    # authenticated user of any role/tenant could issue any tenant's
+    # invoice) -- FIELD_OPS_INVOICE_GEN ("field_ops:invoice:generate") is
+    # the existing, unused permission that already exists specifically for
+    # this action and is granted only to tenant_owner (see permissions.py) --
+    # not a new grant, just wiring the endpoint to the permission that
+    # already names this exact capability.
+    user=Depends(require_tenant_mutation_permission(P.FIELD_OPS_INVOICE_GEN)),
+    db: AsyncSession = Depends(get_db),
 ):
-    data = await inv_svc.issue_invoice(db, invoice_id, str(user.tenant_id),
-                                       str(user.user_id), _rid(r))
+    try:
+        data = await inv_svc.issue_invoice(db, invoice_id, str(user.tenant_id),
+                                           str(user.user_id), _rid(r))
+    except ValueError as exc:
+        _raise_4xx(exc)
     return ok(data, _rid(r), "provider_issue_invoice")
 
 
 @provider_invoice_router.post("/{invoice_id}/record-payment")
 async def provider_record_payment(
     invoice_id: str, body: dict, r: Request = None,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    # Slice 2F-6: no role/permission guard at all previously.
+    # Slice 2F-6A: initially gated with require_staff_or_above_mutation
+    # (which also admits technician), reasoning by analogy to
+    # FIELD_OPS_JOBS_CLOSE's "record direct customer payment" grant.
+    # Re-investigated: that grant belongs to the field_ops/home_service_
+    # assignment job-closing pipeline (a different module, already closed
+    # in Slice 2F-3B), not this one -- zero mobile/staff-app caller was
+    # found for this exact endpoint, only the tenant-portal web app (owner
+    # + office staff). No product evidence proves technician is an intended
+    # actor for THIS capability, so narrowed to
+    # require_owner_or_office_staff_mutation (tenant_owner/staff, NOT
+    # technician) per "do not infer technician access merely because an
+    # existing guard happens to admit it."
+    user=Depends(require_owner_or_office_staff_mutation),
+    db: AsyncSession = Depends(get_db),
 ):
     try:
         data = await pay_svc.record_onsite_payment(
@@ -111,37 +149,53 @@ async def provider_commission_status(
 @staff_invoice_router.post("")
 async def staff_create_invoice(
     body: dict, r: Request = None,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    # Slice 2F-6: no role/permission guard at all previously.
+    # Slice 2F-6A: narrowed from require_staff_or_above_mutation to
+    # require_owner_or_office_staff_mutation (excludes technician) -- no
+    # mobile/staff-app caller exists for this endpoint (tenant-portal web
+    # app only), so technician access is not proven for this capability.
+    user=Depends(require_owner_or_office_staff_mutation),
+    db: AsyncSession = Depends(get_db),
 ):
-    data = await inv_svc.create_invoice(
-        db,
-        job_id=body["job_id"],
-        tenant_id=str(user.tenant_id),
-        source=body.get("source", "manual_final"),
-        quote_id=body.get("quote_id"),
-        notes=body.get("notes"),
-        user_id=str(user.user_id),
-        request_id=_rid(r),
-    )
+    try:
+        data = await inv_svc.create_invoice(
+            db,
+            job_id=body["job_id"],
+            tenant_id=str(user.tenant_id),
+            source=body.get("source", "manual_final"),
+            quote_id=body.get("quote_id"),
+            notes=body.get("notes"),
+            user_id=str(user.user_id),
+            request_id=_rid(r),
+        )
+    except ValueError as exc:
+        _raise_4xx(exc)
     return ok(data, _rid(r), "staff_create_invoice")
 
 
 @staff_invoice_router.post("/{invoice_id}/items")
 async def staff_add_invoice_item(
     invoice_id: str, body: dict, r: Request = None,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    # Slice 2F-6: no role/permission guard at all previously.
+    # Slice 2F-6A: same disposition as staff_create_invoice above --
+    # narrowed to exclude technician (no proven actor evidence).
+    user=Depends(require_owner_or_office_staff_mutation),
+    db: AsyncSession = Depends(get_db),
 ):
-    data = await inv_svc.add_item(
-        db, invoice_id, str(user.tenant_id),
-        item_type=body.get("item_type", "service"),
-        item_name=body["item_name"],
-        item_description=body.get("item_description"),
-        quantity=float(body.get("quantity", 1)),
-        unit_price=float(body.get("unit_price", 0)),
-        is_customer_visible=bool(body.get("is_customer_visible", True)),
-        user_id=str(user.user_id),
-        request_id=_rid(r),
-    )
+    try:
+        data = await inv_svc.add_item(
+            db, invoice_id, str(user.tenant_id),
+            item_type=body.get("item_type", "service"),
+            item_name=body["item_name"],
+            item_description=body.get("item_description"),
+            quantity=float(body.get("quantity", 1)),
+            unit_price=float(body.get("unit_price", 0)),
+            is_customer_visible=bool(body.get("is_customer_visible", True)),
+            user_id=str(user.user_id),
+            request_id=_rid(r),
+        )
+    except ValueError as exc:
+        _raise_4xx(exc)
     return ok(data, _rid(r), "staff_add_invoice_item")
 
 

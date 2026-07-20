@@ -253,10 +253,16 @@ def test_is_primary_column_on_model():
 
 # ── Permission handling ───────────────────────────────────────────────────────
 def test_permission_gated_actions():
+    # Slice 2F-7: these 3 permissions are now wrapped in
+    # require_tenant_mutation_permission(...) (access-scope-aware), not the
+    # plain require_permission(...) they used before -- a read-only-scoped
+    # tenant_owner could previously mutate service-area coverage despite
+    # holding the permission bundle. See
+    # docs/workflow-rearchitecture/phase-02a-slice-02f7/.
     assert "canCreate" in PAGE and "canUpdate" in PAGE and "canDelete" in PAGE and "canSetPrimary" in PAGE
-    assert "require_permission(P.TENANT_SERVICE_AREA_CREATE)" in SERVICEABILITY_ROUTER
-    assert "require_permission(P.TENANT_SERVICE_AREA_UPDATE)" in SERVICEABILITY_ROUTER
-    assert "require_permission(P.TENANT_SERVICE_AREA_DELETE)" in SERVICEABILITY_ROUTER
+    assert "require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_CREATE)" in SERVICEABILITY_ROUTER
+    assert "require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_UPDATE)" in SERVICEABILITY_ROUTER
+    assert "require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_DELETE)" in SERVICEABILITY_ROUTER
 
 
 # ── Error handling ────────────────────────────────────────────────────────────

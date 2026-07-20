@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission, require_staff_or_above_mutation
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.booking.service import BookingService
@@ -76,7 +76,7 @@ async def booking_preflight(r: Request,
              tags=["Booking Engine"],
              response_model=ApiResponse[dict])
 async def create_booking(r: Request,
-                          u: UserContext = Depends(require_permission(P.BOOKING_CREATE)),
+                          u: UserContext = Depends(require_tenant_mutation_permission(P.BOOKING_CREATE)),
                           s: BookingService = Depends(_svc)) -> ApiResponse[dict]:
     """
     Creates a booking with server-side serviceability re-match.
@@ -156,7 +156,7 @@ async def list_bookings(r: Request,
              summary="Step 4: Cancel booking — customer cancels own, tenant_owner cancels tenant's",
              response_model=ApiResponse[dict])
 async def cancel_booking(booking_id: uuid.UUID, r: Request,
-                          u: UserContext = Depends(require_permission(P.BOOKING_CANCEL)),
+                          u: UserContext = Depends(require_tenant_mutation_permission(P.BOOKING_CANCEL)),
                           s: BookingService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.cancel_booking(booking_id, body.get("reason", "Customer request")),
@@ -192,7 +192,7 @@ async def list_by_tenant(tenant_id_param: uuid.UUID, r: Request,
              summary="Step 5: Confirm pending_confirmation booking — tenant_owner only",
              response_model=ApiResponse[dict])
 async def confirm_booking(booking_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(require_permission(P.BOOKING_MANAGE)),
+                           u: UserContext = Depends(require_tenant_mutation_permission(P.BOOKING_MANAGE)),
                            s: BookingService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.confirm_booking(booking_id, body.get("scheduled_at"))
@@ -209,7 +209,7 @@ async def confirm_booking(booking_id: uuid.UUID, r: Request,
              summary="Step 5: Reject pending_confirmation booking — tenant_owner only, reason required",
              response_model=ApiResponse[dict])
 async def reject_booking(booking_id: uuid.UUID, r: Request,
-                          u: UserContext = Depends(require_permission(P.BOOKING_MANAGE)),
+                          u: UserContext = Depends(require_tenant_mutation_permission(P.BOOKING_MANAGE)),
                           s: BookingService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     if not body.get("reason"):
@@ -224,7 +224,7 @@ async def reject_booking(booking_id: uuid.UUID, r: Request,
              summary="Step 5: Convert confirmed booking to Field Ops job — tenant_owner only",
              response_model=ApiResponse[dict])
 async def convert_to_job(booking_id: uuid.UUID, r: Request,
-                          u: UserContext = Depends(require_permission(P.BOOKING_MANAGE)),
+                          u: UserContext = Depends(require_tenant_mutation_permission(P.BOOKING_MANAGE)),
                           s: BookingService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     assigned_staff_id = (uuid.UUID(body["assigned_staff_id"])
@@ -244,7 +244,7 @@ async def convert_to_job(booking_id: uuid.UUID, r: Request,
              summary="Request reschedule — notifies tenant for approval",
              response_model=ApiResponse[dict])
 async def request_reschedule(booking_id: uuid.UUID, r: Request,
-                              u: UserContext = Depends(require_permission(P.BOOKING_RESCHEDULE)),
+                              u: UserContext = Depends(require_tenant_mutation_permission(P.BOOKING_RESCHEDULE)),
                               s: BookingService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     # MODULE-L5-02 bug #26: raw body["requested_date"]/["requested_slot"] access
@@ -262,7 +262,7 @@ async def request_reschedule(booking_id: uuid.UUID, r: Request,
              summary="Tenant accepts reschedule request",
              response_model=ApiResponse[dict])
 async def accept_reschedule(reschedule_id: uuid.UUID, r: Request,
-                             u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                             u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                              s: BookingService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.accept_reschedule(reschedule_id), _rid(r), ENGINE_ID)
 
@@ -271,7 +271,7 @@ async def accept_reschedule(reschedule_id: uuid.UUID, r: Request,
              summary="Tenant rejects reschedule request",
              response_model=ApiResponse[dict])
 async def reject_reschedule(reschedule_id: uuid.UUID, r: Request,
-                             u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                             u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                              s: BookingService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.reject_reschedule(reschedule_id, body.get("reason", "Slot unavailable")),
@@ -290,8 +290,15 @@ async def get_timeline(booking_id: uuid.UUID, r: Request,
 @router.post("/{booking_id}/notes", status_code=status.HTTP_201_CREATED,
              response_model=ApiResponse[dict])
 async def add_note(booking_id: uuid.UUID, r: Request,
-                    u: UserContext = Depends(get_current_user),
+                    u: UserContext = Depends(require_staff_or_above_mutation),
                     s: BookingService = Depends(_svc)) -> ApiResponse[dict]:
+    # Slice 2F-15A: no live caller (customer-app or otherwise) exercises a
+    # customer-authored booking note -- only the tenant-portal calls this
+    # (bookingsApi.addNote). require_staff_or_above_mutation (tenant_owner/
+    # staff/technician, excludes customer, denies read-only tenant scope)
+    # makes this the tool-visible, evidence-based persona gate; the
+    # pre-existing service-level _assert_can_access_booking ownership check
+    # (tenant/customer isolation) remains unmodified underneath it.
     body = await r.json()
     return ok(await s.add_note(booking_id, body["content"], body.get("is_internal", True)),
               _rid(r), ENGINE_ID)

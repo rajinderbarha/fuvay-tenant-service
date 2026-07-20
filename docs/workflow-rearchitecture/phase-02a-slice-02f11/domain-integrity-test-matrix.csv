@@ -1,0 +1,19 @@
+scenario,classification,evidence
+Duplicate property creation,UNSUPPORTED_CAPABILITY,no property model exists
+Duplicate listing creation,UNSUPPORTED_CAPABILITY,no listing model exists
+Publish incomplete listing,UNSUPPORTED_CAPABILITY,no publication concept exists
+Publish archived property,UNSUPPORTED_CAPABILITY,no property/archive concept exists
+Repeated publish/unpublish,UNSUPPORTED_CAPABILITY,no publication concept exists
+Update foreign property,UNSUPPORTED_CAPABILITY,no property model exists
+Attach foreign media / set foreign cover image,UNSUPPORTED_CAPABILITY,no media model exists
+Create inquiry for unpublished property,UNSUPPORTED_CAPABILITY,no property/listing model exists
+Mutate foreign lead,OWNERSHIP_REJECTED,pre-existing tenant_id filter in _get_lead + _assert_agent_owns_lead; re-verified via test_wrong_agent_denied/test_foreign_tenant_lead_not_found
+Assign lead to foreign tenant user,STATE_TRANSITION_REJECTED / OWNERSHIP_REJECTED,no lead-assignment mutation route exists in this router at all (assignment happens upstream, out of scope) -- agent_id is fixed at lead-creation time from this router's perspective
+Repeated lead conversion,STATE_TRANSITION_REJECTED,converted has an empty LEAD_TRANSITIONS target set -- a second convert attempt raises ERR_INVALID_TRANSITION
+Schedule viewing for unavailable property,UNSUPPORTED_CAPABILITY,no property availability concept exists (site-visit is a lead-status phase only)
+Technician completes unassigned viewing,OWNERSHIP_REJECTED (moot -- role-denied first),technician now denied by require_owner_or_office_staff_mutation before reaching assignment check at all
+Repeat viewing completion,STATE_TRANSITION_REJECTED,site_visit_completed's own transition set does not include site_visit_completed as a target from itself
+Modify customer offer amount,UNSUPPORTED_CAPABILITY,no offer model exists
+Offer against inactive listing,UNSUPPORTED_CAPABILITY,no offer/listing model exists
+Private lead data in public response,OWNERSHIP_REJECTED (no public response exists),no public/unauthenticated read route exists for RealEstateLead at all -- every read route requires an authenticated, role-appropriate, ownership-checked principal
+Delete property with active inquiries,UNSUPPORTED_CAPABILITY,no property/delete concept exists

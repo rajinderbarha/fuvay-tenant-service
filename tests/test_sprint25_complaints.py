@@ -124,7 +124,13 @@ async def test_create_complaint_success():
     db     = _mock_db()
     cid    = _uuid()
     cat_id = _uuid()
-    with patch.object(svc, '_log_event', AsyncMock()):
+    # Slice 2F-10A: create_complaint now calls the full
+    # ComplaintEligibilityService.check_eligible contract (ownership,
+    # status, window, duplicate) as the single authoritative gate.
+    with patch.object(svc, '_log_event', AsyncMock()), \
+         patch.object(svc._eligibility, 'check_eligible',
+                      AsyncMock(return_value={"eligible": True, "reason": None,
+                                               "reason_code": None, "policy": None})):
         c = await svc.create_complaint(
             db, cid, category_id=cat_id,
             record_type=RECORD_SERVICE_BOOKING, record_id=_uuid(),

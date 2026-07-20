@@ -551,6 +551,11 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     ]:
         app.include_router(_r)
 
+    # Phase 2A — My Work foundation (technician role, ServiceJob-scoped only;
+    # see docs/workflow-rearchitecture/phase-01a/my-work-contract.md)
+    from app.engines.execution.my_work_router import router as exec_my_work_router
+    app.include_router(exec_my_work_router)
+
     # Sprint 22 — Quote Approval + Checklist Engine
     from app.engines.quote_checklist.provider_router import (
         provider_router as qc_provider_router,

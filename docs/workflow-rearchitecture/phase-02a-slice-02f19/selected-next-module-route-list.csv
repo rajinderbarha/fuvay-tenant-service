@@ -1,0 +1,7 @@
+method,path,endpoint_name,current_dependency,confirmed_mounted
+POST,/v1/provider/compliance/consents/{consent_type}/withdraw,withdraw_consent,require_tenant_owner+get_current_user,YES
+POST,/v1/provider/compliance/customer-requests/{request_id}/tenant-response,customer_tenant_response,require_tenant_owner+get_current_user,YES
+POST,/v1/provider/compliance/requests,create_my_request,require_tenant_owner+get_current_user,YES
+POST,/v1/provider/compliance/requests/{request_id}/cancel,cancel_my_request,require_tenant_owner+get_current_user,YES
+POST,/v1/provider/compliance/requests/{request_id}/generate-export,generate_export,require_tenant_owner+get_current_user,YES
+POST,/v1/provider/compliance/staff-requests/{request_id}/tenant-response,staff_tenant_response,require_tenant_owner+get_current_user,YES
