@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { theme, gs } from "../../styles/theme";
+import { useAppTheme } from "../../context/ThemeContext";
 import type { CustomerContactView } from "../../types/ux05";
 
 /**
@@ -9,16 +10,20 @@ import type { CustomerContactView } from "../../types/ux05";
  * location tracking, no device-permission request until a Navigate action
  * is actually pressed (asks only when needed, per the location-privacy
  * hard constraint).
+ *
+ * UX-05 Round 7: converted to reactive theme colors.
  */
 export function AddressCard({ contact }: { contact:CustomerContactView }) {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const addressLine = [contact.city, contact.zipcode].filter(Boolean).join(", ") || "No address on file";
 
   function copy() { Alert.alert("Copied", addressLine); }
   function navigate() { Alert.alert("Navigate", `Would open maps to: ${addressLine}`); }
 
   return (
-    <View style={[gs.card, s.card]} testID="address-card">
-      <Text style={gs.label}>Service Address</Text>
+    <View style={[gs.card, { backgroundColor:colors.surface }, s.card]} testID="address-card">
+      <Text style={[gs.label, { color:colors.textTertiary }]}>Service Address</Text>
       <Text style={s.address}>📍 {addressLine}</Text>
       <View style={s.actions}>
         <TouchableOpacity style={s.actionBtn} onPress={navigate}
@@ -34,12 +39,13 @@ export function AddressCard({ contact }: { contact:CustomerContactView }) {
   );
 }
 
-const s = StyleSheet.create({
-  card:      { gap:8 },
-  address:   { fontSize:theme.font.size.base, color:theme.colors.textPrimary },
-  actions:   { flexDirection:"row", gap:10, marginTop:6 },
-  // UX-05 Round 4 a11y pass: 40pt -> 44pt to meet the minimum touch-target size.
-  actionBtn: { flex:1, height:44, borderRadius:theme.radius.md, borderWidth:1, borderColor:theme.colors.border,
-               alignItems:"center", justifyContent:"center" },
-  actionText:{ fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary },
-});
+function makeStyles(colors: ReturnType<typeof import("../../styles/theme").getColors>) {
+  return StyleSheet.create({
+    card:      { gap:8 },
+    address:   { fontSize:theme.font.size.base, color:colors.textPrimary },
+    actions:   { flexDirection:"row", gap:10, marginTop:6 },
+    actionBtn: { flex:1, height:44, borderRadius:theme.radius.md, borderWidth:1, borderColor:colors.border,
+                 alignItems:"center", justifyContent:"center" },
+    actionText:{ fontSize:theme.font.size.sm, fontWeight:"600", color:colors.textPrimary },
+  });
+}

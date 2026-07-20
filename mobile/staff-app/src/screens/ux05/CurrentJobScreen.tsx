@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useApi, useAction } from "../../hooks/useApi";
 import { jobsApi } from "../../lib/api";
@@ -10,6 +10,7 @@ import { CustomerContactCard } from "../../components/ux05/CustomerContactCard";
 import { AddressCard } from "../../components/ux05/AddressCard";
 import { NextActionBar } from "../../components/ux05/NextActionBar";
 import { theme, gs } from "../../styles/theme";
+import { useAppTheme } from "../../context/ThemeContext";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { ActionPermissionView, CustomerContactView } from "../../types/ux05";
 
@@ -38,6 +39,8 @@ const ACTION_FN: Record<JobAction, (jobId: string, arg?: string) => Promise<unkn
  * transition logic invented).
  */
 export function CurrentJobScreen({ route }: Props) {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const { jobId } = route.params;
   const detail = useApi(useCallback(() => jobsApi.get(jobId), [jobId]));
   const actionState = useAction(useCallback(async (action: JobAction, arg?: string) => {
@@ -64,13 +67,13 @@ export function CurrentJobScreen({ route }: Props) {
   }
 
   if (detail.loading) return (
-    <ScrollView style={gs.screen} contentContainerStyle={{ padding: theme.spacing.base, gap: 14 }}>
+    <ScrollView style={[gs.screen, { backgroundColor:colors.bg }]} contentContainerStyle={{ padding: theme.spacing.base, gap: 14 }}>
       {[...Array(4)].map((_, i) => <Skeleton key={i} height={80} />)}
     </ScrollView>
   );
 
   if (!j) return (
-    <View style={[gs.screen, { alignItems: "center", justifyContent: "center" }]}>
+    <View style={[gs.screen, { backgroundColor:colors.bg, alignItems: "center", justifyContent: "center" }]}>
       <Text style={s.notFound}>Job not found or not assigned to you.</Text>
     </View>
   );
@@ -83,9 +86,9 @@ export function CurrentJobScreen({ route }: Props) {
   } : null;
 
   return (
-    <View style={gs.screen} testID="current-job-screen">
+    <View style={[gs.screen, { backgroundColor:colors.bg }]} testID="current-job-screen">
       <ScrollView contentContainerStyle={[s.content, { paddingBottom: 100 }]}>
-        <View style={[gs.card, s.header]}>
+        <View style={[gs.card, { backgroundColor:colors.surface }, s.header]}>
           <View style={[gs.row, { justifyContent: "space-between" }]}>
             <Text style={s.jobNum}>{j.job_number}</Text>
             <JobStatusBadge status={j.status} />
@@ -98,8 +101,8 @@ export function CurrentJobScreen({ route }: Props) {
         {contact && <AddressCard contact={contact} />}
 
         {j.completion_data && (
-          <View style={[gs.card, { gap: 6 }]}>
-            <Text style={gs.label}>Completion</Text>
+          <View style={[gs.card, { backgroundColor:colors.surface, gap: 6 }]}>
+            <Text style={[gs.label, { color:colors.textTertiary }]}>Completion</Text>
             <Text style={s.body}>{String(j.completion_data.work_summary ?? "")}</Text>
           </View>
         )}
@@ -109,8 +112,8 @@ export function CurrentJobScreen({ route }: Props) {
             / PartsRequestShowcaseScreen for the real interaction patterns.
             Not duplicated here to avoid two divergent implementations of the
             same not-yet-backed workflow. */}
-        <View style={[gs.card, { gap: 4 }]}>
-          <Text style={gs.label}>Inspection · Checklist · Parts · Media</Text>
+        <View style={[gs.card, { backgroundColor:colors.surface, gap: 4 }]}>
+          <Text style={[gs.label, { color:colors.textTertiary }]}>Inspection · Checklist · Parts · Media</Text>
           <Text style={s.mockNote}>MOCK_DESIGN_ONLY -- no live endpoint for any of these yet. See the dev showcases for the interaction patterns.</Text>
         </View>
 
@@ -121,13 +124,15 @@ export function CurrentJobScreen({ route }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  content:      { padding: theme.spacing.base, gap: 12 },
-  header:       { gap: 8 },
-  jobNum:       { fontSize: theme.font.size.base, fontWeight: "700", color: theme.colors.textPrimary },
-  currentState: { fontSize: theme.font.size.sm, color: theme.colors.textSecondary, fontWeight: "600" },
-  body:         { fontSize: theme.font.size.sm, color: theme.colors.textSecondary },
-  mockNote:     { fontSize: theme.font.size.xs, color: theme.colors.textTertiary },
-  errText:      { fontSize: theme.font.size.sm, color: theme.colors.dangerText },
-  notFound:     { fontSize: theme.font.size.base, color: theme.colors.textTertiary },
-});
+function makeStyles(colors: ReturnType<typeof import("../../styles/theme").getColors>) {
+  return StyleSheet.create({
+    content:      { padding: theme.spacing.base, gap: 12 },
+    header:       { gap: 8 },
+    jobNum:       { fontSize: theme.font.size.base, fontWeight: "700", color: colors.textPrimary },
+    currentState: { fontSize: theme.font.size.sm, color: colors.textSecondary, fontWeight: "600" },
+    body:         { fontSize: theme.font.size.sm, color: colors.textSecondary },
+    mockNote:     { fontSize: theme.font.size.xs, color: colors.textTertiary },
+    errText:      { fontSize: theme.font.size.sm, color: colors.dangerText },
+    notFound:     { fontSize: theme.font.size.base, color: colors.textTertiary },
+  });
+}
