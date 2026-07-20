@@ -1,44 +1,46 @@
 import { useEffect, useState } from "react";
+import NetInfo from "@react-native-community/netinfo";
 import type { OfflineSyncStateView } from "../types/ux05";
 
 /**
- * UX-05 Round 4: minimal real network-state hook for wiring
- * NetworkStatusBanner into the production app shell.
+ * UX-05 Round 5: real network-state hook using @react-native-community/
+ * netinfo (added this round -- investigated per the coordinator's request:
+ * peer deps are permissive (`react: "*"`, `react-native: ">=0.59"`),
+ * installed cleanly against this app's RN 0.85 with no conflicts, and
+ * NetInfo has its own web implementation (uses the same underlying
+ * `navigator.onLine`/connection APIs Round 4's hand-rolled hook used) --
+ * so this single hook now covers native AND web with one real dependency
+ * instead of a web-only DIY implementation.
  *
- * HONEST LIMITATION: this app has no `@react-native-community/netinfo` (or
- * `expo-network`) dependency -- neither was installed by any prior round,
- * and adding one is a real dependency decision, not something to silently
- * slip into a hook. On native (iOS/Android), `navigator.onLine` does not
- * exist and this hook will always report "online" -- it CANNOT detect a
- * real native connectivity change today. On Expo web (react-native-web),
- * `navigator.onLine` + the `online`/`offline` window events are real and
- * this hook does correctly reflect actual browser connectivity -- verified
- * by the Playwright smoke test rendering the login screen with zero errors
- * on the same web bundle this hook ships in.
+ * Supersedes Round 4's `navigator.onLine`-only version, which only worked
+ * on Expo web and always reported "online" on native.
  *
- * `syncState`/`pendingDrafts`/`cacheState` are not derived from anything
- * real yet (no draft-queue or cache-staleness tracking exists) -- they are
- * fixed to the "nothing pending" defaults so the banner never fabricates a
+ * `syncState`/`pendingDrafts`/`cacheState` are still not derived from
+ * anything real (no draft-queue or cache-staleness tracking exists) --
+ * fixed to "nothing pending" defaults so the banner never fabricates a
  * sync-pending/conflict state that isn't actually happening.
  */
 export function useNetworkStatus(): OfflineSyncStateView {
-  const getOnline = () => (typeof navigator !== "undefined" && "onLine" in navigator) ? navigator.onLine : true;
-  const [online, setOnline] = useState(getOnline());
+  const [online, setOnline] = useState(true);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !window.addEventListener) return;
-    const goOnline = () => setOnline(true);
-    const goOffline = () => setOnline(false);
-    window.addEventListener("online", goOnline);
-    window.addEventListener("offline", goOffline);
-    return () => {
-      window.removeEventListener("online", goOnline);
-      window.removeEventListener("offline", goOffline);
-    };
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setOnline(state.isConnected !== false && state.isInternetReachable !== false);
+    });
+    NetInfo.fetch().then(state => {
+      setOnline(state.isConnected !== false && state.isInternetReachable !== false);
+    });
+    return () => unsubscribe();
   }, []);
 
+  // "slow" is not derivable from NetInfo's basic state without also reading
+  // `state.details.cellularGeneration`/effective-type, which varies wildly
+  // by platform and wasn't verified this round -- left as a real gap rather
+  // than guessed at. `isInternetReachable === false` with `isConnected ===
+  // true` (device has a network interface but no real internet) is
+  // presented as offline, not a fabricated "slow" state.
   return {
-    meta: { readiness: online ? "production_ready" : "read_only_ready" },
+    meta: { readiness: "production_ready" },
     networkState: online ? "online" : "offline",
     cacheState: "fresh",
     pendingDrafts: 0,
