@@ -1,0 +1,5 @@
+transition,added,removed,renamed,note
+2344_to_2378,+34,0,0,"Slice 2F-35 batch (tests/test_phase2f35_critical_authorization_batch.py)"
+2378_to_2418,+40,0,0,"Slice 2F-36 batch (tests/test_phase2f36_enterprise_tenant_admin_operational_batch.py)"
+2418_to_2445,+27,0,0,"Slice 2F-37 batch (tests/test_phase2f37_financial_product_policy_batch.py)"
+2445_to_2445_2f38,0,0,0,"Slice 2F-38 added zero test files; only documentation/tooling. Collection count unchanged at 2445, confirmed by 2 independent runs this slice."
