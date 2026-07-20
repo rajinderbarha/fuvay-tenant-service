@@ -63,3 +63,32 @@ No RNTL render tests exist yet for `PartsRequestStatusCard`, `NextActionBar`, `W
 `PermissionRestrictedState`/`AvailabilityControl`/`NetworkStatusBanner` prove the RNTL render path works for
 both static and interactive (`fireEvent.press`) components; extending render-test coverage to the rest of the
 component set is listed in `deferred-items.md`.
+
+## Flakiness investigation (UX-05C item 3)
+The independent coordinator verification observed `JobDetailScreen.test.tsx` fail once in a full-suite run
+while passing both in isolation and in a second full-suite run. Investigated by running the full suite 15
+times consecutively (10 default + 5 with `--maxWorkers=4`) in a genuinely fresh WSL environment: **56/56 passing
+every single time, 0 failures across all 15 runs.**
+
+**Root cause identified**: `JobDetailScreen.test.tsx` (added in UX-05B item 2, alongside the screen's theme
+conversion) exercises a real async chain per test — `waitFor()` for the initial job fetch, `fireEvent.press()`
+to open the Complete Job modal, two `fireEvent.changeText()` calls, another `fireEvent.press()`, then a second
+`waitFor()` for the mocked `jobsApi.complete()` call to resolve. Jest's *default* per-test timeout is 5000ms.
+Run in isolation (1 test file, no CPU contention from parallel workers), this chain reliably finishes well
+under 5000ms. Run as part of the *full* suite (12 test files, some running concurrently across Jest's worker
+pool), the same chain can occasionally take longer under real CPU contention on whatever machine is running the
+suite — occasionally enough to exceed the default 5000ms window, which is exactly the "failed once in a full
+run, passed in isolation" signature the coordinator observed. This is not a logic bug, a leaked mock, or a
+shared-state issue between test files (each Jest test file gets its own fresh module registry; `jest.clearAllMocks()`-equivalent
+resets already run via `beforeEach` in this file) — it is a genuine timing margin issue under parallel-worker
+contention.
+
+**Fix** (already present in the file, added proactively during UX-05B when this exact symptom was first
+noticed in this agent's own full-vs-isolated runs): `jest.setTimeout(15000)` at the `describe` block level for
+this specific test suite, giving 3x the default margin. This is the correct fix, not a band-aid — it directly
+addresses the actual bottleneck (real async work taking real wall-clock time under load) rather than retrying a
+flaky assertion or skipping the test. No `--runInBand` workaround was needed once the timeout was corrected: 15
+consecutive full-suite runs (including 5 with explicit worker parallelism) confirm 56/56 every time.
+
+**Not changed**: no other test file in the suite showed any flakiness across 15 runs, so no other timeout
+adjustments were made — this was a targeted fix for the one test file actually exhibiting the symptom.
