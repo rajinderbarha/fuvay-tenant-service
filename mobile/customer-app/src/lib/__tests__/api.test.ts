@@ -35,6 +35,47 @@ describe("withLanguageInstruction", () => {
   });
 });
 
+describe("aiConversationApi.sendMessage — language instruction is on EVERY request, not just available", () => {
+  const realFetch = global.fetch;
+
+  afterEach(() => { global.fetch = realFetch; jest.restoreAllMocks(); });
+
+  function mockFetchCapturingBody() {
+    const calls: { url: string; body: unknown }[] = [];
+    global.fetch = jest.fn(async (url: any, opts: any) => {
+      calls.push({ url: String(url), body: opts?.body ? JSON.parse(opts.body) : null });
+      return {
+        ok: true,
+        json: async () => ({ data: { reply: "ok", tools_called: [], intent: "x", session: { id:"s1", customer_id:null, workflow_status:"active" } } }),
+      } as Response;
+    }) as unknown as typeof fetch;
+    return calls;
+  }
+
+  it("includes the withLanguageInstruction-wrapped text for a non-English language on every send", async () => {
+    const calls = mockFetchCapturingBody();
+    const { aiConversationApi } = require("../api");
+    const hi = { code:"hi", englishName:"Hindi", nativeName:"हिन्दी", dir:"ltr" as const };
+
+    await aiConversationApi.sendMessage("session-1", "I need AC repair", hi);
+    await aiConversationApi.sendMessage("session-1", "It stopped cooling yesterday", hi);
+
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.url).toContain("/v1/customer/ai-chat/sessions/session-1/messages");
+      expect((call.body as { message:string }).message).toContain("Hindi");
+      expect((call.body as { message:string }).message).toContain("हिन्दी");
+    }
+  });
+
+  it("sends the plain message with no language wrapper when English/no language is selected", async () => {
+    const calls = mockFetchCapturingBody();
+    const { aiConversationApi } = require("../api");
+    await aiConversationApi.sendMessage("session-1", "Hello");
+    expect((calls[0].body as { message:string }).message).toBe("Hello");
+  });
+});
+
 describe("api.ts module surface", () => {
   it("exports the real, corrected endpoint groups (contract-shape smoke test)", () => {
     const api = require("../api");

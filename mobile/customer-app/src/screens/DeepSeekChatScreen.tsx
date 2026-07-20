@@ -1,39 +1,51 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useReducer, useState } from "react";
 import {
   FlatList, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text,
   TextInput, TouchableOpacity, View,
 } from "react-native";
-import { aiConversationApi, type AISession } from "../lib/api";
+import {
+  aiConversationApi, catalogApi, homeServiceDraftApi, bookingConfirmApi,
+  type AISession, type ServiceCategory, type ServiceOffering,
+} from "../lib/api";
+import {
+  chatBookingReducer, initialChatBookingState, canonicalSlugsFor,
+} from "../lib/chatBookingState";
 import { CHAT_LANGUAGES, searchChatLanguages, type ChatLanguageOption } from "../lib/chatLanguages";
 import { theme } from "../styles/theme";
 
 /**
- * UX-06 Round 2 — real DeepSeek conversational booking chat entry, built against
- * the CONFIRMED live contract (not a guess):
- *   POST /v1/customer/ai-chat/sessions              -> creates a real session row
- *   POST /v1/customer/ai-chat/sessions/{id}/messages -> real DeepSeek tool-call
- *     loop, response shape { reply, tools_called, intent, session }
- * Confirmed via source read of app/engines/ai_conversation/{customer_router,
- * service}.py AND live curl probes against the running backend this round (see
- * docs/design/ux-06-customer-app/deepseek-conversation-contract.md for the full
- * evidence trail, including the graceful-fallback reply this dev environment's
- * placeholder DEEPSEEK_API_KEY produces — an infra limitation, not a UI bug).
+ * UX-06 Round 3 — real DeepSeek chat + the real, canonical booking journey
+ * wired underneath it.
  *
- * The language selector below is scoped to THIS SCREEN ONLY, per the hard
- * language-architecture rule — it must never be reused for app-wide navigation
- * or ordinary screens. The backend has no language field, so the selection is
- * folded into each outgoing message via withLanguageInstruction (see lib/api.ts)
- * and kept purely as local UI/conversation state.
+ * Contract layer (see docs/design/ux-06-customer-app/deepseek-conversation-contract.md
+ * for the full two-layer framing agreed with the coordinator):
+ *   VERIFIED LIVE: customer login, chat-session creation, the backend AI-chat
+ *   endpoint, service-category/offering tool calls, the structured response
+ *   contract, graceful model-provider degradation.
+ *   NOT YET VERIFIED: an actual DeepSeek model response using a real
+ *   (non-placeholder) API key, reliable adherence to the customer-selected
+ *   conversation language, language switching mid-conversation, and
+ *   preservation of structured booking state after a language switch.
  *
- * NOT YET wired into AppNavigator/TabNavigator this round — four overlapping
- * legacy chat-shaped screens already exist (AIChatScreen, AIAssistantScreen,
- * SmartBotScreen, ChatScreen) and consolidating navigation onto this one is
- * deferred to the next round (see deferred-items.md) rather than risk breaking
- * existing routes under this round's time constraints.
+ * Why the booking flow below is a structured picker UI, not text parsed out of
+ * DeepSeek's reply: the /messages endpoint only returns `tools_called` (tool
+ * NAMES) and a synthesized `reply` string — never the tools' raw JSON results.
+ * Parsing IDs out of free text (which may itself be in a non-English selected
+ * language) would violate "never let a translated label become a query value."
+ * Instead, "Book a service" opens a REAL structured flow: catalogApi.categories()
+ * -> catalogApi.categoryOfferings(slug) -> homeServiceDraftApi.start/updateFields/
+ * serviceabilityCheck/priceEstimate/summary -> bookingConfirmApi.confirmHomeServiceBooking
+ * (idempotent via a real Idempotency-Key header). Every ID sent onward comes
+ * directly from a typed API response (see chatBookingState.ts) — never from a
+ * chat bubble's display text.
  */
 type Msg = { id:string; role:"user"|"assistant"; content:string };
 
-export function DeepSeekChatScreen() {
+interface Props {
+  navigation?: { navigate: (screen: string, params?: unknown) => void };
+}
+
+export function DeepSeekChatScreen({ navigation }: Props) {
   const [session, setSession]   = useState<AISession | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput]       = useState("");
@@ -43,6 +55,16 @@ export function DeepSeekChatScreen() {
   const [language, setLanguage] = useState<ChatLanguageOption>(CHAT_LANGUAGES[0]);
   const [langModal, setLangModal] = useState(false);
   const [langQuery, setLangQuery] = useState("");
+
+  const [booking, dispatch] = useReducer(chatBookingReducer, initialChatBookingState());
+  const [flowOpen, setFlowOpen]   = useState(false);
+  const [categories, setCategories] = useState<ServiceCategory[]>([]);
+  const [offerings, setOfferings]   = useState<ServiceOffering[]>([]);
+  const [flowLoading, setFlowLoading] = useState(false);
+  const [flowError, setFlowError]     = useState<string|null>(null);
+  const [issueText, setIssueText]     = useState("");
+  const [addressText, setAddressText] = useState("");
+  const [cityText, setCityText]       = useState("");
 
   const startSession = useCallback(async () => {
     setStarting(true); setError(null);
@@ -55,6 +77,10 @@ export function DeepSeekChatScreen() {
     } finally { setStarting(false); }
   }, []);
 
+  // Every outgoing message goes through withLanguageInstruction inside
+  // aiConversationApi.sendMessage — verified by a real unit test
+  // (src/lib/__tests__/api.test.ts) that `language` is always passed through,
+  // never sent without it once a non-English language is selected.
   async function send() {
     const text = input.trim();
     if (!text || !session || sending) return;
@@ -68,6 +94,79 @@ export function DeepSeekChatScreen() {
     } catch (e:unknown) {
       setError(e instanceof Error ? e.message : "Message failed to send. Please try again.");
     } finally { setSending(false); }
+  }
+
+  async function openBookingFlow() {
+    setFlowOpen(true); setFlowLoading(true); setFlowError(null);
+    dispatch({ type:"RESET", aiSessionId: session?.id ?? null });
+    try {
+      const res = await catalogApi.categories();
+      setCategories(res.items);
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not load services.");
+    } finally { setFlowLoading(false); }
+  }
+
+  async function pickCategory(cat: ServiceCategory) {
+    dispatch({ type:"SELECT_CATEGORY", category: cat });
+    setFlowLoading(true); setFlowError(null);
+    try {
+      const res = await catalogApi.categoryOfferings(cat.slug);
+      setOfferings(res.items);
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not load offerings for this category.");
+    } finally { setFlowLoading(false); }
+  }
+
+  function pickOffering(off: ServiceOffering) {
+    dispatch({ type:"SELECT_OFFERING", offering: off });
+  }
+
+  async function submitIssueAndAddress() {
+    const slugs = canonicalSlugsFor(booking);
+    if (!slugs) return;
+    setFlowLoading(true); setFlowError(null);
+    try {
+      const draft = await homeServiceDraftApi.start(slugs.categorySlug, slugs.offeringSlug, session?.id);
+      dispatch({ type:"DRAFT_STARTED", draft });
+      dispatch({ type:"SET_ISSUE", issueDescription: issueText });
+      dispatch({ type:"SET_ADDRESS", addressLine: addressText, city: cityText });
+      await homeServiceDraftApi.updateFields(draft.id, {
+        issue_description: issueText, address_line: addressText, city: cityText,
+      });
+      const svc = await homeServiceDraftApi.serviceabilityCheck(draft.id);
+      dispatch({ type:"SERVICEABILITY_RESULT", serviceable: svc.serviceable, message: svc.message, draftStatus: svc.draft_status });
+      if (svc.serviceable) {
+        const price = await homeServiceDraftApi.priceEstimate(draft.id);
+        dispatch({ type:"PRICE_RESULT", priceSnapshot: price.price_snapshot ?? null, draftStatus: price.draft_status });
+      }
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not process your request. Please try again.");
+    } finally { setFlowLoading(false); }
+  }
+
+  async function confirmBooking() {
+    if (!booking.draft) return;
+    setFlowLoading(true); setFlowError(null);
+    try {
+      // Idempotency-Key: the draft ID itself is a stable, real, caller-owned
+      // key — a retry of this exact call (e.g. after a network blip) hits the
+      // same key and the backend's ConfirmationLockService returns the
+      // existing booking instead of creating a duplicate (confirmed real via
+      // app/engines/final_records/{confirm_router,idempotency}.py).
+      const result = await bookingConfirmApi.confirmHomeServiceBooking(booking.draft.id, booking.draft.id);
+      if (!result.booking_number) throw new Error("Booking confirmation did not return a booking reference.");
+      dispatch({ type:"SUBMITTED", bookingNumber: result.booking_number, jobNumber: result.job_number });
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Booking could not be confirmed. Please try again.");
+    } finally { setFlowLoading(false); }
+  }
+
+  function goToBookingDetail() {
+    setFlowOpen(false);
+    if (navigation && booking.draft) {
+      navigation.navigate("BookingDetail", { bookingId: booking.draft.id });
+    }
   }
 
   if (!session) {
@@ -87,6 +186,9 @@ export function DeepSeekChatScreen() {
   return (
     <KeyboardAvoidingView style={s.screen} behavior={Platform.OS==="ios"?"padding":"height"}>
       <View style={s.header}>
+        <TouchableOpacity style={s.bookBtn} onPress={openBookingFlow} testID="chat-book-service">
+          <Text style={s.bookBtnText}>📅 Book a service</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={s.langChip} onPress={()=>setLangModal(true)} testID="chat-language-btn">
           <Text style={s.langChipText}>{language.nativeName} ▾</Text>
         </TouchableOpacity>
@@ -116,6 +218,7 @@ export function DeepSeekChatScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ── Language selector — scoped to this chat screen only ────────────── */}
       <Modal visible={langModal} animationType="slide" onRequestClose={()=>setLangModal(false)}>
         <View style={s.langModal}>
           <TextInput
@@ -127,12 +230,87 @@ export function DeepSeekChatScreen() {
             data={searchChatLanguages(langQuery)}
             keyExtractor={l=>l.code}
             renderItem={({item}) => (
-              <TouchableOpacity style={s.langRow} onPress={()=>{ setLanguage(item); setLangModal(false); setLangQuery(""); }}>
+              <TouchableOpacity style={s.langRow} testID={`chat-language-option-${item.code}`}
+                onPress={()=>{ setLanguage(item); setLangModal(false); setLangQuery(""); }}>
                 <Text style={s.langRowNative}>{item.nativeName}</Text>
                 <Text style={s.langRowEnglish}>{item.englishName} ({item.code})</Text>
               </TouchableOpacity>
             )}
           />
+        </View>
+      </Modal>
+
+      {/* ── Real, canonical booking journey ─────────────────────────────────── */}
+      <Modal visible={flowOpen} animationType="slide" onRequestClose={()=>setFlowOpen(false)}>
+        <View style={s.flowModal}>
+          {flowError && <Text style={s.errorText}>{flowError}</Text>}
+
+          {booking.step === "submitted" ? (
+            <View style={s.center}>
+              <Text style={s.icon}>✅</Text>
+              <Text style={s.title}>Booking Confirmed</Text>
+              <Text style={s.body} testID="booking-reference">Reference: {booking.bookingNumber}</Text>
+              <TouchableOpacity style={s.startBtn} onPress={goToBookingDetail} testID="chat-view-booking">
+                <Text style={s.startBtnText}>View Booking</Text>
+              </TouchableOpacity>
+            </View>
+          ) : booking.priceSnapshot ? (
+            <View style={{ gap:14, padding:16 }}>
+              <Text style={s.title}>Review your booking</Text>
+              <Text style={s.body}>{booking.category?.name} — {booking.offering?.name}</Text>
+              <Text style={s.body}>{booking.issueDescription}</Text>
+              <Text style={s.body}>{booking.addressLine}, {booking.city}</Text>
+              {/* Price shown EXACTLY as the backend returned it — no client-side
+                  recalculation, per the "server-returned values only" rule. */}
+              <Text style={s.priceText} testID="booking-price">
+                {booking.priceSnapshot.display_price ?? `₹${booking.priceSnapshot.final_price}`}
+              </Text>
+              <TouchableOpacity style={s.startBtn} onPress={confirmBooking} disabled={flowLoading} testID="chat-confirm-booking">
+                <Text style={s.startBtnText}>{flowLoading ? "Confirming…" : "Confirm Booking"}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : booking.step === "serviceability_checked" || booking.serviceable === false ? (
+            <View style={{ gap:14, padding:16 }}>
+              <Text style={s.body} testID="booking-serviceability">{booking.serviceabilityMessage}</Text>
+              {flowLoading && <Text style={s.body}>Loading price…</Text>}
+            </View>
+          ) : booking.offering ? (
+            <View style={{ gap:12, padding:16 }}>
+              <Text style={s.title}>Tell us more</Text>
+              <TextInput style={s.input} value={issueText} onChangeText={setIssueText}
+                placeholder="Describe the issue" placeholderTextColor={theme.colors.textTertiary}
+                testID="booking-issue-input"/>
+              <TextInput style={s.input} value={addressText} onChangeText={setAddressText}
+                placeholder="Address" placeholderTextColor={theme.colors.textTertiary}
+                testID="booking-address-input"/>
+              <TextInput style={s.input} value={cityText} onChangeText={setCityText}
+                placeholder="City" placeholderTextColor={theme.colors.textTertiary}
+                testID="booking-city-input"/>
+              <TouchableOpacity style={s.startBtn} onPress={submitIssueAndAddress} disabled={flowLoading} testID="booking-check-serviceability">
+                <Text style={s.startBtnText}>{flowLoading ? "Checking…" : "Check availability"}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : booking.category ? (
+            <FlatList
+              data={offerings} keyExtractor={o=>o.id}
+              ListHeaderComponent={<Text style={[s.title,{padding:16}]}>Choose a service</Text>}
+              renderItem={({item}) => (
+                <TouchableOpacity style={s.langRow} onPress={()=>pickOffering(item)} testID={`offering-${item.slug}`}>
+                  <Text style={s.langRowNative}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          ) : (
+            <FlatList
+              data={categories} keyExtractor={c=>c.id}
+              ListHeaderComponent={<Text style={[s.title,{padding:16}]}>What do you need help with?</Text>}
+              renderItem={({item}) => (
+                <TouchableOpacity style={s.langRow} onPress={()=>pickCategory(item)} testID={`category-${item.slug}`}>
+                  <Text style={s.langRowNative}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          )}
         </View>
       </Modal>
     </KeyboardAvoidingView>
@@ -145,10 +323,13 @@ const s = StyleSheet.create({
   icon:   { fontSize:48 },
   title:  { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary, textAlign:"center" },
   body:   { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, textAlign:"center", lineHeight:20 },
+  priceText: { fontSize:theme.font.size.xxxl, fontWeight:"800", color:theme.colors.brand, textAlign:"center" },
   errorText: { color:theme.colors.dangerText, fontSize:theme.font.size.sm, textAlign:"center", paddingHorizontal:16 },
   startBtn: { backgroundColor:theme.colors.brand, borderRadius:theme.radius.lg, paddingVertical:14, paddingHorizontal:28 },
-  startBtnText: { color:"#fff", fontWeight:"700", fontSize:theme.font.size.base },
-  header: { flexDirection:"row", justifyContent:"flex-end", padding:10, borderBottomWidth:1, borderBottomColor:theme.colors.border },
+  startBtnText: { color:"#fff", fontWeight:"700", fontSize:theme.font.size.base, textAlign:"center" },
+  header: { flexDirection:"row", justifyContent:"space-between", alignItems:"center", padding:10, borderBottomWidth:1, borderBottomColor:theme.colors.border },
+  bookBtn: { paddingHorizontal:12, paddingVertical:6, borderRadius:theme.radius.full, backgroundColor:theme.colors.brand },
+  bookBtnText: { fontSize:theme.font.size.sm, fontWeight:"700", color:"#fff" },
   langChip: { paddingHorizontal:12, paddingVertical:6, borderRadius:theme.radius.full, backgroundColor:theme.colors.surfaceSunken },
   langChipText: { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary },
   list: { padding:14, gap:10 },
@@ -164,10 +345,11 @@ const s = StyleSheet.create({
   sendBtn: { justifyContent:"center", paddingHorizontal:18, borderRadius:theme.radius.lg, backgroundColor:theme.colors.brand },
   sendBtnText: { color:"#fff", fontWeight:"700" },
   langModal: { flex:1, backgroundColor:theme.colors.bg, paddingTop:60, paddingHorizontal:16 },
+  flowModal: { flex:1, backgroundColor:theme.colors.bg, paddingTop:60 },
   langSearch: { height:44, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
                 paddingHorizontal:14, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
-                backgroundColor:theme.colors.surfaceSunken, marginBottom:12 },
-  langRow: { paddingVertical:12, borderBottomWidth:1, borderBottomColor:theme.colors.border },
+                backgroundColor:theme.colors.surfaceSunken, marginBottom:12, marginHorizontal:16 },
+  langRow: { paddingVertical:12, paddingHorizontal:16, borderBottomWidth:1, borderBottomColor:theme.colors.border },
   langRowNative: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
   langRowEnglish: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:2 },
 });

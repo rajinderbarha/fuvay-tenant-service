@@ -28,17 +28,24 @@ is no structured way to tell the backend "respond in Hindi" today.
   language takes effect on the next message sent, no booking-state loss since
   the session/conversation itself is untouched).
 
-## Explicitly honest about the limitation
+## Explicitly honest about the limitation (exact two-layer framing)
+
+**The DeepSeek integration contract and backend tool orchestration are live and
+verified. Actual model-provider behavior and selected-language compliance
+remain infrastructure-blocked by the placeholder API key.**
 
 Because the instruction is folded into user-turn text rather than a real
 system-level parameter, DeepSeek's actual compliance with it is a model-behavior
-question, not something this client can guarantee. This was NOT verified this
-round because the dev environment's `DEEPSEEK_API_KEY` is a placeholder (see
-deepseek-conversation-contract.md) — live probes returned the graceful
-"having trouble processing" fallback rather than a real completion. **The
-language toggle's effect on the assistant's actual reply language is therefore
-unconfirmed and should be tested in the next round once a real DeepSeek key is
-available in a test environment.**
+question, not something this client can guarantee. This is a SEPARATE, explicit
+blocker from the rest of the Round 3 booking journey (which is genuinely
+provable end-to-end against real backend calls — see
+booking-submission-workflow.md): reliable adherence to the selected language,
+language switching mid-conversation, and preservation of structured booking
+state after a language switch are all **NOT yet verified**, and cannot be until
+a real (non-placeholder) `DEEPSEEK_API_KEY` is available in a test
+environment. Live probes this phase consistently returned the graceful
+"having trouble processing" fallback rather than a real completion — proving
+the orchestration works, but saying nothing about actual language compliance.
 
 ## Compliance with the hard rule
 

@@ -67,8 +67,17 @@ async function apiFetch<T>(path:string, options:RequestInit={}, skipAuth=false):
 export interface CustomerUser {
   id:string; full_name:string; phone?:string; email?:string;
 }
+// Real shape confirmed from app/engines/customer_flow/service.py::_customer_cat_summary
+// (Round 3 correction: field is "slug", not "category_slug" as Round 1 assumed
+// without reading the source; "icon_url", not "icon"). The canonical ID used for
+// every downstream chat-driven booking action must be `id` (UUID) or `slug` —
+// never `name`, which is display-only and would be translated in the DeepSeek
+// chat UI.
 export interface ServiceCategory {
-  category_slug:string; name:string; category_type?:string; icon?:string; description?:string;
+  id:string; slug:string; name:string; category_type?:string; icon_url?:string; description?:string;
+}
+export interface ServiceOffering {
+  id:string; slug:string; name:string; description?:string;
 }
 export interface Booking {
   id:string; booking_number?:string; service_type?:string; scheduled_at?:string; status:string;
@@ -97,13 +106,17 @@ export const authApi = {
 };
 
 // ── Catalog / discovery ─────────────────────────────────────────────────────────
-// Real: GET /v1/customer/categories (customer-visible, active only)
+// Real: GET /v1/customer/categories (customer-visible, active only), confirmed
+// from app/engines/customer_flow/{router,service}.py this round (Round 3
+// correction to Round 1's field-name guess — see ServiceCategory above).
 export const catalogApi = {
   categories: (search?:string) =>
     apiFetch<{ items:ServiceCategory[]; total:number }>(
       `/v1/customer/categories${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+  // Real: GET /v1/customer/categories/{category_slug}/offerings -> { items: ServiceOffering[], total, ... }
   categoryOfferings: (categorySlug:string) =>
-    apiFetch<unknown>(`/v1/customer/categories/${encodeURIComponent(categorySlug)}/offerings`),
+    apiFetch<{ items:ServiceOffering[]; total:number }>(
+      `/v1/customer/categories/${encodeURIComponent(categorySlug)}/offerings`),
 };
 
 // ── Bookings (Booking→field_ops.Job pipeline) ───────────────────────────────────
@@ -169,7 +182,7 @@ export const chatApi = {
 // as the primary customer-role surface).
 export const profileApi = {
   get:    () => apiFetch<CustomerUser>("/v1/customer/profile"),
-  update: (payload:Partial<Pick<CustomerUser,"name"|"phone"|"email">>) =>
+  update: (payload:Partial<Pick<CustomerUser,"full_name"|"phone"|"email">>) =>
     apiFetch<CustomerUser>("/v1/customer/profile", { method:"PUT", body:JSON.stringify(payload) }),
 };
 
@@ -319,4 +332,81 @@ export const aiConversationApi = {
     ),
   closeSession: (sessionId: string) =>
     apiFetch<AISession>(`/v1/customer/ai-chat/sessions/${sessionId}/close`, { method: "POST" }),
+};
+
+// ── Home Service booking draft + canonical confirmation (Round 3) ──────────────
+// Real, confirmed from app/engines/home_service_booking/customer_router.py +
+// service.py, and app/engines/final_records/confirm_router.py. This is the
+// ACTUAL canonical booking-creation pipeline behind the AI-chat tool loop
+// (start_home_service_draft / check_home_service_availability /
+// get_home_service_price_estimate in app/engines/ai_conversation/backend_tools.py
+// call the exact same HomeServiceChatbotBookingService methods these routes
+// expose). Round 1/2 assumed bookingsApi/serviceJobsApi (read-only, list/detail
+// only) were the submission path — on closer inspection this round, there is no
+// POST create on those; the real, canonical CREATE path for AI-chat-originated
+// bookings is: start draft -> update fields -> serviceability-check ->
+// price-estimate -> match-and-price -> confirm-price-choice -> summary ->
+// POST /v1/customer/confirm/home-service-booking/{draft_id} (idempotent via a
+// real `Idempotency-Key` header, confirmed in confirm_router.py).
+export interface BookingDraft {
+  id: string;
+  category_id?: string; category_slug?: string;
+  offering_id?: string; offering_slug?: string;
+  status: string;
+  city?: string; zipcode?: string; address_line?: string;
+  issue_description?: string;
+  serviceability_status?: string;
+  price_snapshot?: { display_price?: string; final_price?: number; currency?: string; [k:string]: unknown };
+  [k: string]: unknown;
+}
+export const homeServiceDraftApi = {
+  start: (categorySlug: string, offeringSlug: string, aiSessionId?: string) =>
+    apiFetch<BookingDraft>("/v1/customer/home-services/booking-drafts", {
+      method: "POST",
+      body: JSON.stringify({ category_slug: categorySlug, offering_slug: offeringSlug, ai_session_id: aiSessionId }),
+    }),
+  get: (draftId: string) => apiFetch<BookingDraft>(`/v1/customer/home-services/booking-drafts/${draftId}`),
+  updateFields: (draftId: string, payload: Record<string, unknown>) =>
+    apiFetch<BookingDraft>(`/v1/customer/home-services/booking-drafts/${draftId}`, {
+      method: "PUT", body: JSON.stringify(payload),
+    }),
+  serviceabilityCheck: (draftId: string) =>
+    apiFetch<{ serviceable: boolean; reason_code?: string; message: string; draft_status: string }>(
+      `/v1/customer/home-services/booking-drafts/${draftId}/serviceability-check`, { method: "POST" }),
+  priceEstimate: (draftId: string) =>
+    apiFetch<{ price_snapshot: BookingDraft["price_snapshot"]; draft_status: string }>(
+      `/v1/customer/home-services/booking-drafts/${draftId}/price-estimate`, { method: "POST" }),
+  matchAndPrice: (draftId: string) =>
+    apiFetch<unknown>(`/v1/customer/home-services/booking-drafts/${draftId}/match-and-price`, { method: "POST" }),
+  confirmPriceChoice: (draftId: string, tier: "low"|"mid"|"high") =>
+    apiFetch<unknown>(`/v1/customer/home-services/booking-drafts/${draftId}/confirm-price-choice`, {
+      method: "POST", body: JSON.stringify({ price_tier: tier }),
+    }),
+  summary: (draftId: string) =>
+    apiFetch<{ booking_summary: unknown; draft_status: string }>(
+      `/v1/customer/home-services/booking-drafts/${draftId}/summary`, { method: "POST" }),
+};
+
+export interface BookingConfirmationResult {
+  record_type: "booking";
+  booking_id: string;
+  booking_number: string;
+  job_id?: string;
+  job_number?: string;
+  status: string;
+  idempotent: boolean;
+  message: string;
+}
+export const bookingConfirmApi = {
+  // Real idempotent confirmation — an Idempotency-Key header is sent on every
+  // call (a stable, caller-generated key, e.g. the draft_id itself) so a
+  // network retry can never create a duplicate booking; confirmed real via
+  // app/engines/final_records/confirm_router.py (Header(None, alias=
+  // "Idempotency-Key"), backed by a real ConfirmationLockService).
+  confirmHomeServiceBooking: (draftId: string, idempotencyKey: string) =>
+    apiFetch<BookingConfirmationResult>(`/v1/customer/confirm/home-service-booking/${draftId}`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ customer_confirmation: true }),
+    }),
 };

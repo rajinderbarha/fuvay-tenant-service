@@ -1,6 +1,28 @@
-# DeepSeek Conversational Booking — Contract Audit (Round 2 update: CONFIRMED REAL)
+# DeepSeek Conversational Booking — Contract Audit (Round 3 update: two-layer framing)
 
-## Status: CONFIRMED_REAL (contract), INFRA_BLOCKED (live model replies)
+## Status — exact framing (per coordinator correction, use this wording verbatim)
+
+**The DeepSeek integration contract and backend tool orchestration are live and
+verified. Actual model-provider behavior and selected-language compliance
+remain infrastructure-blocked by the placeholder API key.**
+
+Split explicitly into what is proven vs. not, independently verified by the
+coordinator logging in as a real customer and hitting these endpoints directly:
+
+**Verified live:** customer login, chat-session creation, the backend AI-chat
+endpoint, service-category/offering tool calls, the structured response
+contract (`{reply, tools_called, intent, session}`), graceful model-provider
+degradation (the safe fallback reply when the upstream DeepSeek call fails).
+
+**NOT yet verified:** an actual DeepSeek model response using a real
+(non-placeholder) API key, reliable adherence to the customer-selected
+conversation language, language switching mid-conversation, and preservation
+of structured booking state after a language switch.
+
+These are two genuinely separate claims and must not be blended into one — the
+contract/orchestration layer is proven; the model-provider behavior and
+language compliance are not, and won't be until a real `DEEPSEEK_API_KEY` is
+available in a test environment.
 
 Round 1 left this open (two candidate routes, unconfirmed schema). Round 2
 resolved it via source-code reading AND live HTTP probes against the running

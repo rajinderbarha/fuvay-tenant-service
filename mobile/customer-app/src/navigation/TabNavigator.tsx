@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { HomeScreen }         from "../screens/HomeScreen";
 import { BookingsListScreen } from "../screens/BookingsListScreen";
-import { AIChatScreen }       from "../screens/AIChatScreen";
+import { DeepSeekChatScreen } from "../screens/DeepSeekChatScreen";
 import { ChatScreen }         from "../screens/ChatScreen";
 import { ProfileScreen }      from "../screens/ProfileScreen";
 import { theme } from "../styles/theme";
@@ -34,7 +34,11 @@ export function TabNavigator() {
         options={{ title:"Home",    tabBarIcon:({focused})=><TabIcon icon="🏠" label="Home"    focused={focused}/> }}/>
       <Tab.Screen name="Bookings" component={BookingsListScreen}
         options={{ title:"My Bookings", tabBarIcon:({focused})=><TabIcon icon="📋" label="Bookings" focused={focused}/> }}/>
-      <Tab.Screen name="AIAssistant" component={AIChatScreen}
+      {/* UX-06 Round 3: wired to the real, live-confirmed DeepSeek chat screen
+          (see docs/design/ux-06-customer-app/deepseek-conversation-contract.md).
+          The prior AIChatScreen was a legacy scaffold screen with no confirmed
+          real backend contract behind it. */}
+      <Tab.Screen name="AIAssistant" component={DeepSeekChatScreen}
         options={{ title:"AI Assistant", tabBarIcon:({focused})=><TabIcon icon="🤖" label="AI Chat"  focused={focused}/> }}/>
       <Tab.Screen name="Chat"     component={ChatScreen}
         options={{ title:"Messages", tabBarIcon:({focused})=><TabIcon icon="💬" label="Chat"    focused={focused}/> }}/>
