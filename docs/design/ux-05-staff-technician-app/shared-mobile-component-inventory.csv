@@ -1,0 +1,16 @@
+component,path,status,notes
+PipelineBadge,src/components/ux05/PipelineBadge.tsx,production_ready,wired into real JobDetailScreen this round
+PermissionRestrictedState,src/components/ux05/PermissionRestrictedState.tsx,production_ready,presentation only, not itself a security boundary
+NextActionBar,src/components/ux05/NextActionBar.tsx,mock_design_only,built, not yet wired into JobDetailScreen (which has its own inline action grid)
+PartsRequestStatusCard,src/components/ux05/PartsRequestStatusCard.tsx,mock_design_only,used by PartsRequestShowcaseScreen + StaffPartsApprovalShowcaseScreen-adjacent
+WorkItemCard,src/components/ux05/WorkItemCard.tsx,mock_design_only,built, not yet wired into JobsListScreen
+ScheduleCard,src/components/ux05/ScheduleCard.tsx,production_ready,wired into real ScheduleScreen this round
+CustomerContactCard,src/components/ux05/CustomerContactCard.tsx,production_ready,wired into real JobDetailScreen this round
+AddressCard,src/components/ux05/AddressCard.tsx,production_ready (navigate/copy actions are placeholder),wired into real JobDetailScreen this round
+NotificationCard,src/components/ux05/NotificationCard.tsx,mock_design_only,built, not yet wired into NotificationsScreen (which has its own inline row renderer)
+NetworkStatusBanner,src/components/ux05/NetworkStatusBanner.tsx,mock_design_only,built, not yet wired into any screen
+ChecklistSection,src/components/ux05/ChecklistSection.tsx,mock_design_only,wired into InspectionChecklistShowcaseScreen
+ChecklistProgress,src/components/ux05/ChecklistSection.tsx,mock_design_only,same file, wired into showcase
+InspectionForm,src/components/ux05/InspectionForm.tsx,mock_design_only,wired into InspectionChecklistShowcaseScreen
+JobNoteComposer,src/components/ux05/JobNoteComposer.tsx,mock_design_only,wired into JobNotesMediaShowcaseScreen
+MediaCaptureGrid,src/components/ux05/MediaCaptureGrid.tsx,mock_design_only,wired into JobNotesMediaShowcaseScreen

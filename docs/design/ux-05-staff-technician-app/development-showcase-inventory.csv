@@ -1,0 +1,11 @@
+showcase,route_name,readiness,covers
+Parts Request (create + track),ShowcasePartsRequest,mock_design_only,workstreams 14/15 -- technician create+track, no approve/reject/install affordance
+Inspection & Checklist,ShowcaseInspectionChecklist,mock_design_only,workstreams 12/13 -- draft editing, pass/fail touch targets, progress bar, required-item completion gate
+Job Notes & Media,ShowcaseJobNotesMedia,mock_design_only,workstreams 18/19 -- internal/technician/customer_visible notes, media grid with no storage-key leakage
+Staff Parts Approval,ShowcaseStaffPartsApproval,mock_design_only,workstream 16 -- fail-closed restricted for every current real user
+
+Not built this pass (deferred, see deferred-items.md): the remaining ~26 showcases from the brief's list of 30
+(Technician Home, Staff Home, My Work, Today Schedule, field_ops.Job Detail [N/A -- no live pipeline, see
+pipeline-aware-job-detail.md], ServiceJob Detail, Current Job, Status Transition, Customer Contact, Notifications,
+Availability, Profile, Offline Cached Work, Sync Pending, Sync Conflict, Read-only, Restricted, Session Expired,
+Tenant Suspended, Long Hindi/Punjabi Content, Large Text/Accessibility, Light/Dark Theme Examples).
