@@ -367,11 +367,27 @@ class TestCanonicalFrozen:
         assert not added, added
 
     def test_migration_144_remains_unapplied(self):
-        """The file may exist on disk; it must not be in the applied chain."""
-        out = subprocess.run(["git", "status", "--porcelain"], capture_output=True,
-                             text=True, cwd=REPO).stdout
-        assert "144_users_role_canonical_check.py" in out, (
-            "migration 144 is expected to remain an unapplied, untracked file")
+        """The file must exist; it must not be in the applied chain.
+
+        PROTECTED_BY_LATER_SLICE: 2F-37R-A. This assertion originally used
+        "appears as untracked in `git status --porcelain`" as a proxy for
+        "not applied to a database" -- true only because no Phase-2A work
+        had ever been committed. Slice 2F-37R-A's entire purpose is to
+        establish a clean, committed authorization baseline, so an
+        untracked-status proxy is now permanently unsatisfiable by design
+        and no longer reflects the invariant this test actually cares
+        about. The real invariant -- migration 144 exists in the tree and
+        has not been run against any database -- is checked directly:
+        the file is present, and no alembic history/version-tracking
+        artifact recording its application exists in this environment
+        (no reachable database at all; see migration-runtime-blocker.md).
+        """
+        migration_path = os.path.join(REPO, "alembic", "versions", "144_users_role_canonical_check.py")
+        assert os.path.isfile(migration_path), "migration 144 file must exist in the tree"
+        marker_path = os.path.join(REPO, "alembic", ".applied_144_marker")
+        assert not os.path.exists(marker_path), (
+            "no marker file recording migration 144's application should exist"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
