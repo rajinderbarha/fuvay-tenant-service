@@ -15,6 +15,7 @@ import { StaffPartsApprovalShowcaseScreen } from "../screens/ux05/StaffPartsAppr
 import { CurrentJobScreen } from "../screens/ux05/CurrentJobScreen";
 import { QuoteShowcaseScreen } from "../screens/ux05/QuoteShowcaseScreen";
 import { OfflineStatesShowcaseScreen } from "../screens/ux05/OfflineStatesShowcaseScreen";
+import { SystemStatesShowcaseScreen } from "../screens/ux05/SystemStatesShowcaseScreen";
 import { NetworkStatusBanner } from "../components/ux05/NetworkStatusBanner";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { theme } from "../styles/theme";
@@ -90,6 +91,8 @@ export function AppNavigator() {
               options={{ headerShown:true, title:"Dev: Quote" }} />
             <Stack.Screen name="ShowcaseOfflineStates" component={OfflineStatesShowcaseScreen}
               options={{ headerShown:true, title:"Dev: Offline States" }} />
+            <Stack.Screen name="ShowcaseSystemStates" component={SystemStatesShowcaseScreen}
+              options={{ headerShown:true, title:"Dev: System States" }} />
           </>
         ) : (
           // ── Unauthenticated ─────────────────────────────────────────────
