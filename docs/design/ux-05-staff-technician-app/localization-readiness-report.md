@@ -1,12 +1,27 @@
 # Localization Readiness Report
 
-## What this is (and isn't)
-No i18n infrastructure exists in this app (no string catalog, no `t()`/translation-loading mechanism, no
-locale-switching) — building that is real, separate infrastructure work, not attempted this round. This is a
-**spot-check**: real, full-length Hindi and Punjabi sentences (not lorem ipsum, not single words) dropped
-directly into a handful of already-built components, to see whether layout/text-wrapping breaks on genuinely
-long translated content, per the coordinator's explicit "no need to build full i18n, just verify wrapping"
-request.
+## PRODUCT CORRECTION (Round 6) — this workstream is NOT_APPLICABLE
+The user issued a language-architecture correction that supersedes this workstream's framing: app-wide English/
+Hindi/Punjabi localization is **not part of ServiceOS's design** for the Super Admin, Tenant, Staff, or
+Technician apps — `mobile/staff-app` included. Those apps stay single-language (English) permanently.
+Multilingual behavior belongs exclusively to the DeepSeek customer-chat assistant, a different app entirely,
+out of UX-05's scope. Per this correction, **localization readiness is disposition `NOT_APPLICABLE`** for this
+app going forward — not `deferred`, not `open`, not something a future UX-05B pass should pick up. No i18n
+infrastructure, translation files, string catalogs, or language toggles should be built for `mobile/staff-app`.
+
+## What was already built (kept — harmless, not removed)
+The Round 5 spot-check below and its 4 passing tests are harmless defensive-layout verification (they prove
+`CustomerContactCard`/`PermissionRestrictedState` don't accidentally truncate *any* unexpectedly long string,
+Hindi/Punjabi or otherwise — e.g. a long English customer note would exercise the same code path) and were left
+in place rather than deleted. They should not be read as evidence of an active or planned localization
+workstream, and no further long-string/multi-language work should be added to this app on the strength of this
+report.
+
+## What this was (historical framing, superseded above)
+Before the correction above, this was written as an open "spot-check" workstream: real, full-length Hindi and
+Punjabi sentences (not lorem ipsum, not single words) dropped directly into a handful of already-built
+components, to see whether layout/text-wrapping breaks on genuinely long content. That check's findings are
+preserved below for the record, but the workstream itself is now closed, not open-with-findings.
 
 ## What was checked
 `LocalizationShowcaseScreen` (new dev-only screen) renders:

@@ -19,11 +19,11 @@
   built and tested (including a genuine unmount/remount restart simulation), wired into
   `InspectionChecklistShowcaseScreen` only. `JobNotesMediaShowcaseScreen` and `QuoteShowcaseScreen` still use
   `useState`-only drafts, lost on unmount — a real, disclosed remaining gap.
-- **The localization spot-check found no accidental truncation** across 4 real components with long Hindi/
-  Punjabi text, but this was a component-level RNTL check, not a real-device/real-screen-width visual
-  verification, and no i18n infrastructure (string catalog, `t()`, locale switching, date/currency formatting
-  helpers) exists at all — every date format call in this app hardcodes `"en-IN"`. See
-  `localization-readiness-report.md`.
+- **Localization is `NOT_APPLICABLE` per a Round 6 product correction** — Super Admin/Tenant/Staff/Technician
+  apps (including this one) are single-language (English) by design; multilingual behavior belongs only to the
+  DeepSeek customer-chat assistant, a different app. No i18n infrastructure should be built here. The Round 5
+  Hindi/Punjabi spot-check (4 components, 4 tests) was kept as harmless defensive-layout verification but is
+  not an open workstream — see `localization-readiness-report.md`.
 - **No focus-order audit, no text-scaling stress test, no live screen-reader session** were performed — the
   accessibility pass (Round 4) fixed concrete, verifiable gaps but did not attempt these harder-to-verify-
   without-a-device checks.
