@@ -1,5 +1,15 @@
 # Known Limitations (through Round 8, + UX-05B finalization)
 
+- **UX-05B scope closure — items 3 and 4 (bulk showcase-screen breadth, remaining ~27 doc files) were not
+  substantially advanced this phase.** UX-05B's bounded scope prioritized correctness (product-review fixes),
+  the one named high-risk deferred item (`JobDetailScreen` theme conversion + its money-modal regression
+  coverage), a formal typecheck classification, closing the two production-reachable Staff-screen jargon leaks,
+  an accessibility reconciliation, a definitive screen inventory, and a final fresh-install/browser verification
+  pass — all done and evidenced in this phase's commits. Given the time actually available, pushing the
+  showcase-screen count further (item 3) and writing the remaining ~27 of 72 doc files (item 4) were not
+  reached. This is an honest, disclosed gap, not silently dropped: the showcase count remains ~12 of ~30, and
+  documentation remains ~47 of 72 files (45 through Round 8 + `typecheck-error-classification.md` +
+  `accessibility-reconciliation.md` + `screen-route-inventory.md` this phase).
 - **UX-05B FIX 3 investigation: the "Today" filter-tab pointer-event-interception report was a confirmed false
   alarm, not a real layout bug.** A manual review claimed clicking the "Today" tab on `JobsListScreen` ("My
   Work") failed in Playwright with "element intercepts pointer events" at a 390px viewport. Investigated live
