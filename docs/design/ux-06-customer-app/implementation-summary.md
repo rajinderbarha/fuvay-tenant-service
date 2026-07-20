@@ -1,10 +1,15 @@
-# UX-06 Customer App — Implementation Summary (updated after Round 2)
+# UX-06 Customer App — Implementation Summary (updated after Round 3)
 
-**Status: CUSTOMER_APP_DESIGN_PARTIAL — foundational contract correction (Round 1)
-+ screen rewiring, real WSL test verification, and confirmed-live DeepSeek
-contract (Round 2). Navigation restructuring, remaining screen typecheck fixes,
-and most feature-building work remain and are honestly deferred (see
-deferred-items.md, known-limitations.md).**
+**Status: CUSTOMER_APP_DESIGN_PARTIAL — foundational contract correction
+(Round 1), screen rewiring + real WSL test verification + confirmed-live
+DeepSeek contract (Round 2), and a real, chat-connected canonical booking
+journey proven 9/13 steps live end-to-end against the running backend, with
+2 real runtime-crash bugs found and fixed via an actual Playwright browser
+run (Round 3). Remaining typecheck errors are now fully classified (not an
+unclassified pile); 4 of the required 13 runtime-proof steps are blocked by a
+confirmed test-data gap (zero seeded service areas), not code — see
+round3-runtime-proof-report.md. Substantial feature-building work remains and
+is honestly deferred (see deferred-items.md, known-limitations.md).**
 
 ## Round 1 (foundational audit + contract correction)
 
@@ -64,20 +69,62 @@ deferred-items.md, known-limitations.md).**
 6. Re-confirmed zero changes to `app/`, `frontend/*`, `mobile/staff-app` after
    this round's work.
 
+## Round 3 (real canonical booking journey wired into chat + navigation)
+
+1. Corrected a Round 1/2 assumption: `bookingsApi`/`fieldOpsJobsApi` are
+   read-only (no `POST` create). Discovered the REAL canonical booking-creation
+   pipeline by reading `app/engines/home_service_booking/customer_router.py` +
+   `app/engines/final_records/confirm_router.py` directly — a draft-based flow
+   (`homeServiceDraftApi` + `bookingConfirmApi`) with a real, confirmed
+   `Idempotency-Key` header mechanism.
+2. Corrected `catalogApi`'s `ServiceCategory`/`ServiceOffering` field names
+   after reading `app/engines/customer_flow/service.py` (Round 1 had guessed
+   without reading source).
+3. Built `src/lib/chatBookingState.ts`: a typed reducer where every state
+   transition requires a real API response payload — never an assumed
+   progression. `canonicalSlugsFor()` is the single choke point sending real
+   backend slugs onward, enforced by a real test that the sent value is never
+   the display name.
+4. Rewired `DeepSeekChatScreen.tsx` to a real, structured "Book a service" flow
+   (category picker → offering picker → issue/address → serviceability check
+   → server-returned price display → idempotent confirm → real booking
+   reference → navigate to BookingDetail) and wired it into real navigation
+   (`TabNavigator`'s "AI Assistant" tab).
+5. Ran a genuine Playwright browser session against a real Expo web dev server
+   and the live backend, logged in as a real seeded demo customer. Found and
+   fixed 2 real, pre-existing runtime-crash bugs (missing imports in
+   `AppNavigator.tsx`, wrong import style in `TabNavigator.tsx`) that a
+   typecheck pass alone hadn't revealed the true severity of. Proved 9 of 13
+   required sequence steps genuinely real end-to-end; steps 10-13 blocked by a
+   confirmed test-data gap (zero seeded `TenantServiceArea` rows for the only
+   real offering in this dev DB), not a code defect.
+6. Expanded tests from 9 to 19 (chatBookingState reducer, canonical-ID
+   enforcement, a real fetch-body-inspection test proving
+   `withLanguageInstruction` is applied on every `sendMessage` call).
+7. Fully classified all 123 remaining typecheck errors by file:line + root-
+   cause pattern (typecheck-error-classification.md) — none left unclassified.
+8. Corrected the DeepSeek framing per the coordinator's exact required
+   wording: contract + tool orchestration are live and verified; model-
+   provider behavior and language compliance remain infra-blocked by the
+   placeholder API key — kept as two explicitly separate claims.
+9. Re-confirmed zero changes to `app/`, `frontend/*`, `mobile/staff-app`.
+
 ## What remains (see deferred-items.md for the full, prioritized list)
 
-126 typecheck errors in untouched screens, navigation restructuring, chat-UI
-navigation wiring, screen-consolidation of the 4 overlapping AI-chat screens,
-typed pipeline-aware view-model layer, booking submission workflow, theme/
-accessibility pass, component-level tests, live Playwright browser proof,
-showcase inventory, switching to the Sprint 29 AI engine once real customer
-credentials exist, and confirming DeepSeek's actual reply-language compliance
-once a real API key is available.
+123 typecheck errors in untouched screens (fully classified, prioritized fix
+list included), consolidating the 3 now-redundant legacy AI-chat screens,
+wiring `match-and-price`/`confirm-price-choice` (server-side provider
+selection) into the booking flow, using saved addresses instead of one-off
+text entry, navigation IA restructure, typed pipeline-aware view-model layer,
+theme/accessibility pass, per-screen component tests, exercising the full
+booking journey against a database with real seeded service areas, switching
+to the Sprint 29 AI engine, and confirming DeepSeek's actual reply-language
+compliance once a real API key is available.
 
-## Final state (Round 2)
+## Final state (Round 3)
 
 - Branch: `design/ux-06-customer-app`
 - Worktree: `G:\serviceos-ux06-customer-app`
-- Commits this phase: `0775bb5`, `b0b6362` (Round 1), `1d68eda`, `faa0af0`,
-  plus this docs commit (Round 2)
+- Commits this phase: `0775bb5`, `b0b6362` (Round 1); `1d68eda`, `faa0af0`,
+  `9e97180` (Round 2); `772f183`, `d98bfa7` (Round 3), plus this docs commit
 - No backend, no other frontend app, touched (re-verified via `git diff --stat`).
