@@ -5,6 +5,7 @@ import { jobsApi, type Job } from "../lib/api";
 import { JobStatusBadge } from "../components/JobStatusBadge";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
+import { groupJobs, type MyWorkGroupKey } from "../lib/ux05/myWork";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 // MODULE-L5-36: rewired from the dead field_ops job list to the real
@@ -13,31 +14,32 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 // to the caller in one call -- so tabs filter client-side here instead. No
 // service_type/customer_name/address/job_value/SLA fields exist on this
 // job shape; only what ServiceJob itself stores is shown.
-const TABS = [
-  { key:"",           label:"All"       },
-  { key:"assigned",   label:"Assigned"  },
-  { key:"active",     label:"Active"    },
-  { key:"completed",  label:"Completed" },
-  { key:"cancelled",  label:"Cancelled" },
-] as const;
-
-const ACTIVE_STATUSES = new Set([
-  "accepted","on_the_way","reached_site","inspection_started",
-  "inspection_done","quote_required","service_started","work_done",
-]);
+//
+// UX-05 Round 3: "My Work" grouping tabs now use the real, tested
+// groupJobs()/classifyJob() (src/lib/ux05/myWork.ts) instead of this
+// screen's own separate ACTIVE_STATUSES set -- Current/Today/Upcoming/
+// Needs Action/Completed match the same classification Home uses, so a
+// job never appears "current" on Home but "upcoming" here.
+const TABS: Array<{ key:MyWorkGroupKey; label:string }> = [
+  { key:"all",          label:"All"          },
+  { key:"current",      label:"Current"      },
+  { key:"today",        label:"Today"        },
+  { key:"upcoming",     label:"Upcoming"     },
+  { key:"needs_action",  label:"Needs Action" },
+  { key:"completed",    label:"Completed"    },
+];
 
 type Props = { navigation: NativeStackNavigationProp<never> };
 
 export function JobsListScreen({ navigation }: Props) {
-  const [activeTab, setActiveTab] = useState("");
+  const [activeTab, setActiveTab] = useState<MyWorkGroupKey>("all");
 
   const jobs = useApi(useCallback(() => jobsApi.myJobs(), []));
 
   const filtered = useMemo(() => {
     const all = jobs.data?.jobs ?? [];
-    if (!activeTab) return all;
-    if (activeTab === "active") return all.filter(j => ACTIVE_STATUSES.has(j.status));
-    return all.filter(j => j.status === activeTab);
+    if (activeTab === "all") return all;
+    return groupJobs(all)[activeTab];
   }, [jobs.data, activeTab]);
 
   const fmt = (d:string) => new Date(d).toLocaleDateString("en-IN",{ day:"numeric", month:"short" });

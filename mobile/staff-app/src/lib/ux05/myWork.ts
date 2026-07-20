@@ -12,6 +12,11 @@
 import type { Job } from "../api";
 import type { MyWorkGroup } from "../../types/ux05";
 
+/** MyWorkGroup plus the UI-only "all" (unfiltered) tab. groupJobs() itself
+ * never returns an "all" bucket -- callers handle that case separately
+ * (see JobsListScreen). */
+export type MyWorkGroupKey = MyWorkGroup | "all";
+
 const IN_PROGRESS = new Set([
   "on_the_way", "reached_site", "inspection_started", "inspection_done",
   "service_started", "work_done",

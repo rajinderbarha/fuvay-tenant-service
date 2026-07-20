@@ -7,6 +7,7 @@ import { JobStatusBadge } from "../components/JobStatusBadge";
 import { StatCard } from "../components/StatCard";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
+import { groupJobs } from "../lib/ux05/myWork";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 type Props = { navigation: NativeStackNavigationProp<never> };
@@ -17,11 +18,13 @@ type Props = { navigation: NativeStackNavigationProp<never> };
 // timer fields (ServiceJob has neither; those require a separate per-job
 // detail fetch that joins the booking). No per-item detail fetch is done
 // here to keep the home screen a single cheap list call.
-const ACTIVE_STATUSES = [
-  "accepted","on_the_way","reached_site","inspection_started",
-  "inspection_done","quote_required","service_started","work_done",
-];
-
+//
+// UX-05 Round 3: recomposed on top of the real, tested groupJobs()
+// (src/lib/ux05/myWork.ts) instead of this screen's own ad-hoc
+// ACTIVE_STATUSES filter -- "current" here is the same "current" group
+// My Work uses, so a technician sees the identical job as their active
+// job on both Home and My Work. "Jobs needing action" is a real group
+// (assigned/quote_required), not a fabricated one.
 export function HomeScreen({ navigation }: Props) {
   const { user } = useAuth();
   const jobs     = useApi(useCallback(() => jobsApi.myJobs(), []));
@@ -31,9 +34,12 @@ export function HomeScreen({ navigation }: Props) {
   const unreadCount = unread.data?.unread_count ?? 0;
 
   const allJobs  = jobs.data?.jobs ?? [];
-  const active   = allJobs.find(j => ACTIVE_STATUSES.includes(j.status));
-  const today    = allJobs.filter(j => new Date(j.created_at).toDateString() === new Date().toDateString());
-  const done     = today.filter(j => j.status === "completed").length;
+  const groups   = groupJobs(allJobs);
+  const active   = groups.current[0];
+  const today    = [...groups.today, ...groups.current];
+  const needsAction = groups.needs_action;
+  const done     = allJobs.filter(j => j.status === "completed" &&
+    new Date(j.updated_at).toDateString() === new Date().toDateString()).length;
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening";
 
   return (
@@ -95,27 +101,53 @@ export function HomeScreen({ navigation }: Props) {
         </View>
       )}
 
+      {/* Jobs needing action (real group -- assigned/quote_required) */}
+      {!jobs.loading && needsAction.length > 0 && (
+        <>
+          <Text style={[gs.label, { marginTop:8 }]}>Needs Your Action</Text>
+          {needsAction.map(j => (
+            <TouchableOpacity key={j.id} style={[gs.card, s.jobRow, s.needsActionCard]}
+              onPress={() => navigation.navigate("JobDetail" as never, { jobId:j.id } as never)}
+              activeOpacity={0.85}>
+              <View style={{ flex:1 }}>
+                <Text style={s.jobNumber}>{j.job_number}</Text>
+                <Text style={s.customer}>{j.status === "assigned" ? "Accept or reject" : "Quote required"}</Text>
+              </View>
+              <JobStatusBadge status={j.status} size="sm" />
+            </TouchableOpacity>
+          ))}
+        </>
+      )}
+
       {/* Upcoming jobs */}
-      <Text style={[gs.label, { marginTop:8 }]}>Upcoming Today</Text>
+      <Text style={[gs.label, { marginTop:8 }]}>Today's Schedule</Text>
       {jobs.loading ? (
         <>{[...Array(3)].map((_,i) => <Skeleton key={i} height={64} style={{ marginBottom:8 }} />)}</>
-      ) : today.filter(j => j.status === "assigned" || j.status === "accepted").map(j => (
+      ) : today.map(j => (
         <TouchableOpacity key={j.id} style={[gs.card, s.jobRow]}
           onPress={() => navigation.navigate("JobDetail" as never, { jobId:j.id } as never)}
           activeOpacity={0.85}>
           <View style={{ flex:1 }}>
             <Text style={s.jobNumber}>{j.job_number}</Text>
-            <Text style={s.customer}>{j.city ?? "—"}</Text>
+            <Text style={s.customer}>{j.city ?? "—"}{j.scheduled_time_window ? ` · ${j.scheduled_time_window}` : ""}</Text>
           </View>
           <JobStatusBadge status={j.status} size="sm" />
         </TouchableOpacity>
       ))}
 
-      {!jobs.loading && today.filter(j=>["assigned","accepted"].includes(j.status)).length===0 && (
+      {!jobs.loading && today.length===0 && (
         <View style={[gs.card, { alignItems:"center", paddingVertical:24 }]}>
           <Text style={s.noActiveSub}>No more jobs scheduled for today</Text>
         </View>
       )}
+
+      {/* Pending parts / checklist progress -- MOCK_DESIGN_ONLY: no live
+          per-job checklist/parts-summary endpoint exists yet (see
+          backend-contract-blockers.md). Shown as a disclosed placeholder
+          rather than a fabricated count. */}
+      <View style={[gs.card, s.mockRow]}>
+        <Text style={s.mockText}>Pending parts &amp; checklist progress: not yet available (no live summary endpoint).</Text>
+      </View>
     </ScrollView>
   );
 }
@@ -149,4 +181,7 @@ const s = StyleSheet.create({
   noActiveText: { fontSize:theme.font.size.lg, fontWeight:"600", color:theme.colors.textPrimary },
   noActiveSub:  { fontSize:theme.font.size.sm, color:theme.colors.textTertiary },
   jobRow:       { flexDirection:"row", alignItems:"center", gap:12 },
+  needsActionCard:{ borderLeftWidth:4, borderLeftColor:theme.colors.warning, paddingLeft:10 },
+  mockRow:      { paddingVertical:14 },
+  mockText:     { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, textAlign:"center" },
 });
