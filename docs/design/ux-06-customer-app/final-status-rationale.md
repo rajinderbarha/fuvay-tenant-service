@@ -1,6 +1,23 @@
-# Final Status Rationale — UX-06 Round 6 (current, supersedes Round 5's rationale)
+# Final Status Rationale — UX-06 FINAL (Recertification, supersedes Round 6)
 
-## Status: `CUSTOMER_APP_SOURCE_COMPLETE_BACKEND_INTEGRATION_BLOCKED`
+## Status: `CUSTOMER_APP_DESIGN_COMPLETE`
+
+The backend team closed the final gap (`mark_ready_for_confirmation()`/
+`build_booking_summary()` now accept the `"standard"` tier); the frontend's
+one missing piece (`/summary` call before `/confirm`) was found and fixed
+this round. All 11 required sequence steps — discovery through refresh
+persistence — are now genuinely proven live for `ac_repair`, the
+customer-catalog-visible offering, through actual production navigation.
+See final-recertification-complete.md for the complete itemized proof,
+screenshots, and the full completion-bar checklist (none relaxed).
+
+---
+
+*(Below: Round 6's rationale, superseded but kept for history — that status
+was correct at the time, given the real, narrower blocker that existed
+before this recertification.)*
+
+## Prior status (Round 6): `CUSTOMER_APP_SOURCE_COMPLETE_BACKEND_INTEGRATION_BLOCKED`
 
 Full justification in round-6-final-status.md; summary:
 

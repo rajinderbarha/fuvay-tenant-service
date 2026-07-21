@@ -1,8 +1,13 @@
-# Approval Gate — UX-06 Round 6
+# Approval Gate — UX-06 FINAL (Recertification, 2nd pass)
 
-**Status: `CUSTOMER_APP_SOURCE_COMPLETE_BACKEND_INTEGRATION_BLOCKED`.**
-Stopping here per instruction ("Do not begin UX-07 under any outcome.") —
-UX-07 was not started.
+**Status: `CUSTOMER_APP_DESIGN_COMPLETE`.** See
+final-recertification-complete.md for the full itemized proof of all 11
+required sequence steps, now genuinely real end-to-end for `ac_repair`.
+Stopping here — UX-07 was not started.
+
+---
+
+*(Below: the Round 6 gate, superseded by the above but kept for history.)*
 
 ## Gate checklist
 
