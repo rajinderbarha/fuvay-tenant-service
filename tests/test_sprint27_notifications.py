@@ -326,9 +326,19 @@ async def test_chat_thread_create(user_id, tenant_id):
 
 @pytest.mark.asyncio
 async def test_chat_thread_customer_cannot_access_other_customer(user_id, customer_id):
+    # PROTECTED_BY_LATER_SLICE: 2F-39A. validate_thread_access now raises
+    # ERR_CHAT_THREAD_NOT_FOUND (not ERR_CHAT_THREAD_ACCESS_DENIED) for a
+    # real-but-unauthorized thread -- a deliberate non-oracular fix (same
+    # error for "doesn't exist" and "exists but not yours", matching the
+    # Booking-series precedent used throughout this program) so an
+    # unauthorized caller cannot distinguish the two. This is a privacy
+    # improvement, not a regression: access is still correctly denied
+    # (ValueError is still raised) -- only the message changed.
+    # ERR_CHAT_THREAD_ACCESS_DENIED is kept as a constant for internal/log
+    # use only per chat_service.py's own comment.
     from app.engines.platform_notifications.chat_service import ChatThreadService
     from app.engines.platform_notifications.models import ChatThread
-    from app.engines.platform_notifications.constants import ERR_CHAT_THREAD_ACCESS_DENIED
+    from app.engines.platform_notifications.constants import ERR_CHAT_THREAD_NOT_FOUND
     svc = ChatThreadService()
     db = _db()
 
@@ -339,15 +349,17 @@ async def test_chat_thread_customer_cannot_access_other_customer(user_id, custom
     )
     thread.id = uuid.uuid4()
 
-    with pytest.raises(ValueError, match=ERR_CHAT_THREAD_ACCESS_DENIED):
+    with pytest.raises(ValueError, match=ERR_CHAT_THREAD_NOT_FOUND):
         await svc.validate_thread_access(db, thread, user_id, "customer", None)
 
 
 @pytest.mark.asyncio
 async def test_chat_thread_provider_cannot_access_other_tenant(user_id, tenant_id, other_tenant_id):
+    # PROTECTED_BY_LATER_SLICE: 2F-39A -- same non-oracular fix as
+    # test_chat_thread_customer_cannot_access_other_customer above.
     from app.engines.platform_notifications.chat_service import ChatThreadService
     from app.engines.platform_notifications.models import ChatThread
-    from app.engines.platform_notifications.constants import ERR_CHAT_THREAD_ACCESS_DENIED
+    from app.engines.platform_notifications.constants import ERR_CHAT_THREAD_NOT_FOUND
     svc = ChatThreadService()
     db = _db()
 
@@ -358,7 +370,7 @@ async def test_chat_thread_provider_cannot_access_other_tenant(user_id, tenant_i
     )
     thread.id = uuid.uuid4()
 
-    with pytest.raises(ValueError, match=ERR_CHAT_THREAD_ACCESS_DENIED):
+    with pytest.raises(ValueError, match=ERR_CHAT_THREAD_NOT_FOUND):
         await svc.validate_thread_access(db, thread, user_id, "provider", tenant_id)
 
 
