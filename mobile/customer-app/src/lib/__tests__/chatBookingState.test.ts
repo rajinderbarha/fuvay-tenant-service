@@ -90,3 +90,37 @@ describe("canonicalSlugsFor — enforces real backend slug/id, never a display l
     expect(slugs?.offeringSlug).not.toBe(OFFERING.name);
   });
 });
+
+// UX-06 Round 5: real bargain/price-tier state additions (see
+// bargain-contract-audit.md for why tier selection is mandatory
+// infrastructure, not optional haggling, for this pipeline).
+describe("chatBookingState — bargain-available / bargain-unavailable transitions (Round 5)", () => {
+  it("MATCH_AND_PRICE_UNAVAILABLE moves to an honest not_yet_bookable step (no internal error surfaced in state)", () => {
+    let state = initialChatBookingState();
+    state = chatBookingReducer(state, { type:"MATCH_AND_PRICE_RESULT", priceOptions: null });
+    state = chatBookingReducer(state, { type:"MATCH_AND_PRICE_UNAVAILABLE" });
+    expect(state.step).toBe("not_yet_bookable");
+  });
+
+  it("MATCH_AND_PRICE_RESULT stores real price options without advancing past tier selection", () => {
+    let state = initialChatBookingState();
+    state = chatBookingReducer(state, { type:"MATCH_AND_PRICE_RESULT", priceOptions: { low:100, mid:150, high:200 } });
+    expect(state.priceOptions).toEqual({ low:100, mid:150, high:200 });
+    expect(state.selectedTier).toBeNull();
+  });
+
+  it("TIER_SELECTED only ever stores a real backend tier value (low/mid/high), moves to bookable", () => {
+    let state = initialChatBookingState();
+    state = chatBookingReducer(state, { type:"TIER_SELECTED", tier:"mid" });
+    expect(state.selectedTier).toBe("mid");
+    expect(state.step).toBe("bookable");
+  });
+
+  it("RESET clears bargain/tier state along with everything else", () => {
+    let state = initialChatBookingState();
+    state = chatBookingReducer(state, { type:"TIER_SELECTED", tier:"low" });
+    state = chatBookingReducer(state, { type:"RESET" });
+    expect(state.selectedTier).toBeNull();
+    expect(state.priceOptions).toBeNull();
+  });
+});
