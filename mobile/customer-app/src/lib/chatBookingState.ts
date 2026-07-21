@@ -57,7 +57,18 @@ export interface ChatBookingState {
   // this step is mandatory infrastructure (provider matching), not optional
   // haggling.
   priceOptions: unknown | null;
-  selectedTier: "low" | "mid" | "high" | null;
+  selectedTier: "low" | "mid" | "high" | "standard" | null;
+  // UX-06 Recertification: real backend fix — match-and-price now always
+  // returns bargain_available:boolean. When false, standard_price is the
+  // real, server-derived price (from ServicePricingRule.base_price,
+  // fee-inclusive) to show and book at — never a client guess. Confirmed
+  // live for ac_repair: bargain_available:false, standard_price:775.0.
+  bargainAvailable: boolean | null;
+  standardPrice: number | null;
+  // ac_repair-specific real catalog quirk: 2 type-scoped ServicePricingRule
+  // rows with no global fallback mean offering_type_id must be set even
+  // though is_type_required:false is reported. Real IDs, not invented.
+  offeringTypeId: string | null;
   bookingNumber: string | null;
   jobNumber: string | null;
 }
@@ -73,11 +84,14 @@ export function initialChatBookingState(aiSessionId: string | null = null): Chat
     city: null,
     zipcode: null,
     brandId: null,
+    offeringTypeId: null,
     draft: null,
     serviceable: null,
     serviceabilityMessage: null,
     priceSnapshot: null,
     priceOptions: null,
+    bargainAvailable: null,
+    standardPrice: null,
     selectedTier: null,
     bookingNumber: null,
     jobNumber: null,
@@ -90,12 +104,13 @@ export type ChatBookingAction =
   | { type: "SET_ISSUE"; issueDescription: string }
   | { type: "SET_ADDRESS"; addressLine: string; city: string; zipcode?: string }
   | { type: "SET_BRAND"; brandId: string }
+  | { type: "SET_OFFERING_TYPE"; offeringTypeId: string }
   | { type: "DRAFT_STARTED"; draft: BookingDraft }
   | { type: "SERVICEABILITY_RESULT"; serviceable: boolean; message: string; draftStatus: string }
   | { type: "PRICE_RESULT"; priceSnapshot: BookingDraft["price_snapshot"] | null; draftStatus: string }
   | { type: "MATCH_AND_PRICE_UNAVAILABLE" }  // real 422 from the backend -- honest, not an error to hide
-  | { type: "MATCH_AND_PRICE_RESULT"; priceOptions: unknown }
-  | { type: "TIER_SELECTED"; tier: "low" | "mid" | "high" }
+  | { type: "MATCH_AND_PRICE_RESULT"; priceOptions: unknown; bargainAvailable: boolean; standardPrice: number | null }
+  | { type: "TIER_SELECTED"; tier: "low" | "mid" | "high" | "standard" }
   | { type: "REVIEWED" }
   | { type: "SUBMITTED"; bookingNumber: string; jobNumber?: string }
   | { type: "RESET"; aiSessionId?: string | null };
@@ -116,6 +131,8 @@ export function chatBookingReducer(state: ChatBookingState, action: ChatBookingA
       return { ...state, addressLine: action.addressLine, city: action.city, zipcode: action.zipcode ?? null, step: "address_collected" };
     case "SET_BRAND":
       return { ...state, brandId: action.brandId };
+    case "SET_OFFERING_TYPE":
+      return { ...state, offeringTypeId: action.offeringTypeId };
     case "DRAFT_STARTED":
       return { ...state, draft: action.draft };
     case "SERVICEABILITY_RESULT":
@@ -130,7 +147,12 @@ export function chatBookingReducer(state: ChatBookingState, action: ChatBookingA
     case "MATCH_AND_PRICE_UNAVAILABLE":
       return { ...state, step: "not_yet_bookable" };
     case "MATCH_AND_PRICE_RESULT":
-      return { ...state, priceOptions: action.priceOptions };
+      return {
+        ...state,
+        priceOptions: action.priceOptions,
+        bargainAvailable: action.bargainAvailable,
+        standardPrice: action.standardPrice,
+      };
     case "TIER_SELECTED":
       return { ...state, selectedTier: action.tier, step: "bookable" };
     case "REVIEWED":

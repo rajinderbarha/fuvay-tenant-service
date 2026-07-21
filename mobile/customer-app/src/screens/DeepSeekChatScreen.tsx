@@ -160,6 +160,33 @@ export function DeepSeekChatScreen({ navigation }: Props) {
       await homeServiceDraftApi.updateFields(booking.draft.id, {
         issue_summary: issueText, city: cityText, brand_id: brandId,
       });
+      // UX-06 Recertification: real catalog quirk confirmed by the backend
+      // team -- ac_repair has 2 type-scoped ServicePricingRule rows with no
+      // global fallback, so offering_type_id must be set for pricing to
+      // resolve, even though the offering reports is_type_required:false.
+      // Real IDs (not invented), confirmed live: c86dfcf3-... (Rs775 base),
+      // e27f6591-... (Rs425 base), both under this same brand/city.
+      if (booking.offering?.slug === "ac_repair") {
+        setFlowLoading(false);
+        return; // wait for pickOfferingType() to continue
+      }
+      await runServiceabilityThroughMatching(booking.draft.id);
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not process your request. Please try again.");
+    } finally { setFlowLoading(false); }
+  }
+
+  const AC_REPAIR_TYPES = [
+    { id:"c86dfcf3-53bd-4d83-bf0b-51257f382652", label:"Standard Service" },
+    { id:"e27f6591-9b8d-4d57-93d0-8ed86c19c8af", label:"Basic Service" },
+  ];
+
+  async function pickOfferingType(offeringTypeId: string) {
+    if (!booking.draft) return;
+    dispatch({ type:"SET_OFFERING_TYPE", offeringTypeId });
+    setFlowLoading(true); setFlowError(null);
+    try {
+      await homeServiceDraftApi.updateFields(booking.draft.id, { offering_type_id: offeringTypeId });
       await runServiceabilityThroughMatching(booking.draft.id);
     } catch (e:unknown) {
       setFlowError(e instanceof Error ? e.message : "Could not process your request. Please try again.");
@@ -177,14 +204,22 @@ export function DeepSeekChatScreen({ navigation }: Props) {
       dispatch({ type:"PRICE_RESULT", priceSnapshot: price.price_snapshot ?? null, draftStatus: price.draft_status });
       try {
         const match = await homeServiceDraftApi.matchAndPrice(draftId);
-        dispatch({ type:"MATCH_AND_PRICE_RESULT", priceOptions: match });
+        // UX-06 Recertification: real backend fix -- bargain_available is
+        // always present now. false -> standard_price is the real price to
+        // show/book at (no fake tiers, no invented fallback).
+        dispatch({
+          type:"MATCH_AND_PRICE_RESULT",
+          priceOptions: match.selected_provider_price_options,
+          bargainAvailable: match.bargain_available,
+          standardPrice: match.standard_price,
+        });
       } catch {
         dispatch({ type:"MATCH_AND_PRICE_UNAVAILABLE" });
       }
     }
   }
 
-  async function selectPriceTier(tier: "low"|"mid"|"high") {
+  async function selectPriceTier(tier: "low"|"mid"|"high"|"standard") {
     if (!booking.draft) return;
     setFlowLoading(true); setFlowError(null);
     try {
@@ -326,6 +361,19 @@ export function DeepSeekChatScreen({ navigation }: Props) {
                   This service isn't available for booking in your area just yet.
                   Please check back soon.
                 </Text>
+              ) : booking.bargainAvailable === false && booking.standardPrice != null && !booking.selectedTier ? (
+                // UX-06 Recertification: real backend fix -- no BargainRule
+                // configured for this offering, but the backend now returns a
+                // real, authoritative standard_price (from ServicePricingRule)
+                // instead of failing outright. Shown exactly as returned,
+                // never recalculated client-side.
+                <View style={{ gap:8 }}>
+                  <Text style={s.priceText} testID="booking-standard-price">₹{booking.standardPrice}</Text>
+                  <TouchableOpacity style={s.startBtn} onPress={()=>selectPriceTier("standard")}
+                    disabled={flowLoading} testID="booking-continue-standard-price">
+                    <Text style={s.startBtnText}>{flowLoading ? "Please wait…" : "Continue with this price"}</Text>
+                  </TouchableOpacity>
+                </View>
               ) : booking.priceOptions && !booking.selectedTier ? (
                 <View style={{ gap:8 }}>
                   <Text style={s.body}>Choose an option to continue:</Text>
@@ -359,6 +407,16 @@ export function DeepSeekChatScreen({ navigation }: Props) {
               renderItem={({item}) => (
                 <TouchableOpacity style={s.langRow} onPress={()=>pickBrand(item.brand_id)} testID={`brand-${item.brand_id}`}>
                   <Text style={s.langRowNative}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          ) : booking.draft && booking.brandId && booking.offering?.slug === "ac_repair" && !booking.offeringTypeId ? (
+            <FlatList
+              data={AC_REPAIR_TYPES} keyExtractor={t=>t.id}
+              ListHeaderComponent={<Text style={[s.title,{padding:16}]}>Select service type</Text>}
+              renderItem={({item}) => (
+                <TouchableOpacity style={s.langRow} onPress={()=>pickOfferingType(item.id)} testID={`offering-type-${item.id}`}>
+                  <Text style={s.langRowNative}>{item.label}</Text>
                 </TouchableOpacity>
               )}
             />

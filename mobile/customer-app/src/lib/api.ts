@@ -416,9 +416,27 @@ export const homeServiceDraftApi = {
   priceEstimate: (draftId: string) =>
     apiFetch<{ price_snapshot: BookingDraft["price_snapshot"]; draft_status: string }>(
       `/v1/customer/home-services/booking-drafts/${draftId}/price-estimate`, { method: "POST" }),
+  // UX-06 Recertification: backend fix (deployed live, verified this round)
+  // — match-and-price now ALWAYS returns a real `bargain_available: boolean`.
+  // true -> selected_provider_price_options has real low/mid/high tiers
+  // (ac_installation's existing behavior, unchanged). false -> standard_price
+  // is the real, server-derived price to show and book at;
+  // selected_provider_price_options is null. Confirmed live for ac_repair:
+  // bargain_available:false, standard_price:775.0, matching the real
+  // ServicePricingRule row exactly. Never a client-side fallback value.
   matchAndPrice: (draftId: string) =>
-    apiFetch<unknown>(`/v1/customer/home-services/booking-drafts/${draftId}/match-and-price`, { method: "POST" }),
-  confirmPriceChoice: (draftId: string, tier: "low"|"mid"|"high") =>
+    apiFetch<{
+      selected_provider?: { provider_name?:string; rating?:number|null; customer_visible_reason?:string };
+      bargain_available: boolean;
+      selected_provider_price_options: { low_price:number; mid_price:number; high_price:number; currency?:string } | null;
+      standard_price: number | null;
+      area_market_comparison?: unknown;
+      draft_status: string;
+    }>(`/v1/customer/home-services/booking-drafts/${draftId}/match-and-price`, { method: "POST" }),
+  // "standard" is only valid when bargain_available is false (real backend
+  // validation) — stores the real server standard_price as customer_offer,
+  // never a client-supplied amount.
+  confirmPriceChoice: (draftId: string, tier: "low"|"mid"|"high"|"standard") =>
     apiFetch<unknown>(`/v1/customer/home-services/booking-drafts/${draftId}/confirm-price-choice`, {
       method: "POST", body: JSON.stringify({ price_tier: tier }),
     }),
