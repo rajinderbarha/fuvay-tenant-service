@@ -451,10 +451,18 @@ class PricingService:
         await self._invalidate_tenant_cache(str(rule.tenant_id))
         return self._rule_dict(rule)
 
-    async def activate_rule(self, rule_id: uuid.UUID) -> dict:
+    async def activate_rule(self, rule_id: uuid.UUID, tenant_id: uuid.UUID | None = None) -> dict:
+        # Slice 2F-39A2R fix: previously had zero tenant scoping at all --
+        # rule_id alone determined the target, so any tenant-permitted
+        # caller could activate another tenant's pricing rule. Now matches
+        # update_rule/delete_rule's established ownership-check pattern.
+        if tenant_id is not None:
+            tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(DynamicPricingRule).where(DynamicPricingRule.id == rule_id))
         rule = r.scalar_one_or_none()
         if not rule: raise NotFoundException("DynamicPricingRule", str(rule_id))
+        if tenant_id is not None and rule.tenant_id != tenant_id:
+            raise NotFoundException("DynamicPricingRule", str(rule_id))
         if rule.is_active: raise ServiceOSException("CONFLICT", "Rule is already active.")
         rule.is_active = True
         await self._invalidate_tenant_cache(str(rule.tenant_id))
@@ -462,10 +470,15 @@ class PricingService:
                             {"rule_name": rule.rule_name})
         return self._rule_dict(rule)
 
-    async def deactivate_rule(self, rule_id: uuid.UUID) -> dict:
+    async def deactivate_rule(self, rule_id: uuid.UUID, tenant_id: uuid.UUID | None = None) -> dict:
+        # Slice 2F-39A2R fix: same zero-tenant-scoping gap as activate_rule.
+        if tenant_id is not None:
+            tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(DynamicPricingRule).where(DynamicPricingRule.id == rule_id))
         rule = r.scalar_one_or_none()
         if not rule: raise NotFoundException("DynamicPricingRule", str(rule_id))
+        if tenant_id is not None and rule.tenant_id != tenant_id:
+            raise NotFoundException("DynamicPricingRule", str(rule_id))
         rule.is_active = False
         await self._invalidate_tenant_cache(str(rule.tenant_id))
         return self._rule_dict(rule)

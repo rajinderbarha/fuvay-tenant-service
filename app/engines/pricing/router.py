@@ -231,17 +231,20 @@ async def update_rule(tenant_id: uuid.UUID, rule_id: uuid.UUID, body: DynamicRul
 @router.post("/tenants/{tenant_id}/rules/{rule_id}/activate",
              summary="Activate a dynamic pricing rule", response_model=ApiResponse[dict])
 async def activate_rule(tenant_id: uuid.UUID, rule_id: uuid.UUID, r: Request,
-                         u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                         u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                          s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.activate_rule(rule_id)
+    # Slice 2F-39A2R fix: was require_permission (read-only-scope
+    # bypassable) with zero tenant_id passed to the service at all.
+    data = await s.activate_rule(rule_id, tenant_id=tenant_id)
     return ok(data, _req_id(r), ENGINE_ID)
 
 @router.post("/tenants/{tenant_id}/rules/{rule_id}/deactivate",
              summary="Deactivate a rule", response_model=ApiResponse[dict])
 async def deactivate_rule(tenant_id: uuid.UUID, rule_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                           u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                            s: PricingService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.deactivate_rule(rule_id)
+    # Slice 2F-39A2R fix: same as activate_rule above.
+    data = await s.deactivate_rule(rule_id, tenant_id=tenant_id)
     return ok(data, _req_id(r), ENGINE_ID)
 
 @router.delete("/tenants/{tenant_id}/rules/{rule_id}",
