@@ -53,6 +53,53 @@ use of this round's time budget (proving genuine cross-app data continuity)
 over re-proving individual apps' own UI wiring, which prior UX phases
 already established.
 
-## Final commit
+## Final commit (Round 1)
 
-See `final-status-rationale.md` and the session's closing commit hash.
+See `final-status-rationale.md` and commit `0f35afa`.
+
+## Round 2 (this update)
+
+Status: `UX07_INTEGRATION_PARTIAL` (see `round-2-status-rationale.md`).
+
+1. **Baseline revalidated**: HEAD `0f35afa`, ancestry, Round 1 booking
+   (`BK-20260721-000008`, still `accepted`), and `chatLanguages.ts`'s
+   narrowing all re-confirmed intact before any new work.
+2. **WSL install + typecheck + test baseline established** for all 4
+   relevant app groups (customer-app, staff-app, tenant-portal,
+   super-admin) — real results in `typecheck-build-test-baseline.md`.
+   Surfaced and fixed 1 real dependency-declaration defect
+   (`@testing-library/dom` missing from tenant-portal's `package.json`)
+   and precisely diagnosed 1 more (a React version-pin mismatch between
+   tenant-portal and super-admin), deliberately left unfixed with full
+   reasoning.
+3. **Super Admin access resolved**: `SUPER_ADMIN_ACCESS_VERIFIED` using
+   `admin@serviceos.local` from the repo's own `scripts/seed_demo_users.py`
+   — see `super-admin-access-investigation.md`.
+4. **Role-boundary verification** done via real API calls: customer/
+   tenant_owner/technician all correctly rejected (`403`) from
+   `/v1/admin/*`; 1 real backend authorization defect found (`500` instead
+   of `403` for a customer token on a provider-scoped endpoint); 1
+   ambiguous finding disclosed, not resolved.
+5. **Tenant onboarding**: real route/endpoint source map produced; a real
+   live snapshot of the demo tenant's onboarding-status/package-summary
+   taken and honestly interpreted (inconsistent with its real operational
+   state, most likely due to direct seeding rather than the real
+   registration pipeline — not confirmed as a live bug).
+6. **Catalog/pricing continuity**: both the standard-price (`ac_repair`)
+   and bargain-enabled (`ac_installation`) paths reconfirmed live this
+   round with real IDs, cross-referenced in `catalog-entity-continuity.csv`
+   and `pricing-continuity.md`.
+7. **offering_type_id defect fully root-caused**: `master_services.
+   is_type_required = False` for `ac_repair` despite its pricing rules
+   being 100% type-scoped — a real catalog-data inconsistency. Full
+   investigation in `offering-type-contract-defect.md`; ready backend
+   ticket in `backend-remediation-ticket-offering-type.md`; NOT
+   implemented (out of scope).
+8. **Non-change audit**: exactly 1 code file changed
+   (`frontend/tenant-portal/package.json`, 1 line) — zero backend files,
+   zero other-app files. See `backend-non-change-report.md`.
+
+## Final commit (Round 2)
+
+See `round-2-status-rationale.md` and the commit hash reported at the end
+of this round's session.

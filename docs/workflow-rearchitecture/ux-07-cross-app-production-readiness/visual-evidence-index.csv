@@ -1,2 +1,3 @@
-evidence_type,status,reason
-screenshots,not_captured_this_round,"No Playwright/Expo-web browser session was run this round -- all evidence is real curl request/response JSON captured in live-e2e-evidence.md and real-record-evidence.csv, not screenshots. Deferred to a later round alongside the Playwright work in playwright-report.md."
+evidence_type,status,reason,round
+screenshots,not_captured_this_round,"No Playwright/Expo-web browser session was run this round -- all evidence is real curl request/response JSON captured in live-e2e-evidence.md and real-record-evidence.csv, not screenshots. Deferred to a later round alongside the Playwright work in playwright-report.md.",1
+screenshots,not_captured_this_round,"Same as Round 1 -- no browser session run in Round 2 either (see playwright-baseline.md). All Round 2 evidence is API-level curl/JSON, not screenshots.",2

@@ -19,3 +19,29 @@ No use of the read-only `G:\serviceos` main tree beyond `grep`/`Read`
 (verifying the UX-06 `bargain_available` fix is still live and querying the
 `service_pricing_rules`/`service_types` tables directly via a local Python
 script for the E2E proof's diagnosis step) — no writes were made there.
+
+## Round 2
+
+`git status --short` and `git diff --stat 0f35afa..HEAD` at end of Round 2
+show exactly:
+
+- 1 modified code file: `frontend/tenant-portal/package.json` (the
+  `@testing-library/dom` addition — see `frontend-corrections-report.md`).
+- All other changes are new or appended documentation files under
+  `docs/workflow-rearchitecture/ux-07-cross-app-production-readiness/`.
+
+Zero `app/` (backend) files touched in Round 2. Zero
+`frontend/super-admin`, `mobile/staff-app`, or `mobile/customer-app` files
+touched in Round 2. Specifically re-confirmed unchanged this round:
+role registry, permission registry, `scripts/seed_demo_users.py` (read
+only, not edited), migration 144, UX-04/05/06 completion evidence docs,
+booking pipeline semantics, on-site payment policy (re-verified live via
+the pricing-continuity checks — `payment_mode:"customer_pays_provider_directly"`
+still the only value ever returned), customer cancellation/rescheduling
+(not touched or newly exercised), Booking Exception Resolution (not
+touched), N01 media behavior (not touched).
+
+Read-only DB queries this round used the Windows-host Python `asyncpg`
+directly against `localhost:5432` (same DB the running backend uses) —
+purely `SELECT` statements, no writes, confirmed by inspecting each query
+before running it.
