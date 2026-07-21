@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { useAuth }      from "../context/AuthContext";
 import { useApi }       from "../hooks/useApi";
-import { bookingsApi, jobsApi } from "../lib/api";
+import { bookingsApi, fieldOpsJobsApi } from "../lib/api";
 import { isActive }     from "../lib/jobStatus";
 import { BookingCard }  from "../components/BookingCard";
 import { Skeleton }     from "../components/Skeleton";
@@ -50,12 +50,17 @@ export default function HomeScreen({ navigation }: Props) {
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
   const recentBookings = useApi(useCallback(() =>
-    bookingsApi.list({ limit: "3" }), []));
+    bookingsApi.list(), []));
   const activeJob = useApi(useCallback(() =>
-    jobsApi.list({ status: "active", limit: "1" }), []));
+    fieldOpsJobsApi.list(1), []));
 
   function openCategory(catId: string) {
-    navigation.navigate("SmartBot" as never, { categoryId: catId } as never);
+    // UX-06 Round 5: "SmartBot" was a deleted, dead-API-calling legacy screen
+    // -- category selection now routes to the real, live DeepSeekChatScreen
+    // (the "AI Assistant" tab), which has its own real category/offering
+    // booking flow. catId isn't passed through yet (the tab route doesn't
+    // accept params today) -- a real, documented gap, not silently dropped.
+    (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"AIAssistant" });
   }
 
   const jobs = (activeJob.data as any)?.jobs ?? [];
@@ -86,8 +91,7 @@ export default function HomeScreen({ navigation }: Props) {
         {hasActive && (
           <TouchableOpacity
             style={s.activeBanner}
-            onPress={() => navigation.navigate("JobTracking" as never,
-              { jobId: jobs[0]?.id } as never)}
+            onPress={() => (navigation.navigate as (...args: unknown[]) => void)("JobTracking", { jobId: jobs[0]?.id })}
             activeOpacity={0.88}>
             <View style={s.activeDot}/>
             <View style={{ flex:1 }}>
@@ -140,7 +144,7 @@ export default function HomeScreen({ navigation }: Props) {
 
         {recentBookings.loading
           ? [1,2].map(i => <Skeleton key={i} height={80} style={{ marginBottom:10, borderRadius:14 }}/>)
-          : (recentBookings.data as any)?.bookings?.length === 0
+          : (recentBookings.data as any)?.items?.length === 0
           ? (
             <View style={s.emptyBookings}>
               <Text style={{ fontSize:32, marginBottom:8 }}>📋</Text>
@@ -148,11 +152,10 @@ export default function HomeScreen({ navigation }: Props) {
               <Text style={s.emptySubText}>Tap a category above to get started</Text>
             </View>
           )
-          : (recentBookings.data as any)?.bookings?.slice(0,3).map((b: any) => (
+          : (recentBookings.data as any)?.items?.slice(0,3).map((b: any) => (
             <BookingCard
               key={b.id} booking={b}
-              onPress={() => navigation.navigate("BookingDetail" as never,
-                { bookingId: b.id } as never)}
+              onPress={() => (navigation.navigate as (...args: unknown[]) => void)("BookingDetail", { bookingId: b.id })}
             />
           ))
         }

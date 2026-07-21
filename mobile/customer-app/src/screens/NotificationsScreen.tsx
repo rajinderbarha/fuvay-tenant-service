@@ -18,23 +18,27 @@ const TYPE_COLOR: Record<string,string> = {
 };
 
 export function NotificationsScreen() {
-  const notifs     = useApi(useCallback(() => notificationsApi.list(50), []));
-  const markRead   = useAction(useCallback((id:string) => notificationsApi.markRead(id), []));
-  const markAll    = useAction(useCallback(() => notificationsApi.markAllRead(), []));
+  // UX-06 Round 5: fixed to the real api.ts shape ({items,total}, not
+  // {notifications,unread_count}) and the real separate unread-count
+  // endpoint (GET /v1/customer/notifications/unread-count).
+  const notifs      = useApi(useCallback(() => notificationsApi.list(50), []));
+  const unreadCount = useApi(useCallback(() => notificationsApi.unreadCount(), []));
+  const markRead    = useAction(useCallback((id:string) => notificationsApi.markRead(id), []));
+  const markAll     = useAction(useCallback(() => notificationsApi.markAllRead(), []));
 
   async function handleMarkRead(n: AppNotification) {
     if (n.is_read) return;
     await markRead.execute(n.id);
-    notifs.refetch();
+    notifs.refetch(); unreadCount.refetch();
   }
 
   async function handleMarkAll() {
     await markAll.execute();
-    notifs.refetch();
+    notifs.refetch(); unreadCount.refetch();
   }
 
-  const data    = notifs.data?.notifications ?? [];
-  const unread  = notifs.data?.unread_count ?? 0;
+  const data    = notifs.data?.items ?? [];
+  const unread  = unreadCount.data?.count ?? 0;
   const fmtTime = (d:string) => {
     const ms = Date.now() - new Date(d).getTime();
     if (ms < 60000)   return "Just now";

@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useApi } from "../hooks/useApi";
-import { jobsApi, type Job } from "../lib/api";
+import { fieldOpsJobsApi, type FieldOpsJob } from "../lib/api";
 import { JobStatusBadge } from "../components/JobStatusBadge";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
@@ -13,32 +13,34 @@ const SERVICE_FILTERS = ["All","AC Service","Plumbing","Electrical","Cleaning","
 
 export function ServiceHistoryScreen({ navigation }: Props) {
   const [filter, setFilter] = useState("All");
-  const jobs = useApi(useCallback(() => jobsApi.myJobs({ status:"completed", limit:"50" }), []));
+  const jobs = useApi(useCallback(() => fieldOpsJobsApi.list(50), []));
 
-  const filtered = (jobs.data?.jobs ?? []).filter(j =>
-    filter === "All" || j.service_type.toLowerCase().includes(filter.toLowerCase())
+  const allJobs = (jobs.data?.jobs ?? []).filter(j => j.status === "completed" || j.status === "closed");
+  const filtered = allJobs.filter(j =>
+    filter === "All" || (j.service_category ?? "").toLowerCase().includes(filter.toLowerCase())
   );
 
-  const totalSpend = (jobs.data?.jobs ?? []).reduce((s,j) => s + (j.job_value??0), 0);
+  const totalSpend = allJobs.reduce((s,j) => s + (j.estimated_price ?? 0), 0);
   const fmtMoney = (n:number) => `₹${n.toLocaleString("en-IN")}`;
   const fmtDate  = (d:string) => new Date(d).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
 
-  function renderJob({ item:j, index:i }: { item:Job; index:number }) {
+  function renderJob({ item:j }: { item:FieldOpsJob }) {
+    const d = j.created_at ? new Date(j.created_at) : null;
     return (
       <TouchableOpacity style={s.jobRow} activeOpacity={0.85}
-        onPress={()=>navigation.navigate("BookingDetail" as never,{bookingId:j.id} as never)}>
+        onPress={()=>(navigation.navigate as (...args: unknown[]) => void)("BookingDetail",{bookingId:j.job_id})}>
         <View style={s.dateCol}>
-          <Text style={s.dateDay}>{new Date(j.created_at).getDate()}</Text>
-          <Text style={s.dateMon}>{new Date(j.created_at).toLocaleString("en-IN",{month:"short"})}</Text>
+          <Text style={s.dateDay}>{d ? d.getDate() : "—"}</Text>
+          <Text style={s.dateMon}>{d ? d.toLocaleString("en-IN",{month:"short"}) : ""}</Text>
         </View>
         <View style={{flex:1}}>
-          <Text style={s.serviceType}>{j.service_type}</Text>
-          <Text style={s.meta}>{j.city}{j.assigned_staff?` · ${j.assigned_staff}`:""}</Text>
+          <Text style={s.serviceType}>{j.title ?? j.service_category ?? "Service"}</Text>
+          <Text style={s.meta}>{j.city ?? ""}</Text>
         </View>
         <View style={{alignItems:"flex-end",gap:5}}>
           <JobStatusBadge status={j.status} size="sm"/>
-          {j.job_value != null && (
-            <Text style={s.value}>{fmtMoney(j.job_value)}</Text>
+          {j.estimated_price != null && (
+            <Text style={s.value}>{fmtMoney(j.estimated_price)}</Text>
           )}
         </View>
       </TouchableOpacity>
@@ -50,7 +52,7 @@ export function ServiceHistoryScreen({ navigation }: Props) {
       {/* Summary banner */}
       <View style={s.banner}>
         <View style={s.bannerStat}>
-          <Text style={s.bannerVal}>{jobs.data?.total ?? "—"}</Text>
+          <Text style={s.bannerVal}>{allJobs.length}</Text>
           <Text style={s.bannerLabel}>Services</Text>
         </View>
         <View style={s.bannerDivider}/>
@@ -60,7 +62,7 @@ export function ServiceHistoryScreen({ navigation }: Props) {
         </View>
         <View style={s.bannerDivider}/>
         <View style={s.bannerStat}>
-          <Text style={s.bannerVal}>{new Set((jobs.data?.jobs??[]).map(j=>j.service_type)).size}</Text>
+          <Text style={s.bannerVal}>{new Set(allJobs.map(j=>j.service_category)).size}</Text>
           <Text style={s.bannerLabel}>Service Types</Text>
         </View>
       </View>
@@ -91,7 +93,7 @@ export function ServiceHistoryScreen({ navigation }: Props) {
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={j=>j.id}
+          keyExtractor={j=>j.job_id}
           renderItem={renderJob}
           onRefresh={jobs.refetch}
           refreshing={jobs.loading}

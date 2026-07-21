@@ -1,0 +1,4 @@
+step,result
+before,"no BargainRule exists for master_service_id=a96e625a-60e1-46c0-bde4-ccbb88da50a2 (ac_repair); match-and-price returns 422 PRICE_OPTIONS_UNAVAILABLE"
+action_taken,"NONE -- creation blocked per bargain-configuration-safety.md (5 of 9 required safety conditions fail; no tenant scoping exists on the model, no safe create API exists)"
+after,"unchanged -- match-and-price still returns 422 PRICE_OPTIONS_UNAVAILABLE for ac_repair; verified identical to before"

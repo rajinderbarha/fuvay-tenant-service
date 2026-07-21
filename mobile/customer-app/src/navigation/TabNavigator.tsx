@@ -1,14 +1,29 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { HomeScreen }         from "../screens/HomeScreen";
+// UX-06 Round 3 fix: HomeScreen.tsx uses `export default`, not a named export
+// -- this was a pre-existing runtime-breaking bug (React Navigation received
+// `undefined` for the Home tab's component), discovered via a real Playwright
+// browser run against Expo web this round.
+import HomeScreen              from "../screens/HomeScreen";
 import { BookingsListScreen } from "../screens/BookingsListScreen";
-import { AIChatScreen }       from "../screens/AIChatScreen";
+import { DeepSeekChatScreen } from "../screens/DeepSeekChatScreen";
 import { ChatScreen }         from "../screens/ChatScreen";
 import { ProfileScreen }      from "../screens/ProfileScreen";
 import { theme } from "../styles/theme";
 
-const Tab = createBottomTabNavigator();
+// UX-06 Round 5: real typed tab param list (HomeScreen/ProfileScreen declare
+// NativeStackScreenProps<{Home:undefined}>/<{Profile:undefined}> themselves —
+// this matches that, resolving the last Pattern F typecheck errors).
+export type TabParamList = {
+  Home: undefined;
+  Bookings: undefined;
+  AIAssistant: undefined;
+  Chat: undefined;
+  Profile: undefined;
+};
+
+const Tab = createBottomTabNavigator<TabParamList>();
 
 function TabIcon({ icon, label, focused }:{ icon:string; label:string; focused:boolean }) {
   return (
@@ -34,7 +49,11 @@ export function TabNavigator() {
         options={{ title:"Home",    tabBarIcon:({focused})=><TabIcon icon="🏠" label="Home"    focused={focused}/> }}/>
       <Tab.Screen name="Bookings" component={BookingsListScreen}
         options={{ title:"My Bookings", tabBarIcon:({focused})=><TabIcon icon="📋" label="Bookings" focused={focused}/> }}/>
-      <Tab.Screen name="AIAssistant" component={AIChatScreen}
+      {/* UX-06 Round 3: wired to the real, live-confirmed DeepSeek chat screen
+          (see docs/design/ux-06-customer-app/deepseek-conversation-contract.md).
+          The prior AIChatScreen was a legacy scaffold screen with no confirmed
+          real backend contract behind it. */}
+      <Tab.Screen name="AIAssistant" component={DeepSeekChatScreen}
         options={{ title:"AI Assistant", tabBarIcon:({focused})=><TabIcon icon="🤖" label="AI Chat"  focused={focused}/> }}/>
       <Tab.Screen name="Chat"     component={ChatScreen}
         options={{ title:"Messages", tabBarIcon:({focused})=><TabIcon icon="💬" label="Chat"    focused={focused}/> }}/>

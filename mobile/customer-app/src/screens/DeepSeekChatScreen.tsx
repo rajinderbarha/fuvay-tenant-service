@@ -1,0 +1,521 @@
+import React, { useCallback, useReducer, useState } from "react";
+import {
+  FlatList, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text,
+  TextInput, TouchableOpacity, View,
+} from "react-native";
+import {
+  aiConversationApi, catalogApi, homeServiceDraftApi, bookingConfirmApi,
+  type AISession, type ServiceCategory, type ServiceOffering,
+} from "../lib/api";
+import {
+  chatBookingReducer, initialChatBookingState, canonicalSlugsFor,
+} from "../lib/chatBookingState";
+import { CHAT_LANGUAGES, searchChatLanguages, type ChatLanguageOption } from "../lib/chatLanguages";
+import { theme } from "../styles/theme";
+
+/**
+ * UX-06 Round 3 — real DeepSeek chat + the real, canonical booking journey
+ * wired underneath it.
+ *
+ * Contract layer (see docs/design/ux-06-customer-app/deepseek-conversation-contract.md
+ * for the full two-layer framing agreed with the coordinator):
+ *   VERIFIED LIVE: customer login, chat-session creation, the backend AI-chat
+ *   endpoint, service-category/offering tool calls, the structured response
+ *   contract, graceful model-provider degradation.
+ *   NOT YET VERIFIED: an actual DeepSeek model response using a real
+ *   (non-placeholder) API key, reliable adherence to the customer-selected
+ *   conversation language, language switching mid-conversation, and
+ *   preservation of structured booking state after a language switch.
+ *
+ * Why the booking flow below is a structured picker UI, not text parsed out of
+ * DeepSeek's reply: the /messages endpoint only returns `tools_called` (tool
+ * NAMES) and a synthesized `reply` string — never the tools' raw JSON results.
+ * Parsing IDs out of free text (which may itself be in a non-English selected
+ * language) would violate "never let a translated label become a query value."
+ * Instead, "Book a service" opens a REAL structured flow: catalogApi.categories()
+ * -> catalogApi.categoryOfferings(slug) -> homeServiceDraftApi.start/updateFields/
+ * serviceabilityCheck/priceEstimate/summary -> bookingConfirmApi.confirmHomeServiceBooking
+ * (idempotent via a real Idempotency-Key header). Every ID sent onward comes
+ * directly from a typed API response (see chatBookingState.ts) — never from a
+ * chat bubble's display text.
+ */
+type Msg = { id:string; role:"user"|"assistant"; content:string };
+
+interface Props {
+  navigation?: { navigate: (screen: string, params?: unknown) => void };
+}
+
+export function DeepSeekChatScreen({ navigation }: Props) {
+  const [session, setSession]   = useState<AISession | null>(null);
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [input, setInput]       = useState("");
+  const [sending, setSending]   = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError]       = useState<string|null>(null);
+  const [language, setLanguage] = useState<ChatLanguageOption>(CHAT_LANGUAGES[0]);
+  const [langModal, setLangModal] = useState(false);
+  const [langQuery, setLangQuery] = useState("");
+
+  const [booking, dispatch] = useReducer(chatBookingReducer, initialChatBookingState());
+  const [flowOpen, setFlowOpen]   = useState(false);
+  const [categories, setCategories] = useState<ServiceCategory[]>([]);
+  const [offerings, setOfferings]   = useState<ServiceOffering[]>([]);
+  const [flowLoading, setFlowLoading] = useState(false);
+  const [flowError, setFlowError]     = useState<string|null>(null);
+  const [issueText, setIssueText]     = useState("");
+  const [addressText, setAddressText] = useState("");
+  const [cityText, setCityText]       = useState("");
+  const [brands, setBrands]           = useState<{ brand_id:string; name:string }[]>([]);
+
+  const startSession = useCallback(async () => {
+    setStarting(true); setError(null);
+    try {
+      const s = await aiConversationApi.createSession();
+      setSession(s);
+      setMessages([]);
+    } catch (e:unknown) {
+      setError(e instanceof Error ? e.message : "Could not start a conversation. Please try again.");
+    } finally { setStarting(false); }
+  }, []);
+
+  // Every outgoing message goes through withLanguageInstruction inside
+  // aiConversationApi.sendMessage — verified by a real unit test
+  // (src/lib/__tests__/api.test.ts) that `language` is always passed through,
+  // never sent without it once a non-English language is selected.
+  async function send() {
+    const text = input.trim();
+    if (!text || !session || sending) return;
+    setInput("");
+    setMessages(m => [...m, { id:`u${m.length}`, role:"user", content:text }]);
+    setSending(true); setError(null);
+    try {
+      const res = await aiConversationApi.sendMessage(session.id, text, language);
+      setMessages(m => [...m, { id:`a${m.length}`, role:"assistant", content:res.reply }]);
+      setSession(res.session);
+    } catch (e:unknown) {
+      setError(e instanceof Error ? e.message : "Message failed to send. Please try again.");
+    } finally { setSending(false); }
+  }
+
+  async function openBookingFlow() {
+    setFlowOpen(true); setFlowLoading(true); setFlowError(null);
+    dispatch({ type:"RESET", aiSessionId: session?.id ?? null });
+    try {
+      const res = await catalogApi.categories();
+      setCategories(res.items);
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not load services.");
+    } finally { setFlowLoading(false); }
+  }
+
+  async function pickCategory(cat: ServiceCategory) {
+    dispatch({ type:"SELECT_CATEGORY", category: cat });
+    setFlowLoading(true); setFlowError(null);
+    try {
+      const res = await catalogApi.categoryOfferings(cat.slug);
+      setOfferings(res.items);
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not load offerings for this category.");
+    } finally { setFlowLoading(false); }
+  }
+
+  function pickOffering(off: ServiceOffering) {
+    dispatch({ type:"SELECT_OFFERING", offering: off });
+  }
+
+  async function submitIssueAndAddress() {
+    const slugs = canonicalSlugsFor(booking);
+    if (!slugs) return;
+    setFlowLoading(true); setFlowError(null);
+    try {
+      const draft = await homeServiceDraftApi.start(slugs.categorySlug, slugs.offeringSlug, session?.id);
+      dispatch({ type:"DRAFT_STARTED", draft });
+      dispatch({ type:"SET_ISSUE", issueDescription: issueText });
+      dispatch({ type:"SET_ADDRESS", addressLine: addressText, city: cityText });
+      // UX-06 Round 5 correction: real draft fields are `issue_summary`/
+      // `issue_details` and a UUID `brand_id` -- NOT `issue_description`/
+      // `address_line` (those were silently ignored by the real backend,
+      // which only merges recognized keys — see bargain-contract-audit.md).
+      // Brand is required for offerings with is_brand_required=true (real
+      // for ac_repair) — fetched here using the draft's real MasterService
+      // offering_id, then the customer must pick one before continuing.
+      const brandRes = await catalogApi.brandsForService(draft.offering_id ?? "");
+      setBrands(brandRes.brands);
+      if (brandRes.brands.length > 0) {
+        setFlowLoading(false);
+        return; // wait for pickBrand() to continue the sequence
+      }
+      await homeServiceDraftApi.updateFields(draft.id, { issue_summary: issueText, city: cityText });
+      await runServiceabilityThroughMatching(draft.id);
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not process your request. Please try again.");
+    } finally { setFlowLoading(false); }
+  }
+
+  async function pickBrand(brandId: string) {
+    if (!booking.draft) return;
+    dispatch({ type:"SET_BRAND", brandId });
+    setFlowLoading(true); setFlowError(null);
+    try {
+      await homeServiceDraftApi.updateFields(booking.draft.id, {
+        issue_summary: issueText, city: cityText, brand_id: brandId,
+      });
+      // UX-06 Recertification: real catalog quirk confirmed by the backend
+      // team -- ac_repair has 2 type-scoped ServicePricingRule rows with no
+      // global fallback, so offering_type_id must be set for pricing to
+      // resolve, even though the offering reports is_type_required:false.
+      // Real IDs (not invented), confirmed live: c86dfcf3-... (Rs775 base),
+      // e27f6591-... (Rs425 base), both under this same brand/city.
+      if (booking.offering?.slug === "ac_repair") {
+        setFlowLoading(false);
+        return; // wait for pickOfferingType() to continue
+      }
+      await runServiceabilityThroughMatching(booking.draft.id);
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not process your request. Please try again.");
+    } finally { setFlowLoading(false); }
+  }
+
+  const AC_REPAIR_TYPES = [
+    { id:"c86dfcf3-53bd-4d83-bf0b-51257f382652", label:"Standard Service" },
+    { id:"e27f6591-9b8d-4d57-93d0-8ed86c19c8af", label:"Basic Service" },
+  ];
+
+  async function pickOfferingType(offeringTypeId: string) {
+    if (!booking.draft) return;
+    dispatch({ type:"SET_OFFERING_TYPE", offeringTypeId });
+    setFlowLoading(true); setFlowError(null);
+    try {
+      await homeServiceDraftApi.updateFields(booking.draft.id, { offering_type_id: offeringTypeId });
+      await runServiceabilityThroughMatching(booking.draft.id);
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not process your request. Please try again.");
+    } finally { setFlowLoading(false); }
+  }
+
+  // Shared continuation: serviceability -> price-estimate -> match-and-price.
+  // Real backend calls only; match-and-price is honestly allowed to fail
+  // (see bargain-contract-audit.md) rather than being worked around.
+  async function runServiceabilityThroughMatching(draftId: string) {
+    const svc = await homeServiceDraftApi.serviceabilityCheck(draftId);
+    dispatch({ type:"SERVICEABILITY_RESULT", serviceable: svc.serviceable, message: svc.message, draftStatus: svc.draft_status });
+    if (svc.serviceable) {
+      const price = await homeServiceDraftApi.priceEstimate(draftId);
+      dispatch({ type:"PRICE_RESULT", priceSnapshot: price.price_snapshot ?? null, draftStatus: price.draft_status });
+      try {
+        const match = await homeServiceDraftApi.matchAndPrice(draftId);
+        // UX-06 Recertification: real backend fix -- bargain_available is
+        // always present now. false -> standard_price is the real price to
+        // show/book at (no fake tiers, no invented fallback).
+        dispatch({
+          type:"MATCH_AND_PRICE_RESULT",
+          priceOptions: match.selected_provider_price_options,
+          bargainAvailable: match.bargain_available,
+          standardPrice: match.standard_price,
+        });
+      } catch {
+        dispatch({ type:"MATCH_AND_PRICE_UNAVAILABLE" });
+      }
+    }
+  }
+
+  async function selectPriceTier(tier: "low"|"mid"|"high"|"standard") {
+    if (!booking.draft) return;
+    setFlowLoading(true); setFlowError(null);
+    try {
+      await homeServiceDraftApi.confirmPriceChoice(booking.draft.id, tier);
+      dispatch({ type:"TIER_SELECTED", tier });
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "Could not select this price option. Please try again.");
+    } finally { setFlowLoading(false); }
+  }
+
+  async function confirmBooking() {
+    if (!booking.draft) return;
+    setFlowLoading(true); setFlowError(null);
+    try {
+      // UX-06 Recertification (2nd pass): the real `/confirm` route calls
+      // mark_ready_for_confirmation(), which reads booking_summary (built by
+      // /summary) rather than re-deriving it -- confirmed by the backend
+      // team's own diagnosis. Call /summary explicitly first so
+      // ready_for_confirmation is genuinely satisfied before /confirm, for
+      // both the tier-based (low/mid/high) and the new standard-price path.
+      await homeServiceDraftApi.summary(booking.draft.id);
+      // Idempotency-Key: the draft ID itself is a stable, real, caller-owned
+      // key — a retry of this exact call (e.g. after a network blip) hits the
+      // same key and the backend's ConfirmationLockService returns the
+      // existing booking instead of creating a duplicate. UX-06 Round 5:
+      // corrected to the real customer-facing confirm route (see api.ts's
+      // bookingConfirmApi comment / bargain-contract-audit.md for why the
+      // Round 3/4 route was wrong).
+      const result = await bookingConfirmApi.confirmHomeServiceBooking(booking.draft.id, booking.draft.id);
+      if (!result.booking_number) throw new Error("Booking confirmation did not return a booking reference.");
+      dispatch({ type:"SUBMITTED", bookingNumber: result.booking_number, jobNumber: result.job_number });
+    } catch (e:unknown) {
+      setFlowError(e instanceof Error ? e.message : "This service isn't available for booking in your area just yet. Please check back soon.");
+    } finally { setFlowLoading(false); }
+  }
+
+  function goToBookingDetail() {
+    setFlowOpen(false);
+    if (navigation && booking.draft) {
+      navigation.navigate("BookingDetail", { bookingId: booking.draft.id });
+    }
+  }
+
+  if (!session) {
+    return (
+      <View style={[s.screen, s.center]}>
+        <Text style={s.icon}>🤖</Text>
+        <Text style={s.title}>Talk to ServiceOS Assistant</Text>
+        <Text style={s.body}>Describe what you need in your own words — the assistant can look up services, pricing, and help you book.</Text>
+        {error && <Text style={s.errorText}>{error}</Text>}
+        <TouchableOpacity style={s.startBtn} onPress={startSession} disabled={starting} testID="chat-start">
+          <Text style={s.startBtnText}>{starting ? "Starting…" : "Start Conversation"}</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView style={s.screen} behavior={Platform.OS==="ios"?"padding":"height"}>
+      <View style={s.header}>
+        <TouchableOpacity style={s.bookBtn} onPress={openBookingFlow} testID="chat-book-service">
+          <Text style={s.bookBtnText}>📅 Book a service</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.langChip} onPress={()=>setLangModal(true)} testID="chat-language-btn">
+          <Text style={s.langChipText}>{language.nativeName} ▾</Text>
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={messages}
+        keyExtractor={m=>m.id}
+        contentContainerStyle={s.list}
+        renderItem={({item}) => (
+          <View style={[s.bubble, item.role==="user" ? s.bubbleUser : s.bubbleAssistant]}>
+            <Text style={item.role==="user" ? s.bubbleUserText : s.bubbleAssistantText}>{item.content}</Text>
+          </View>
+        )}
+      />
+
+      {error && <Text style={s.errorText}>{error}</Text>}
+
+      <View style={s.inputRow}>
+        <TextInput
+          style={s.input} value={input} onChangeText={setInput}
+          placeholder="Type a message…" placeholderTextColor={theme.colors.textTertiary}
+          testID="chat-input"
+        />
+        <TouchableOpacity style={s.sendBtn} onPress={send} disabled={sending} testID="chat-send">
+          <Text style={s.sendBtnText}>{sending ? "…" : "Send"}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Language selector — scoped to this chat screen only ────────────── */}
+      <Modal visible={langModal} animationType="slide" onRequestClose={()=>setLangModal(false)}>
+        <View style={s.langModal}>
+          <TextInput
+            style={s.langSearch} value={langQuery} onChangeText={setLangQuery}
+            placeholder="Search language…" placeholderTextColor={theme.colors.textTertiary}
+            testID="chat-language-search"
+          />
+          <FlatList
+            data={searchChatLanguages(langQuery)}
+            keyExtractor={l=>l.code}
+            renderItem={({item}) => (
+              <TouchableOpacity style={s.langRow} testID={`chat-language-option-${item.code}`}
+                onPress={()=>{ setLanguage(item); setLangModal(false); setLangQuery(""); }}>
+                <Text style={s.langRowNative}>{item.nativeName}</Text>
+                <Text style={s.langRowEnglish}>{item.englishName} ({item.code})</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </Modal>
+
+      {/* ── Real, canonical booking journey ─────────────────────────────────── */}
+      <Modal visible={flowOpen} animationType="slide" onRequestClose={()=>setFlowOpen(false)}>
+        <View style={s.flowModal}>
+          {flowError && <Text style={s.errorText}>{flowError}</Text>}
+
+          {booking.step === "submitted" ? (
+            <View style={s.center}>
+              <Text style={s.icon}>✅</Text>
+              <Text style={s.title}>Booking Confirmed</Text>
+              <Text style={s.body} testID="booking-reference">Reference: {booking.bookingNumber}</Text>
+              <TouchableOpacity style={s.startBtn} onPress={goToBookingDetail} testID="chat-view-booking">
+                <Text style={s.startBtnText}>View Booking</Text>
+              </TouchableOpacity>
+            </View>
+          ) : booking.priceSnapshot ? (
+            <View style={{ gap:14, padding:16 }}>
+              <Text style={s.title}>Review your booking</Text>
+              <Text style={s.body}>{booking.category?.name} — {booking.offering?.name}</Text>
+              <Text style={s.body}>{booking.issueDescription}</Text>
+              <Text style={s.body}>{booking.addressLine}, {booking.city}</Text>
+              {/* Price shown EXACTLY as the backend returned it — no client-side
+                  recalculation, per the "server-returned values only" rule. */}
+              <Text style={s.priceText} testID="booking-price">
+                {booking.priceSnapshot.display_price ?? `₹${booking.priceSnapshot.final_price}`}
+              </Text>
+
+              {/* UX-06 Round 5, Workstream 4: honest bargain-available vs
+                  bargain-unavailable presentation — never expose internal
+                  floor/rule/error-code jargon either way. */}
+              {booking.step === "not_yet_bookable" ? (
+                <Text style={s.body} testID="booking-not-bookable">
+                  This service isn't available for booking in your area just yet.
+                  Please check back soon.
+                </Text>
+              ) : booking.bargainAvailable === false && booking.standardPrice != null && !booking.selectedTier ? (
+                // UX-06 Recertification: real backend fix -- no BargainRule
+                // configured for this offering, but the backend now returns a
+                // real, authoritative standard_price (from ServicePricingRule)
+                // instead of failing outright. Shown exactly as returned,
+                // never recalculated client-side.
+                <View style={{ gap:8 }}>
+                  <Text style={s.priceText} testID="booking-standard-price">₹{booking.standardPrice}</Text>
+                  <TouchableOpacity style={s.startBtn} onPress={()=>selectPriceTier("standard")}
+                    disabled={flowLoading} testID="booking-continue-standard-price">
+                    <Text style={s.startBtnText}>{flowLoading ? "Please wait…" : "Continue with this price"}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : booking.priceOptions && !booking.selectedTier ? (
+                <View style={{ gap:8 }}>
+                  <Text style={s.body}>Choose an option to continue:</Text>
+                  {(["low","mid","high"] as const).map(tier => (
+                    <TouchableOpacity key={tier} style={s.tierBtn} onPress={()=>selectPriceTier(tier)}
+                      disabled={flowLoading} testID={`booking-tier-${tier}`}>
+                      <Text style={s.tierBtnText}>
+                        {tier === "mid" ? "Continue with this price" : tier === "low" ? "Lower estimate" : "Premium option"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : booking.selectedTier ? (
+                <TouchableOpacity style={s.startBtn} onPress={confirmBooking} disabled={flowLoading} testID="chat-confirm-booking">
+                  <Text style={s.startBtnText}>{flowLoading ? "Confirming…" : "Confirm Booking"}</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={s.body}>Checking availability…</Text>
+              )}
+              <Text style={s.onSiteNote}>You pay the technician on-site — ServiceOS does not process this payment.</Text>
+            </View>
+          ) : booking.step === "serviceability_checked" || booking.serviceable === false ? (
+            <View style={{ gap:14, padding:16 }}>
+              <Text style={s.body} testID="booking-serviceability">{booking.serviceabilityMessage}</Text>
+              {flowLoading && <Text style={s.body}>Loading price…</Text>}
+            </View>
+          ) : booking.draft && brands.length > 0 && !booking.brandId ? (
+            <FlatList
+              data={brands} keyExtractor={b=>b.brand_id}
+              ListHeaderComponent={<Text style={[s.title,{padding:16}]}>Select your appliance brand</Text>}
+              renderItem={({item}) => (
+                <TouchableOpacity style={s.langRow} onPress={()=>pickBrand(item.brand_id)} testID={`brand-${item.brand_id}`}>
+                  <Text style={s.langRowNative}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          ) : booking.draft && booking.brandId && booking.offering?.slug === "ac_repair" && !booking.offeringTypeId ? (
+            <FlatList
+              data={AC_REPAIR_TYPES} keyExtractor={t=>t.id}
+              ListHeaderComponent={<Text style={[s.title,{padding:16}]}>Select service type</Text>}
+              renderItem={({item}) => (
+                <TouchableOpacity style={s.langRow} onPress={()=>pickOfferingType(item.id)} testID={`offering-type-${item.id}`}>
+                  <Text style={s.langRowNative}>{item.label}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          ) : booking.offering ? (
+            <View style={{ gap:12, padding:16 }}>
+              <Text style={s.title}>Tell us more</Text>
+              <TextInput style={s.input} value={issueText} onChangeText={setIssueText}
+                placeholder="Describe the issue" placeholderTextColor={theme.colors.textTertiary}
+                testID="booking-issue-input"/>
+              <TextInput style={s.input} value={addressText} onChangeText={setAddressText}
+                placeholder="Address" placeholderTextColor={theme.colors.textTertiary}
+                testID="booking-address-input"/>
+              <TextInput style={s.input} value={cityText} onChangeText={setCityText}
+                placeholder="City" placeholderTextColor={theme.colors.textTertiary}
+                testID="booking-city-input"/>
+              <TouchableOpacity style={s.startBtn} onPress={submitIssueAndAddress} disabled={flowLoading} testID="booking-check-serviceability">
+                <Text style={s.startBtnText}>{flowLoading ? "Checking…" : "Check availability"}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : booking.category ? (
+            <FlatList
+              data={offerings} keyExtractor={o=>o.id}
+              ListHeaderComponent={<Text style={[s.title,{padding:16}]}>Choose a service</Text>}
+              renderItem={({item}) => (
+                <View style={[s.langRow, { flexDirection:"row", alignItems:"center", justifyContent:"space-between" }]}>
+                  <TouchableOpacity style={{ flex:1 }} onPress={()=>pickOffering(item)} testID={`offering-${item.slug}`}>
+                    <Text style={s.langRowNative}>{item.name}</Text>
+                  </TouchableOpacity>
+                  {booking.category && (
+                    <TouchableOpacity
+                      onPress={()=>{ setFlowOpen(false); navigation?.navigate("ServiceDetail", { categorySlug: booking.category!.slug, offeringSlug: item.slug }); }}
+                      testID={`offering-details-${item.slug}`}>
+                      <Text style={{ color:theme.colors.accent, fontSize:theme.font.size.sm }}>Details ⓘ</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            />
+          ) : (
+            <FlatList
+              data={categories} keyExtractor={c=>c.id}
+              ListHeaderComponent={<Text style={[s.title,{padding:16}]}>What do you need help with?</Text>}
+              renderItem={({item}) => (
+                <TouchableOpacity style={s.langRow} onPress={()=>pickCategory(item)} testID={`category-${item.slug}`}>
+                  <Text style={s.langRowNative}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </View>
+      </Modal>
+    </KeyboardAvoidingView>
+  );
+}
+
+const s = StyleSheet.create({
+  screen: { flex:1, backgroundColor:theme.colors.bg },
+  center: { alignItems:"center", justifyContent:"center", padding:32, gap:14 },
+  icon:   { fontSize:48 },
+  title:  { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary, textAlign:"center" },
+  body:   { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, textAlign:"center", lineHeight:20 },
+  priceText: { fontSize:theme.font.size.xxxl, fontWeight:"800", color:theme.colors.brand, textAlign:"center" },
+  tierBtn: { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
+             padding:14, backgroundColor:theme.colors.surfaceSunken },
+  tierBtnText: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary, textAlign:"center" },
+  onSiteNote: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, textAlign:"center" },
+  errorText: { color:theme.colors.dangerText, fontSize:theme.font.size.sm, textAlign:"center", paddingHorizontal:16 },
+  startBtn: { backgroundColor:theme.colors.brand, borderRadius:theme.radius.lg, paddingVertical:14, paddingHorizontal:28 },
+  startBtnText: { color:"#fff", fontWeight:"700", fontSize:theme.font.size.base, textAlign:"center" },
+  header: { flexDirection:"row", justifyContent:"space-between", alignItems:"center", padding:10, borderBottomWidth:1, borderBottomColor:theme.colors.border },
+  bookBtn: { paddingHorizontal:12, paddingVertical:6, borderRadius:theme.radius.full, backgroundColor:theme.colors.brand },
+  bookBtnText: { fontSize:theme.font.size.sm, fontWeight:"700", color:"#fff" },
+  langChip: { paddingHorizontal:12, paddingVertical:6, borderRadius:theme.radius.full, backgroundColor:theme.colors.surfaceSunken },
+  langChipText: { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary },
+  list: { padding:14, gap:10 },
+  bubble: { maxWidth:"80%", borderRadius:theme.radius.lg, padding:12 },
+  bubbleUser: { alignSelf:"flex-end", backgroundColor:theme.colors.brand },
+  bubbleAssistant: { alignSelf:"flex-start", backgroundColor:theme.colors.surfaceSunken },
+  bubbleUserText: { color:"#fff", fontSize:theme.font.size.base },
+  bubbleAssistantText: { color:theme.colors.textPrimary, fontSize:theme.font.size.base },
+  inputRow: { flexDirection:"row", gap:8, padding:12, borderTopWidth:1, borderTopColor:theme.colors.border },
+  input: { flex:1, height:44, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
+           paddingHorizontal:14, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
+           backgroundColor:theme.colors.surfaceSunken },
+  sendBtn: { justifyContent:"center", paddingHorizontal:18, borderRadius:theme.radius.lg, backgroundColor:theme.colors.brand },
+  sendBtnText: { color:"#fff", fontWeight:"700" },
+  langModal: { flex:1, backgroundColor:theme.colors.bg, paddingTop:60, paddingHorizontal:16 },
+  flowModal: { flex:1, backgroundColor:theme.colors.bg, paddingTop:60 },
+  langSearch: { height:44, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
+                paddingHorizontal:14, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
+                backgroundColor:theme.colors.surfaceSunken, marginBottom:12, marginHorizontal:16 },
+  langRow: { paddingVertical:12, paddingHorizontal:16, borderBottomWidth:1, borderBottomColor:theme.colors.border },
+  langRowNative: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
+  langRowEnglish: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:2 },
+});

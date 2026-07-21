@@ -37,7 +37,7 @@ export function ProfileScreen({ navigation }: Props) {
       title: "Support",
       items: [
         { icon:"❓", label:"Help & Support",   onPress:() => navigation.navigate("HelpSupport"    as never) },
-        { icon:"🤖", label:"AI Assistant",     onPress:() => navigation.navigate("AIAssistant"    as never) },
+        { icon:"🤖", label:"AI Assistant",     onPress:() => (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"AIAssistant" }) },
       ],
     },
   ];
@@ -48,10 +48,10 @@ export function ProfileScreen({ navigation }: Props) {
       {profile.loading ? <Skeleton height={90}/> : (
         <Card style={{ flexDirection:"row", alignItems:"center", gap:14 }}>
           <View style={s.avatar}>
-            <Text style={s.avatarText}>{(p?.name??user?.name??"?")[0]?.toUpperCase()}</Text>
+            <Text style={s.avatarText}>{(p?.full_name??user?.full_name??"?")[0]?.toUpperCase()}</Text>
           </View>
           <View style={{ flex:1 }}>
-            <Text style={s.name}>{p?.name ?? user?.name ?? "—"}</Text>
+            <Text style={s.name}>{p?.full_name ?? user?.full_name ?? "—"}</Text>
             {p?.phone&&<Text style={s.sub}>{p.phone}</Text>}
             {p?.email&&<Text style={s.sub}>{p.email}</Text>}
           </View>
@@ -62,14 +62,13 @@ export function ProfileScreen({ navigation }: Props) {
         </Card>
       )}
 
-      {/* Stats */}
-      {p && (p.total_jobs != null || p.health_score != null) && (
-        <View style={s.statsRow}>
-          {p.total_jobs    != null && <View style={s.statBox}><Text style={s.statVal}>{p.total_jobs}</Text><Text style={s.statLabel}>Services</Text></View>}
-          {p.health_score  != null && <View style={s.statBox}><Text style={s.statVal}>{p.health_score}</Text><Text style={s.statLabel}>Health Score</Text></View>}
-          {p.health_band   != null && <View style={s.statBox}><Text style={[s.statVal,{textTransform:"capitalize"}]}>{p.health_band.replace("_"," ")}</Text><Text style={s.statLabel}>LTV Band</Text></View>}
-        </View>
-      )}
+      {/* UX-06 Round 5: removed a "stats" row (total_jobs/health_score/
+          health_band) that read fields never confirmed to exist on the real
+          CustomerUser/profile response, AND would have exposed internal
+          health/ranking scores to the customer -- a hard-forbidden item per
+          the canonical domain rules ("never expose internal ranking/health
+          scores"). This was a real rule violation fixed this round, not
+          just a typecheck cleanup. */}
 
       {/* Sectioned menu */}
       {SECTIONS.map(section => (

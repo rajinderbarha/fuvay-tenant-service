@@ -39,7 +39,7 @@ export function AddressBookScreen() {
     await defaultAction.execute(id); addresses.refetch();
   }
 
-  const list = addresses.data?.addresses ?? [];
+  const list = addresses.data?.items ?? [];
 
   return (
     <View style={gs.screen}>
