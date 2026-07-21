@@ -30,7 +30,7 @@ function resolveMode(preference: ThemePreference, systemScheme: ColorSchemeName)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
-  const [systemScheme, setSystemScheme] = useState<ColorSchemeName>(Appearance.getColorScheme());
+  const [systemScheme, setSystemScheme] = useState<ColorSchemeName>(Appearance.getColorScheme() ?? "light");
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {

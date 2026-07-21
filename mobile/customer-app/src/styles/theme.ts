@@ -53,7 +53,7 @@ const lightColors = {
   bubbleSystemText:   "#475569",
   bubbleError:        "#FEF2F2",
   bubbleErrorText:    "#B91C1C",
-  statusBarStyle:     "dark" as const,
+  statusBarStyle:     "dark" as "dark" | "light",
   overlay:            "rgba(15,23,42,0.45)",
 };
 
@@ -99,7 +99,7 @@ const darkColors: typeof lightColors = {
   bubbleSystemText:   "#B8C4D9",
   bubbleError:        "#3A1414",
   bubbleErrorText:    "#FCA5A5",
-  statusBarStyle:     "light" as const,
+  statusBarStyle:     "light" as "dark" | "light",
   overlay:            "rgba(0,0,0,0.6)",
 };
 

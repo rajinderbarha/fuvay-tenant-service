@@ -131,3 +131,38 @@
     comments, not assumed) — unchanged from prior rounds' understanding,
     now confirmed with direct source citations.
     `deferred-workstreams.md`.
+
+## Round 4, Pass 2 (customer-app dark mode / responsive / accessibility)
+
+24. **Dark mode is real but only partially covers the app — item 4 above is
+    now PARTIALLY resolved, not fully closed.** A genuine ThemeContext
+    (System/Light/Dark, persisted, no-flash-of-wrong-theme) now exists, and
+    the shared building blocks used by most screens (Card, Button,
+    JobStatusBadge, BookingCard, StarRating, Skeleton) plus Login, Home, and
+    DeepSeekChatScreen (SmartBot) are fully migrated. But 14 screens
+    (BookingsList, BookingDetail, Chat, JobTracking, Profile, Review,
+    Notifications, AddressBook, ServiceHistory, ServiceDetail, HelpSupport,
+    PaymentMethods, Invoice, QuoteApproval) still import the static
+    (light-only) `theme` export. **Concrete user-facing consequence**: a
+    customer who switches to Dark mode in Settings will see a correctly
+    dark-themed Home/Login/SmartBot/tab-bar/shared-cards, but still-light
+    screens on Bookings/Profile/Review/etc. This is a real, disclosed
+    partial-coverage gap, not a hidden one — see
+    `customer-screen-theme-matrix.csv` for the exact per-screen status.
+25. **No Playwright/Expo-web visual run was performed this pass.** All
+    verification this pass is typecheck (0 errors) + jest (58/58, including
+    10 new theme-specific tests) run in WSL. No screenshot evidence (light/
+    dark pairs, 320px, Hindi/Punjabi stress content) was captured — item 17/18
+    of the Pass 2 mission brief.
+26. **Responsive-width matrix (320/360/390/430/768/1024), text-scaling,
+    contrast audit (CSV), keyboard/focus audit, touch-target audit (CSV),
+    and reduced-motion audit beyond `Skeleton`** were not produced this
+    pass — no real measurement/certification exists yet for these items on
+    any screen, migrated or not. `Skeleton`'s reduced-motion handling was
+    implemented and is real; nothing else honors Reduce Motion yet.
+27. **Accessibility semantic audit** was only applied ad hoc to the files
+    touched this pass (accessibilityRole/Label/State on Button, StarRating,
+    JobStatusBadge, BookingCard, tab icons, Login inputs, SmartBot header/
+    bubbles/composer/language modal). No CSV audit artifact and no
+    systematic pass over the other 14 screens exists yet.
+28. **ESLint was not run this session** (see `typecheck-build-lint-report.md`).

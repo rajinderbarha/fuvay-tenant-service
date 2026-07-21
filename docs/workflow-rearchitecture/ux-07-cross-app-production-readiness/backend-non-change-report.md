@@ -75,3 +75,18 @@ transition, including the terminal `completed` state — see
 rescheduling and Booking Exception Resolution: not touched. N01 media
 behavior: not touched (the real job's `completion_data` had empty
 photo-id arrays — no media upload was exercised this round).
+
+## Round 4, Pass 2
+
+`git diff --stat b6cdd82..HEAD -- app/ frontend/super-admin frontend/tenant-portal mobile/staff-app db/`
+returns empty at the end of this pass — zero backend files, zero
+super-admin/tenant-portal/staff-app files, zero migration/seed-script
+files touched. All changes are confined to `mobile/customer-app/src/**`
+(theme system, shared components, 3 screens, 2 new test files) plus new/
+appended documentation under
+`docs/workflow-rearchitecture/ux-07-cross-app-production-readiness/`. The
+theme changes are purely presentational (color tokens, StyleSheet values,
+accessibility attributes) — no API payload, booking-state, or pricing
+logic was touched, and the 48 pre-existing tests (auth, chat/booking
+contract, no-internal-jargon, booking-state reducer) pass unchanged,
+confirming no behavioral regression alongside the 10 new theme tests.
