@@ -1,20 +1,31 @@
 import React, { useCallback, useState } from "react";
 import {
   Alert, Modal, ScrollView, StyleSheet,
-  Text, TextInput, TouchableOpacity, View, ActivityIndicator,
+  Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { useApi, useAction } from "../hooks/useApi";
 import { quoteApi } from "../lib/api";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
-import { theme, gs } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 type Params = { jobId:string; bookingNumber?:string };
 type Props  = NativeStackScreenProps<{ QuoteApproval:Params }, "QuoteApproval">;
 
+// UX-07 Pass 3b: confirmed quoteApi.get/approve/reject are real
+// (/v1/customer/quotes/*, src/lib/api.ts) -- this screen is ACTIVE, not
+// fixture data. Per api.ts's own Round 5 note, several Quote fields
+// (visit_fee/labour_cost/parts_cost/recommended_work/technician_notes) were
+// widened but not re-verified live against a running backend that round --
+// left as documented in known-limitations.md, not silently fixed here (out
+// of scope for a theme-only pass). Migrated off the static `theme`/`gs`
+// import onto useTheme().
 export function QuoteApprovalScreen({ route, navigation }: Props) {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
   const { jobId, bookingNumber } = route.params;
   const [rejectModal, setRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -59,7 +70,7 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
   // ── Success states ──────────────────────────────────────────────────────
   if (decided === "approved") {
     return (
-      <View style={[gs.screen, { alignItems:"center", justifyContent:"center", padding:32, gap:16 }]}>
+      <View style={[s.screen, { alignItems:"center", justifyContent:"center", padding:32, gap:16 }]}>
         <Text style={{ fontSize:64 }}>✅</Text>
         <Text style={{ fontSize:theme.font.size.xxxl, fontWeight:"800", color:theme.colors.textPrimary, textAlign:"center" }}>
           Repair Approved!
@@ -70,20 +81,20 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
         <Card style={{ width:"100%", gap:6 }}>
           {q && (
             <>
-              <View style={[gs.row, { justifyContent:"space-between" }]}>
+              <View style={[s.row, { justifyContent:"space-between" }]}>
                 <Text style={{ fontSize:theme.font.size.sm, color:theme.colors.textSecondary }}>Total to pay on completion</Text>
                 <Text style={{ fontSize:theme.font.size.xl, fontWeight:"800", color:theme.colors.brand }}>
                   {fmtPrice(q.quoted_price)}
                 </Text>
               </View>
-              <View style={[gs.row, { justifyContent:"space-between" }]}>
+              <View style={[s.row, { justifyContent:"space-between" }]}>
                 <Text style={{ fontSize:theme.font.size.sm, color:theme.colors.textSecondary }}>Visit fee already paid</Text>
                 <Text style={{ fontSize:theme.font.size.base, color:theme.colors.success }}>
                   - {fmtPrice(q.visit_fee)}
                 </Text>
               </View>
               <View style={[{ height:1, backgroundColor:theme.colors.border, marginVertical:4 }]}/>
-              <View style={[gs.row, { justifyContent:"space-between" }]}>
+              <View style={[s.row, { justifyContent:"space-between" }]}>
                 <Text style={{ fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary }}>Balance due</Text>
                 <Text style={{ fontSize:theme.font.size.xl, fontWeight:"800", color:theme.colors.textPrimary }}>
                   {fmtPrice((q.quoted_price??0) - (q.visit_fee??0))}
@@ -102,7 +113,7 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
 
   if (decided === "rejected") {
     return (
-      <View style={[gs.screen, { alignItems:"center", justifyContent:"center", padding:32, gap:16 }]}>
+      <View style={[s.screen, { alignItems:"center", justifyContent:"center", padding:32, gap:16 }]}>
         <Text style={{ fontSize:64 }}>👍</Text>
         <Text style={{ fontSize:theme.font.size.xxl, fontWeight:"700", color:theme.colors.textPrimary, textAlign:"center" }}>
           Understood
@@ -117,7 +128,7 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
   }
 
   return (
-    <ScrollView style={gs.screen} contentContainerStyle={s.content}>
+    <ScrollView style={s.screen} contentContainerStyle={s.content}>
       {/* Header */}
       <View style={s.header}>
         <Text style={s.headerTitle}>Repair Quote</Text>
@@ -135,13 +146,13 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
         <>
           {/* Findings */}
           <Card style={{ gap:10 }}>
-            <Text style={gs.label}>What the Technician Found</Text>
+            <Text style={s.label}>What the Technician Found</Text>
             <Text style={s.findings}>{q.findings}</Text>
           </Card>
 
           {/* Recommended work */}
           <Card style={{ gap:10 }}>
-            <Text style={gs.label}>Recommended Work</Text>
+            <Text style={s.label}>Recommended Work</Text>
             <Text style={s.findings}>{q.recommended_work}</Text>
             {q.technician_notes && (
               <Text style={s.techNote}>💬 "{q.technician_notes}"</Text>
@@ -150,13 +161,13 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
 
           {/* Price breakdown */}
           <Card style={{ gap:10 }}>
-            <Text style={gs.label}>Price Breakdown</Text>
+            <Text style={s.label}>Price Breakdown</Text>
             {[
               { label:"Labour",         amount:q.labour_cost },
               { label:"Parts & Material",amount:q.parts_cost },
               { label:"Visit Fee (already paid)", amount:q.visit_fee, credit:true },
             ].map(row => (
-              <View key={row.label} style={[gs.row, { justifyContent:"space-between", paddingVertical:6,
+              <View key={row.label} style={[s.row, { justifyContent:"space-between", paddingVertical:6,
                 borderBottomWidth:1, borderBottomColor:theme.colors.border }]}>
                 <Text style={{ fontSize:theme.font.size.base, color:theme.colors.textSecondary }}>{row.label}</Text>
                 <Text style={{ fontSize:theme.font.size.base, fontWeight:"600",
@@ -165,7 +176,7 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
                 </Text>
               </View>
             ))}
-            <View style={[gs.row, { justifyContent:"space-between", paddingTop:6 }]}>
+            <View style={[s.row, { justifyContent:"space-between", paddingTop:6 }]}>
               <Text style={{ fontSize:theme.font.size.lg, fontWeight:"700", color:theme.colors.textPrimary }}>
                 Total
               </Text>
@@ -244,31 +255,37 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  content:     { padding:theme.spacing.base, gap:14, paddingBottom:40 },
-  header:      { gap:6 },
-  headerTitle: { fontSize:theme.font.size.xxxl, fontWeight:"800", color:theme.colors.textPrimary },
-  headerSub:   { fontSize:theme.font.size.sm, color:theme.colors.textTertiary },
-  pendingBadge:{ backgroundColor:theme.colors.warningBg, borderRadius:99, paddingHorizontal:12,
-                 paddingVertical:5, alignSelf:"flex-start", borderWidth:1, borderColor:theme.colors.warningBorder },
-  pendingText: { fontSize:theme.font.size.sm, fontWeight:"700", color:theme.colors.warningText },
-  findings:    { fontSize:theme.font.size.base, color:theme.colors.textPrimary, lineHeight:24 },
-  techNote:    { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, fontStyle:"italic",
-                 padding:10, backgroundColor:theme.colors.surfaceSunken, borderRadius:theme.radius.md },
-  expiryBox:   { backgroundColor:theme.colors.infoBg, borderRadius:theme.radius.md, padding:10,
-                 borderWidth:1, borderColor:theme.colors.infoBorder },
-  expiryText:  { fontSize:theme.font.size.sm, color:theme.colors.infoText },
-  helpBox:     { alignItems:"center", padding:12 },
-  helpText:    { fontSize:theme.font.size.sm, color:theme.colors.textTertiary, textAlign:"center", lineHeight:20 },
-  errBox:      { backgroundColor:theme.colors.dangerBg, borderRadius:theme.radius.md,
-                 padding:12, borderWidth:1, borderColor:theme.colors.dangerBorder },
-  errText:     { fontSize:theme.font.size.sm, color:theme.colors.dangerText },
-  overlay:     { flex:1, justifyContent:"flex-end", backgroundColor:"rgba(0,0,0,0.45)" },
-  sheet:       { backgroundColor:theme.colors.surface, borderTopLeftRadius:28, borderTopRightRadius:28,
-                 padding:24, gap:14, paddingBottom:40 },
-  sheetTitle:  { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary },
-  sheetSub:    { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
-  textarea:    { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
-                 padding:12, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
-                 minHeight:100, backgroundColor:theme.colors.surfaceSunken },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:      { flex:1, backgroundColor:theme.colors.bg },
+    row:         { flexDirection:"row", alignItems:"center" },
+    label:       { fontSize:theme.font.size.xs, fontWeight:theme.font.weight.bold,
+                   color:theme.colors.textTertiary, textTransform:"uppercase", letterSpacing:1 },
+    content:     { padding:theme.spacing.base, gap:14, paddingBottom:40 },
+    header:      { gap:6 },
+    headerTitle: { fontSize:theme.font.size.xxxl, fontWeight:"800", color:theme.colors.textPrimary },
+    headerSub:   { fontSize:theme.font.size.sm, color:theme.colors.textTertiary },
+    pendingBadge:{ backgroundColor:theme.colors.warningBg, borderRadius:99, paddingHorizontal:12,
+                   paddingVertical:5, alignSelf:"flex-start", borderWidth:1, borderColor:theme.colors.warningBorder },
+    pendingText: { fontSize:theme.font.size.sm, fontWeight:"700", color:theme.colors.warningText },
+    findings:    { fontSize:theme.font.size.base, color:theme.colors.textPrimary, lineHeight:24 },
+    techNote:    { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, fontStyle:"italic",
+                   padding:10, backgroundColor:theme.colors.surfaceSunken, borderRadius:theme.radius.md },
+    expiryBox:   { backgroundColor:theme.colors.infoBg, borderRadius:theme.radius.md, padding:10,
+                   borderWidth:1, borderColor:theme.colors.infoBorder },
+    expiryText:  { fontSize:theme.font.size.sm, color:theme.colors.infoText },
+    helpBox:     { alignItems:"center", padding:12 },
+    helpText:    { fontSize:theme.font.size.sm, color:theme.colors.textTertiary, textAlign:"center", lineHeight:20 },
+    errBox:      { backgroundColor:theme.colors.dangerBg, borderRadius:theme.radius.md,
+                   padding:12, borderWidth:1, borderColor:theme.colors.dangerBorder },
+    errText:     { fontSize:theme.font.size.sm, color:theme.colors.dangerText },
+    overlay:     { flex:1, justifyContent:"flex-end", backgroundColor:"rgba(0,0,0,0.45)" },
+    sheet:       { backgroundColor:theme.colors.surface, borderTopLeftRadius:28, borderTopRightRadius:28,
+                   padding:24, gap:14, paddingBottom:40 },
+    sheetTitle:  { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary },
+    sheetSub:    { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
+    textarea:    { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
+                   padding:12, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
+                   minHeight:100, backgroundColor:theme.colors.surfaceSunken },
+  });
+}

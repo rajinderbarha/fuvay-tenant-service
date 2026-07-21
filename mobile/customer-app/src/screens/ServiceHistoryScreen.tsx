@@ -4,14 +4,18 @@ import { useApi } from "../hooks/useApi";
 import { fieldOpsJobsApi, type FieldOpsJob } from "../lib/api";
 import { JobStatusBadge } from "../components/JobStatusBadge";
 import { Skeleton } from "../components/Skeleton";
-import { theme, gs } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 type Props = { navigation: NativeStackNavigationProp<never> };
 
 const SERVICE_FILTERS = ["All","AC Service","Plumbing","Electrical","Cleaning","Carpentry","Pest Control"];
 
+// UX-07 Pass 3b: migrated off the static `theme`/`gs` import onto useTheme().
 export function ServiceHistoryScreen({ navigation }: Props) {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
   const [filter, setFilter] = useState("All");
   const jobs = useApi(useCallback(() => fieldOpsJobsApi.list(50), []));
 
@@ -20,9 +24,8 @@ export function ServiceHistoryScreen({ navigation }: Props) {
     filter === "All" || (j.service_category ?? "").toLowerCase().includes(filter.toLowerCase())
   );
 
-  const totalSpend = allJobs.reduce((s,j) => s + (j.estimated_price ?? 0), 0);
+  const totalSpend = allJobs.reduce((sum,j) => sum + (j.estimated_price ?? 0), 0);
   const fmtMoney = (n:number) => `₹${n.toLocaleString("en-IN")}`;
-  const fmtDate  = (d:string) => new Date(d).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
 
   function renderJob({ item:j }: { item:FieldOpsJob }) {
     const d = j.created_at ? new Date(j.created_at) : null;
@@ -48,7 +51,7 @@ export function ServiceHistoryScreen({ navigation }: Props) {
   }
 
   return (
-    <View style={gs.screen}>
+    <View style={s.screen}>
       {/* Summary banner */}
       <View style={s.banner}>
         <View style={s.bannerStat}>
@@ -97,7 +100,7 @@ export function ServiceHistoryScreen({ navigation }: Props) {
           renderItem={renderJob}
           onRefresh={jobs.refetch}
           refreshing={jobs.loading}
-          ItemSeparatorComponent={()=><View style={gs.sep}/>}
+          ItemSeparatorComponent={()=><View style={s.sep}/>}
           contentContainerStyle={{backgroundColor:theme.colors.surface}}
         />
       )}
@@ -105,24 +108,28 @@ export function ServiceHistoryScreen({ navigation }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  banner:       { flexDirection:"row", backgroundColor:theme.colors.brand, padding:16, gap:0 },
-  bannerStat:   { flex:1, alignItems:"center", gap:4 },
-  bannerVal:    { fontSize:theme.font.size.xxl, fontWeight:"800", color:"#fff" },
-  bannerLabel:  { fontSize:theme.font.size.xs, color:"rgba(255,255,255,0.65)", fontWeight:"600", textTransform:"uppercase", letterSpacing:0.5 },
-  bannerDivider:{ width:1, backgroundColor:"rgba(255,255,255,0.2)", marginVertical:6 },
-  filterList:   { paddingHorizontal:14, paddingVertical:10, gap:8, backgroundColor:theme.colors.surface,
-                  borderBottomWidth:1, borderBottomColor:theme.colors.border },
-  filterChip:   { paddingHorizontal:14, paddingVertical:6, borderRadius:99, borderWidth:1, borderColor:theme.colors.border, backgroundColor:theme.colors.surfaceSunken },
-  filterChipActive:{ borderColor:theme.colors.brand, backgroundColor:theme.colors.brand },
-  filterText:   { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary },
-  filterTextActive:{ color:"#fff" },
-  jobRow:       { flexDirection:"row", alignItems:"center", gap:14, padding:14, backgroundColor:theme.colors.surface },
-  dateCol:      { width:36, alignItems:"center", backgroundColor:theme.colors.surfaceSunken,
-                  borderRadius:theme.radius.sm, padding:5 },
-  dateDay:      { fontSize:theme.font.size.xl, fontWeight:"800", color:theme.colors.brand, lineHeight:22 },
-  dateMon:      { fontSize:9, fontWeight:"700", color:theme.colors.textTertiary, textTransform:"uppercase" },
-  serviceType:  { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
-  meta:         { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:2 },
-  value:        { fontSize:theme.font.size.sm, fontWeight:"700", color:theme.colors.successText },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:       { flex:1, backgroundColor:theme.colors.bg },
+    sep:          { height:1, backgroundColor:theme.colors.border },
+    banner:       { flexDirection:"row", backgroundColor:theme.colors.brand, padding:16, gap:0 },
+    bannerStat:   { flex:1, alignItems:"center", gap:4 },
+    bannerVal:    { fontSize:theme.font.size.xxl, fontWeight:"800", color:"#fff" },
+    bannerLabel:  { fontSize:theme.font.size.xs, color:"rgba(255,255,255,0.65)", fontWeight:"600", textTransform:"uppercase", letterSpacing:0.5 },
+    bannerDivider:{ width:1, backgroundColor:"rgba(255,255,255,0.2)", marginVertical:6 },
+    filterList:   { paddingHorizontal:14, paddingVertical:10, gap:8, backgroundColor:theme.colors.surface,
+                    borderBottomWidth:1, borderBottomColor:theme.colors.border },
+    filterChip:   { paddingHorizontal:14, paddingVertical:6, borderRadius:99, borderWidth:1, borderColor:theme.colors.border, backgroundColor:theme.colors.surfaceSunken },
+    filterChipActive:{ borderColor:theme.colors.brand, backgroundColor:theme.colors.brand },
+    filterText:   { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary },
+    filterTextActive:{ color:"#fff" },
+    jobRow:       { flexDirection:"row", alignItems:"center", gap:14, padding:14, backgroundColor:theme.colors.surface },
+    dateCol:      { width:36, alignItems:"center", backgroundColor:theme.colors.surfaceSunken,
+                    borderRadius:theme.radius.sm, padding:5 },
+    dateDay:      { fontSize:theme.font.size.xl, fontWeight:"800", color:theme.colors.brand, lineHeight:22 },
+    dateMon:      { fontSize:9, fontWeight:"700", color:theme.colors.textTertiary, textTransform:"uppercase" },
+    serviceType:  { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
+    meta:         { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:2 },
+    value:        { fontSize:theme.font.size.sm, fontWeight:"700", color:theme.colors.successText },
+  });
+}

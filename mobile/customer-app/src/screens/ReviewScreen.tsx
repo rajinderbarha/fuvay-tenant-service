@@ -1,9 +1,10 @@
-import React, { useCallback, useState } from "react";
+import React, { useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { StarRating } from "../components/StarRating";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
-import { theme, gs } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 type Params = { bookingId:string; jobId?:string };
@@ -15,7 +16,10 @@ const PROMPT_LABELS: [number,string][] = [
 
 const TAGS = ["On time","Professional","Quality work","Clean","Friendly","Thorough"];
 
+// UX-07 Pass 3b: migrated off the static `theme`/`gs` import onto useTheme().
 export function ReviewScreen({ route, navigation }: Props) {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
   const { bookingId, jobId } = route.params;
   const [score,    setScore]    = useState(0);
   const [comment,  setComment]  = useState("");
@@ -40,7 +44,7 @@ export function ReviewScreen({ route, navigation }: Props) {
   }
 
   if (submitted) return (
-    <View style={[gs.screen,{ alignItems:"center", justifyContent:"center", padding:32, gap:16 }]}>
+    <View style={[s.screen,{ alignItems:"center", justifyContent:"center", padding:32, gap:16 }]}>
       <Text style={{ fontSize:64 }}>🌟</Text>
       <Text style={{ fontSize:theme.font.size.xxxl, fontWeight:"800", color:theme.colors.textPrimary, textAlign:"center" }}>
         Thank you!
@@ -54,7 +58,7 @@ export function ReviewScreen({ route, navigation }: Props) {
   );
 
   return (
-    <KeyboardAvoidingView style={gs.screen} behavior={Platform.OS==="ios"?"padding":"height"}>
+    <KeyboardAvoidingView style={s.screen} behavior={Platform.OS==="ios"?"padding":"height"}>
       <ScrollView contentContainerStyle={s.content}>
         {/* Star rating */}
         <Card style={{ alignItems:"center", gap:16, paddingVertical:24 }}>
@@ -68,7 +72,7 @@ export function ReviewScreen({ route, navigation }: Props) {
         {/* Quick tags */}
         {score >= 4 && (
           <Card style={{ gap:12 }}>
-            <Text style={gs.label}>What did you like?</Text>
+            <Text style={s.label}>What did you like?</Text>
             <View style={{ flexDirection:"row", flexWrap:"wrap", gap:8 }}>
               {TAGS.map(tag => (
                 <View key={tag} onTouchEnd={()=>toggleTag(tag)}
@@ -84,7 +88,7 @@ export function ReviewScreen({ route, navigation }: Props) {
 
         {/* Comment */}
         <Card style={{ gap:10 }}>
-          <Text style={gs.label}>Additional Comments</Text>
+          <Text style={s.label}>Additional Comments</Text>
           <TextInput style={s.textarea} value={comment} onChangeText={setComment}
             placeholder="Tell us more about your experience…"
             placeholderTextColor={theme.colors.textTertiary}
@@ -103,19 +107,24 @@ export function ReviewScreen({ route, navigation }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  content:      { padding:theme.spacing.base, gap:14, paddingBottom:40 },
-  ratingTitle:  { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary, textAlign:"center" },
-  ratingLabel:  { fontSize:theme.font.size.lg, color:theme.colors.textSecondary },
-  tag:          { paddingHorizontal:14, paddingVertical:8, borderRadius:theme.radius.full,
-                  borderWidth:1, borderColor:theme.colors.border, backgroundColor:theme.colors.surfaceSunken },
-  tagActive:    { borderColor:theme.colors.brand, backgroundColor:theme.colors.brand },
-  tagText:      { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary },
-  tagTextActive:{ color:"#fff" },
-  textarea:     { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
-                  padding:12, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
-                  minHeight:110, backgroundColor:theme.colors.surfaceSunken },
-  errBox:       { backgroundColor:theme.colors.dangerBg, borderRadius:theme.radius.md,
-                  padding:12, borderWidth:1, borderColor:theme.colors.dangerBorder },
-  errText:      { fontSize:theme.font.size.sm, color:theme.colors.dangerText },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:       { flex:1, backgroundColor:theme.colors.bg },
+    label:        { fontSize:theme.font.size.xs, fontWeight:theme.font.weight.bold,
+                    color:theme.colors.textTertiary, textTransform:"uppercase", letterSpacing:1 },
+    content:      { padding:theme.spacing.base, gap:14, paddingBottom:40 },
+    ratingTitle:  { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary, textAlign:"center" },
+    ratingLabel:  { fontSize:theme.font.size.lg, color:theme.colors.textSecondary },
+    tag:          { paddingHorizontal:14, paddingVertical:8, borderRadius:theme.radius.full,
+                    borderWidth:1, borderColor:theme.colors.border, backgroundColor:theme.colors.surfaceSunken },
+    tagActive:    { borderColor:theme.colors.brand, backgroundColor:theme.colors.brand },
+    tagText:      { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary },
+    tagTextActive:{ color:"#fff" },
+    textarea:     { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
+                    padding:12, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
+                    minHeight:110, backgroundColor:theme.colors.surfaceSunken },
+    errBox:       { backgroundColor:theme.colors.dangerBg, borderRadius:theme.radius.md,
+                    padding:12, borderWidth:1, borderColor:theme.colors.dangerBorder },
+    errText:      { fontSize:theme.font.size.sm, color:theme.colors.dangerText },
+  });
+}

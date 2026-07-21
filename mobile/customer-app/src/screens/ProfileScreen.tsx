@@ -5,16 +5,19 @@ import { useApi } from "../hooks/useApi";
 import { profileApi } from "../lib/api";
 import { Card } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
-import { theme, gs } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 type Props = NativeStackScreenProps<{ Profile:undefined }, "Profile">;
 
+// UX-07 Pass 3b: migrated off the static `theme`/`gs` import onto useTheme().
 export function ProfileScreen({ navigation }: Props) {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
   const { user, logout } = useAuth();
   const profile = useApi(useCallback(() => profileApi.get(), []));
   const p = profile.data;
-  const fmt = (n:number) => `₹${n.toLocaleString("en-IN")}`;
 
   const SECTIONS = [
     {
@@ -43,7 +46,7 @@ export function ProfileScreen({ navigation }: Props) {
   ];
 
   return (
-    <ScrollView style={gs.screen} contentContainerStyle={s.content}>
+    <ScrollView style={s.screen} contentContainerStyle={s.content}>
       {/* Profile header */}
       {profile.loading ? <Skeleton height={90}/> : (
         <Card style={{ flexDirection:"row", alignItems:"center", gap:14 }}>
@@ -73,7 +76,7 @@ export function ProfileScreen({ navigation }: Props) {
       {/* Sectioned menu */}
       {SECTIONS.map(section => (
         <View key={section.title}>
-          <Text style={[gs.label,{marginBottom:8}]}>{section.title}</Text>
+          <Text style={[s.label,{marginBottom:8}]}>{section.title}</Text>
           <Card style={{ padding:0, overflow:"hidden" }}>
             {section.items.map((item, i, arr) => (
               <TouchableOpacity key={item.label}
@@ -103,26 +106,25 @@ export function ProfileScreen({ navigation }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  content:   { padding:theme.spacing.base, gap:14, paddingBottom:40 },
-  avatar:    { width:60, height:60, borderRadius:30, backgroundColor:theme.colors.brand,
-               alignItems:"center", justifyContent:"center" },
-  avatarText:{ fontSize:theme.font.size.xxl, fontWeight:"800", color:"#fff" },
-  name:      { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary },
-  sub:       { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, marginTop:2 },
-  editBtn:   { paddingHorizontal:10, paddingVertical:5, borderRadius:theme.radius.sm,
-               borderWidth:1, borderColor:theme.colors.border },
-  editText:  { fontSize:theme.font.size.xs, fontWeight:"600", color:theme.colors.textSecondary },
-  statsRow:  { flexDirection:"row", gap:10 },
-  statBox:   { flex:1, backgroundColor:theme.colors.surface, borderRadius:theme.radius.lg,
-               padding:14, alignItems:"center", gap:4, ...theme.shadow.sm },
-  statVal:   { fontSize:theme.font.size.xxl, fontWeight:"800", color:theme.colors.textPrimary },
-  statLabel: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, fontWeight:"600",
-               textTransform:"uppercase", letterSpacing:0.5 },
-  menuItem:  { flexDirection:"row", alignItems:"center", gap:14, padding:16 },
-  menuLabel: { flex:1, fontSize:theme.font.size.base, fontWeight:"500", color:theme.colors.textPrimary },
-  menuArrow: { fontSize:theme.font.size.xl, color:theme.colors.textTertiary },
-  logoutBtn: { alignItems:"center", padding:16, backgroundColor:theme.colors.dangerBg,
-               borderRadius:theme.radius.lg, borderWidth:1, borderColor:theme.colors.dangerBorder },
-  logoutText:{ fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.dangerText },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:    { flex:1, backgroundColor:theme.colors.bg },
+    label:     { fontSize:theme.font.size.xs, fontWeight:theme.font.weight.bold,
+                 color:theme.colors.textTertiary, textTransform:"uppercase", letterSpacing:1 },
+    content:   { padding:theme.spacing.base, gap:14, paddingBottom:40 },
+    avatar:    { width:60, height:60, borderRadius:30, backgroundColor:theme.colors.brand,
+                 alignItems:"center", justifyContent:"center" },
+    avatarText:{ fontSize:theme.font.size.xxl, fontWeight:"800", color:"#fff" },
+    name:      { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary },
+    sub:       { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, marginTop:2 },
+    editBtn:   { paddingHorizontal:10, paddingVertical:5, borderRadius:theme.radius.sm,
+                 borderWidth:1, borderColor:theme.colors.border },
+    editText:  { fontSize:theme.font.size.xs, fontWeight:"600", color:theme.colors.textSecondary },
+    menuItem:  { flexDirection:"row", alignItems:"center", gap:14, padding:16 },
+    menuLabel: { flex:1, fontSize:theme.font.size.base, fontWeight:"500", color:theme.colors.textPrimary },
+    menuArrow: { fontSize:theme.font.size.xl, color:theme.colors.textTertiary },
+    logoutBtn: { alignItems:"center", padding:16, backgroundColor:theme.colors.dangerBg,
+                 borderRadius:theme.radius.lg, borderWidth:1, borderColor:theme.colors.dangerBorder },
+    logoutText:{ fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.dangerText },
+  });
+}

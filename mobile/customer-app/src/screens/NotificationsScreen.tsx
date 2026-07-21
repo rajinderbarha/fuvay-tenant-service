@@ -3,21 +3,27 @@ import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native
 import { useApi, useAction } from "../hooks/useApi";
 import { notificationsApi, type AppNotification } from "../lib/api";
 import { Skeleton } from "../components/Skeleton";
-import { Button } from "../components/Button";
-import { theme, gs } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 
 const TYPE_ICON: Record<string,string> = {
   booking:     "📋", job_update:"🔧", payment:"💳",
   promotion:"🎉", review:"⭐", system:"⚙️",
 };
 
-const TYPE_COLOR: Record<string,string> = {
-  booking:"var(--info)", job_update:theme.colors.accent,
-  payment:theme.colors.success, promotion:theme.colors.warning,
-  system:theme.colors.textTertiary,
-};
-
+// UX-07 Pass 3b: migrated off the static `theme`/`gs` import onto useTheme().
+// Also fixed a pre-existing bug found while migrating: TYPE_COLOR.booking
+// was the literal CSS string "var(--info)" (not a valid React Native color)
+// -- replaced with the real theme.colors.info token now that TYPE_COLOR is
+// built inside the component with access to the active theme.
 export function NotificationsScreen() {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
+  const TYPE_COLOR: Record<string,string> = {
+    booking:theme.colors.info, job_update:theme.colors.accent,
+    payment:theme.colors.success, promotion:theme.colors.warning,
+    system:theme.colors.textTertiary,
+  };
   // UX-06 Round 5: fixed to the real api.ts shape ({items,total}, not
   // {notifications,unread_count}) and the real separate unread-count
   // endpoint (GET /v1/customer/notifications/unread-count).
@@ -59,16 +65,16 @@ export function NotificationsScreen() {
           <Text style={s.body} numberOfLines={2}>{n.body}</Text>
           <Text style={s.time}>{fmtTime(n.created_at)}</Text>
         </View>
-        {!n.is_read && <View style={s.dot}/>}
+        {!n.is_read && <View style={[s.dot,{backgroundColor:TYPE_COLOR[n.type] ?? theme.colors.accent}]}/>}
       </TouchableOpacity>
     );
   }
 
   return (
-    <View style={gs.screen}>
+    <View style={s.screen}>
       {/* Header row */}
       {unread > 0 && (
-        <View style={[gs.row,{justifyContent:"space-between",padding:12,
+        <View style={[s.headerRow,{justifyContent:"space-between",padding:12,
           backgroundColor:theme.colors.surface, borderBottomWidth:1,
           borderBottomColor:theme.colors.border}]}>
           <Text style={{fontSize:theme.font.size.sm,color:theme.colors.textSecondary}}>
@@ -99,19 +105,24 @@ export function NotificationsScreen() {
           renderItem={renderItem}
           onRefresh={notifs.refetch}
           refreshing={notifs.loading}
-          ItemSeparatorComponent={()=><View style={gs.sep}/>}
+          ItemSeparatorComponent={()=><View style={s.sep}/>}
         />
       )}
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  row:      { flexDirection:"row", alignItems:"flex-start", gap:12, padding:14, backgroundColor:theme.colors.surface },
-  rowUnread:{ backgroundColor:theme.colors.accentLight+"30" },
-  iconWrap: { width:44, height:44, borderRadius:22, alignItems:"center", justifyContent:"center", flexShrink:0 },
-  title:    { fontSize:theme.font.size.base, fontWeight:"500", color:theme.colors.textPrimary, marginBottom:3 },
-  body:     { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, lineHeight:18 },
-  time:     { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:4 },
-  dot:      { width:8, height:8, borderRadius:4, backgroundColor:theme.colors.accent, marginTop:6, flexShrink:0 },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:   { flex:1, backgroundColor:theme.colors.bg },
+    headerRow:{ flexDirection:"row", alignItems:"center" },
+    sep:      { height:1, backgroundColor:theme.colors.border },
+    row:      { flexDirection:"row", alignItems:"flex-start", gap:12, padding:14, backgroundColor:theme.colors.surface },
+    rowUnread:{ backgroundColor:theme.colors.accentLight+"30" },
+    iconWrap: { width:44, height:44, borderRadius:22, alignItems:"center", justifyContent:"center", flexShrink:0 },
+    title:    { fontSize:theme.font.size.base, fontWeight:"500", color:theme.colors.textPrimary, marginBottom:3 },
+    body:     { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, lineHeight:18 },
+    time:     { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:4 },
+    dot:      { width:8, height:8, borderRadius:4, backgroundColor:theme.colors.accent, marginTop:6, flexShrink:0 },
+  });
+}
