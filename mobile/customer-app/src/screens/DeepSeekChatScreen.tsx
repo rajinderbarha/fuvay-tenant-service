@@ -11,7 +11,8 @@ import {
   chatBookingReducer, initialChatBookingState, canonicalSlugsFor,
 } from "../lib/chatBookingState";
 import { CHAT_LANGUAGES, searchChatLanguages, type ChatLanguageOption } from "../lib/chatLanguages";
-import { theme } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 
 /**
  * UX-06 Round 3 — real DeepSeek chat + the real, canonical booking journey
@@ -46,6 +47,8 @@ interface Props {
 }
 
 export function DeepSeekChatScreen({ navigation }: Props) {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
   const [session, setSession]   = useState<AISession | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput]       = useState("");
@@ -280,10 +283,12 @@ export function DeepSeekChatScreen({ navigation }: Props) {
   return (
     <KeyboardAvoidingView style={s.screen} behavior={Platform.OS==="ios"?"padding":"height"}>
       <View style={s.header}>
-        <TouchableOpacity style={s.bookBtn} onPress={openBookingFlow} testID="chat-book-service">
+        <TouchableOpacity style={s.bookBtn} onPress={openBookingFlow} testID="chat-book-service"
+          accessible accessibilityRole="button" accessibilityLabel="Book a service">
           <Text style={s.bookBtnText}>📅 Book a service</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={s.langChip} onPress={()=>setLangModal(true)} testID="chat-language-btn">
+        <TouchableOpacity style={s.langChip} onPress={()=>setLangModal(true)} testID="chat-language-btn"
+          accessible accessibilityRole="button" accessibilityLabel={`Conversation language: ${language.englishName}. Tap to change`}>
           <Text style={s.langChipText}>{language.nativeName} ▾</Text>
         </TouchableOpacity>
       </View>
@@ -293,32 +298,38 @@ export function DeepSeekChatScreen({ navigation }: Props) {
         keyExtractor={m=>m.id}
         contentContainerStyle={s.list}
         renderItem={({item}) => (
-          <View style={[s.bubble, item.role==="user" ? s.bubbleUser : s.bubbleAssistant]}>
+          <View style={[s.bubble, item.role==="user" ? s.bubbleUser : s.bubbleAssistant]}
+            accessible accessibilityLabel={`${item.role === "user" ? "You" : "Assistant"} said: ${item.content}`}>
             <Text style={item.role==="user" ? s.bubbleUserText : s.bubbleAssistantText}>{item.content}</Text>
           </View>
         )}
       />
 
-      {error && <Text style={s.errorText}>{error}</Text>}
+      {error && <Text style={s.errorText} accessibilityRole="alert" accessible>{error}</Text>}
 
       <View style={s.inputRow}>
         <TextInput
           style={s.input} value={input} onChangeText={setInput}
           placeholder="Type a message…" placeholderTextColor={theme.colors.textTertiary}
-          testID="chat-input"
+          testID="chat-input" accessibilityLabel="Message"
         />
-        <TouchableOpacity style={s.sendBtn} onPress={send} disabled={sending} testID="chat-send">
+        <TouchableOpacity style={s.sendBtn} onPress={send} disabled={sending} testID="chat-send"
+          accessible accessibilityRole="button" accessibilityLabel="Send message" accessibilityState={{ disabled: sending, busy: sending }}>
           <Text style={s.sendBtnText}>{sending ? "…" : "Send"}</Text>
         </TouchableOpacity>
       </View>
 
       {/* ── Language selector — scoped to this chat screen only ────────────── */}
       <Modal visible={langModal} animationType="slide" onRequestClose={()=>setLangModal(false)}>
-        <View style={s.langModal}>
+        <View style={s.langModal} accessibilityViewIsModal accessibilityRole="none">
+          <TouchableOpacity onPress={()=>setLangModal(false)} accessible accessibilityRole="button"
+            accessibilityLabel="Close language selector" style={{ alignSelf:"flex-end", padding:8 }}>
+            <Text style={{ fontSize:18, color:theme.colors.textSecondary }}>✕</Text>
+          </TouchableOpacity>
           <TextInput
             style={s.langSearch} value={langQuery} onChangeText={setLangQuery}
             placeholder="Search language…" placeholderTextColor={theme.colors.textTertiary}
-            testID="chat-language-search"
+            testID="chat-language-search" accessibilityLabel="Search language"
           />
           <FlatList
             data={searchChatLanguages(langQuery)}
@@ -479,43 +490,55 @@ export function DeepSeekChatScreen({ navigation }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  screen: { flex:1, backgroundColor:theme.colors.bg },
-  center: { alignItems:"center", justifyContent:"center", padding:32, gap:14 },
-  icon:   { fontSize:48 },
-  title:  { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary, textAlign:"center" },
-  body:   { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, textAlign:"center", lineHeight:20 },
-  priceText: { fontSize:theme.font.size.xxxl, fontWeight:"800", color:theme.colors.brand, textAlign:"center" },
-  tierBtn: { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
-             padding:14, backgroundColor:theme.colors.surfaceSunken },
-  tierBtnText: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary, textAlign:"center" },
-  onSiteNote: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, textAlign:"center" },
-  errorText: { color:theme.colors.dangerText, fontSize:theme.font.size.sm, textAlign:"center", paddingHorizontal:16 },
-  startBtn: { backgroundColor:theme.colors.brand, borderRadius:theme.radius.lg, paddingVertical:14, paddingHorizontal:28 },
-  startBtnText: { color:"#fff", fontWeight:"700", fontSize:theme.font.size.base, textAlign:"center" },
-  header: { flexDirection:"row", justifyContent:"space-between", alignItems:"center", padding:10, borderBottomWidth:1, borderBottomColor:theme.colors.border },
-  bookBtn: { paddingHorizontal:12, paddingVertical:6, borderRadius:theme.radius.full, backgroundColor:theme.colors.brand },
-  bookBtnText: { fontSize:theme.font.size.sm, fontWeight:"700", color:"#fff" },
-  langChip: { paddingHorizontal:12, paddingVertical:6, borderRadius:theme.radius.full, backgroundColor:theme.colors.surfaceSunken },
-  langChipText: { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary },
-  list: { padding:14, gap:10 },
-  bubble: { maxWidth:"80%", borderRadius:theme.radius.lg, padding:12 },
-  bubbleUser: { alignSelf:"flex-end", backgroundColor:theme.colors.brand },
-  bubbleAssistant: { alignSelf:"flex-start", backgroundColor:theme.colors.surfaceSunken },
-  bubbleUserText: { color:"#fff", fontSize:theme.font.size.base },
-  bubbleAssistantText: { color:theme.colors.textPrimary, fontSize:theme.font.size.base },
-  inputRow: { flexDirection:"row", gap:8, padding:12, borderTopWidth:1, borderTopColor:theme.colors.border },
-  input: { flex:1, height:44, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
-           paddingHorizontal:14, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
-           backgroundColor:theme.colors.surfaceSunken },
-  sendBtn: { justifyContent:"center", paddingHorizontal:18, borderRadius:theme.radius.lg, backgroundColor:theme.colors.brand },
-  sendBtnText: { color:"#fff", fontWeight:"700" },
-  langModal: { flex:1, backgroundColor:theme.colors.bg, paddingTop:60, paddingHorizontal:16 },
-  flowModal: { flex:1, backgroundColor:theme.colors.bg, paddingTop:60 },
-  langSearch: { height:44, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
-                paddingHorizontal:14, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
-                backgroundColor:theme.colors.surfaceSunken, marginBottom:12, marginHorizontal:16 },
-  langRow: { paddingVertical:12, paddingHorizontal:16, borderBottomWidth:1, borderBottomColor:theme.colors.border },
-  langRowNative: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
-  langRowEnglish: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:2 },
-});
+// UX-07 Round 4 Pass 2: DeepSeekChatScreen (the SmartBot surface) migrated
+// off the static `theme` import onto useTheme()/makeStyles(theme) -- the
+// most important dark-mode surface per this round's mission. Bubbles now
+// use the dedicated bubbleCustomer*/bubbleAssistant* tokens (readable in
+// both modes, distinct from raw brand/surfaceSunken which flattened
+// contrast in dark mode) and "#fff" literals were replaced with
+// theme.colors.textInverse / bubbleCustomerText so button/bubble text
+// stays legible against the dark brand color too. Long Hindi/Punjabi
+// bubble text is unaffected by these changes (still auto-sizing maxWidth
+// 80% + wrapping Text, no fixed height).
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen: { flex:1, backgroundColor:theme.colors.bg },
+    center: { alignItems:"center", justifyContent:"center", padding:32, gap:14 },
+    icon:   { fontSize:48 },
+    title:  { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary, textAlign:"center" },
+    body:   { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, textAlign:"center", lineHeight:20 },
+    priceText: { fontSize:theme.font.size.xxxl, fontWeight:"800", color:theme.colors.brand, textAlign:"center" },
+    tierBtn: { borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
+               padding:14, backgroundColor:theme.colors.surfaceSunken },
+    tierBtnText: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary, textAlign:"center" },
+    onSiteNote: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, textAlign:"center" },
+    errorText: { color:theme.colors.dangerText, fontSize:theme.font.size.sm, textAlign:"center", paddingHorizontal:16 },
+    startBtn: { backgroundColor:theme.colors.brand, borderRadius:theme.radius.lg, paddingVertical:14, paddingHorizontal:28, minHeight:44 },
+    startBtnText: { color:theme.colors.textInverse, fontWeight:"700", fontSize:theme.font.size.base, textAlign:"center" },
+    header: { flexDirection:"row", justifyContent:"space-between", alignItems:"center", padding:10, borderBottomWidth:1, borderBottomColor:theme.colors.border, backgroundColor:theme.colors.surface },
+    bookBtn: { paddingHorizontal:12, paddingVertical:6, minHeight:36, justifyContent:"center", borderRadius:theme.radius.full, backgroundColor:theme.colors.brand },
+    bookBtnText: { fontSize:theme.font.size.sm, fontWeight:"700", color:theme.colors.textInverse },
+    langChip: { paddingHorizontal:12, paddingVertical:6, minHeight:36, justifyContent:"center", borderRadius:theme.radius.full, backgroundColor:theme.colors.surfaceSunken },
+    langChipText: { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textPrimary },
+    list: { padding:14, gap:10 },
+    bubble: { maxWidth:"80%", borderRadius:theme.radius.lg, padding:12 },
+    bubbleUser: { alignSelf:"flex-end", backgroundColor:theme.colors.bubbleCustomer },
+    bubbleAssistant: { alignSelf:"flex-start", backgroundColor:theme.colors.bubbleAssistant },
+    bubbleUserText: { color:theme.colors.bubbleCustomerText, fontSize:theme.font.size.base },
+    bubbleAssistantText: { color:theme.colors.bubbleAssistantText, fontSize:theme.font.size.base },
+    inputRow: { flexDirection:"row", gap:8, padding:12, borderTopWidth:1, borderTopColor:theme.colors.border, backgroundColor:theme.colors.surface },
+    input: { flex:1, height:44, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
+             paddingHorizontal:14, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
+             backgroundColor:theme.colors.surfaceSunken },
+    sendBtn: { justifyContent:"center", paddingHorizontal:18, minHeight:44, borderRadius:theme.radius.lg, backgroundColor:theme.colors.brand },
+    sendBtnText: { color:theme.colors.textInverse, fontWeight:"700" },
+    langModal: { flex:1, backgroundColor:theme.colors.bg, paddingTop:60, paddingHorizontal:16 },
+    flowModal: { flex:1, backgroundColor:theme.colors.bg, paddingTop:60 },
+    langSearch: { height:44, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
+                  paddingHorizontal:14, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
+                  backgroundColor:theme.colors.surfaceSunken, marginBottom:12, marginHorizontal:16 },
+    langRow: { paddingVertical:12, paddingHorizontal:16, minHeight:44, borderBottomWidth:1, borderBottomColor:theme.colors.border },
+    langRowNative: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
+    langRowEnglish: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:2 },
+  });
+}

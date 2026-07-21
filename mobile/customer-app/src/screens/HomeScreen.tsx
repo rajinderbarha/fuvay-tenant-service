@@ -1,14 +1,16 @@
 import React, { useCallback } from "react";
 import {
   ScrollView, StyleSheet, Text, TouchableOpacity,
-  View, StatusBar, Dimensions,
+  View, Dimensions,
 } from "react-native";
 import { useAuth }      from "../context/AuthContext";
+import { useTheme }     from "../context/ThemeContext";
 import { useApi }       from "../hooks/useApi";
 import { bookingsApi, fieldOpsJobsApi } from "../lib/api";
 import { isActive }     from "../lib/jobStatus";
 import { BookingCard }  from "../components/BookingCard";
 import { Skeleton }     from "../components/Skeleton";
+import type { Theme }   from "../styles/theme";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 const { width } = Dimensions.get("window");
@@ -34,6 +36,12 @@ const TYPE_LABEL: Record<string,string> = {
 const TYPE_COLOR: Record<string,string> = {
   repair:"#DC2626", service:"#16A34A", consult:"#7C3AED",
 };
+// UX-07 Round 4 Pass 2: dark-mode readable variants of the same hues (the
+// light set's near-white "#DC2626" @ 15% alpha on a light card reads fine,
+// but the same overlay on a dark card loses almost all contrast).
+const TYPE_COLOR_DARK: Record<string,string> = {
+  repair:"#FCA5A5", service:"#86EFAC", consult:"#D8B4FE",
+};
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -45,8 +53,18 @@ function greeting(): string {
 // ── Component ──────────────────────────────────────────────────────────────────
 type Props = NativeStackScreenProps<{ Home: undefined }, "Home">;
 
+// UX-07 Round 4 Pass 2: migrated to useTheme(). The category grid's pastel
+// per-category backgrounds (cat.bg, designed for a light canvas) are only
+// used in light mode; dark mode uses a shared theme.colors.surfaceRaised
+// card background with the category's brand color kept for the icon
+// accent/text/pills (TYPE_COLOR_DARK) so each category still carries a
+// distinct hue, just not as a full-card pastel wash which would clash with
+// the dark palette. Header/hero keep the brand-navy treatment in both
+// modes (it's a deliberate brand surface, not a "light surface").
 export default function HomeScreen({ navigation }: Props) {
   const { user } = useAuth();
+  const { theme, mode } = useTheme();
+  const s = makeStyles(theme);
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
   const recentBookings = useApi(useCallback(() =>
@@ -65,11 +83,10 @@ export default function HomeScreen({ navigation }: Props) {
 
   const jobs = (activeJob.data as any)?.jobs ?? [];
   const hasActive = jobs.some((j: any) => isActive(j.status));
+  const typeColors = mode === "dark" ? TYPE_COLOR_DARK : TYPE_COLOR;
 
   return (
     <View style={s.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#0F1F3A" />
-
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <View style={s.header}>
         <View>
@@ -78,7 +95,9 @@ export default function HomeScreen({ navigation }: Props) {
         </View>
         <TouchableOpacity
           style={s.profileBtn}
-          onPress={() => navigation.navigate("Profile" as never)}>
+          onPress={() => navigation.navigate("Profile" as never)}
+          accessible accessibilityRole="button" accessibilityLabel="Open profile"
+          hitSlop={{ top:6, bottom:6, left:6, right:6 }}>
           <Text style={s.profileInitial}>{firstName[0]?.toUpperCase()}</Text>
         </TouchableOpacity>
       </View>
@@ -92,7 +111,9 @@ export default function HomeScreen({ navigation }: Props) {
           <TouchableOpacity
             style={s.activeBanner}
             onPress={() => (navigation.navigate as (...args: unknown[]) => void)("JobTracking", { jobId: jobs[0]?.id })}
-            activeOpacity={0.88}>
+            activeOpacity={0.88}
+            accessible accessibilityRole="button"
+            accessibilityLabel="Technician is on the way. Tap to track live location">
             <View style={s.activeDot}/>
             <View style={{ flex:1 }}>
               <Text style={s.activeBannerTitle}>Technician is on the way</Text>
@@ -109,9 +130,11 @@ export default function HomeScreen({ navigation }: Props) {
           {CATEGORIES.map(cat => (
             <TouchableOpacity
               key={cat.id}
-              style={[s.catCard, { backgroundColor: cat.bg }]}
+              style={[s.catCard, { backgroundColor: mode === "dark" ? theme.colors.surfaceRaised : cat.bg }]}
               onPress={() => openCategory(cat.id)}
-              activeOpacity={0.82}>
+              activeOpacity={0.82}
+              accessible accessibilityRole="button"
+              accessibilityLabel={`${cat.name}. Tap to start`}>
 
               {/* Color accent strip */}
               <View style={[s.catAccent, { backgroundColor: cat.color + "22",
@@ -124,9 +147,9 @@ export default function HomeScreen({ navigation }: Props) {
               <View style={s.typePills}>
                 {cat.types.map(t => (
                   <View key={t}
-                    style={[s.typePill, { backgroundColor: TYPE_COLOR[t] + "15",
-                      borderColor: TYPE_COLOR[t] + "40" }]}>
-                    <Text style={[s.typePillText, { color: TYPE_COLOR[t] }]}>
+                    style={[s.typePill, { backgroundColor: typeColors[t] + "22",
+                      borderColor: typeColors[t] + "55" }]}>
+                    <Text style={[s.typePillText, { color: typeColors[t] }]}>
                       {TYPE_LABEL[t]}
                     </Text>
                   </View>
@@ -134,7 +157,7 @@ export default function HomeScreen({ navigation }: Props) {
               </View>
 
               {/* Tap cue */}
-              <Text style={[s.tapCue, { color: cat.color + "99" }]}>Tap to start →</Text>
+              <Text style={[s.tapCue, { color: cat.color }]}>Tap to start →</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -167,52 +190,48 @@ export default function HomeScreen({ navigation }: Props) {
 }
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
-  screen:           { flex:1, backgroundColor:"#F5F7FA" },
-  // Header
-  header:           { backgroundColor:"#0F1F3A", paddingTop:56, paddingBottom:24,
-                       paddingHorizontal:20, flexDirection:"row",
-                       alignItems:"center", justifyContent:"space-between" },
-  greeting:         { fontSize:22, fontWeight:"800", color:"#FFFFFF", letterSpacing:-0.3 },
-  headerSub:        { fontSize:14, color:"rgba(255,255,255,0.6)", marginTop:3 },
-  profileBtn:       { width:42, height:42, borderRadius:21,
-                       backgroundColor:"rgba(255,255,255,0.15)",
-                       alignItems:"center", justifyContent:"center" },
-  profileInitial:   { fontSize:18, fontWeight:"700", color:"#FFFFFF" },
-  // Content
-  content:          { padding:16, paddingTop:20 },
-  sectionLabel:     { fontSize:13, fontWeight:"700", color:"#94A3B8",
-                       letterSpacing:0.8, textTransform:"uppercase", marginBottom:14 },
-  // Active job banner
-  activeBanner:     { flexDirection:"row", alignItems:"center", gap:12,
-                       backgroundColor:"#0F1F3A", borderRadius:16, padding:16,
-                       marginBottom:20, shadowColor:"#0F1F3A",
-                       shadowOffset:{width:0,height:4}, shadowOpacity:0.25, shadowRadius:12,
-                       elevation:6 },
-  activeDot:        { width:10, height:10, borderRadius:5, backgroundColor:"#22C55E",
-                       shadowColor:"#22C55E", shadowOffset:{width:0,height:0},
-                       shadowOpacity:0.8, shadowRadius:4 },
-  activeBannerTitle:{ fontSize:15, fontWeight:"700", color:"#FFFFFF" },
-  activeBannerSub:  { fontSize:12, color:"rgba(255,255,255,0.6)", marginTop:2 },
-  activeBannerArrow:{ fontSize:22, color:"rgba(255,255,255,0.5)" },
-  // Category grid
-  grid:             { flexDirection:"row", flexWrap:"wrap", gap:12 },
-  catCard:          { width:CARD_W, borderRadius:18, padding:16, overflow:"hidden",
-                       shadowColor:"#000", shadowOffset:{width:0,height:2},
-                       shadowOpacity:0.08, shadowRadius:8, elevation:3,
-                       position:"relative" },
-  catAccent:        { position:"absolute", top:0, bottom:0, left:0, width:3,
-                       borderTopLeftRadius:18, borderBottomLeftRadius:18 },
-  catIcon:          { fontSize:34, marginBottom:10, marginTop:4 },
-  catName:          { fontSize:15, fontWeight:"800", marginBottom:8, letterSpacing:-0.2 },
-  typePills:        { flexDirection:"row", flexWrap:"wrap", gap:4, marginBottom:10 },
-  typePill:         { paddingHorizontal:7, paddingVertical:3, borderRadius:6,
-                       borderWidth:1 },
-  typePillText:     { fontSize:10, fontWeight:"700", letterSpacing:0.3 },
-  tapCue:           { fontSize:11, fontWeight:"600" },
-  // Empty state
-  emptyBookings:    { alignItems:"center", paddingVertical:32,
-                       backgroundColor:"#FFFFFF", borderRadius:16, marginBottom:8 },
-  emptyText:        { fontSize:15, fontWeight:"600", color:"#64748B" },
-  emptySubText:     { fontSize:13, color:"#94A3B8", marginTop:4 },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:           { flex:1, backgroundColor:theme.colors.bg },
+    // Header -- deliberate brand-navy surface in both modes
+    header:           { backgroundColor:theme.colors.brand, paddingTop:56, paddingBottom:24,
+                        paddingHorizontal:20, flexDirection:"row",
+                        alignItems:"center", justifyContent:"space-between" },
+    greeting:         { fontSize:22, fontWeight:"800", color:theme.colors.textInverse, letterSpacing:-0.3 },
+    headerSub:        { fontSize:14, color:"rgba(255,255,255,0.7)", marginTop:3 },
+    profileBtn:       { width:42, height:42, borderRadius:21,
+                        backgroundColor:"rgba(255,255,255,0.18)",
+                        alignItems:"center", justifyContent:"center" },
+    profileInitial:   { fontSize:18, fontWeight:"700", color:theme.colors.textInverse },
+    // Content
+    content:          { padding:16, paddingTop:20 },
+    sectionLabel:     { fontSize:13, fontWeight:"700", color:theme.colors.textTertiary,
+                        letterSpacing:0.8, textTransform:"uppercase", marginBottom:14 },
+    // Active job banner
+    activeBanner:     { flexDirection:"row", alignItems:"center", gap:12,
+                        backgroundColor:theme.colors.brand, borderRadius:16, padding:16,
+                        marginBottom:20, ...theme.shadow.md },
+    activeDot:        { width:10, height:10, borderRadius:5, backgroundColor:theme.colors.success },
+    activeBannerTitle:{ fontSize:15, fontWeight:"700", color:theme.colors.textInverse },
+    activeBannerSub:  { fontSize:12, color:"rgba(255,255,255,0.7)", marginTop:2 },
+    activeBannerArrow:{ fontSize:22, color:"rgba(255,255,255,0.6)" },
+    // Category grid
+    grid:             { flexDirection:"row", flexWrap:"wrap", gap:12 },
+    catCard:          { width:CARD_W, borderRadius:18, padding:16, overflow:"hidden",
+                        ...theme.shadow.sm, position:"relative" },
+    catAccent:        { position:"absolute", top:0, bottom:0, left:0, width:3,
+                        borderTopLeftRadius:18, borderBottomLeftRadius:18 },
+    catIcon:          { fontSize:34, marginBottom:10, marginTop:4 },
+    catName:          { fontSize:15, fontWeight:"800", marginBottom:8, letterSpacing:-0.2 },
+    typePills:        { flexDirection:"row", flexWrap:"wrap", gap:4, marginBottom:10 },
+    typePill:         { paddingHorizontal:7, paddingVertical:3, borderRadius:6,
+                        borderWidth:1 },
+    typePillText:     { fontSize:10, fontWeight:"700", letterSpacing:0.3 },
+    tapCue:           { fontSize:11, fontWeight:"600" },
+    // Empty state
+    emptyBookings:    { alignItems:"center", paddingVertical:32,
+                        backgroundColor:theme.colors.surface, borderRadius:16, marginBottom:8 },
+    emptyText:        { fontSize:15, fontWeight:"600", color:theme.colors.textSecondary },
+    emptySubText:     { fontSize:13, color:theme.colors.textTertiary, marginTop:4 },
+  });
+}
