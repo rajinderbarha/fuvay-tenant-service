@@ -45,10 +45,10 @@ export function BookingsListScreen({ navigation }: Props) {
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={b=>b.id}
+          keyExtractor={b=>b.booking_id}
           renderItem={({item:b})=>(
             <BookingCard booking={b}
-              onPress={()=>navigation.navigate("BookingDetail",{bookingId:b.id})}/>
+              onPress={()=>navigation.navigate("BookingDetail",{bookingId:b.booking_id})}/>
           )}
           contentContainerStyle={{ padding:theme.spacing.base, gap:12, paddingBottom:32 }}
           onRefresh={bookings.refetch} refreshing={bookings.loading}

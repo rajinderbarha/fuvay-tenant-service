@@ -79,9 +79,24 @@ export interface ServiceCategory {
 export interface ServiceOffering {
   id:string; slug:string; name:string; description?:string;
 }
+// UX-06 Round 6 correction: `/v1/customer/bookings*` is actually backed by
+// `app/engines/home_service_assignment/customer_router.py` (engine_id:
+// "assignment") -- the SAME ServiceBooking/ServiceJob pipeline created by
+// homeServiceDraftApi/bookingConfirmApi, NOT a separate "Booking->field_ops.Job"
+// pipeline as Round 1 assumed without reading the router source. Confirmed
+// live: a real booking created via bookingConfirmApi.confirmHomeServiceBooking
+// appeared immediately in this exact endpoint's response with this exact
+// shape. (fieldOpsJobsApi/`/v1/customer/jobs*` remains the genuinely distinct
+// Booking->field_ops.Job pipeline -- unaffected by this correction.)
 export interface Booking {
-  id:string; booking_number?:string; service_type?:string; scheduled_at?:string; status:string;
-  created_at:string; notes?:string;
+  booking_id:string; booking_number:string; status:string;
+  issue_summary?:string; city?:string; address?:string;
+  preferred_date?:string; preferred_time_window?:string;
+  selected_provider?:{ provider_name?:string; rating?:number|null };
+  selected_price_option?:string; selected_price_amount?:number;
+  payment_mode?:string;
+  job_id?:string; job_status?:string;
+  assignment_status?:string; assignment_message?:string;
 }
 // Real field_ops.Job shape, confirmed from app/engines/field_ops/service.py::_job_dict
 // (Booking->field_ops.Job pipeline, read-only for customers, GET /v1/customer/jobs*).

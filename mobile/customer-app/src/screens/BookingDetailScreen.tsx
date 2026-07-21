@@ -13,31 +13,22 @@ type RootParamList = { BookingDetail: Params };
 type Props  = NativeStackScreenProps<RootParamList, "BookingDetail">;
 
 /**
- * UX-06 Round 5 rewrite. Two real, corrected issues found this round:
- * 1. This screen previously read fields (`price_snapshot`, `quoted_price`,
- *    `credit_applied`, `payable_amount`, `tenant_name`, `assigned_staff`)
- *    that were never confirmed to exist on the real `GET /v1/customer/bookings/{id}`
- *    response (Booking type in lib/api.ts only has id/booking_number/
- *    service_type/scheduled_at/status/created_at/notes) — trimmed to real
- *    fields only, removing the fabricated payment-breakdown card.
- * 2. It called `bookingsApi.cancel(...)`, which was never a real export —
- *    cancellation for this pipeline is deliberately UNRESOLVED/unexposed per
- *    the canonical domain rule established in Round 1 (see
- *    known-limitations.md history) — REMOVED the cancel button/modal
- *    entirely rather than leave a dead control calling a nonexistent
- *    endpoint. Same for the quote-approval/job-tracking/review CTAs, which
- *    referenced fields/routes not present on this real Booking shape — removed
- *    pending a real, confirmed contract (see production-route-design-census.csv).
- *
- * Preserves pipeline identity per Workstream 9: shows the real
- * booking_number/status/service_type/date, with the internal booking `id`
- * kept out of the primary label (shown only in a small secondary line).
+ * UX-06 Round 6 correction: `GET /v1/customer/bookings/{id}` is backed by
+ * `app/engines/home_service_assignment/customer_router.py` (engine_id:
+ * "assignment") — confirmed by creating a REAL booking this round
+ * (BK-20260721-000001, via an existing already-configured offering,
+ * ac_installation, proving the full canonical pipeline end-to-end without
+ * creating new shared pricing policy — see canonical-booking-live-evidence.md).
+ * Real fields: booking_id/booking_number/status/issue_summary/city/
+ * selected_provider/selected_price_option/selected_price_amount/
+ * payment_mode/job_id/job_status/assignment_status/assignment_message.
+ * Preserves pipeline identity: booking_id and job_id are shown as distinct,
+ * secondary reference lines, never merged into one ID.
  */
 export function BookingDetailScreen({ route }: Props) {
   const { bookingId } = route.params;
   const booking = useApi(useCallback(() => bookingsApi.get(bookingId), [bookingId]));
   const b = booking.data;
-  const fmtDate = (d?:string) => d ? new Date(d).toLocaleString("en-IN",{weekday:"short",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"}) : "Not yet scheduled";
 
   if (booking.loading) return (
     <ScrollView style={gs.screen} contentContainerStyle={{padding:theme.spacing.base,gap:14}}>
@@ -54,24 +45,33 @@ export function BookingDetailScreen({ route }: Props) {
               <Text style={s.bookingNum}>{b.booking_number ?? "Booking"}</Text>
               <JobStatusBadge status={b.status}/>
             </View>
-            {b.service_type && <Text style={s.serviceType}>{b.service_type}</Text>}
-            <Text style={s.date}>📅 {fmtDate(b.scheduled_at)}</Text>
-            <Text style={s.internalId}>Ref: {b.id}</Text>
+            {b.issue_summary && <Text style={s.serviceType}>{b.issue_summary}</Text>}
+            {b.city && <Text style={s.date}>📍 {b.city}</Text>}
+            {b.selected_provider?.provider_name && (
+              <Text style={s.date}>🏢 {b.selected_provider.provider_name}</Text>
+            )}
+            {b.assignment_message && <Text style={s.date}>{b.assignment_message}</Text>}
           </Card>
 
-          <Card>
-            <Text style={s.onSiteNote}>
-              Payment is made directly to the technician on-site — ServiceOS
-              does not process this payment.
-            </Text>
-          </Card>
-
-          {b.notes && (
-            <Card>
-              <Text style={gs.label}>Your Notes</Text>
-              <Text style={s.notes}>{b.notes}</Text>
+          {b.selected_price_amount != null && (
+            <Card style={{ gap:6 }}>
+              <View style={[gs.row,{justifyContent:"space-between"}]}>
+                <Text style={gs.label}>Price</Text>
+                <Text style={s.price}>₹{b.selected_price_amount.toLocaleString("en-IN")}</Text>
+              </View>
+              <Text style={s.onSiteNote}>
+                Payment is made directly to the technician on-site — ServiceOS
+                does not process this payment.
+              </Text>
             </Card>
           )}
+
+          {/* Pipeline provenance — kept as small, distinct secondary lines,
+              never merged, never a primary label. */}
+          <Card style={{ gap:4 }}>
+            <Text style={s.internalId}>Booking ref: {b.booking_id}</Text>
+            {b.job_id && <Text style={s.internalId}>Job ref: {b.job_id}{b.job_status ? ` (${b.job_status})` : ""}</Text>}
+          </Card>
         </>
       )}
     </ScrollView>
@@ -83,7 +83,7 @@ const s = StyleSheet.create({
   bookingNum: { fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary },
   serviceType:{ fontSize:theme.font.size.xl,  fontWeight:"700", color:theme.colors.textPrimary },
   date:       { fontSize:theme.font.size.base, color:theme.colors.textSecondary },
+  price:      { fontSize:theme.font.size.xl, fontWeight:"800", color:theme.colors.brand },
   internalId: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
   onSiteNote: { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
-  notes:      { fontSize:theme.font.size.base, color:theme.colors.textSecondary, lineHeight:22 },
 });

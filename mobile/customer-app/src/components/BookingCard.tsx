@@ -6,29 +6,28 @@ import type { Booking } from "../lib/api";
 
 interface Props { booking:Booking; onPress:()=>void }
 
-// UX-06 Round 5: trimmed to the real Booking shape (id/booking_number/
-// service_type/scheduled_at/status/created_at/notes) -- price_snapshot/
-// tenant_name/assigned_staff were never confirmed real fields (see
-// BookingDetailScreen.tsx's Round 5 rewrite for the same correction).
+// UX-06 Round 6 correction: `/v1/customer/bookings*` (home_service_assignment
+// engine) returns issue_summary/city/selected_provider/selected_price_amount,
+// not service_type/scheduled_at -- confirmed live this round by creating a
+// real booking (BK-20260721-000001) and inspecting the actual list response.
 export function BookingCard({ booking:b, onPress }:Props) {
-  const date = b.scheduled_at ? new Date(b.scheduled_at) : null;
-  const fmt  = date ? date.toLocaleDateString("en-IN",{ weekday:"short", day:"numeric", month:"short" }) : null;
-  const time = date ? date.toLocaleTimeString("en-IN",{ hour:"2-digit", minute:"2-digit" }) : null;
-
   return (
     <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.85}>
       <View style={s.top}>
         <View style={{ flex:1 }}>
-          <Text style={s.serviceType}>{b.service_type ?? "Service"}</Text>
-          <Text style={s.meta}>{b.booking_number}</Text>
+          <Text style={s.serviceType} numberOfLines={1}>{b.issue_summary ?? "Service"}</Text>
+          <Text style={s.meta}>{b.booking_number}{b.city ? ` · ${b.city}` : ""}</Text>
         </View>
         <JobStatusBadge status={b.status} size="sm" />
       </View>
-      {date && (
+      {b.selected_provider?.provider_name && (
         <View style={s.dateRow}>
-          <Text style={s.dateIcon}>📅</Text>
-          <Text style={s.dateText}>{fmt} at {time}</Text>
+          <Text style={s.dateIcon}>🏢</Text>
+          <Text style={s.dateText}>{b.selected_provider.provider_name}</Text>
         </View>
+      )}
+      {b.selected_price_amount != null && (
+        <Text style={s.price}>₹{b.selected_price_amount.toLocaleString("en-IN")}</Text>
       )}
     </TouchableOpacity>
   );
@@ -42,4 +41,5 @@ const s = StyleSheet.create({
   dateRow:  { flexDirection:"row", alignItems:"center", gap:6, marginBottom:4 },
   dateIcon: { fontSize:14 },
   dateText: { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
+  price:    { fontSize:theme.font.size.base, fontWeight:"800", color:theme.colors.brand, marginTop:4 },
 });
