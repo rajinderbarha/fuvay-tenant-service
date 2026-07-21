@@ -19,10 +19,16 @@ BASE = "http://localhost:8000"
 
 class TestStaffChatSource:
     def test_staff_chat_router_exists_and_is_tenant_scoped(self):
+        # PROTECTED_BY_LATER_SLICE: 2F-39. The actor-type literal RECIP_STAFF
+        # is no longer inlined here -- it's resolved via _staff_actor_type(u),
+        # which correctly distinguishes technician vs staff (a real
+        # improvement over always assuming RECIP_STAFF regardless of role;
+        # see _staff_actor_type's own "RECIP_TECHNICIAN if u.role ==
+        # 'technician' else RECIP_STAFF"). This test predates that helper.
         from app.engines.platform_notifications import provider_router
         # The staff chat list must pass tenant_id (tenant-scoped visibility).
         src = inspect.getsource(provider_router.staff_list_threads)
-        assert "RECIP_STAFF" in src and "_tid(u)" in src
+        assert "_staff_actor_type(u)" in src and "_tid(u)" in src
 
 
 class TestStaffChatLive:

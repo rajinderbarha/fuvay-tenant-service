@@ -139,30 +139,30 @@ async def test_customer_cannot_get_another_customers_review():
 
 @pytest.mark.asyncio
 async def test_create_review_router_ignores_spoofed_customer_id():
+    # PROTECTED_BY_LATER_SLICE: 2F-39. This legacy `reviews` engine's write
+    # path was retired to HTTP 410 (Phase 2A Slice 2 "preserve legacy
+    # reads, block legacy writes" decision -- app/engines/review/router.py's
+    # create_review now unconditionally raises 410, superseded by the
+    # customer_reviews engine per Sprint 24/MODULE-L5-13). The spoofed-ID
+    # IDOR concern this test originally guarded against is structurally
+    # moot: the endpoint no longer reads the request body or creates
+    # anything at all. This test now proves the retirement itself, the
+    # security-relevant fact that actually matters today.
     import app.engines.review.router as review_router
     from app.dependencies.auth import UserContext
+    from fastapi import HTTPException
 
     own_id = str(uuid.uuid4())
-    other_id = str(uuid.uuid4())
-    spoofed_body = {"tenant_id": str(uuid.uuid4()), "job_id": "JOB-1",
-                     "customer_id": other_id, "signals": {}}
-
-    captured = {}
-    async def fake_create_review(tenant_id, job_id, customer_id, staff_id, signals, comment):
-        captured["customer_id"] = customer_id
-        return {"review_id": str(uuid.uuid4())}
 
     class FakeState:
         request_id = "req_test"
 
     class FakeRequest:
         state = FakeState()
-        async def json(self): return spoofed_body
 
-    fake_svc = MagicMock()
-    fake_svc.create_review = fake_create_review
     user = UserContext(user_id=own_id, email="c@x.io", role="customer", tenant_id=None,
                         full_name="Cust", is_verified=True)
 
-    await review_router.create_review(FakeRequest(), u=user, s=fake_svc)
-    assert str(captured["customer_id"]) == own_id
+    with pytest.raises(HTTPException) as exc_info:
+        await review_router.create_review(FakeRequest(), u=user)
+    assert exc_info.value.status_code == 410

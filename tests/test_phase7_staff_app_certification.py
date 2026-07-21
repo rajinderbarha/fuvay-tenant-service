@@ -38,7 +38,11 @@ def test_job_detail_isolation_helper_blocks_unassigned_staff():
 
 
 def test_staff_jobs_router_scopes_to_staff_and_technician_roles_only():
-    assert 'u.role not in ("staff", "technician")' in FIELD_OPS_STAFF_ROUTER
+    # PROTECTED_BY_LATER_SLICE: 2F-39. Slice 2F-14 replaced this router's
+    # inline role check with the named require_staff_or_technician_only
+    # dependency (same policy) -- see
+    # tests/test_p0_job_completion_credit_deduction.py's identical fix.
+    assert "require_staff_or_technician_only" in FIELD_OPS_STAFF_ROUTER
 
 
 # ── Bug 2: real technician role excluded from tenant staff list ────
