@@ -579,7 +579,10 @@ return redis.call('ZCARD', key)
                                "expires_at": s.expires_at.isoformat()} for s in sessions]}
 
     async def revoke_session(self, session_id: str, reason: str) -> dict:
-        """PROVEN: Redis DELETE first (immediate effect), then DB update (audit)."""
+        """PROVEN: ownership read, then Redis DELETE (immediate effect), then DB write (audit).
+        The ownership read is a read-only lookup, not the audit write --
+        Redis is still cleared before any DB mutation, preserving the
+        original immediate-invalidation guarantee for the write path."""
         # Slice 2F-39A2R fix (HIGH severity, observed and recorded
         # unremediated since Slice 2F-26D/F/G/H's
         # security-observations-not-remediated.md): the caller's own
