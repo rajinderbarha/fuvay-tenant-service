@@ -1,0 +1,5 @@
+app,screen_count_production,screen_count_dev_showcase,notes
+super-admin,~130 page.tsx routes under /admin,~13 under /dev,route counts from `find app -name page.tsx` this round; full per-screen readiness classification deferred to a later round (round 1 only established the route list per the brief's own prioritization)
+tenant-portal,~85 page.tsx routes under (tenant)/ and /staff/,~39 under /dev (ux-03: 22, ux-04: 17),same method; /staff/* production routes serve an alternate embedded staff surface distinct from mobile/staff-app -- flagged for round-2 duplication review (Workstream 1 follow-up)
+mobile/staff-app,17 screens (8 top-level + ux05/StaffHome+CurrentJob+Schedule+WorkQueue+StaffMore),8 ux05 showcase screens (~18/30 per UX05-BL-001 backlog still pending build in future rounds -- not this round's scope),
+mobile/customer-app,17 screens,0 (no /dev or showcase dir found under mobile/customer-app/src/screens),customer-app has no dev-showcase surface at all -- confirmed via directory listing

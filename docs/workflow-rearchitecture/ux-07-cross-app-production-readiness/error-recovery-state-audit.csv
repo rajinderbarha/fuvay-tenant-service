@@ -1,0 +1,2 @@
+workstream,status,reason
+error_recovery_states,not_attempted_this_round,"Round 1 time budget prioritized Workstreams 1/2/19/9/17/12 per the brief's explicit ordering; error/recovery UI states across all 4 apps not audited this round. One real error contract WAS discovered incidentally: POST .../summary returns 405 if called as GET (see api-contract-audit.csv) -- a real, minor, previously-undocumented contract detail, not a UI error-state audit finding."

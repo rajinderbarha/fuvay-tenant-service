@@ -1,0 +1,18 @@
+method,path,caller_app,auth_role,tenant_derivation,ownership_check,verified_live,notes
+POST,/v1/auth/login,all 4,none (public),n/a,n/a,YES,unified endpoint across all roles per UX-05/UX-06 prior findings; re-confirmed this round for customer/tenant_owner/technician
+POST,/v1/customer/home-services/booking-drafts,mobile/customer-app,customer,server-derived from JWT (customer_id, tenant_id null),n/a (draft not yet tenant-scoped),YES,
+PUT,/v1/customer/home-services/booking-drafts/{id},mobile/customer-app,customer,n/a,draft owned by JWT customer_id (implicit -- not independently negative-tested this round),YES,required_fields response listed issue_summary/city/brand_id but offering_type_id is ALSO functionally required for match-and-price -- real undocumented gap, see live-e2e-evidence.md step 5
+POST,/v1/customer/home-services/booking-drafts/{id}/serviceability-check,mobile/customer-app,customer,n/a,same as above,YES,
+POST,/v1/customer/home-services/booking-drafts/{id}/price-estimate,mobile/customer-app,customer,n/a,same as above,YES,
+POST,/v1/customer/home-services/booking-drafts/{id}/match-and-price,mobile/customer-app,customer,server-resolves tenant via matching,same as above,YES,bargain_available:false / standard_price fallback (UX-06 fix) verified live
+POST,/v1/customer/home-services/booking-drafts/{id}/confirm-price-choice,mobile/customer-app,customer,n/a,same as above,YES,payment_mode:customer_pays_provider_directly correctly returned (on-site payment rule enforced)
+POST,/v1/customer/home-services/booking-drafts/{id}/summary,mobile/customer-app,customer,n/a,same as above,YES,MUST be called via POST not GET -- GET returns 405 (real, minor contract detail)
+POST,/v1/customer/home-services/booking-drafts/{id}/confirm,mobile/customer-app,customer,n/a,same as above,YES,requires Idempotency-Key header; creates real ServiceBooking+ServiceJob pair
+GET,/v1/customer/bookings/{id},mobile/customer-app,customer,server-derived,implicit ownership by customer_id (not negative-tested this round),YES,customer-safe shape confirmed -- no online-payment/escrow fields present
+GET,/v1/provider/service-jobs/assignable,tenant-portal,tenant_owner,server-derived from JWT tenant_id,tenant-scoped list (implicit -- not negative-tested against a second tenant this round),YES,
+GET,/v1/provider/service-jobs/{id}/eligible-staff,tenant-portal,tenant_owner,server-derived,same-tenant staff only (match_reasons confirms same_tenant check),YES,
+POST,/v1/provider/service-jobs/{id}/assign,tenant-portal,tenant_owner,server-derived,not independently negative-tested (e.g. assigning cross-tenant staff) this round,YES,
+GET,/v1/provider/service-jobs/{id}/assignment-timeline,tenant-portal,tenant_owner,server-derived,n/a (read),YES,
+GET,/v1/staff/service-jobs,mobile/staff-app,technician,server-derived from JWT (own assigned jobs only -- confirmed: exactly 1 job returned, matching only this technician's assignment),YES,per MODULE-L5-36 fix
+POST,/v1/staff/service-jobs/{id}/accept,mobile/staff-app,technician,server-derived,implicit (not negative-tested against a job assigned to a different technician) this round,YES,real transitions.ts NEXT_ACTION[assigned] legal value
+GET,/v1/auth/me,all 4,any authenticated,n/a,n/a,YES,used to verify role+tenant_id for each of the 3 tested accounts

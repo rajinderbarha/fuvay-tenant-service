@@ -1,0 +1,2 @@
+app,status,reason
+all_4_apps,not_attempted_this_round,"A full mock/fixture census (Workstream 16) was not performed this round -- time budget prioritized the live E2E proof over static fixture auditing. Known from prior phases: tenant-portal has dev/ux-03 and dev/ux-04 fixture-driven showcase routes (lib/ux03/fixtures.ts confirmed to exist); mobile/staff-app has ux05 showcase screens with local fixtures (per UX05-BL-001 backlog, ~18/30 still pending). Full census deferred."

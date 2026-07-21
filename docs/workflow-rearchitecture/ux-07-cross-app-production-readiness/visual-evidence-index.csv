@@ -1,0 +1,2 @@
+evidence_type,status,reason
+screenshots,not_captured_this_round,"No Playwright/Expo-web browser session was run this round -- all evidence is real curl request/response JSON captured in live-e2e-evidence.md and real-record-evidence.csv, not screenshots. Deferred to a later round alongside the Playwright work in playwright-report.md."

@@ -1,0 +1,36 @@
+file,status_this_round,description
+branch-worktree-baseline.md,pre-existing (coordinator setup),worktree/branch/ancestry integration record
+approved-baseline-ancestry.md,new,re-confirmation of ancestry at round start
+implementation-summary.md,new,round 1 summary of what was done vs deferred
+app-route-inventory.csv,new,real route list for all 4 apps
+production-screen-inventory.csv,new,screen counts + production vs showcase split
+role-navigation-matrix.csv,new,real login verification per role/app
+cross-app-workflow-map.md,new,ASCII diagram of the proven customer->tenant->technician loop
+tenant-onboarding-verification.md,new,deferred with reason
+catalog-pricing-continuity.md,new,partial finding (offering_type_id gap) + deferral
+customer-booking-verification.md,new,re-verification summary pointing to live-e2e-evidence.md
+assignment-staff-workflow.md,new,real assignment flow summary
+quote-checklist-parts-verification.md,new,deferred with resumption point
+completion-commission-review.md,new,deferred
+cross-app-state-synchronization.md,new,refresh-reverify summary
+error-recovery-state-audit.csv,new,deferred
+shared-design-consistency.md,new,deferred
+smartbot-language-verification.md,new,real fix: narrowed chat language registry to en/hi/pa
+responsive-certification.md,new,deferred
+dark-mode-certification.md,new,deferred (standing gap)
+accessibility-readiness.md,new,deferred
+mock-fixture-census.csv,new,deferred
+api-contract-audit.csv,new,real endpoint-by-endpoint audit for the E2E proof's calls
+live-e2e-evidence.md,new,the round's core deliverable -- full real curl E2E proof
+real-record-evidence.csv,new,every real ID from the E2E proof
+unit-component-test-report.md,new,not run this round (disclosed)
+playwright-report.md,new,not run this round (disclosed)
+repeated-test-stability.md,new,not run this round (disclosed)
+visual-evidence-index.csv,new,not captured this round (disclosed)
+frontend-file-change-report.md,new,the one real code change (chatLanguages.ts)
+backend-non-change-report.md,new,confirms zero backend changes
+known-limitations.md,new,itemized honest gaps
+deferred-enhancements.md,new,itemized round-2+ candidates
+final-status-rationale.md,new,why PARTIAL not COMPLETE/BLOCKED
+approval-gate.md,new,round-1 checklist + recommendation
+artifact-manifest.csv,new,this file

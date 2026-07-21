@@ -13,6 +13,14 @@
  * selection made here is therefore folded into the outgoing message text via
  * withLanguageInstruction() in lib/api.ts, and kept as local, client-only
  * conversation metadata (never sent as a fake structured field).
+ *
+ * UX-07 NARROWING: per this phase's explicit requirement, the SmartBot chat
+ * language selector supports EXACTLY English/हिन्दी/ਪੰਜਾਬੀ — no more. UX-06 had
+ * built a broader 14-language BCP-47 registry; that exceeded this phase's
+ * explicit bar (verified against docs/design/ux-06-customer-app's own
+ * language-architecture-compliance.md, which documented the broader registry
+ * as UX-06's own choice, not a hard requirement). Narrowed here; no other
+ * screen imports this file (grep-confirmed), so this is a scoped, safe change.
  */
 export interface ChatLanguageOption {
   code: string;         // BCP-47
@@ -21,22 +29,11 @@ export interface ChatLanguageOption {
   dir: "ltr" | "rtl";
 }
 
-// A real, if non-exhaustive, multi-language registry — not limited to en/hi/pa.
+// Exactly the 3 languages required by UX-07: English/हिन्दी/ਪੰਜਾਬੀ.
 export const CHAT_LANGUAGES: ChatLanguageOption[] = [
   { code:"en", englishName:"English",    nativeName:"English",     dir:"ltr" },
   { code:"hi", englishName:"Hindi",      nativeName:"हिन्दी",       dir:"ltr" },
   { code:"pa", englishName:"Punjabi",    nativeName:"ਪੰਜਾਬੀ",       dir:"ltr" },
-  { code:"bn", englishName:"Bengali",    nativeName:"বাংলা",        dir:"ltr" },
-  { code:"ta", englishName:"Tamil",      nativeName:"தமிழ்",        dir:"ltr" },
-  { code:"te", englishName:"Telugu",     nativeName:"తెలుగు",       dir:"ltr" },
-  { code:"mr", englishName:"Marathi",    nativeName:"मराठी",        dir:"ltr" },
-  { code:"gu", englishName:"Gujarati",   nativeName:"ગુજરાતી",      dir:"ltr" },
-  { code:"kn", englishName:"Kannada",    nativeName:"ಕನ್ನಡ",        dir:"ltr" },
-  { code:"ml", englishName:"Malayalam",  nativeName:"മലയാളം",      dir:"ltr" },
-  { code:"ur", englishName:"Urdu",       nativeName:"اردو",         dir:"rtl" },
-  { code:"ar", englishName:"Arabic",     nativeName:"العربية",      dir:"rtl" },
-  { code:"es", englishName:"Spanish",    nativeName:"Español",      dir:"ltr" },
-  { code:"fr", englishName:"French",     nativeName:"Français",     dir:"ltr" },
 ];
 
 export function searchChatLanguages(query: string): ChatLanguageOption[] {

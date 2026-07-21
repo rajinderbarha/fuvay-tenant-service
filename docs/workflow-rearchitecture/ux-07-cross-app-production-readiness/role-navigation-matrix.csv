@@ -1,0 +1,11 @@
+role,app,login_endpoint,verified_this_round,notes
+super_admin,super-admin,POST /v1/auth/login,NOT VERIFIED,no known super_admin demo credential found in any prior-phase doc; deferred to round 2 (need to find/seed one)
+tenant_owner,tenant-portal,POST /v1/auth/login,VERIFIED LIVE,provider@serviceos.local / Password123! -> role tenant_owner tenant_id 5209ef33-a53e-4fc0-b3f6-006335b8d712
+staff,mobile/staff-app,POST /v1/auth/login,PARTIALLY VERIFIED (same account tested was actually role=technician not staff),staff@serviceos.local resolved to role technician; a distinct staff-designation account not separately tested this round
+technician,mobile/staff-app,POST /v1/auth/login,VERIFIED LIVE,staff@serviceos.local / Password123! -> role technician tenant_id 5209ef33-a53e-4fc0-b3f6-006335b8d712
+customer,mobile/customer-app,POST /v1/auth/login,VERIFIED LIVE,customer@serviceos.local / Password123! -> role customer tenant_id null (correct)
+guest,mobile/customer-app,n/a,NOT VERIFIED,guest booking-draft flow not exercised this round
+admin_operations,super-admin,POST /v1/auth/login,NOT VERIFIED,no known demo credential; deferred
+admin_finance,super-admin,POST /v1/auth/login,NOT VERIFIED,no known demo credential; deferred
+admin_security,super-admin,POST /v1/auth/login,NOT VERIFIED,no known demo credential; deferred
+admin_readonly,super-admin,POST /v1/auth/login,NOT VERIFIED,no known demo credential; deferred
