@@ -1,7 +1,15 @@
+# Slice 2F-39A cumulative route-census summary
+# NOT the final mounted-route census: this is a summary of counts, not a
+# per-route ledger covering all 2,320 mounted route-method records.
+# Detailed per-route evidence for the one module classified this slice
+# lives in final-route-classification.csv. A later census-completion
+# slice must produce or reference a complete master ledger covering
+# every mounted route-method record before any census-complete claim.
 metric,value,evidence
-total_mounted_routes,2320,"list_routes.py, live route_index() introspection, re-run fresh this slice"
-total_auto_detected_mutation_routes,1186,"inventory_mutation_routes.py, re-run fresh this slice, unchanged from 2F-38/39"
-canonical_tenant_provider_mutations,321,"313 (2F-37 baseline) + 8 (this slice, canonical-mutation-additions.csv)"
-previously_unresolved_UNVERIFIED,261,"2F-38 baseline, re-confirmed fresh this slice before any change"
+total_mounted_route_method_records,2320,"list_routes.py, live route_index() introspection, re-run fresh this slice"
+total_auto_detected_mutation_like_records,1186,"inventory_mutation_routes.py, re-run fresh this slice, unchanged from 2F-38/39"
+canonical_tenant_provider_mutations_protected,321,"313 (2F-37 baseline) + 8 (this slice, canonical-mutation-additions.csv)"
+canonical_tenant_provider_mutations_unprotected,0,"verify_2f37.py 21/21, reconfirmed; no gap found in any of the 8 additions"
+unresolved_route_method_records_before_this_slice,261,"2F-38 baseline, re-confirmed fresh this slice before any change"
 resolved_this_slice,32,"all of app.engines.auth.router, see final-route-classification.csv"
-still_unresolved,229,"32 modules not individually inspected this slice, see unresolved-route-reproduction.md"
+unresolved_route_method_records_after_this_slice,229,"32 modules not individually inspected this slice, see unresolved-route-reproduction.md -- these are unresolved, not presumed insecure"
