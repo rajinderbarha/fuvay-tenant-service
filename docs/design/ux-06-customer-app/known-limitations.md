@@ -1,4 +1,34 @@
-# Known Limitations — UX-06 (updated after Round 5)
+# Known Limitations — UX-06 (updated after Round 6)
+
+## Round 6 additions
+
+- **`ac_repair` (the only customer-catalog-visible offering) still cannot
+  complete a real booking** — confirmed by direct code reading that
+  `match_provider_and_price()` has no fallback path without an active
+  `BargainRule`, and none exists for `ac_repair`'s `master_service_id`. This
+  is now precisely diagnosed as a backend catalog/pricing data gap (see
+  round-6-bargain-optionality-proof.md), not a frontend defect — but it
+  remains a real, user-facing limitation until either a real `BargainRule`
+  is added for `ac_repair` or the customer catalog is updated to surface an
+  offering that already has one (e.g. `ac_installation`).
+- **A real, unresolved backend inconsistency was found** (not fixed, out of
+  scope): `auto_price_options_enabled` defaults to `True` and
+  `manual_bargain_rules_enabled` defaults to `False`, implying manual
+  `BargainRule` authoring shouldn't be required — but
+  `match_provider_and_price()` never checks either flag and unconditionally
+  requires a manual `BargainRule` row regardless. Flagged for the backend
+  team in round-6-bargain-optionality-proof.md.
+- **`ac_installation` is not customer-catalog-visible** — it exists as a
+  real, bookable `MasterService` (used successfully this round to prove the
+  full pipeline) but does not appear in
+  `GET /v1/customer/categories/home_services/offerings`. Making it visible
+  would require a backend catalog data change, out of scope for UX-06.
+- **Dark theme, 320px width, large-text scaling**: unchanged standing gaps
+  from prior rounds — not addressed this round (narrow, bounded scope per
+  the Round 6 brief).
+- **Notifications with real triggered data**: not exercised this round (no
+  new notification-triggering event beyond the booking creation itself was
+  checked against the Notifications screen).
 
 ## Round 5 additions
 
