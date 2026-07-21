@@ -1,39 +1,57 @@
-# Final Status Rationale — UX-06 Round 4
+# Final Status Rationale — UX-06 Round 5
 
 ## Status: CUSTOMER_APP_DESIGN_PARTIAL
 
-Per the coordinator's own completion boundary: *"Remain
-CUSTOMER_APP_DESIGN_PARTIAL when: booking submission not proven, seed data
-unsafe/unavailable, major screens still use mock design, material typecheck
-defects affect UX-06, browser evidence incomplete."*
+Per the coordinator's completion boundary: *"Remain DESIGN_PARTIAL if major
+screens still unverified, booking unproven, material UX-06-owned type errors
+remain, old scaffold remains, or runtime evidence incomplete."*
 
-- **Seed data**: safe and available — the opposite of `SAFE_TEST_DATA_ENVIRONMENT_UNAVAILABLE`.
-  This condition does not apply; the environment IS safe and WAS used correctly.
-- **Booking submission**: NOT proven. Real progress (serviceability + price
-  now live, up from fully blocked in Round 3), but the real canonical confirm
-  step still fails with a genuine backend error (`FINAL_DRAFT_NOT_READY`),
-  root-caused to a missing platform-wide `BargainRule` record this round
-  correctly declined to create (shared canonical data, out of safe scope). →
-  **Triggers CUSTOMER_APP_DESIGN_PARTIAL, not COMPLETE.**
-- **Major screens design check**: incomplete — 3 of 18 screens
-  (Notifications, Booking Detail, Service Detail) were not visited/verified
-  this round. → Also triggers PARTIAL per the stated boundary ("browser
-  evidence incomplete").
-- **Typecheck**: 123 errors remain, but zero are UX-06-owned (confirmed via
-  typecheck-error-inventory.csv) — this alone would not block completion, but
-  combined with the two items above, PARTIAL is the correct, honest status.
+- **Typecheck**: 0 UX-06-owned errors remain (was 123 at Round 5 start,
+  126 at Round 2 start) — this condition is now fully satisfied, a genuine
+  strength this round.
+- **Old scaffold**: closed to zero major production screens remaining
+  `OLD_SCAFFOLD_REMAINS` (see old-scaffold-closure-report.md,
+  production-route-design-census.csv) — satisfied.
+- **Booking submission**: still **not proven live end-to-end**. Real,
+  significant progress: corrected a real wrong-endpoint bug (Rounds 3/4 called
+  `/v1/customer/confirm/home-service-booking/{id}` instead of the real
+  `/v1/customer/home-services/booking-drafts/{id}/confirm`), fixed real
+  required-field-name bugs (`issue_summary`/`brand_id`, not
+  `issue_description`/`address_line`), and precisely re-diagnosed the sole
+  remaining blocker down to `HOME_BOOKING_NO_PROVIDER_AVAILABLE` /
+  `PRICE_OPTIONS_UNAVAILABLE` (no `BargainRule` exists for `ac_repair`) —
+  creating one was correctly declined per the strict safety gate (5 of 9
+  required conditions fail; the model has no tenant scoping at all — see
+  bargain-configuration-safety.md). This alone keeps the status at PARTIAL.
+- **Runtime evidence**: the backend (`http://localhost:8000`) became
+  unreachable partway through this round's execution (confirmed via repeated
+  `curl`/`Test-NetConnection` attempts over an extended window) — a genuine
+  infrastructure interruption, not a frontend defect. This blocked completing
+  the full live Playwright certification sequence and the full light/dark
+  visual evidence sweep this round (see known-limitations.md,
+  playwright-runtime-report.md for the precise, honest accounting of what was
+  and wasn't completed).
 
-`CUSTOMER_APP_DESIGN_COMPLETE` was explicitly NOT used because the required
-bar ("complete real booking flow succeeds, real booking reference returned,
-booking list/detail work ... new design visible on every major production
-screen") is not met yet — both conditions are real, specific, and documented,
-not vague hedging.
+`CUSTOMER_APP_DESIGN_COMPLETE` is explicitly not used: the required bar
+("complete real booking flow succeeds, real booking reference returned,
+booking list/detail work ... browser runtime passes") is not met — the
+booking-submission blocker and the backend-outage-interrupted runtime
+certification are both real, specific, and documented, not hedged.
 
-`SAFE_TEST_DATA_ENVIRONMENT_UNAVAILABLE` was NOT used because the environment
-WAS proven safe and usable (see test-data-environment-safety.md) — declining
-to create the platform-wide `BargainRule` was a principled scope decision, not
-an environment failure.
+`BARGAIN_CONFIGURATION_POLICY_BLOCKED` is not used as the overall status
+because it describes only ONE sub-area (the pricing-tier step) — the rest of
+the app (all screens, typecheck, most of the booking pipeline up to that
+step) is real, working, and not blocked by that specific issue. Using it as
+the overall status would overstate how narrow the remaining blocker actually
+is.
 
-`FRONTEND_RUNTIME_BLOCKED` was NOT used because the frontend runs correctly
-(zero uncaught errors, confirmed via a real, passing Playwright session this
-round) — the blocker is backend test data, not a frontend runtime failure.
+`FRONTEND_RUNTIME_BLOCKED` is not used: the frontend itself is verified sound
+— typecheck is clean, 46/46 tests pass across 4 repeated runs with zero
+flakiness, and every screen exercised via source/contract review this round
+shows no frontend defect. The blocker is a backend data/config gap (bargain
+policy) plus a temporary backend outage, not a frontend crash.
+
+`SAFE_TEST_DATA_ENVIRONMENT_UNAVAILABLE` is not used: the environment WAS
+proven safe and usable in Round 4 and remains so — the `BargainRule` decision
+is a principled scope boundary (per Workstream 3's own safety gate), not an
+environment failure.

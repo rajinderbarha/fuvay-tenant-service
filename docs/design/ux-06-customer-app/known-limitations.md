@@ -1,4 +1,36 @@
-# Known Limitations — UX-06 (updated after Round 4)
+# Known Limitations — UX-06 (updated after Round 5)
+
+## Round 5 additions
+
+- **Typecheck is now clean (0 UX-06-owned errors)** — this item from Round 4
+  is resolved (see typecheck-reconciliation.md).
+- **Booking submission still blocked, more precisely diagnosed**: not a
+  routing bug anymore (fixed this round — see bargain-contract-audit.md), not
+  a required-field bug anymore (fixed this round). The sole remaining blocker
+  is a missing `BargainRule` for `ac_repair`, which cannot be safely created
+  from an isolated test session (no tenant scoping on the model, no create
+  API — see bargain-configuration-safety.md).
+- **Backend outage interrupted this round's live runtime certification.**
+  `http://localhost:8000` became unreachable partway through Round 5
+  (confirmed via repeated connectivity checks) — a genuine infrastructure
+  interruption. This blocked a fresh full Playwright certification pass (with
+  the react-dom fix applied) and a full light/dark visual evidence sweep for
+  screens not already captured in Round 4's evidence. Deferred to next round.
+- **`QuoteApprovalScreen`'s `Quote` field shape was widened but NOT
+  re-verified against a live backend this round** (backend was unreachable
+  during that specific fix) — flagged honestly, not silently assumed correct.
+- **`ReviewScreen` has no real submission path** — converted to an honest
+  "not available yet" message this round rather than calling a nonexistent
+  endpoint; a real review-submission contract was never found in the backend
+  across any round of this phase.
+- **4 legacy screens deleted** (`AIChatScreen`, `AIAssistantScreen`,
+  `SmartBotScreen`, `BookServiceScreen`) — fully superseded by
+  `DeepSeekChatScreen`; if any external documentation or navigation
+  elsewhere in the codebase (outside this app) referenced these by name, it
+  would need updating, though none was found within `mobile/customer-app`.
+- **Saved-address integration in the booking flow still not wired** (real
+  `/v1/customers/me/addresses` exists since Round 1, `DeepSeekChatScreen`
+  still collects a one-off address via text entry) — unchanged from Round 4.
 
 ## Round 4 additions
 

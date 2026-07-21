@@ -1,4 +1,17 @@
-# Console Runtime Report — UX-06 Round 4
+# Console Runtime Report — UX-06 (updated Round 5)
+
+## Round 5 update
+
+A fresh browser session with the Round 5 react-dom fix applied was not
+re-run this round due to a genuine backend outage (see
+playwright-runtime-report.md) — the Round 4 findings below remain the most
+recent live evidence. The react-dom/react version-mismatch warning that WAS
+observed once this round (`Incompatible React versions: react 19.2.0 vs
+react-dom 19.2.7`) was root-caused and fixed via a real `package.json`
+`overrides` entry; a clean re-run to confirm it no longer appears is deferred
+to the next round pending backend availability.
+
+## Round 4 findings (still the latest confirmed-clean live evidence)
 
 Real Playwright session, `page.on("pageerror")` + `page.on("console", type==="error")`
 listeners active throughout the full Round 4 flow (login → home → bookings →
