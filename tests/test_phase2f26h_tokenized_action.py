@@ -217,7 +217,16 @@ class TestBurnedCorporaStableFields:
                      ("POST", "/v1/payments/tenants/{tenant_id}/payout"),
                      ("PUT", "/v1/subscriptions/tenants/{tenant_id}/plan"),
                      ("POST", "/v1/compliance/deletion-requests"),
-                     ("POST", "/v1/compliance/portability-requests")):
+                     ("POST", "/v1/compliance/portability-requests"),
+                     # Slice 2F-39A2 fixed security.router::create_api_key,
+                     # which this exact corpus row had already manually
+                     # flagged UNPROTECTED_CROSS_TENANT / HIGH severity at
+                     # adjudication time (CLIENT_ASSERTED_TARGET_TENANT) --
+                     # tenant_id is now server-derived from the caller's own
+                     # token instead of trusted from the request body, so
+                     # the live classifier correctly resolves
+                     # PRINCIPAL_TENANT here now.
+                     ("POST", "/v1/security/api-keys")):
                 d += r["tenant_direction"] == "PRINCIPAL_TENANT"
                 continue
             d += (e is None) or r["tenant_direction"] == e
