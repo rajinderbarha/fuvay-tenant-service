@@ -27,3 +27,24 @@ Not run this round — no test suite was executed at all this session (see
   mode (`document is not defined`, missing jsdom environment config) is
   clearly an environment-configuration gap, not the kind of timing-
   sensitive issue that benefits from a repeat run.
+
+## Round 4, Pass 1
+
+- **frontend/super-admin**: reproduced the Round 2/3-confirmed baseline
+  from a genuinely clean WSL install (`rm`-fresh directory, fresh
+  `npm install --workspaces --include-workspace-root --legacy-peer-deps`):
+  10/13 passing, 3 failing — identical to the prior rounds' reported
+  numbers, confirming no drift.
+- After applying the two test-infrastructure fixes documented in
+  `super-admin-test-failure-analysis.md` (ResizeObserver mock in
+  `test-setup.ts`; scoped `getByRole` query in `patterns.test.tsx`), ran
+  `npx vitest run` **3 consecutive times** with no code changes between
+  runs:
+  - Run 1: 13/13 passed, 3.95s
+  - Run 2: 13/13 passed, 3.64s
+  - Run 3: 13/13 passed, 3.67s
+  All three runs show identical pass/fail composition (Test Files: 4
+  passed; Tests: 13 passed) with only a benign recharts console warning
+  ("width(0) and height(0) of chart") that does not fail any assertion —
+  this is jsdom giving the container zero layout dimensions, not a defect.
+  No flakiness observed.

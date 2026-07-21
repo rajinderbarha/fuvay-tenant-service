@@ -60,3 +60,54 @@ selection defects were found in the code actually exercised this round
 re-check, and the role-boundary checks) beyond what's documented above and
 in `offering-type-contract-defect.md` (which is backend-owned, not
 frontend-owned, and correctly NOT patched here).
+
+## Round 4, Pass 1
+
+Two files changed to fix the 3 previously-failing `frontend/super-admin`
+vitest tests (full root-cause analysis in
+`super-admin-test-failure-analysis.md`):
+
+1. **`frontend/super-admin/test-setup.ts`** — added a minimal
+   `ResizeObserver` mock (`observe`/`unobserve`/`disconnect` no-ops),
+   guarded by `typeof globalThis.ResizeObserver === "undefined"`. jsdom
+   does not implement `ResizeObserver`; recharts' `<ResponsiveContainer>`
+   (used by `RoleDashboard`'s finance/risk widgets) calls it
+   unconditionally on mount, which threw `ReferenceError:
+   ResizeObserver is not defined` in both `RoleDashboard` tests. This is a
+   test-environment gap, not a source defect — the mock only affects the
+   `vitest`/jsdom test run, never the real browser (which always has a
+   native `ResizeObserver`).
+2. **`frontend/super-admin/__tests__/ux02/patterns.test.tsx`** — changed
+   `fireEvent.click(screen.getByText("Section B"))` to
+   `fireEvent.click(screen.getByRole("button", { name: "Section B" }))`
+   in the `EnterpriseDetailPage` "switches sections via the nav buttons"
+   test. `EnterpriseDetailPage` intentionally renders each section label
+   twice — once in a desktop `<nav><button>` and once in a mobile
+   `<select><option>` — toggled visually via a CSS `@media` query that
+   jsdom does not evaluate, so both were simultaneously present in the
+   test DOM and `getByText` (which matches by visible text content across
+   any element) was ambiguous. Scoping to `getByRole("button", ...)`
+   selects only the real, always-intended desktop nav button; the
+   `<option>` isn't a button so it's excluded. This is a test-query bug,
+   not a defect in `EnterpriseDetailPage.tsx` (source file was not
+   changed).
+
+No source component files were changed — both fixes are confined to test
+infrastructure/test code. See `super-admin-test-report.md` for before/after
+pass rates and `repeated-test-stability.md` for the 3-consecutive-run
+stability check.
+
+### Live-access verification note (Workstream 4)
+
+No frontend source files needed changes to get login/dashboard/tenants/
+pricing/packages/logout working live against the running backend — see
+`super-admin-live-access.md`. One environment-specific finding worth
+recording: the app's own onboarding/product "tour" overlay
+(`useTour()` in `components/layout/AdminLayout.tsx`) renders a full-screen
+`position: fixed` backdrop (`z-index: 498`) on first dashboard load that
+intercepts pointer events on other chrome (including the header's "Log
+out" button) until "Skip tour" (or completing the tour) is clicked. This
+is expected onboarding-tour behavior, not a defect, and was handled in
+verification by clicking "Skip tour" first — flagged here only so a future
+round doesn't mistake it for a broken logout button if it's encountered
+via a partial-interaction test.
