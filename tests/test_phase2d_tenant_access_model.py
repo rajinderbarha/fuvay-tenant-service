@@ -147,11 +147,20 @@ class TestTenantMutationPermissionCoverage:
                 continue
             if "require_tenant_mutation_permission" in text and "def require_tenant_mutation_permission" not in text:
                 matches.append(py_file)
-        assert len(matches) == 5, (
-            f"Expected exactly 5 files calling require_tenant_mutation_permission "
-            f"(2 from Slice 2D + tenant_engine/router.py from Slice 2F-1 + "
-            f"invoice_payment/provider_router.py from Slice 2F-6 + "
-            f"serviceability/router.py from Slice 2F-7), found {len(matches)}: {matches}. "
+        # PROTECTED_BY_LATER_SLICE: 2F-39. The frozen count of 5 (Slice 2D
+        # through 2F-7) predates Slices 2F-35/36/37, which legitimately
+        # expanded require_tenant_mutation_permission usage app-wide as
+        # part of closing the canonical 313/313 mutation-authorization
+        # program -- documented, intended forward progress, not a
+        # surprise or a classifier artifact. This assertion was never
+        # updated across 2F-35 through 2F-38 (a real test-history gap
+        # 2F-38's full-backend-suite run first surfaced); 2F-39 updates
+        # the literal per the docstring's own instruction ("further
+        # growth is good news and should keep updating this count").
+        assert len(matches) == 26, (
+            f"Expected exactly 26 files calling require_tenant_mutation_permission "
+            f"(5 through Slice 2F-7, +21 from Slices 2F-35/36/37's app-wide "
+            f"mutation-authorization program), found {len(matches)}: {matches}. "
             f"If this changed, update tenant-readonly-decision.md's conclusion."
         )
         assert any(p.name == "router.py" and p.parent.name == "tenant_engine" for p in matches)

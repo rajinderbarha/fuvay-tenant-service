@@ -30,18 +30,29 @@ async def test_dispatch_manual_mode_sets_job_assigned_staff_id_and_advances_stat
     job = make_job(status="confirmed")
     staff_id = uuid.uuid4()
 
-    job_result = MagicMock()
-    job_result.scalar_one_or_none.return_value = job
     existing_dispatch_result = MagicMock()
     existing_dispatch_result.scalar_one_or_none.return_value = None  # no idempotent dup
 
     db = MagicMock()
-    # Call order: idempotency check, then our job lookup (score-weights lookup is mocked out below).
-    db.execute = AsyncMock(side_effect=[existing_dispatch_result, job_result])
+    # Only the idempotency check now goes through db.execute -- the
+    # job-ownership pre-check and the post-assignment Job sync (both added
+    # since this test was written) call self._get_job(), mocked directly
+    # below instead of routed through db.execute's side_effect, since it's
+    # invoked twice (pre-check + sync) and must return the *same* job
+    # object both times for this test's mutation-based assertions to work.
+    db.execute = AsyncMock(side_effect=[existing_dispatch_result])
     db.flush = AsyncMock()
 
-    svc = DispatchService(db=db, actor_id=uuid.uuid4(), actor_role="tenant_owner")
+    # Slice 2F-39: actor_tenant_id added -- Slice 2F-36's
+    # _require_trusted_tenant guard (dispatch.service.py) now requires it;
+    # this test predates that fix and previously left it unset (None),
+    # which the guard correctly rejects ("No tenant context.").
+    svc = DispatchService(db=db, actor_id=uuid.uuid4(), actor_role="tenant_owner",
+                           actor_tenant_id=job.tenant_id)
     svc._get_score_weights = AsyncMock(return_value={})
+    # Slice 2F-39: _get_job() is a newer helper (added alongside the
+    # job-ownership pre-check and Job-row sync) that this test predates.
+    svc._get_job = AsyncMock(return_value=job)
     await svc.dispatch_job(str(job.id), job.tenant_id, DispatchMode.MANUAL, staff_id,
                             None, None, "ac_repair")
 
@@ -102,7 +113,10 @@ async def test_reassign_job_updates_job_assigned_staff_id():
     db = MagicMock()
     db.execute = AsyncMock(side_effect=[rec_result, job_result])
 
-    svc = DispatchService(db=db, actor_id=uuid.uuid4(), actor_role="tenant_owner")
+    # Slice 2F-39: actor_tenant_id added, same reason as
+    # test_dispatch_manual_mode_sets_job_assigned_staff_id_and_advances_status above.
+    svc = DispatchService(db=db, actor_id=uuid.uuid4(), actor_role="tenant_owner",
+                           actor_tenant_id=job.tenant_id)
     await svc.reassign_job(str(job.id), new_staff, "no-show")
 
     assert job.assigned_staff_id == new_staff
@@ -138,12 +152,23 @@ async def test_invoice_generated_transition_actually_creates_a_document():
 
     import app.engines.document.service as doc_module
     real_init = doc_module.DocumentService.__init__
+    real_generate_document = doc_module.DocumentService.generate_document
     doc_module.DocumentService.__init__ = lambda self, *a, **kw: None
     doc_module.DocumentService.generate_document = fake_generate_document
     try:
         result = await svc.update_status(job.id, "invoice_generated", None, None, None)
     finally:
+        # Slice 2F-39 fix: generate_document was patched onto the class
+        # directly but never restored, permanently replacing it with this
+        # stub for the rest of the test session -- caused
+        # test_phase2f35_critical_authorization_batch.py's
+        # test_generate_document_calls_trusted_tenant (which inspects
+        # DocumentService.generate_document's real source) to fail only
+        # when running after this test in the same process, never in
+        # isolation. Both class attributes must be restored, not just
+        # __init__.
         doc_module.DocumentService.__init__ = real_init
+        doc_module.DocumentService.generate_document = real_generate_document
 
     assert captured["doc_type"] == "invoice"
     assert captured["variables"]["amount"] == "1500"
