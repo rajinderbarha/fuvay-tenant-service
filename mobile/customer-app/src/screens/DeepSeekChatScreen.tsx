@@ -234,6 +234,13 @@ export function DeepSeekChatScreen({ navigation }: Props) {
     if (!booking.draft) return;
     setFlowLoading(true); setFlowError(null);
     try {
+      // UX-06 Recertification (2nd pass): the real `/confirm` route calls
+      // mark_ready_for_confirmation(), which reads booking_summary (built by
+      // /summary) rather than re-deriving it -- confirmed by the backend
+      // team's own diagnosis. Call /summary explicitly first so
+      // ready_for_confirmation is genuinely satisfied before /confirm, for
+      // both the tier-based (low/mid/high) and the new standard-price path.
+      await homeServiceDraftApi.summary(booking.draft.id);
       // Idempotency-Key: the draft ID itself is a stable, real, caller-owned
       // key — a retry of this exact call (e.g. after a network blip) hits the
       // same key and the backend's ConfirmationLockService returns the
