@@ -1,0 +1,44 @@
+required_filename,actual_filename,present_or_missing,consolidated_into,reason_for_consolidation,evidence_source
+implementation-summary.md,implementation-summary.md,present,,,this slice
+branch-worktree-baseline.md,branch-worktree-baseline.md,present,,,this slice
+baseline-freeze.md,baseline-freeze.md,present,,,this slice
+worktree-interference-guard.md,worktree-interference-guard.md,present,,,this slice
+route-enumeration-method.md,route-enumeration-method.md,present,,,this slice
+mounted-route-census.csv,mounted-route-census.csv,present,,,this slice
+prior-vs-current-route-diff.csv,route-denominator-reconciliation.md,consolidated,route-denominator-reconciliation.md,"before/after arithmetic covers the same content as a table rather than a separate CSV, given the small number of rows",this slice
+unresolved-route-reproduction.md,unresolved-route-reproduction.md,present,,,this slice
+unresolved-route-before-after.csv,route-denominator-reconciliation.md,consolidated,route-denominator-reconciliation.md,same as above,this slice
+route-classification-contract.md,route-classification-contract.md,present,,,this slice
+final-route-classification.csv,final-route-classification.csv,present,,,this slice (32 of 261 rows -- see known-limitations.md)
+confirmed-mutation-routes.csv,final-route-classification.csv,consolidated,final-route-classification.csv,"canonical/customer/admin/internal/public mutation rows are all in one classification table given only one module was fully classified this slice",this slice
+confirmed-read-only-routes.csv,,MISSING,,"no read-only route was classified this slice (auth.router's 32 UNVERIFIED entries were all mutation-capable by the auto-classifier's own pre-filter)",n/a
+canonical-mutation-additions.csv,canonical-mutation-additions.csv,present,,,this slice
+customer-self-service-routes.csv,final-route-classification.csv,consolidated,final-route-classification.csv,"13 self-service rows are in the one classification table",this slice
+platform-admin-routes.csv,final-route-classification.csv,consolidated,final-route-classification.csv,"2 platform-admin rows are in the one classification table",this slice
+internal-routes.csv,,MISSING,,"no PLATFORM_INTERNAL_MUTATION route was found in auth.router this slice",n/a
+callback-webhook-routes.csv,final-route-classification.csv,consolidated,final-route-classification.csv,"9 public/callback rows are in the one classification table",this slice
+duplicate-alias-routes.csv,,MISSING,,"no DUPLICATE_OR_ALIAS route was found in auth.router this slice",n/a
+deprecated-mounted-routes.csv,,MISSING,,"no DEPRECATED_BUT_MOUNTED route was found in auth.router this slice",n/a
+framework-generated-routes.csv,,MISSING,,"no FRAMEWORK_GENERATED_NON_BUSINESS route was found in auth.router this slice",n/a
+product-policy-blocked-routes.csv,,MISSING,,"no PRODUCT_POLICY_BLOCKED route was found in auth.router this slice",n/a
+service-layer-bypass-audit.csv,service-layer-bypass-audit.csv,present,,,this slice (3/8 fully checked, 5 UNVERIFIED on this dimension -- see known-limitations.md)
+authorization-remediation-report.md,final-status-rationale.md,consolidated,final-status-rationale.md,"the remediation narrative (8 additions, notification fix) is folded into the status rationale rather than duplicated in a separate report",this slice
+notification-chat-access-investigation.md,notification-chat-access-investigation.md,present,,,this slice
+notification-failure-disposition.csv,notification-failure-disposition.csv,present,,,this slice
+route-denominator-reconciliation.md,route-denominator-reconciliation.md,present,,,this slice
+route-category-arithmetic.csv,route-denominator-reconciliation.md,consolidated,route-denominator-reconciliation.md,"category arithmetic is a small table, folded into the reconciliation doc",this slice
+canonical-coverage-reconciliation.md,canonical-coverage-reconciliation.md,present,,,this slice
+targeted-test-report.md,targeted-test-report.md,present,,,this slice
+phase2f-regression-report.md,phase2f-regression-report.md,present,,,this slice
+full-backend-regression-diff.md,full-backend-regression-diff.md,present,,,this slice
+test-node-diff.csv,test-node-diff.csv,present,,,this slice
+verifier-spec.md,verifier-spec.md,present,,,this slice
+verifier-report.md,verifier-report.md,present,,,this slice
+verifier-negative-fixture-report.md,verifier-negative-fixture-report.md,present,,,this slice
+backend-file-change-report.md,backend-file-change-report.md,present,,,this slice
+frontend-non-change-report.md,frontend-non-change-report.md,present,,,this slice
+known-limitations.md,known-limitations.md,present,,,this slice
+deferred-items.md,deferred-items.md,present,,,this slice
+final-status-rationale.md,final-status-rationale.md,present,,,this slice
+approval-gate.md,approval-gate.md,present,,,this slice
+artifact-manifest.csv,artifact-manifest.csv,present,,,this slice

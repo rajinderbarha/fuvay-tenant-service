@@ -1,0 +1,7 @@
+metric,value,evidence
+total_mounted_routes,2320,"list_routes.py, live route_index() introspection, re-run fresh this slice"
+total_auto_detected_mutation_routes,1186,"inventory_mutation_routes.py, re-run fresh this slice, unchanged from 2F-38/39"
+canonical_tenant_provider_mutations,321,"313 (2F-37 baseline) + 8 (this slice, canonical-mutation-additions.csv)"
+previously_unresolved_UNVERIFIED,261,"2F-38 baseline, re-confirmed fresh this slice before any change"
+resolved_this_slice,32,"all of app.engines.auth.router, see final-route-classification.csv"
+still_unresolved,229,"32 modules not individually inspected this slice, see unresolved-route-reproduction.md"

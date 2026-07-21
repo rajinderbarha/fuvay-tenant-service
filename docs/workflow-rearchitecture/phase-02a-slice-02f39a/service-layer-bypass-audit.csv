@@ -1,0 +1,9 @@
+route,service_method,other_callers_checked,bypass_found,evidence
+create_api_key,AuthService.create_api_key,"grep for AuthService(...).create_api_key( across app/ and scripts/ -- only called from the router",NO,test_phase2f39a_canonical_additions.py
+revoke_api_key,AuthService.revoke_api_key,same grep,NO,test_phase2f39a_canonical_additions.py
+update_api_key,AuthService.update_api_key,same grep,NO,test_phase2f39a_canonical_additions.py
+invite_staff,AuthService.invite_staff,NOT INDEPENDENTLY CHECKED THIS SLICE,UNVERIFIED,"guard-pattern evidence only; no grep for alternate callers performed"
+update_permissions,AuthService.update_permissions,NOT INDEPENDENTLY CHECKED THIS SLICE,UNVERIFIED,"guard-pattern evidence only"
+deactivate_staff,AuthService.deactivate_staff,NOT INDEPENDENTLY CHECKED THIS SLICE,UNVERIFIED,"guard-pattern evidence only"
+resend_invite,AuthService.resend_invite (assumed method name),NOT INDEPENDENTLY CHECKED THIS SLICE,UNVERIFIED,"guard-pattern evidence only"
+update_staff_schedule,AuthService.update_staff_schedule (assumed method name),NOT INDEPENDENTLY CHECKED THIS SLICE,UNVERIFIED,"guard-pattern evidence only"
