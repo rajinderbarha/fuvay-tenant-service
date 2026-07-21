@@ -8,7 +8,6 @@ import { theme } from "../styles/theme";
 // Screens
 import { LoginScreen }             from "../screens/LoginScreen";
 import { BookingDetailScreen }     from "../screens/BookingDetailScreen";
-import { BookServiceScreen }       from "../screens/BookServiceScreen";
 import { JobTrackingScreen }       from "../screens/JobTrackingScreen";
 import { ReviewScreen }            from "../screens/ReviewScreen";
 import { SettingsScreen }          from "../screens/SettingsScreen";
@@ -19,18 +18,38 @@ import { HelpSupportScreen }       from "../screens/HelpSupportScreen";
 import { PaymentMethodsScreen }    from "../screens/PaymentMethodsScreen";
 import { InvoiceScreen }           from "../screens/InvoiceScreen";
 import { ServiceDetailScreen }     from "../screens/ServiceDetailScreen";
-// UX-06 Round 3 fix: these 3 screens were referenced below (SmartBot/
-// AIAssistant/QuoteApproval routes) with no import anywhere in this file —
-// a pre-existing "Cannot find name" ReferenceError that crashed the whole app
-// at runtime the moment a logged-in user's stack tried to render (discovered
-// via a real Playwright browser run against Expo web this round). Fixing the
-// missing imports, not touching route structure.
-import { SmartBotScreen }          from "../screens/SmartBotScreen";
-import { AIAssistantScreen }       from "../screens/AIAssistantScreen";
 import { QuoteApprovalScreen }     from "../screens/QuoteApprovalScreen";
 import { TabNavigator }            from "./TabNavigator";
+// UX-06 Round 5: BookServiceScreen/SmartBotScreen/AIAssistantScreen/
+// AIChatScreen deleted (not just unregistered) -- all four were fully
+// superseded by DeepSeekChatScreen's real, live-verified booking/chat flow
+// and called dead APIs (bookingsApi.create, aiApi -- neither ever existed).
+// Keeping dead code around that calls nonexistent endpoints, even
+// unreachable, is worse than deleting it. See old-scaffold-closure-report.md.
 
-const Stack = createNativeStackNavigator();
+// UX-06 Round 5: a real root param list, replacing the untyped
+// createNativeStackNavigator() -- this is what resolved the last remaining
+// "Type '{}' is missing ... navigation, route" class of typecheck error
+// across every screen with typed route params (Pattern F in
+// typecheck-error-classification.md/typecheck-reconciliation.md).
+export type RootStackParamList = {
+  Tabs: undefined;
+  BookingDetail: { bookingId:string };
+  ServiceDetail: { categorySlug:string; offeringSlug:string };
+  JobTracking: { jobId:string };
+  QuoteApproval: { jobId:string; bookingNumber?:string };
+  Review: { bookingId:string; jobId?:string };
+  Invoice: { invoiceId:string };
+  Settings: undefined;
+  Notifications: undefined;
+  AddressBook: undefined;
+  ServiceHistory: undefined;
+  HelpSupport: undefined;
+  PaymentMethods: undefined;
+  Login: undefined;
+};
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 // Shared header style
 const HDR = {
@@ -58,21 +77,12 @@ export function AppNavigator() {
             <Stack.Screen name="Tabs" component={TabNavigator}/>
 
             {/* ── Booking flow ─────────────────────────────────────────── */}
-            <Stack.Screen name="BookService"   component={BookServiceScreen}
-              options={{ ...HDR, title:"Book a Service" }}/>
             <Stack.Screen name="BookingDetail" component={BookingDetailScreen}
               options={{ ...HDR, title:"Booking Details" }}/>
             <Stack.Screen name="ServiceDetail" component={ServiceDetailScreen}
               options={{ ...HDR, title:"Service Details" }}/>
             <Stack.Screen name="JobTracking"   component={JobTrackingScreen}
               options={{ ...HDR, title:"Track Technician" }}/>
-            <Stack.Screen name="SmartBot" component={SmartBotScreen}
-              options={{ headerShown:false }}/>
-            <Stack.Screen name="AIAssistant" component={AIAssistantScreen}
-              options={{ headerShown:true, title:"AI Assistant 🤖",
-                headerStyle:{backgroundColor:theme.colors.surface},
-                headerTintColor:theme.colors.textPrimary,
-                headerTitleStyle:{fontWeight:"700"} }}/>
             <Stack.Screen name="QuoteApproval" component={QuoteApprovalScreen}
               options={{ headerShown:true, title:"Repair Quote",
                 headerStyle:{backgroundColor:theme.colors.surface},

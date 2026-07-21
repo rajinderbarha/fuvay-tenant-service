@@ -52,6 +52,7 @@
     "testTimeout": 10000
   },
   "overrides": {
-    "react-test-renderer": "19.2.0"
+    "react-test-renderer": "19.2.0",
+    "react-dom": "19.2.0"
   }
 }

@@ -1,7 +1,5 @@
 import React, { useCallback, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useAction } from "../hooks/useApi";
-import { reviewsApi } from "../lib/api";
 import { StarRating } from "../components/StarRating";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -24,9 +22,13 @@ export function ReviewScreen({ route, navigation }: Props) {
   const [selTags,  setSelTags]  = useState<string[]>([]);
   const [submitted,setSubmitted]= useState(false);
 
-  const submitAction = useAction(useCallback(
-    (sc:number, cm:string) => reviewsApi.submit(jobId ?? bookingId, sc, cm), [jobId, bookingId]
-  ));
+  // UX-06 Round 5: reviewsApi has no real `submit` endpoint (only
+  // eligibility/list/get were ever confirmed real -- see Round 1's audit).
+  // Rather than call a nonexistent endpoint, this screen is honest about the
+  // gap: real reviewsApi.eligibility()/list() are used elsewhere in the app,
+  // and submission itself is deferred until a real contract is confirmed
+  // (see known-limitations.md).
+  const [submitError, setSubmitError] = useState<string|null>(null);
 
   function toggleTag(tag:string) {
     setSelTags(prev => prev.includes(tag) ? prev.filter(t=>t!==tag) : [...prev,tag]);
@@ -34,9 +36,7 @@ export function ReviewScreen({ route, navigation }: Props) {
 
   async function handleSubmit() {
     if (score === 0) { Alert.alert("Rating Required","Please select a star rating."); return; }
-    const fullComment = [selTags.join(", "), comment].filter(Boolean).join(". ");
-    const res = await submitAction.execute(score, fullComment);
-    if (res) setSubmitted(true);
+    setSubmitError("Review submission isn't available yet. Please check back soon.");
   }
 
   if (submitted) return (
@@ -91,12 +91,12 @@ export function ReviewScreen({ route, navigation }: Props) {
             multiline numberOfLines={5} textAlignVertical="top"/>
         </Card>
 
-        {submitAction.error && (
-          <View style={s.errBox}><Text style={s.errText}>{submitAction.error}</Text></View>
+        {submitError && (
+          <View style={s.errBox}><Text style={s.errText}>{submitError}</Text></View>
         )}
 
         <Button label="Submit Review" variant="primary" size="lg"
-          loading={submitAction.loading} disabled={score===0}
+          disabled={score===0}
           onPress={handleSubmit} fullWidth/>
       </ScrollView>
     </KeyboardAvoidingView>

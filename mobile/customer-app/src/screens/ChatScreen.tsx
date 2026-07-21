@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useApi, useAction } from "../hooks/useApi";
-import { chatApi, type ChatMessage, type ChatRoom } from "../lib/api";
+import { chatApi, type ChatMessage, type ChatThread } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Skeleton } from "../components/Skeleton";
 import { theme, gs } from "../styles/theme";
@@ -10,26 +10,29 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 type Props = { navigation: NativeStackNavigationProp<never> };
 
 export function ChatScreen({ navigation }: Props) {
-  const rooms = useApi(useCallback(() => chatApi.listRooms(), []));
-  const [activeRoom, setActiveRoom] = useState<ChatRoom | null>(null);
+  // UX-06 Round 5: rewired to the real api.ts shape -- chatApi.listRooms()
+  // was never a real export (real is listThreads(), returning {items} of
+  // ChatThread keyed by thread_id, not room_id).
+  const rooms = useApi(useCallback(() => chatApi.listThreads(), []));
+  const [activeRoom, setActiveRoom] = useState<ChatThread | null>(null);
   const [text, setText] = useState("");
   const { user } = useAuth();
   const listRef = useRef<FlatList>(null);
 
   const messages = useApi(
-    useCallback(() => activeRoom ? chatApi.getMessages(activeRoom.room_id) : Promise.resolve({ messages:[], has_next:false }),
-    [activeRoom?.room_id]));
+    useCallback(() => activeRoom ? chatApi.getMessages(activeRoom.thread_id) : Promise.resolve({ items:[] as ChatMessage[] }),
+    [activeRoom?.thread_id]));
 
   const sendAction = useAction(useCallback(
-    (content:string) => chatApi.sendMessage(activeRoom!.room_id, content), [activeRoom?.room_id]
+    (content:string) => chatApi.sendMessage(activeRoom!.thread_id, content), [activeRoom?.thread_id]
   ));
 
   useEffect(() => {
-    if (activeRoom) chatApi.markRead(activeRoom.room_id).catch(()=>{});
-  }, [activeRoom?.room_id]);
+    if (activeRoom) chatApi.markRead(activeRoom.thread_id).catch(()=>{});
+  }, [activeRoom?.thread_id]);
 
   useEffect(() => {
-    if (messages.data?.messages.length)
+    if (messages.data?.items.length)
       setTimeout(()=>listRef.current?.scrollToEnd({ animated:false }), 100);
   }, [messages.data]);
 
@@ -48,7 +51,7 @@ export function ChatScreen({ navigation }: Props) {
       <View style={gs.screen}>
         {rooms.loading ? (
           <View style={{padding:16,gap:14}}>{[...Array(4)].map((_,i)=><Skeleton key={i} height={70}/>)}</View>
-        ) : (rooms.data?.rooms ?? []).length === 0 ? (
+        ) : (rooms.data?.items ?? []).length === 0 ? (
           <View style={{flex:1,alignItems:"center",justifyContent:"center",gap:12}}>
             <Text style={{fontSize:44}}>💬</Text>
             <Text style={{color:theme.colors.textTertiary,fontSize:theme.font.size.base}}>No conversations yet</Text>
@@ -57,19 +60,19 @@ export function ChatScreen({ navigation }: Props) {
             </Text>
           </View>
         ) : (
-          <FlatList data={rooms.data?.rooms??[]} keyExtractor={r=>r.room_id}
+          <FlatList data={rooms.data?.items??[]} keyExtractor={r=>r.thread_id}
             renderItem={({item:r})=>(
               <TouchableOpacity style={s.roomRow} onPress={()=>setActiveRoom(r)} activeOpacity={0.85}>
-                <View style={s.roomAvatar}><Text style={s.roomAvatarText}>{r.participant_name[0].toUpperCase()}</Text></View>
+                <View style={s.roomAvatar}><Text style={s.roomAvatarText}>{(r.participant_name??"?")[0].toUpperCase()}</Text></View>
                 <View style={{flex:1}}>
                   <View style={[gs.row,{justifyContent:"space-between"}]}>
-                    <Text style={s.roomName}>{r.participant_name}</Text>
+                    <Text style={s.roomName}>{r.participant_name ?? "Conversation"}</Text>
                     {r.last_message_at && <Text style={s.roomTime}>{fmtTime(r.last_message_at)}</Text>}
                   </View>
                   {r.job_number&&<Text style={s.roomJob}>Job: {r.job_number}</Text>}
                   {r.last_message&&<Text style={s.roomPreview} numberOfLines={1}>{r.last_message}</Text>}
                 </View>
-                {r.unread_count>0&&(
+                {!!r.unread_count && r.unread_count>0&&(
                   <View style={s.unreadBadge}><Text style={s.unreadText}>{r.unread_count}</Text></View>
                 )}
               </TouchableOpacity>
@@ -100,9 +103,9 @@ export function ChatScreen({ navigation }: Props) {
       {/* Header */}
       <TouchableOpacity style={s.threadHeader} onPress={()=>setActiveRoom(null)} activeOpacity={0.8}>
         <Text style={s.backBtn}>←</Text>
-        <View style={s.roomAvatar}><Text style={s.roomAvatarText}>{activeRoom.participant_name[0].toUpperCase()}</Text></View>
+        <View style={s.roomAvatar}><Text style={s.roomAvatarText}>{(activeRoom.participant_name??"?")[0].toUpperCase()}</Text></View>
         <View>
-          <Text style={s.threadName}>{activeRoom.participant_name}</Text>
+          <Text style={s.threadName}>{activeRoom.participant_name ?? "Conversation"}</Text>
           {activeRoom.job_number&&<Text style={s.threadJob}>Job: {activeRoom.job_number}</Text>}
         </View>
       </TouchableOpacity>
@@ -110,7 +113,7 @@ export function ChatScreen({ navigation }: Props) {
       {messages.loading ? (
         <View style={{padding:16,gap:12}}>{[...Array(4)].map((_,i)=><Skeleton key={i} height={44}/>)}</View>
       ) : (
-        <FlatList ref={listRef} data={messages.data?.messages??[]} keyExtractor={m=>m.message_id}
+        <FlatList ref={listRef} data={messages.data?.items??[]} keyExtractor={m=>m.id}
           renderItem={renderMsg} contentContainerStyle={{padding:14,gap:10}}/>
       )}
       {/* Input */}

@@ -28,8 +28,8 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
   ));
 
   const q = quote.data;
-  const fmtPrice = (n:number) => `₹${n.toLocaleString("en-IN")}`;
-  const fmtDate  = (d:string) => new Date(d).toLocaleDateString("en-IN",{ day:"numeric", month:"short", year:"numeric" });
+  const fmtPrice = (n?:number) => n!=null ? `₹${n.toLocaleString("en-IN")}` : "—";
+  const fmtDate  = (d?:string) => d ? new Date(d).toLocaleDateString("en-IN",{ day:"numeric", month:"short", year:"numeric" }) : "—";
 
   async function handleApprove() {
     Alert.alert(
@@ -86,16 +86,16 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
               <View style={[gs.row, { justifyContent:"space-between" }]}>
                 <Text style={{ fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary }}>Balance due</Text>
                 <Text style={{ fontSize:theme.font.size.xl, fontWeight:"800", color:theme.colors.textPrimary }}>
-                  {fmtPrice(q.quoted_price - q.visit_fee)}
+                  {fmtPrice((q.quoted_price??0) - (q.visit_fee??0))}
                 </Text>
               </View>
             </>
           )}
         </Card>
         <Button label="Track Job" variant="primary" size="lg" fullWidth
-          onPress={() => navigation.navigate("JobTracking" as never, { jobId } as never)} />
+          onPress={() => (navigation.navigate as (...args: unknown[]) => void)("JobTracking", { jobId })} />
         <Button label="Go Home" variant="ghost" size="md" fullWidth
-          onPress={() => navigation.navigate("Home" as never)} />
+          onPress={() => (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"Home" })} />
       </View>
     );
   }
@@ -111,7 +111,7 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
           The repair has been declined. The visit fee has been charged. The technician has been informed.
         </Text>
         <Button label="Go Home" variant="primary" size="lg" fullWidth
-          onPress={() => navigation.navigate("Home" as never)} />
+          onPress={() => (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"Home" })} />
       </View>
     );
   }
@@ -174,7 +174,7 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
               </Text>
             </View>
             <Text style={{ fontSize:theme.font.size.xs, color:theme.colors.textTertiary }}>
-              Balance due on completion: {fmtPrice(q.quoted_price - q.visit_fee)}
+              Balance due on completion: {fmtPrice((q.quoted_price??0) - (q.visit_fee??0))}
             </Text>
           </Card>
 
@@ -194,7 +194,7 @@ export function QuoteApprovalScreen({ route, navigation }: Props) {
 
           <View style={{ gap:10 }}>
             <Button label={`✓ Approve — ${fmtPrice(q.quoted_price)}`}
-              variant="success" size="lg" fullWidth
+              variant="primary" size="lg" fullWidth
               loading={approveAction.loading}
               onPress={handleApprove} />
             <Button label="✕ Decline Repair"

@@ -12,7 +12,18 @@ import { ChatScreen }         from "../screens/ChatScreen";
 import { ProfileScreen }      from "../screens/ProfileScreen";
 import { theme } from "../styles/theme";
 
-const Tab = createBottomTabNavigator();
+// UX-06 Round 5: real typed tab param list (HomeScreen/ProfileScreen declare
+// NativeStackScreenProps<{Home:undefined}>/<{Profile:undefined}> themselves —
+// this matches that, resolving the last Pattern F typecheck errors).
+export type TabParamList = {
+  Home: undefined;
+  Bookings: undefined;
+  AIAssistant: undefined;
+  Chat: undefined;
+  Profile: undefined;
+};
+
+const Tab = createBottomTabNavigator<TabParamList>();
 
 function TabIcon({ icon, label, focused }:{ icon:string; label:string; focused:boolean }) {
   return (

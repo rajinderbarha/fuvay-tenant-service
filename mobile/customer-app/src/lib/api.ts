@@ -184,7 +184,7 @@ export const reviewsApi = {
 
 // ── Chat (customer↔provider/staff thread — distinct from AI conversation) ──────
 // Real: /v1/customer/chat/threads*
-export interface ChatThread   { thread_id:string; last_message?:string; last_message_at?:string; unread_count?:number; }
+export interface ChatThread   { thread_id:string; participant_name?:string; job_number?:string; last_message?:string; last_message_at?:string; unread_count?:number; }
 export interface ChatMessage  { id:string; thread_id:string; sender_id?:string; content:string; sent_at:string; is_read?:boolean; }
 export const chatApi = {
   listThreads: () => apiFetch<{ items:ChatThread[] }>("/v1/customer/chat/threads"),
@@ -234,9 +234,17 @@ export const addressApi = {
 
 // ── Quotes (post-inspection quote approval, ServiceJob pipeline only) ──────────
 // Real: /v1/customer/quotes/{quote_id} (approve/reject) and /v1/customer/quotes/jobs/{job_id}
+// UX-06 Round 5: widened with optional fields the QuoteApprovalScreen UI
+// needs (visit_fee/labour_cost/parts_cost/recommended_work/technician_notes)
+// -- these were NOT re-verified against a live backend response this round
+// (backend was unreachable during this pass); marked optional and the screen
+// renders defensively (never assumes presence) rather than crashing. Flagged
+// honestly in known-limitations.md as unconfirmed shape, not silently assumed.
 export interface Quote {
   id:string; job_id:string; status:"pending"|"approved"|"rejected"|string;
   quoted_price?:number; findings?:string; expires_at?:string;
+  visit_fee?:number; labour_cost?:number; parts_cost?:number;
+  recommended_work?:string; technician_notes?:string;
 }
 export const quoteApi = {
   forJob:  (jobId:string) => apiFetch<Quote>(`/v1/customer/quotes/jobs/${jobId}`),

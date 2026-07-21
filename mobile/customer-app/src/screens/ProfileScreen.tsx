@@ -37,7 +37,7 @@ export function ProfileScreen({ navigation }: Props) {
       title: "Support",
       items: [
         { icon:"❓", label:"Help & Support",   onPress:() => navigation.navigate("HelpSupport"    as never) },
-        { icon:"🤖", label:"AI Assistant",     onPress:() => navigation.navigate("AIAssistant"    as never) },
+        { icon:"🤖", label:"AI Assistant",     onPress:() => (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"AIAssistant" }) },
       ],
     },
   ];

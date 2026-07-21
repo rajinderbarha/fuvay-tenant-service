@@ -28,7 +28,7 @@ export function ServiceHistoryScreen({ navigation }: Props) {
     const d = j.created_at ? new Date(j.created_at) : null;
     return (
       <TouchableOpacity style={s.jobRow} activeOpacity={0.85}
-        onPress={()=>navigation.navigate("BookingDetail" as never,{bookingId:j.job_id} as never)}>
+        onPress={()=>(navigation.navigate as (...args: unknown[]) => void)("BookingDetail",{bookingId:j.job_id})}>
         <View style={s.dateCol}>
           <Text style={s.dateDay}>{d ? d.getDate() : "—"}</Text>
           <Text style={s.dateMon}>{d ? d.toLocaleString("en-IN",{month:"short"}) : ""}</Text>
