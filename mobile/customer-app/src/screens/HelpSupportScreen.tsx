@@ -1,7 +1,8 @@
 import React from "react";
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Card } from "../components/Card";
-import { theme, gs } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 
 const CONTACT_OPTIONS = [
   { icon:"📞", label:"Call Support",   sub:"Mon–Sat, 8 AM – 10 PM", onPress:()=>Linking.openURL("tel:1800XXXXXXX") },
@@ -20,11 +21,15 @@ const CONTACT_OPTIONS = [
  * intended production home for "raise an issue" in a future round, but it models
  * a structured complaint/settlement workflow, not a free-text support ticket, so
  * it wasn't reused here without confirming that's the right fit.
+ *
+ * UX-07 Pass 3b: migrated off the static `theme`/`gs` import onto useTheme().
  */
 export function HelpSupportScreen() {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
   return (
-    <ScrollView style={gs.screen} contentContainerStyle={s.content}>
-      <Text style={gs.sectionTitle}>Contact Us</Text>
+    <ScrollView style={s.screen} contentContainerStyle={s.content}>
+      <Text style={s.sectionTitle}>Contact Us</Text>
       <Card style={{padding:0,overflow:"hidden"}}>
         {CONTACT_OPTIONS.map((opt,i,arr)=>(
           <TouchableOpacity key={opt.label} style={[s.contactRow,
@@ -51,12 +56,16 @@ export function HelpSupportScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  content:      { padding:theme.spacing.base, gap:14, paddingBottom:40 },
-  contactRow:   { flexDirection:"row", alignItems:"center", padding:14 },
-  contactLabel: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
-  contactSub:   { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:2 },
-  comingSoon:   { alignItems:"center", gap:8, padding:28 },
-  comingSoonTitle:{ fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary, textAlign:"center" },
-  comingSoonBody: { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, textAlign:"center" },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:       { flex:1, backgroundColor:theme.colors.bg },
+    sectionTitle: { fontSize:theme.font.size.lg, fontWeight:theme.font.weight.bold, color:theme.colors.textPrimary },
+    content:      { padding:theme.spacing.base, gap:14, paddingBottom:40 },
+    contactRow:   { flexDirection:"row", alignItems:"center", padding:14 },
+    contactLabel: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
+    contactSub:   { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:2 },
+    comingSoon:   { alignItems:"center", gap:8, padding:28 },
+    comingSoonTitle:{ fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary, textAlign:"center" },
+    comingSoonBody: { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, textAlign:"center" },
+  });
+}

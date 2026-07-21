@@ -4,7 +4,8 @@ import { useApi } from "../hooks/useApi";
 import { bookingsApi, type Booking } from "../lib/api";
 import { BookingCard } from "../components/BookingCard";
 import { Skeleton } from "../components/Skeleton";
-import { theme, gs } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 const TABS = [
@@ -17,7 +18,10 @@ const TABS = [
 type RootParamList = { BookingDetail: { bookingId: string } };
 type Props = { navigation: NativeStackNavigationProp<RootParamList> };
 
+// UX-07 Pass 3b: migrated off the static `theme`/`gs` import onto useTheme().
 export function BookingsListScreen({ navigation }: Props) {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
   const [tab, setTab] = useState("");
   // UX-06 Round 5: bookingsApi.list() takes no filter params (real
   // GET /v1/customer/bookings was never confirmed to support a status query
@@ -27,7 +31,7 @@ export function BookingsListScreen({ navigation }: Props) {
   const filtered = (bookings.data?.items ?? []).filter(b => !tab || b.status === tab);
 
   return (
-    <View style={gs.screen}>
+    <View style={s.screen}>
       {/* Tabs */}
       <View style={s.tabs}>
         {TABS.map(t => (
@@ -66,10 +70,13 @@ export function BookingsListScreen({ navigation }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  tabs:        { flexDirection:"row", backgroundColor:theme.colors.surface, borderBottomWidth:1, borderBottomColor:theme.colors.border },
-  tab:         { flex:1, alignItems:"center", paddingVertical:13, borderBottomWidth:2, borderBottomColor:"transparent" },
-  tabActive:   { borderBottomColor:theme.colors.brand },
-  tabText:     { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary },
-  tabTextActive:{ color:theme.colors.brand },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:      { flex:1, backgroundColor:theme.colors.bg },
+    tabs:        { flexDirection:"row", backgroundColor:theme.colors.surface, borderBottomWidth:1, borderBottomColor:theme.colors.border },
+    tab:         { flex:1, alignItems:"center", paddingVertical:13, borderBottomWidth:2, borderBottomColor:"transparent" },
+    tabActive:   { borderBottomColor:theme.colors.brand },
+    tabText:     { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary },
+    tabTextActive:{ color:theme.colors.brand },
+  });
+}

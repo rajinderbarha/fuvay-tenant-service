@@ -5,7 +5,8 @@ import { fieldOpsJobsApi } from "../lib/api";
 import { JobStatusBadge } from "../components/JobStatusBadge";
 import { Card } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
-import { theme, gs } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 type Params = { jobId:string };
@@ -20,8 +21,12 @@ type Props  = NativeStackScreenProps<{ JobTracking:Params }, "JobTracking">;
  * rather than left calling a guessed endpoint — the job progress-steps timeline
  * (a real, confirmed contract) is shown instead. Re-add live location tracking
  * once a real customer-facing geo endpoint is confirmed.
+ *
+ * UX-07 Pass 3b: migrated off the static `theme`/`gs` import onto useTheme().
  */
 export function JobTrackingScreen({ route }: Props) {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
   const { jobId } = route.params;
   const job      = useApi(useCallback(() => fieldOpsJobsApi.get(jobId), [jobId]));
   const progress = useApi(useCallback(() => fieldOpsJobsApi.progress(jobId), [jobId]));
@@ -49,10 +54,10 @@ export function JobTrackingScreen({ route }: Props) {
   }
 
   return (
-    <ScrollView style={gs.screen} contentContainerStyle={s.content}>
+    <ScrollView style={s.screen} contentContainerStyle={s.content}>
       {job.loading ? <Skeleton height={90}/> : j && (
         <Card style={{ gap:8 }}>
-          <View style={[gs.row,{justifyContent:"space-between"}]}>
+          <View style={[s.row,{justifyContent:"space-between"}]}>
             <Text style={s.jobNum}>{j.job_number}</Text>
             <JobStatusBadge status={j.status}/>
           </View>
@@ -64,11 +69,11 @@ export function JobTrackingScreen({ route }: Props) {
       )}
 
       <Card>
-        <Text style={[gs.label,{marginBottom:14}]}>Job Progress</Text>
+        <Text style={[s.label,{marginBottom:14}]}>Job Progress</Text>
         {STEPS.map((step, i) => {
           const state = stepState(step.statuses);
           return (
-            <View key={i} style={[gs.row,{gap:14,paddingBottom:i<STEPS.length-1?14:0,alignItems:"flex-start"}]}>
+            <View key={i} style={[s.row,{gap:14,paddingBottom:i<STEPS.length-1?14:0,alignItems:"flex-start"}]}>
               <View style={{alignItems:"center",width:28}}>
                 <View style={[s.stepDot,
                   state==="done"  && s.stepDotDone,
@@ -92,16 +97,22 @@ export function JobTrackingScreen({ route }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  content:    { padding:16, gap:14 },
-  jobNum:     { fontSize:theme.font.size.md, fontWeight:"700", color:theme.colors.textPrimary },
-  serviceType:{ fontSize:theme.font.size.base, color:theme.colors.textSecondary },
-  staffName:  { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
-  stepDot:    { width:28, height:28, borderRadius:14, backgroundColor:theme.colors.surfaceSunken,
-                alignItems:"center", justifyContent:"center" },
-  stepDotDone:{ backgroundColor:theme.colors.brand },
-  stepDotActive:{ backgroundColor:theme.colors.brand, opacity:0.7 },
-  stepLine:   { width:2, flex:1, backgroundColor:theme.colors.border, marginTop:4, minHeight:14 },
-  stepLineDone:{ backgroundColor:theme.colors.brand },
-  stepLabel:  { fontSize:theme.font.size.base, color:theme.colors.textPrimary },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:     { flex:1, backgroundColor:theme.colors.bg },
+    row:        { flexDirection:"row", alignItems:"center" },
+    label:      { fontSize:theme.font.size.xs, fontWeight:theme.font.weight.bold,
+                  color:theme.colors.textTertiary, textTransform:"uppercase", letterSpacing:1 },
+    content:    { padding:16, gap:14 },
+    jobNum:     { fontSize:theme.font.size.md, fontWeight:"700", color:theme.colors.textPrimary },
+    serviceType:{ fontSize:theme.font.size.base, color:theme.colors.textSecondary },
+    staffName:  { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
+    stepDot:    { width:28, height:28, borderRadius:14, backgroundColor:theme.colors.surfaceSunken,
+                  alignItems:"center", justifyContent:"center" },
+    stepDotDone:{ backgroundColor:theme.colors.brand },
+    stepDotActive:{ backgroundColor:theme.colors.brand, opacity:0.7 },
+    stepLine:   { width:2, flex:1, backgroundColor:theme.colors.border, marginTop:4, minHeight:14 },
+    stepLineDone:{ backgroundColor:theme.colors.brand },
+    stepLabel:  { fontSize:theme.font.size.base, color:theme.colors.textPrimary },
+  });
+}

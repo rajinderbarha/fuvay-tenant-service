@@ -5,13 +5,17 @@ import { addressApi, type SavedAddress } from "../lib/api";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
-import { theme, gs } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 
 const LABEL_ICONS: Record<string,string> = { home:"🏠", work:"💼", other:"📍" };
 
 const EMPTY_FORM = { label:"home" as SavedAddress["label"], address_line:"", city:"", pincode:"" };
 
+// UX-07 Pass 3b: migrated off the static `theme`/`gs` import onto useTheme().
 export function AddressBookScreen() {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
   const addresses    = useApi(useCallback(() => addressApi.list(), []));
   const addAction    = useAction(useCallback((a:Parameters<typeof addressApi.add>[0]) => addressApi.add(a), []));
   const deleteAction = useAction(useCallback((id:string) => addressApi.delete(id), []));
@@ -42,12 +46,12 @@ export function AddressBookScreen() {
   const list = addresses.data?.items ?? [];
 
   return (
-    <View style={gs.screen}>
+    <View style={s.screen}>
       <ScrollView contentContainerStyle={s.content}>
         {addresses.loading ? (
           <>{[...Array(3)].map((_,i)=><Skeleton key={i} height={90}/>)}</>
         ) : list.length === 0 ? (
-          <View style={[gs.card,{alignItems:"center",paddingVertical:40,gap:12}]}>
+          <View style={[s.card,{alignItems:"center",paddingVertical:40,gap:12}]}>
             <Text style={{fontSize:36}}>📍</Text>
             <Text style={{fontSize:theme.font.size.lg,fontWeight:"700",color:theme.colors.textPrimary}}>No saved addresses</Text>
             <Text style={{fontSize:theme.font.size.sm,color:theme.colors.textSecondary,textAlign:"center"}}>
@@ -56,10 +60,10 @@ export function AddressBookScreen() {
           </View>
         ) : list.map(addr => (
           <Card key={addr.id} style={{gap:10}}>
-            <View style={gs.row}>
+            <View style={s.row}>
               <Text style={{fontSize:22,marginRight:10}}>{LABEL_ICONS[addr.label]??"📍"}</Text>
               <View style={{flex:1}}>
-                <View style={[gs.row,{gap:8}]}>
+                <View style={[s.row,{gap:8}]}>
                   <Text style={s.addrLabel}>{addr.label.charAt(0).toUpperCase()+addr.label.slice(1)}</Text>
                   {addr.is_default && (
                     <View style={s.defaultBadge}><Text style={s.defaultText}>Default</Text></View>
@@ -69,7 +73,7 @@ export function AddressBookScreen() {
                 <Text style={s.addrCity}>{addr.city}{addr.pincode?` - ${addr.pincode}`:""}</Text>
               </View>
             </View>
-            <View style={[gs.row,{gap:10,justifyContent:"flex-end"}]}>
+            <View style={[s.row,{gap:10,justifyContent:"flex-end"}]}>
               {!addr.is_default && (
                 <TouchableOpacity onPress={()=>handleSetDefault(addr.id)}
                   style={s.actionBtn} disabled={defaultAction.loading}>
@@ -129,28 +133,34 @@ export function AddressBookScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  content:       { padding:theme.spacing.base, gap:12, paddingBottom:40 },
-  addrLabel:     { fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary },
-  addrLine:      { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, marginTop:2 },
-  addrCity:      { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
-  defaultBadge:  { paddingHorizontal:8, paddingVertical:2, borderRadius:99,
-                   backgroundColor:theme.colors.successBg, borderWidth:1, borderColor:theme.colors.successBorder },
-  defaultText:   { fontSize:theme.font.size.xs, fontWeight:"700", color:theme.colors.successText },
-  actionBtn:     { paddingHorizontal:12, paddingVertical:7, borderRadius:theme.radius.md,
-                   borderWidth:1, borderColor:theme.colors.border },
-  actionBtnDanger:{ borderColor:theme.colors.dangerBorder, backgroundColor:theme.colors.dangerBg },
-  actionBtnText: { fontSize:theme.font.size.xs, fontWeight:"600", color:theme.colors.textSecondary },
-  overlay:       { flex:1, justifyContent:"flex-end", backgroundColor:"rgba(0,0,0,0.4)" },
-  sheet:         { backgroundColor:theme.colors.surface, borderTopLeftRadius:28,
-                   borderTopRightRadius:28, padding:24, maxHeight:"90%" },
-  modalTitle:    { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary },
-  fieldLabel:    { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary, marginBottom:6 },
-  input:         { height:46, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
-                   paddingHorizontal:14, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
-                   backgroundColor:theme.colors.surfaceSunken },
-  labelChip:     { flex:1, paddingVertical:9, borderRadius:theme.radius.md, borderWidth:1,
-                   borderColor:theme.colors.border, alignItems:"center" },
-  labelChipActive:{ borderColor:theme.colors.brand, backgroundColor:theme.colors.brand },
-  labelChipText: { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:        { flex:1, backgroundColor:theme.colors.bg },
+    card:          { backgroundColor:theme.colors.surfaceCard, borderRadius:theme.radius.lg,
+                     padding:theme.spacing.base, ...theme.shadow.sm },
+    row:           { flexDirection:"row", alignItems:"center" },
+    content:       { padding:theme.spacing.base, gap:12, paddingBottom:40 },
+    addrLabel:     { fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary },
+    addrLine:      { fontSize:theme.font.size.sm, color:theme.colors.textSecondary, marginTop:2 },
+    addrCity:      { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
+    defaultBadge:  { paddingHorizontal:8, paddingVertical:2, borderRadius:99,
+                     backgroundColor:theme.colors.successBg, borderWidth:1, borderColor:theme.colors.successBorder },
+    defaultText:   { fontSize:theme.font.size.xs, fontWeight:"700", color:theme.colors.successText },
+    actionBtn:     { paddingHorizontal:12, paddingVertical:7, borderRadius:theme.radius.md,
+                     borderWidth:1, borderColor:theme.colors.border },
+    actionBtnDanger:{ borderColor:theme.colors.dangerBorder, backgroundColor:theme.colors.dangerBg },
+    actionBtnText: { fontSize:theme.font.size.xs, fontWeight:"600", color:theme.colors.textSecondary },
+    overlay:       { flex:1, justifyContent:"flex-end", backgroundColor:"rgba(0,0,0,0.4)" },
+    sheet:         { backgroundColor:theme.colors.surface, borderTopLeftRadius:28,
+                     borderTopRightRadius:28, padding:24, maxHeight:"90%" },
+    modalTitle:    { fontSize:theme.font.size.xl, fontWeight:"700", color:theme.colors.textPrimary },
+    fieldLabel:    { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary, marginBottom:6 },
+    input:         { height:46, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
+                     paddingHorizontal:14, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
+                     backgroundColor:theme.colors.surfaceSunken },
+    labelChip:     { flex:1, paddingVertical:9, borderRadius:theme.radius.md, borderWidth:1,
+                     borderColor:theme.colors.border, alignItems:"center" },
+    labelChipActive:{ borderColor:theme.colors.brand, backgroundColor:theme.colors.brand },
+    labelChipText: { fontSize:theme.font.size.sm, fontWeight:"600", color:theme.colors.textSecondary },
+  });
+}

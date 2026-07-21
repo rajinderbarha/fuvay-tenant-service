@@ -5,7 +5,8 @@ import { bookingsApi } from "../lib/api";
 import { JobStatusBadge } from "../components/JobStatusBadge";
 import { Card } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
-import { theme, gs } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
+import type { Theme } from "../styles/theme";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 type Params = { bookingId:string };
@@ -24,24 +25,28 @@ type Props  = NativeStackScreenProps<RootParamList, "BookingDetail">;
  * payment_mode/job_id/job_status/assignment_status/assignment_message.
  * Preserves pipeline identity: booking_id and job_id are shown as distinct,
  * secondary reference lines, never merged into one ID.
+ *
+ * UX-07 Pass 3b: migrated off the static `theme`/`gs` import onto useTheme().
  */
 export function BookingDetailScreen({ route }: Props) {
+  const { theme } = useTheme();
+  const s = makeStyles(theme);
   const { bookingId } = route.params;
   const booking = useApi(useCallback(() => bookingsApi.get(bookingId), [bookingId]));
   const b = booking.data;
 
   if (booking.loading) return (
-    <ScrollView style={gs.screen} contentContainerStyle={{padding:theme.spacing.base,gap:14}}>
+    <ScrollView style={s.screen} contentContainerStyle={{padding:theme.spacing.base,gap:14}}>
       {[...Array(3)].map((_,i)=><Skeleton key={i} height={90}/>)}
     </ScrollView>
   );
 
   return (
-    <ScrollView style={gs.screen} contentContainerStyle={s.content}>
+    <ScrollView style={s.screen} contentContainerStyle={s.content}>
       {b && (
         <>
           <Card style={{ gap:10 }}>
-            <View style={[gs.row,{justifyContent:"space-between"}]}>
+            <View style={[s.row,{justifyContent:"space-between"}]}>
               <Text style={s.bookingNum}>{b.booking_number ?? "Booking"}</Text>
               <JobStatusBadge status={b.status}/>
             </View>
@@ -55,8 +60,8 @@ export function BookingDetailScreen({ route }: Props) {
 
           {b.selected_price_amount != null && (
             <Card style={{ gap:6 }}>
-              <View style={[gs.row,{justifyContent:"space-between"}]}>
-                <Text style={gs.label}>Price</Text>
+              <View style={[s.row,{justifyContent:"space-between"}]}>
+                <Text style={s.label}>Price</Text>
                 <Text style={s.price}>₹{b.selected_price_amount.toLocaleString("en-IN")}</Text>
               </View>
               <Text style={s.onSiteNote}>
@@ -78,12 +83,18 @@ export function BookingDetailScreen({ route }: Props) {
   );
 }
 
-const s = StyleSheet.create({
-  content:    { padding:theme.spacing.base, gap:12, paddingBottom:40 },
-  bookingNum: { fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary },
-  serviceType:{ fontSize:theme.font.size.xl,  fontWeight:"700", color:theme.colors.textPrimary },
-  date:       { fontSize:theme.font.size.base, color:theme.colors.textSecondary },
-  price:      { fontSize:theme.font.size.xl, fontWeight:"800", color:theme.colors.brand },
-  internalId: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
-  onSiteNote: { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    screen:     { flex:1, backgroundColor:theme.colors.bg },
+    row:        { flexDirection:"row", alignItems:"center" },
+    label:      { fontSize:theme.font.size.xs, fontWeight:theme.font.weight.bold,
+                  color:theme.colors.textTertiary, textTransform:"uppercase", letterSpacing:1 },
+    content:    { padding:theme.spacing.base, gap:12, paddingBottom:40 },
+    bookingNum: { fontSize:theme.font.size.base, fontWeight:"700", color:theme.colors.textPrimary },
+    serviceType:{ fontSize:theme.font.size.xl,  fontWeight:"700", color:theme.colors.textPrimary },
+    date:       { fontSize:theme.font.size.base, color:theme.colors.textSecondary },
+    price:      { fontSize:theme.font.size.xl, fontWeight:"800", color:theme.colors.brand },
+    internalId: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary },
+    onSiteNote: { fontSize:theme.font.size.sm, color:theme.colors.textSecondary },
+  });
+}
