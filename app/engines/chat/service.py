@@ -311,10 +311,17 @@ class ChatService:
 
     async def delete_message(self, message_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
         """PROVEN: soft-delete only — content replaced, row kept for audit."""
+        # Slice 2F-39A3 fix: missing the same sender-ownership check its
+        # sibling edit_message already has -- any authenticated user in
+        # (or claiming, via the client-supplied tenant_id query param) any
+        # tenant could soft-delete any other user's message. Now requires
+        # the caller to be the message's own sender, matching edit_message.
         r = await self.db.execute(select(Message).where(
             Message.id == message_id, Message.tenant_id == tenant_id))
         msg = r.scalar_one_or_none()
         if not msg: raise NotFoundException("Message", str(message_id))
+        if msg.sender_id != self.actor_id:
+            raise ServiceOSException("FORBIDDEN", "You can only delete your own messages.")
         if msg.is_deleted:
             raise ServiceOSException("CONFLICT", "Message is already deleted.")
         msg.is_deleted = True; msg.deleted_at = utcnow()
