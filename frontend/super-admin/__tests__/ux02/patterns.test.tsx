@@ -37,7 +37,13 @@ describe("EnterpriseDetailPage", () => {
       />
     );
     expect(screen.getByText("Content A")).toBeTruthy();
-    fireEvent.click(screen.getByText("Section B"));
+    // The component intentionally renders the section label twice: once as
+    // a desktop <nav> <button> and once as a mobile <select> <option>,
+    // toggled between via a CSS media query (jsdom does not evaluate media
+    // queries, so both are present in the accessibility tree during tests).
+    // Scope to the button role so the click targets the desktop nav item,
+    // not the ambiguous "Section B" text shared with the <option>.
+    fireEvent.click(screen.getByRole("button", { name: "Section B" }));
     expect(screen.getByText("Content B")).toBeTruthy();
   });
 
