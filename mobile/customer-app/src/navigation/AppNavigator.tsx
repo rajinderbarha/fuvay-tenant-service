@@ -1,9 +1,10 @@
 import React from "react";
 import { ActivityIndicator, View } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
+import { StatusBar } from "expo-status-bar";
+import { NavigationContainer, DefaultTheme, DarkTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useAuth } from "../context/AuthContext";
-import { theme } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
 
 // Screens
 import { LoginScreen }             from "../screens/LoginScreen";
@@ -51,25 +52,33 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// Shared header style
-const HDR = {
-  headerShown:      true,
-  headerStyle:      { backgroundColor:theme.colors.surface },
-  headerTintColor:  theme.colors.textPrimary,
-  headerTitleStyle: { fontWeight:"700" as const },
-};
-
 export function AppNavigator() {
   const { user, loading } = useAuth();
+  const { theme, mode, isLoaded } = useTheme();
 
-  if (loading) return (
+  // Shared header style -- theme-aware, rebuilt whenever mode changes
+  const HDR = {
+    headerShown:      true,
+    headerStyle:      { backgroundColor:theme.colors.surface },
+    headerTintColor:  theme.colors.textPrimary,
+    headerTitleStyle: { fontWeight:"700" as const },
+  };
+
+  // Avoid a flash-of-wrong-theme: hold the loading spinner (already
+  // theme-driven) until the persisted preference has been read once.
+  if (loading || !isLoaded) return (
     <View style={{ flex:1, alignItems:"center", justifyContent:"center", backgroundColor:theme.colors.bg }}>
       <ActivityIndicator size="large" color={theme.colors.brand}/>
     </View>
   );
 
+  const navTheme = mode === "dark"
+    ? { ...DarkTheme, colors: { ...DarkTheme.colors, background: theme.colors.bg, card: theme.colors.surface, text: theme.colors.textPrimary, border: theme.colors.border, primary: theme.colors.brand } }
+    : { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: theme.colors.bg, card: theme.colors.surface, text: theme.colors.textPrimary, border: theme.colors.border, primary: theme.colors.brand } };
+
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navTheme}>
+      <StatusBar style={mode === "dark" ? "light" : "dark"}/>
       <Stack.Navigator screenOptions={{ headerShown:false }}>
         {user ? (
           <>
@@ -84,10 +93,7 @@ export function AppNavigator() {
             <Stack.Screen name="JobTracking"   component={JobTrackingScreen}
               options={{ ...HDR, title:"Track Technician" }}/>
             <Stack.Screen name="QuoteApproval" component={QuoteApprovalScreen}
-              options={{ headerShown:true, title:"Repair Quote",
-                headerStyle:{backgroundColor:theme.colors.surface},
-                headerTintColor:theme.colors.textPrimary,
-                headerTitleStyle:{fontWeight:"700"} }}/>
+              options={{ ...HDR, title:"Repair Quote" }}/>
             <Stack.Screen name="Review"        component={ReviewScreen}
               options={{ ...HDR, title:"Leave a Review" }}/>
             <Stack.Screen name="Invoice"       component={InvoiceScreen}

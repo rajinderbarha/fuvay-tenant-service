@@ -10,7 +10,7 @@ import { BookingsListScreen } from "../screens/BookingsListScreen";
 import { DeepSeekChatScreen } from "../screens/DeepSeekChatScreen";
 import { ChatScreen }         from "../screens/ChatScreen";
 import { ProfileScreen }      from "../screens/ProfileScreen";
-import { theme } from "../styles/theme";
+import { useTheme } from "../context/ThemeContext";
 
 // UX-06 Round 5: real typed tab param list (HomeScreen/ProfileScreen declare
 // NativeStackScreenProps<{Home:undefined}>/<{Profile:undefined}> themselves —
@@ -26,8 +26,10 @@ export type TabParamList = {
 const Tab = createBottomTabNavigator<TabParamList>();
 
 function TabIcon({ icon, label, focused }:{ icon:string; label:string; focused:boolean }) {
+  const { theme } = useTheme();
   return (
-    <View style={{ alignItems:"center", gap:2, paddingTop:6 }}>
+    <View style={{ alignItems:"center", gap:2, paddingTop:6 }}
+      accessible accessibilityLabel={`${label} tab${focused ? ", selected" : ""}`}>
       <Text style={{ fontSize:22, opacity:focused?1:0.45 }}>{icon}</Text>
       <Text style={{ fontSize:9, fontWeight:"600",
         color:focused?theme.colors.tabActive:theme.colors.tabInactive }}>{label}</Text>
@@ -36,10 +38,11 @@ function TabIcon({ icon, label, focused }:{ icon:string; label:string; focused:b
 }
 
 export function TabNavigator() {
+  const { theme } = useTheme();
   return (
     <Tab.Navigator screenOptions={{
       headerShown:true, tabBarShowLabel:false,
-      tabBarStyle:{ backgroundColor:"#fff", borderTopWidth:1,
+      tabBarStyle:{ backgroundColor:theme.colors.surface, borderTopWidth:1,
         borderTopColor:theme.colors.border, height:64, paddingBottom:8 },
       headerStyle:{ backgroundColor:theme.colors.surface },
       headerTintColor:theme.colors.textPrimary,
