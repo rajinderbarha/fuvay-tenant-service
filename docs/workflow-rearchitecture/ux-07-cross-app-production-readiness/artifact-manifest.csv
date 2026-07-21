@@ -57,3 +57,14 @@ known-limitations.md,appended (round 2),9 new Round 2 items appended
 deferred-workstreams.md,new (round 2),itemized deferrals + round-3 priorities
 round-2-status-rationale.md,new (round 2),why UX07_INTEGRATION_PARTIAL
 round-2-approval-gate.md,new (round 2),round-2 checklist + recommendation
+status-transition-verification.md,new (round 3),real full graph accepted->completed with cross-app reflection
+quote-checklist-parts-live-evidence.md,new (round 3),real source-cited audit -- checklist/quote unwired, parts CREATE unwired on staff-app
+completion-commission-review-verification.md,new (round 3),real commission deduction + real customer_reviews submission end-to-end
+react-version-pin-investigation.md,new (round 3),attempted fix regressed a different test set, reverted, firm reasoning for continued deferral
+responsive-dark-mode-spotcheck.md,new (round 3),code-level spot-check of 4 real production screens, no screenshots (disclosed)
+real-record-evidence.csv,appended (round 3),Round 3 IDs (completed job, commission ledger, review) appended
+known-limitations.md,appended (round 3),6 new Round 3 items appended
+frontend-file-change-report.md,appended (round 3),Round 3's file changes (super-admin test infra; net-zero root package.json)
+backend-non-change-report.md,appended (round 3),Round 3 non-change audit appended
+round-3-status-rationale.md,new (round 3),why UX07_INTEGRATION_PARTIAL
+round-3-approval-gate.md,new (round 3),round-3 checklist + recommendation

@@ -16,3 +16,10 @@ confirmation_id,eea218d2-01ed-48e9-8ca1-23a605f15c5c,returned by /confirm
 assignment_id,944edbf6-d82e-418a-b6e8-30631d96c83b,created by POST /v1/provider/service-jobs/{id}/assign
 standard_price,775.00 INR,bargain_available:false -> standard-price fallback path (UX-06 backend fix, re-verified live this round)
 final_job_status_this_round,accepted,transitioned via POST /v1/staff/service-jobs/{id}/accept (real transitions.ts value, NEXT_ACTION[assigned] = accept)
+--- ROUND 3 (appended, Round 1/2 rows above preserved unchanged) ---
+final_job_status_round3,completed,job 4284c162-... carried through the full real graph this round: on_the_way -> reached_site -> inspection_started -> inspection_done -> service_started -> work_done -> completed
+usage_credit_ledger_id,846951c7-7446-4e46-aa9e-8d9ac3fb2898,real server-computed commission/credit deduction on completion; credit_delta -21.0, balance 3980.0 -> 3959.0
+review_id,1228bcfa-b7bc-4031-a2bf-c8417053a22b,real customer_reviews submission (canonical /v1/customer/reviews, not legacy /v1/reviews)
+review_number,REV-56700400,status pending / visibility private_until_approved; visible to provider via GET /v1/provider/reviews
+ac_installation_offering_id,13f6cf5e-5d17-4790-b406-6561675a5d38,used for Round 2's bargain-path pricing-continuity spot-check (draft not carried to a full booking)
+ac_installation_draft_id,d5048334-db35-4ba7-adbc-9cd1df13f54d,left at provider_matched status (Round 2), not confirmed into a booking

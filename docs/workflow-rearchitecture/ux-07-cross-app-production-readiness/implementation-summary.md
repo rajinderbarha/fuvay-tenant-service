@@ -101,5 +101,57 @@ Status: `UX07_INTEGRATION_PARTIAL` (see `round-2-status-rationale.md`).
 
 ## Final commit (Round 2)
 
-See `round-2-status-rationale.md` and the commit hash reported at the end
+See `round-2-status-rationale.md` and commit `c182e7a`.
+
+## Round 3 (this update)
+
+Status: `UX07_INTEGRATION_PARTIAL` (see `round-3-status-rationale.md`).
+
+1. **Full real status-transition graph walked to `completed`**: the
+   Round 1 job (`accepted`) was carried through 7 more real, legal
+   transitions (`on_the_way -> reached_site -> inspection_started ->
+   inspection_done -> service_started -> work_done -> completed`), each
+   cross-verified in tenant-portal's execution timeline and the customer
+   app's booking detail. See `status-transition-verification.md`.
+2. **Quote/checklist/parts audited from real source**: confirmed (not
+   assumed) that checklist and quote have zero real backend wiring
+   (fixture-only, per the code's own honest comments), and that the
+   technician side of the real, backend-supported parts-request lifecycle
+   has no client call anywhere in `mobile/staff-app`. See
+   `quote-checklist-parts-live-evidence.md`.
+3. **Completion, commission and review all verified live**: real
+   server-computed commission/credit deduction (`-21.0` against a `775.0`
+   job, full ledger audit trail), no fake online payment at any point, and
+   a genuinely NEW finding — a real `POST /v1/customer/reviews` endpoint
+   (not present/found in UX-06's audit) was discovered and successfully
+   used to submit a real review (`REV-56700400`), visible to the tenant.
+   One new real backend defect found (500 instead of 422 on malformed
+   submissions). See `completion-commission-review-verification.md`.
+4. **Super-admin test infrastructure wired**: added the missing
+   `vitest`/`@testing-library` devDependencies, a `vitest.config.ts`
+   (mirroring tenant-portal's own working config), and a real `test`
+   script. Result: 10/13 tests now pass (up from 0 runnable), stable
+   across 2 repeated runs.
+5. **React version-pin mismatch: genuinely attempted, reverted with firm
+   reasoning**: a root `overrides` pin was tried, successfully deduplicated
+   react/react-dom, but broke a different dependency's resolution
+   (`design-system`'s `lucide-react`), regressing from 3 to 5 failing test
+   suites. Reverted; net change to root `package.json` is zero. See
+   `react-version-pin-investigation.md`.
+6. **Responsive/dark-mode spot-check**: code-level (not screenshot-based)
+   check of 4 real production screens across all 4 apps — confirmed
+   customer-app has no dark mode (standing gap), the other 3 apps/screens
+   do. See `responsive-dark-mode-spotcheck.md`.
+7. **All 4 apps' test suites re-run twice this round**: customer-app
+   48/48 x2, staff-app 56/56 x2, tenant-portal 42/53 x2 (13/16 suites),
+   super-admin 10/13 x2 (3/4 suites) — all stable, no flakiness.
+8. **Non-change audit**: net code changes this round are
+   `frontend/super-admin/package.json` (modified) +
+   `frontend/super-admin/vitest.config.ts` + `test-setup.ts` (new) — root
+   `package.json`'s temporary override was fully reverted (zero net diff).
+   Zero backend files touched.
+
+## Final commit (Round 3)
+
+See `round-3-status-rationale.md` and the commit hash reported at the end
 of this round's session.

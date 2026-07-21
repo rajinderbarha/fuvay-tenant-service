@@ -30,3 +30,29 @@ React-version-pin mismatch was found in the SAME file
 `frontend/super-admin/package.json`'s `19.2.0`) but was deliberately NOT
 changed this round — see `frontend-corrections-report.md`'s "Correction
 considered but NOT made" section for the full reasoning.
+
+## Round 3
+
+Three files changed, net:
+
+- `frontend/super-admin/package.json` — added `vitest`,
+  `@testing-library/jest-dom`, `@testing-library/react`,
+  `@testing-library/dom`, `@testing-library/user-event`, `jsdom` as
+  devDependencies, and a real `"test": "vitest run"` script. This is
+  wiring up MISSING test infrastructure (Round 2's found gap), not a
+  version upgrade of anything already pinned.
+- `frontend/super-admin/vitest.config.ts` — NEW file, an exact mirror of
+  `frontend/tenant-portal`'s own existing, working config (jsdom
+  environment, react/react-dom dedupe hint, same exclude patterns) — not
+  an invented configuration, a copy of this repo's own proven pattern.
+- `frontend/super-admin/test-setup.ts` — NEW file, identical 1-line
+  content to tenant-portal's own (`import "@testing-library/jest-dom/vitest"`).
+
+**Root `package.json`'s `overrides` field was added, tested, found to
+regress a different test set, and REVERTED this round** — net change to
+this file across the whole round: **zero** (confirmed via
+`git diff -- package.json` showing no diff after the revert). See
+`react-version-pin-investigation.md` for the full attempt-and-revert
+narrative.
+
+No other frontend file was modified in Round 3.

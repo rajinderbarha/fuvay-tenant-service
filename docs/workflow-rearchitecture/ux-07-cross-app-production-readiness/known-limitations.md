@@ -79,5 +79,55 @@
     level curl evidence, same limitation class as Round 1's #6.
 17. Workstreams 14 (visual evidence, beyond what's already noted),
     full Playwright suites, and the new targeted tests requested by the
-    brief (Workstream 13) were not completed this round — see
+    brief (Workstream 13) were not completed this round — see each
+    workstream's own doc file for the specific, honest reason.
+
+## Round 3
+
+18. **React version-pin mismatch: attempted, made worse, reverted.** A
+    root `overrides` pin was tried, deduplicated react/react-dom
+    correctly, but broke `design-system`'s `lucide-react` dependency
+    resolution (5 suites failed instead of 3, a NEW failure mode). Reverted
+    to the Round 2 baseline (confirmed identical: 13/16 suites, 42/53
+    tests, twice). See `react-version-pin-investigation.md` for the full
+    firmer reasoning on why a deeper fix (direct pin alignment + full
+    `next build` verification on both apps) is required, not a one-line
+    override.
+19. **`frontend/super-admin` test infrastructure now wired** (resolves
+    limitation #14): added `vitest`/`@testing-library/*` devDependencies,
+    a `vitest.config.ts` (jsdom environment, mirroring tenant-portal's),
+    a `test-setup.ts`, and a real `"test": "vitest run"` script. Real
+    result: 3/4 test files pass, 10/13 tests pass (up from 0 runnable
+    before). The 1 remaining failing file
+    (`__tests__/ux02/patterns.test.tsx`) fails with a real
+    `getMultipleElementsFoundError` — ambiguous test-code query matching
+    multiple DOM elements, a genuine pre-existing test-code issue, not an
+    infrastructure gap. Not fixed this round (would require inspecting the
+    actual rendered component markup to disambiguate the query — time
+    budget). Confirmed stable across 2 repeated runs (identical 10/13
+    both times).
+20. **`ReviewScreen.tsx` review-eligibility real backend endpoint
+    discovered this round via a raw dict-access 500 instead of a proper
+    422** on `POST /v1/customer/reviews` when required fields are
+    misnamed (`app/engines/customer_reviews/customer_router.py`'s
+    `submit_review` does unguarded `body["tenant_id"]` etc.) — a real,
+    narrow, backend-owned defect. Not fixed (out of scope). See
+    `completion-commission-review-verification.md`.
+21. **`mobile/customer-app`'s real review-submission gap is now precisely
+    actionable, not just "blocked"**: a genuine `POST /v1/customer/reviews`
+    endpoint exists and was successfully exercised live this round
+    (`REV-56700400`) — `ReviewScreen.tsx` was NOT updated to wire this up
+    (deliberately deferred, see rationale in
+    `completion-commission-review-verification.md`), but the exact real
+    request shape is now fully documented for whoever picks this up next.
+22. **Technician-side parts-request CREATE has no real client anywhere**
+    (new, more precise finding than Round 1's deferral): the backend's
+    parts-request lifecycle IS real and tenant-portal's approve/reject/
+    install calls ARE real, but `mobile/staff-app/src/lib/api.ts` has zero
+    calls to create one — `PartsRequestShowcaseScreen.tsx` is fixture-only.
+    See `quote-checklist-parts-live-evidence.md`.
+23. Checklist and quote flows remain entirely fixture-driven with NO real
+    backend endpoint discovered for either (confirmed from source
+    comments, not assumed) — unchanged from prior rounds' understanding,
+    now confirmed with direct source citations.
     `deferred-workstreams.md`.
