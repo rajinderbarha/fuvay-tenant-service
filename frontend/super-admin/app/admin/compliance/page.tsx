@@ -2,8 +2,9 @@
 import React, { useState, useCallback } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
-  Card, Badge, Btn, StatCard, SectionHeader, Modal, Skeleton,
+  Badge, Btn, StatCard, Modal, Skeleton,
 } from "../../../components/shared/ui";
+import { Card, PageHeader, PageShell } from "@serviceos/design-system";
 import {
   Shield, AlertTriangle, Clock, FileDown, CheckCircle2, XCircle,
   Users, FileText, RefreshCw, Search, Filter, ChevronDown,
@@ -488,9 +489,10 @@ export default function CompliancePage() {
       )}
 
       {/* Header */}
-      <SectionHeader
+      <PageShell>
+      <PageHeader
         title="DPDP Compliance Command Center"
-        subtitle="Manage data rights, consent, erasure, portability, retention, exemptions, evidence, and compliance audit trails."
+        description="Manage data rights, consent, erasure, portability, retention, exemptions, evidence, and compliance audit trails."
         actions={
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <Badge variant={statusColor as "success" | "warning" | "danger"}>
@@ -519,7 +521,7 @@ export default function CompliancePage() {
       {health.loading ? (
         <Skeleton height={90} style={{ borderRadius: 12, marginBottom: 20 }}/>
       ) : h && (
-        <Card style={{ padding: "16px 20px", marginBottom: 20, display: "flex",
+        <Card padding="md" style={{ marginBottom: 20, display: "flex",
           alignItems: "center", gap: 24, flexWrap: "wrap" }}>
           <div>
             <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)",
@@ -616,7 +618,7 @@ export default function CompliancePage() {
           {actionQueue.loading ? (
             <Skeleton height={200} style={{ borderRadius: 12 }}/>
           ) : (actionQueue.data?.items.length ?? 0) === 0 ? (
-            <Card style={{ padding: "40px 20px", textAlign: "center" }}>
+            <Card padding="lg" style={{ textAlign: "center" }}>
               <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>
                 No compliance actions pending.
               </p>
@@ -625,7 +627,7 @@ export default function CompliancePage() {
               </p>
             </Card>
           ) : (
-            <Card style={{ padding: 0, overflow: "hidden" }}>
+            <Card padding="none">
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "var(--surface-sunken)" }}>
@@ -671,7 +673,7 @@ export default function CompliancePage() {
             </Btn>
           </div>
           {showHoldForm && (
-            <Card style={{ padding: 16 }}>
+            <Card padding="md">
               <p style={{ fontSize: 13, fontWeight: 600, margin: "0 0 10px" }}>New Legal Hold</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
                 <select value={holdForm.entity_type}
@@ -705,13 +707,13 @@ export default function CompliancePage() {
           {legalHolds.loading ? (
             <Skeleton height={200} style={{ borderRadius: 12 }}/>
           ) : (legalHolds.data?.items.length ?? 0) === 0 ? (
-            <Card style={{ padding: "40px 20px", textAlign: "center" }}>
+            <Card padding="lg" style={{ textAlign: "center" }}>
               <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
                 No legal holds on record.
               </p>
             </Card>
           ) : (
-            <Card style={{ padding: 0, overflow: "hidden" }}>
+            <Card padding="none">
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "var(--surface-sunken)" }}>
@@ -810,7 +812,7 @@ export default function CompliancePage() {
           )}
 
           {/* Request table */}
-          <Card padding={0}>
+          <Card padding="none">
             {requests.loading ? (
               <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
                 {[...Array(5)].map((_,i) => <Skeleton key={i} height={60}/>)}
@@ -912,7 +914,7 @@ export default function CompliancePage() {
 
       {/* ── TAB: CONSENT ─────────────────────────────────────────────────── */}
       {activeTab === "consent" && (
-        <Card padding={0}>
+        <Card padding="none">
           <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)",
             display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>
@@ -982,7 +984,7 @@ export default function CompliancePage() {
 
       {/* ── TAB: EXPORTS ─────────────────────────────────────────────────── */}
       {activeTab === "exports" && (
-        <Card padding={0}>
+        <Card padding="none">
           <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)",
             display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Data Exports</h3>
@@ -1088,7 +1090,7 @@ export default function CompliancePage() {
           ) : (
             <>
               {/* Exempt tables */}
-              <Card padding={16}>
+              <Card padding="md">
                 <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 12px",
                   color: "var(--text-primary)" }}>Statutory Exemptions</h3>
                 <div style={{ display: "grid",
@@ -1108,7 +1110,7 @@ export default function CompliancePage() {
 
               {/* Policies table */}
               {(retention.data?.policies ?? []).length > 0 && (
-                <Card padding={0}>
+                <Card padding="none">
                   <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
                     <h3 style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>Retention Policies</h3>
                   </div>
@@ -1156,7 +1158,7 @@ export default function CompliancePage() {
 
       {/* ── TAB: AUDIT ───────────────────────────────────────────────────── */}
       {activeTab === "audit" && (
-        <Card padding={0}>
+        <Card padding="none">
           <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)",
             display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
@@ -1285,6 +1287,7 @@ export default function CompliancePage() {
           </div>
         </div>
       </Modal>
+      </PageShell>
     </AdminLayout>
   );
 }
