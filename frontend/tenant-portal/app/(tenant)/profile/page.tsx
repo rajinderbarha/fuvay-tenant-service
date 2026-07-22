@@ -11,7 +11,8 @@ import {
   type UserProfile, type BusinessProfile, type MediaAsset,
 } from "../../../lib/api";
 import { ServiceOSError, trustBadgesApi } from "../../../lib/api";
-import { TrustBadges } from "../../../components/TrustBadges";
+import { TrustBadgeChip } from "../../../components/TrustBadges";
+import type { EarnedBadge } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import {
   Building2, User, Mail, Phone, Globe, Clock, Camera, AlertTriangle,
@@ -68,6 +69,18 @@ const safeDate  = (v: unknown): string => {
 const safeStatus = (raw: unknown): { label:string; variant:"success"|"warning"|"danger"|"neutral" } =>
   STATUS_MAP[String(raw ?? "")] ?? { label: safeText(raw,"Unknown").replace(/_/g," "), variant:"neutral" };
 function copyText(t: string) { if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {}); }
+
+// Pick a single "current" badge to show as a status indicator: prefer the most
+// recently earned customer-visible badge, else fall back to the most recently
+// earned badge overall. Returns null if the tenant has no badges (no fake data).
+function pickPrimaryBadge(badges: EarnedBadge[] | null | undefined): EarnedBadge | null {
+  if (!badges || badges.length === 0) return null;
+  const byRecency = (a: EarnedBadge, b: EarnedBadge) =>
+    new Date(b.earned_at ?? 0).getTime() - new Date(a.earned_at ?? 0).getTime();
+  const customerVisible = badges.filter(b => b.customer_visible).sort(byRecency);
+  if (customerVisible.length > 0) return customerVisible[0];
+  return [...badges].sort(byRecency)[0];
+}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 function StatusBadge({ raw }: { raw: unknown }) {
@@ -541,6 +554,7 @@ export default function ProviderProfilePage() {
           <HeroCard
             shopPreview={shopPreview} logoPreview={logoPreview}
             biz={biz} verStatus={verStatus} isApproved={isApproved} pct={pct} done={done} total={total}
+            primaryBadge={pickPrimaryBadge(badgesApi.data)}
             onLogoUploaded={(a)=>{ setLogoPreview(a.preview_url??a.public_url??null); setLogoMediaId(a.id); notify("Business logo updated."); bizApi.refetch(); }}
             onShopUploaded={(a)=>{ setShopPreview(a.preview_url??a.public_url??null); setShopMediaId(a.id); notify("Cover photo updated."); bizApi.refetch(); }}
           />
@@ -674,16 +688,6 @@ export default function ProviderProfilePage() {
 
             {tab === "overview" && (
               <div className="overview-grid" id="overview">
-                {/* Trust Badges — what customers see on your profile */}
-                <div className="card" style={{ gridColumn: "1 / -1" }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-                    <p style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:0 }}>Trust Badges</p>
-                    <span style={{ fontSize:12, color:"var(--text-tertiary)" }}>Earned automatically · shown to customers</span>
-                  </div>
-                  <TrustBadges badges={badgesApi.data ?? []}
-                    empty="No badges earned yet. Keep ratings high and jobs completed to earn them." />
-                </div>
-
                 {/* Business Information */}
                 <div className="card">
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
@@ -1230,10 +1234,11 @@ function NextStep({ done, blocked, title, desc, ctaLabel, onClick }: {
 }
 
 // ── HeroCard — inline clickable upload for logo + cover ─────────────────────
-function HeroCard({ shopPreview, logoPreview, biz, verStatus, isApproved, pct, done, total, onLogoUploaded, onShopUploaded }: {
+function HeroCard({ shopPreview, logoPreview, biz, verStatus, isApproved, pct, done, total, primaryBadge, onLogoUploaded, onShopUploaded }: {
   shopPreview: string|null; logoPreview: string|null;
   biz: import("../../../lib/api").BusinessProfile | null | undefined;
   verStatus: string; isApproved: boolean; pct: number; done: number; total: number;
+  primaryBadge: EarnedBadge | null;
   onLogoUploaded: (a: import("../../../lib/api").MediaAsset) => void;
   onShopUploaded: (a: import("../../../lib/api").MediaAsset) => void;
 }) {
@@ -1325,6 +1330,7 @@ function HeroCard({ shopPreview, logoPreview, biz, verStatus, isApproved, pct, d
                   {safeText(biz?.business_name,"Your Business")}
                 </h2>
                 {isApproved && <CheckCircle2 size={18} style={{ color:"#60a5fa" }}/>}
+                {primaryBadge && <TrustBadgeChip badge={primaryBadge} size={14}/>}
               </div>
               <div style={{ fontSize:13, color:"rgba(255,255,255,0.65)", marginBottom:10 }}>
                 Home Services{" "}<span style={{ margin:"0 6px", opacity:0.5 }}>•</span>
