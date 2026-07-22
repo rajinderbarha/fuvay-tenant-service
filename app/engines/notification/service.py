@@ -222,6 +222,7 @@ class NotificationService:
         return {"tenant_id": str(tenant_id), "channel": channel, "is_enabled": is_enabled}
 
     async def test_channel(self, tenant_id: uuid.UUID, channel: str) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         return {"tenant_id": str(tenant_id), "channel": channel,
                 "test_sent": True, "message": f"Test {channel} dispatched."}
 

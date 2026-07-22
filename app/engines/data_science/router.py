@@ -229,7 +229,7 @@ async def get_anomaly(anomaly_id: uuid.UUID, r: Request,
              summary="Acknowledge anomaly with resolution notes",
              response_model=ApiResponse[dict])
 async def acknowledge_anomaly(anomaly_id: uuid.UUID, r: Request,
-                               u: UserContext = Depends(get_current_user),
+                               u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                                s: DSService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.acknowledge_anomaly(anomaly_id, body.get("notes")), _rid(r), ENGINE_ID)

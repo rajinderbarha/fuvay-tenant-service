@@ -92,6 +92,7 @@ class PaymentService:
     async def create_payment_order(self, tenant_id: uuid.UUID, booking_id: str | None,
                                     customer_id: uuid.UUID | None, amount: Decimal,
                                     payment_type: str, gateway: str) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         receipt = f"pay_{tenant_id}_{booking_id or secrets.token_hex(4)}"
         order = await razorpay_client.create_order(
             amount, receipt=receipt,
@@ -217,6 +218,7 @@ class PaymentService:
                                 booking_id: str | None, amount: Decimal,
                                 tax_amount: Decimal, line_items: list,
                                 invoice_type: str) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         invoice_number = await self._next_invoice_number(tenant_id)
         total = amount + tax_amount
         inv = InvoiceRecord(

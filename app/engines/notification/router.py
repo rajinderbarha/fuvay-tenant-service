@@ -112,6 +112,6 @@ async def set_channel(tenant_id: uuid.UUID, channel: str, r: Request,
 
 @router.post("/tenants/{tenant_id}/channels/{channel}/test", response_model=ApiResponse[dict])
 async def test_channel(tenant_id: uuid.UUID, channel: str, r: Request,
-                        u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                        u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                         s: NotificationService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.test_channel(tenant_id, channel), _rid(r), ENGINE_ID)

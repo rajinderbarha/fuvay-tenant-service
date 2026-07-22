@@ -291,6 +291,7 @@ class InventoryService:
 
     async def request_replenishment(self, tenant_id: uuid.UUID, item_id: uuid.UUID,
                                      quantity: int) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         await self._publish("inventory.replenishment_requested", str(tenant_id), str(item_id),
                             {"quantity": quantity, "item_id": str(item_id)})
         return {"item_id": str(item_id), "quantity_requested": quantity,

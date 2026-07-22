@@ -27,7 +27,7 @@ async def engine_meta() -> dict:
                             "immutable_payment_records","refund_audit_trail",
                             "payout_management","settlement_breakdown"]}
 @router.post("/orders", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
-async def create_order(r: Request, u: UserContext=Depends(require_permission(P.TENANT_BILLING_MANAGE)),
+async def create_order(r: Request, u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_BILLING_MANAGE)),
                         s: PaymentService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.create_payment_order(uuid.UUID(body["tenant_id"]),
@@ -71,7 +71,7 @@ async def list_refunds(tenant_id: uuid.UUID, r: Request, limit: int=Query(50,ge=
                         s: PaymentService=Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.list_refunds(tenant_id, limit, cursor), _rid(r), ENGINE_ID)
 @router.post("/invoices", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
-async def generate_invoice(r: Request, u: UserContext=Depends(require_permission(P.TENANT_BILLING_MANAGE)),
+async def generate_invoice(r: Request, u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_BILLING_MANAGE)),
                             s: PaymentService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.generate_invoice(uuid.UUID(body["tenant_id"]),

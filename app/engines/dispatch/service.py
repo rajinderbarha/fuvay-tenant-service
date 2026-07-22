@@ -248,6 +248,10 @@ class DispatchService:
         return {"dispatch_records": [self._rec_dict(x) for x in items], "has_next": has_next, "next_cursor": nc}
 
     async def accept_job(self, job_id: str, staff_id: uuid.UUID) -> dict:
+        if self.actor_role != "super_admin" and staff_id != self.actor_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You can only accept a job as yourself.",
+                blocking_rule="dispatch_accept_identity_spoofing_denied")
         r = await self.db.execute(select(DispatchRecord).where(DispatchRecord.job_id == job_id))
         rec = r.scalar_one_or_none()
         if not rec: raise NotFoundException("DispatchRecord", job_id)
@@ -267,6 +271,10 @@ class DispatchService:
         return self._rec_dict(rec)
 
     async def reject_job(self, job_id: str, staff_id: uuid.UUID, reason: str | None) -> dict:
+        if self.actor_role != "super_admin" and staff_id != self.actor_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You can only reject a job as yourself.",
+                blocking_rule="dispatch_reject_identity_spoofing_denied")
         r = await self.db.execute(select(DispatchRecord).where(DispatchRecord.job_id == job_id))
         rec = r.scalar_one_or_none()
         if not rec: raise NotFoundException("DispatchRecord", job_id)

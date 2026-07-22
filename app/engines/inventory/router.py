@@ -79,7 +79,7 @@ async def low_stock(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(get
     return ok(await s.list_below_minimum(tenant_id), _rid(r), ENGINE_ID)
 @router.post("/tenants/{tenant_id}/items/{item_id}/replenish", response_model=ApiResponse[dict])
 async def replenish(tenant_id: uuid.UUID, item_id: uuid.UUID, r: Request,
-                     u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+                     u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                      s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.request_replenishment(tenant_id, item_id, body["quantity"]), _rid(r), ENGINE_ID)

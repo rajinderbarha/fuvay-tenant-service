@@ -53,7 +53,7 @@ async def engine_meta() -> dict:
              status_code=status.HTTP_201_CREATED,
              response_model=ApiResponse[dict])
 async def create_kb(r: Request,
-                     u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                     u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                      s: RAGService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.create_kb(
@@ -98,7 +98,7 @@ async def list_kbs(tenant_id: uuid.UUID, r: Request,
             summary="Update KB settings (chunk size, overlap, top-k)",
             response_model=ApiResponse[dict])
 async def update_kb(kb_id: uuid.UUID, r: Request,
-                     u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                     u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                      s: RAGService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.update_kb(kb_id, body)

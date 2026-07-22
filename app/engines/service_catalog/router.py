@@ -60,6 +60,6 @@ async def update_item(item_id: uuid.UUID, r: Request,
 
 @router.post("/{item_id}/deactivate", summary="Retire a service offering", response_model=ApiResponse[dict])
 async def deactivate_item(item_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                           u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                            s: ServiceCatalogService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.deactivate_item(item_id), _rid(r), ENGINE_ID)

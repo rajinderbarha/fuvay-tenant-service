@@ -173,5 +173,9 @@ class ServiceCatalogService:
         r = await self.db.execute(select(ServiceCatalogItem).where(ServiceCatalogItem.id == item_id))
         item = r.scalar_one_or_none()
         if not item: raise NotFoundException("ServiceCatalogItem", str(item_id))
+        if self.actor_role != "super_admin" and (
+            self.actor_tenant_id is None or item.tenant_id != self.actor_tenant_id
+        ):
+            raise NotFoundException("ServiceCatalogItem", str(item_id))
         item.is_active = False
         return self._dict(item)

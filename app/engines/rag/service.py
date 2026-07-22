@@ -179,6 +179,11 @@ class RAGService:
     async def create_kb(self, tenant_id: uuid.UUID, name: str, description: str | None,
                          vertical: str | None, chunk_size: int, chunk_overlap: int,
                          top_k: int) -> dict:
+        trusted_tenant_id = self._require_trusted_tenant()
+        if trusted_tenant_id is not None and tenant_id != trusted_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's knowledge bases.",
+                blocking_rule="rag_mutation_cross_tenant_denied")
         kb = KnowledgeBase(
             tenant_id=tenant_id, name=name, description=description,
             vertical=vertical, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
@@ -217,7 +222,7 @@ class RAGService:
                 "has_next": has_next, "next_cursor": nc}
 
     async def update_kb(self, kb_id: uuid.UUID, data: dict) -> dict:
-        kb = await self._get_kb(kb_id)
+        kb = await self._get_kb_trusted(kb_id)
         for field in ("name", "description", "chunk_size", "chunk_overlap", "top_k"):
             if field in data and data[field] is not None:
                 setattr(kb, field, data[field])

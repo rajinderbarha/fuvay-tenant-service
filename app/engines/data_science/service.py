@@ -585,6 +585,10 @@ class DSService:
         r = await self.db.execute(select(AnomalyRecord).where(AnomalyRecord.id == anomaly_id))
         a = r.scalar_one_or_none()
         if not a: raise NotFoundException("AnomalyRecord", str(anomaly_id))
+        if self.actor_role != "super_admin" and (
+            self.actor_tenant_id is None or a.tenant_id != self.actor_tenant_id
+        ):
+            raise NotFoundException("AnomalyRecord", str(anomaly_id))
         if a.status == "acknowledged":
             raise ServiceOSException("CONFLICT", "Anomaly already acknowledged.")
         a.status = "acknowledged"; a.acknowledged_by = self.actor_id
