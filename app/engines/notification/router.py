@@ -32,7 +32,7 @@ async def engine_meta() -> dict:
 @router.post("/send", summary="Send notification (async, idempotent)",
              status_code=status.HTTP_202_ACCEPTED, response_model=ApiResponse[dict])
 async def send_notification(r: Request,
-                             u: UserContext = Depends(get_current_user),
+                             u: UserContext = Depends(require_super_admin),
                              s: NotificationService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.send(
@@ -63,7 +63,7 @@ async def list_notifications(tenant_id: uuid.UUID, r: Request,
 
 @router.post("/{notification_id}/retry", response_model=ApiResponse[dict])
 async def retry(notification_id: uuid.UUID, r: Request,
-                 u: UserContext = Depends(get_current_user),
+                 u: UserContext = Depends(require_super_admin),
                  s: NotificationService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.retry_failed(notification_id), _rid(r), ENGINE_ID)
 

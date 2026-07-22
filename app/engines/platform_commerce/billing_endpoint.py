@@ -89,7 +89,7 @@ async def change_mode(tenant_id: uuid.UUID, r: Request,
              summary="Route a billing operation to correct engine — logs every decision",
              response_model=ApiResponse[dict])
 async def route_operation(r: Request,
-                           u: UserContext = Depends(get_current_user),
+                           u: UserContext = Depends(require_super_admin),
                            s: BillingRouterService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.route(

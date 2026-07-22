@@ -211,7 +211,14 @@ class AppointmentService:
         - Redis SETNX to prevent concurrent holds on same slot
         - DB row with unique constraint as second layer
         - Celery task created (simulated) to expire hold after 10 min
+
+        Slice 2F-39A5: tenant_id had no ownership check at all, letting any
+        authenticated user hold a slot against another tenant's staff. Staff
+        assisting a walk-in customer (customer_id not equal to caller) is a
+        legitimate flow, so only tenant_id is verified against the caller's
+        own tenant here -- not customer_id.
         """
+        tenant_id = self._require_trusted_tenant(tenant_id)
         try:
             scheduled_dt = datetime.fromisoformat(scheduled_at)
         except ValueError:
