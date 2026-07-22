@@ -1,10 +1,10 @@
 "use client";
 import React, { useState, useRef } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
-import { Card, SectionHeader, Btn, Badge, Spinner, Skeleton, StatCard, DeleteBtn } from "../../../components/shared/ui";
 import { mediaApi, type MediaFile, type MediaQuota } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
-import { Upload, HardDrive, FolderOpen, Cloud, CheckCircle2, Image, FileText, Film, Paperclip, Eye } from "lucide-react";
+import { Upload, HardDrive, FolderOpen, Cloud, CheckCircle2, Image, FileText, Film, Paperclip, Eye, Trash2 } from "lucide-react";
+import { PageHeader, Card, Button, Skeleton, Alert } from "@serviceos/design-system";
 
 function fmtBytes(b: number) {
   if (b >= 1e9) return `${(b/1e9).toFixed(1)} GB`;
@@ -14,6 +14,19 @@ function fmtBytes(b: number) {
 }
 
 const PURPOSE_OPTS = ["job_photo", "invoice", "document", "profile", "other"];
+
+function StatTile({ label, value, sub, icon, alert }: { label: string; value: string | number; sub: string; icon: React.ReactNode; alert?: boolean }) {
+  return (
+    <Card padding="md">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
+        <span style={{ color: alert ? "var(--danger-text)" : "var(--text-tertiary)" }}>{icon}</span>
+      </div>
+      <p style={{ fontSize: 22, fontWeight: 800, color: alert ? "var(--danger-text)" : "var(--text-primary)", margin: 0 }}>{value}</p>
+      <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "4px 0 0" }}>{sub}</p>
+    </Card>
+  );
+}
 
 export default function MediaPage() {
   const files = useApi(() => mediaApi.listFiles({ limit: 50 }), []);
@@ -74,10 +87,9 @@ export default function MediaPage() {
   return (
     <TenantLayout activeNav="media">
       <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
-        <SectionHeader
+        <PageHeader
           title="Media Vault"
-          subtitle="Upload, manage and organise your business files"
-          icon={<Image/>}
+          description="Upload, manage and organise your business files"
           actions={
             <div style={{ display:"flex", gap:10, alignItems:"center" }}>
               <select value={purpose} onChange={e => setPurpose(e.target.value)}
@@ -86,53 +98,40 @@ export default function MediaPage() {
                   height:36, outline:"none", cursor:"pointer" }}>
                 {PURPOSE_OPTS.map(p => <option key={p} value={p}>{p.replace(/_/g," ")}</option>)}
               </select>
-              <Btn size="sm" onClick={() => fileInputRef.current?.click()} loading={uploading} icon={<Upload size={14}/>}>
+              <Button size="sm" onClick={() => fileInputRef.current?.click()} loading={uploading} leftIcon={<Upload size={14}/>}>
                 Upload File
-              </Btn>
+              </Button>
               <input ref={fileInputRef} type="file" style={{ display:"none" }}
                 onChange={handleUpload} accept="image/*,application/pdf,video/*" />
             </div>
           }
         />
 
-        {toast && (
-          <div style={{ padding:"12px 16px", background:"var(--success-bg)", border:"1px solid var(--success-border)",
-            borderRadius:10, color:"var(--success-text)", fontSize:13, display:"flex", alignItems:"center", gap:8 }}>
-            <CheckCircle2 size={14}/> {toast}
-          </div>
-        )}
+        {toast && <Alert tone="success">{toast}</Alert>}
 
         {/* Quota stat cards */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14 }}>
           {quota.loading ? (
-            [...Array(3)].map((_,i) => (
-              <Card key={i} padding={18}>
-                <Skeleton height={12} width={80} style={{ marginBottom:10 }}/>
-                <Skeleton height={24} width={60}/>
-              </Card>
-            ))
+            [...Array(3)].map((_,i) => <Skeleton key={i} height="6.5rem" radius="12px"/>)
           ) : <>
-            <StatCard
+            <StatTile
               label="Storage Used"
               value={q ? fmtBytes(q.used_bytes) : "—"}
-              change={`of ${q ? fmtBytes(q.limit_bytes) : "?"} total`}
-              trend={usedPct > 80 ? "down" : "neutral"}
-              icon={<HardDrive/>}
+              sub={`of ${q ? fmtBytes(q.limit_bytes) : "?"} total`}
+              icon={<HardDrive size={16}/>}
               alert={usedPct > 90}
             />
-            <StatCard
+            <StatTile
               label="Files Stored"
               value={q?.file_count ?? 0}
-              change={`of ${q?.file_limit ?? "?"} limit`}
-              trend="neutral"
-              icon={<FolderOpen/>}
+              sub={`of ${q?.file_limit ?? "?"} limit`}
+              icon={<FolderOpen size={16}/>}
             />
-            <StatCard
+            <StatTile
               label="Free Space"
               value={freeBytes > 0 ? fmtBytes(freeBytes) : "Full"}
-              change={`${freePct}% remaining`}
-              trend={freePct < 20 ? "down" : "up"}
-              icon={<Cloud/>}
+              sub={`${freePct}% remaining`}
+              icon={<Cloud size={16}/>}
               alert={freePct < 10}
             />
           </>}
@@ -140,7 +139,7 @@ export default function MediaPage() {
 
         {/* Quota bar */}
         {q && (
-          <Card padding={16}>
+          <Card padding="md">
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
               <span style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Storage Usage</span>
               <span style={{ fontSize:12, fontWeight:700,
@@ -159,28 +158,22 @@ export default function MediaPage() {
         {/* Purpose filter pills */}
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           {["all", ...PURPOSE_OPTS].map(p => (
-            <button key={p} onClick={() => setFilter(p)}
-              style={{ padding:"5px 14px", borderRadius:999,
-                border: `1px solid ${filter === p ? "var(--brand)" : "var(--border)"}`,
-                cursor:"pointer", fontSize:12, fontWeight:600,
-                background: filter === p ? "var(--brand)" : "var(--surface)",
-                color: filter === p ? "white" : "var(--text-secondary)",
-                transition:"all 0.12s" }}>
+            <Button key={p} variant={filter === p ? "primary" : "secondary"} size="sm" onClick={() => setFilter(p)}>
               {p.replace(/_/g, " ")}
-            </button>
+            </Button>
           ))}
         </div>
 
         {/* File grid */}
-        <Card padding={16}>
+        <Card padding="md">
           {files.loading ? (
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px,1fr))", gap:12 }}>
               {[...Array(8)].map((_,i) => (
                 <div key={i} style={{ border:"1px solid var(--border)", borderRadius:10, overflow:"hidden" }}>
-                  <Skeleton height={120} radius={0}/>
+                  <Skeleton height="7.5rem" radius="0"/>
                   <div style={{ padding:"10px 12px" }}>
-                    <Skeleton height={12} width="80%" style={{ marginBottom:6 }}/>
-                    <Skeleton height={10} width="50%"/>
+                    <Skeleton height="0.75rem" width="80%" />
+                    <div style={{ marginTop: 6 }}><Skeleton height="0.625rem" width="50%"/></div>
                   </div>
                 </div>
               ))}
@@ -194,9 +187,9 @@ export default function MediaPage() {
               <p style={{ color:"var(--text-tertiary)", fontSize:13, margin:"4px 0 16px" }}>
                 Upload your first file using the button above.
               </p>
-              <Btn size="sm" onClick={() => fileInputRef.current?.click()} loading={uploading} icon={<Upload size={14}/>}>
+              <Button size="sm" onClick={() => fileInputRef.current?.click()} loading={uploading} leftIcon={<Upload size={14}/>}>
                 Upload File
-              </Btn>
+              </Button>
             </div>
           ) : (
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px,1fr))", gap:12 }}>
@@ -247,7 +240,10 @@ function FileCard({ file, onDelete, deleting, iconFor }: {
           {file.filename}
         </p>
         <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
-          <Badge variant="muted" size="sm">{file.purpose.replace(/_/g," ")}</Badge>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+            background: "var(--surface-sunken)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>
+            {file.purpose.replace(/_/g," ")}
+          </span>
           <span style={{ fontSize:11, color:"var(--text-tertiary)" }}>
             {fmtBytes(file.size_bytes)}
           </span>
@@ -261,10 +257,12 @@ function FileCard({ file, onDelete, deleting, iconFor }: {
         display:"flex", gap:6, alignItems:"center" }}>
         {file.url && (
           <a href={file.url} target="_blank" rel="noopener noreferrer" style={{ flex:1 }}>
-            <Btn variant="secondary" size="xs" icon={<Eye size={13}/>} fullWidth>View</Btn>
+            <Button variant="secondary" size="sm" leftIcon={<Eye size={13}/>} style={{ width: "100%", justifyContent: "center" }}>View</Button>
           </a>
         )}
-        <DeleteBtn onClick={onDelete} size="sm" tooltip={deleting ? "Deleting…" : "Delete"}/>
+        <Button variant="icon" size="sm" aria-label={deleting ? "Deleting…" : "Delete"} onClick={onDelete}>
+          <Trash2 size={13}/>
+        </Button>
       </div>
     </div>
   );
