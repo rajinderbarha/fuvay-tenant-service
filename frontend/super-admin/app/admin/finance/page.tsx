@@ -5,7 +5,8 @@ import {
   RefreshCw, Download, Wallet, Shield, ArrowUpRight, AlertTriangle, Activity, ListChecks,
 } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader } from "../../../components/shared/ui";
+import { Badge, Btn } from "../../../components/shared/ui";
+import { Card, PageHeader, PageShell } from "@serviceos/design-system";
 import { SummaryCardsRow } from "../../../components/pricing/SummaryCard";
 import { financeApi } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
@@ -33,7 +34,7 @@ function InsightCard({ title, icon, children, emptyText, isEmpty }: {
   emptyText: string; isEmpty: boolean;
 }) {
   return (
-    <Card padding={16}>
+    <Card padding="md">
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
         {icon}
         <span style={{ fontWeight: 700, fontSize: 14 }}>{title}</span>
@@ -57,9 +58,10 @@ export default function FinanceHubPage() {
 
   return (
     <AdminLayout activeNav="finance">
-      <SectionHeader
+      <PageShell>
+      <PageHeader
         title="Finance Hub"
-        subtitle="Monitor wallets, deposits, top-ups, claims, payouts, and platform earnings."
+        description="Monitor wallets, deposits, top-ups, claims, payouts, and platform earnings."
         actions={
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="secondary" size="sm" icon={<RefreshCw size={13}/>} onClick={refetchAll}>Refresh</Btn>
@@ -68,8 +70,8 @@ export default function FinanceHubPage() {
         }
       />
 
-      <div style={{ padding: "0 28px 32px", display: "flex", flexDirection: "column", gap: 20 }}>
-        {summary.error && <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Could not load finance data. {summary.error}</p></Card>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {summary.error && <Card padding="md"><p style={{ color: "var(--danger-text)" }}>Could not load finance data. {summary.error}</p></Card>}
 
         {s && (
           <>
@@ -185,6 +187,7 @@ export default function FinanceHubPage() {
           )}
         </InsightCard>
       </div>
+      </PageShell>
     </AdminLayout>
   );
 }
