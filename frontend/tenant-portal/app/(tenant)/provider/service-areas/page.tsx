@@ -8,8 +8,12 @@ import {
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import {
+  PageHeader, Card, Button, Modal, Drawer, Input, Skeleton,
+  StatusBadge as DsStatusBadge, Alert, EmptyState, pushToast,
+} from "@serviceos/design-system";
+import {
   MapPin, Plus, RefreshCw, ChevronRight, AlertTriangle,
-  CheckCircle2, XCircle, Copy, Star, Edit2, Trash2, X,
+  CheckCircle2, XCircle, Copy, Star, Edit2, Trash2,
   Activity, Info, Shield, Search, Eye,
   AlertCircle, ToggleRight, ListChecks,
 } from "lucide-react";
@@ -36,8 +40,6 @@ const BLANK: ProviderServiceAreaPayload = {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const safeText = (v: unknown, fb = "Not configured"): string =>
   (typeof v === "string" && v.trim()) ? v.trim() : fb;
-const safeNum  = (v: unknown): number =>
-  (typeof v === "number" && isFinite(v)) ? v : 0;
 const safeDate = (v: unknown): string => {
   if (!v) return "Not configured";
   try { return new Date(String(v)).toLocaleDateString("en-IN", { dateStyle: "medium" }); } catch { return "Not configured"; }
@@ -71,57 +73,17 @@ function SectionError({ title, error, requestId, onRetry }: {
   title: string; error: string; requestId?: string | null; onRetry: () => void;
 }) {
   return (
-    <div style={{ padding: "16px 20px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
-      borderRadius: 12 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--danger-text)", margin: "0 0 4px",
-            display: "flex", alignItems: "center", gap: 6 }}>
-            <XCircle size={14}/> {title}
-          </p>
-          <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0, opacity: 0.85 }}>
-            {error} Retry or contact support with the request ID below.
-          </p>
-          {requestId && (
-            <button onClick={() => copyText(requestId)}
-              style={{ fontSize: 11, color: "var(--danger-text)", background: "none", border: "none",
-                cursor: "pointer", padding: "4px 0 0", display: "flex", alignItems: "center",
-                gap: 4, fontFamily: "inherit", opacity: 0.75 }}>
-              <Copy size={10}/> Request ID: {requestId}
-            </button>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-          {requestId && (
-            <button onClick={() => copyText(requestId)}
-              style={{ padding: "6px 10px", fontSize: 12, borderRadius: 8,
-                border: "1px solid var(--danger-border)", background: "transparent",
-                color: "var(--danger-text)", cursor: "pointer", fontFamily: "inherit" }}>
-              Copy ID
-            </button>
-          )}
-          <button onClick={onRetry}
-            style={{ padding: "6px 12px", fontSize: 12, borderRadius: 8,
-              border: "1px solid var(--danger-border)", background: "transparent",
-              color: "var(--danger-text)", cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", gap: 5 }}>
-            <RefreshCw size={11}/> Retry
-          </button>
-        </div>
+    <Alert tone="danger" title={title}>
+      <p style={{ margin: "0 0 6px" }}>{error} Retry or contact support with the request ID below.</p>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {requestId && (
+          <Button variant="ghost" size="sm" leftIcon={<Copy size={11}/>} onClick={() => copyText(requestId)}>
+            Request ID: {requestId}
+          </Button>
+        )}
+        <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={12}/>} onClick={onRetry}>Retry</Button>
       </div>
-    </div>
-  );
-}
-
-function StatusBadge({ active, small }: { active: boolean; small?: boolean }) {
-  const s = small ? { fontSize: 10, padding: "2px 7px" } : { fontSize: 11, padding: "3px 9px" };
-  return (
-    <span style={{ ...s, fontWeight: 700, borderRadius: 999, border: "1px solid",
-      background: active ? "var(--success-bg)" : "var(--surface-sunken)",
-      color: active ? "var(--success-text)" : "var(--text-tertiary)",
-      borderColor: active ? "var(--success-border)" : "var(--border)" }}>
-      {active ? "Active" : "Inactive"}
-    </span>
+    </Alert>
   );
 }
 
@@ -137,25 +99,26 @@ function KpiCard({ label, value, sub, variant, icon }: {
     neutral: { bg: "var(--surface-sunken)", text: "var(--text-secondary)", border: "var(--border)"   },
   }[v];
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12,
-      padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)",
-          textTransform: "uppercase", letterSpacing: "0.07em" }}>{label}</span>
-        <div style={{ width: 32, height: 32, borderRadius: 9, background: colors.bg,
-          border: `1px solid ${colors.border}`, display: "flex", alignItems: "center",
-          justifyContent: "center", color: colors.text, flexShrink: 0 }}>
-          {icon}
+    <Card padding="md">
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)",
+            textTransform: "uppercase", letterSpacing: "0.07em" }}>{label}</span>
+          <div style={{ width: 32, height: 32, borderRadius: 9, background: colors.bg,
+            border: `1px solid ${colors.border}`, display: "flex", alignItems: "center",
+            justifyContent: "center", color: colors.text, flexShrink: 0 }}>
+            {icon}
+          </div>
+        </div>
+        <div>
+          <p style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: 0, lineHeight: 1.15,
+            wordBreak: "break-word" }}>
+            {value}
+          </p>
+          {sub && <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "4px 0 0" }}>{sub}</p>}
         </div>
       </div>
-      <div>
-        <p style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: 0, lineHeight: 1.15,
-          wordBreak: "break-word" }}>
-          {value}
-        </p>
-        {sub && <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "4px 0 0" }}>{sub}</p>}
-      </div>
-    </div>
+    </Card>
   );
 }
 
@@ -194,14 +157,10 @@ function ValidationPreviewPanel({ result, loading, onValidate, canValidate }: {
         <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", margin: 0 }}>
           Validation Preview
         </p>
-        <button onClick={onValidate} disabled={!canValidate || loading}
-          style={{ padding: "5px 12px", fontSize: 11, fontWeight: 600, borderRadius: 7,
-            border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)",
-            cursor: canValidate ? "pointer" : "not-allowed", fontFamily: "inherit",
-            display: "flex", alignItems: "center", gap: 4, opacity: canValidate ? 1 : 0.5 }}>
-          {loading ? <><RefreshCw size={10} style={{ animation: "spin 1s linear infinite" }}/> Checking…</>
-                   : <><Search size={10}/> Validate</>}
-        </button>
+        <Button variant="secondary" size="sm" disabled={!canValidate} loading={loading}
+          leftIcon={!loading ? <Search size={11}/> : undefined} onClick={onValidate}>
+          {loading ? "Checking…" : "Validate"}
+        </Button>
       </div>
 
       {!result && !loading && (
@@ -258,34 +217,15 @@ function AreaDetailDrawer({ area, onClose, onEdit, onDelete, onToggle, totalActi
 }) {
   const isLastActive = area.is_active && totalActive === 1;
   return (
-    <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)",
-        zIndex: 999, backdropFilter: "blur(2px)" }}/>
-      <div style={{ position: "fixed", top: 0, right: 0, width: 420, height: "100vh",
-        background: "var(--surface)", borderLeft: "1px solid var(--border)",
-        zIndex: 1000, display: "flex", flexDirection: "column",
-        boxShadow: "-8px 0 32px rgba(0,0,0,0.15)", animation: "slideIn 0.22s ease" }}>
-
-        <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)",
-          display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <div>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-              {areaLabel(area)}
-            </h2>
-            <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "2px 0 0" }}>
-              Area Detail &amp; Serviceability
-            </p>
-          </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8,
-            border: "1px solid var(--border)", background: "var(--surface-sunken)",
-            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-            color: "var(--text-secondary)" }}><X size={14}/></button>
-        </div>
-
-        <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px" }}>
+    <Drawer open onClose={onClose} title={areaLabel(area)}>
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 16px" }}>
+            Area Detail &amp; Serviceability
+          </p>
 
           <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-            <StatusBadge active={area.is_active}/>
+            <DsStatusBadge status={area.is_active ? "active" : "inactive"}/>
             {area.is_primary && (
               <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
                 background: "rgba(217,119,6,0.12)", color: "#d97706", border: "1px solid rgba(217,119,6,0.3)" }}>
@@ -350,32 +290,16 @@ function AreaDetailDrawer({ area, onClose, onEdit, onDelete, onToggle, totalActi
           </Section>
         </div>
 
-        <div style={{ padding: "16px 22px", borderTop: "1px solid var(--border)", flexShrink: 0,
+        <div style={{ paddingTop: 16, borderTop: "1px solid var(--border)", flexShrink: 0,
           display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={onEdit}
-            style={{ flex: 1, padding: "9px", fontSize: 12, fontWeight: 600, borderRadius: 9,
-              border: "1px solid var(--border)", background: "var(--surface-sunken)",
-              color: "var(--text-primary)", cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-            <Edit2 size={12}/> Edit
-          </button>
-          <button onClick={onToggle}
-            style={{ flex: 1, padding: "9px", fontSize: 12, fontWeight: 600, borderRadius: 9,
-              border: "1px solid var(--border)", background: "var(--surface-sunken)",
-              color: "var(--text-primary)", cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-            <ToggleRight size={12}/> {area.is_active ? "Disable" : "Enable"}
-          </button>
-          <button onClick={onDelete}
-            style={{ padding: "9px 14px", fontSize: 12, fontWeight: 600, borderRadius: 9,
-              border: "1px solid var(--danger-border)", background: "var(--danger-bg)",
-              color: "var(--danger-text)", cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", gap: 5 }}>
-            <Trash2 size={12}/> Delete
-          </button>
+          <Button variant="secondary" size="sm" leftIcon={<Edit2 size={12}/>} onClick={onEdit}>Edit</Button>
+          <Button variant="secondary" size="sm" leftIcon={<ToggleRight size={12}/>} onClick={onToggle}>
+            {area.is_active ? "Disable" : "Enable"}
+          </Button>
+          <Button variant="destructive" size="sm" leftIcon={<Trash2 size={12}/>} onClick={onDelete}>Delete</Button>
         </div>
       </div>
-    </>
+    </Drawer>
   );
 }
 
@@ -407,62 +331,39 @@ function DeleteConfirmModal({ area, totalActive, loading, onConfirm, onCancel }:
 }) {
   const isLastActive = area.is_active && totalActive === 1;
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "var(--surface)", borderRadius: 14, padding: "28px 32px",
-        maxWidth: 440, width: "100%", border: "1px solid var(--border)",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 8px" }}>
-          Delete service area?
-        </h2>
-        <div style={{ padding: "12px 16px", background: "var(--surface-sunken)", borderRadius: 10,
-          border: "1px solid var(--border)", marginBottom: 16 }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
-            Area: {areaLabel(area)}
-          </p>
-          <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 2px" }}>
-            Pincode: {safeText(area.zipcode)}
-          </p>
-          <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>
-            Status: {area.is_active ? "Active" : "Inactive"}
-          </p>
-        </div>
-
-        <div style={{ padding: "10px 14px", borderRadius: 9, background: "var(--warning-bg)",
-          border: "1px solid var(--warning-border)", marginBottom: isLastActive ? 10 : 16,
-          display: "flex", gap: 8, fontSize: 12, color: "var(--warning-text)" }}>
-          <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }}/>
-          Deleting this area may reduce where customers can book your services.
-        </div>
-
-        {isLastActive && (
-          <div style={{ padding: "10px 14px", borderRadius: 9, background: "var(--danger-bg)",
-            border: "1px solid var(--danger-border)", marginBottom: 16,
-            display: "flex", gap: 8, fontSize: 12, color: "var(--danger-text)" }}>
-            <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }}/>
-            <div>
-              This is your last active area. Removing it may make your business not bookable.
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button onClick={onCancel}
-            style={{ padding: "9px 18px", fontSize: 13, borderRadius: 9, border: "1px solid var(--border)",
-              background: "var(--surface-sunken)", color: "var(--text-primary)", cursor: "pointer",
-              fontFamily: "inherit" }}>
-            Cancel
-          </button>
-          <button onClick={onConfirm} disabled={loading}
-            style={{ padding: "9px 18px", fontSize: 13, fontWeight: 600, borderRadius: 9,
-              border: "none", background: "var(--danger-text)", color: "white",
-              cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", gap: 6, opacity: loading ? 0.7 : 1 }}>
-            {loading ? <><RefreshCw size={12} style={{ animation: "spin 1s linear infinite" }}/> Deleting…</> : <><Trash2 size={12}/> Delete Area</>}
-          </button>
-        </div>
+    <Modal open onClose={onCancel} title="Delete service area?"
+      footer={<>
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button variant="destructive" size="sm" loading={loading}
+          leftIcon={!loading ? <Trash2 size={12}/> : undefined} onClick={onConfirm}>
+          Delete Area
+        </Button>
+      </>}>
+      <div style={{ padding: "12px 16px", background: "var(--surface-sunken)", borderRadius: 10,
+        border: "1px solid var(--border)", marginBottom: 16 }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
+          Area: {areaLabel(area)}
+        </p>
+        <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 2px" }}>
+          Pincode: {safeText(area.zipcode)}
+        </p>
+        <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>
+          Status: {area.is_active ? "Active" : "Inactive"}
+        </p>
       </div>
-    </div>
+
+      <Alert tone="warning">
+        Deleting this area may reduce where customers can book your services.
+      </Alert>
+
+      {isLastActive && (
+        <div style={{ marginTop: 10 }}>
+          <Alert tone="danger">
+            This is your last active area. Removing it may make your business not bookable.
+          </Alert>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -471,34 +372,18 @@ function SetPrimaryConfirmModal({ area, loading, onConfirm, onCancel }: {
   area: ProviderServiceArea; loading: boolean; onConfirm: () => void; onCancel: () => void;
 }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "var(--surface)", borderRadius: 14, padding: "28px 32px",
-        maxWidth: 440, width: "100%", border: "1px solid var(--border)",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 8px" }}>
-          Set {areaLabel(area)} as primary area?
-        </h2>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 20px" }}>
-          This area will be used as your default coverage area for matching and pricing.
-        </p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button onClick={onCancel}
-            style={{ padding: "9px 18px", fontSize: 13, borderRadius: 9, border: "1px solid var(--border)",
-              background: "var(--surface-sunken)", color: "var(--text-primary)", cursor: "pointer",
-              fontFamily: "inherit" }}>
-            Cancel
-          </button>
-          <button onClick={onConfirm} disabled={loading}
-            style={{ padding: "9px 18px", fontSize: 13, fontWeight: 600, borderRadius: 9,
-              border: "none", background: "var(--brand)", color: "white",
-              cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", gap: 6, opacity: loading ? 0.7 : 1 }}>
-            {loading ? <><RefreshCw size={12} style={{ animation: "spin 1s linear infinite" }}/> Setting…</> : <><Star size={12}/> Set Primary</>}
-          </button>
-        </div>
-      </div>
-    </div>
+    <Modal open onClose={onCancel} title={`Set ${areaLabel(area)} as primary area?`}
+      footer={<>
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button variant="primary" size="sm" loading={loading}
+          leftIcon={!loading ? <Star size={12}/> : undefined} onClick={onConfirm}>
+          Set Primary
+        </Button>
+      </>}>
+      <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
+        This area will be used as your default coverage area for matching and pricing.
+      </p>
+    </Modal>
   );
 }
 
@@ -567,12 +452,6 @@ function AreaWizard({ initial, existingAreas, limitReached, maxAreas, loading, e
 
   const replacingPrimary = form.is_primary && !!existingPrimary && existingPrimary.id !== (initial as { id?: string }).id;
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "9px 12px", fontSize: 13, boxSizing: "border-box",
-    border: "1px solid var(--border)", borderRadius: 8,
-    background: "var(--surface)", color: "var(--text-primary)", outline: "none", fontFamily: "inherit",
-  };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>
@@ -580,11 +459,9 @@ function AreaWizard({ initial, existingAreas, limitReached, maxAreas, loading, e
       </p>
 
       {limitReached && !isEdit && (
-        <div style={{ padding: "12px 16px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
-          borderRadius: 10, fontSize: 13, color: "var(--danger-text)", display: "flex", gap: 8 }}>
-          <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }}/>
+        <Alert tone="danger">
           Service area limit reached ({maxAreas}/{maxAreas}). Disable or delete an existing area, or upgrade your plan to add more.
-        </div>
+        </Alert>
       )}
 
       {/* Area Type */}
@@ -594,49 +471,30 @@ function AreaWizard({ initial, existingAreas, limitReached, maxAreas, loading, e
         </label>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {(["zipcode","city","zone","radius"] as AreaType[]).map(t => (
-            <button key={t} onClick={() => f("coverage_type", t)}
-              style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid", cursor: "pointer", fontSize: 12,
-                fontFamily: "inherit", fontWeight: form.coverage_type === t ? 700 : 400,
-                borderColor: form.coverage_type === t ? "var(--brand)" : "var(--border)",
-                background: form.coverage_type === t ? "rgba(37,99,235,0.08)" : "var(--surface-sunken)",
-                color: form.coverage_type === t ? "var(--brand)" : "var(--text-secondary)" }}>
+            <Button key={t} variant={form.coverage_type === t ? "primary" : "secondary"} size="sm"
+              onClick={() => f("coverage_type", t)}>
               {AREA_TYPE_LABELS[t]}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
 
       {/* Location Details */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>
-            State <span style={{ color: "var(--danger-text)" }}>*</span>
-          </label>
-          <input value={form.state ?? ""} onChange={e => f("state", e.target.value)} placeholder="Punjab" style={inputStyle}/>
-        </div>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>District</label>
-          <input value={form.district ?? ""} onChange={e => f("district", e.target.value)} placeholder="Ludhiana" style={inputStyle}/>
-        </div>
+        <Input label="State" required value={form.state ?? ""} onChange={e => f("state", e.target.value)} placeholder="Punjab"/>
+        <Input label="District" value={form.district ?? ""} onChange={e => f("district", e.target.value)} placeholder="Ludhiana"/>
       </div>
 
       {(form.coverage_type === "city" || form.coverage_type === "zipcode") && (
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>
-            City {form.coverage_type === "city" && <span style={{ color: "var(--danger-text)" }}>*</span>}
-          </label>
-          <input value={form.city ?? ""} onChange={e => f("city", e.target.value)} placeholder="Ludhiana" style={inputStyle}
-            disabled={isEdit}/>
-        </div>
+        <Input label="City" required={form.coverage_type === "city"} value={form.city ?? ""}
+          onChange={e => f("city", e.target.value)} placeholder="Ludhiana" disabled={isEdit}/>
       )}
 
       {form.coverage_type === "zipcode" && (
         <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>
-            Zipcode / Pincode <span style={{ color: "var(--danger-text)" }}>*</span>
-          </label>
-          <input value={form.zipcode ?? ""} onChange={e => f("zipcode", e.target.value)}
-            placeholder="141001" style={{ ...inputStyle, fontFamily: "monospace" }} disabled={isEdit}/>
+          <Input label="Zipcode / Pincode" required value={form.zipcode ?? ""}
+            onChange={e => f("zipcode", e.target.value)}
+            placeholder="141001" style={{ fontFamily: "monospace" }} disabled={isEdit}/>
           {isEdit && (
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "5px 0 0" }}>
               To change pincode, add a new service area.
@@ -646,45 +504,28 @@ function AreaWizard({ initial, existingAreas, limitReached, maxAreas, loading, e
       )}
 
       {form.coverage_type === "zone" && (
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>
-            Zone Name <span style={{ color: "var(--danger-text)" }}>*</span>
-          </label>
-          <input value={form.zone_name ?? ""} onChange={e => f("zone_name", e.target.value)}
-            placeholder="North Ludhiana" style={inputStyle} disabled={isEdit}/>
-        </div>
+        <Input label="Zone Name" required value={form.zone_name ?? ""}
+          onChange={e => f("zone_name", e.target.value)} placeholder="North Ludhiana" disabled={isEdit}/>
       )}
 
       {form.coverage_type === "radius" && (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>Latitude</label>
-              <input type="number" value={form.latitude != null ? String(form.latitude) : ""}
-                onChange={e => f("latitude", e.target.value ? parseFloat(e.target.value) : null)}
-                placeholder="30.9" style={inputStyle} disabled={isEdit}/>
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>Longitude</label>
-              <input type="number" value={form.longitude != null ? String(form.longitude) : ""}
-                onChange={e => f("longitude", e.target.value ? parseFloat(e.target.value) : null)}
-                placeholder="75.8" style={inputStyle} disabled={isEdit}/>
-            </div>
+            <Input label="Latitude" type="number" value={form.latitude != null ? String(form.latitude) : ""}
+              onChange={e => f("latitude", e.target.value ? parseFloat(e.target.value) : null)}
+              placeholder="30.9" disabled={isEdit}/>
+            <Input label="Longitude" type="number" value={form.longitude != null ? String(form.longitude) : ""}
+              onChange={e => f("longitude", e.target.value ? parseFloat(e.target.value) : null)}
+              placeholder="75.8" disabled={isEdit}/>
           </div>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>Radius (km)</label>
-            <input type="number" value={form.radius_km != null ? String(form.radius_km) : ""}
-              onChange={e => f("radius_km", e.target.value ? parseFloat(e.target.value) : null)}
-              placeholder="10" style={inputStyle} disabled={isEdit}/>
-          </div>
+          <Input label="Radius (km)" type="number" value={form.radius_km != null ? String(form.radius_km) : ""}
+            onChange={e => f("radius_km", e.target.value ? parseFloat(e.target.value) : null)}
+            placeholder="10" disabled={isEdit}/>
         </>
       )}
 
       {!isEdit && (
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>Country</label>
-          <input value={form.country ?? "India"} onChange={e => f("country", e.target.value)} style={inputStyle}/>
-        </div>
+        <Input label="Country" value={form.country ?? "India"} onChange={e => f("country", e.target.value)}/>
       )}
 
       {/* Validation Preview */}
@@ -712,79 +553,32 @@ function AreaWizard({ initial, existingAreas, limitReached, maxAreas, loading, e
       </div>
 
       {replacingPrimary && (
-        <div style={{ padding: "10px 14px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)",
-          borderRadius: 9, fontSize: 12, color: "var(--warning-text)", display: "flex", gap: 7 }}>
-          <Info size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
+        <Alert tone="warning">
           Setting this as primary will replace the current primary area ({areaLabel(existingPrimary!)}).
-        </div>
+        </Alert>
       )}
 
       {(fieldErr || error) && (
-        <div style={{ padding: "10px 14px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
-          borderRadius: 9 }}>
-          <p style={{ fontSize: 12, color: "var(--danger-text)", margin: "0 0 4px", fontWeight: 600 }}>
-            {fieldErr ?? error}
-          </p>
+        <Alert tone="danger">
+          <p style={{ margin: 0 }}>{fieldErr ?? error}</p>
           {requestId && (
-            <button onClick={() => copyText(requestId)}
-              style={{ fontSize: 11, color: "var(--danger-text)", background: "none", border: "none",
-                cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 4,
-                fontFamily: "inherit", opacity: 0.75 }}>
-              <Copy size={10}/> Request ID: {requestId}
-            </button>
+            <Button variant="ghost" size="sm" leftIcon={<Copy size={10}/>} onClick={() => copyText(requestId)}>
+              Request ID: {requestId}
+            </Button>
           )}
-        </div>
+        </Alert>
       )}
 
-      <div style={{ padding: "10px 14px", background: "var(--surface-sunken)", border: "1px solid var(--border)",
-        borderRadius: 9, fontSize: 12, color: "var(--text-secondary)", display: "flex", gap: 7 }}>
-        <Shield size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
+      <Alert tone="info">
         Active service areas count toward your bookability requirement. At least one active area is required to accept bookings.
-      </div>
+      </Alert>
 
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 4 }}>
-        <button onClick={onCancel}
-          style={{ padding: "9px 18px", fontSize: 13, borderRadius: 9, border: "1px solid var(--border)",
-            background: "var(--surface-sunken)", color: "var(--text-primary)", cursor: "pointer", fontFamily: "inherit" }}>
-          Cancel
-        </button>
-        <button onClick={handleSubmit} disabled={loading || (limitReached && !isEdit)}
-          style={{ padding: "9px 20px", fontSize: 13, fontWeight: 600, borderRadius: 9,
-            border: "none", background: "var(--brand)", color: "white", fontFamily: "inherit",
-            cursor: loading || (limitReached && !isEdit) ? "not-allowed" : "pointer",
-            opacity: loading || (limitReached && !isEdit) ? 0.7 : 1,
-            display: "flex", alignItems: "center", gap: 6 }}>
-          {loading ? <><RefreshCw size={12} style={{ animation: "spin 1s linear infinite" }}/> Saving…</> : submitLabel ?? "Save"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Wizard Modal shell ────────────────────────────────────────────────────────
-function WizardModal({ title, subtitle, open, onClose, children }: {
-  title: string; subtitle?: string; open: boolean; onClose: () => void; children: React.ReactNode;
-}) {
-  if (!open) return null;
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "var(--surface)", borderRadius: 14, maxWidth: 580, width: "100%",
-        maxHeight: "92vh", display: "flex", flexDirection: "column",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.2)", border: "1px solid var(--border)" }}>
-        <div style={{ padding: "18px 24px", borderBottom: "1px solid var(--border)",
-          display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexShrink: 0 }}>
-          <div>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{title}</h2>
-            {subtitle && <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "3px 0 0" }}>{subtitle}</p>}
-          </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid var(--border)",
-            background: "var(--surface-sunken)", cursor: "pointer", display: "flex",
-            alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", flexShrink: 0 }}>
-            <X size={14}/>
-          </button>
-        </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>{children}</div>
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button variant="primary" size="sm" loading={loading} disabled={limitReached && !isEdit}
+          onClick={handleSubmit}>
+          {submitLabel ?? "Save"}
+        </Button>
       </div>
     </div>
   );
@@ -804,10 +598,9 @@ export default function ProviderServiceAreasPage() {
   const [primaryArea_, setPrimaryTarget] = useState<ProviderServiceArea | null>(null);
   const [search,      setSearch]      = useState("");
   const [filterStatus,setFilterStatus]= useState<"all"|"active"|"inactive">("all");
-  const [toast,       setToast]       = useState<{ msg: string; type: "success"|"error" } | null>(null);
 
-  function notify(msg: string, type: "success"|"error" = "success") {
-    setToast({ msg, type }); setTimeout(() => setToast(null), 3800);
+  function notify(msg: string, type: "success"|"danger" = "success") {
+    pushToast({ tone: type, title: msg });
   }
 
   const list: ProviderServiceArea[] = areasApi.data?.areas ?? [];
@@ -930,8 +723,6 @@ export default function ProviderServiceAreasPage() {
       <style>{`
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
         .sa-grid{display:grid;gap:20px}
         .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
         .sa-cols{display:grid;grid-template-columns:2fr 1fr;gap:20px;align-items:start}
@@ -939,19 +730,6 @@ export default function ProviderServiceAreasPage() {
         @media(max-width:768px){.kpi-grid{grid-template-columns:1fr 1fr}}
         @media(max-width:520px){.kpi-grid{grid-template-columns:1fr}}
       `}</style>
-
-      {toast && (
-        <div style={{ position: "fixed", top: 72, right: 24, zIndex: 9999, maxWidth: 380,
-          padding: "12px 18px", borderRadius: 10, boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
-          animation: "fadeIn 0.2s ease",
-          background: toast.type === "success" ? "var(--success-bg)" : "var(--danger-bg)",
-          border: `1px solid ${toast.type === "success" ? "var(--success-border)" : "var(--danger-border)"}`,
-          color: toast.type === "success" ? "var(--success-text)" : "var(--danger-text)",
-          fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
-          {toast.type === "success" ? <CheckCircle2 size={14}/> : <XCircle size={14}/>}
-          {toast.msg}
-        </div>
-      )}
 
       {/* Breadcrumb */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16,
@@ -961,38 +739,20 @@ export default function ProviderServiceAreasPage() {
         <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>Service Coverage Areas</span>
       </div>
 
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-        flexWrap: "wrap", gap: 12, marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 4px",
-            letterSpacing: "-0.01em" }}>
-            Service Coverage Areas
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-            Define where your business can receive customer bookings and manage location readiness.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={refetchAll}
-            style={{ padding: "8px 14px", fontSize: 12, fontWeight: 600, borderRadius: 9,
-              border: "1px solid var(--border)", background: "var(--surface-sunken)",
-              color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", gap: 5 }}>
-            <RefreshCw size={12}/> Refresh
-          </button>
-          {canCreate && (
-            <button onClick={() => setCreateOpen(true)} disabled={limitReached}
-              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius: 9,
-                border: "none",
-                background: limitReached ? "var(--surface-sunken)" : "linear-gradient(135deg,#2563eb,#1d4ed8)",
-                color: limitReached ? "var(--text-tertiary)" : "white",
-                cursor: limitReached ? "not-allowed" : "pointer", fontFamily: "inherit",
-                display: "flex", alignItems: "center", gap: 6 }}>
-              <Plus size={13}/> Add Service Area
-            </button>
-          )}
-        </div>
+      <div style={{ marginBottom: 24 }}>
+        <PageHeader
+          title="Service Coverage Areas"
+          description="Define where your business can receive customer bookings and manage location readiness."
+          actions={<>
+            <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={12}/>} onClick={refetchAll}>Refresh</Button>
+            {canCreate && (
+              <Button variant="primary" size="sm" leftIcon={<Plus size={13}/>} disabled={limitReached}
+                onClick={() => setCreateOpen(true)}>
+                Add Service Area
+              </Button>
+            )}
+          </>}
+        />
       </div>
 
       <div className="sa-grid">
@@ -1029,12 +789,7 @@ export default function ProviderServiceAreasPage() {
           </div>
         </div>
 
-        <div style={{ padding: "11px 15px", borderRadius: 9,
-          background: "var(--info-bg, rgba(59,130,246,0.08))", border: "1px solid var(--info-border, rgba(59,130,246,0.2))",
-          fontSize: 12, color: "var(--text-secondary)", display: "flex", gap: 7 }}>
-          <Info size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
-          {coverageStatus.banner}
-        </div>
+        <Alert tone="info">{coverageStatus.banner}</Alert>
 
         {/* KPI Cards */}
         <div className="kpi-grid">
@@ -1054,7 +809,7 @@ export default function ProviderServiceAreasPage() {
 
         {/* Action Required Panel */}
         {issues.length > 0 ? (
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
+          <Card padding="lg">
             <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px",
               display: "flex", alignItems: "center", gap: 8 }}>
               <AlertTriangle size={15} style={{ color: "var(--warning-text)" }}/> Action Required
@@ -1081,34 +836,17 @@ export default function ProviderServiceAreasPage() {
                       </div>
                     </div>
                     {(canCreate || canSetPrimary) && (
-                      <button onClick={iss.action}
-                        style={{ fontSize: 11, fontWeight: 700, padding: "5px 11px", borderRadius: 7,
-                          border: `1px solid ${isDanger ? "var(--danger-border)" : "var(--warning-border)"}`,
-                          background: "transparent",
-                          color: isDanger ? "var(--danger-text)" : "var(--warning-text)",
-                          cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap" }}>
-                        {iss.actionLabel}
-                      </button>
+                      <Button variant="ghost" size="sm" onClick={iss.action}>{iss.actionLabel}</Button>
                     )}
                   </div>
                 );
               })}
             </div>
-          </div>
+          </Card>
         ) : !areasApi.loading && (
-          <div style={{ padding: "14px 18px", background: "var(--success-bg)",
-            border: "1px solid var(--success-border)", borderRadius: 10,
-            display: "flex", alignItems: "center", gap: 10 }}>
-            <CheckCircle2 size={16} style={{ color: "var(--success-text)" }}/>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--success-text)", margin: 0 }}>
-                All coverage checks are passing.
-              </p>
-              <p style={{ fontSize: 12, color: "var(--success-text)", margin: "2px 0 0", opacity: 0.8 }}>
-                Customers in your active areas can discover your services.
-              </p>
-            </div>
-          </div>
+          <Alert tone="success" title="All coverage checks are passing.">
+            Customers in your active areas can discover your services.
+          </Alert>
         )}
 
         {/* Two-column: table + sidebar */}
@@ -1119,31 +857,21 @@ export default function ProviderServiceAreasPage() {
               <div style={{ position: "relative", flex: 1, minWidth: 200, maxWidth: 320 }}>
                 <Search size={13} style={{ position: "absolute", left: 10, top: "50%",
                   transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }}/>
-                <input value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Search areas…"
-                  style={{ width: "100%", padding: "8px 12px 8px 32px", fontSize: 13, boxSizing: "border-box",
-                    border: "1px solid var(--border)", borderRadius: 9,
-                    background: "var(--surface)", color: "var(--text-primary)", outline: "none", fontFamily: "inherit" }}/>
+                <Input value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Search areas…" style={{ paddingLeft: 32 }}/>
               </div>
               <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
                 {(["all","active","inactive"] as const).map(s => (
-                  <button key={s} onClick={() => setFilterStatus(s)}
-                    style={{ padding: "8px 14px", fontSize: 12, fontWeight: 600, borderRadius: 9,
-                      border: "1px solid", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                      borderColor: filterStatus === s ? "var(--brand)" : "var(--border)",
-                      background: filterStatus === s ? "rgba(37,99,235,0.08)" : "var(--surface-sunken)",
-                      color: filterStatus === s ? "var(--brand)" : "var(--text-secondary)" }}>
+                  <Button key={s} variant={filterStatus === s ? "primary" : "secondary"} size="sm"
+                    onClick={() => setFilterStatus(s)}>
                     {s.charAt(0).toUpperCase() + s.slice(1)}
-                  </button>
+                  </Button>
                 ))}
               </div>
               {(search || filterStatus !== "all") && (
-                <button onClick={() => { setSearch(""); setFilterStatus("all"); }}
-                  style={{ fontSize: 11, color: "var(--text-tertiary)", background: "none",
-                    border: "none", cursor: "pointer", fontFamily: "inherit", display: "flex",
-                    alignItems: "center", gap: 3 }}>
-                  <X size={11}/> Clear
-                </button>
+                <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setFilterStatus("all"); }}>
+                  Clear
+                </Button>
               )}
             </div>
 
@@ -1152,36 +880,23 @@ export default function ProviderServiceAreasPage() {
               <SectionError title="We couldn't load service coverage" error={areasApi.error}
                 requestId={areasApi.requestId} onRetry={areasApi.refetch}/>
             ) : areasApi.loading ? (
-              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12 }}>
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} style={{ height: 62, margin: 12, background: "var(--surface-sunken)",
-                    borderRadius: 8, animation: "pulse 1.5s ease-in-out infinite", opacity: 0.7 }}/>
-                ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {[...Array(3)].map((_, i) => <Skeleton key={i} height="4rem" radius="10px"/>)}
               </div>
             ) : filtered.length === 0 ? (
-              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12,
-                padding: "48px 24px", textAlign: "center" }}>
-                <MapPin size={36} style={{ color: "var(--text-tertiary)", marginBottom: 12, opacity: 0.4 }}/>
-                <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 6px" }}>
-                  {list.length === 0 ? "No service areas configured" : "No areas match your filters"}
-                </p>
-                <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 16px" }}>
-                  {list.length === 0
+              <Card padding="lg">
+                <EmptyState
+                  title={list.length === 0 ? "No service areas configured" : "No areas match your filters"}
+                  description={list.length === 0
                     ? "Add at least one active service area to allow customers to find and book your services."
                     : "Try adjusting your search or filter settings."}
-                </p>
-                {list.length === 0 && canCreate && (
-                  <button onClick={() => setCreateOpen(true)}
-                    style={{ padding: "10px 20px", fontSize: 13, fontWeight: 600, borderRadius: 9,
-                      border: "none", background: "var(--brand)", color: "white", cursor: "pointer",
-                      fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <Plus size={13}/> Add Your First Area
-                  </button>
-                )}
-              </div>
+                  primaryAction={list.length === 0 && canCreate
+                    ? <Button variant="primary" size="sm" leftIcon={<Plus size={13}/>} onClick={() => setCreateOpen(true)}>Add Your First Area</Button>
+                    : undefined}
+                />
+              </Card>
             ) : (
-              <div style={{ background: "var(--surface)", border: "1px solid var(--border)",
-                borderRadius: 12, overflow: "hidden" }}>
+              <Card padding="none">
                 <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
                   <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
                     Coverage Areas
@@ -1230,50 +945,36 @@ export default function ProviderServiceAreasPage() {
                               : <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>No</span>}
                           </td>
                           <td style={{ padding: "12px 14px" }}>
-                            <StatusBadge active={a.is_active} small/>
+                            <DsStatusBadge status={a.is_active ? "active" : "inactive"} size="sm"/>
                           </td>
                           <td style={{ padding: "12px 14px", fontSize: 11, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>
                             {safeDate(a.updated_at ?? a.created_at)}
                           </td>
                           <td style={{ padding: "12px 14px" }}>
                             <div style={{ display: "flex", gap: 4 }}>
-                              <button onClick={e => { e.stopPropagation(); setDetailArea(a); }}
-                                title="View Details"
-                                style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid var(--border)",
-                                  background: "var(--surface-sunken)", cursor: "pointer",
-                                  display: "flex", alignItems: "center", justifyContent: "center",
-                                  color: "var(--text-secondary)" }}>
+                              <Button variant="icon" size="sm" aria-label="View Details"
+                                onClick={e => { e.stopPropagation(); setDetailArea(a); }}>
                                 <Eye size={11}/>
-                              </button>
+                              </Button>
                               {canUpdate && (
-                                <button onClick={e => { e.stopPropagation(); setEditArea(a); }}
-                                  title="Edit"
-                                  style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid var(--border)",
-                                    background: "var(--surface-sunken)", cursor: "pointer",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    color: "var(--text-secondary)" }}>
+                                <Button variant="icon" size="sm" aria-label="Edit"
+                                  onClick={e => { e.stopPropagation(); setEditArea(a); }}>
                                   <Edit2 size={11}/>
-                                </button>
+                                </Button>
                               )}
                               {canSetPrimary && !a.is_primary && (
-                                <button onClick={e => { e.stopPropagation(); setPrimaryTarget(a); }}
-                                  title="Set as Primary"
-                                  style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid var(--border)",
-                                    background: "var(--surface-sunken)", cursor: "pointer",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    color: "#d97706" }}>
+                                <Button variant="icon" size="sm" aria-label="Set as Primary"
+                                  style={{ color: "#d97706" }}
+                                  onClick={e => { e.stopPropagation(); setPrimaryTarget(a); }}>
                                   <Star size={11}/>
-                                </button>
+                                </Button>
                               )}
                               {canDelete && (
-                                <button onClick={e => { e.stopPropagation(); setDeleteArea(a); }}
-                                  title="Delete"
-                                  style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid var(--danger-border)",
-                                    background: "var(--danger-bg)", cursor: "pointer",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    color: "var(--danger-text)" }}>
+                                <Button variant="icon" size="sm" aria-label="Delete"
+                                  style={{ color: "var(--danger-text)" }}
+                                  onClick={e => { e.stopPropagation(); setDeleteArea(a); }}>
                                   <Trash2 size={11}/>
-                                </button>
+                                </Button>
                               )}
                             </div>
                           </td>
@@ -1287,7 +988,7 @@ export default function ProviderServiceAreasPage() {
                   <span>{list.length} area{list.length !== 1 ? "s" : ""}</span>
                   <span>{list.length} / {maxAreas} slots used</span>
                 </div>
-              </div>
+              </Card>
             )}
           </div>
 
@@ -1295,7 +996,7 @@ export default function ProviderServiceAreasPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
             {/* Coverage Summary */}
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "18px 20px" }}>
+            <Card padding="md">
               <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>
                 Coverage Summary
               </p>
@@ -1306,10 +1007,10 @@ export default function ProviderServiceAreasPage() {
                   value={primaryArea ? safeZoneTier((primaryArea as unknown as { resolved_zone_tier?: string }).resolved_zone_tier) : "Not configured"}/>
                 <SummaryRow icon={<Activity size={13}/>} label="Last Sync" value="Today"/>
               </div>
-            </div>
+            </Card>
 
             {/* Coverage Rules */}
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "18px 20px" }}>
+            <Card padding="md">
               <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px",
                 display: "flex", alignItems: "center", gap: 6 }}>
                 <ListChecks size={14}/> Coverage Rules
@@ -1319,16 +1020,14 @@ export default function ProviderServiceAreasPage() {
                 <RuleRow ok={!limitReached} text={`Maximum ${maxAreas} service areas on current plan`}/>
                 <RuleRow ok={totalActive > 0} text="Active areas are visible for customer matching"/>
               </div>
-            </div>
+            </Card>
 
             {/* Recent Activity */}
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "18px 20px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: 0,
-                  display: "flex", alignItems: "center", gap: 6 }}>
-                  <Activity size={14}/> Recent Activity
-                </p>
-              </div>
+            <Card padding="md">
+              <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px",
+                display: "flex", alignItems: "center", gap: 6 }}>
+                <Activity size={14}/> Recent Activity
+              </p>
               <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "0 0 12px" }}>
                 Service area updates and coverage events.
               </p>
@@ -1338,10 +1037,7 @@ export default function ProviderServiceAreasPage() {
                   requestId={activityApi.requestId} onRetry={activityApi.refetch}/>
               ) : activityApi.loading ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {[...Array(2)].map((_, i) => (
-                    <div key={i} style={{ height: 44, background: "var(--surface-sunken)", borderRadius: 8,
-                      animation: "pulse 1.5s ease-in-out infinite", opacity: 0.7 }}/>
-                  ))}
+                  {[...Array(2)].map((_, i) => <Skeleton key={i} height="2.75rem" radius="8px"/>)}
                 </div>
               ) : activities.length === 0 ? (
                 <div style={{ padding: "18px 8px", textAlign: "center", color: "var(--text-tertiary)" }}>
@@ -1370,7 +1066,7 @@ export default function ProviderServiceAreasPage() {
                 display: "flex", alignItems: "center", gap: 3, marginTop: 10 }}>
                 View all activity <ChevronRight size={11}/>
               </a>
-            </div>
+            </Card>
           </div>
         </div>
       </div>
@@ -1408,9 +1104,7 @@ export default function ProviderServiceAreasPage() {
         />
       )}
 
-      <WizardModal title="Add Service Area"
-        subtitle="Add a city, pincode, zone, or radius where customers can book your services."
-        open={createOpen} onClose={() => setCreateOpen(false)}>
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Add Service Area">
         <AreaWizard
           initial={{ ...BLANK }}
           existingAreas={list}
@@ -1423,9 +1117,9 @@ export default function ProviderServiceAreasPage() {
           onCancel={() => setCreateOpen(false)}
           submitLabel="Add Area"
         />
-      </WizardModal>
+      </Modal>
 
-      <WizardModal title="Edit Service Area" open={editArea !== null} onClose={() => setEditArea(null)}>
+      <Modal open={editArea !== null} onClose={() => setEditArea(null)} title="Edit Service Area">
         {editArea && (
           <AreaWizard
             initial={{
@@ -1454,7 +1148,7 @@ export default function ProviderServiceAreasPage() {
             isEdit
           />
         )}
-      </WizardModal>
+      </Modal>
     </TenantLayout>
   );
 }
