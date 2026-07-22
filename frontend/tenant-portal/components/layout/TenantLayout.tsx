@@ -199,7 +199,7 @@ function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => vo
               Complete all steps to go live and accept bookings
             </p>
           </div>
-          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-sunken)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface-sunken)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
             <X size={15}/>
           </button>
         </div>
@@ -246,13 +246,13 @@ function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => vo
           {loading ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[...Array(6)].map((_, i) => (
-                <div key={i} style={{ height: 60, background: "var(--surface-sunken)", borderRadius: 10, animation: "pulse 1.5s ease-in-out infinite" }}/>
+                <div key={i} style={{ height: 60, background: "var(--surface-sunken)", borderRadius: "var(--radius-lg)", animation: "pulse 1.5s ease-in-out infinite" }}/>
               ))}
             </div>
           ) : statusApi.error ? (
-            <div style={{ padding: "16px", background: "var(--danger-bg)", borderRadius: 10, border: "1px solid var(--danger-border)" }}>
+            <div style={{ padding: "16px", background: "var(--danger-bg)", borderRadius: "var(--radius-lg)", border: "1px solid var(--danger-border)" }}>
               <p style={{ fontSize: 13, color: "var(--danger-text)", margin: "0 0 8px" }}>Could not load setup status.</p>
-              <button onClick={statusApi.refetch} style={{ fontSize: 12, padding: "5px 12px", borderRadius: 8, border: "1px solid var(--danger-border)", background: "transparent", color: "var(--danger-text)", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5 }}>
+              <button onClick={statusApi.refetch} style={{ fontSize: 12, padding: "5px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--danger-border)", background: "transparent", color: "var(--danger-text)", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5 }}>
                 <RefreshCw size={11}/> Retry
               </button>
             </div>
@@ -269,7 +269,7 @@ function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => vo
                       display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
                       background: done ? "var(--success-bg)" : "var(--surface-sunken)",
                       border: `1px solid ${done ? "var(--success-border)" : "var(--border)"}`,
-                      borderRadius: 10, textDecoration: "none",
+                      borderRadius: "var(--radius-lg)", textDecoration: "none",
                       cursor: done ? "default" : "pointer",
                       transition: "all 0.12s",
                     }}
@@ -304,7 +304,7 @@ function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => vo
         {!loading && !statusApi.error && (
           <div style={{ padding: "16px 22px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
             {pct === 100 ? (
-              <div style={{ padding: "12px 16px", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 10, display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ padding: "12px 16px", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: "var(--radius-lg)", display: "flex", alignItems: "center", gap: 8 }}>
                 <CheckCircle2 size={16} style={{ color: "var(--success-text)" }}/>
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--success-text)", margin: 0 }}>Setup complete! You're live and accepting bookings.</p>
               </div>
@@ -312,13 +312,13 @@ function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => vo
               <div style={{ display: "flex", gap: 10 }}>
                 <a href="/provider/status" onClick={onClose} style={{
                   flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                  padding: "10px", borderRadius: 10, textDecoration: "none",
+                  padding: "10px", borderRadius: "var(--radius-lg)", textDecoration: "none",
                   background: "var(--brand)", color: "white", fontSize: 13, fontWeight: 600,
                 }}>
                   <AlertCircle size={14}/> View Full Status
                 </a>
                 <button onClick={onClose} style={{
-                  padding: "10px 16px", borderRadius: 10, border: "1px solid var(--border)",
+                  padding: "10px 16px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)",
                   background: "var(--surface-sunken)", color: "var(--text-secondary)", fontSize: 13,
                   cursor: "pointer", fontFamily: "inherit",
                 }}>
@@ -425,7 +425,7 @@ function TenantShellInner({ children, activeNav }: {
       }}>
         {/* Logo */}
         <div style={{ height: 64, padding: collapsed ? "0 16px" : "0 18px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,0.15)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid rgba(255,255,255,0.2)" }}>
+          <div style={{ width: 34, height: 34, borderRadius: "var(--radius-lg)", background: "rgba(255,255,255,0.15)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid rgba(255,255,255,0.2)" }}>
             <span style={{ color: "white", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>
               {tenant.tenantName?.[0]?.toUpperCase() ?? "T"}
             </span>
@@ -466,7 +466,7 @@ function TenantShellInner({ children, activeNav }: {
                     width: "100%", display: "flex", alignItems: "center", gap: 10,
                     padding: collapsed ? "9px 0" : "8px 10px",
                     justifyContent: collapsed ? "center" : undefined,
-                    borderRadius: 8, background: "transparent",
+                    borderRadius: "var(--radius-md)", background: "transparent",
                     border: "none", cursor: "pointer",
                     color: "var(--sidebar-text)", fontFamily: "inherit",
                     fontSize: 13, fontWeight: 500,
@@ -528,7 +528,7 @@ function TenantShellInner({ children, activeNav }: {
               <Search size={14} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }}/>
               <input
                 placeholder="Search jobs, customers, bookings…"
-                style={{ width: "100%", height: 36, padding: "0 12px 0 34px", fontSize: 13, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text-primary)", outline: "none", fontFamily: "inherit" }}
+                style={{ width: "100%", height: 36, padding: "0 12px 0 34px", fontSize: 13, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", color: "var(--text-primary)", outline: "none", fontFamily: "inherit" }}
                 onFocus={e => { e.currentTarget.style.borderColor = "var(--border-focus)"; e.currentTarget.style.background = "var(--surface)"; }}
                 onBlur={e  => { e.currentTarget.style.borderColor = "var(--border)";       e.currentTarget.style.background = "var(--surface-sunken)"; }}
               />
@@ -539,10 +539,10 @@ function TenantShellInner({ children, activeNav }: {
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }}/>
             <span style={{ fontSize: 11, fontWeight: 600, color: "var(--success-text)" }}>Online</span>
           </div>
-          <button onClick={toggle} title={theme === "dark" ? "Light mode" : "Dark mode"} style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
+          <button onClick={toggle} title={theme === "dark" ? "Light mode" : "Dark mode"} style={{ width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
             {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
           </button>
-          <a href="/notifications" aria-label="Notifications" title="Notifications" style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", textDecoration: "none" }}>
+          <a href="/notifications" aria-label="Notifications" title="Notifications" style={{ width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", textDecoration: "none" }}>
             <Bell size={16}/>
           </a>
           <a href="/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
@@ -552,7 +552,7 @@ function TenantShellInner({ children, activeNav }: {
             </div>
             <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={myAvatar} size={34}/>
           </a>
-          <button onClick={handleLogout} title="Log out" style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
+          <button onClick={handleLogout} title="Log out" style={{ width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
             <LogOut size={16}/>
           </button>
         </header>
@@ -578,7 +578,7 @@ function TenantShellInner({ children, activeNav }: {
 }
 
 function footerBtnStyle(collapsed: boolean): React.CSSProperties {
-  return { width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: "none", background: "transparent", cursor: "pointer", color: "var(--sidebar-text)", fontFamily: "inherit", justifyContent: collapsed ? "center" : undefined };
+  return { width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: "var(--radius-md)", border: "none", background: "transparent", cursor: "pointer", color: "var(--sidebar-text)", fontFamily: "inherit", justifyContent: collapsed ? "center" : undefined };
 }
 
 function SidebarItem({ item, active, collapsed }: { item: NavItem; active: boolean; collapsed: boolean }) {
@@ -590,7 +590,7 @@ function SidebarItem({ item, active, collapsed }: { item: NavItem; active: boole
         display: "flex", alignItems: "center", gap: 10,
         padding: collapsed ? "9px 0" : "8px 10px",
         justifyContent: collapsed ? "center" : undefined,
-        borderRadius: 8, textDecoration: "none",
+        borderRadius: "var(--radius-md)", textDecoration: "none",
         background: active ? "var(--sidebar-active)" : hov ? "var(--sidebar-hover)" : "transparent",
         color: active ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
         fontWeight: active ? 600 : 400, fontSize: 13,
