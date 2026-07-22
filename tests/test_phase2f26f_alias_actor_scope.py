@@ -248,7 +248,14 @@ class TestBurnedCorpora:
             # CLIENT_ASSERTED_TARGET_TENANT.
             ("POST", "/v1/payments/invoices"),
         }
-        PERSONA_EXEMPT = {("POST", "/v1/appointments/{appointment_id}/reschedule")}
+        PERSONA_EXEMPT = {("POST", "/v1/appointments/{appointment_id}/reschedule"): "TENANT_PROVIDER_MUTATION"}
+        # Slice 2F-39A5: analytics.router::ingest_event was restricted to
+        # require_super_admin (no legitimate tenant-side caller found for
+        # arbitrary tenant_id/actor_id event forgery); the classifier now
+        # correctly reads this as a platform-admin operation rather than an
+        # unprotected tenant-provider mutation.
+        PERSONA_EXEMPT[("POST", "/v1/analytics/events/ingest")] = "PLATFORM_ADMIN_MUTATION"
+        DIRECTION_EXEMPT_EXPLICIT = {("POST", "/v1/analytics/events/ingest"): "GLOBAL_PLATFORM_SCOPE"}
         p = d = n = 0
         for m in man:
             k = (m["method"], F.norm(m["path"]))
@@ -256,10 +263,12 @@ class TestBurnedCorpora:
                 continue
             r = F.resolve(idx[k]); n += 1
             if k in PERSONA_EXEMPT:
-                p += r["persona"] == "TENANT_PROVIDER_MUTATION"
+                p += r["persona"] == PERSONA_EXEMPT[k]
             else:
                 p += r["persona"] == m["persona"]
-            if k in DIRECTION_EXEMPT:
+            if k in DIRECTION_EXEMPT_EXPLICIT:
+                d += r["tenant_direction"] == DIRECTION_EXEMPT_EXPLICIT[k]
+            elif k in DIRECTION_EXEMPT:
                 d += r["tenant_direction"] == "PRINCIPAL_TENANT"
             else:
                 d += r["tenant_direction"] == m["tenant_direction"]

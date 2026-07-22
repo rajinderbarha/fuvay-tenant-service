@@ -167,13 +167,23 @@ class TestBurnedCorporaStableFields:
             # REQUIRES_MANUAL_ADJUDICATION (appointment_id-only, no
             # ownership check at hand-label time) to a confident
             # TENANT_PROVIDER_MUTATION now that _assert_appt_access exists.
-            if k in (("DELETE", "/v1/rag/knowledge-bases/{kb_id}"),
+            # Slice 2F-39A5: analytics.router::ingest_event was restricted
+            # to require_super_admin (no legitimate tenant-side caller found
+            # for arbitrary tenant_id/actor_id event forgery); the
+            # classifier now correctly reads this as a platform-admin
+            # operation rather than an unprotected tenant-provider mutation.
+            if k == ("POST", "/v1/analytics/events/ingest"):
+                p += r["persona"] == "PLATFORM_ADMIN_MUTATION"
+            elif k in (("DELETE", "/v1/rag/knowledge-bases/{kb_id}"),
                      ("POST", "/v1/appointments/{appointment_id}/reschedule"),
                      ("POST", "/v1/dispatch/jobs/{job_id}/reassign"),
                      ("POST", "/v1/appointments/{appointment_id}/confirm")):
                 p += r["persona"] == "TENANT_PROVIDER_MUTATION"
             else:
                 p += r["persona"] == m["persona"]
+            if k == ("POST", "/v1/analytics/events/ingest"):
+                d += r["tenant_direction"] == "GLOBAL_PLATFORM_SCOPE"
+                continue
             e = self.REMAP.get(m["tenant_direction"], m["tenant_direction"])
             # Slice 2F-33 fixed update_location's tenant derivation
             # (client-asserted -> server-derived principal); the LIVE

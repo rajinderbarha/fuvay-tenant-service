@@ -198,6 +198,12 @@ class TestBurnedCorpora:
     # (appointment_id-only, no ownership check at hand-label time) to a
     # confident TENANT_PROVIDER_MUTATION now that _assert_appt_access exists.
     PERSONA_EXEMPT_2F36 = {("POST", "/v1/appointments/{appointment_id}/reschedule")}
+    # Slice 2F-39A5: analytics.router::ingest_event was restricted to
+    # require_super_admin; the classifier now correctly reads this as a
+    # platform-admin operation rather than an unprotected tenant-provider
+    # mutation.
+    PERSONA_EXEMPT_EXPLICIT = {("POST", "/v1/analytics/events/ingest"): "PLATFORM_ADMIN_MUTATION"}
+    DIRECTION_EXEMPT_EXPLICIT = {("POST", "/v1/analytics/events/ingest"): "GLOBAL_PLATFORM_SCOPE"}
 
     def _run(self, G, idx, path):
         man = _rows(os.path.basename(path), os.path.dirname(path))
@@ -207,10 +213,15 @@ class TestBurnedCorpora:
             if k not in idx:
                 continue
             r = G.resolve(idx[k]); n += 1
-            if k in self.PERSONA_EXEMPT_2F36:
+            if k in self.PERSONA_EXEMPT_EXPLICIT:
+                p += r["persona"] == self.PERSONA_EXEMPT_EXPLICIT[k]
+            elif k in self.PERSONA_EXEMPT_2F36:
                 p += r["persona"] == "TENANT_PROVIDER_MUTATION"
             else:
                 p += r["persona"] == m["persona"]
+            if k in self.DIRECTION_EXEMPT_EXPLICIT:
+                d += r["tenant_direction"] == self.DIRECTION_EXEMPT_EXPLICIT[k]
+                continue
             e = self.REMAP.get(m["tenant_direction"], m["tenant_direction"])
             # Slice 2F-33 fixed update_location's tenant derivation
             # (client-asserted -> server-derived principal); the LIVE
