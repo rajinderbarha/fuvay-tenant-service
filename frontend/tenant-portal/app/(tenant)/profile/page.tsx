@@ -2,7 +2,9 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { ProfilePhotoUploader } from "../../../components/shared/ProfilePhotoUploader";
-import { Modal } from "../../../components/shared/ui";
+import {
+  Modal, Button as DsButton, Input as DsInput, Textarea as DsTextarea, Skeleton as DsSkeleton,
+} from "@serviceos/design-system";
 import {
   profileApi, businessProfileApi, tenantSetupApi, providerStatusApi, myStatusApi, authApi,
   mediaAssetApi,
@@ -112,8 +114,7 @@ function SkeletonCard({ rows=3 }: { rows?: number }) {
     <div style={{ background:"var(--surface)",border:"1px solid var(--border)",borderRadius:12,padding:24 }}>
       <div style={{ height:18,width:"40%",background:"var(--surface-sunken)",borderRadius:6,marginBottom:18 }}/>
       {[...Array(rows)].map((_,i) => (
-        <div key={i} style={{ height:40,background:"var(--surface-sunken)",borderRadius:8,marginBottom:12,
-          animation:"pulse 1.5s ease-in-out infinite",opacity:0.7 }}/>
+        <div key={i} style={{ marginBottom:12 }}><DsSkeleton height={40} radius="8px"/></div>
       ))}
     </div>
   );
@@ -139,12 +140,9 @@ function TextInput({ value, onChange, placeholder, readOnly, mono }: {
   value:string; onChange?:(v:string)=>void; placeholder?:string; readOnly?:boolean; mono?:boolean;
 }) {
   return (
-    <input value={value} readOnly={readOnly} placeholder={placeholder}
+    <DsInput value={value} readOnly={readOnly} placeholder={placeholder}
       onChange={e=>onChange?.(e.target.value)}
-      style={{ width:"100%",padding:"9px 12px",fontSize:13,borderRadius:8,
-        border:"1px solid var(--border)",background: readOnly ? "var(--surface-sunken)" : "var(--surface)",
-        color:"var(--text-primary)",outline:"none",boxSizing:"border-box",
-        fontFamily: mono ? "monospace" : "inherit" }}/>
+      style={{ fontFamily: mono ? "monospace" : "inherit" }}/>
   );
 }
 
@@ -152,11 +150,8 @@ function Textarea({ value, onChange, placeholder, rows=3 }: {
   value:string; onChange?:(v:string)=>void; placeholder?:string; rows?:number;
 }) {
   return (
-    <textarea value={value} rows={rows} placeholder={placeholder}
-      onChange={e=>onChange?.(e.target.value)}
-      style={{ width:"100%",padding:"9px 12px",fontSize:13,borderRadius:8,
-        border:"1px solid var(--border)",background:"var(--surface)",
-        color:"var(--text-primary)",outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit" }}/>
+    <DsTextarea value={value} rows={rows} placeholder={placeholder}
+      onChange={e=>onChange?.(e.target.value)}/>
   );
 }
 
@@ -177,18 +172,10 @@ function Btn({ onClick, loading, disabled, variant="primary", size="md", childre
   onClick?:()=>void; loading?:boolean; disabled?:boolean; variant?:"primary"|"secondary"|"ghost"; size?:"sm"|"md";
   children:React.ReactNode;
 }) {
-  const styles = {
-    primary:   { background:"linear-gradient(135deg,var(--brand),var(--brand-dark,var(--brand)))",color:"white",border:"none" },
-    secondary: { background:"var(--surface-sunken)",color:"var(--text-primary)",border:"1px solid var(--border)" },
-    ghost:     { background:"transparent",color:"var(--text-secondary)",border:"1px solid transparent" },
-  }[variant];
   return (
-    <button onClick={onClick} disabled={disabled||loading}
-      style={{ ...styles, padding: size==="sm" ? "7px 12px" : "9px 16px", fontSize: size==="sm" ? 12 : 13, fontWeight:600,
-        borderRadius:9, cursor: (disabled||loading) ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1,
-        display:"flex",alignItems:"center",gap:6,fontFamily:"inherit",whiteSpace:"nowrap" }}>
-      {loading ? <RefreshCw size={13} style={{ animation:"spin 0.8s linear infinite" }}/> : children}
-    </button>
+    <DsButton onClick={onClick} loading={loading} disabled={disabled} variant={variant} size={size}>
+      {children}
+    </DsButton>
   );
 }
 
@@ -1084,7 +1071,7 @@ export default function ProviderProfilePage() {
       )}
 
       {/* Edit Business Info Modal */}
-      <Modal open={editOpen} onClose={()=>setEditOpen(false)} title="Edit Business Info" size="lg">
+      <Modal open={editOpen} onClose={()=>setEditOpen(false)} title="Edit Business Info">
         <div style={{ display:"grid", gap:16 }}>
           <p style={{ fontSize:12, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"var(--text-tertiary)", margin:0 }}>Basic Info</p>
           <div className="two-col">
@@ -1133,7 +1120,7 @@ export default function ProviderProfilePage() {
       </Modal>
 
       {/* Preview Public Profile Modal — customer-safe fields only */}
-      <Modal open={previewOpen} onClose={()=>setPreviewOpen(false)} title="Public Profile Preview" size="md">
+      <Modal open={previewOpen} onClose={()=>setPreviewOpen(false)} title="Public Profile Preview">
         <div style={{ borderRadius:12, overflow:"hidden", border:"1px solid var(--border)" }}>
           <div style={{ height:100, background: shopPreview
             ? `linear-gradient(180deg, rgba(15,23,42,0.1), rgba(15,23,42,0.5)), url(${shopPreview}) center/cover no-repeat`
