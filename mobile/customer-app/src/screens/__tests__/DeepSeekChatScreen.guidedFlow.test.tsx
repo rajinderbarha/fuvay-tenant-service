@@ -110,4 +110,23 @@ describe("DeepSeekChatScreen guided flow restructure (UX-07 Pass 3e)", () => {
     // aiConversationApi.createSession.
     expect(aiConversationApi.createSession).toHaveBeenCalledTimes(1);
   });
+
+  // UX-07 Pass 3f accessibility remediation.
+  it("the guided booking-flow modal exposes accessible modal semantics and a labeled close/back control", async () => {
+    const { getByTestId } = await openFlow();
+    const backBtn = getByTestId("booking-flow-back");
+    expect(backBtn.props.accessibilityRole).toBe("button");
+    expect(backBtn.props.accessibilityLabel).toBe("Close guided booking");
+    expect(backBtn.props.hitSlop).toBeTruthy();
+  });
+
+  it("language options in the language selector expose an accessible name and selected state", async () => {
+    const utils = render(withTheme(<DeepSeekChatScreen />));
+    fireEvent.press(utils.getByTestId("chat-start"));
+    await waitFor(() => expect(utils.queryByTestId("chat-language-btn")).toBeTruthy());
+    fireEvent.press(utils.getByTestId("chat-language-btn"));
+    const englishOption = utils.getByTestId("chat-language-option-en");
+    expect(englishOption.props.accessibilityRole).toBe("button");
+    expect(englishOption.props.accessibilityState).toEqual({ selected: true });
+  });
 });

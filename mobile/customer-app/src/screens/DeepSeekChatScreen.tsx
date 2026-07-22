@@ -353,7 +353,9 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
         <Text style={s.title}>Talk to ServiceOS Assistant</Text>
         <Text style={s.body}>Describe what you need in your own words — the assistant can look up services, pricing, and help you book.</Text>
         {error && <Text style={s.errorText}>{error}</Text>}
-        <TouchableOpacity style={s.startBtn} onPress={startSession} disabled={starting} testID="chat-start">
+        <TouchableOpacity style={s.startBtn} onPress={startSession} disabled={starting} testID="chat-start"
+          accessible accessibilityRole="button" accessibilityLabel="Start Conversation"
+          accessibilityState={{ disabled: starting, busy: starting }}>
           <Text style={s.startBtnText}>{starting ? "Starting…" : "Start Conversation"}</Text>
         </TouchableOpacity>
       </View>
@@ -416,7 +418,10 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
             keyExtractor={l=>l.code}
             renderItem={({item}) => (
               <TouchableOpacity style={s.langRow} testID={`chat-language-option-${item.code}`}
-                onPress={()=>{ setLanguage(item); setLangModal(false); setLangQuery(""); }}>
+                onPress={()=>{ setLanguage(item); setLangModal(false); setLangQuery(""); }}
+                accessible accessibilityRole="button"
+                accessibilityLabel={`${item.englishName} (${item.nativeName})`}
+                accessibilityState={{ selected: item.code === language.code }}>
                 <Text style={s.langRowNative}>{item.nativeName}</Text>
                 <Text style={s.langRowEnglish}>{item.englishName} ({item.code})</Text>
               </TouchableOpacity>
@@ -427,10 +432,11 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
 
       {/* ── Real, canonical booking journey ─────────────────────────────────── */}
       <Modal visible={flowOpen} animationType="slide" onRequestClose={()=>setFlowOpen(false)}>
-        <View style={s.flowModal}>
+        <View style={s.flowModal} accessibilityViewIsModal>
           <View style={s.flowHeader}>
             <TouchableOpacity onPress={()=>setFlowOpen(false)} testID="booking-flow-back"
               accessible accessibilityRole="button" accessibilityLabel="Close guided booking"
+              hitSlop={{ top:8, bottom:8, left:8, right:8 }}
               style={s.flowBackBtn}>
               <Ionicons name="chevron-back" size={22} color={theme.colors.textPrimary}/>
             </TouchableOpacity>
@@ -496,7 +502,8 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
               <Text style={s.icon}>✅</Text>
               <Text style={s.title}>Booking Confirmed</Text>
               <Text style={s.body} testID="booking-reference">Reference: {booking.bookingNumber}</Text>
-              <TouchableOpacity style={s.startBtn} onPress={goToBookingDetail} testID="chat-view-booking">
+              <TouchableOpacity style={s.startBtn} onPress={goToBookingDetail} testID="chat-view-booking"
+                accessible accessibilityRole="button" accessibilityLabel="View Booking">
                 <Text style={s.startBtnText}>View Booking</Text>
               </TouchableOpacity>
             </View>
@@ -529,24 +536,31 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
                 <View style={{ gap:8 }}>
                   <Text style={s.priceText} testID="booking-standard-price">₹{booking.standardPrice}</Text>
                   <TouchableOpacity style={s.startBtn} onPress={()=>selectPriceTier("standard")}
-                    disabled={flowLoading} testID="booking-continue-standard-price">
+                    disabled={flowLoading} testID="booking-continue-standard-price"
+                    accessible accessibilityRole="button" accessibilityLabel="Continue with this price"
+                    accessibilityState={{ disabled: flowLoading, busy: flowLoading }}>
                     <Text style={s.startBtnText}>{flowLoading ? "Please wait…" : "Continue with this price"}</Text>
                   </TouchableOpacity>
                 </View>
               ) : booking.priceOptions && !booking.selectedTier ? (
                 <View style={{ gap:8 }}>
                   <Text style={s.body}>Choose an option to continue:</Text>
-                  {(["low","mid","high"] as const).map(tier => (
-                    <TouchableOpacity key={tier} style={s.tierBtn} onPress={()=>selectPriceTier(tier)}
-                      disabled={flowLoading} testID={`booking-tier-${tier}`}>
-                      <Text style={s.tierBtnText}>
-                        {tier === "mid" ? "Continue with this price" : tier === "low" ? "Lower estimate" : "Premium option"}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  {(["low","mid","high"] as const).map(tier => {
+                    const tierLabel = tier === "mid" ? "Continue with this price" : tier === "low" ? "Lower estimate" : "Premium option";
+                    return (
+                      <TouchableOpacity key={tier} style={s.tierBtn} onPress={()=>selectPriceTier(tier)}
+                        disabled={flowLoading} testID={`booking-tier-${tier}`}
+                        accessible accessibilityRole="button" accessibilityLabel={tierLabel}
+                        accessibilityState={{ disabled: flowLoading, busy: flowLoading }}>
+                        <Text style={s.tierBtnText}>{tierLabel}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               ) : booking.selectedTier ? (
-                <TouchableOpacity style={s.startBtn} onPress={confirmBooking} disabled={flowLoading} testID="chat-confirm-booking">
+                <TouchableOpacity style={s.startBtn} onPress={confirmBooking} disabled={flowLoading} testID="chat-confirm-booking"
+                  accessible accessibilityRole="button" accessibilityLabel="Confirm Booking"
+                  accessibilityState={{ disabled: flowLoading, busy: flowLoading }}>
                   <Text style={s.startBtnText}>{flowLoading ? "Confirming…" : "Confirm Booking"}</Text>
                 </TouchableOpacity>
               ) : (
@@ -586,14 +600,16 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
               <Text style={s.title}>Tell us more</Text>
               <TextInput style={s.input} value={issueText} onChangeText={setIssueText}
                 placeholder="Describe the issue" placeholderTextColor={theme.colors.textTertiary}
-                testID="booking-issue-input"/>
+                testID="booking-issue-input" accessibilityLabel="Describe the issue"/>
               <TextInput style={s.input} value={addressText} onChangeText={setAddressText}
                 placeholder="Address" placeholderTextColor={theme.colors.textTertiary}
-                testID="booking-address-input"/>
+                testID="booking-address-input" accessibilityLabel="Address"/>
               <TextInput style={s.input} value={cityText} onChangeText={setCityText}
                 placeholder="City" placeholderTextColor={theme.colors.textTertiary}
-                testID="booking-city-input"/>
-              <TouchableOpacity style={s.startBtn} onPress={submitIssueAndAddress} disabled={flowLoading} testID="booking-check-serviceability">
+                testID="booking-city-input" accessibilityLabel="City"/>
+              <TouchableOpacity style={s.startBtn} onPress={submitIssueAndAddress} disabled={flowLoading} testID="booking-check-serviceability"
+                accessible accessibilityRole="button" accessibilityLabel="Check availability"
+                accessibilityState={{ disabled: flowLoading, busy: flowLoading }}>
                 <Text style={s.startBtnText}>{flowLoading ? "Checking…" : "Check availability"}</Text>
               </TouchableOpacity>
             </View>
