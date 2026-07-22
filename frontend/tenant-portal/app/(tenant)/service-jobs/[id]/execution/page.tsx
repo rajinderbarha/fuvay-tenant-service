@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { homeServiceExecutionApi, ExecutionEventRecord, ExecutionNoteRecord, PartsRequestRecord, serviceJobAssignmentApi } from "../../../../../lib/api";
+import { PageShell, PageHeader, Card, Button, Modal, Alert, StatusBadge } from "@serviceos/design-system";
 
 const STATUS_ACTIONS: Record<string, { label: string; action: string }[]> = {
   accepted:          [{ label: "On the Way", action: "on_the_way" }],
@@ -154,97 +155,74 @@ export default function JobExecutionPage() {
   const status = (job?.status as string) ?? "";
   const actions = STATUS_ACTIONS[status] ?? [];
 
-  if (loading) return <div style={{ padding: 32 }}>Loading job execution...</div>;
+  if (loading) {
+    return (
+      <PageShell>
+        <div style={{ padding: 32 }}>Loading job execution...</div>
+      </PageShell>
+    );
+  }
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Job Execution</h1>
-          <div style={{ color: "#6b7280", marginTop: 4 }}>
-            Status: <strong>{status || "—"}</strong>
-          </div>
-        </div>
-        <a href={`/service-jobs/${jobId}`} style={{ color: "#6366f1", textDecoration: "none", fontSize: 14 }}>
-          ← Back to Job
-        </a>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Job Execution"
+        description={`Status: ${status || "—"}`}
+        actions={<a href={`/service-jobs/${jobId}`} style={{ color: "var(--brand)", textDecoration: "none", fontSize: 14 }}>← Back to Job</a>}
+      />
 
-      {error && (
-        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 6, padding: 12, marginBottom: 16, color: "#dc2626" }}>
-          {error}
-        </div>
-      )}
+      {error && <div style={{ marginBottom: 16 }}><Alert tone="danger">{error}</Alert></div>}
 
       {/* Status Action Bar */}
       {actions.length > 0 && (
-        <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: 16, marginBottom: 20 }}>
+        <Card padding="md" style={{ marginBottom: 20, background: "var(--success-bg)", borderColor: "var(--success-border)" }}>
           <div style={{ fontWeight: 600, marginBottom: 12 }}>Next Action</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {actions.map((a) => (
-              <button
-                key={a.action}
-                onClick={() => handleAction(a.action)}
-                disabled={actionLoading}
-                style={{
-                  background: "#16a34a", color: "white", border: "none",
-                  borderRadius: 6, padding: "8px 16px", cursor: "pointer", fontWeight: 600,
-                }}
-              >
+              <Button key={a.action} variant="primary" disabled={actionLoading} onClick={() => handleAction(a.action)}>
                 {a.label}
-              </button>
+              </Button>
             ))}
-            <button
-              onClick={() => setShowCancelModal(true)}
-              disabled={actionLoading}
-              style={{
-                background: "white", color: "#dc2626", border: "1px solid #dc2626",
-                borderRadius: 6, padding: "8px 16px", cursor: "pointer",
-              }}
-            >
+            <Button variant="destructive" disabled={actionLoading} onClick={() => setShowCancelModal(true)}>
               Cancel Job
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* HS8B — Parts Requests (tenant/business approval) */}
       {partsRequests.length > 0 && (
-        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, marginBottom: 20 }}>
+        <Card padding="md" style={{ marginBottom: 20 }}>
           <div style={{ fontWeight: 600, marginBottom: 12 }}>Parts Requests</div>
           {partsRequests.map((pr) => (
-            <div key={pr.parts_request_id} style={{ borderBottom: "1px solid #f3f4f6", paddingBottom: 10, marginBottom: 10 }}>
+            <div key={pr.parts_request_id} style={{ borderBottom: "1px solid var(--border)", paddingBottom: 10, marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontWeight: 500, fontSize: 14 }}>{pr.part_name} × {pr.quantity}</div>
-                <span style={{
-                  fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
-                  background: pr.status.includes("rejected") ? "#fef2f2" : pr.status === "installed" ? "#f0fdf4" : "#eff6ff",
-                  color: pr.status.includes("rejected") ? "#dc2626" : pr.status === "installed" ? "#16a34a" : "#2563eb",
-                }}>{pr.status}</span>
+                <StatusBadge status={pr.status} size="sm" />
               </div>
-              <div style={{ fontSize: 13, color: "#374151", marginTop: 2 }}>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
                 Estimated cost: ₹{pr.estimated_cost.toLocaleString("en-IN")} — {pr.reason}
               </div>
               {pr.status === "requested" && (
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <button onClick={() => handleApproveParts(pr.parts_request_id)} disabled={partsActionLoading === pr.parts_request_id}
-                    style={{ background: "#16a34a", color: "white", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                  <Button size="sm" variant="primary" disabled={partsActionLoading === pr.parts_request_id}
+                    onClick={() => handleApproveParts(pr.parts_request_id)}>
                     Approve
-                  </button>
-                  <button onClick={() => handleRejectParts(pr.parts_request_id)} disabled={partsActionLoading === pr.parts_request_id}
-                    style={{ background: "white", color: "#dc2626", border: "1px solid #dc2626", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>
+                  </Button>
+                  <Button size="sm" variant="destructive" disabled={partsActionLoading === pr.parts_request_id}
+                    onClick={() => handleRejectParts(pr.parts_request_id)}>
                     Reject
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
           ))}
-        </div>
+        </Card>
       )}
 
       {/* HS8B — Completion Proof (view only, tenant does not complete jobs) */}
       {job?.completion_data != null && (
-        <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: 16, marginBottom: 20 }}>
+        <Card padding="md" style={{ marginBottom: 20, background: "var(--success-bg)", borderColor: "var(--success-border)" }}>
           <div style={{ fontWeight: 600, marginBottom: 8 }}>Completion Proof</div>
           {(() => {
             const cd = job.completion_data as Record<string, unknown>;
@@ -254,53 +232,53 @@ export default function JobExecutionPage() {
                 <div style={{ fontSize: 14, fontWeight: 700 }}>
                   Collected Amount: ₹{Number(cd.collected_amount ?? 0).toLocaleString("en-IN")}
                 </div>
-                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
                   Payment Collected On-site — Customer Pays Provider Directly
                 </div>
                 {cd.technician_note ? (
-                  <div style={{ fontSize: 12, color: "#374151", marginTop: 6 }}>Note: {String(cd.technician_note)}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6 }}>Note: {String(cd.technician_note)}</div>
                 ) : null}
               </>
             );
           })()}
-        </div>
+        </Card>
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         {/* Timeline */}
-        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16 }}>
+        <Card padding="md">
           <div style={{ fontWeight: 600, marginBottom: 12 }}>Timeline</div>
           {timeline.length === 0 ? (
-            <div style={{ color: "#9ca3af", fontSize: 14 }}>No events yet.</div>
+            <div style={{ color: "var(--text-tertiary)", fontSize: 14 }}>No events yet.</div>
           ) : (
             timeline.map((ev) => (
-              <div key={ev.id} style={{ borderBottom: "1px solid #f3f4f6", paddingBottom: 10, marginBottom: 10 }}>
+              <div key={ev.id} style={{ borderBottom: "1px solid var(--border)", paddingBottom: 10, marginBottom: 10 }}>
                 <div style={{ fontWeight: 500, fontSize: 14 }}>{ev.event_type.replace(/_/g, " ")}</div>
                 {ev.old_status && (
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                     {ev.old_status} → {ev.new_status}
                   </div>
                 )}
-                {ev.notes && <div style={{ fontSize: 12, color: "#374151", marginTop: 2 }}>{ev.notes}</div>}
-                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+                {ev.notes && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{ev.notes}</div>}
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>
                   {ev.created_at ? new Date(ev.created_at).toLocaleString() : "—"}
                 </div>
               </div>
             ))
           )}
-        </div>
+        </Card>
 
         {/* Notes */}
-        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16 }}>
+        <Card padding="md">
           <div style={{ fontWeight: 600, marginBottom: 12 }}>Notes</div>
           {notes.length === 0 ? (
-            <div style={{ color: "#9ca3af", fontSize: 14, marginBottom: 12 }}>No notes yet.</div>
+            <div style={{ color: "var(--text-tertiary)", fontSize: 14, marginBottom: 12 }}>No notes yet.</div>
           ) : (
             notes.map((n) => (
-              <div key={n.id} style={{ borderBottom: "1px solid #f3f4f6", paddingBottom: 10, marginBottom: 10 }}>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>{n.note_type}</div>
+              <div key={n.id} style={{ borderBottom: "1px solid var(--border)", paddingBottom: 10, marginBottom: 10 }}>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{n.note_type}</div>
                 <div style={{ fontSize: 14 }}>{n.note_text}</div>
-                <div style={{ fontSize: 11, color: "#9ca3af" }}>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
                   {n.created_at ? new Date(n.created_at).toLocaleString() : "—"}
                 </div>
               </div>
@@ -312,67 +290,55 @@ export default function JobExecutionPage() {
               onChange={(e) => setNoteText(e.target.value)}
               placeholder="Add a note..."
               rows={3}
-              style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 6, padding: 8, fontSize: 14, boxSizing: "border-box" }}
+              style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 6, padding: 8, fontSize: 14,
+                boxSizing: "border-box", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit" }}
             />
-            <button
-              onClick={submitNote}
-              disabled={noteLoading || !noteText.trim()}
-              style={{
-                background: "#6366f1", color: "white", border: "none",
-                borderRadius: 6, padding: "8px 14px", cursor: "pointer",
-                marginTop: 8, width: "100%",
-              }}
-            >
-              {noteLoading ? "Saving..." : "Add Note"}
-            </button>
+            <Button variant="primary" style={{ marginTop: 8, width: "100%" }}
+              disabled={noteLoading || !noteText.trim()} loading={noteLoading} onClick={submitNote}>
+              Add Note
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Quote Required Modal */}
-      {showQuoteModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div style={{ background: "white", borderRadius: 8, padding: 24, width: 400, maxWidth: "90%" }}>
-            <h3 style={{ margin: "0 0 12px" }}>Quote Required</h3>
-            <p style={{ color: "#6b7280", fontSize: 14, marginBottom: 12 }}>Describe what quote/parts are needed.</p>
-            <textarea
-              value={quoteNote}
-              onChange={(e) => setQuoteNote(e.target.value)}
-              rows={4}
-              placeholder="Describe the quote requirements..."
-              style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 6, padding: 8, boxSizing: "border-box" }}
-            />
-            <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
-              <button onClick={() => setShowQuoteModal(false)} style={{ padding: "8px 16px", border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}>Cancel</button>
-              <button onClick={submitQuote} disabled={!quoteNote.trim() || actionLoading} style={{ background: "#dc2626", color: "white", border: "none", borderRadius: 6, padding: "8px 16px", cursor: "pointer" }}>
-                Mark Quote Required
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal open={showQuoteModal} onClose={() => setShowQuoteModal(false)} title="Quote Required"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setShowQuoteModal(false)}>Cancel</Button>
+          <Button variant="destructive" size="sm" disabled={!quoteNote.trim() || actionLoading}
+            loading={actionLoading} onClick={submitQuote}>
+            Mark Quote Required
+          </Button>
+        </>}>
+        <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 12 }}>Describe what quote/parts are needed.</p>
+        <textarea
+          value={quoteNote}
+          onChange={(e) => setQuoteNote(e.target.value)}
+          rows={4}
+          placeholder="Describe the quote requirements..."
+          style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 6, padding: 8,
+            boxSizing: "border-box", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit" }}
+        />
+      </Modal>
 
       {/* Cancel Modal */}
-      {showCancelModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div style={{ background: "white", borderRadius: 8, padding: 24, width: 400, maxWidth: "90%" }}>
-            <h3 style={{ margin: "0 0 12px" }}>Cancel Job</h3>
-            <textarea
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.target.value)}
-              rows={3}
-              placeholder="Reason for cancellation..."
-              style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 6, padding: 8, boxSizing: "border-box" }}
-            />
-            <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
-              <button onClick={() => setShowCancelModal(false)} style={{ padding: "8px 16px", border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer" }}>Back</button>
-              <button onClick={submitCancel} disabled={!cancelReason.trim() || actionLoading} style={{ background: "#dc2626", color: "white", border: "none", borderRadius: 6, padding: "8px 16px", cursor: "pointer" }}>
-                Cancel Job
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      <Modal open={showCancelModal} onClose={() => setShowCancelModal(false)} title="Cancel Job"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setShowCancelModal(false)}>Back</Button>
+          <Button variant="destructive" size="sm" disabled={!cancelReason.trim() || actionLoading}
+            loading={actionLoading} onClick={submitCancel}>
+            Cancel Job
+          </Button>
+        </>}>
+        <textarea
+          value={cancelReason}
+          onChange={(e) => setCancelReason(e.target.value)}
+          rows={3}
+          placeholder="Reason for cancellation..."
+          style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 6, padding: 8,
+            boxSizing: "border-box", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit" }}
+        />
+      </Modal>
+    </PageShell>
   );
 }
