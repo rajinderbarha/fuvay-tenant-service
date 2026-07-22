@@ -19,8 +19,8 @@ import { Toaster, type ToastItem } from "../shared/ui";
 import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "./Breadcrumbs";
-import { authApi, providerStatusApi, tenantSetupApi, staffApi, providerServiceAreasApi, usageCreditsApi, entitlementApi } from "../../lib/api";
-import { useApi } from "../../hooks/useApi";
+import { authApi, providerStatusApi, entitlementApi } from "../../lib/api";
+import { useSetupStatus } from "../../hooks/useSetupStatus";
 
 // FINAL-L5-04B: live tenant module/category entitlement state, fetched once
 // per shell mount and refreshable after an admin entitlement mutation —
@@ -42,33 +42,23 @@ export function useTenantEntitlements() {
 type NavItem = { id: string; href: string; label: string; icon: React.ReactNode; badge?: number };
 type NavGroup = { label: string; items: NavItem[]; special?: string };
 
-// ── Setup wizard steps ────────────────────────────────────────────────────────
-const SETUP_STEPS = [
-  { key: "profile_complete",        label: "Business Profile",       desc: "Add business name, GST, address",           href: "/profile",                   icon: <Zap size={14}/> },
-  { key: "package_active",          label: "Package Active",         desc: "Activate your subscription package",        href: "/finance/package",            icon: <Package size={14}/> },
-  { key: "credits_available",       label: "Usage Credits",          desc: "Ensure credits are available",              href: "/finance/usage-credit-ledger",icon: <CreditCard size={14}/> },
-  { key: "security_deposit_ok",     label: "Security Deposit",       desc: "₹5,000 deposit required",                  href: "/finance/security-deposit",   icon: <Shield size={14}/> },
-  { key: "service_areas_count",     label: "Service Areas",          desc: "Add at least one coverage area",            href: "/provider/service-areas",     icon: <ArrowRight size={14}/> },
-  { key: "active_services_count",   label: "Enable a Service",       desc: "Enable AC Repair or another service",       href: "/tenant/setup/services",      icon: <Zap size={14}/> },
-  { key: "coverage_configured",     label: "Service Coverage",       desc: "Set types, brands & issue types",           href: "/provider/service-coverage",  icon: <Shield size={14}/> },
-  { key: "staff_count",             label: "Add Technician",         desc: "Add at least one technician",               href: "/provider/staff",             icon: <Users2 size={14}/> },
-  { key: "availability_configured", label: "Business Hours",          desc: "Set working hours",                         href: "/tenant/setup/availability",  icon: <CalendarCheck size={14}/> },
-  { key: "documents_submitted",     label: "Documents",              desc: "Submit required business documents",        href: "/documents",                  icon: <FileText size={14}/> },
-];
-
 // ── Enterprise static nav ─────────────────────────────────────────────────────
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "Overview",
     items: [
       { id: "dashboard", href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={16}/> },
+      // Business Profile stays always-visible even once the "Setup" group
+      // below is hidden (setup complete) -- it's not just a setup step, and
+      // it's the consolidation point where all setup/config now lives
+      // (see the "Business Setup" section on the Profile page).
+      { id: "profile",   href: "/profile",   label: "Business Profile", icon: <Zap size={16}/> },
     ],
   },
   {
     label: "Setup",
     items: [
       { id: "provider-status",                    href: "/provider/status",                    label: "Setup Checklist",       icon: <CheckSquare size={16}/> },
-      { id: "profile",                            href: "/profile",                            label: "Business Profile",      icon: <Zap size={16}/> },
       { id: "provider-service-areas",             href: "/provider/service-areas",             label: "Service Areas",         icon: <ArrowRight size={16}/> },
       { id: "tenant-setup-services",              href: "/tenant/setup/services",              label: "Service Setup",         icon: <Wrench size={16}/> },
       { id: "provider-service-coverage",          href: "/provider/service-coverage",          label: "Service Coverage",      icon: <Shield size={16}/> },
@@ -128,49 +118,11 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 // ── Setup Wizard Drawer ───────────────────────────────────────────────────────
-function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const statusApi = useApi(useCallback(() => providerStatusApi.get(), []), []);
-  const pkgApi    = useApi(useCallback(() => tenantSetupApi.getPackage(), []), []);
-  // FINAL-L5-03: was tenantSetupApi.getWallet() -> /v1/provider/wallet, which
-  // reads the dormant `tenant_wallets` table (never populated by the
-  // canonical seed) and always 500s. Usage Credit Balance is the real,
-  // canonical source (tenant_billing.credit_balance via usage_credit_ledger),
-  // already used elsewhere in this app -- see project memory on
-  // tenant_wallets being legacy/dormant.
-  const creditApi = useApi(useCallback(() => usageCreditsApi.getBalance(), []), []);
-  const staffApi2 = useApi(useCallback(() => staffApi.list(), []), []);
-  const areasApi  = useApi(useCallback(() => providerServiceAreasApi.list(), []), []);
-
-  const s       = statusApi.data;
-  const blockers = [...(s?.visibility_blockers ?? []), ...(s?.bookability_blockers ?? [])];
-  const pkg     = pkgApi.data as Record<string, unknown> | null;
-  const staffCount = staffApi2.data?.users?.length ?? 0;
-  const areasCount = areasApi.data?.total ?? areasApi.data?.areas?.length ?? 0;
-  const creditBal  = creditApi.data?.usage_credit_balance ?? 0;
-  const pkgStatus  = String(pkg?.status ?? "inactive");
-  const depositSt  = String(pkg?.security_deposit_status ?? "pending");
-
-  function isDone(key: string): boolean {
-    switch (key) {
-      case "profile_complete":        return !blockers.some(b => b.code?.includes("profile"));
-      case "package_active":          return pkgStatus === "active";
-      case "credits_available":       return creditBal > 0;
-      case "security_deposit_ok":     return depositSt === "received" || depositSt === "waived";
-      case "service_areas_count":     return areasCount > 0;
-      case "active_services_count":   return !blockers.some(b => b.code?.includes("service") || b.code?.includes("offering"));
-      case "coverage_configured":     return !blockers.some(b => b.code?.includes("coverage"));
-      case "staff_count":             return staffCount > 0;
-      case "availability_configured": return !blockers.some(b => b.code?.includes("availability") || b.code?.includes("slot"));
-      case "documents_submitted":     return !blockers.some(b => b.code?.includes("document"));
-      default:                        return false;
-    }
-  }
-
-  const doneCount  = SETUP_STEPS.filter(st => isDone(st.key)).length;
-  const total      = SETUP_STEPS.length;
-  const pct        = Math.round((doneCount / total) * 100);
-  const isBookable = s?.is_bookable ?? false;
-  const loading    = statusApi.loading || pkgApi.loading || creditApi.loading;
+export function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const setup = useSetupStatus();
+  const { steps, doneCount, total, isBookable, loading } = setup;
+  const statusApi = { error: setup.error, refetch: setup.refetch };
+  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
 
   if (!open) return null;
 
@@ -218,7 +170,7 @@ function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => vo
                 {isBookable ? <><CheckCircle2 size={11}/> Bookable</> : <><XCircle size={11}/> Not Bookable</>}
               </span>
               {!loading && (
-                <button onClick={() => { statusApi.refetch(); pkgApi.refetch(); creditApi.refetch(); staffApi2.refetch(); areasApi.refetch(); }}
+                <button onClick={statusApi.refetch}
                   style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4, display: "flex", alignItems: "center" }}>
                   <RefreshCw size={12}/>
                 </button>
@@ -258,8 +210,8 @@ function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => vo
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {SETUP_STEPS.map((step, idx) => {
-                const done = isDone(step.key);
+              {steps.map((step, idx) => {
+                const done = step.done;
                 return (
                   <a
                     key={step.key}
@@ -351,6 +303,7 @@ function TenantShellInner({ children, activeNav }: {
   const { theme, toggle } = useTheme();
   const tour   = useTour();
   const tenant = useTenant();
+  const setupStatus = useSetupStatus();
   const [collapsed,    setCollapsed]    = useState(false);
   const [toasts,       setToasts]       = useState<ToastItem[]>([]);
   const [myName,       setMyName]       = useState<string>("");
@@ -404,7 +357,16 @@ function TenantShellInner({ children, activeNav }: {
 
   const hasAnyModule = entitlementsLoaded ? entitledModuleKeys.length > 0 : true;
   const ALWAYS_VISIBLE_GROUPS = new Set(["Overview", "More"]);
-  const visibleNavGroups = hasAnyModule ? NAV_GROUPS : NAV_GROUPS.filter(g => ALWAYS_VISIBLE_GROUPS.has(g.label));
+  // Once every real setup step is done (10/10, from the shared hook), the
+  // "Setup" nav group is no longer relevant on an ongoing basis -- hide it.
+  // Business Profile stays reachable (moved into "Overview" above) and the
+  // Profile page's "Business Setup" section remains the one-stop place to
+  // reopen any individual setup page or the wizard drawer. While still
+  // onboarding (not yet 10/10, or status not loaded yet), keep it visible
+  // exactly as today -- fail open, don't hide mid-onboarding.
+  const hideSetupGroup = !setupStatus.loading && !setupStatus.error && setupStatus.isComplete;
+  const visibleNavGroups = (hasAnyModule ? NAV_GROUPS : NAV_GROUPS.filter(g => ALWAYS_VISIBLE_GROUPS.has(g.label)))
+    .filter(g => !(g.label === "Setup" && hideSetupGroup));
 
   return (
     <TenantShellCtx.Provider value={true}>
@@ -425,14 +387,14 @@ function TenantShellInner({ children, activeNav }: {
       }}>
         {/* Logo */}
         <div style={{ height: 64, padding: collapsed ? "0 16px" : "0 18px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0 }}>
-          <div style={{ width: 34, height: 34, borderRadius: "var(--radius-lg)", background: "rgba(255,255,255,0.15)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid rgba(255,255,255,0.2)" }}>
-            <span style={{ color: "white", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>
+          <div style={{ width: 34, height: 34, borderRadius: "var(--radius-lg)", background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <span style={{ color: "var(--text-on-brand)", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>
               {tenant.tenantName?.[0]?.toUpperCase() ?? "T"}
             </span>
           </div>
           {!collapsed && (
             <div style={{ minWidth: 0 }}>
-              <p style={{ color: "#fff", fontWeight: 700, fontSize: 13, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
+              <p style={{ color: "var(--sidebar-text-active)", fontWeight: 700, fontSize: 13, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
                 {tenant.tenantName ?? "My Business"}
               </p>
               <p style={{ color: "var(--sidebar-category)", fontSize: 10, margin: 0, fontWeight: 600, letterSpacing: "0.07em" }}>
@@ -484,8 +446,8 @@ function TenantShellInner({ children, activeNav }: {
                       {setupPct !== null && (
                         <span style={{
                           fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, flexShrink: 0,
-                          background: setupPct === 100 ? "rgba(5,150,105,0.25)" : "rgba(255,255,255,0.18)",
-                          color: setupPct === 100 ? "#a7f3d0" : "rgba(255,255,255,0.85)",
+                          background: setupPct === 100 ? "var(--success-bg)" : "var(--sidebar-active)",
+                          color: setupPct === 100 ? "var(--success-text)" : "var(--sidebar-text-active)",
                         }}>{setupPct}%</span>
                       )}
                     </>
@@ -590,14 +552,13 @@ function SidebarItem({ item, active, collapsed }: { item: NavItem; active: boole
         display: "flex", alignItems: "center", gap: 10,
         padding: collapsed ? "9px 0" : "8px 10px",
         justifyContent: collapsed ? "center" : undefined,
-        borderRadius: "var(--radius-md)", textDecoration: "none",
+        borderRadius: "var(--radius-full)", textDecoration: "none",
         background: active ? "var(--sidebar-active)" : hov ? "var(--sidebar-hover)" : "transparent",
         color: active ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
         fontWeight: active ? 600 : 400, fontSize: 13,
         transition: "all 0.12s ease", position: "relative", marginBottom: 1,
       }}
     >
-      {active && <span style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: 3, height: 20, borderRadius: "0 3px 3px 0", background: "rgba(255,255,255,0.9)" }}/>}
       <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: active ? 1 : 0.75 }}>{item.icon}</span>
       {!collapsed && (
         <>
