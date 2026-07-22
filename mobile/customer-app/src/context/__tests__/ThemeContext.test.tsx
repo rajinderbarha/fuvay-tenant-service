@@ -27,6 +27,17 @@ describe("ThemeContext", () => {
   beforeEach(async () => {
     await AsyncStorage.clear();
     jest.spyOn(Appearance, "getColorScheme").mockReturnValue("light");
+    // ThemeContext subscribes to Appearance.addChangeListener for live
+    // system-theme updates. Left unmocked, RN/RN-web's real listener can
+    // fire asynchronously with the test machine's actual OS/browser color
+    // scheme, racing and flipping `systemScheme` state after mount -- this
+    // was the source of this suite's intermittent failures (a mock-lifecycle
+    // leak, not a ThemeContext defect). Mocking it deterministically removes
+    // the race; each test can still simulate a live change by grabbing the
+    // captured listener and invoking it explicitly.
+    jest.spyOn(Appearance, "addChangeListener").mockImplementation(() => ({
+      remove: () => {},
+    }));
   });
   afterEach(() => jest.restoreAllMocks());
 
