@@ -8,13 +8,13 @@
  */
 import React, { useCallback, useState, useEffect } from "react";
 import { TenantLayout }                  from "../../../../components/layout/TenantLayout";
-import { Card, Btn, Skeleton, Badge, JobStatusBadge, Modal, SectionHeader, EditBtn } from "../../../../components/shared/ui";
 import { staffApi, serviceJobsApi, authApi }    from "../../../../lib/api";
 import { trustBadgesApi }                from "../../../../lib/api";
 import { TrustBadges }                    from "../../../../components/TrustBadges";
 import { useApi, useAction }             from "../../../../hooks/useApi";
 import type { WorkingHours, StaffSecurityStatus, StaffLoginEvent } from "../../../../lib/api";
 import { CalendarDays } from "lucide-react";
+import { Card, Button, Modal, Skeleton, StatusBadge, Alert } from "@serviceos/design-system";
 
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] as const;
 const DAY_LABEL: Record<string,string> = {
@@ -92,14 +92,6 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   const staffJobs = (jobs.data?.items ?? []).filter(j => j.assigned_staff_id === id).slice(0, 10);
-  const fmt = (n: number) => `${(n * 100).toFixed(1)}%`;
-
-  const STATUS_COLORS: Record<string, string> = {
-    active:      "var(--success-text)",
-    on_leave:    "var(--warning-text)",
-    inactive:    "var(--text-tertiary)",
-    suspended:   "var(--danger-text)",
-  };
 
   return (
     <TenantLayout activeNav="staff">
@@ -115,17 +107,17 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
 
       {staff.loading ? (
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <Skeleton height={140} style={{ borderRadius:14 }} />
+          <Skeleton height={140} radius="14px" />
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-            <Skeleton height={200} style={{ borderRadius:14 }} />
-            <Skeleton height={200} style={{ borderRadius:14 }} />
+            <Skeleton height={200} radius="14px" />
+            <Skeleton height={200} radius="14px" />
           </div>
         </div>
       ) : s && (
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
 
           {/* ── Profile header ── */}
-          <Card padding={24}>
+          <Card padding="lg">
             <div style={{ display:"flex", alignItems:"flex-start", gap:18, flexWrap:"wrap" }}>
               <div style={{ width:64, height:64, borderRadius:"50%",
                 background:"var(--brand)", display:"flex", alignItems:"center",
@@ -138,12 +130,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                   <h1 style={{ fontSize:22, fontWeight:700, color:"var(--text-primary)", margin:0 }}>
                     {s.full_name}
                   </h1>
-                  <span style={{ fontSize:12, padding:"3px 9px", borderRadius:99, fontWeight:700,
-                    background: s.status==="active" ? "var(--success-bg)" : "var(--surface-sunken)",
-                    color: STATUS_COLORS[s.status] ?? "var(--text-secondary)",
-                    border:`1px solid ${s.status==="active"?"var(--success-border)":"var(--border)"}` }}>
-                    {s.status.replace(/_/g," ")}
-                  </span>
+                  <StatusBadge status={s.status} />
                 </div>
                 <p style={{ fontSize:13, color:"var(--text-secondary)", margin:"0 0 10px" }}>
                   {s.phone ?? "No phone"} · {s.specialisations.join(" · ") || "No specialisations"}
@@ -165,13 +152,13 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                 </div>
               </div>
               <div style={{ display:"flex", gap:8 }}>
-                <Btn variant="secondary" size="sm" icon={<CalendarDays size={14}/>} onClick={openSchedule}>Edit Schedule</Btn>
+                <Button variant="secondary" size="sm" leftIcon={<CalendarDays size={14}/>} onClick={openSchedule}>Edit Schedule</Button>
               </div>
             </div>
           </Card>
 
           {/* ── Trust badges ── */}
-          <Card padding={20}>
+          <Card padding="md">
             <h3 style={{ fontSize:15, fontWeight:600, color:"var(--text-primary)", margin:"0 0 12px" }}>
               Trust Badges
             </h3>
@@ -181,7 +168,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
 
             {/* ── Performance signals ── */}
-            <Card padding={20}>
+            <Card padding="md">
               <h3 style={{ fontSize:15, fontWeight:600, color:"var(--text-primary)", margin:"0 0 16px" }}>
                 Performance Breakdown
               </h3>
@@ -251,10 +238,13 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
             </Card>
 
             {/* ── Working hours ── */}
-            <Card padding={20}>
-              <h3 style={{ fontSize:15, fontWeight:600, color:"var(--text-primary)", margin:"0 0 14px" }}>
-                Weekly Schedule
-              </h3>
+            <Card padding="md">
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+                <h3 style={{ fontSize:15, fontWeight:600, color:"var(--text-primary)", margin:0 }}>
+                  Weekly Schedule
+                </h3>
+                <Button size="sm" variant="ghost" onClick={openSchedule}>Edit</Button>
+              </div>
               <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                 {DAYS.map(day => {
                   const dh = wh[day] ?? { start:"09:00", end:"18:00", is_working: day !== "sunday" };
@@ -289,14 +279,11 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                   );
                 })}
               </div>
-              <div style={{ marginTop:14, textAlign:"right" }}>
-                <EditBtn onClick={openSchedule} tooltip="Edit Schedule"/>
-              </div>
             </Card>
           </div>
 
           {/* ── Recent jobs ── */}
-          <Card padding={0}>
+          <Card padding="none">
             <div style={{ padding:"14px 20px", borderBottom:"1px solid var(--border)",
               display:"flex", alignItems:"center", justifyContent:"space-between" }}>
               <h3 style={{ fontSize:14, fontWeight:600, color:"var(--text-primary)", margin:0 }}>
@@ -333,7 +320,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                     {j.zipcode ?? j.city ?? "—"} · {j.created_at ? new Date(j.created_at).toLocaleDateString("en-IN") : "—"}
                   </p>
                 </div>
-                <JobStatusBadge status={j.status} />
+                <StatusBadge status={j.status} size="sm" />
                 {j.completion_data?.collected_amount != null && (
                   <span style={{ fontSize:13, fontWeight:600, color:"var(--success-text)",
                     whiteSpace:"nowrap" }}>
@@ -349,7 +336,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
       {/* ── Staff Security Section ── */}
       {s && (
         <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:12 }}>
-          <Card padding={20}>
+          <Card padding="md">
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
               marginBottom:14, flexWrap:"wrap", gap:8 }}>
               <h3 style={{ fontSize:14, fontWeight:700, margin:0, color:"var(--text-primary)" }}>
@@ -358,34 +345,32 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
               {!secLoading && (
                 <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                   {secStatus?.account_status !== "locked" ? (
-                    <Btn size="xs" variant="danger" onClick={()=>{
+                    <Button size="sm" variant="destructive" onClick={()=>{
                       setSecReason(""); setSecConfirm({ title:"Lock Staff Account",
                         body:"This will lock the account and revoke all active sessions. The staff member cannot log in.",
                         act: async()=>{ await authApi.lockStaff(id, secReason||"Admin security review", true); secNotify("Account locked."); }
                       });
-                    }}>Lock</Btn>
+                    }}>Lock</Button>
                   ) : (
-                    <Btn size="xs" variant="secondary" onClick={()=>{
+                    <Button size="sm" variant="secondary" onClick={()=>{
                       setSecReason(""); setSecConfirm({ title:"Unlock Account",
                         body:"This will allow the staff member to log in again.",
                         act: async()=>{ await authApi.unlockStaff(id, secReason||"Issue resolved"); secNotify("Account unlocked."); }
                       });
-                    }}>Unlock</Btn>
+                    }}>Unlock</Button>
                   )}
-                  <Btn size="xs" variant="secondary" onClick={()=>{
+                  <Button size="sm" variant="secondary" onClick={()=>{
                     setSecReason(""); setSecConfirm({ title:"Revoke All Sessions",
                       body:"All active sessions for this staff member will be immediately invalidated.",
                       act: async()=>{ await authApi.revokeStaffSessions(id, secReason||"Security reset"); secNotify("Sessions revoked."); }
                     });
-                  }}>Revoke Sessions</Btn>
+                  }}>Revoke Sessions</Button>
                 </div>
               )}
             </div>
 
             {secToast && (
-              <div style={{ padding:"8px 12px", borderRadius:8, background:"var(--success-bg)",
-                border:"1px solid var(--success-border)", color:"var(--success-text)", fontSize:12,
-                marginBottom:12 }}>{secToast}</div>
+              <div style={{ marginBottom:12 }}><Alert tone="success">{secToast}</Alert></div>
             )}
 
             {secLoading ? (
@@ -396,11 +381,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 24px" }}>
                 <div>
                   {[
-                    { label:"Status", value: <span style={{
-                        fontWeight:700,
-                        color: secStatus.account_status==="active"?"var(--success-text)":
-                               secStatus.account_status==="locked"?"var(--danger-text)":"var(--text-tertiary)"
-                      }}>{secStatus.account_status}</span>},
+                    { label:"Status", value: <StatusBadge status={secStatus.account_status} size="sm"/> },
                     { label:"Active Sessions", value: String(secStatus.active_sessions) },
                     { label:"Last Login", value: secStatus.last_login_at ? new Date(secStatus.last_login_at).toLocaleString() : "—" },
                   ].map(r=>(
@@ -436,7 +417,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
 
           {/* Login history mini-table */}
           {secHistory.length > 0 && (
-            <Card padding={0}>
+            <Card padding="none">
               <div style={{ padding:"12px 16px", borderBottom:"1px solid var(--border)" }}>
                 <p style={{ margin:0, fontSize:13, fontWeight:700, color:"var(--text-primary)" }}>
                   Recent Login Events
@@ -460,13 +441,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                           {new Date(ev.created_at).toLocaleString()}
                         </td>
                         <td style={{ padding:"8px 14px" }}>
-                          <span style={{
-                            padding:"2px 7px", borderRadius:99, fontSize:11, fontWeight:600,
-                            background: ev.event_type==="login_success"?"var(--success-bg)":
-                                        ev.event_type==="login_failed"?"var(--danger-bg)":"var(--surface-sunken)",
-                            color: ev.event_type==="login_success"?"var(--success-text)":
-                                   ev.event_type==="login_failed"?"var(--danger-text)":"var(--text-tertiary)",
-                          }}>{ev.event_type.replace(/_/g," ")}</span>
+                          <StatusBadge status={ev.event_type} size="sm"/>
                         </td>
                         <td style={{ padding:"8px 14px", fontFamily:"monospace",
                           color:"var(--text-secondary)" }}>{ev.ip_address ?? "—"}</td>
@@ -485,7 +460,17 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
 
       {/* ── Security Confirm Modal ── */}
       <Modal open={!!secConfirm} onClose={()=>!secActing&&setSecConfirm(null)}
-        title={secConfirm?.title??""} size="sm">
+        title={secConfirm?.title??""}
+        footer={secConfirm ? (
+          <>
+            <Button variant="ghost" size="sm" onClick={()=>setSecConfirm(null)} disabled={secActing}>
+              Cancel
+            </Button>
+            <Button variant="destructive" size="sm" onClick={runSecConfirm} loading={secActing}>
+              Confirm
+            </Button>
+          </>
+        ) : null}>
         {secConfirm && (
           <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
             <p style={{ margin:0, fontSize:13, color:"var(--text-secondary)", lineHeight:1.6 }}>
@@ -501,20 +486,18 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                   background:"var(--surface)", color:"var(--text-primary)",
                   fontFamily:"inherit", resize:"vertical", boxSizing:"border-box" as const }}/>
             </div>
-            <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-              <Btn variant="ghost" size="sm" onClick={()=>setSecConfirm(null)} disabled={secActing}>
-                Cancel
-              </Btn>
-              <Btn variant="danger" size="sm" onClick={runSecConfirm} loading={secActing}>
-                Confirm
-              </Btn>
-            </div>
           </div>
         )}
       </Modal>
 
       {/* ── Edit Schedule Modal ── */}
-      <Modal open={scheduleModal} onClose={() => setScheduleModal(false)} title="Edit Weekly Schedule">
+      <Modal open={scheduleModal} onClose={() => setScheduleModal(false)} title="Edit Weekly Schedule"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setScheduleModal(false)}>Cancel</Button>
+          <Button variant="primary" size="sm" loading={updateSched.loading} onClick={saveSchedule}>
+            Save Schedule
+          </Button>
+        </>}>
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
           {DAYS.map(day => {
             const dh = localHours[day] ?? { start:"09:00", end:"18:00", is_working:true };
@@ -555,12 +538,6 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
               </div>
             );
           })}
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:8 }}>
-            <Btn variant="ghost" size="sm" onClick={() => setScheduleModal(false)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" loading={updateSched.loading} onClick={saveSchedule}>
-              Save Schedule
-            </Btn>
-          </div>
         </div>
       </Modal>
     </TenantLayout>
