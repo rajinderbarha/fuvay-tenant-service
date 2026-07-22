@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
-from sqlalchemy import and_, desc, select, update
+from sqlalchemy import and_, desc, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.home_service_booking.constants import (
@@ -555,7 +555,7 @@ class HomeServiceChatbotBookingService:
         from app.engines.home_service_booking.matching_engine import (
             select_best_provider, get_area_market_comparison,
             build_customer_safe_provider, build_admin_provider, compute_price_tiers,
-            assert_home_services_vertical,
+            assert_home_services_vertical, _round2,
         )
         from app.engines.admin_catalog.bargain_engine import BargainValidationError
         from app.engines.admin_catalog.models import BargainRule, ServicePricingRule, ServiceCategory
@@ -626,28 +626,98 @@ class HomeServiceChatbotBookingService:
         eligible_candidates = [row for row in bargain_candidates if _specificity(row) >= 0]
         eligible_candidates.sort(key=lambda row: (_specificity(row), row[0].created_at), reverse=True)
         bargain_rule = eligible_candidates[0][0] if eligible_candidates else None
-        if not bargain_rule or bargain_rule.customer_min_price is None or bargain_rule.customer_max_price is None:
-            raise ServiceOSException(
-                "PRICE_OPTIONS_UNAVAILABLE",
-                "Selected provider does not have a customer price range configured yet.",
-                status_code=422,
-            )
-        pricing_rule = None
-        if bargain_rule.pricing_rule_id:
-            pricing_rule = await self.db.get(ServicePricingRule, bargain_rule.pricing_rule_id)
 
-        try:
-            price_options = compute_price_tiers(
-                admin_min_price=pricing_rule.min_price if pricing_rule else None,
-                admin_max_price=pricing_rule.max_price if pricing_rule else None,
-                admin_base_price=pricing_rule.base_price if pricing_rule else None,
-                customer_min_price=bargain_rule.customer_min_price,
-                customer_max_price=bargain_rule.customer_max_price,
-                platform_fee_percent=bargain_rule.platform_fee_percent or (pricing_rule.platform_fee_percent if pricing_rule else 0),
-                platform_fee_fixed_amount=bargain_rule.platform_fee_fixed_amount,
-            )
-        except BargainValidationError as e:
-            raise ServiceOSException(e.code, e.message, status_code=422) from e
+        bargain_available = bool(
+            bargain_rule and bargain_rule.customer_min_price is not None
+            and bargain_rule.customer_max_price is not None
+        )
+        price_options: dict | None = None
+        standard_price: Decimal | None = None
+
+        if bargain_available:
+            pricing_rule = None
+            if bargain_rule.pricing_rule_id:
+                pricing_rule = await self.db.get(ServicePricingRule, bargain_rule.pricing_rule_id)
+            try:
+                price_options = compute_price_tiers(
+                    admin_min_price=pricing_rule.min_price if pricing_rule else None,
+                    admin_max_price=pricing_rule.max_price if pricing_rule else None,
+                    admin_base_price=pricing_rule.base_price if pricing_rule else None,
+                    customer_min_price=bargain_rule.customer_min_price,
+                    customer_max_price=bargain_rule.customer_max_price,
+                    platform_fee_percent=bargain_rule.platform_fee_percent or (pricing_rule.platform_fee_percent if pricing_rule else 0),
+                    platform_fee_fixed_amount=bargain_rule.platform_fee_fixed_amount,
+                )
+            except BargainValidationError as e:
+                raise ServiceOSException(e.code, e.message, status_code=422) from e
+        else:
+            # Optional-bargain path (fix/bargain-optional-price-path): no active
+            # BargainRule is configured for this offering/type/brand. Per product
+            # policy, bargaining is ALLOWED but never MANDATORY — the customer
+            # must still be able to book at the ordinary, server-authoritative
+            # price. Resolve that price the same way the admin/tenant pricing
+            # console already does (_find_admin_pricing_rule's hierarchy:
+            # type+brand > type-only > service-only), then apply the SAME
+            # fee-inclusive formula used elsewhere (fee on top of the raw
+            # provider-facing base price) so the customer-facing number is
+            # computed identically regardless of whether a BargainRule exists.
+            # NOTE: unlike _find_admin_pricing_rule (which only reads the
+            # global, city=NULL admin-console rule), real tenant pricing here
+            # may be city-scoped — confirmed live: ac_repair's seeded rules
+            # carry city='Ludhiana', not NULL. Accept both a city-exact match
+            # and a global (city IS NULL) rule, preferring the city-exact one.
+            spr_candidates = (await self.db.execute(
+                select(ServicePricingRule).where(
+                    ServicePricingRule.master_service_id == master_service_id,
+                    ServicePricingRule.deleted_at.is_(None),
+                    ServicePricingRule.is_active == True,
+                    ServicePricingRule.tier_id.is_(None),
+                    or_(ServicePricingRule.city.is_(None), ServicePricingRule.city == city),
+                )
+            )).scalars().all()
+
+            def _spr_specificity(spr) -> int:
+                # A row is only usable if every scoping column it DOES set
+                # actually matches this request — a type/brand-scoped rule for
+                # a different type/brand must never be selected. Rows whose
+                # scoping columns are all None are the global fallback.
+                if spr.service_type_id is not None and spr.service_type_id != offering_type_id:
+                    return -1
+                if spr.brand_id is not None and spr.brand_id != brand_id:
+                    return -1
+                has_type = offering_type_id is not None and spr.service_type_id == offering_type_id
+                has_brand = brand_id is not None and spr.brand_id == brand_id
+                has_city  = bool(city) and spr.city == city
+                if has_type and has_brand:
+                    base = 4
+                elif has_type:
+                    base = 3
+                elif has_brand:
+                    base = 2
+                else:
+                    base = 1  # global rule: no type/brand scoping at all
+                return base * 2 + (1 if has_city else 0)
+
+            eligible_sprs = [s for s in spr_candidates if _spr_specificity(s) >= 0]
+            eligible_sprs.sort(key=lambda s: _spr_specificity(s), reverse=True)
+            pricing_rule = eligible_sprs[0] if eligible_sprs else None
+
+            if not pricing_rule or pricing_rule.base_price is None:
+                # Genuinely no pricing configuration at all for this offering —
+                # not a bargain-specific gap, a real absence of any price. This
+                # is the one case that must still fail; there is no authoritative
+                # number to show the customer.
+                raise ServiceOSException(
+                    "PRICE_OPTIONS_UNAVAILABLE",
+                    "This service does not have pricing configured yet.",
+                    status_code=422,
+                )
+
+            fee_percent = pricing_rule.platform_fee_percent or Decimal("0")
+            fee_fixed = Decimal("0")  # ServicePricingRule has no separate fixed-fee column; only BargainRule does.
+            base = pricing_rule.base_price
+            fee_amount = _round2(base * fee_percent / Decimal("100") + fee_fixed)
+            standard_price = _round2(base + fee_amount)
 
         area_comparison = await get_area_market_comparison(
             self.db, category_id=category_id, offering_id=master_service_id,
@@ -659,7 +729,12 @@ class HomeServiceChatbotBookingService:
 
         result = {
             "selected_provider": selected_provider_public,
+            "bargain_available": bargain_available,
             "selected_provider_price_options": price_options,
+            # Present only when bargain_available is False — the ordinary,
+            # server-authoritative, fee-inclusive price the customer may book
+            # at directly. Never present alongside price_options.
+            "standard_price": float(standard_price) if standard_price is not None else None,
             "area_market_comparison": area_comparison,
         }
         if reveal_internal_score:
@@ -676,7 +751,12 @@ class HomeServiceChatbotBookingService:
                 "matching_score_snapshot": build_admin_provider(signals, score)["internal_score_breakdown"],
                 "internal_score": float(score),
             }
-            draft.price_snapshot = {**(draft.price_snapshot or {}), "price_options": price_options}
+            draft.price_snapshot = {
+                **(draft.price_snapshot or {}),
+                "bargain_available": bargain_available,
+                "price_options": price_options,
+                "standard_price": float(standard_price) if standard_price is not None else None,
+            }
             draft.provider_match_status = PROVIDER_MATCH_MATCHED
             draft.status = DRAFT_STATUS_PROVIDER_MATCHED
             draft.updated_at = utcnow()
@@ -697,24 +777,45 @@ class HomeServiceChatbotBookingService:
         price_tier: str,
         customer_id: uuid.UUID | None = None,
     ) -> dict:
-        """Customer chooses Low/Mid/High only — never a raw amount, never a
-        provider. Re-validates the stored price options before storing the
-        offer (hard gate 10: no assignment change without revalidation)."""
+        """Customer chooses Low/Mid/High when bargain is available, or
+        'standard' to continue at the ordinary server-authoritative price
+        when no BargainRule is configured (fix/bargain-optional-price-path).
+        Never a raw amount, never a provider-set price. Re-validates the
+        stored price snapshot before storing the offer (hard gate 10: no
+        assignment change without revalidation)."""
         from app.engines.home_service_booking.matching_engine import resolve_customer_offer_for_tier
 
         draft = await self._require_draft(draft_id, customer_id)
         self._assert_not_terminal(draft)
 
-        if price_tier not in ("low", "mid", "high"):
+        if price_tier not in ("low", "mid", "high", "standard"):
             raise ServiceOSException("INVALID_PRICE_TIER",
-                "price_tier must be 'low', 'mid', or 'high'.", status_code=422)
-        if not draft.selected_tenant_id or not draft.price_snapshot or "price_options" not in draft.price_snapshot:
+                "price_tier must be 'low', 'mid', 'high', or 'standard'.", status_code=422)
+        if not draft.selected_tenant_id or not draft.price_snapshot:
             raise ServiceOSException(ERR_NO_PROVIDER_AVAILABLE,
-                "No matched provider/price options found for this draft. Run provider matching first.",
+                "No matched provider/price found for this draft. Run provider matching first.",
                 status_code=422)
 
-        price_options = draft.price_snapshot["price_options"]
-        customer_offer = resolve_customer_offer_for_tier(price_options, price_tier)
+        bargain_available = draft.price_snapshot.get("bargain_available", "price_options" in draft.price_snapshot)
+
+        if price_tier == "standard":
+            if bargain_available or draft.price_snapshot.get("standard_price") is None:
+                raise ServiceOSException("INVALID_PRICE_TIER",
+                    "'standard' is only valid when bargain is unavailable for this offering.",
+                    status_code=422)
+            customer_offer = Decimal(str(draft.price_snapshot["standard_price"]))
+            allowed_min = allowed_max = float(customer_offer)
+            platform_fee_amount = 0.0  # already folded into standard_price server-side; no separate fee shown
+        else:
+            if not bargain_available or "price_options" not in draft.price_snapshot:
+                raise ServiceOSException(ERR_NO_PROVIDER_AVAILABLE,
+                    "Bargain is not available for this offering. Use price_tier='standard' instead.",
+                    status_code=422)
+            price_options = draft.price_snapshot["price_options"]
+            customer_offer = resolve_customer_offer_for_tier(price_options, price_tier)
+            allowed_min = price_options["allowed_offer_min"]
+            allowed_max = price_options["allowed_offer_max"]
+            platform_fee_amount = price_options["platform_fee_amount"]
 
         # HS7 fix: matching_score_snapshot (internal per-signal scoring) was
         # being copied into booking_summary and returned verbatim to the
@@ -728,10 +829,11 @@ class HomeServiceChatbotBookingService:
             "selected_provider_name": (draft.selected_provider_snapshot or {}).get("provider_name"),
             "selected_zipcode": draft.zipcode,
             "selected_price_tier": price_tier,
+            "bargain_available": bargain_available,
             "customer_offer": float(customer_offer),
-            "allowed_offer_min": price_options["allowed_offer_min"],
-            "allowed_offer_max": price_options["allowed_offer_max"],
-            "platform_fee_amount": price_options["platform_fee_amount"],
+            "allowed_offer_min": allowed_min,
+            "allowed_offer_max": allowed_max,
+            "platform_fee_amount": platform_fee_amount,
             "payment_mode": "customer_pays_provider_directly",
         }
         draft.updated_at = utcnow()
@@ -799,7 +901,12 @@ class HomeServiceChatbotBookingService:
             "ready_for_confirmation": (
                 draft.serviceability_status == SVCABILITY_SERVICEABLE
                 and bool(draft.selected_tenant_id)
-                and existing.get("selected_price_tier") in ("low", "mid", "high")
+                # fix/bargain-optional-price-path: "standard" is a real,
+                # legitimate selected_price_tier value when bargain_available
+                # is False -- previously only low/mid/high were accepted here,
+                # which made a customer who correctly booked at the standard
+                # price incorrectly show as "not ready for confirmation".
+                and existing.get("selected_price_tier") in ("low", "mid", "high", "standard")
             ),
         }
 
@@ -855,7 +962,16 @@ class HomeServiceChatbotBookingService:
                 status_code=422,
             )
 
-        if not draft.selected_tenant_id or not draft.price_snapshot or "price_options" not in draft.price_snapshot:
+        # fix/bargain-optional-price-path: a draft may have been matched via
+        # either the bargain-available path ("price_options" in the
+        # snapshot) or the standard-price path ("standard_price" in the
+        # snapshot, bargain_available: False) -- both are real, matched,
+        # priced states; only a draft with NEITHER has genuinely not been
+        # through provider matching yet.
+        if not draft.selected_tenant_id or not draft.price_snapshot or (
+            "price_options" not in draft.price_snapshot
+            and draft.price_snapshot.get("standard_price") is None
+        ):
             raise ServiceOSException(
                 ERR_NO_PROVIDER_AVAILABLE,
                 "No matched provider/price options found for this draft. Run provider matching first.",
@@ -863,7 +979,7 @@ class HomeServiceChatbotBookingService:
             )
 
         selected_tier = (draft.booking_summary or {}).get("selected_price_tier")
-        if selected_tier not in ("low", "mid", "high"):
+        if selected_tier not in ("low", "mid", "high", "standard"):
             raise ServiceOSException(
                 "INVALID_SELECTED_PRICE_OPTION",
                 "Selected price option is no longer valid.",
