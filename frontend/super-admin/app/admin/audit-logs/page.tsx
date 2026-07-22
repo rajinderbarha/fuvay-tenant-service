@@ -1,6 +1,7 @@
 ﻿"use client";
 import { useCallback, useState } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
+import { PageShell, PageHeader } from "@serviceos/design-system";
 import EnterpriseDataGrid, { GridColumn, GridData } from "../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../components/enterprise/EnterpriseFilterBar";
 import { apiFetchPaginatedRaw, sprint27AdminApi, AuditLogRecord } from "../../../lib/api";
@@ -147,11 +148,8 @@ export default function AuditLogsPage() {
 
   return (
     <AdminLayout>
-    <div style={{ padding: "24px 32px", maxWidth: 1280, margin: "0 auto",
-      display: "flex", flexDirection: "column", gap: 20 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-        Audit Logs
-      </h1>
+    <PageShell>
+      <PageHeader title="Audit Logs" description="Engine, security, and auth audit trails across the platform." />
 
       <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)" }}>
         {TABS.map(t => (
@@ -238,7 +236,7 @@ export default function AuditLogsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
     </AdminLayout>
   );
 }
