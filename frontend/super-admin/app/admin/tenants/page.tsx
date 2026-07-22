@@ -2,8 +2,9 @@
 import React, { useState, useCallback, useRef, Suspense } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
-  Card, CardHeader, SectionHeader, StatCard, Badge, Btn, Modal, DataTable,
+  StatCard, Badge, Btn, Modal, DataTable,
 } from "../../../components/shared/ui";
+import { Card, PageHeader, StatusBadge } from "@serviceos/design-system";
 import {
   Search, RefreshCw, Users, CheckCircle, Clock, AlertCircle, XCircle,
   Download, Eye, Archive, Flag, Shield, X, Filter, ChevronDown, ChevronLeft,
@@ -302,11 +303,9 @@ function RowActions({ row, onAction }: {
 // ── Verification Progress Cell ─────────────────────────────────────────────────
 
 function VerifCell({ status }: { status: string }) {
-  const v = VERIF_V[status] ?? "muted";
-  const l = VERIF_LABEL[status] ?? humanize(status);
   return (
     <div>
-      <Badge variant={v} size="sm">{l}</Badge>
+      <StatusBadge status={status} size="sm" />
     </div>
   );
 }
@@ -798,9 +797,7 @@ function TenantsPageInner() {
       key: "status", label: "Status",
       render: (_v, row) => (
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <Badge variant={STATUS_V[row.status as string] ?? "muted"} size="sm">
-            {STATUS_LABEL[row.status as string] || humanize(row.status as string)}
-          </Badge>
+          <StatusBadge status={row.status as string} size="sm" />
         </div>
       ),
     },
@@ -883,10 +880,9 @@ function TenantsPageInner() {
     <AdminLayout activeNav="tenants">
       <div style={{ padding: "28px 32px", minHeight: "100vh" }}>
         {/* Page Header */}
-        <SectionHeader
+        <PageHeader
           title="Tenants"
-          subtitle="Manage provider businesses, verification status, plans, credits, service coverage, and operational health."
-          icon={<Building2 />}
+          description="Manage provider businesses, verification status, plans, credits, service coverage, and operational health."
           actions={
             <div style={{ display: "flex", gap: 8 }}>
               <Btn variant="secondary" size="sm" onClick={handleExport}><Download size={12} /> Export</Btn>
