@@ -5,7 +5,8 @@
  */
 import React, { useState, useCallback } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
-import { Card, Badge, Btn, Modal, Input, Skeleton, SectionHeader } from "../../../components/shared/ui";
+import { PageHeader, Card, StatusBadge, Button, Modal, Textarea } from "@serviceos/design-system";
+import { Badge, Skeleton } from "../../../components/shared/ui";
 import { bookingsApi } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import type { Booking } from "../../../lib/api";
@@ -46,15 +47,15 @@ export default function BookingsPage() {
 
   return (
     <TenantLayout activeNav="bookings">
-      <SectionHeader
+      <PageHeader
         title="Bookings"
-        subtitle={bookings.loading ? "Loading..." : `${bookings.data?.bookings.length ?? 0} ${tab.replace(/_/g," ")} bookings`}
-        actions={<Btn variant="ghost" size="sm" icon={<RefreshCw size={14}/>} onClick={bookings.refetch}>Refresh</Btn>}
+        description={bookings.loading ? "Loading..." : `${bookings.data?.bookings.length ?? 0} ${tab.replace(/_/g," ")} bookings — Booking (field_ops.Job) pipeline`}
+        actions={<Button variant="ghost" size="sm" leftIcon={<RefreshCw size={14}/>} onClick={bookings.refetch}>Refresh</Button>}
       />
 
       {/* Tabs */}
       <div style={{ display:"flex", gap:2, padding:4, background:"var(--surface-sunken)",
-        borderRadius:12, border:"1px solid var(--border)", marginBottom:16 }}>
+        borderRadius:12, border:"1px solid var(--border)", marginBottom:16, marginTop:16 }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             padding:"7px 16px", borderRadius:9, border:"none",
@@ -80,7 +81,7 @@ export default function BookingsPage() {
           {[...Array(4)].map((_,i) => <Skeleton key={i} height={100} style={{ borderRadius:14 }}/>)}
         </div>
       ) : (bookings.data?.bookings ?? []).length === 0 ? (
-        <Card padding={48} style={{ textAlign:"center" }}>
+        <Card padding="lg" style={{ textAlign:"center" }}>
           <div style={{ display:"flex", justifyContent:"center", marginBottom:12, color:"var(--text-tertiary)" }}><CalendarDays size={32}/></div>
           <p style={{ fontSize:14, color:"var(--text-secondary)", margin:0 }}>
             No {tab.replace(/_/g," ")} bookings
@@ -89,7 +90,7 @@ export default function BookingsPage() {
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
           {(bookings.data?.bookings ?? []).map((b:Booking) => (
-            <Card key={b.booking_id} padding={18} style={{ cursor:"pointer" }}
+            <Card key={b.booking_id} padding="md" style={{ cursor:"pointer" }}
               onClick={() => window.location.href = `/bookings/${b.booking_id}`}>
               <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
                 gap:16, flexWrap:"wrap" }}>
@@ -98,9 +99,7 @@ export default function BookingsPage() {
                     <span style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)" }}>
                       {b.booking_number}
                     </span>
-                    <Badge variant={b.status==="confirmed"?"success":b.status==="cancelled"?"danger":b.status==="pending_confirmation"?"warning":"muted"}>
-                      {b.status.replace(/_/g," ")}
-                    </Badge>
+                    <StatusBadge status={b.status} />
                     {b.reschedule_count > 0 && (
                       <Badge variant="info" size="sm">Rescheduled {b.reschedule_count}×</Badge>
                     )}
@@ -126,14 +125,14 @@ export default function BookingsPage() {
                   )}
                   <div style={{ display:"flex", gap:8 }} onClick={e => e.stopPropagation()}>
                     {b.status==="pending_confirmation" && <>
-                      <Btn variant="success" size="sm" icon={<CheckCircle2 size={14}/>} loading={confirmAction.loading}
-                        onClick={() => handleConfirm(b.booking_id)}>Accept</Btn>
-                      <Btn variant="danger" size="sm" icon={<XCircle size={14}/>}
-                        onClick={() => { setRejectId(b.booking_id); setRejectModal(true); }}>Reject</Btn>
+                      <Button variant="primary" size="sm" leftIcon={<CheckCircle2 size={14}/>} loading={confirmAction.loading}
+                        onClick={() => handleConfirm(b.booking_id)}>Accept</Button>
+                      <Button variant="destructive" size="sm" leftIcon={<XCircle size={14}/>}
+                        onClick={() => { setRejectId(b.booking_id); setRejectModal(true); }}>Reject</Button>
                     </>}
                     {b.status==="confirmed" && (
-                      <Btn variant="primary" size="sm" loading={convertAction.loading}
-                        onClick={() => handleConvert(b.booking_id)}>Convert to Job</Btn>
+                      <Button variant="primary" size="sm" loading={convertAction.loading}
+                        onClick={() => handleConvert(b.booking_id)}>Convert to Job</Button>
                     )}
                   </div>
                 </div>
@@ -149,17 +148,19 @@ export default function BookingsPage() {
         </div>
       )}
 
-      <Modal open={rejectModal} onClose={() => setRejectModal(false)} title="Reject Booking">
-        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <Input label="Reason for rejection" placeholder="Not available on this date, out of service area..."
-            value={rejectMsg} onChange={setRejectMsg} rows={3} required/>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setRejectModal(false)}>Cancel</Btn>
-            <Btn variant="danger" size="sm" loading={rejectAction.loading} onClick={handleReject}>
-              Reject Booking
-            </Btn>
-          </div>
-        </div>
+      <Modal
+        open={rejectModal}
+        onClose={() => setRejectModal(false)}
+        title="Reject Booking"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setRejectModal(false)}>Cancel</Button>
+          <Button variant="destructive" size="sm" loading={rejectAction.loading} onClick={handleReject}>
+            Reject Booking
+          </Button>
+        </>}
+      >
+        <Textarea label="Reason for rejection" placeholder="Not available on this date, out of service area..."
+          value={rejectMsg} onChange={e => setRejectMsg(e.target.value)} rows={3} required/>
       </Modal>
     </TenantLayout>
   );
