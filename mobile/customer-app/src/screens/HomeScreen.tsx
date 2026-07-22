@@ -1,8 +1,9 @@
 import React, { useCallback } from "react";
 import {
-  ScrollView, StyleSheet, Text, TouchableOpacity,
+  ScrollView, StyleSheet, Text, TouchableOpacity, TextInput,
   View, Dimensions,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth }      from "../context/AuthContext";
 import { useTheme }     from "../context/ThemeContext";
 import { useApi }       from "../hooks/useApi";
@@ -14,34 +15,26 @@ import type { Theme }   from "../styles/theme";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 const { width } = Dimensions.get("window");
-const CARD_W = (width - 48) / 2;
+const TILE_W = (width - 16 * 2 - 12 * 2) / 3;
 
-// ── Category definitions ───────────────────────────────────────────────────────
-const CATEGORIES = [
-  { id:"ac",             icon:"❄️",  name:"AC & Cooling",     color:"#0EA5E9", bg:"#E0F2FE", types:["repair","service","consult"] },
-  { id:"plumbing",       icon:"🔧",  name:"Plumbing",          color:"#3B82F6", bg:"#DBEAFE", types:["repair","service","consult"] },
-  { id:"electrical",     icon:"⚡",  name:"Electrical",        color:"#F59E0B", bg:"#FEF3C7", types:["repair","service","consult"] },
-  { id:"cleaning",       icon:"🧹",  name:"Cleaning",          color:"#10B981", bg:"#D1FAE5", types:["service"] },
-  { id:"pest_control",   icon:"🪲",  name:"Pest Control",      color:"#8B5CF6", bg:"#EDE9FE", types:["service","consult"] },
-  { id:"appliances",     icon:"🏠",  name:"Appliances",        color:"#6366F1", bg:"#E0E7FF", types:["repair","service"] },
-  { id:"painting",       icon:"🎨",  name:"Painting",          color:"#EC4899", bg:"#FCE7F3", types:["service","consult"] },
-  { id:"carpentry",      icon:"🪵",  name:"Carpentry",         color:"#D97706", bg:"#FEF3C7", types:["repair","service","consult"] },
-  { id:"waterproofing",  icon:"💧",  name:"Waterproofing",     color:"#0284C7", bg:"#E0F2FE", types:["repair","service"] },
-  { id:"interior_design",icon:"🏡",  name:"Interior Design",   color:"#14B8A6", bg:"#CCFBF1", types:["consult"] },
+// ── Popular-service tiles ────────────────────────────────────────────────────
+// UX-07 Pass 3d: dropped the premature Repair/Service/Consult badges and the
+// per-category pastel "hero card" treatment -- those choices belong INSIDE
+// the guided SmartBot flow after category selection (see
+// DeepSeekChatScreen.tsx), not on Home. Kept as compact single-icon tiles.
+// `label` is passed to SmartBot as free-text context (matched against the
+// real backend category list there) -- it is NOT assumed to equal a real
+// backend category slug (Home's own tile list predates/doesn't track the
+// backend catalog 1:1; see category-smartbot-handoff.md).
+const POPULAR_SERVICES: { id:string; label:string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { id:"ac",           label:"AC Repair",   icon:"snow-outline" },
+  { id:"plumbing",     label:"Plumbing",    icon:"water-outline" },
+  { id:"electrical",   label:"Electrical",  icon:"flash-outline" },
+  { id:"cleaning",     label:"Cleaning",    icon:"sparkles-outline" },
+  { id:"appliances",   label:"Appliances",  icon:"hardware-chip-outline" },
+  { id:"pest_control", label:"Pest Control",icon:"bug-outline" },
+  { id:"more",         label:"More",        icon:"grid-outline" },
 ];
-
-const TYPE_LABEL: Record<string,string> = {
-  repair:"Repair", service:"Service", consult:"Consult",
-};
-const TYPE_COLOR: Record<string,string> = {
-  repair:"#DC2626", service:"#16A34A", consult:"#7C3AED",
-};
-// UX-07 Round 4 Pass 2: dark-mode readable variants of the same hues (the
-// light set's near-white "#DC2626" @ 15% alpha on a light card reads fine,
-// but the same overlay on a dark card loses almost all contrast).
-const TYPE_COLOR_DARK: Record<string,string> = {
-  repair:"#FCA5A5", service:"#86EFAC", consult:"#D8B4FE",
-};
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -53,129 +46,160 @@ function greeting(): string {
 // ── Component ──────────────────────────────────────────────────────────────────
 type Props = NativeStackScreenProps<{ Home: undefined }, "Home">;
 
-// UX-07 Round 4 Pass 2: migrated to useTheme(). The category grid's pastel
-// per-category backgrounds (cat.bg, designed for a light canvas) are only
-// used in light mode; dark mode uses a shared theme.colors.surfaceRaised
-// card background with the category's brand color kept for the icon
-// accent/text/pills (TYPE_COLOR_DARK) so each category still carries a
-// distinct hue, just not as a full-card pastel wash which would clash with
-// the dark palette. Header/hero keep the brand-navy treatment in both
-// modes (it's a deliberate brand surface, not a "light surface").
+// UX-07 Pass 3d: full information-architecture rebuild of Home. See
+// docs/workflow-rearchitecture/ux-07-cross-app-production-readiness/
+// home-screen-root-cause-audit.md for the itemized "why it felt cluttered"
+// findings this replaces (oversized hero banner, repeated "Home" title,
+// generic "Customer" fallback greeting was never actually present but the
+// greeting had no real-name path documented, emoji category icons,
+// premature Repair/Service/Consult badges on Home, no search entry, no
+// SmartBot primary CTA, wrapping 4-icon bottom nav).
 export default function HomeScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const { theme, mode } = useTheme();
+  const { theme } = useTheme();
   const s = makeStyles(theme);
-  const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
-  const recentBookings = useApi(useCallback(() =>
-    bookingsApi.list(), []));
-  const activeJob = useApi(useCallback(() =>
-    fieldOpsJobsApi.list(1), []));
+  // Honest fallback: never fabricate a name. If AuthContext hasn't loaded a
+  // real full_name yet, the greeting omits a name entirely rather than
+  // showing a fake "Customer".
+  const firstName = user?.full_name?.trim().split(/\s+/)[0] || null;
+  const greetingText = firstName ? `${greeting()}, ${firstName}` : greeting();
 
-  function openCategory(catId: string) {
-    // UX-06 Round 5: "SmartBot" was a deleted, dead-API-calling legacy screen
-    // -- category selection now routes to the real, live DeepSeekChatScreen
-    // (the "AI Assistant" tab), which has its own real category/offering
-    // booking flow. catId isn't passed through yet (the tab route doesn't
-    // accept params today) -- a real, documented gap, not silently dropped.
-    (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"AIAssistant" });
+  const [searchText, setSearchText] = React.useState("");
+
+  const recentBookings = useApi(useCallback(() => bookingsApi.list(), []));
+  const activeJob = useApi(useCallback(() => fieldOpsJobsApi.list(5), []));
+
+  function goToSmartBot(initialCategoryLabel?: string) {
+    (navigation.navigate as (...args: unknown[]) => void)("Tabs", {
+      screen: "AIAssistant",
+      params: initialCategoryLabel ? { initialCategoryLabel } : undefined,
+    });
   }
 
-  const jobs = (activeJob.data as any)?.jobs ?? [];
-  const hasActive = jobs.some((j: any) => isActive(j.status));
-  const typeColors = mode === "dark" ? TYPE_COLOR_DARK : TYPE_COLOR;
+  function submitSearch() {
+    const q = searchText.trim();
+    if (!q) { goToSmartBot(); return; }
+    goToSmartBot(q);
+  }
+
+  const jobs = (activeJob.data as { jobs?: { job_id:string; status:string }[] } | null)?.jobs ?? [];
+  const activeJobRecord = jobs.find(j => isActive(j.status)) ?? null;
+  const bookingItems = (recentBookings.data as { items?: unknown[] } | null)?.items ?? [];
 
   return (
     <View style={s.screen}>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <View style={s.header}>
-        <View>
-          <Text style={s.greeting}>{greeting()}, {firstName} 👋</Text>
-          <Text style={s.headerSub}>What do you need help with today?</Text>
-        </View>
-        <TouchableOpacity
-          style={s.profileBtn}
-          onPress={() => navigation.navigate("Profile" as never)}
-          accessible accessibilityRole="button" accessibilityLabel="Open profile"
-          hitSlop={{ top:6, bottom:6, left:6, right:6 }}>
-          <Text style={s.profileInitial}>{firstName[0]?.toUpperCase()}</Text>
+      {/* ── Top utility row ──────────────────────────────────────────────── */}
+      <View style={s.topRow}>
+        <TouchableOpacity style={s.locationChip} activeOpacity={0.75}
+          onPress={() => navigation.navigate("AddressBook" as never)}
+          accessible accessibilityRole="button" accessibilityLabel="Choose service location">
+          <Ionicons name="location-outline" size={16} color={theme.colors.textInverse}/>
+          <Text style={s.locationText} numberOfLines={1}>Choose service location</Text>
+          <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.7)"/>
         </TouchableOpacity>
+        <View style={s.topIcons}>
+          <TouchableOpacity style={s.iconBtn}
+            onPress={() => (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"Notifications" })}
+            accessible accessibilityRole="button" accessibilityLabel="Notifications">
+            <Ionicons name="notifications-outline" size={20} color={theme.colors.textInverse}/>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.avatarBtn}
+            onPress={() => (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"Profile" })}
+            accessible accessibilityRole="button" accessibilityLabel="Open profile"
+            testID="home-profile-avatar">
+            <Text style={s.avatarInitial}>{(firstName ?? "?")[0]?.toUpperCase()}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.content}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
+        {/* ── Greeting ──────────────────────────────────────────────────── */}
+        <Text style={s.greeting} testID="home-greeting">{greetingText}</Text>
+        <Text style={s.greetingSub}>What do you need help with today?</Text>
 
-        {/* ── Active job banner ─────────────────────────────────────────────── */}
-        {hasActive && (
-          <TouchableOpacity
-            style={s.activeBanner}
-            onPress={() => (navigation.navigate as (...args: unknown[]) => void)("JobTracking", { jobId: jobs[0]?.id })}
-            activeOpacity={0.88}
-            accessible accessibilityRole="button"
-            accessibilityLabel="Technician is on the way. Tap to track live location">
+        {/* ── Search entry ──────────────────────────────────────────────── */}
+        <View style={s.searchRow}>
+          <Ionicons name="search-outline" size={18} color={theme.colors.textTertiary}/>
+          <TextInput
+            style={s.searchInput}
+            value={searchText}
+            onChangeText={setSearchText}
+            onSubmitEditing={submitSearch}
+            placeholder="Search AC repair, plumbing, cleaning…"
+            placeholderTextColor={theme.colors.textTertiary}
+            returnKeyType="search"
+            testID="home-search-input"
+            accessibilityLabel="Search for a service"
+          />
+        </View>
+
+        {/* ── SmartBot CTA ──────────────────────────────────────────────── */}
+        <TouchableOpacity style={s.smartbotCard} activeOpacity={0.9}
+          onPress={() => goToSmartBot()} testID="home-smartbot-cta"
+          accessible accessibilityRole="button" accessibilityLabel="Start with SmartBot">
+          <View style={s.smartbotIconWrap}>
+            <Ionicons name="sparkles" size={22} color={theme.colors.textInverse}/>
+          </View>
+          <View style={{ flex:1 }}>
+            <Text style={s.smartbotTitle}>Smart Service Assistant</Text>
+            <Text style={s.smartbotSub}>Describe your issue and get matched to the right service.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.textInverse}/>
+        </TouchableOpacity>
+
+        {/* ── Active booking / empty state ──────────────────────────────── */}
+        {activeJob.loading ? (
+          <Skeleton height={72} style={{ marginTop:20, borderRadius:16 }}/>
+        ) : activeJobRecord ? (
+          <TouchableOpacity style={s.activeBanner} activeOpacity={0.88}
+            onPress={() => (navigation.navigate as (...args: unknown[]) => void)("JobTracking", { jobId: activeJobRecord.job_id })}
+            testID="home-active-booking"
+            accessible accessibilityRole="button" accessibilityLabel="Track your active job">
             <View style={s.activeDot}/>
             <View style={{ flex:1 }}>
-              <Text style={s.activeBannerTitle}>Technician is on the way</Text>
-              <Text style={s.activeBannerSub}>Tap to track live location</Text>
+              <Text style={s.activeBannerTitle}>You have an active job</Text>
+              <Text style={s.activeBannerSub}>Tap to track your job</Text>
             </View>
-            <Text style={s.activeBannerArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)"/>
           </TouchableOpacity>
+        ) : (
+          <View style={s.noActiveBanner} testID="home-no-active-booking">
+            <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.textTertiary}/>
+            <Text style={s.noActiveText}>No active jobs right now</Text>
+          </View>
         )}
 
-        {/* ── Section: Services ────────────────────────────────────────────── */}
-        <Text style={s.sectionLabel}>Services</Text>
-
-        <View style={s.grid}>
-          {CATEGORIES.map(cat => (
+        {/* ── Popular services ──────────────────────────────────────────── */}
+        <Text style={s.sectionLabel}>Popular services</Text>
+        <View style={s.tileGrid}>
+          {POPULAR_SERVICES.map(svc => (
             <TouchableOpacity
-              key={cat.id}
-              style={[s.catCard, { backgroundColor: mode === "dark" ? theme.colors.surfaceRaised : cat.bg }]}
-              onPress={() => openCategory(cat.id)}
-              activeOpacity={0.82}
-              accessible accessibilityRole="button"
-              accessibilityLabel={`${cat.name}. Tap to start`}>
-
-              {/* Color accent strip */}
-              <View style={[s.catAccent, { backgroundColor: cat.color + "22",
-                borderLeftColor: cat.color, borderLeftWidth: 3 }]}/>
-
-              <Text style={s.catIcon}>{cat.icon}</Text>
-              <Text style={[s.catName, { color: cat.color }]}>{cat.name}</Text>
-
-              {/* Type pills */}
-              <View style={s.typePills}>
-                {cat.types.map(t => (
-                  <View key={t}
-                    style={[s.typePill, { backgroundColor: typeColors[t] + "22",
-                      borderColor: typeColors[t] + "55" }]}>
-                    <Text style={[s.typePillText, { color: typeColors[t] }]}>
-                      {TYPE_LABEL[t]}
-                    </Text>
-                  </View>
-                ))}
+              key={svc.id}
+              style={s.tile}
+              onPress={() => svc.id === "more" ? goToSmartBot() : goToSmartBot(svc.label)}
+              activeOpacity={0.8}
+              accessible accessibilityRole="button" accessibilityLabel={svc.label}
+              testID={`home-service-tile-${svc.id}`}>
+              <View style={s.tileIconWrap}>
+                <Ionicons name={svc.icon} size={22} color={theme.colors.brand}/>
               </View>
-
-              {/* Tap cue */}
-              <Text style={[s.tapCue, { color: cat.color }]}>Tap to start →</Text>
+              <Text style={s.tileLabel} numberOfLines={1}>{svc.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* ── Section: Recent Bookings ──────────────────────────────────────── */}
-        <Text style={[s.sectionLabel, { marginTop: 28 }]}>Recent Bookings</Text>
-
+        {/* ── Recent bookings ────────────────────────────────────────────── */}
+        <Text style={[s.sectionLabel, { marginTop:24 }]}>Recent bookings</Text>
         {recentBookings.loading
           ? [1,2].map(i => <Skeleton key={i} height={80} style={{ marginBottom:10, borderRadius:14 }}/>)
-          : (recentBookings.data as any)?.items?.length === 0
-          ? (
-            <View style={s.emptyBookings}>
-              <Text style={{ fontSize:32, marginBottom:8 }}>📋</Text>
+          : bookingItems.length === 0 ? (
+            <View style={s.emptyBookings} testID="home-no-bookings">
+              <Ionicons name="document-text-outline" size={26} color={theme.colors.textTertiary}/>
               <Text style={s.emptyText}>No bookings yet</Text>
-              <Text style={s.emptySubText}>Tap a category above to get started</Text>
+              <Text style={s.emptySubText}>Use SmartBot above to book your first service</Text>
             </View>
-          )
-          : (recentBookings.data as any)?.items?.slice(0,3).map((b: any) => (
+          ) : (bookingItems as any[]).slice(0,3).map((b: any) => (
             <BookingCard
               key={b.id} booking={b}
               onPress={() => (navigation.navigate as (...args: unknown[]) => void)("BookingDetail", { bookingId: b.id })}
@@ -183,7 +207,22 @@ export default function HomeScreen({ navigation }: Props) {
           ))
         }
 
-        <View style={{ height: 32 }}/>
+        {/* ── Trust row ──────────────────────────────────────────────────── */}
+        <View style={s.trustRow}>
+          {[
+            { icon:"shield-checkmark-outline" as const, label:"Verified pros" },
+            { icon:"pricetag-outline" as const,          label:"Transparent pricing" },
+            { icon:"cash-outline" as const,              label:"Pay on-site" },
+            { icon:"help-buoy-outline" as const,         label:"Customer support" },
+          ].map(t => (
+            <View key={t.label} style={s.trustItem}>
+              <Ionicons name={t.icon} size={16} color={theme.colors.textTertiary}/>
+              <Text style={s.trustLabel} numberOfLines={2}>{t.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={{ height:32 }}/>
       </ScrollView>
     </View>
   );
@@ -193,45 +232,57 @@ export default function HomeScreen({ navigation }: Props) {
 function makeStyles(theme: Theme) {
   return StyleSheet.create({
     screen:           { flex:1, backgroundColor:theme.colors.bg },
-    // Header -- deliberate brand-navy surface in both modes
-    header:           { backgroundColor:theme.colors.brand, paddingTop:56, paddingBottom:24,
-                        paddingHorizontal:20, flexDirection:"row",
-                        alignItems:"center", justifyContent:"space-between" },
-    greeting:         { fontSize:22, fontWeight:"800", color:theme.colors.textInverse, letterSpacing:-0.3 },
-    headerSub:        { fontSize:14, color:"rgba(255,255,255,0.7)", marginTop:3 },
-    profileBtn:       { width:42, height:42, borderRadius:21,
-                        backgroundColor:"rgba(255,255,255,0.18)",
-                        alignItems:"center", justifyContent:"center" },
-    profileInitial:   { fontSize:18, fontWeight:"700", color:theme.colors.textInverse },
-    // Content
-    content:          { padding:16, paddingTop:20 },
-    sectionLabel:     { fontSize:13, fontWeight:"700", color:theme.colors.textTertiary,
-                        letterSpacing:0.8, textTransform:"uppercase", marginBottom:14 },
-    // Active job banner
+    topRow:           { backgroundColor:theme.colors.brand, paddingTop:52, paddingBottom:14,
+                        paddingHorizontal:16, flexDirection:"row", alignItems:"center", gap:10 },
+    locationChip:     { flex:1, flexDirection:"row", alignItems:"center", gap:6,
+                        backgroundColor:"rgba(255,255,255,0.14)", borderRadius:20,
+                        paddingHorizontal:12, paddingVertical:8 },
+    locationText:     { flex:1, fontSize:13, fontWeight:"600", color:theme.colors.textInverse },
+    topIcons:         { flexDirection:"row", alignItems:"center", gap:8 },
+    iconBtn:          { width:36, height:36, borderRadius:18, alignItems:"center", justifyContent:"center",
+                        backgroundColor:"rgba(255,255,255,0.14)" },
+    avatarBtn:        { width:36, height:36, borderRadius:18, alignItems:"center", justifyContent:"center",
+                        backgroundColor:"rgba(255,255,255,0.22)" },
+    avatarInitial:    { fontSize:15, fontWeight:"700", color:theme.colors.textInverse },
+    content:          { padding:16, paddingTop:18 },
+    greeting:         { fontSize:20, fontWeight:"800", color:theme.colors.textPrimary, letterSpacing:-0.3 },
+    greetingSub:      { fontSize:13, color:theme.colors.textSecondary, marginTop:2, marginBottom:16 },
+    searchRow:        { flexDirection:"row", alignItems:"center", gap:8,
+                        backgroundColor:theme.colors.surface, borderRadius:14, borderWidth:1,
+                        borderColor:theme.colors.border, paddingHorizontal:14, height:46, marginBottom:14 },
+    searchInput:      { flex:1, fontSize:14, color:theme.colors.textPrimary, height:44 },
+    smartbotCard:     { flexDirection:"row", alignItems:"center", gap:12,
+                        backgroundColor:theme.colors.brand, borderRadius:16, padding:14,
+                        marginBottom:14, ...theme.shadow.sm },
+    smartbotIconWrap: { width:40, height:40, borderRadius:12, alignItems:"center", justifyContent:"center",
+                        backgroundColor:"rgba(255,255,255,0.18)" },
+    smartbotTitle:    { fontSize:14, fontWeight:"800", color:theme.colors.textInverse },
+    smartbotSub:      { fontSize:11.5, color:"rgba(255,255,255,0.78)", marginTop:2 },
     activeBanner:     { flexDirection:"row", alignItems:"center", gap:12,
-                        backgroundColor:theme.colors.brand, borderRadius:16, padding:16,
-                        marginBottom:20, ...theme.shadow.md },
-    activeDot:        { width:10, height:10, borderRadius:5, backgroundColor:theme.colors.success },
-    activeBannerTitle:{ fontSize:15, fontWeight:"700", color:theme.colors.textInverse },
-    activeBannerSub:  { fontSize:12, color:"rgba(255,255,255,0.7)", marginTop:2 },
-    activeBannerArrow:{ fontSize:22, color:"rgba(255,255,255,0.6)" },
-    // Category grid
-    grid:             { flexDirection:"row", flexWrap:"wrap", gap:12 },
-    catCard:          { width:CARD_W, borderRadius:18, padding:16, overflow:"hidden",
-                        ...theme.shadow.sm, position:"relative" },
-    catAccent:        { position:"absolute", top:0, bottom:0, left:0, width:3,
-                        borderTopLeftRadius:18, borderBottomLeftRadius:18 },
-    catIcon:          { fontSize:34, marginBottom:10, marginTop:4 },
-    catName:          { fontSize:15, fontWeight:"800", marginBottom:8, letterSpacing:-0.2 },
-    typePills:        { flexDirection:"row", flexWrap:"wrap", gap:4, marginBottom:10 },
-    typePill:         { paddingHorizontal:7, paddingVertical:3, borderRadius:6,
-                        borderWidth:1 },
-    typePillText:     { fontSize:10, fontWeight:"700", letterSpacing:0.3 },
-    tapCue:           { fontSize:11, fontWeight:"600" },
-    // Empty state
-    emptyBookings:    { alignItems:"center", paddingVertical:32,
+                        backgroundColor:theme.colors.brand, borderRadius:16, padding:14,
+                        marginBottom:20, ...theme.shadow.sm },
+    activeDot:        { width:9, height:9, borderRadius:5, backgroundColor:theme.colors.success },
+    activeBannerTitle:{ fontSize:14, fontWeight:"700", color:theme.colors.textInverse },
+    activeBannerSub:  { fontSize:11.5, color:"rgba(255,255,255,0.7)", marginTop:2 },
+    noActiveBanner:   { flexDirection:"row", alignItems:"center", gap:8,
+                        paddingVertical:12, paddingHorizontal:14, marginBottom:20,
+                        backgroundColor:theme.colors.surfaceSunken, borderRadius:14 },
+    noActiveText:     { fontSize:12.5, color:theme.colors.textTertiary, fontWeight:"600" },
+    sectionLabel:     { fontSize:12.5, fontWeight:"700", color:theme.colors.textTertiary,
+                        letterSpacing:0.6, textTransform:"uppercase", marginBottom:12 },
+    tileGrid:         { flexDirection:"row", flexWrap:"wrap", gap:12, marginBottom:8 },
+    tile:             { width:TILE_W, alignItems:"center", gap:6, backgroundColor:theme.colors.surface,
+                        borderRadius:14, paddingVertical:14, ...theme.shadow.sm },
+    tileIconWrap:     { width:40, height:40, borderRadius:12, alignItems:"center", justifyContent:"center",
+                        backgroundColor:theme.colors.surfaceSunken },
+    tileLabel:        { fontSize:11, fontWeight:"600", color:theme.colors.textSecondary, maxWidth:TILE_W-6 },
+    emptyBookings:    { alignItems:"center", gap:4, paddingVertical:28,
                         backgroundColor:theme.colors.surface, borderRadius:16, marginBottom:8 },
-    emptyText:        { fontSize:15, fontWeight:"600", color:theme.colors.textSecondary },
-    emptySubText:     { fontSize:13, color:theme.colors.textTertiary, marginTop:4 },
+    emptyText:        { fontSize:14, fontWeight:"600", color:theme.colors.textSecondary, marginTop:4 },
+    emptySubText:     { fontSize:12, color:theme.colors.textTertiary },
+    trustRow:         { flexDirection:"row", flexWrap:"wrap", gap:10, marginTop:24,
+                        paddingTop:16, borderTopWidth:1, borderTopColor:theme.colors.border },
+    trustItem:        { flexDirection:"row", alignItems:"center", gap:6, width:(width-16*2-10)/2 },
+    trustLabel:       { fontSize:11, color:theme.colors.textTertiary, flexShrink:1 },
   });
 }
