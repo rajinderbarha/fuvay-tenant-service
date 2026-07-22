@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { tenantSetupApi, usageCreditsApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
+import { PageHeader, Card, Skeleton } from "@serviceos/design-system";
 
 const safeNum = (v: unknown): number => (typeof v === "number" && isFinite(v)) ? v : 0;
 
@@ -32,63 +33,62 @@ export default function PackagePage() {
 
   return (
     <TenantLayout activeNav="finance-package">
-      <div style={{ padding: "var(--space-6)" }}>
-        <p style={{ color: "var(--text-secondary)", fontSize: "0.75rem", margin: "0 0 4px" }}>Finance &rsaquo; Package &amp; Credits</p>
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Package &amp; Credits</h1>
-        <p style={{ color: "var(--text-secondary)", margin: "0 0 24px" }}>Your current package details and usage credit balance.</p>
+      <PageHeader
+        title="Package & Credits"
+        description="Your current package details and usage credit balance."
+      />
 
-        {error && <div style={{ color: "var(--danger-text)", marginBottom: 16 }}>Error loading package info.</div>}
+      {error && <div style={{ color: "var(--danger-text)", margin: "16px 0" }}>Error loading package info.</div>}
 
-        {loading ? (
-          <div style={{ height: 120, background: "var(--surface-sunken)", borderRadius: 12, marginBottom: 16 }} />
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "18px 20px" }}>
-              <h2 style={{ fontWeight: 600, marginBottom: 14, color: "var(--text-primary)", fontSize: 15, margin: "0 0 14px" }}>Package Details</h2>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <Row label="Package Name"             value={String(p?.package_name ?? p?.plan_type ?? "—")} />
-                <Row label="Package Code"             value={String(p?.package_code ?? p?.code ?? "—")} />
-                <Row label="Status"                   value={String(p?.status ?? "—")} highlight={p?.status === "active"} />
-                <Row label="Staff Limit"              value={safeNum(p?.staff_limit ?? 5)} />
-                <Row label="Service Area Limit"       value={safeNum(p?.service_area_limit ?? 5)} />
-                <Row label="Included Usage Credits"   value={safeNum(p?.included_credits ?? p?.jobs_included)} />
-                <Row label="Started At"               value={p?.started_at ? new Date(p.started_at as string).toLocaleDateString() : "—"} />
-              </div>
+      {loading ? (
+        <Skeleton height="7.5rem" radius="12px" />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, margin: "16px 0 24px" }}>
+          <Card>
+            <h2 style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 15, margin: "0 0 14px" }}>Package Details</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <Row label="Package Name"             value={String(p?.package_name ?? p?.plan_type ?? "—")} />
+              <Row label="Package Code"             value={String(p?.package_code ?? p?.code ?? "—")} />
+              <Row label="Status"                   value={String(p?.status ?? "—")} highlight={p?.status === "active"} />
+              <Row label="Staff Limit"              value={safeNum(p?.staff_limit ?? 5)} />
+              <Row label="Service Area Limit"       value={safeNum(p?.service_area_limit ?? 5)} />
+              <Row label="Included Usage Credits"   value={safeNum(p?.included_credits ?? p?.jobs_included)} />
+              <Row label="Started At"               value={p?.started_at ? new Date(p.started_at as string).toLocaleDateString() : "—"} />
             </div>
+          </Card>
 
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "18px 20px" }}>
-              <h2 style={{ fontWeight: 600, marginBottom: 14, color: "var(--text-primary)", fontSize: 15, margin: "0 0 14px" }}>Usage Credit Balance</h2>
-              {balLoading ? (
-                <div style={{ height: 60, background: "var(--surface-sunken)", borderRadius: 8 }} />
-              ) : (
-                <>
-                  <p style={{ fontSize: "2rem", fontWeight: 700, color: balance?.low_credit ? "var(--danger-text)" : "var(--brand)", margin: "0 0 4px" }}>
-                    {safeNum(balance?.usage_credit_balance)}
-                  </p>
-                  <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: "0 0 16px" }}>credits available</p>
-                  {balance?.low_credit && (
-                    <div style={{ padding: 12, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, fontSize: "0.875rem", color: "var(--danger-text)", marginBottom: 12 }}>
-                      Low Usage Credits — completed jobs may fail to deduct. Contact Platform Admin to add Provider Usage Credits.
-                    </div>
-                  )}
-                  <div style={{ padding: 12, background: "var(--surface-sunken)", borderRadius: 8, fontSize: "0.875rem", color: "var(--text-secondary)" }}>
-                    Each completed job deducts usage credits from your balance.
-                    Credits are provisioned when your package is active.
+          <Card>
+            <h2 style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 15, margin: "0 0 14px" }}>Usage Credit Balance</h2>
+            {balLoading ? (
+              <Skeleton height="3.75rem" radius="8px" />
+            ) : (
+              <>
+                <p style={{ fontSize: "2rem", fontWeight: 700, color: balance?.low_credit ? "var(--danger-text)" : "var(--brand)", margin: "0 0 4px" }}>
+                  {safeNum(balance?.usage_credit_balance)}
+                </p>
+                <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: "0 0 16px" }}>credits available</p>
+                {balance?.low_credit && (
+                  <div style={{ padding: 12, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, fontSize: "0.875rem", color: "var(--danger-text)", marginBottom: 12 }}>
+                    Low Usage Credits — completed jobs may fail to deduct. Contact Platform Admin to add Provider Usage Credits.
                   </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 20px" }}>
-          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: 0 }}>
-            Package and credit settings are managed by your administrator. Contact support to change your package or add credits.
-            To view your credit transaction history, visit <a href="/finance/usage-credit-ledger" style={{ color: "var(--brand)" }}>Usage Credit Ledger</a>.
-            For security deposit information, visit <a href="/finance/security-deposit" style={{ color: "var(--brand)" }}>Security Deposit</a>.
-          </p>
+                )}
+                <div style={{ padding: 12, background: "var(--surface-sunken)", borderRadius: 8, fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+                  Each completed job deducts usage credits from your balance.
+                  Credits are provisioned when your package is active.
+                </div>
+              </>
+            )}
+          </Card>
         </div>
-      </div>
+      )}
+
+      <Card>
+        <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: 0 }}>
+          Package and credit settings are managed by your administrator. Contact support to change your package or add credits.
+          To view your credit transaction history, visit <a href="/finance/usage-credit-ledger" style={{ color: "var(--brand)" }}>Usage Credit Ledger</a>.
+          For security deposit information, visit <a href="/finance/security-deposit" style={{ color: "var(--brand)" }}>Security Deposit</a>.
+        </p>
+      </Card>
     </TenantLayout>
   );
 }
