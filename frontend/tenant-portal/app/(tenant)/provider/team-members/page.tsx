@@ -1,13 +1,13 @@
 "use client";
 import React, { useCallback, useState } from "react";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
-import { Card, Badge, Btn, Modal, Input, Skeleton } from "../../../../components/shared/ui";
 import {
   providerTeamMembersApi, providerOnboardingApi, categoryDashboardApi,
   type ProviderTeamMember, type ProviderTeamMemberPayload, type MemberType,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { Users, AlertCircle, UserPlus, Trash2, Edit2, Key, Eye, EyeOff } from "lucide-react";
+import { PageHeader, Card, Button, Modal, Input, Skeleton, StatusBadge as DsStatusBadge, Alert } from "@serviceos/design-system";
 
 async function tryOnboardingRefresh() {
   try { await providerOnboardingApi.refresh(); } catch (e) { console.warn("Onboarding refresh failed", e); }
@@ -57,17 +57,12 @@ function CredentialsModal({
   const [revealed, setRevealed] = useState(false);
   if (!open || !credentials) return null;
   return (
-    <Modal open title="Login Credentials Created" onClose={onClose} size="sm">
+    <Modal open title="Login Credentials Created" onClose={onClose}
+      footer={<Button variant="primary" size="sm" onClick={onClose}>I have saved these credentials</Button>}>
       <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-        <div style={{ padding:"12px 16px", borderRadius:10, background:"rgba(220,38,38,0.08)",
-          border:"1px solid rgba(220,38,38,0.25)" }}>
-          <p style={{ fontSize:13, fontWeight:700, color:"#dc2626", margin:"0 0 4px" }}>
-            ⚠ Save these credentials now.
-          </p>
-          <p style={{ fontSize:12, color:"#dc2626", margin:0 }}>
-            They will not be shown again after you close this window.
-          </p>
-        </div>
+        <Alert tone="danger" title="Save these credentials now.">
+          They will not be shown again after you close this window.
+        </Alert>
         <div style={{ background:"var(--surface-sunken)", borderRadius:10, padding:"12px 16px",
           border:"1px solid var(--border)" }}>
           <p style={{ fontSize:11, fontWeight:700, color:"var(--text-tertiary)", margin:"0 0 8px",
@@ -94,7 +89,6 @@ function CredentialsModal({
             {credentials.password}
           </p>
         </div>
-        <Btn variant="primary" size="sm" onClick={onClose}>I have saved these credentials</Btn>
       </div>
     </Modal>
   );
@@ -179,14 +173,17 @@ function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberF
 
   return (
     <Modal open title={isEdit ? `Edit: ${existing?.full_name}` : "Add Team Member"}
-      onClose={onClose} size="md">
+      onClose={onClose}
+      footer={<>
+        <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button size="sm" variant="primary" loading={saveAction.loading}
+          disabled={!form.full_name.trim()}
+          onClick={() => saveAction.execute()}>
+          {isEdit ? "Save Changes" : "Add Member"}
+        </Button>
+      </>}>
       <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-        {saveAction.error && (
-          <div style={{ padding:"10px 14px", borderRadius:9, background:"rgba(220,38,38,0.08)",
-            border:"1px solid rgba(220,38,38,0.25)" }}>
-            <p style={{ fontSize:12, color:"#dc2626", margin:0 }}>{saveAction.error}</p>
-          </div>
-        )}
+        {saveAction.error && <Alert tone="danger">{saveAction.error}</Alert>}
 
         {/* Member type */}
         <div>
@@ -196,43 +193,30 @@ function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberF
           </label>
           <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
             {typeOptions.map(opt => (
-              <button key={opt.value} onClick={() => f("member_type", opt.value)}
-                style={{ padding:"6px 12px", borderRadius:8, border:"1px solid", cursor:"pointer", fontSize:12,
-                  borderColor: form.member_type===opt.value ? "var(--brand)" : "var(--border)",
-                  background: form.member_type===opt.value ? "rgba(37,99,235,0.08)" : "var(--surface)",
-                  color: form.member_type===opt.value ? "var(--brand)" : "var(--text-secondary)",
-                  fontWeight: form.member_type===opt.value ? 700 : 400 }}>
+              <Button key={opt.value} variant={form.member_type===opt.value ? "primary" : "secondary"} size="sm"
+                onClick={() => f("member_type", opt.value)}>
                 {opt.label}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
 
         {/* Basic info */}
         <Input label="Full Name" placeholder="Aman Singh" value={form.full_name}
-          onChange={v => f("full_name", v)} required/>
+          onChange={e => f("full_name", e.target.value)} required/>
 
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
           <Input label="Phone" placeholder="+91 98xxx xxxxx" value={form.phone ?? ""}
-            onChange={v => f("phone", v)}/>
+            onChange={e => f("phone", e.target.value)}/>
           <Input label="Email" type="email" placeholder="aman@example.com" value={form.email ?? ""}
-            onChange={v => f("email", v)}/>
+            onChange={e => f("email", e.target.value)}/>
         </div>
 
         <Input label="Designation" placeholder="Senior Technician, Lead Trainer…" value={form.designation ?? ""}
-          onChange={v => f("designation", v)}/>
+          onChange={e => f("designation", e.target.value)}/>
 
-        <div>
-          <label style={{ fontSize:11, fontWeight:600, color:"var(--text-tertiary)", display:"block",
-            marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>
-            Skills (comma separated)
-          </label>
-          <input value={skillsText} onChange={e => setSkillsText(e.target.value)}
-            placeholder="AC Repair, Split AC, Daikin, Inverter"
-            style={{ width:"100%", fontSize:13, padding:"8px 10px", borderRadius:8,
-              border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text-primary)",
-              outline:"none", boxSizing:"border-box" }}/>
-        </div>
+        <Input label="Skills (comma separated)" value={skillsText} onChange={e => setSkillsText(e.target.value)}
+          placeholder="AC Repair, Split AC, Daikin, Inverter"/>
 
         {/* Flags */}
         <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
@@ -250,15 +234,6 @@ function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberF
               <span style={{ fontSize:13, color:"var(--text-primary)" }}>Create login account</span>
             </label>
           )}
-        </div>
-
-        <div style={{ display:"flex", gap:8, justifyContent:"flex-end", paddingTop:4 }}>
-          <Btn size="sm" variant="secondary" onClick={onClose}>Cancel</Btn>
-          <Btn size="sm" variant="primary" loading={saveAction.loading}
-            disabled={!form.full_name.trim()}
-            onClick={() => saveAction.execute()}>
-            {isEdit ? "Save Changes" : "Add Member"}
-          </Btn>
         </div>
       </div>
     </Modal>
@@ -319,28 +294,18 @@ export default function TeamMembersPage() {
   return (
     <TenantLayout activeNav="provider-team-members">
       {/* Header */}
-      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
-        marginBottom:20, flexWrap:"wrap", gap:12 }}>
-        <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:"var(--text-primary)", margin:"0 0 4px" }}>
-            {title}
-          </h1>
-          <p style={{ fontSize:13, color:"var(--text-secondary)", margin:0 }}>
-            Manage the people who deliver your services.
-          </p>
-        </div>
-        <Btn variant="primary" size="sm" onClick={() => { setEditMember(null); setModalOpen(true); }}>
-          <UserPlus size={14}/> Add Member
-        </Btn>
+      <div style={{ marginBottom: 20 }}>
+        <PageHeader
+          title={title}
+          description="Manage the people who deliver your services."
+          actions={<Button variant="primary" size="sm" leftIcon={<UserPlus size={14}/>}
+            onClick={() => { setEditMember(null); setModalOpen(true); }}>Add Member</Button>}
+        />
       </div>
 
       {/* Toasts */}
-      {toast    && <div style={{ padding:"10px 16px", borderRadius:10, marginBottom:12,
-        background:"rgba(5,150,105,0.08)", border:"1px solid rgba(5,150,105,0.25)",
-        fontSize:13, color:"#059669" }}>✓ {toast}</div>}
-      {toastErr && <div style={{ padding:"10px 16px", borderRadius:10, marginBottom:12,
-        background:"rgba(220,38,38,0.08)", border:"1px solid rgba(220,38,38,0.25)",
-        fontSize:13, color:"#dc2626" }}>✕ {toastErr}</div>}
+      {toast    && <div style={{ marginBottom: 12 }}><Alert tone="success">{toast}</Alert></div>}
+      {toastErr && <div style={{ marginBottom: 12 }}><Alert tone="danger">{toastErr}</Alert></div>}
 
       {/* Summary */}
       {!members.loading && list.length > 0 && (
@@ -361,26 +326,26 @@ export default function TeamMembersPage() {
       {/* Content */}
       {members.loading ? (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-          {[...Array(4)].map((_,i) => <Skeleton key={i} height={64}/>)}
+          {[...Array(4)].map((_,i) => <Skeleton key={i} height="4rem"/>)}
         </div>
       ) : members.error ? (
         <Card>
           <div style={{ textAlign:"center", padding:"32px 0" }}>
             <AlertCircle size={28} style={{ color:"#dc2626", display:"block", margin:"0 auto 10px" }}/>
             <p style={{ fontSize:13, color:"#dc2626", margin:"0 0 12px" }}>{members.error}</p>
-            <Btn size="sm" variant="primary" onClick={members.refetch}>Retry</Btn>
+            <Button size="sm" variant="primary" onClick={members.refetch}>Retry</Button>
           </div>
         </Card>
       ) : list.length === 0 ? (
         <Card style={{ textAlign:"center" }}>
           <Users size={32} style={{ color:"var(--text-tertiary)", display:"block", margin:"0 auto 12px" }}/>
           <p style={{ fontSize:14, color:"var(--text-secondary)", margin:"0 0 12px" }}>No {title.toLowerCase()} yet.</p>
-          <Btn size="sm" variant="primary" onClick={() => { setEditMember(null); setModalOpen(true); }}>
+          <Button size="sm" variant="primary" onClick={() => { setEditMember(null); setModalOpen(true); }}>
             Add First Member
-          </Btn>
+          </Button>
         </Card>
       ) : (
-        <Card padding={0}>
+        <Card padding="none">
           <div style={{ overflowX:"auto" }}>
             <table style={{ width:"100%", borderCollapse:"collapse" }}>
               <thead>
@@ -404,7 +369,10 @@ export default function TeamMembersPage() {
                         </p>
                       </td>
                       <td style={{ padding:"10px 12px" }}>
-                        <Badge variant="muted" size="sm">{typeLabel}</Badge>
+                        <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:999,
+                          background:"var(--surface-sunken)", border:"1px solid var(--border)", color:"var(--text-secondary)" }}>
+                          {typeLabel}
+                        </span>
                       </td>
                       <td style={{ padding:"10px 12px", fontSize:12, color:"var(--text-secondary)" }}>
                         {m.phone ?? "—"}
@@ -430,43 +398,39 @@ export default function TeamMembersPage() {
                         ) : <span style={{ fontSize:12, color:"var(--text-tertiary)" }}>—</span>}
                       </td>
                       <td style={{ padding:"10px 12px" }}>
-                        <Badge variant={m.can_receive_assignment ? "success" : "muted"} size="sm">
-                          {m.can_receive_assignment ? "Yes" : "No"}
-                        </Badge>
+                        <DsStatusBadge status={m.can_receive_assignment ? "active" : "inactive"} size="sm"/>
                       </td>
                       <td style={{ padding:"10px 12px" }}>
-                        <Badge variant={m.status === "active" ? "success" : "muted"} size="sm">
-                          {m.status}
-                        </Badge>
+                        <DsStatusBadge status={m.status === "active" ? "active" : "inactive"} size="sm"/>
                       </td>
                       <td style={{ padding:"10px 12px" }}>
                         <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
-                          <Btn size="xs" variant="ghost" onClick={() => {
+                          <Button size="sm" variant="ghost" onClick={() => {
                             setEditMember(m); setModalOpen(true);
                           }}>
                             <Edit2 size={11}/>
-                          </Btn>
+                          </Button>
                           {m.status === "active" ? (
-                            <Btn size="xs" variant="ghost" loading={deactivateAction.loading}
+                            <Button size="sm" variant="ghost" loading={deactivateAction.loading}
                               onClick={() => {
                                 if (confirm(`Deactivate ${m.full_name}?`)) deactivateAction.execute(m.member_id);
                               }}>
                               Deactivate
-                            </Btn>
+                            </Button>
                           ) : (
-                            <Btn size="xs" variant="ghost" loading={activateAction.loading}
+                            <Button size="sm" variant="ghost" loading={activateAction.loading}
                               onClick={() => activateAction.execute(m.member_id)}>
                               Activate
-                            </Btn>
+                            </Button>
                           )}
-                          <Btn size="xs" variant="ghost"
+                          <Button size="sm" variant="ghost"
                             loading={createLoginAction.loading}
                             onClick={() => {
                               if (confirm(`Create login for ${m.full_name}? Credentials will be shown once.`))
                                 createLoginAction.execute(m.member_id);
                             }}>
                             <Key size={11}/>
-                          </Btn>
+                          </Button>
                         </div>
                       </td>
                     </tr>
