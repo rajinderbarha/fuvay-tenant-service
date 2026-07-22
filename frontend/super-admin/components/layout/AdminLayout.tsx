@@ -580,7 +580,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
             transition: "background 0.18s ease, box-shadow 0.18s ease",
           }}
         >
-          <FolderTree size={16} style={{ opacity: 0.75 }}/>
+          <FolderTree size={21} style={{ opacity: 0.75 }}/>
           <span style={{
             fontSize: 9.5, fontWeight: isActiveSection ? 700 : 500, lineHeight: 1.2, textAlign: "center",
             maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",

@@ -363,6 +363,12 @@ function TenantShellInner({ children, activeNav }: {
       refresh: loadEntitlements,
     }}>
     <div style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
+      <style>{`
+        .sidebar-rail-item:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+        @media (prefers-reduced-motion: reduce) {
+          .sidebar-rail-item, aside, aside * { transition: none !important; animation: none !important; }
+        }
+      `}</style>
 
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
       <aside style={{
@@ -397,14 +403,45 @@ function TenantShellInner({ children, activeNav }: {
               UX convenience, not the security boundary -- see the comment on
               EntitlementCtx above. Fails open (shows everything) until the
               entitlement fetch resolves, and always if it errors. */}
-          {visibleNavGroups.map((group, gi) => (
+          {visibleNavGroups.map((group, gi) => {
+            const isActive = (item: NavItem) =>
+              activeNav === item.id || activeNav === item.href?.replace(/^\//, "");
+
+            if (collapsed) {
+              // Boxed rail: one connected, bordered, rounded container per
+              // group with 1px separators between items -- gap between
+              // containers signals group boundaries (a group-name heading
+              // wouldn't fit at this width).
+              if (group.special === "setup-wizard") {
+                return (
+                  <div key={group.label} style={{
+                    border: "1px solid var(--sidebar-border)", borderRadius: "var(--radius-lg)",
+                    overflow: "hidden", marginBottom: 10,
+                  }}>
+                    <SetupWizardRailButton onClick={() => setSetupOpen(true)} pct={setupPct}/>
+                  </div>
+                );
+              }
+              return (
+                <div key={group.label} style={{
+                  border: "1px solid var(--sidebar-border)", borderRadius: "var(--radius-lg)",
+                  overflow: "hidden", marginBottom: 10,
+                }}>
+                  {group.items.map((item, ii) => (
+                    <SidebarItem
+                      key={item.id} item={item} active={isActive(item)} collapsed
+                      isLast={ii === group.items.length - 1}
+                    />
+                  ))}
+                </div>
+              );
+            }
+
+            return (
             <div key={group.label} style={{ marginBottom: gi < visibleNavGroups.length - 1 ? 8 : 0 }}>
-              {!collapsed && (
-                <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.09em", color: "var(--sidebar-category)", padding: "10px 10px 4px", margin: 0, textTransform: "uppercase" }}>
-                  {group.label}
-                </p>
-              )}
-              {collapsed && gi > 0 && <div style={{ height: 1, background: "var(--sidebar-border)", margin: "6px 10px" }}/>}
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.09em", color: "var(--sidebar-category)", padding: "10px 10px 4px", margin: 0, textTransform: "uppercase" }}>
+                {group.label}
+              </p>
 
               {group.special === "setup-wizard" ? (
                 /* ── Special: Setup wizard button ── */
@@ -412,8 +449,7 @@ function TenantShellInner({ children, activeNav }: {
                   onClick={() => setSetupOpen(true)}
                   style={{
                     width: "100%", display: "flex", alignItems: "center", gap: 10,
-                    padding: collapsed ? "9px 0" : "8px 10px",
-                    justifyContent: collapsed ? "center" : undefined,
+                    padding: "8px 10px",
                     borderRadius: "var(--radius-md)", background: "transparent",
                     border: "none", cursor: "pointer",
                     color: "var(--sidebar-text)", fontFamily: "inherit",
@@ -426,31 +462,23 @@ function TenantShellInner({ children, activeNav }: {
                   <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: 0.75 }}>
                     <CheckSquare size={16}/>
                   </span>
-                  {!collapsed && (
-                    <>
-                      <span style={{ flex: 1, whiteSpace: "nowrap", lineHeight: 1, textAlign: "left" }}>Setup</span>
-                      {setupPct !== null && (
-                        <span style={{
-                          fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, flexShrink: 0,
-                          background: setupPct === 100 ? "var(--success-bg)" : "var(--sidebar-active)",
-                          color: setupPct === 100 ? "var(--success-text)" : "var(--sidebar-text-active)",
-                        }}>{setupPct}%</span>
-                      )}
-                    </>
+                  <span style={{ flex: 1, whiteSpace: "nowrap", lineHeight: 1, textAlign: "left" }}>Setup</span>
+                  {setupPct !== null && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, flexShrink: 0,
+                      background: setupPct === 100 ? "var(--success-bg)" : "var(--sidebar-active)",
+                      color: setupPct === 100 ? "var(--success-text)" : "var(--sidebar-text-active)",
+                    }}>{setupPct}%</span>
                   )}
                 </button>
               ) : (
                 group.items.map(item => (
-                  <SidebarItem
-                    key={item.id}
-                    item={item}
-                    active={activeNav === item.id || activeNav === item.href?.replace(/^\//, "")}
-                    collapsed={collapsed}
-                  />
+                  <SidebarItem key={item.id} item={item} active={isActive(item)} collapsed={false}/>
                 ))
               )}
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Footer */}
@@ -529,15 +557,86 @@ function footerBtnStyle(collapsed: boolean): React.CSSProperties {
   return { width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: "var(--radius-md)", border: "none", background: "transparent", cursor: "pointer", color: "var(--sidebar-text)", fontFamily: "inherit", justifyContent: collapsed ? "center" : undefined };
 }
 
-function SidebarItem({ item, active, collapsed }: { item: NavItem; active: boolean; collapsed: boolean }) {
+function SetupWizardRailButton({ onClick, pct }: { onClick: () => void; pct: number | null }) {
   const [hov, setHov] = useState(false);
   return (
-    <a href={item.href} id={`nav-${item.id}`} title={collapsed ? item.label : undefined}
+    <button
+      onClick={onClick}
+      className="sidebar-rail-item"
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        width: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        gap: 4, padding: "10px 4px", border: "none", cursor: "pointer", fontFamily: "inherit",
+        background: hov ? "var(--sidebar-hover)" : "transparent",
+        color: "var(--sidebar-text)",
+        transition: "background 0.18s ease",
+      }}
+    >
+      <span style={{ position: "relative", display: "flex", opacity: 0.75 }}>
+        <CheckSquare size={21}/>
+        {pct !== null && pct < 100 && (
+          <span style={{
+            position: "absolute", top: -5, right: -7, minWidth: 13, height: 13, padding: "0 3px",
+            borderRadius: 999, background: "var(--sidebar-active)", color: "var(--sidebar-text-active)",
+            fontSize: 8, fontWeight: 700, lineHeight: 1,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            border: "1.5px solid var(--sidebar-bg)",
+          }}>{pct}</span>
+        )}
+      </span>
+      <span style={{ fontSize: 9.5, fontWeight: 500, lineHeight: 1.2 }}>Setup</span>
+    </button>
+  );
+}
+
+function SidebarItem({ item, active, collapsed, isLast }: { item: NavItem; active: boolean; collapsed: boolean; isLast?: boolean }) {
+  const [hov, setHov] = useState(false);
+
+  if (collapsed) {
+    return (
+      <a
+        href={item.href} id={`nav-${item.id}`} title={item.label}
+        aria-current={active ? "page" : undefined}
+        className="sidebar-rail-item"
+        onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+        style={{
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          gap: 4, padding: "10px 4px", textDecoration: "none",
+          background: active ? "var(--sidebar-active)" : hov ? "var(--sidebar-hover)" : "transparent",
+          color: active ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
+          borderBottom: isLast ? "none" : "1px solid var(--sidebar-border)",
+          boxShadow: active ? "inset 3px 0 0 0 var(--brand)" : "none",
+          transition: "background 0.18s ease, box-shadow 0.18s ease",
+          position: "relative",
+        }}
+      >
+        <span style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", opacity: active ? 1 : 0.75 }}>
+          {React.isValidElement(item.icon) ? React.cloneElement(item.icon as React.ReactElement<{ size?: number }>, { size: 21 }) : item.icon}
+          {item.badge != null && item.badge > 0 && (
+            <span style={{
+              position: "absolute", top: -5, right: -7, minWidth: 13, height: 13, padding: "0 3px",
+              borderRadius: 999, background: "var(--terra)", color: "#fff",
+              fontSize: 8, fontWeight: 700, lineHeight: 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              border: "1.5px solid var(--sidebar-bg)",
+            }}>{item.badge > 9 ? "9+" : item.badge}</span>
+          )}
+        </span>
+        <span style={{
+          fontSize: 9.5, fontWeight: active ? 700 : 500, lineHeight: 1.2, textAlign: "center",
+          maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{item.label}</span>
+      </a>
+    );
+  }
+
+  return (
+    <a href={item.href} id={`nav-${item.id}`} aria-current={active ? "page" : undefined}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         display: "flex", alignItems: "center", gap: 10,
-        padding: collapsed ? "9px 0" : "8px 10px",
-        justifyContent: collapsed ? "center" : undefined,
+        padding: "8px 10px",
         borderRadius: "var(--radius-full)", textDecoration: "none",
         background: active ? "var(--sidebar-active)" : hov ? "var(--sidebar-hover)" : "transparent",
         color: active ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
@@ -546,13 +645,9 @@ function SidebarItem({ item, active, collapsed }: { item: NavItem; active: boole
       }}
     >
       <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: active ? 1 : 0.75 }}>{item.icon}</span>
-      {!collapsed && (
-        <>
-          <span style={{ flex: 1, whiteSpace: "nowrap", lineHeight: 1 }}>{item.label}</span>
-          {item.badge != null && item.badge > 0 && (
-            <span style={{ background: "var(--terra)", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 700, padding: "1px 7px", flexShrink: 0 }}>{item.badge}</span>
-          )}
-        </>
+      <span style={{ flex: 1, whiteSpace: "nowrap", lineHeight: 1 }}>{item.label}</span>
+      {item.badge != null && item.badge > 0 && (
+        <span style={{ background: "var(--terra)", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 700, padding: "1px 7px", flexShrink: 0 }}>{item.badge}</span>
       )}
     </a>
   );
