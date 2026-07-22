@@ -75,6 +75,7 @@ export const TENANT_NAV_GROUPS: NavGroup[] = [
       { id: "bookings",     label: "Bookings",     href: "/bookings",     icon: "CalendarDays", group: "operations" },
       { id: "appointments", label: "Appointments", href: "/appointments", icon: "Calendar",     group: "operations" },
       { id: "dispatch",     label: "Dispatch",     href: "/dispatch",     icon: "Truck",        group: "operations" },
+      { id: "operational-exceptions", label: "Operational Exceptions", href: "/operations/exceptions", icon: "AlertTriangle", group: "operations" },
     ],
   },
   {
@@ -111,6 +112,7 @@ export const TENANT_PATH_TO_NAV_ID: Record<string, string> = {
   bookings:            "bookings",
   appointments:        "appointments",
   dispatch:            "dispatch",
+  "operations/exceptions": "operational-exceptions",
   "service-areas":     "provider-service-areas",
   staff:               "provider-staff",
   catalog:             "provider-services",
