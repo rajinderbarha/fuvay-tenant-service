@@ -6,19 +6,11 @@
  */
 import React, { useCallback, useState } from "react";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
-import { Card, Badge, Btn, Modal, Input, Select, Skeleton } from "../../../../components/shared/ui";
+import { PageHeader, Card, StatusBadge, Button, Modal, Input, Textarea, Select, Skeleton } from "@serviceos/design-system";
+import { Badge } from "../../../../components/shared/ui";
 import { bookingsApi } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { CheckCircle2, XCircle, RefreshCw, Plus } from "lucide-react";
-
-const STATUS_VARIANT: Record<string, "default"|"success"|"warning"|"danger"|"info"|"muted"> = {
-  pending_confirmation: "warning",
-  confirmed: "success",
-  cancelled: "danger",
-  converted: "info",
-  no_show: "muted",
-  void: "muted",
-};
 
 const SLOTS = ["morning","afternoon","evening"].map(s => ({ value: s, label: s[0].toUpperCase()+s.slice(1) }));
 
@@ -85,10 +77,12 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         </span>
       </div>
 
+      <PageHeader title={booking.loading ? "Loading..." : (b?.booking_number ?? "Booking")} description="Booking (field_ops.Job) pipeline" />
+
       {booking.loading ? (
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <Skeleton height={140} style={{ borderRadius:14 }}/>
-          <Skeleton height={200} style={{ borderRadius:14 }}/>
+          <Skeleton height="8.75rem"/>
+          <Skeleton height="12.5rem"/>
         </div>
       ) : !b ? (
         <div style={{ textAlign:"center", padding:60 }}>
@@ -97,14 +91,14 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
           {/* Hero */}
-          <Card padding={24}>
+          <Card padding="lg">
             <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:16 }}>
               <div>
                 <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
                   <h1 style={{ fontSize:20, fontWeight:700, color:"var(--text-primary)", margin:0 }}>
                     {b.booking_number}
                   </h1>
-                  <Badge variant={STATUS_VARIANT[b.status] ?? "muted"}>{b.status.replace(/_/g," ")}</Badge>
+                  <StatusBadge status={b.status} />
                   {b.reschedule_count > 0 && (
                     <Badge variant="info">Rescheduled {b.reschedule_count}×</Badge>
                   )}
@@ -118,29 +112,29 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               </div>
               <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                 {b.status === "pending_confirmation" && <>
-                  <Btn variant="success" size="sm" icon={<CheckCircle2 size={14}/>} loading={confirmAction.loading} onClick={handleConfirm}>
+                  <Button variant="primary" size="sm" leftIcon={<CheckCircle2 size={14}/>} loading={confirmAction.loading} onClick={handleConfirm}>
                     Confirm
-                  </Btn>
-                  <Btn variant="danger" size="sm" icon={<XCircle size={14}/>} onClick={() => setRejectModal(true)}>Reject</Btn>
+                  </Button>
+                  <Button variant="destructive" size="sm" leftIcon={<XCircle size={14}/>} onClick={() => setRejectModal(true)}>Reject</Button>
                 </>}
                 {(b.status === "pending_confirmation" || b.status === "confirmed") && (
-                  <Btn variant="secondary" size="sm" onClick={() => setReschedModal(true)}>
+                  <Button variant="secondary" size="sm" onClick={() => setReschedModal(true)}>
                     Reschedule
-                  </Btn>
+                  </Button>
                 )}
                 {b.status === "confirmed" && (
-                  <Btn variant="primary" size="sm" loading={convertAction.loading} onClick={handleConvert}>
+                  <Button variant="primary" size="sm" loading={convertAction.loading} onClick={handleConvert}>
                     Convert to Job
-                  </Btn>
+                  </Button>
                 )}
-                <Btn variant="ghost" size="sm" icon={<RefreshCw size={14}/>} onClick={refetchAll}/>
+                <Button variant="ghost" size="sm" leftIcon={<RefreshCw size={14}/>} onClick={refetchAll}>Refresh</Button>
               </div>
             </div>
           </Card>
 
           {/* Details grid */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-            <Card padding={20}>
+            <Card padding="md">
               <h3 style={{ fontSize:13, fontWeight:600, color:"var(--text-tertiary)", margin:"0 0 14px",
                 textTransform:"uppercase", letterSpacing:"0.06em" }}>Customer</h3>
               <div style={{ display:"flex", gap:12, padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
@@ -155,7 +149,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               </div>
             </Card>
 
-            <Card padding={20}>
+            <Card padding="md">
               <h3 style={{ fontSize:13, fontWeight:600, color:"var(--text-tertiary)", margin:"0 0 14px",
                 textTransform:"uppercase", letterSpacing:"0.06em" }}>Booking Info</h3>
               {[
@@ -176,7 +170,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           {/* Payment breakdown — Home Services rule: customer pays provider directly,
               platform never collects the service payment. */}
           {b.quoted_price != null && (
-            <Card padding={20}>
+            <Card padding="md">
               <h3 style={{ fontSize:13, fontWeight:600, color:"var(--text-tertiary)", margin:"0 0 14px",
                 textTransform:"uppercase", letterSpacing:"0.06em" }}>Payment Breakdown</h3>
               {[
@@ -202,12 +196,12 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           )}
 
           {/* Status timeline */}
-          <Card padding={20}>
+          <Card padding="md">
             <h3 style={{ fontSize:13, fontWeight:600, color:"var(--text-tertiary)", margin:"0 0 16px",
               textTransform:"uppercase", letterSpacing:"0.06em" }}>Status Timeline</h3>
             {timeline.loading ? (
               <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                {[...Array(3)].map((_,i) => <Skeleton key={i} height={32}/>)}
+                {[...Array(3)].map((_,i) => <Skeleton key={i} height="2rem"/>)}
               </div>
             ) : (timeline.data?.timeline ?? []).length === 0 ? (
               <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No history available</p>
@@ -221,7 +215,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                     {h.from_status && (
                       <span style={{ fontSize:12, color:"var(--text-tertiary)" }}>{h.from_status.replace(/_/g," ")} →</span>
                     )}
-                    <Badge variant={STATUS_VARIANT[h.to_status] ?? "muted"}>{h.to_status.replace(/_/g," ")}</Badge>
+                    <StatusBadge status={h.to_status} />
                     {h.reason && <span style={{ fontSize:11, color:"var(--text-tertiary)" }}>{h.reason}</span>}
                   </div>
                 </div>
@@ -233,15 +227,15 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           </Card>
 
           {/* Notes */}
-          <Card padding={20}>
+          <Card padding="md">
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
               <h3 style={{ fontSize:13, fontWeight:600, color:"var(--text-tertiary)", margin:0,
                 textTransform:"uppercase", letterSpacing:"0.06em" }}>Notes</h3>
-              <Btn variant="ghost" size="sm" icon={<Plus size={14}/>} onClick={() => setNoteModal(true)}>Add Note</Btn>
+              <Button variant="ghost" size="sm" leftIcon={<Plus size={14}/>} onClick={() => setNoteModal(true)}>Add Note</Button>
             </div>
             {notes.loading ? (
               <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                {[...Array(2)].map((_,i) => <Skeleton key={i} height={40}/>)}
+                {[...Array(2)].map((_,i) => <Skeleton key={i} height="2.5rem"/>)}
               </div>
             ) : (notes.data?.notes ?? []).length === 0 ? (
               <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No notes yet</p>
@@ -258,52 +252,64 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       {/* Reject modal */}
-      <Modal open={rejectModal} onClose={() => setRejectModal(false)} title="Reject Booking">
+      <Modal
+        open={rejectModal}
+        onClose={() => setRejectModal(false)}
+        title="Reject Booking"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setRejectModal(false)}>Cancel</Button>
+          <Button variant="destructive" size="sm" loading={rejectAction.loading} onClick={handleReject}>
+            Reject Booking
+          </Button>
+        </>}
+      >
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <Input label="Reason for rejection" placeholder="Not available on this date, out of service area..."
-            value={rejectMsg} onChange={setRejectMsg} rows={3} required/>
+          <Textarea label="Reason for rejection" placeholder="Not available on this date, out of service area..."
+            value={rejectMsg} onChange={e => setRejectMsg(e.target.value)} rows={3} required/>
           {rejectAction.error && <p style={{ fontSize:12, color:"var(--danger-text)", margin:0 }}>{rejectAction.error}</p>}
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setRejectModal(false)}>Cancel</Btn>
-            <Btn variant="danger" size="sm" loading={rejectAction.loading} onClick={handleReject}>
-              Reject Booking
-            </Btn>
-          </div>
         </div>
       </Modal>
 
       {/* Reschedule modal */}
-      <Modal open={reschedModal} onClose={() => setReschedModal(false)} title="Request Reschedule">
+      <Modal
+        open={reschedModal}
+        onClose={() => setReschedModal(false)}
+        title="Request Reschedule"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setReschedModal(false)}>Cancel</Button>
+          <Button variant="primary" size="sm" loading={rescheduleAction.loading}
+            disabled={!reschedDate || !reschedSlot} onClick={handleReschedule}>
+            Request Reschedule
+          </Button>
+        </>}
+      >
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <Input label="New date" type="date" value={reschedDate} onChange={setReschedDate} required/>
-          <Select label="New slot" value={reschedSlot} onChange={setReschedSlot}
+          <Input label="New date" type="date" value={reschedDate} onChange={e => setReschedDate(e.target.value)} required/>
+          <Select label="New slot" value={reschedSlot} onChange={e => setReschedSlot(e.target.value)}
             placeholder="Select a slot…" options={SLOTS}/>
-          <Input label="Reason" placeholder="Customer requested a different time..."
-            value={reschedMsg} onChange={setReschedMsg} rows={2}/>
+          <Textarea label="Reason" placeholder="Customer requested a different time..."
+            value={reschedMsg} onChange={e => setReschedMsg(e.target.value)} rows={2}/>
           {rescheduleAction.error && <p style={{ fontSize:12, color:"var(--danger-text)", margin:0 }}>{rescheduleAction.error}</p>}
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setReschedModal(false)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" loading={rescheduleAction.loading}
-              disabled={!reschedDate || !reschedSlot} onClick={handleReschedule}>
-              Request Reschedule
-            </Btn>
-          </div>
         </div>
       </Modal>
 
       {/* Add note modal */}
-      <Modal open={noteModal} onClose={() => setNoteModal(false)} title="Add Note">
+      <Modal
+        open={noteModal}
+        onClose={() => setNoteModal(false)}
+        title="Add Note"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setNoteModal(false)}>Cancel</Button>
+          <Button variant="primary" size="sm" loading={addNoteAction.loading}
+            disabled={!noteContent.trim()} onClick={handleAddNote}>
+            Add Note
+          </Button>
+        </>}
+      >
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <Input label="Note" placeholder="Internal note about this booking..."
-            value={noteContent} onChange={setNoteContent} rows={3} required/>
+          <Textarea label="Note" placeholder="Internal note about this booking..."
+            value={noteContent} onChange={e => setNoteContent(e.target.value)} rows={3} required/>
           {addNoteAction.error && <p style={{ fontSize:12, color:"var(--danger-text)", margin:0 }}>{addNoteAction.error}</p>}
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setNoteModal(false)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" loading={addNoteAction.loading}
-              disabled={!noteContent.trim()} onClick={handleAddNote}>
-              Add Note
-            </Btn>
-          </div>
         </div>
       </Modal>
     </TenantLayout>
