@@ -81,7 +81,7 @@ export default function PrivacyPage() {
           <Link href="/account/privacy/requests">
             <Btn variant="primary">My Data Requests</Btn>
           </Link>
-          <Link href="/account/privacy/requests/new">
+          <Link href="/account/privacy/requests">
             <Btn variant="secondary">+ New Request</Btn>
           </Link>
         </div>

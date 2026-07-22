@@ -1,8 +1,9 @@
-﻿"use client";
-import { useCallback } from "react";
+"use client";
+import { useCallback, useState } from "react";
 import EnterpriseDataGrid, { GridColumn, GridData } from "../../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../../components/enterprise/EnterpriseFilterBar";
-import { apiFetch } from "../../../../lib/api";
+import { apiFetch, providerReviewApi } from "../../../../lib/api";
+import { Modal, Btn, Input } from "../../../../components/shared/ui";
 
 const COLUMNS: GridColumn[] = [
   { key: "review_number",  label: "Review #",   width: 150 },
@@ -59,6 +60,17 @@ function wrapLegacy(d: unknown, params: Record<string, unknown>) {
 }
 
 export default function ProviderReviewsPage() {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [replyRow, setReplyRow] = useState<Record<string, unknown> | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [replyLoading, setReplyLoading] = useState(false);
+  const [replyError, setReplyError] = useState("");
+
+  const [flagRow, setFlagRow] = useState<Record<string, unknown> | null>(null);
+  const [flagReason, setFlagReason] = useState("");
+  const [flagLoading, setFlagLoading] = useState(false);
+  const [flagError, setFlagError] = useState("");
+
   const fetchFn = useCallback(async (params: Record<string, unknown>) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v != null && v !== "") qs.set(k, String(v)); });
@@ -67,20 +79,87 @@ export default function ProviderReviewsPage() {
     return wrapLegacy(d, params);
   }, []);
 
+  async function submitReply() {
+    if (!replyRow) return;
+    setReplyLoading(true);
+    setReplyError("");
+    try {
+      await providerReviewApi.submitReply(String(replyRow.id), replyText);
+      setReplyRow(null);
+      setReplyText("");
+      setRefreshKey(k => k + 1);
+    } catch (e: unknown) {
+      setReplyError((e as { message?: string })?.message || "Failed to submit reply.");
+    } finally {
+      setReplyLoading(false);
+    }
+  }
+
+  async function submitFlag() {
+    if (!flagRow) return;
+    setFlagLoading(true);
+    setFlagError("");
+    try {
+      await providerReviewApi.flagReview(String(flagRow.id), { reason_code: "other", reason_text: flagReason });
+      setFlagRow(null);
+      setFlagReason("");
+      setRefreshKey(k => k + 1);
+    } catch (e: unknown) {
+      setFlagError((e as { message?: string })?.message || "Failed to flag review.");
+    } finally {
+      setFlagLoading(false);
+    }
+  }
+
   return (
-    <EnterpriseDataGrid
-      resourceKey="provider_reviews"
-      fetchFn={fetchFn}
-      columns={COLUMNS}
-      filters={FILTERS}
-      defaultSort={{ sort_by: "created_at", sort_direction: "desc" }}
-      enableColumnPrefs
-      title="Customer Reviews"
-      emptyMessage="No reviews yet."
-      rowActions={row => [
-        { label: "Reply",    onClick: () => { window.location.href = `/provider/reviews/${row.id}?action=reply`; } },
-        { label: "Flag",     onClick: () => { window.location.href = `/provider/reviews/${row.id}?action=flag`; } },
-      ]}
-    />
+    <>
+      <EnterpriseDataGrid
+        key={refreshKey}
+        resourceKey="provider_reviews"
+        fetchFn={fetchFn}
+        columns={COLUMNS}
+        filters={FILTERS}
+        defaultSort={{ sort_by: "created_at", sort_direction: "desc" }}
+        enableColumnPrefs
+        title="Customer Reviews"
+        emptyMessage="No reviews yet."
+        rowActions={row => [
+          { label: "Reply", onClick: () => { setReplyRow(row); setReplyText(""); setReplyError(""); } },
+          { label: "Flag",  onClick: () => { setFlagRow(row); setFlagReason(""); setFlagError(""); } },
+        ]}
+      />
+
+      <Modal open={!!replyRow} onClose={() => setReplyRow(null)} title="Reply to Review" size="md">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Input
+            value={replyText}
+            onChange={setReplyText}
+            placeholder="Write your reply…"
+            rows={4}
+          />
+          {replyError && <p style={{ color: "var(--danger)", fontSize: 12 }}>{replyError}</p>}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Btn variant="ghost" onClick={() => setReplyRow(null)}>Cancel</Btn>
+            <Btn onClick={submitReply} loading={replyLoading} disabled={!replyText.trim()}>Send Reply</Btn>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!flagRow} onClose={() => setFlagRow(null)} title="Flag Review" size="md">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Input
+            value={flagReason}
+            onChange={setFlagReason}
+            placeholder="Reason for flagging this review…"
+            rows={3}
+          />
+          {flagError && <p style={{ color: "var(--danger)", fontSize: 12 }}>{flagError}</p>}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Btn variant="ghost" onClick={() => setFlagRow(null)}>Cancel</Btn>
+            <Btn variant="danger" onClick={submitFlag} loading={flagLoading} disabled={!flagReason.trim()}>Flag Review</Btn>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }

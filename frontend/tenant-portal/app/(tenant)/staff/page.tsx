@@ -44,7 +44,7 @@ export default function StaffPage() {
           actions={<>
             <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={14}/>} onClick={staff.refetch}>Refresh</Button>
             <Button variant="primary" size="sm" leftIcon={<Plus size={14}/>}
-              onClick={() => window.location.href="/staff/invite"}>
+              onClick={() => window.location.href="/account"}>
               Add Staff
             </Button>
           </>}
