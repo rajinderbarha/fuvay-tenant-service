@@ -39,42 +39,35 @@ class TestMigration144DetectionLogic:
     detection query behaves correctly against a real Postgres CHECK-constraint
     candidate column — not a mock that can't validate real SQL syntax."""
 
-    async def test_detection_query_finds_a_freshly_inserted_invalid_role(self):
+    async def test_invalid_role_insert_is_rejected_by_db_level_constraint(self):
+        """PROTECTED_BY_LATER_SLICE (Slice 2F-39B): Migration 144 has since
+        been applied to this database (confirmed: alembic_version == '144',
+        and pg_constraint carries ck_users_role_canonical enforcing exactly
+        the 10 canonical roles). An invalid-role INSERT is now rejected
+        outright by the database's own CHECK constraint (asyncpg
+        CheckViolationError) before this test's own detection-query
+        assertion can even run -- a strictly stronger guarantee than the
+        original test's select-based detection flow assumed. This test now
+        proves the DB-level constraint itself, superseding the original
+        "insert then detect via SELECT" premise, which is no longer
+        reachable now that invalid roles cannot be inserted at all."""
+        from sqlalchemy.exc import IntegrityError
         settings = get_settings()
         engine = create_async_engine(settings.DATABASE_URL)
         async with engine.connect() as conn:
             async with conn.begin() as trans:
-                # Reuse an existing tenant id (any one) as the FK target
-                # rather than inserting a new tenant row -- avoids needing to
-                # satisfy every NOT NULL column on `tenants`, and this
-                # transaction is rolled back regardless so no real data is
-                # touched either way.
                 existing_tenant = (await conn.execute(text("SELECT id FROM tenants LIMIT 1"))).scalar()
                 assert existing_tenant is not None, "no tenant exists in this database to attach the test user to"
 
                 fake_id = uuid.uuid4()
-                # Insert a deliberately-invalid-role row inside a transaction
-                # that is rolled back at the end of this block -- never
-                # committed, so it never touches real data or the 2 known
-                # pre-existing invalid accounts.
-                await conn.execute(text(
-                    "INSERT INTO users (id, email, full_name, role, tenant_id, hashed_password, "
-                    "is_active, is_verified, force_password_change, created_at, updated_at) "
-                    "VALUES (:id, :email, 'Slice2C Test User', 'totally_invalid_role', :tenant_id, "
-                    "'x', true, true, false, now(), now())"
-                ), {"id": str(fake_id), "email": f"slice2c-test-{fake_id}@example.invalid", "tenant_id": str(existing_tenant)})
-
-                result = await conn.execute(text(_detection_sql()))
-                emails = [row[0] for row in result]
-                assert f"slice2c-test-{fake_id}@example.invalid" in emails
-
+                with pytest.raises(IntegrityError, match="ck_users_role_canonical"):
+                    await conn.execute(text(
+                        "INSERT INTO users (id, email, full_name, role, tenant_id, hashed_password, "
+                        "is_active, is_verified, force_password_change, created_at, updated_at) "
+                        "VALUES (:id, :email, 'Slice2C Test User', 'totally_invalid_role', :tenant_id, "
+                        "'x', true, true, false, now(), now())"
+                    ), {"id": str(fake_id), "email": f"slice2c-test-{fake_id}@example.invalid", "tenant_id": str(existing_tenant)})
                 await trans.rollback()
-
-        # Confirm the rollback actually happened -- the test row must not persist.
-        async with engine.connect() as conn:
-            result = await conn.execute(text(_detection_sql()))
-            emails = [row[0] for row in result]
-            assert f"slice2c-test-{fake_id}@example.invalid" not in emails
         await engine.dispose()
 
     async def test_detection_query_does_not_flag_any_canonical_role(self):
