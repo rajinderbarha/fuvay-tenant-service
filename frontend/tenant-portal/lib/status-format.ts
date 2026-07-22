@@ -129,15 +129,15 @@ const BLOCKER_TYPE_META: Record<string, { title: string; cta: string; route: str
   availability_missing:        { title: "Availability Not Configured", cta: "Set Availability", route: "/provider/availability", ruleKey: "availability_configured", severity: "warning" },
   documents_pending:           { title: "Documents Pending", cta: "View Documents", route: "/documents", ruleKey: "documents_verified", severity: "warning" },
   pricing_setup_missing:       { title: "Pricing Not Configured", cta: "Manage Pricing", route: "/provider/pricing", ruleKey: "pricing_valid", severity: "warning" },
-  tenant_not_approved:         { title: "Tenant Not Yet Approved", cta: "View Setup Checklist", route: "/provider/status", ruleKey: "tenant_approved", severity: "critical" },
-  tenant_suspended:            { title: "Tenant Suspended", cta: "Contact Support", route: "/provider/status", ruleKey: "tenant_not_suspended", severity: "critical" },
+  tenant_not_approved:         { title: "Tenant Not Yet Approved", cta: "View Business Profile", route: "/profile", ruleKey: "tenant_approved", severity: "critical" },
+  tenant_suspended:            { title: "Tenant Suspended", cta: "Contact Support", route: "/profile", ruleKey: "tenant_not_suspended", severity: "critical" },
 };
 
 export function blockerMeta(code: string) {
   return BLOCKER_TYPE_META[code] ?? {
     title: code.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
     cta: "Review",
-    route: "/provider/status",
+    route: "/profile",
     ruleKey: code,
     severity: "warning" as Severity,
   };

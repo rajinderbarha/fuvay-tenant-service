@@ -359,10 +359,10 @@ export default function ServiceCoveragePage() {
                   </div>
                 ))}
               </div>
-              <Link href="/provider/status">
+              <Link href="/profile">
                 <Button variant="secondary" size="sm" style={{ marginTop: 12, width: "100%", justifyContent: "center" }}
                   rightIcon={<ExternalLink size={12}/>}>
-                  View Full Status
+                  Go to Business Profile
                 </Button>
               </Link>
             </Card>

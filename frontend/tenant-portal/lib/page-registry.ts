@@ -62,35 +62,30 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "staff",
     breadcrumbs: [{ label: "Staff" }],
   },
-  "/provider/status": {
-    title: "Provider Status",
-    section: "provider",
-    breadcrumbs: [{ label: "Provider", href: "/provider/status" }, { label: "Status" }],
-  },
   "/provider/offerings": {
     title: "Offerings",
     section: "provider",
-    breadcrumbs: [{ label: "Provider", href: "/provider/status" }, { label: "Offerings" }],
+    breadcrumbs: [{ label: "Business Profile", href: "/profile" }, { label: "Offerings" }],
   },
   "/provider/service-areas": {
     title: "Service Areas",
     section: "provider",
-    breadcrumbs: [{ label: "Provider", href: "/provider/status" }, { label: "Service Areas" }],
+    breadcrumbs: [{ label: "Business Profile", href: "/profile" }, { label: "Service Areas" }],
   },
   "/provider/team-members": {
     title: "Team Members",
     section: "provider",
-    breadcrumbs: [{ label: "Provider", href: "/provider/status" }, { label: "Team" }],
+    breadcrumbs: [{ label: "Business Profile", href: "/profile" }, { label: "Team" }],
   },
   "/provider/availability": {
     title: "Availability",
     section: "provider",
-    breadcrumbs: [{ label: "Provider", href: "/provider/status" }, { label: "Availability" }],
+    breadcrumbs: [{ label: "Business Profile", href: "/profile" }, { label: "Availability" }],
   },
   "/provider/marketing": {
     title: "Provider Marketing",
     section: "provider",
-    breadcrumbs: [{ label: "Provider", href: "/provider/status" }, { label: "Marketing" }],
+    breadcrumbs: [{ label: "Business Profile", href: "/profile" }, { label: "Marketing" }],
   },
   "/catalog": {
     title: "Catalog",

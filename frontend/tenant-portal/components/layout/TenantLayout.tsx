@@ -56,16 +56,6 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Setup",
-    items: [
-      { id: "provider-status",                    href: "/provider/status",                    label: "Setup Checklist",       icon: <CheckSquare size={16}/> },
-      { id: "provider-service-areas",             href: "/provider/service-areas",             label: "Service Areas",         icon: <ArrowRight size={16}/> },
-      { id: "tenant-setup-services",              href: "/tenant/setup/services",              label: "Service Setup",         icon: <Wrench size={16}/> },
-      { id: "provider-service-coverage",          href: "/provider/service-coverage",          label: "Service Coverage",      icon: <Shield size={16}/> },
-      { id: "provider-availability",              href: "/tenant/setup/availability",          label: "Business Hours",        icon: <CalendarCheck size={16}/> },
-    ],
-  },
-  {
     label: "Team",
     items: [
       { id: "provider-staff", href: "/provider/staff", label: "Staff & Technicians", icon: <Users2 size={16}/> },
@@ -262,12 +252,12 @@ export function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: (
               </div>
             ) : (
               <div style={{ display: "flex", gap: 10 }}>
-                <a href="/provider/status" onClick={onClose} style={{
+                <a href="/profile" onClick={onClose} style={{
                   flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                   padding: "10px", borderRadius: "var(--radius-lg)", textDecoration: "none",
                   background: "var(--brand)", color: "white", fontSize: 13, fontWeight: 600,
                 }}>
-                  <AlertCircle size={14}/> View Full Status
+                  <AlertCircle size={14}/> Go to Business Profile
                 </a>
                 <button onClick={onClose} style={{
                   padding: "10px 16px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)",
@@ -353,20 +343,16 @@ function TenantShellInner({ children, activeNav }: {
     window.location.href = "/login";
   }
 
-  const w = collapsed ? 68 : 248;
+  const w = collapsed ? 84 : 248;
 
   const hasAnyModule = entitlementsLoaded ? entitledModuleKeys.length > 0 : true;
   const ALWAYS_VISIBLE_GROUPS = new Set(["Overview", "More"]);
   // Once every real setup step is done (10/10, from the shared hook), the
-  // "Setup" nav group is no longer relevant on an ongoing basis -- hide it.
-  // Business Profile stays reachable (moved into "Overview" above) and the
-  // Profile page's "Business Setup" section remains the one-stop place to
-  // reopen any individual setup page or the wizard drawer. While still
-  // onboarding (not yet 10/10, or status not loaded yet), keep it visible
-  // exactly as today -- fail open, don't hide mid-onboarding.
-  const hideSetupGroup = !setupStatus.loading && !setupStatus.error && setupStatus.isComplete;
-  const visibleNavGroups = (hasAnyModule ? NAV_GROUPS : NAV_GROUPS.filter(g => ALWAYS_VISIBLE_GROUPS.has(g.label)))
-    .filter(g => !(g.label === "Setup" && hideSetupGroup));
+  // The "Setup" nav group was removed entirely -- Business Profile (in
+  // "Overview" above) is now the one-stop place to reach every individual
+  // setup page (Service Areas, Service Setup, Service Coverage, Business
+  // Hours) or reopen the wizard drawer, via its "Business Setup" section.
+  const visibleNavGroups = hasAnyModule ? NAV_GROUPS : NAV_GROUPS.filter(g => ALWAYS_VISIBLE_GROUPS.has(g.label));
 
   return (
     <TenantShellCtx.Provider value={true}>

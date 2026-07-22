@@ -228,10 +228,11 @@ export default function PlatformCommandCenterPage() {
               <SectionError title="We couldn't load tenant data" error={lifecycle.error} requestId={lifecycle.requestId} onRetry={lifecycle.refetch}/>
             ) : lifecycle.loading ? <Skeleton height={90}/> : l ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <Row label="Pending Review" value={String(l.pending_review)} href="/admin/tenants?status=pending_review"/>
-                <Row label="Changes Requested" value={String(l.changes_requested)} href="/admin/tenants?status=changes_requested"/>
+                {/* pending_review / changes_requested intentionally omitted here --
+                    identical counts already shown on /admin/tenants's own KPI row. */}
                 <Row label="Bookable" value={String(l.bookable_tenants)}/>
                 <Row label="Non-Bookable" value={String(l.non_bookable_tenants)} href="/admin/tenants?bookable_status=not_bookable"/>
+                <Row label="View All Tenants" value="→" href="/admin/tenants"/>
               </div>
             ) : null}
           </Card>
@@ -519,13 +520,15 @@ export default function PlatformCommandCenterPage() {
             ) : securityAllowed ? (
               <Card padding="md">
                 <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Compliance & Security</p>
-                {compliance.loading ? <Skeleton height={100}/> : compliance.data && (
+                {/* Data Export/Deletion Requests, Open Threats, and Failed
+                    Logins intentionally omitted here -- identical counts
+                    already shown on /admin/compliance and /admin/security's
+                    own summary cards. DPDP Requests Pending is a genuine
+                    aggregate (sums multiple request types) not shown
+                    anywhere else, so it stays. */}
+                {compliance.loading ? <Skeleton height={40}/> : compliance.data && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <Row label="DPDP Requests Pending" value={String(compliance.data.dpdp_requests_pending)}/>
-                    <Row label="Data Export Requests" value={String(compliance.data.data_export_requests)}/>
-                    <Row label="Deletion Requests" value={String(compliance.data.deletion_requests)}/>
-                    <Row label="Open Threats" value={String(compliance.data.open_threats)} danger={compliance.data.open_threats > 0}/>
-                    <Row label="Failed Logins (24h)" value={String(compliance.data.failed_logins)}/>
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>

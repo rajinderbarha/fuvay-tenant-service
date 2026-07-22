@@ -331,12 +331,18 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
     window.location.href = "/login";
   }
 
-  const w = collapsed ? 68 : 248;
+  const w = collapsed ? 84 : 248;
 
   return (
     <AdminShellCtx.Provider value={true}>
     <AdminMenuRefreshCtx.Provider value={loadEffectiveMenu}>
     <div style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
+      <style>{`
+        .sidebar-rail-item:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+        @media (prefers-reduced-motion: reduce) {
+          .sidebar-rail-item, aside, aside * { transition: none !important; animation: none !important; }
+        }
+      `}</style>
 
       {/* FINAL-L5-05AC: skip-to-content -- first focusable element in the
           shell, visually hidden until keyboard-focused. */}
@@ -389,7 +395,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: "12px 8px", display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
-          {NAV_GROUPS.map((group, gi) => {
+          {NAV_GROUPS.map((group) => {
             // FINAL-L5-05M: two independent gates, both must pass — module/
             // category entitlement (isNavItemVisible, pre-existing) AND
             // effective-permission (isNavItemPermitted, this sprint). An
@@ -403,18 +409,46 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
               effectiveMenu.verticals.some(v => v.is_enabled && v.vertical_key !== "home_services") &&
               effectiveRole === "super_admin"; // verticals management is SUPER_ADMIN_ONLY, matching "categories"/"verticals" items above; home_services excluded — its modules live in the static "Home Services" group instead
             if (visibleItems.length === 0 && !hasVerticalsSubmenu) return null;
+            const verticalsForFlyout = hasVerticalsSubmenu
+              ? effectiveMenu!.verticals.filter(v => v.is_enabled && v.vertical_key !== "home_services")
+              : [];
+
+            if (collapsed) {
+              // Boxed rail: one connected, bordered, rounded container per
+              // group with 1px separators between items (no per-item
+              // shadow/floating cards) -- gap between containers signals
+              // group boundaries instead of a group-name heading, which
+              // wouldn't fit at this width.
+              return (
+                <div key={group.label} style={{
+                  border: "1px solid var(--sidebar-border)",
+                  borderRadius: "var(--radius-lg)",
+                  overflow: "hidden",
+                  marginBottom: 10,
+                }}>
+                  {visibleItems.map((item, ii) => (
+                    <SidebarItem
+                      key={item.id} item={item} active={activeNav === item.id} collapsed
+                      isLast={ii === visibleItems.length - 1 && verticalsForFlyout.length === 0}
+                    />
+                  ))}
+                  {verticalsForFlyout.map((v, vi) => (
+                    <VerticalCatalogSection
+                      key={v.vertical_key} vertical={v} activeNav={activeNav} collapsed
+                      isLast={vi === verticalsForFlyout.length - 1}
+                    />
+                  ))}
+                </div>
+              );
+            }
+
             return (
             <div key={group.label} style={{ marginBottom: 8 }}>
-              {!collapsed && (
-                <p style={{
-                  fontSize: 10, fontWeight: 700, letterSpacing: "0.09em",
-                  color: "var(--sidebar-category)", padding: "10px 10px 4px",
-                  margin: 0, textTransform: "uppercase",
-                }}>{group.label}</p>
-              )}
-              {collapsed && gi > 0 && (
-                <div style={{ height: 1, background: "var(--sidebar-border)", margin: "6px 10px 6px" }}/>
-              )}
+              <p style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: "0.09em",
+                color: "var(--sidebar-category)", padding: "10px 10px 4px",
+                margin: 0, textTransform: "uppercase",
+              }}>{group.label}</p>
               {visibleItems.map(item => (
                   <SidebarItem key={item.id} item={item} active={activeNav === item.id} collapsed={collapsed}/>
                 ))}
@@ -425,9 +459,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
                   are migrated into the static "Home Services" nav group
                   above instead, so the sidebar doesn't show two separate
                   "Home Services" sections for the same vertical. */}
-              {hasVerticalsSubmenu && effectiveMenu!.verticals
-                .filter(v => v.is_enabled && v.vertical_key !== "home_services")
-                .map(v => (
+              {verticalsForFlyout.map(v => (
                   <VerticalCatalogSection
                     key={v.vertical_key}
                     vertical={v}
@@ -494,33 +526,121 @@ function footerBtnStyle(collapsed: boolean): React.CSSProperties {
 
 // ── Per-Vertical catalog sub-section ─────────────────────────────────────────
 
-function VerticalCatalogSection({ vertical, activeNav, collapsed }: {
+function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
   vertical: import("../../lib/api").EffectiveMenuVertical;
   activeNav?: string;
   collapsed: boolean;
+  isLast?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [flyoutOpen, setFlyoutOpen] = useState(false);
+  const flyoutRef = React.useRef<HTMLDivElement>(null);
   const modules = vertical.modules.filter(m => m.is_enabled);
+
+  // Close the flyout when the sidebar expands, so it never lingers behind
+  // the now-wider expanded rail.
+  useEffect(() => { if (!collapsed) setFlyoutOpen(false); }, [collapsed]);
+
+  useEffect(() => {
+    if (!flyoutOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (flyoutRef.current && !flyoutRef.current.contains(e.target as Node)) setFlyoutOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFlyoutOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [flyoutOpen]);
+
   if (modules.length === 0) return null;
 
-  const verticalNavId = `catalog-${vertical.vertical_key}`;
   const isActiveSection = modules.some(m => activeNav === `catalog-${vertical.vertical_key}-${m.key}`);
 
   if (collapsed) {
     return (
-      <a
-        href={`/admin/catalog/${vertical.vertical_key}`}
-        title={vertical.vertical_label}
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "9px 0", borderRadius: "var(--radius-full)", textDecoration: "none",
-          color: isActiveSection ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
-          background: isActiveSection ? "var(--sidebar-active)" : "transparent",
-          marginBottom: 1,
-        }}
-      >
-        <FolderTree size={16} style={{ opacity: 0.75 }}/>
-      </a>
+      <div ref={flyoutRef} style={{ position: "relative" }}>
+        <button
+          type="button"
+          onClick={() => setFlyoutOpen(o => !o)}
+          aria-haspopup="menu"
+          aria-expanded={flyoutOpen}
+          aria-label={vertical.vertical_label}
+          aria-current={isActiveSection ? "page" : undefined}
+          className="sidebar-rail-item"
+          style={{
+            width: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            gap: 4, padding: "10px 4px", border: "none", cursor: "pointer", fontFamily: "inherit",
+            background: isActiveSection || flyoutOpen ? "var(--sidebar-active)" : "transparent",
+            color: isActiveSection ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
+            borderBottom: isLast ? "none" : "1px solid var(--sidebar-border)",
+            boxShadow: isActiveSection ? "inset 3px 0 0 0 var(--brand)" : "none",
+            transition: "background 0.18s ease, box-shadow 0.18s ease",
+          }}
+        >
+          <FolderTree size={16} style={{ opacity: 0.75 }}/>
+          <span style={{
+            fontSize: 9.5, fontWeight: isActiveSection ? 700 : 500, lineHeight: 1.2, textAlign: "center",
+            maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }} title={vertical.vertical_label}>{vertical.vertical_label}</span>
+        </button>
+
+        {flyoutOpen && (
+          <div
+            role="menu"
+            aria-label={vertical.vertical_label}
+            style={{
+              position: "absolute", left: "100%", top: 0, marginLeft: 8,
+              minWidth: 200, maxWidth: 260, maxHeight: "calc(100vh - 32px)", overflowY: "auto",
+              background: "var(--surface)", border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)",
+              zIndex: 300,
+            }}
+          >
+            <div style={{
+              padding: "10px 14px", borderBottom: "1px solid var(--border)",
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <FolderTree size={14} style={{ opacity: 0.7, flexShrink: 0 }}/>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {vertical.vertical_label}
+              </span>
+              {vertical.is_beta && (
+                <span style={{
+                  fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4, flexShrink: 0,
+                  background: "var(--terra-bg)", color: "var(--terra-text)",
+                }}>BETA</span>
+              )}
+            </div>
+            <div style={{ padding: 6 }}>
+              {modules.map(m => {
+                const navId = `catalog-${vertical.vertical_key}-${m.key}`;
+                const path = m.admin_path || `/admin/catalog/${vertical.vertical_key}`;
+                const isActive = activeNav === navId;
+                return (
+                  <a
+                    key={m.key} href={path} role="menuitem"
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => setFlyoutOpen(false)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
+                      borderRadius: "var(--radius-md)", textDecoration: "none", fontSize: 13,
+                      background: isActive ? "var(--sidebar-active)" : "transparent",
+                      color: isActive ? "var(--sidebar-text-active)" : "var(--text-primary)",
+                      fontWeight: isActive ? 600 : 400,
+                    }}
+                  >
+                    <Settings2 size={14} style={{ opacity: 0.7, flexShrink: 0 }}/>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.label}</span>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -577,22 +697,63 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed }: {
 }
 
 function SidebarItem({
-  item, active, collapsed,
+  item, active, collapsed, isLast,
 }: {
-  item: NavItem; active: boolean; collapsed: boolean;
+  item: NavItem; active: boolean; collapsed: boolean; isLast?: boolean;
 }) {
   const [hov, setHov] = useState(false);
+
+  if (collapsed) {
+    return (
+      <a
+        href={item.href}
+        id={`nav-${item.id}`}
+        title={item.label}
+        aria-current={active ? "page" : undefined}
+        className="sidebar-rail-item"
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        style={{
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          gap: 4, padding: "10px 4px", textDecoration: "none",
+          background: active ? "var(--sidebar-active)" : hov ? "var(--sidebar-hover)" : "transparent",
+          color: active ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
+          borderBottom: isLast ? "none" : "1px solid var(--sidebar-border)",
+          boxShadow: active ? "inset 3px 0 0 0 var(--brand)" : "none",
+          transition: "background 0.18s ease, box-shadow 0.18s ease",
+          position: "relative",
+        }}
+      >
+        <span style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", opacity: active ? 1 : 0.75 }}>
+          {React.isValidElement(item.icon) ? React.cloneElement(item.icon as React.ReactElement<{ size?: number }>, { size: 21 }) : item.icon}
+          {item.badge != null && item.badge > 0 && (
+            <span style={{
+              position: "absolute", top: -5, right: -7, minWidth: 13, height: 13, padding: "0 3px",
+              borderRadius: 999, background: "var(--terra)", color: "#fff",
+              fontSize: 8, fontWeight: 700, lineHeight: 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              border: "1.5px solid var(--sidebar-bg)",
+            }}>{item.badge > 9 ? "9+" : item.badge}</span>
+          )}
+        </span>
+        <span style={{
+          fontSize: 9.5, fontWeight: active ? 700 : 500, lineHeight: 1.2, textAlign: "center",
+          maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{item.label}</span>
+      </a>
+    );
+  }
+
   return (
     <a
       href={item.href}
       id={`nav-${item.id}`}
-      title={collapsed ? item.label : undefined}
+      aria-current={active ? "page" : undefined}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
         display: "flex", alignItems: "center", gap: 10,
-        padding: collapsed ? "9px 0" : "8px 12px",
-        justifyContent: collapsed ? "center" : undefined,
+        padding: "8px 12px",
         borderRadius: "var(--radius-full)", textDecoration: "none",
         background: active ? "var(--sidebar-active)" : hov ? "var(--sidebar-hover)" : "transparent",
         color: active ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
@@ -606,17 +767,13 @@ function SidebarItem({
       <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: active ? 1 : 0.75 }}>
         {item.icon}
       </span>
-      {!collapsed && (
-        <>
-          <span style={{ flex: 1, whiteSpace: "nowrap", lineHeight: 1 }}>{item.label}</span>
-          {item.badge != null && item.badge > 0 && (
-            <span style={{
-              background: "var(--terra)", color: "#fff",
-              borderRadius: 999, fontSize: 10, fontWeight: 700,
-              padding: "1px 7px", flexShrink: 0,
-            }}>{item.badge}</span>
-          )}
-        </>
+      <span style={{ flex: 1, whiteSpace: "nowrap", lineHeight: 1 }}>{item.label}</span>
+      {item.badge != null && item.badge > 0 && (
+        <span style={{
+          background: "var(--terra)", color: "#fff",
+          borderRadius: 999, fontSize: 10, fontWeight: 700,
+          padding: "1px 7px", flexShrink: 0,
+        }}>{item.badge}</span>
       )}
     </a>
   );

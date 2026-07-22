@@ -15,8 +15,6 @@ import {
 } from "../api";
 import { requireTenantContext } from "./tenant-context";
 
-export const getTenantSetupChecklist = () => myStatusApi.getStatus();
-
 export const getTenantBusinessProfile = () => myStatusApi.getStatus();
 
 export const getTenantServiceAreas = () => {

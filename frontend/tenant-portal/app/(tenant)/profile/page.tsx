@@ -11,7 +11,7 @@ import {
   type UserProfile, type BusinessProfile, type MediaAsset,
 } from "../../../lib/api";
 import { ServiceOSError, trustBadgesApi } from "../../../lib/api";
-import { TrustBadgeChip } from "../../../components/TrustBadges";
+import { TrustBadgeChip, TrustBadges } from "../../../components/TrustBadges";
 import type { EarnedBadge } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { useSetupStatus } from "../../../hooks/useSetupStatus";
@@ -40,6 +40,7 @@ const TIMEZONES = [
   { value:"America/New_York",label:"EST/EDT — America/New_York" },
   { value:"UTC",             label:"UTC" },
 ];
+const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const STATUS_MAP: Record<string,{label:string;variant:"success"|"warning"|"danger"|"neutral"}> = {
   approved:                { label:"Approved",         variant:"success" },
   verified:                { label:"Approved",         variant:"success" },
@@ -247,6 +248,7 @@ export default function ProviderProfilePage() {
   const activityApi = useApi(useCallback(()=>tenantSetupApi.getActivity(1),[]), []);
   const teamApi = useApi(useCallback(()=>myStatusApi.getTeamMembers(),[]), []);
   const areasApi = useApi(useCallback(()=>myStatusApi.getServiceAreas(),[]), []);
+  const availabilityApi = useApi(useCallback(()=>myStatusApi.getAvailability(),[]), []);
   const selfApi = useApi(useCallback(()=>authApi.me(),[]), []);
   const badgesApi = useApi(useCallback(()=>trustBadgesApi.myBadges(),[]), []);
 
@@ -513,11 +515,7 @@ export default function ProviderProfilePage() {
             </Btn>
           )}
           {canSubmit && (
-            isApproved ? (
-              <a href="/provider/status" style={{ textDecoration:"none" }}>
-                <Btn variant="primary" size="sm"><Shield size={13}/> View Verification</Btn>
-              </a>
-            ) : (
+            !isApproved && (
               <Btn variant="primary" size="sm" loading={submitReview.loading} onClick={submitReview.execute}>
                 <Send size={13}/> Submit for Review
               </Btn>
@@ -823,6 +821,14 @@ export default function ProviderProfilePage() {
                     </div>
                   </div>
 
+                  {/* Trust Badges — earned automatically, shown to customers on your public profile */}
+                  <div className="card">
+                    <p className="section-title"><Shield size={15}/> Trust Badges</p>
+                    <p className="section-sub">Earned automatically — shown to customers on your profile.</p>
+                    <TrustBadges badges={badgesApi.data ?? []}
+                      empty="No badges earned yet. Keep your ratings high and jobs completed to earn them."/>
+                  </div>
+
                   {/* Next Steps */}
                   <div className="card">
                     <p className="section-title"><CheckCircle2 size={15}/> Next Steps</p>
@@ -983,6 +989,33 @@ export default function ProviderProfilePage() {
                       <a href="/provider/service-areas" style={{ fontSize:12, fontWeight:700, color:"var(--brand)",
                         textDecoration:"none", display:"inline-flex", alignItems:"center", gap:5 }}>
                         <MapPin size={12}/> Add Service Area
+                      </a>
+                    </div>
+
+                    <div style={{ paddingTop:16, borderTop:"1px solid var(--border)", marginTop:16 }}>
+                      <p style={{ fontSize:12, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em",
+                        color:"var(--text-tertiary)", margin:"0 0 12px" }}>Business Hours</p>
+                      {availabilityApi.error ? (
+                        <SectionError title="Could not load business hours" error={availabilityApi.error} requestId={availabilityApi.requestId} onRetry={availabilityApi.refetch}/>
+                      ) : availabilityApi.loading ? <SkeletonCard rows={2}/> : (availabilityApi.data?.rules?.length ?? 0) === 0 ? (
+                        <p style={{ fontSize:13, color:"var(--text-secondary)" }}>Working hours not configured yet.</p>
+                      ) : (
+                        <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:14 }}>
+                          {(availabilityApi.data?.rules ?? []).filter(r=>r.is_active).map((r) => (
+                            <div key={r.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+                              padding:"10px 14px", background:"var(--surface-sunken)", borderRadius:9, border:"1px solid var(--border)" }}>
+                              <span style={{ fontSize:13, fontWeight:600 }}>{DAY_NAMES[r.day_of_week] ?? "—"}</span>
+                              <span style={{ fontSize:12, color:"var(--text-tertiary)" }}>{r.start_time}–{r.end_time}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <p style={{ fontSize:12, color:"var(--text-tertiary)", margin:"0 0 12px" }}>
+                        {(availabilityApi.data?.rules ?? []).filter(r=>r.is_active).length} rule(s) configured — required for bookability.
+                      </p>
+                      <a href="/tenant/setup/availability" style={{ fontSize:12, fontWeight:700, color:"var(--brand)",
+                        textDecoration:"none", display:"inline-flex", alignItems:"center", gap:5 }}>
+                        <Clock size={12}/> Manage Business Hours
                       </a>
                     </div>
                   </>

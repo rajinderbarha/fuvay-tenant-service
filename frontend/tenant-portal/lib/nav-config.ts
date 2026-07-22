@@ -31,7 +31,6 @@ export const TENANT_NAV_GROUPS: NavGroup[] = [
     id: "setup",
     label: "Setup",
     items: [
-      { id: "provider-status",          label: "Setup Checklist",  href: "/provider/status",          icon: "CheckSquare", group: "setup" },
       { id: "profile",                  label: "Business Profile", href: "/profile",                  icon: "Building2",   group: "setup" },
       { id: "provider-service-areas",   label: "Service Areas",   href: "/provider/service-areas",   icon: "MapPin",      group: "setup" },
       { id: "provider-services",        label: "Service Setup",    href: "/tenant/setup/services",    icon: "Wrench",      group: "setup" },

@@ -7,20 +7,9 @@
  * internally via the existing typed API objects — no direct fetch().
  */
 import {
-  catalogApi, dashboardApi, homeServicesCatalogConsoleApi, autoPriceOptionsApi,
+  catalogApi, homeServicesCatalogConsoleApi, autoPriceOptionsApi,
   usageCreditsAdminApi, adminTenantApi, platformUsersApi,
 } from "../api";
-
-/** No single "overview" endpoint exists yet; composes the two real endpoints
- *  that already back the /admin/home-services/* pages and the executive
- *  dashboard's home-services summary. */
-export async function getAdminHomeServicesOverview() {
-  const [homeServicesSummary, services] = await Promise.all([
-    dashboardApi.getHomeServicesSummary(),
-    homeServicesCatalogConsoleApi.listServices(),
-  ]);
-  return { homeServicesSummary, services };
-}
 
 export const getAdminServiceCatalog = () => homeServicesCatalogConsoleApi.listServices();
 

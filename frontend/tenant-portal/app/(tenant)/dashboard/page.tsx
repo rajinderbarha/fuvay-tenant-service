@@ -2,13 +2,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Wrench, Users2, MapPin, CreditCard, Package, Shield, RefreshCw,
-  CheckCircle2, XCircle, ClipboardCheck, ChevronRight, Building2,
+  ClipboardCheck, ChevronRight, Building2,
   FileEdit, Plus, Clock,
 } from "lucide-react";
 import {
-  providerStatusApi, providerServiceAreasApi, providerTeamMembersApi,
+  providerServiceAreasApi, providerTeamMembersApi,
   masterCatalogApi, myStatusApi,
-  type ProviderStatusResult, type ProviderServiceArea, type TenantEnabledService,
+  type ProviderServiceArea, type TenantEnabledService,
   type ProviderTeamMember, type AdminMasterServiceRow,
   type PackageAssignmentSummary, type TenantSecurityDepositStatus, type TenantCreditWalletDetail,
   type TenantStatusAuditLogEntry,
@@ -16,7 +16,7 @@ import {
 import { useApi } from "../../../hooks/useApi";
 import { useSetupStatus } from "../../../hooks/useSetupStatus";
 import { SetupWizardDrawer } from "../../../components/layout/TenantLayout";
-import { PageHeader, Card, Button } from "@serviceos/design-system";
+import { PageHeader, Card, Button, StatCard } from "@serviceos/design-system";
 import { Badge, Skeleton } from "../../../components/shared/ui";
 
 const safeNum = (v: unknown): number => (typeof v === "number" && isFinite(v)) ? v : 0;
@@ -44,17 +44,6 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-const CHECKLIST_DEFS: { key: string; label: string; blockerCode: string; route: string }[] = [
-  { key: "account_active", label: "Account Active & Verified", blockerCode: "TENANT_SUSPENDED_OR_REJECTED", route: "/support" },
-  { key: "business_profile", label: "Business Profile Complete", blockerCode: "BUSINESS_PROFILE_INCOMPLETE", route: "/profile" },
-  { key: "service_published", label: "At Least One Service Published", blockerCode: "NO_PUBLISHED_SERVICE", route: "/tenant/setup/services" },
-  { key: "price_range", label: "Provider Price Range Configured", blockerCode: "PROVIDER_PRICE_RANGE_MISSING", route: "/tenant/setup/services" },
-  { key: "service_area", label: "At Least One Service Area", blockerCode: "SERVICE_AREA_MISSING", route: "/provider/service-areas" },
-  { key: "availability", label: "Availability Configured", blockerCode: "AVAILABILITY_MISSING", route: "/provider/availability" },
-  { key: "usage_credits", label: "Usage Credits Available", blockerCode: "USAGE_CREDITS_INSUFFICIENT", route: "/finance/usage-credit-ledger" },
-  { key: "security_deposit", label: "Security Deposit Satisfied", blockerCode: "SECURITY_DEPOSIT_REQUIRED", route: "/finance/security-deposit" },
-];
-
 export default function DashboardPage() {
   const [tenantName, setTenantName] = useState("Your Business");
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -70,7 +59,6 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const statusApi = useApi<ProviderStatusResult>(useCallback(() => providerStatusApi.get(), []), []);
   const svcEnabledApi = useApi<{ services: TenantEnabledService[] }>(useCallback(() => masterCatalogApi.listEnabled(), []), []);
   const svcAvailableApi = useApi<{ services: AdminMasterServiceRow[] }>(useCallback(() => masterCatalogApi.listAvailable(), []), []);
   const areasApi = useApi<{ areas: ProviderServiceArea[]; total: number }>(useCallback(() => providerServiceAreasApi.list(), []), []);
@@ -80,26 +68,22 @@ export default function DashboardPage() {
   const walletApi = useApi<TenantCreditWalletDetail>(useCallback(() => myStatusApi.getCreditWallet(), []), []);
   const activityApi = useApi<{ logs: TenantStatusAuditLogEntry[] }>(useCallback(() => myStatusApi.getAuditLog(6), []), []);
 
-  const loading = statusApi.loading || svcEnabledApi.loading || areasApi.loading || staffApi.loading;
+  const loading = setupStatus.loading || svcEnabledApi.loading || areasApi.loading || staffApi.loading;
 
   const refreshAll = useCallback(() => {
-    statusApi.refetch(); svcEnabledApi.refetch(); svcAvailableApi.refetch();
+    setupStatus.refetch(); svcEnabledApi.refetch(); svcAvailableApi.refetch();
     areasApi.refetch(); staffApi.refetch(); pkgApi.refetch(); depositApi.refetch();
     walletApi.refetch(); activityApi.refetch();
-  }, [statusApi, svcEnabledApi, svcAvailableApi, areasApi, staffApi, pkgApi, depositApi, walletApi, activityApi]);
+  }, [setupStatus, svcEnabledApi, svcAvailableApi, areasApi, staffApi, pkgApi, depositApi, walletApi, activityApi]);
 
-  const s = statusApi.data;
-  const isBookable = s?.is_bookable ?? false;
-  const allBlockerCodes = useMemo(() => {
-    const set = new Set<string>();
-    (s?.visibility_blockers ?? []).forEach((b) => set.add(b.code));
-    (s?.bookability_blockers ?? []).forEach((b) => set.add(b.code));
-    return set;
-  }, [s]);
-
-  const checklist = CHECKLIST_DEFS.map((c) => ({ ...c, done: !allBlockerCodes.has(c.blockerCode) }));
-  const doneCount = checklist.filter((c) => c.done).length;
-  const setupPct = Math.round((doneCount / checklist.length) * 100);
+  // Setup readiness now comes from the single canonical useSetupStatus hook
+  // (also used by TenantLayout's nav filtering, the Profile page, and the
+  // SetupWizardDrawer below) instead of a second, hand-rolled 8-step
+  // checklist independently computed from the same blockers -- avoids the
+  // two counts ever disagreeing.
+  const isBookable = setupStatus.isBookable;
+  const doneCount = setupStatus.doneCount;
+  const setupPct = setupStatus.total > 0 ? Math.round((setupStatus.doneCount / setupStatus.total) * 100) : 0;
 
   const svcNameMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -122,8 +106,11 @@ export default function DashboardPage() {
   const wallet = walletApi.data;
   const activityLogs = activityApi.data?.logs ?? [];
 
-  const pill = (v: string) => (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "rgba(255,255,255,0.18)", color: "var(--text-on-brand)", border: "1px solid rgba(255,255,255,0.28)" }}>{v}</span>
+  const pill = (v: string, tone: "success" | "warning" | "danger" = "success") => (
+    <span style={{
+      fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
+      background: `var(--${tone}-bg)`, color: `var(--${tone}-text)`, border: `1px solid var(--${tone}-border)`,
+    }}>{v}</span>
   );
 
   return (
@@ -157,75 +144,44 @@ export default function DashboardPage() {
       )}
       <SetupWizardDrawer open={wizardOpen} onClose={() => setWizardOpen(false)} />
 
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <div style={{ background: "var(--primary-gradient)",
-        borderRadius: "var(--radius-xl, 1.25rem)", padding: "26px 28px", color: "var(--text-on-brand)", marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 20 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-              <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>{tenantName}</h1>
-              {isBookable
-                ? pill("Bookable")
-                : <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "rgba(0,0,0,0.18)", color: "var(--text-on-brand)", border: "1px solid rgba(255,255,255,0.25)" }}>Not Bookable</span>}
-              <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "rgba(255,255,255,0.18)", color: "var(--text-on-brand)" }}>
-                Setup {setupPct}%
-              </span>
-            </div>
-            {primaryArea && (
-              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", display: "flex", alignItems: "center", gap: 5, margin: "0 0 6px" }}>
-                <MapPin size={12} /> {safeStr(primaryArea.city)}, {safeStr(primaryArea.state)}
-              </p>
-            )}
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", margin: 0 }}>
-              Manage your services, staff, service areas, pricing, package, credits, and setup readiness.
-            </p>
+      {/* ── Identity strip ───────────────────────────────────────────────── */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+            <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: "var(--text-primary)" }}>{tenantName}</h1>
+            {isBookable ? pill("Bookable", "success") : pill("Not Bookable", "danger")}
+            {pill(`Setup ${setupPct}%`, setupPct === 100 ? "success" : "warning")}
           </div>
-          <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={13} />} onClick={refreshAll}
-            style={{ background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.3)", color: "var(--text-on-brand)" }}>
-            Refresh
-          </Button>
+          {primaryArea && (
+            <p style={{ fontSize: 13, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 5, margin: 0 }}>
+              <MapPin size={12} /> {safeStr(primaryArea.city)}, {safeStr(primaryArea.state)}
+            </p>
+          )}
         </div>
-
-        <div style={{ display: "flex", gap: 32, flexWrap: "wrap", marginTop: 22, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,0.2)" }}>
-          {[
-            { icon: <Wrench size={12} />, label: "Active Services", value: loading ? "—" : String(activeSvc.length) },
-            { icon: <MapPin size={12} />, label: "Service Areas", value: loading ? "—" : `${activeAreas.length} / ${areasList.length || activeAreas.length}` },
-            { icon: <Users2 size={12} />, label: "Technicians", value: loading ? "—" : `${activeStaff.length} / ${staffList.length || activeStaff.length}` },
-            { icon: <CreditCard size={12} />, label: "Usage Credits", value: walletApi.loading ? "—" : String(safeNum(wallet?.balance)) },
-            { icon: <Shield size={12} />, label: "Security Deposit", value: depositApi.loading ? "—" : `₹${safeNum(deposit?.paid_amount ?? deposit?.required_amount)}` },
-          ].map((m) => (
-            <div key={m.label} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: 5 }}>{m.icon}{m.label}</span>
-              <span style={{ fontSize: 18, fontWeight: 700 }}>{m.value}</span>
-            </div>
-          ))}
-        </div>
+        <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={13} />} onClick={refreshAll}>
+          Refresh
+        </Button>
       </div>
 
-      {/* ── KPI cards ────────────────────────────────────────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 24 }}>
-        {[
-          { icon: <ClipboardCheck size={20} />, label: "Setup Progress", value: `${setupPct}%`, sub: setupPct === 100 ? "Complete" : "In Progress", tone: setupPct === 100 ? "success" as const : "warning" as const },
-          { icon: <Wrench size={20} />, label: "Active Services", value: String(activeSvc.length), sub: "Configured", tone: activeSvc.length > 0 ? "success" as const : "default" as const },
-          { icon: <Users2 size={20} />, label: "Team", value: `${activeStaff.length} / ${staffList.length || activeStaff.length}`, sub: "Active", tone: activeStaff.length > 0 ? "success" as const : "default" as const },
-          { icon: <MapPin size={20} />, label: "Coverage", value: `${activeAreas.length} / ${areasList.length || activeAreas.length}`, sub: "Configured", tone: activeAreas.length > 0 ? "success" as const : "default" as const },
-        ].map((k) => (
-          <Card key={k.label}>
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 44, height: 44, borderRadius: "var(--radius-lg)", background: "var(--accent-muted)", color: "var(--brand)",
-                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{k.icon}</div>
-              <div>
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 3px" }}>{k.label}</p>
-                {/* FINAL-L5-03: was a <p>, but Skeleton renders a <div> -- a
-                    <div> inside a <p> is invalid HTML and caused a real
-                    SSR/client hydration mismatch (React had to discard and
-                    re-render this whole subtree on every load). */}
-                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 3px" }}>{loading ? <Skeleton width={50} height={22} /> : k.value}</div>
-                <Badge variant={k.tone} size="sm">{k.sub}</Badge>
-              </div>
-            </div>
-          </Card>
-        ))}
+      {/* ── KPI cards — one consolidated row, each metric shown exactly once ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 24 }}>
+        <StatCard icon={ClipboardCheck} label="Setup Progress" tone={setupPct === 100 ? "success" : "warning"}
+          value={loading ? <Skeleton width={40} height={22} /> : `${setupPct}%`}
+          change={{ value: setupPct === 100 ? "Complete" : "In progress", direction: setupPct === 100 ? "up" : "flat" }} />
+        <StatCard icon={Wrench} label="Active Services" tone="brand"
+          value={loading ? <Skeleton width={30} height={22} /> : String(activeSvc.length)}
+          change={{ value: "Configured", direction: "flat" }} />
+        <StatCard icon={Users2} label="Team" tone="brand"
+          value={loading ? <Skeleton width={40} height={22} /> : `${activeStaff.length} / ${staffList.length || activeStaff.length}`}
+          change={{ value: "Active", direction: "flat" }} />
+        <StatCard icon={MapPin} label="Coverage" tone="brand"
+          value={loading ? <Skeleton width={40} height={22} /> : `${activeAreas.length} / ${areasList.length || activeAreas.length}`}
+          change={{ value: "Service areas", direction: "flat" }} />
+        <StatCard icon={CreditCard} label="Usage Credits" tone="info"
+          value={walletApi.loading ? <Skeleton width={30} height={22} /> : String(safeNum(wallet?.balance))}
+          change={wallet ? { value: `${safeNum(wallet.lifetime_consumed)} consumed`, direction: "flat" } : undefined} />
+        <StatCard icon={Shield} label="Security Deposit" tone="info"
+          value={depositApi.loading ? <Skeleton width={40} height={22} /> : `₹${safeNum(deposit?.paid_amount ?? deposit?.required_amount)}`} />
       </div>
 
       {/* ── Main grid ────────────────────────────────────────────────────── */}
@@ -233,26 +189,21 @@ export default function DashboardPage() {
         <style>{`@media (max-width: 1024px) { .dash-grid { grid-template-columns: 1fr !important; } }`}</style>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {/* Setup Readiness */}
+          {/* Setup Readiness -- summary only; the full step-by-step
+              checklist lives in one place, the SetupWizardDrawer (opened
+              from here or from the banner above), instead of being
+              re-rendered a second time on this page. */}
           <Card>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-              <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                <ClipboardCheck size={16} color="var(--brand)" /> Setup Readiness
-              </h3>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", background: "var(--surface-sunken)", padding: "3px 10px", borderRadius: 999 }}>
-                {doneCount} / {checklist.length} complete
-              </span>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "10px 20px" }}>
-              {loading ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} height={18} />) : checklist.map((c) => (
-                <a key={c.key} href={c.done ? undefined : c.route} style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none",
-                  cursor: c.done ? "default" : "pointer" }}>
-                  {c.done
-                    ? <CheckCircle2 size={16} color="var(--success)" style={{ flexShrink: 0 }} />
-                    : <XCircle size={16} color="var(--danger)" style={{ flexShrink: 0 }} />}
-                  <span style={{ fontSize: 13, color: c.done ? "var(--text-primary)" : "var(--text-secondary)" }}>{c.label}</span>
-                </a>
-              ))}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+              <div>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px", display: "flex", alignItems: "center", gap: 8 }}>
+                  <ClipboardCheck size={16} color="var(--brand)" /> Setup Readiness
+                </h3>
+                <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
+                  {loading ? <Skeleton width={140} height={16} /> : `${doneCount} of ${setupStatus.total} steps complete`}
+                </p>
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => setWizardOpen(true)}>Review Checklist</Button>
             </div>
           </Card>
 
@@ -341,33 +292,24 @@ export default function DashboardPage() {
             <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 14px", display: "flex", alignItems: "center", gap: 8 }}>
               <Users2 size={16} color="var(--brand)" /> People & Coverage
             </h3>
+            {/* Staff count already shown in the "Team" KPI card above, and
+                primary area location already shown in the identity strip --
+                this card links out rather than re-displaying either. */}
             <div style={{ marginBottom: 14 }}>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><Users2 size={12} /> Staff / Technicians</p>
-              {staffApi.loading ? <Skeleton height={30} /> : staffList.length === 0 ? (
+              {staffApi.loading ? <Skeleton height={20} /> : staffList.length === 0 ? (
                 <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>No technicians added yet.</p>
               ) : (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{safeStr(staffList[0].full_name)}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "capitalize" }}>{safeStr(staffList[0].designation, staffList[0].member_type)}</p>
-                  </div>
-                  <Badge variant={staffList[0].status === "active" ? "success" : "default"} size="sm">{staffList[0].status === "active" ? "Active" : "Inactive"}</Badge>
-                </div>
+                <p style={{ fontSize: 13, color: "var(--text-primary)", margin: 0 }}>{activeStaff.length} active of {staffList.length} total</p>
               )}
               <a href="/provider/staff" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2, marginTop: 6 }}>View All Staff <ChevronRight size={12} /></a>
             </div>
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><MapPin size={12} /> Service Areas</p>
-              {areasApi.loading ? <Skeleton height={30} /> : areasList.length === 0 ? (
+              {areasApi.loading ? <Skeleton height={20} /> : areasList.length === 0 ? (
                 <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>No service areas added yet.</p>
               ) : (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{safeStr(primaryArea?.city)}, {safeStr(primaryArea?.state)}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{safeStr(primaryArea?.zipcode)}</p>
-                  </div>
-                  <Badge variant={primaryArea?.is_active ? "success" : "default"} size="sm">{primaryArea?.is_active ? "Active" : "Inactive"}</Badge>
-                </div>
+                <p style={{ fontSize: 13, color: "var(--text-primary)", margin: 0 }}>{activeAreas.length} active of {areasList.length} total</p>
               )}
               <a href="/provider/service-areas" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2, marginTop: 6 }}>View All Areas <ChevronRight size={12} /></a>
             </div>
@@ -405,7 +347,6 @@ export default function DashboardPage() {
         <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 14px" }}>Quick Actions</h3>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
           {[
-            { icon: <ClipboardCheck size={18} />, title: "Complete Setup", desc: "Finish setup checklist to go live", href: "/provider/status" },
             { icon: <Building2 size={18} />, title: "Business Profile", desc: "Update your business information", href: "/profile" },
             { icon: <Plus size={18} />, title: "Add Service Area", desc: "Add coverage locations", href: "/provider/service-areas" },
             { icon: <FileEdit size={18} />, title: "Manage Services", desc: "Enable and configure services", href: "/tenant/setup/services" },
