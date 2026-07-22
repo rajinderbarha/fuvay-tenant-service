@@ -14,6 +14,8 @@ import {
   type TenantStatusAuditLogEntry,
 } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
+import { useSetupStatus } from "../../../hooks/useSetupStatus";
+import { SetupWizardDrawer } from "../../../components/layout/TenantLayout";
 import { PageHeader, Card, Button } from "@serviceos/design-system";
 import { Badge, Skeleton } from "../../../components/shared/ui";
 
@@ -55,6 +57,11 @@ const CHECKLIST_DEFS: { key: string; label: string; blockerCode: string; route: 
 
 export default function DashboardPage() {
   const [tenantName, setTenantName] = useState("Your Business");
+  const [wizardOpen, setWizardOpen] = useState(false);
+  // Shared hook (also used by TenantLayout's nav filtering and the Profile
+  // page's "Business Setup" section) -- first-time banner only, so it must
+  // not render once every real step is done.
+  const setupStatus = useSetupStatus();
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -116,7 +123,7 @@ export default function DashboardPage() {
   const activityLogs = activityApi.data?.logs ?? [];
 
   const pill = (v: string) => (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "rgba(255,255,255,0.12)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }}>{v}</span>
+    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "rgba(255,255,255,0.18)", color: "var(--text-on-brand)", border: "1px solid rgba(255,255,255,0.28)" }}>{v}</span>
   );
 
   return (
@@ -124,36 +131,62 @@ export default function DashboardPage() {
       <div style={{ marginBottom: 20 }}>
         <PageHeader title="Dashboard" description={`${tenantName} — services, staff, service areas, pricing, package, credits, and setup readiness.`} />
       </div>
+
+      {/* ── First-time setup banner ─────────────────────────────────────────
+          Shown only while setup is incomplete (via the shared hook's 10-step
+          isComplete). Once complete, this never renders -- setup access then
+          lives permanently on the Profile page's "Business Setup" section. */}
+      {!setupStatus.loading && !setupStatus.error && !setupStatus.isComplete && (
+        <Card style={{ marginBottom: 20, background: "var(--warning-bg)", border: "1px solid var(--warning-border)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ width: 44, height: 44, borderRadius: "var(--radius-lg)", background: "var(--warning)", color: "white",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <ClipboardCheck size={20} />
+              </div>
+              <div>
+                <p style={{ fontSize: 14, fontWeight: 700, color: "var(--warning-text)", margin: "0 0 3px" }}>Finish setting up your business</p>
+                <p style={{ fontSize: 13, color: "var(--warning-text)", margin: 0, opacity: 0.85 }}>
+                  {setupStatus.doneCount} of {setupStatus.total} setup steps complete — finish the rest to go live and accept bookings.
+                </p>
+              </div>
+            </div>
+            <Button variant="primary" size="sm" onClick={() => setWizardOpen(true)}>Continue Setup</Button>
+          </div>
+        </Card>
+      )}
+      <SetupWizardDrawer open={wizardOpen} onClose={() => setWizardOpen(false)} />
+
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <div style={{ background: "linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f172a 100%)",
-        borderRadius: 20, padding: "26px 28px", color: "#fff", marginBottom: 24 }}>
+      <div style={{ background: "var(--primary-gradient)",
+        borderRadius: "var(--radius-xl, 1.25rem)", padding: "26px 28px", color: "var(--text-on-brand)", marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 20 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
               <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>{tenantName}</h1>
               {isBookable
                 ? pill("Bookable")
-                : <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "rgba(232,97,90,0.2)", color: "#FCA5A5", border: "1px solid rgba(252,165,165,0.3)" }}>Not Bookable</span>}
-              <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: setupPct === 100 ? "rgba(112,207,160,0.2)" : "rgba(255,180,92,0.2)", color: setupPct === 100 ? "#86EFAC" : "#FDBA74" }}>
+                : <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "rgba(0,0,0,0.18)", color: "var(--text-on-brand)", border: "1px solid rgba(255,255,255,0.25)" }}>Not Bookable</span>}
+              <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "rgba(255,255,255,0.18)", color: "var(--text-on-brand)" }}>
                 Setup {setupPct}%
               </span>
             </div>
             {primaryArea && (
-              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 5, margin: "0 0 6px" }}>
+              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", display: "flex", alignItems: "center", gap: 5, margin: "0 0 6px" }}>
                 <MapPin size={12} /> {safeStr(primaryArea.city)}, {safeStr(primaryArea.state)}
               </p>
             )}
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", margin: 0 }}>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", margin: 0 }}>
               Manage your services, staff, service areas, pricing, package, credits, and setup readiness.
             </p>
           </div>
           <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={13} />} onClick={refreshAll}
-            style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.18)", color: "#fff" }}>
+            style={{ background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.3)", color: "var(--text-on-brand)" }}>
             Refresh
           </Button>
         </div>
 
-        <div style={{ display: "flex", gap: 32, flexWrap: "wrap", marginTop: 22, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+        <div style={{ display: "flex", gap: 32, flexWrap: "wrap", marginTop: 22, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,0.2)" }}>
           {[
             { icon: <Wrench size={12} />, label: "Active Services", value: loading ? "—" : String(activeSvc.length) },
             { icon: <MapPin size={12} />, label: "Service Areas", value: loading ? "—" : `${activeAreas.length} / ${areasList.length || activeAreas.length}` },
@@ -162,7 +195,7 @@ export default function DashboardPage() {
             { icon: <Shield size={12} />, label: "Security Deposit", value: depositApi.loading ? "—" : `₹${safeNum(deposit?.paid_amount ?? deposit?.required_amount)}` },
           ].map((m) => (
             <div key={m.label} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: 5 }}>{m.icon}{m.label}</span>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: 5 }}>{m.icon}{m.label}</span>
               <span style={{ fontSize: 18, fontWeight: 700 }}>{m.value}</span>
             </div>
           ))}
@@ -179,7 +212,7 @@ export default function DashboardPage() {
         ].map((k) => (
           <Card key={k.label}>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 14, background: "var(--accent-muted)", color: "var(--brand)",
+              <div style={{ width: 44, height: 44, borderRadius: "var(--radius-lg)", background: "var(--accent-muted)", color: "var(--brand)",
                 display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{k.icon}</div>
               <div>
                 <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 3px" }}>{k.label}</p>
@@ -382,7 +415,7 @@ export default function DashboardPage() {
             <a key={a.title} href={a.href} style={{ textDecoration: "none" }}>
               <Card onClick={() => { window.location.href = a.href; }} style={{ cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--accent-muted)", color: "var(--brand)",
+                  <div style={{ width: 36, height: 36, borderRadius: "var(--radius-md)", background: "var(--accent-muted)", color: "var(--brand)",
                     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{a.icon}</div>
                   <div>
                     <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 3px" }}>{a.title}</p>
