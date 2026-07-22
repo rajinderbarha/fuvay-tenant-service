@@ -111,7 +111,6 @@ const NAV_GROUPS: NavGroup[] = [
     // matching_engine.assert_home_services_vertical / get_home_services_category_id).
     label: "Home Services",
     items: [
-      { id: "hs-overview", href: "/admin/home-services/overview", label: "Overview", icon: <LayoutGrid size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "hs-service-catalog", href: "/admin/home-services/service-catalog", label: "Service Catalog", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "hs-pricing-rules", href: "/admin/home-services/pricing-rules", label: "Pricing Rules", icon: <Sliders size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "hs-price-experience", href: "/admin/home-services/price-experience", label: "Customer Price Experience", icon: <FlaskConical size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
@@ -120,6 +119,20 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "hs-service-areas", href: "/admin/home-services/service-areas", label: "Service Areas / Zones", icon: <MapPin size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/>, requiredPermission: "finance.completed_job_deduction_rules.read" },
       { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      // Migrated in from the dynamic per-vertical Catalog sub-menu
+      // (VerticalCatalogSection) — home_services is now excluded from that
+      // loop below to stop the sidebar showing two separate "Home Services"
+      // sections. These are the vertical's real, backend-enabled catalog
+      // modules (from GET /v1/admin/catalog/navigation/effective-menu);
+      // "categories" is intentionally NOT migrated here since it already
+      // exists as the Catalog group's own "Categories" item (same /admin/categories route).
+      { id: "hs-service-groups", href: "/admin/service-groups", label: "Service Groups", icon: <Layers size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-master-services", href: "/admin/master-services", label: "Master Services", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-types-brands", href: "/admin/types-brands", label: "Types & Brands", icon: <Tag size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-service-options", href: "/admin/service-options", label: "Service Options", icon: <Sliders size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-issue-types", href: "/admin/issue-types", label: "Issue Types", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-checklist-templates", href: "/admin/checklists", label: "Checklist Templates", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "hs-service-setup", href: "/admin/service-setup", label: "Service Setup", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       // Phase 2A Slice 2 nav reconciliation: page existed and was fully
       // built (adminBookabilityApi-backed) but had zero sidebar entry —
       // confirmed orphaned in the Phase 1 frontend audit and still true.
@@ -387,8 +400,8 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
               .filter(item => isNavItemVisible(item.id, effectiveMenu))
               .filter(item => isNavItemPermitted(item, effectivePermissions, effectiveRole));
             const hasVerticalsSubmenu = group.label === "Catalog" && effectiveMenu &&
-              effectiveMenu.verticals.some(v => v.is_enabled) &&
-              effectiveRole === "super_admin"; // verticals management is SUPER_ADMIN_ONLY, matching "categories"/"verticals" items above
+              effectiveMenu.verticals.some(v => v.is_enabled && v.vertical_key !== "home_services") &&
+              effectiveRole === "super_admin"; // verticals management is SUPER_ADMIN_ONLY, matching "categories"/"verticals" items above; home_services excluded — its modules live in the static "Home Services" group instead
             if (visibleItems.length === 0 && !hasVerticalsSubmenu) return null;
             return (
             <div key={group.label} style={{ marginBottom: 8 }}>
@@ -405,9 +418,15 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
               {visibleItems.map(item => (
                   <SidebarItem key={item.id} item={item} active={activeNav === item.id} collapsed={collapsed}/>
                 ))}
-              {/* After the Catalog group, inject per-vertical sub-menus */}
+              {/* After the Catalog group, inject per-vertical sub-menus.
+                  home_services is excluded here: its real catalog modules
+                  (Service Groups, Master Services, Types & Brands, Service
+                  Options, Issue Types, Checklist Templates, Service Setup)
+                  are migrated into the static "Home Services" nav group
+                  above instead, so the sidebar doesn't show two separate
+                  "Home Services" sections for the same vertical. */}
               {hasVerticalsSubmenu && effectiveMenu!.verticals
-                .filter(v => v.is_enabled)
+                .filter(v => v.is_enabled && v.vertical_key !== "home_services")
                 .map(v => (
                   <VerticalCatalogSection
                     key={v.vertical_key}
