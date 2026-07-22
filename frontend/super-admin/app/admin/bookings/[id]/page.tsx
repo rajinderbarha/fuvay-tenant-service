@@ -276,7 +276,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               <InfoRow label="Job Status"  value={b.job_status as string || "—"} />
               <InfoRow label="Job ID"      value={
                 b.job_id ? (
-                  <a href={`/admin/jobs/${b.job_id}`} style={{ fontSize: 11, color: "var(--text-link)", fontFamily: "monospace" }}>
+                  <a href={`/admin/home-services/service-jobs/${b.job_id}`} style={{ fontSize: 11, color: "var(--text-link)", fontFamily: "monospace" }}>
                     {(b.job_id as string).slice(0, 8)}… →
                   </a>
                 ) : "—"

@@ -604,7 +604,7 @@ export default function PlatformCommandCenterPage() {
                 { label: "Tenant Approvals", href: "/admin/tenants?status=pending_review", count: l?.pending_review, requires: "tenant:read" },
                 { label: "Live Operations", href: "/admin/operations", requires: "admin:jobs:read" },
                 { label: "Finance Summary", href: "/admin/finance", requires: "finance:hub:read" },
-                { label: "Completed Job Deductions", href: "/admin/finance/commissions", requires: "finance:hub:read" },
+                { label: "Completed Job Deductions", href: "/admin/home-services/completed-job-deduction", requires: "finance:hub:read" },
                 { label: "Customer Service Credits", href: "/admin/finance/customer-credits", requires: "finance:hub:read" },
                 { label: "Complaints & Disputes", href: "/admin/complaints", requires: SUPER_ADMIN_ONLY },
                 { label: "Security Center", href: "/admin/security", requires: "security:read" },

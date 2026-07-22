@@ -289,15 +289,15 @@ export default function PlatformAnalyticsDashboard() {
       {/* KPI Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
         <KpiCard label="Active Tenants" value={fmt(s.active_tenants)} href="/admin/tenants?status=active" loading={sumLoading} />
-        <KpiCard label="Total Jobs" value={fmt(s.total_jobs)} href="/admin/jobs" loading={sumLoading} />
+        <KpiCard label="Total Jobs" value={fmt(s.total_jobs)} href="/admin/home-services/service-jobs" loading={sumLoading} />
         <KpiCard label="Platform Revenue" value={fmtMoney(s.platform_revenue)} helpText="Top-ups + packages" loading={sumLoading} />
-        <KpiCard label="Completed Job Deductions" value={fmtMoney(s.completed_job_deductions)} href="/admin/finance/completed-job-deductions" loading={sumLoading} />
+        <KpiCard label="Completed Job Deductions" value={fmtMoney(s.completed_job_deductions)} href="/admin/home-services/completed-job-deduction" loading={sumLoading} />
         <KpiCard label="Provider Direct Service Value" value={fmtMoney(s.provider_direct_service_value)} helpText="Paid directly to provider" loading={sumLoading} />
         <KpiCard label="Avg Job Rating" value={fmtRating(s.avg_job_rating)} loading={sumLoading} />
         <KpiCard label="Complaint Rate" value={fmtPct(s.complaint_rate)} href="/admin/complaints" loading={sumLoading} />
         <KpiCard label="Pending Approvals" value={fmt(s.pending_approvals)} href="/admin/tenants?status=pending_review" loading={sumLoading} />
         <KpiCard label="New Providers" value={fmt(s.new_providers)} loading={sumLoading} />
-        <KpiCard label="Customer Service Credits Issued" value={fmtMoney(s.customer_service_credits_issued)} href="/admin/finance/customer-service-credits" loading={sumLoading} />
+        <KpiCard label="Customer Service Credits Issued" value={fmtMoney(s.customer_service_credits_issued)} href="/admin/finance/customer-credits" loading={sumLoading} />
         <KpiCard label="Security Deposit Held" value={fmtMoney(s.security_deposit_held)} loading={sumLoading} />
         <KpiCard label="Active Customers" value={fmt(s.active_customers)} loading={sumLoading} />
       </div>
