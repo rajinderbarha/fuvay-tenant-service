@@ -9,8 +9,8 @@
  */
 import React, { useCallback, useState } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { StatCard, Card, Skeleton, Badge, Btn, EmptyState } from "../../../components/shared/ui";
-import { PageShell, PageHeader } from "../../../components/shared/layout";
+import { StatCard, Btn, EmptyState, Badge } from "../../../components/shared/ui";
+import { PageShell, PageHeader, Card, StatusBadge, Skeleton } from "@serviceos/design-system";
 import {
   Building2, Activity, ClipboardCheck, AlertTriangle, ShieldAlert, HeartPulse,
   RefreshCw, Download, FileText, Bell, ListChecks, ScrollText, ShieldCheck,
@@ -137,29 +137,41 @@ export default function PlatformCommandCenterPage() {
 
   return (
     <AdminLayout activeNav="dashboard">
-      <PageShell maxWidth={1600}>
+      <PageShell>
+        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: "-0.75rem" }}>
+          Dashboard / Platform Overview
+        </div>
         <PageHeader
           title="Platform Command Center"
           description="Monitor ServiceOS health, tenants, operations, finance, trust, compliance, and system engines in real time."
-          breadcrumbs={[{ label: "Dashboard" }, { label: "Platform Overview" }]}
-          primaryAction={<Btn variant="ghost" size="sm" icon={<RefreshCw size={14}/>} loading={refreshAction.loading} onClick={handleRefresh}>Refresh</Btn>}
-          secondaryActions={[
-            // FINAL-L5-05O Part 6: dashboard quick action requires its own
-            // mutation permission (dashboard.export), distinct from any
-            // widget read permission -- omitted entirely when denied so it
-            // never flashes or renders as a doomed 403 click target.
-            ...(exportAllowed ? [{ label: "Export Snapshot", icon: <Download size={14}/>, onClick: handleExport }] : []),
-            { label: "Create Report", icon: <FileText size={14}/> },
-            { label: "Open Alerts", icon: <Bell size={14}/>, href: "/admin/dashboard#actions" },
-            { label: "Open Operations Board", icon: <ListChecks size={14}/>, href: "/admin/operations" },
-            { label: "Open Audit Logs", icon: <ScrollText size={14}/>, href: "/admin/audit-logs" },
-          ]}
+          actions={
+            <>
+              <Btn variant="ghost" size="sm" icon={<RefreshCw size={14}/>} loading={refreshAction.loading} onClick={handleRefresh}>Refresh</Btn>
+              {/* FINAL-L5-05O Part 6: dashboard quick action requires its own
+                  mutation permission (dashboard.export), distinct from any
+                  widget read permission -- omitted entirely when denied so it
+                  never flashes or renders as a doomed 403 click target. */}
+              {exportAllowed && (
+                <Btn variant="secondary" size="sm" icon={<Download size={14}/>} loading={exportAction.loading} onClick={handleExport}>Export Snapshot</Btn>
+              )}
+              <Btn variant="secondary" size="sm" icon={<FileText size={14}/>}>Create Report</Btn>
+              <a href="/admin/dashboard#actions" style={{ textDecoration: "none" }}>
+                <Btn variant="ghost" size="sm" icon={<Bell size={14}/>}>Open Alerts</Btn>
+              </a>
+              <a href="/admin/operations" style={{ textDecoration: "none" }}>
+                <Btn variant="ghost" size="sm" icon={<ListChecks size={14}/>}>Open Operations Board</Btn>
+              </a>
+              <a href="/admin/audit-logs" style={{ textDecoration: "none" }}>
+                <Btn variant="ghost" size="sm" icon={<ScrollText size={14}/>}>Open Audit Logs</Btn>
+              </a>
+            </>
+          }
         />
 
         {/* Top row: Executive KPI cards */}
         {loading ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 20 }}>
-            {[...Array(6)].map((_, i) => <Skeleton key={i} height={120} style={{ borderRadius: 14 }}/>)}
+            {[...Array(6)].map((_, i) => <Skeleton key={i} height={120} radius="14px"/>)}
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 20 }}>
@@ -192,9 +204,9 @@ export default function PlatformCommandCenterPage() {
               + denied -> section does not render at all (no empty card
               chrome, no doomed-403 flash). */}
           {perm.loading ? (
-            <Card padding={20}><Skeleton height={90}/></Card>
+            <Card padding="md"><Skeleton height={90}/></Card>
           ) : financeAllowed ? (
-            <Card padding={20}>
+            <Card padding="md">
               <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase",
                 letterSpacing: "0.06em", margin: "0 0 12px" }}>Finance Snapshot</p>
               {finance.error ? (
@@ -209,7 +221,7 @@ export default function PlatformCommandCenterPage() {
               ) : null}
             </Card>
           ) : null}
-          <Card padding={20}>
+          <Card padding="md">
             <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase",
               letterSpacing: "0.06em", margin: "0 0 12px" }}>Tenant Lifecycle</p>
             {lifecycle.error ? (
@@ -224,9 +236,9 @@ export default function PlatformCommandCenterPage() {
             ) : null}
           </Card>
           {perm.loading ? (
-            <Card padding={20}><Skeleton height={90}/></Card>
+            <Card padding="md"><Skeleton height={90}/></Card>
           ) : opsAllowed ? (
-            <Card padding={20}>
+            <Card padding="md">
               <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase",
                 letterSpacing: "0.06em", margin: "0 0 12px" }}>Operations Snapshot</p>
               {ops.error ? (
@@ -241,7 +253,7 @@ export default function PlatformCommandCenterPage() {
               ) : null}
             </Card>
           ) : null}
-          <Card padding={20}>
+          <Card padding="md">
             <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase",
               letterSpacing: "0.06em", margin: "0 0 12px" }}>Trust & Quality</p>
             {trust.error ? (
@@ -259,7 +271,7 @@ export default function PlatformCommandCenterPage() {
 
         {/* Home Services Summary — always its own dedicated section, never
             merged into the generic tenant/operations cards above. */}
-        <Card padding={20}>
+        <Card padding="md">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Wind size={16} style={{ color: "var(--accent)" }}/>
@@ -312,7 +324,7 @@ export default function PlatformCommandCenterPage() {
           {/* Left column */}
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             {/* Trends */}
-            <Card padding={20}>
+            <Card padding="md">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Platform Revenue Trend</p>
                 <div style={{ display: "flex", gap: 4 }}>
@@ -348,7 +360,7 @@ export default function PlatformCommandCenterPage() {
               )}
             </Card>
 
-            <Card padding={20}>
+            <Card padding="md">
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 16px" }}>
                 Jobs / Bookings / Leads Trend
               </p>
@@ -370,9 +382,9 @@ export default function PlatformCommandCenterPage() {
 
             {/* Live Operations Board */}
             {perm.loading ? (
-              <Card padding={0}><div style={{ padding: 16 }}><Skeleton height={100}/></div></Card>
+              <Card padding="none"><div style={{ padding: 16 }}><Skeleton height={100}/></div></Card>
             ) : opsAllowed ? (
-              <Card padding={0}>
+              <Card padding="none">
                 <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
                   <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Live Operations Board</p>
                 </div>
@@ -396,7 +408,7 @@ export default function PlatformCommandCenterPage() {
                           <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 12 }}>{it.item}</td>
                           <td style={{ padding: "10px 16px", fontSize: 12 }}>{it.vertical ?? "—"}</td>
                           <td style={{ padding: "10px 16px", fontSize: 12 }}>{it.tenant ?? "—"}</td>
-                          <td style={{ padding: "10px 16px" }}><Badge variant="info" size="sm">{it.status.replace(/_/g," ")}</Badge></td>
+                          <td style={{ padding: "10px 16px" }}><StatusBadge status={it.status} size="sm"/></td>
                           <td style={{ padding: "10px 16px" }}>{it.sla_breach ? <Badge variant="danger" size="sm">Breach</Badge> : <Badge variant="success" size="sm">OK</Badge>}</td>
                           <td style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tertiary)" }}>
                             {it.updated_at ? new Date(it.updated_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
@@ -415,9 +427,9 @@ export default function PlatformCommandCenterPage() {
                 is the mutation itself (resolve/snooze); a read-only variant
                 is not a distinct capability in this system today. */}
             {perm.loading ? (
-              <Card padding={0}><div style={{ padding: 16 }}><Skeleton height={100}/></div></Card>
+              <Card padding="none"><div style={{ padding: 16 }}><Skeleton height={100}/></div></Card>
             ) : actionsAllowed ? (
-              <Card padding={0}>
+              <Card padding="none">
                 <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }} id="actions">
                   <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Pending Admin Action Queue</p>
                 </div>
@@ -444,7 +456,7 @@ export default function PlatformCommandCenterPage() {
                           </td>
                           <td style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-primary)" }}>{a.action}</td>
                           <td style={{ padding: "10px 16px", fontSize: 12 }}>{a.vertical ?? "—"}</td>
-                          <td style={{ padding: "10px 16px" }}><Badge variant="info" size="sm">{a.status}</Badge></td>
+                          <td style={{ padding: "10px 16px" }}><StatusBadge status={a.status} size="sm"/></td>
                           <td style={{ padding: "10px 16px" }}>
                             <div style={{ display: "flex", gap: 6 }}>
                               <Btn size="xs" variant="secondary" loading={resolveAction.loading} onClick={() => handleResolve(a.action_id)}>Resolve</Btn>
@@ -464,9 +476,9 @@ export default function PlatformCommandCenterPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             {/* Engine Health */}
             {perm.loading ? (
-              <Card padding={20}><Skeleton height={120}/></Card>
+              <Card padding="md"><Skeleton height={120}/></Card>
             ) : enginesAllowed ? (
-              <Card padding={20}>
+              <Card padding="md">
                 <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>System / Engine Health</p>
                 {engines.loading ? <Skeleton height={120}/> : (
                   <>
@@ -483,7 +495,7 @@ export default function PlatformCommandCenterPage() {
             ) : null}
 
             {/* At-Risk Tenants */}
-            <Card padding={20}>
+            <Card padding="md">
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>At-Risk Tenants</p>
               {atRisk.loading ? <Skeleton height={100}/> : (atRisk.data?.items ?? []).length === 0 ? (
                 <EmptyState icon={<ShieldCheck/>} title="No at-risk tenants."
@@ -503,9 +515,9 @@ export default function PlatformCommandCenterPage() {
 
             {/* Compliance & Security */}
             {perm.loading ? (
-              <Card padding={20}><Skeleton height={100}/></Card>
+              <Card padding="md"><Skeleton height={100}/></Card>
             ) : securityAllowed ? (
-              <Card padding={20}>
+              <Card padding="md">
                 <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Compliance & Security</p>
                 {compliance.loading ? <Skeleton height={100}/> : compliance.data && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -525,9 +537,9 @@ export default function PlatformCommandCenterPage() {
 
             {/* Recent Activity */}
             {perm.loading ? (
-              <Card padding={20}><Skeleton height={100}/></Card>
+              <Card padding="md"><Skeleton height={100}/></Card>
             ) : activityAllowed ? (
-              <Card padding={20}>
+              <Card padding="md">
                 <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Recent Activity</p>
                 {activity.loading ? <Skeleton height={100}/> : (activity.data?.items ?? []).length === 0 ? (
                   <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>No activity yet.</p>
@@ -546,7 +558,7 @@ export default function PlatformCommandCenterPage() {
 
         {/* Bottom: Category Performance + Quick Links */}
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
-          <Card padding={0}>
+          <Card padding="none">
             <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Category Performance</p>
             </div>
@@ -580,7 +592,7 @@ export default function PlatformCommandCenterPage() {
             )}
           </Card>
 
-          <Card padding={20}>
+          <Card padding="md">
             <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 14px" }}>Quick Links</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {/* FINAL-L5-05O Part 9: each link appears only if perm.has()
