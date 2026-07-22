@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useCallback } from "react";
 import { TenantLayout } from "../../../../../components/layout/TenantLayout";
+import { Modal as DsModal, Button as DsButton, Skeleton as DsSkeleton } from "@serviceos/design-system";
 import {
   providerAvailabilityApi,
   providerStatusApi,
@@ -208,39 +209,22 @@ function PresetConfirmModal({ preset, onConfirm, onCancel, loading }: {
   preset: Preset; onConfirm: () => void; onCancel: () => void; loading: boolean;
 }) {
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:1100,
-      display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div style={{ background:"var(--surface)", borderRadius:14, maxWidth:420, width:"100%",
-        padding:"28px 24px", border:"1px solid var(--border)", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
-        <div style={{ fontSize:32, marginBottom:12, textAlign:"center" }}>{preset.icon}</div>
-        <h3 style={{ fontSize:16, fontWeight:700, color:"var(--text-primary)", margin:"0 0 8px", textAlign:"center" }}>
-          Apply {preset.title}?
-        </h3>
-        <p style={{ fontSize:13, color:"var(--text-secondary)", margin:"0 0 6px", textAlign:"center" }}>
-          This will update your weekly schedule.
-        </p>
-        <div style={{ padding:"10px 14px", background:"var(--surface-sunken)", border:"1px solid var(--border)",
-          borderRadius:9, fontSize:12, color:"var(--text-secondary)", textAlign:"center", marginBottom:20, fontFamily:"monospace" }}>
-          {preset.preview}
-        </div>
-        <div style={{ display:"flex", gap:10, justifyContent:"center" }}>
-          <button onClick={onCancel}
-            style={{ flex:1, padding:"10px 16px", fontSize:13, borderRadius:9, border:"1px solid var(--border)",
-              background:"var(--surface-sunken)", color:"var(--text-primary)", cursor:"pointer", fontFamily:"inherit" }}>
-            Cancel
-          </button>
-          <button onClick={onConfirm} disabled={loading}
-            style={{ flex:1, padding:"10px 16px", fontSize:13, fontWeight:600, borderRadius:9,
-              border:"none", background:"var(--brand)", color:"white",
-              cursor: loading ? "not-allowed" : "pointer", fontFamily:"inherit",
-              opacity: loading ? 0.7 : 1, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-            {loading
-              ? <><RefreshCw size={12} style={{ animation:"spin 1s linear infinite" }}/> Applying…</>
-              : "Apply Preset"}
-          </button>
-        </div>
+    <DsModal open onClose={onCancel} title={`Apply ${preset.title}?`}
+      footer={<>
+        <DsButton variant="secondary" size="sm" onClick={onCancel}>Cancel</DsButton>
+        <DsButton variant="primary" size="sm" disabled={loading} loading={loading} onClick={onConfirm}>
+          Apply Preset
+        </DsButton>
+      </>}>
+      <div style={{ fontSize:32, marginBottom:12, textAlign:"center" }}>{preset.icon}</div>
+      <p style={{ fontSize:13, color:"var(--text-secondary)", margin:"0 0 6px", textAlign:"center" }}>
+        This will update your weekly schedule.
+      </p>
+      <div style={{ padding:"10px 14px", background:"var(--surface-sunken)", border:"1px solid var(--border)",
+        borderRadius:9, fontSize:12, color:"var(--text-secondary)", textAlign:"center", fontFamily:"monospace" }}>
+        {preset.preview}
       </div>
-    </div>
+    </DsModal>
   );
 }
 
@@ -995,40 +979,26 @@ function DeleteConfirm({ rule, onConfirm, onCancel, loading }: {
   rule: ProviderAvailabilityRule; onConfirm: () => void; onCancel: () => void; loading: boolean;
 }) {
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:1100,
-      display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div style={{ background:"var(--surface)", borderRadius:14, maxWidth:420, width:"100%",
-        padding:"24px", border:"1px solid var(--border)", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
-        <div style={{ display:"flex", gap:12, marginBottom:14 }}>
-          <AlertTriangle size={20} style={{ color:"var(--warning-text)", flexShrink:0 }}/>
-          <div>
-            <h3 style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:"0 0 6px" }}>
-              Remove Working Hours
-            </h3>
-            <p style={{ fontSize:13, color:"var(--text-secondary)", margin:"0 0 10px" }}>
-              {DAY_NAMES[rule.day_of_week]} {rule.start_time}–{rule.end_time}
-            </p>
-            <div style={{ padding:"10px 14px", background:"var(--warning-bg)", border:"1px solid var(--warning-border)",
-              borderRadius:9, fontSize:12, color:"var(--warning-text)" }}>
-              Removing this rule may make your business unavailable for bookings.
-            </div>
+    <DsModal open onClose={onCancel} title="Remove Working Hours"
+      footer={<>
+        <DsButton variant="secondary" size="sm" onClick={onCancel}>Cancel</DsButton>
+        <DsButton variant="destructive" size="sm" disabled={loading} loading={loading} onClick={onConfirm}>
+          Remove Rule
+        </DsButton>
+      </>}>
+      <div style={{ display:"flex", gap:12 }}>
+        <AlertTriangle size={20} style={{ color:"var(--warning-text)", flexShrink:0 }}/>
+        <div>
+          <p style={{ fontSize:13, color:"var(--text-secondary)", margin:"0 0 10px" }}>
+            {DAY_NAMES[rule.day_of_week]} {rule.start_time}–{rule.end_time}
+          </p>
+          <div style={{ padding:"10px 14px", background:"var(--warning-bg)", border:"1px solid var(--warning-border)",
+            borderRadius:9, fontSize:12, color:"var(--warning-text)" }}>
+            Removing this rule may make your business unavailable for bookings.
           </div>
         </div>
-        <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-          <button onClick={onCancel}
-            style={{ padding:"9px 16px", fontSize:13, borderRadius:9, border:"1px solid var(--border)",
-              background:"var(--surface-sunken)", color:"var(--text-primary)", cursor:"pointer", fontFamily:"inherit" }}>
-            Cancel
-          </button>
-          <button onClick={onConfirm} disabled={loading}
-            style={{ padding:"9px 16px", fontSize:13, fontWeight:600, borderRadius:9,
-              border:"none", background:"#dc2626", color:"white", cursor: loading ? "not-allowed" : "pointer",
-              fontFamily:"inherit", opacity: loading ? 0.7 : 1 }}>
-            {loading ? "Removing…" : "Remove Rule"}
-          </button>
-        </div>
       </div>
-    </div>
+    </DsModal>
   );
 }
 
@@ -1134,61 +1104,38 @@ function AddHolidayModal({ onClose, onSave }: {
   };
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:1100,
-      display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div style={{ background:"var(--surface)", borderRadius:14, maxWidth:420, width:"100%",
-        padding:"24px", border:"1px solid var(--border)", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
-          <h3 style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:0 }}>Add Holiday / Exception</h3>
-          <button onClick={onClose}
-            style={{ width:28, height:28, borderRadius:7, border:"1px solid var(--border)",
-              background:"var(--surface-sunken)", cursor:"pointer",
-              display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <X size={13}/>
-          </button>
+    <DsModal open onClose={onClose} title="Add Holiday / Exception"
+      footer={<>
+        <DsButton variant="secondary" size="sm" onClick={onClose}>Cancel</DsButton>
+        <DsButton variant="primary" size="sm" onClick={save}>Add Holiday</DsButton>
+      </>}>
+      {err && (
+        <div style={{ padding:"8px 12px", background:"var(--danger-bg)", border:"1px solid var(--danger-border)",
+          borderRadius:8, fontSize:12, color:"var(--danger-text)", marginBottom:12 }}>
+          {err}
         </div>
+      )}
 
-        {err && (
-          <div style={{ padding:"8px 12px", background:"var(--danger-bg)", border:"1px solid var(--danger-border)",
-            borderRadius:8, fontSize:12, color:"var(--danger-text)", marginBottom:12 }}>
-            {err}
-          </div>
-        )}
-
-        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-          <div>
-            <label style={{ fontSize:11, fontWeight:700, color:"var(--text-secondary)", display:"block", marginBottom:5, textTransform:"uppercase", letterSpacing:"0.06em" }}>Date</label>
-            <input type="date" value={date} onChange={e => { setDate(e.target.value); setErr(null); }} style={inputStyle}/>
-          </div>
-          <div>
-            <label style={{ fontSize:11, fontWeight:700, color:"var(--text-secondary)", display:"block", marginBottom:5, textTransform:"uppercase", letterSpacing:"0.06em" }}>Reason</label>
-            <input value={reason} onChange={e => { setReason(e.target.value); setErr(null); }}
-              placeholder="e.g. Diwali Holiday" style={inputStyle}/>
-          </div>
-          <div>
-            <label style={{ fontSize:11, fontWeight:700, color:"var(--text-secondary)", display:"block", marginBottom:5, textTransform:"uppercase", letterSpacing:"0.06em" }}>Type</label>
-            <select value={type} onChange={e => setType(e.target.value)} style={inputStyle}>
-              <option value="closed">Full Day Closed</option>
-              <option value="custom">Custom Hours</option>
-              <option value="emergency_open">Emergency Open</option>
-            </select>
-          </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+        <div>
+          <label style={{ fontSize:11, fontWeight:700, color:"var(--text-secondary)", display:"block", marginBottom:5, textTransform:"uppercase", letterSpacing:"0.06em" }}>Date</label>
+          <input type="date" value={date} onChange={e => { setDate(e.target.value); setErr(null); }} style={inputStyle}/>
         </div>
-
-        <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:18 }}>
-          <button onClick={onClose}
-            style={{ padding:"9px 16px", fontSize:13, borderRadius:9, border:"1px solid var(--border)",
-              background:"var(--surface-sunken)", color:"var(--text-primary)", cursor:"pointer", fontFamily:"inherit" }}>
-            Cancel
-          </button>
-          <button onClick={save}
-            style={{ padding:"9px 18px", fontSize:13, fontWeight:600, borderRadius:9,
-              border:"none", background:"var(--brand)", color:"white", cursor:"pointer", fontFamily:"inherit" }}>
-            Add Holiday
-          </button>
+        <div>
+          <label style={{ fontSize:11, fontWeight:700, color:"var(--text-secondary)", display:"block", marginBottom:5, textTransform:"uppercase", letterSpacing:"0.06em" }}>Reason</label>
+          <input value={reason} onChange={e => { setReason(e.target.value); setErr(null); }}
+            placeholder="e.g. Diwali Holiday" style={inputStyle}/>
+        </div>
+        <div>
+          <label style={{ fontSize:11, fontWeight:700, color:"var(--text-secondary)", display:"block", marginBottom:5, textTransform:"uppercase", letterSpacing:"0.06em" }}>Type</label>
+          <select value={type} onChange={e => setType(e.target.value)} style={inputStyle}>
+            <option value="closed">Full Day Closed</option>
+            <option value="custom">Custom Hours</option>
+            <option value="emergency_open">Emergency Open</option>
+          </select>
         </div>
       </div>
-    </div>
+    </DsModal>
   );
 }
 
@@ -1475,8 +1422,7 @@ export default function BusinessHoursPage() {
         {rulesApi.loading ? (
           <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, padding:"20px" }}>
             {[...Array(7)].map((_,i) => (
-              <div key={i} style={{ height:52, background:"var(--surface-sunken)", borderRadius:8,
-                marginBottom:8, animation:"pulse 1.5s ease-in-out infinite" }}/>
+              <div key={i} style={{ marginBottom:8 }}><DsSkeleton height={52} radius="8px"/></div>
             ))}
           </div>
         ) : (
@@ -1518,8 +1464,7 @@ export default function BusinessHoursPage() {
             {rulesApi.loading ? (
               <div style={{ padding:"16px 20px" }}>
                 {[...Array(3)].map((_,i) => (
-                  <div key={i} style={{ height:40, background:"var(--surface-sunken)", borderRadius:8,
-                    marginBottom:8, animation:"pulse 1.5s ease-in-out infinite" }}/>
+                  <div key={i} style={{ marginBottom:8 }}><DsSkeleton height={40} radius="8px"/></div>
                 ))}
               </div>
             ) : filteredList.length === 0 ? (
@@ -1677,8 +1622,7 @@ export default function BusinessHoursPage() {
             ) : activityApi.loading ? (
               <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                 {[...Array(3)].map((_,i) => (
-                  <div key={i} style={{ height:40, background:"var(--surface-sunken)", borderRadius:8,
-                    animation:"pulse 1.5s ease-in-out infinite" }}/>
+                  <DsSkeleton key={i} height={40} radius="8px"/>
                 ))}
               </div>
             ) : activities.length === 0 ? (
