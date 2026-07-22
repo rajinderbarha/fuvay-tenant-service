@@ -4,7 +4,8 @@ import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { engineApi } from "../../../../lib/api";
 import type { TenantEffectiveEngine } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
-import { CheckCircle2, XCircle, RefreshCw, Info } from "lucide-react";
+import { CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { PageHeader, Card, Button, Skeleton, Alert } from "@serviceos/design-system";
 
 const SOURCE_LABEL: Record<string, string> = {
   global:              "Platform Default",
@@ -45,37 +46,30 @@ export default function EnginesPage() {
   return (
     <TenantLayout activeNav="settings">
       <div style={{ padding:"24px 28px", maxWidth:900 }}>
-        {/* Header */}
-        <div style={{ marginBottom:24 }}>
-          <h1 style={{ fontSize:20, fontWeight:700, color:"var(--text-primary)", margin:"0 0 4px" }}>
-            My Engine Access
-          </h1>
-          <p style={{ fontSize:13, color:"var(--text-secondary)", margin:0 }}>
-            Platform capabilities available to your account. Engine access is determined by your category,
-            package, and platform configuration.
-          </p>
+        <div style={{ marginBottom: 24 }}>
+          <PageHeader
+            title="My Engine Access"
+            description="Platform capabilities available to your account. Engine access is determined by your category, package, and platform configuration."
+          />
         </div>
 
         {/* Info banner */}
-        <div style={{ display:"flex", gap:10, padding:"10px 14px", background:"#eff6ff",
-          border:"1px solid #bfdbfe", borderRadius:8, marginBottom:20 }}>
-          <Info size={15} style={{ color:"#3b82f6", flexShrink:0, marginTop:1 }} />
-          <p style={{ fontSize:12, color:"#1e40af", margin:0 }}>
+        <div style={{ marginBottom: 20 }}>
+          <Alert tone="info">
             Engine access is managed by your platform administrator. Contact support if you need
             an engine enabled or have questions about your current access.
-          </p>
+          </Alert>
         </div>
 
         {loading && (
-          <div style={{ textAlign:"center", padding:"48px 0", color:"var(--text-tertiary)", fontSize:13 }}>
-            Loading engine access…
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {[...Array(3)].map((_,i) => <Skeleton key={i} height="4rem" />)}
           </div>
         )}
 
         {error && (
-          <div style={{ padding:"12px 16px", background:"#fef2f2", border:"1px solid #fecaca",
-            borderRadius:8, color:"#dc2626", fontSize:13, marginBottom:16 }}>
-            {error}
+          <div style={{ marginBottom: 16 }}>
+            <Alert tone="danger">{error}</Alert>
           </div>
         )}
 
@@ -88,12 +82,12 @@ export default function EnginesPage() {
                 { label:"Enabled for You",  value:data.summary.enabled, color:"#15803d" },
                 { label:"Not Enabled",      value:data.summary.disabled,color:"#9ca3af" },
               ].map(s => (
-                <div key={s.label} style={{ border:"1px solid var(--border)", borderRadius:8, padding:"14px 16px" }}>
+                <Card key={s.label} padding="md">
                   <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"0 0 4px", textTransform:"uppercase", letterSpacing:"0.05em" }}>
                     {s.label}
                   </p>
                   <p style={{ fontSize:26, fontWeight:800, color:s.color, margin:0 }}>{s.value}</p>
-                </div>
+                </Card>
               ))}
             </div>
 
@@ -117,9 +111,10 @@ export default function EnginesPage() {
 
             {/* Admin overrides notice */}
             {withOverride.length > 0 && (
-              <div style={{ padding:"10px 14px", background:"#fffbeb", border:"1px solid #fde68a",
-                borderRadius:8, marginBottom:20, fontSize:12, color:"#92400e" }}>
-                <strong>{withOverride.length} engine(s)</strong> have a custom admin override applied to your account.
+              <div style={{ marginBottom: 20 }}>
+                <Alert tone="warning">
+                  <strong>{withOverride.length} engine(s)</strong> have a custom admin override applied to your account.
+                </Alert>
               </div>
             )}
 
@@ -129,12 +124,7 @@ export default function EnginesPage() {
                 <h2 style={{ fontSize:14, fontWeight:600, color:"var(--text-primary)", margin:0 }}>
                   Enabled Engines ({enabled.length})
                 </h2>
-                <button onClick={refetch}
-                  style={{ background:"none", border:"1px solid var(--border)", borderRadius:6,
-                    padding:"4px 10px", fontSize:12, cursor:"pointer", color:"var(--text-secondary)",
-                    display:"flex", alignItems:"center", gap:4 }}>
-                  <RefreshCw size={12} /> Refresh
-                </button>
+                <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={12}/>} onClick={refetch}>Refresh</Button>
               </div>
 
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap:10 }}>
