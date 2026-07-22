@@ -40,6 +40,10 @@ export function ProfileScreen({ navigation }: Props) {
       title: "Support",
       items: [
         { icon:"❓", label:"Help & Support",   onPress:() => navigation.navigate("HelpSupport"    as never) },
+        // UX-07 Pass 3d: Chat (human/provider support thread) folded here
+        // now that it's no longer a primary bottom-nav tab -- it's a real,
+        // distinct surface from SmartBot (see ChatScreen.tsx), not deleted.
+        { icon:"💬", label:"Messages",         onPress:() => navigation.navigate("Chat"           as never) },
         { icon:"🤖", label:"AI Assistant",     onPress:() => (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"AIAssistant" }) },
       ],
     },

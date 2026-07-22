@@ -20,6 +20,7 @@ import { PaymentMethodsScreen }    from "../screens/PaymentMethodsScreen";
 import { InvoiceScreen }           from "../screens/InvoiceScreen";
 import { ServiceDetailScreen }     from "../screens/ServiceDetailScreen";
 import { QuoteApprovalScreen }     from "../screens/QuoteApprovalScreen";
+import { ChatScreen }              from "../screens/ChatScreen";
 import { TabNavigator }            from "./TabNavigator";
 // UX-06 Round 5: BookServiceScreen/SmartBotScreen/AIAssistantScreen/
 // AIChatScreen deleted (not just unregistered) -- all four were fully
@@ -43,6 +44,7 @@ export type RootStackParamList = {
   Invoice: { invoiceId:string };
   Settings: undefined;
   Notifications: undefined;
+  Chat: undefined;
   AddressBook: undefined;
   ServiceHistory: undefined;
   HelpSupport: undefined;
@@ -104,6 +106,13 @@ export function AppNavigator() {
               options={{ ...HDR, title:"Settings" }}/>
             <Stack.Screen name="Notifications"  component={NotificationsScreen}
               options={{ ...HDR, title:"Notifications" }}/>
+            {/* UX-07 Pass 3d: Chat (real human/provider support thread, see
+                ChatScreen.tsx's Pass 3b disposition note) is no longer a
+                primary bottom-nav tab -- reachable from Profile > Support >
+                "Messages" instead, since it's a distinct real surface, not a
+                SmartBot duplicate. */}
+            <Stack.Screen name="Chat"           component={ChatScreen}
+              options={{ ...HDR, title:"Messages" }}/>
             <Stack.Screen name="AddressBook"    component={AddressBookScreen}
               options={{ ...HDR, title:"Saved Addresses" }}/>
             <Stack.Screen name="ServiceHistory" component={ServiceHistoryScreen}
