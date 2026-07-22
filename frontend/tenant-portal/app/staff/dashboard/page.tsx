@@ -1,17 +1,36 @@
 "use client";
 import React, { useCallback } from "react";
 import { StaffLayout } from "../../../components/layout/StaffLayout";
-import { Card, StatCard, Skeleton, EmptyState, Badge } from "../../../components/shared/ui";
 import { useApi } from "../../../hooks/useApi";
 import { useStaffContextValue } from "../../../hooks/useStaffContext";
 import { staffSelfApi, tenantSetupApi, homeServiceStaffJobsApi } from "../../../lib/api";
 import { ClipboardList, Wrench, MapPin, Clock, FileText, Bell, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Card, Skeleton, EmptyState, StatusBadge as DsStatusBadge } from "@serviceos/design-system";
 
 export default function StaffDashboardPage() {
   return (
     <StaffLayout activeNav="dashboard">
       <StaffDashboardContent/>
     </StaffLayout>
+  );
+}
+
+function StatTile({ label, value, icon, alert }: { label: string; value: string | number; icon: React.ReactNode; alert?: boolean }) {
+  return (
+    <Card padding="md">
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 9, flexShrink: 0, display: "flex",
+          alignItems: "center", justifyContent: "center",
+          background: alert ? "var(--danger-bg)" : "var(--surface-sunken)",
+          color: alert ? "var(--danger-text)" : "var(--text-secondary)" }}>
+          {icon}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600 }}>{label}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-primary)" }}>{value}</div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -50,15 +69,15 @@ function StaffDashboardContent() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
         {jobs.loading || skills.loading || areas.loading || notifs.loading ? (
-          Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={92}/>)
+          Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height="5.75rem"/>)
         ) : (
           <>
-            <StatCard label="Today's Assigned Work" value={jobCount} icon={<ClipboardList/>}/>
-            <StatCard label="Active Skills" value={skillCount} icon={<Wrench/>}/>
-            <StatCard label="Service Areas" value={areaCount} icon={<MapPin/>}/>
-            <StatCard label="Availability Status" value="—" icon={<Clock/>}/>
-            <StatCard label="Documents Status" value="Not tracked yet" icon={<FileText/>}/>
-            <StatCard label="Notifications" value={unread} icon={<Bell/>} alert={unread > 0}/>
+            <StatTile label="Today's Assigned Work" value={jobCount} icon={<ClipboardList size={16}/>}/>
+            <StatTile label="Active Skills" value={skillCount} icon={<Wrench size={16}/>}/>
+            <StatTile label="Service Areas" value={areaCount} icon={<MapPin size={16}/>}/>
+            <StatTile label="Availability Status" value="—" icon={<Clock size={16}/>}/>
+            <StatTile label="Documents Status" value="Not tracked yet" icon={<FileText size={16}/>}/>
+            <StatTile label="Notifications" value={unread} icon={<Bell size={16}/>} alert={unread > 0}/>
           </>
         )}
       </div>
@@ -66,8 +85,8 @@ function StaffDashboardContent() {
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
         <Card>
           <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Assigned Work</h3>
-          {jobs.loading ? <Skeleton height={100}/> : jobCount === 0 ? (
-            <EmptyState icon={<ClipboardList/>} title="No assigned work yet."
+          {jobs.loading ? <Skeleton height="6.25rem"/> : jobCount === 0 ? (
+            <EmptyState title="No assigned work yet."
               description="New jobs assigned to you will appear here."/>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -83,11 +102,11 @@ function StaffDashboardContent() {
 
         <Card>
           <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Tenant Status Snapshot (readonly)</h3>
-          {status.loading ? <Skeleton height={80}/> : (
+          {status.loading ? <Skeleton height="5rem"/> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 {bookable ? <CheckCircle2 size={14} color="var(--success)"/> : <AlertTriangle size={14} color="var(--warning)"/>}
-                Bookable: <Badge variant={bookable ? "success" : "warning"} size="sm">{bookable ? "Yes" : "Not yet"}</Badge>
+                Bookable: <DsStatusBadge status={bookable ? "active" : "pending"} size="sm"/>
               </div>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
                 Package, usage credits, and security deposit status are managed by your tenant owner/admin — you can view but not change them.
