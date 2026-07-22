@@ -7,8 +7,12 @@ import {
 import { ServiceOSError } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import {
+  PageHeader, Card, Button, Modal, Select, Textarea, Input,
+  StatusBadge as DsStatusBadge, Alert, Skeleton, EmptyState,
+} from "@serviceos/design-system";
+import {
   Tag, RefreshCw, ChevronRight, AlertTriangle, CheckCircle2,
-  XCircle, Copy, Info, Activity, Search, X, Eye,
+  XCircle, Copy, Info, Activity, Search, Eye,
   AlertCircle, Shield, DollarSign, FileText,
 } from "lucide-react";
 
@@ -49,61 +53,25 @@ function copyText(t: string) {
   if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {});
 }
 
-const STATUS_MAP: Record<string, { label: string; variant: "success"|"warning"|"danger"|"neutral" }> = {
-  pending:       { label: "Pending Approval", variant: "warning" },
-  approved:      { label: "Approved",          variant: "success" },
-  rejected:      { label: "Rejected",          variant: "danger"  },
-  cancelled:     { label: "Cancelled",         variant: "neutral" },
-  expired:       { label: "Expired",           variant: "neutral" },
-};
-
 // ── Sub-components ────────────────────────────────────────────────────────────
 function SectionError({ title, error, requestId, onRetry }: {
   title: string; error: string; requestId?: string | null; onRetry: () => void;
 }) {
   return (
-    <div style={{ padding: "16px 20px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--danger-text)", margin: "0 0 4px", display: "flex", alignItems: "center", gap: 6 }}>
-            <XCircle size={14}/> {title}
-          </p>
-          <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0, opacity: 0.85 }}>{error}</p>
-          {requestId && (
-            <button onClick={() => copyText(requestId)}
-              style={{ fontSize: 11, color: "var(--danger-text)", background: "none", border: "none",
-                cursor: "pointer", padding: "4px 0 0", display: "flex", alignItems: "center",
-                gap: 4, fontFamily: "inherit", opacity: 0.75 }}>
-              <Copy size={10}/> Request ID: {requestId}
-            </button>
-          )}
-        </div>
-        <button onClick={onRetry}
-          style={{ padding: "6px 12px", fontSize: 12, borderRadius: 8,
-            border: "1px solid var(--danger-border)", background: "transparent",
-            color: "var(--danger-text)", cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-          <RefreshCw size={11}/> Retry
+    <Alert tone="danger" title={title}>
+      <div>{error}</div>
+      {requestId && (
+        <button onClick={() => copyText(requestId)}
+          style={{ fontSize: 11, color: "inherit", background: "none", border: "none",
+            cursor: "pointer", padding: "4px 0 0", display: "flex", alignItems: "center",
+            gap: 4, fontFamily: "inherit", opacity: 0.75 }}>
+          <Copy size={10}/> Request ID: {requestId}
         </button>
+      )}
+      <div style={{ marginTop: 8 }}>
+        <Button variant="ghost" size="sm" onClick={onRetry} leftIcon={<RefreshCw size={11}/>}>Retry</Button>
       </div>
-    </div>
-  );
-}
-
-function StatusBadge({ raw }: { raw: string | null | undefined }) {
-  const s = STATUS_MAP[String(raw ?? "")] ?? { label: safeText(raw, "Unknown"), variant: "neutral" as const };
-  const colors: Record<string, { bg: string; text: string; border: string }> = {
-    success: { bg: "var(--success-bg)", text: "var(--success-text)", border: "var(--success-border)" },
-    warning: { bg: "var(--warning-bg)", text: "var(--warning-text)", border: "var(--warning-border)" },
-    danger:  { bg: "var(--danger-bg)",  text: "var(--danger-text)",  border: "var(--danger-border)"  },
-    neutral: { bg: "var(--surface-sunken)", text: "var(--text-secondary)", border: "var(--border)"   },
-  };
-  const c = colors[s.variant];
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999,
-      background: c.bg, color: c.text, border: `1px solid ${c.border}`, whiteSpace: "nowrap" }}>
-      {s.label}
-    </span>
+    </Alert>
   );
 }
 
@@ -159,12 +127,6 @@ function PricePreviewPanel({ enabledServices }: { enabledServices: Record<string
   const [result, setResult] = useState<PreviewResult | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "9px 12px", fontSize: 13, boxSizing: "border-box",
-    border: "1px solid var(--border)", borderRadius: 8,
-    background: "var(--surface)", color: "var(--text-primary)", outline: "none", fontFamily: "inherit",
-  };
-
   async function preview() {
     if (!serviceTypeId.trim()) return;
     setLoading(true); setResult(null);
@@ -183,7 +145,7 @@ function PricePreviewPanel({ enabledServices }: { enabledServices: Record<string
   }
 
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
+    <Card padding="lg">
       <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px",
         display: "flex", alignItems: "center", gap: 8 }}>
         <Search size={15}/> Price Preview
@@ -193,43 +155,18 @@ function PricePreviewPanel({ enabledServices }: { enabledServices: Record<string
       </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
-            Service Type ID
-          </label>
-          <input value={serviceTypeId} onChange={e => setServiceTypeId(e.target.value)}
-            placeholder="UUID or slug" style={{ ...inputStyle, fontFamily: "monospace", fontSize: 12 }}/>
-        </div>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
-            Category
-          </label>
-          <input value={serviceCategory} onChange={e => setServiceCategory(e.target.value)}
-            placeholder="home_services" style={inputStyle}/>
-        </div>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
-            City
-          </label>
-          <input value={cityName} onChange={e => setCityName(e.target.value)}
-            placeholder="Ludhiana" style={inputStyle}/>
-        </div>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
-            Zipcode
-          </label>
-          <input value={pincode} onChange={e => setPincode(e.target.value)}
-            placeholder="141001" style={{ ...inputStyle, fontFamily: "monospace" }}/>
-        </div>
-        <button onClick={preview} disabled={!serviceTypeId.trim() || loading}
-          style={{ padding: "9px 18px", fontSize: 13, fontWeight: 600, borderRadius: 9,
-            border: "none", background: "var(--brand)", color: "white",
-            cursor: serviceTypeId.trim() ? "pointer" : "not-allowed", fontFamily: "inherit",
-            display: "flex", alignItems: "center", gap: 6,
-            opacity: serviceTypeId.trim() ? 1 : 0.5 }}>
-          {loading ? <><RefreshCw size={12} style={{ animation: "spin 1s linear infinite" }}/> …</>
-                   : <><Eye size={12}/> Preview</>}
-        </button>
+        <Input label="Service Type ID" value={serviceTypeId} onChange={e => setServiceTypeId(e.target.value)}
+          placeholder="UUID or slug" style={{ fontFamily: "monospace", fontSize: 12 }}/>
+        <Input label="Category" value={serviceCategory} onChange={e => setServiceCategory(e.target.value)}
+          placeholder="home_services"/>
+        <Input label="City" value={cityName} onChange={e => setCityName(e.target.value)}
+          placeholder="Ludhiana"/>
+        <Input label="Zipcode" value={pincode} onChange={e => setPincode(e.target.value)}
+          placeholder="141001" style={{ fontFamily: "monospace" }}/>
+        <Button variant="primary" onClick={preview} disabled={!serviceTypeId.trim()} loading={loading}
+          leftIcon={<Eye size={12}/>}>
+          Preview
+        </Button>
       </div>
 
       {enabledServices.length > 0 && (
@@ -257,20 +194,17 @@ function PricePreviewPanel({ enabledServices }: { enabledServices: Record<string
 
       {result && (
         result.error ? (
-          <div style={{ padding: "12px 16px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
-            borderRadius: 10, fontSize: 12, color: "var(--danger-text)" }}>
-            <div style={{ display: "flex", gap: 7, marginBottom: result.requestId ? 6 : 0 }}>
-              <XCircle size={13} style={{ flexShrink: 0, marginTop: 1 }}/> {result.error}
-            </div>
+          <Alert tone="danger">
+            <div>{result.error}</div>
             {result.requestId && (
               <button onClick={() => copyText(result.requestId!)}
                 style={{ fontSize: 11, background: "none", border: "none", cursor: "pointer",
-                  color: "var(--danger-text)", fontFamily: "inherit", display: "flex",
-                  alignItems: "center", gap: 4, padding: 0, opacity: 0.75 }}>
+                  color: "inherit", fontFamily: "inherit", display: "flex",
+                  alignItems: "center", gap: 4, padding: 0, opacity: 0.75, marginTop: 4 }}>
                 <Copy size={10}/> Request ID: {result.requestId}
               </button>
             )}
-          </div>
+          </Alert>
         ) : (
           <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 10, padding: "16px 20px" }}>
             <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", margin: "0 0 12px",
@@ -307,7 +241,7 @@ function PricePreviewPanel({ enabledServices }: { enabledServices: Record<string
           </div>
         )
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -375,12 +309,6 @@ function OverrideWizard({ onClose, onSubmitted }: { onClose: () => void; onSubmi
     }
   });
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "9px 12px", fontSize: 13, boxSizing: "border-box",
-    border: "1px solid var(--border)", borderRadius: 8,
-    background: "var(--surface)", color: "var(--text-primary)", outline: "none", fontFamily: "inherit",
-  };
-
   if (submitted) {
     return (
       <div style={{ padding: "24px", textAlign: "center" }}>
@@ -391,18 +319,12 @@ function OverrideWizard({ onClose, onSubmitted }: { onClose: () => void; onSubmi
         <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 16px" }}>
           Your pricing override request has been submitted for admin approval.
         </p>
-        <div style={{ padding: "12px 16px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)",
-          borderRadius: 10, fontSize: 12, color: "var(--warning-text)", marginBottom: 16, textAlign: "left",
-          display: "flex", gap: 7 }}>
-          <Shield size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
-          Status: Pending Approval — you cannot self-approve this request.
+        <div style={{ marginBottom: 16, textAlign: "left" }}>
+          <Alert tone="warning">
+            Status: Pending Approval — you cannot self-approve this request.
+          </Alert>
         </div>
-        <button onClick={onClose}
-          style={{ padding: "9px 20px", fontSize: 13, fontWeight: 600, borderRadius: 9,
-            border: "none", background: "var(--brand)", color: "white",
-            cursor: "pointer", fontFamily: "inherit" }}>
-          Close
-        </button>
+        <Button variant="primary" onClick={onClose}>Close</Button>
       </div>
     );
   }
@@ -411,18 +333,13 @@ function OverrideWizard({ onClose, onSubmitted }: { onClose: () => void; onSubmi
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
       {/* Business rule banner */}
-      <div style={{ padding: "10px 14px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)",
-        borderRadius: 9, fontSize: 12, color: "var(--warning-text)", display: "flex", gap: 7 }}>
-        <Shield size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
+      <Alert tone="warning">
         You cannot self-approve this request. Submitted overrides require admin approval.
-      </div>
+      </Alert>
 
       {/* Service context */}
-      <div>
-        <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>Service</label>
-        <input value={form.service_name} onChange={e => f("service_name", e.target.value)}
-          placeholder="AC Repair" style={inputStyle}/>
-      </div>
+      <Input label="Service" value={form.service_name} onChange={e => f("service_name", e.target.value)}
+        placeholder="AC Repair"/>
 
       {/* Platform pricing display */}
       <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px" }}>
@@ -440,11 +357,9 @@ function OverrideWizard({ onClose, onSubmitted }: { onClose: () => void; onSubmi
 
       {/* Override price */}
       <div>
-        <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          Requested Override Price (₹)
-        </label>
-        <input type="number" value={form.requested_price} onChange={e => { f("requested_price", e.target.value); setValidationMsg(null); setValidationOk(null); }}
-          placeholder="e.g. 900" style={{ ...inputStyle, fontFamily: "monospace" }}/>
+        <Input type="number" label="Requested Override Price (₹)" value={form.requested_price}
+          onChange={e => { f("requested_price", e.target.value); setValidationMsg(null); setValidationOk(null); }}
+          placeholder="e.g. 900" style={{ fontFamily: "monospace" }}/>
         <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
           {[500, 900, 1300].map(p => (
             <button key={p} onClick={() => { f("requested_price", String(p)); setValidationMsg(null); setValidationOk(null); }}
@@ -459,77 +374,44 @@ function OverrideWizard({ onClose, onSubmitted }: { onClose: () => void; onSubmi
       </div>
 
       {/* Validate button */}
-      <button onClick={() => validate()}
-        style={{ padding: "8px 14px", fontSize: 12, fontWeight: 600, borderRadius: 8,
-          border: "1px solid var(--border)", background: "var(--surface-sunken)",
-          color: "var(--text-primary)", cursor: "pointer", fontFamily: "inherit",
-          display: "flex", alignItems: "center", gap: 5, alignSelf: "flex-start" }}>
-        <CheckCircle2 size={12}/> Validate Price
-      </button>
+      <Button variant="secondary" size="sm" onClick={() => validate()} leftIcon={<CheckCircle2 size={12}/>}
+        style={{ alignSelf: "flex-start" }}>
+        Validate Price
+      </Button>
 
       {validationMsg && (
-        <div style={{ padding: "10px 14px", borderRadius: 9,
-          background: validationOk ? "var(--success-bg)" : "var(--danger-bg)",
-          border: `1px solid ${validationOk ? "var(--success-border)" : "var(--danger-border)"}`,
-          fontSize: 12, color: validationOk ? "var(--success-text)" : "var(--danger-text)",
-          display: "flex", gap: 7 }}>
-          {validationOk ? <CheckCircle2 size={13} style={{ flexShrink: 0, marginTop: 1 }}/> : <XCircle size={13} style={{ flexShrink: 0, marginTop: 1 }}/>}
-          {validationMsg}
-        </div>
+        <Alert tone={validationOk ? "success" : "danger"}>{validationMsg}</Alert>
       )}
 
       {/* Reason */}
-      <div>
-        <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          Reason <span style={{ color: "var(--danger-text)" }}>*</span>
-        </label>
-        <textarea value={form.reason} onChange={e => f("reason", e.target.value)}
-          placeholder="e.g. Local market rate for AC repair in Ludhiana is ₹900 for Split AC."
-          rows={3}
-          style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}/>
-      </div>
+      <Textarea label="Reason" required value={form.reason} onChange={e => f("reason", e.target.value)}
+        placeholder="e.g. Local market rate for AC repair in Ludhiana is ₹900 for Split AC."
+        rows={3}/>
 
       {/* Notes */}
-      <div>
-        <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          Additional Notes (optional)
-        </label>
-        <textarea value={form.notes} onChange={e => f("notes", e.target.value)}
-          placeholder="Any additional context for the admin reviewer…" rows={2}
-          style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}/>
-      </div>
+      <Textarea label="Additional Notes (optional)" value={form.notes} onChange={e => f("notes", e.target.value)}
+        placeholder="Any additional context for the admin reviewer…" rows={2}/>
 
       {saveErr && (
-        <div style={{ padding: "10px 14px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
-          borderRadius: 9, fontSize: 12, color: "var(--danger-text)" }}>
-          <p style={{ margin: "0 0 4px", fontWeight: 600 }}>{saveErr}</p>
+        <Alert tone="danger">
+          <div style={{ fontWeight: 600 }}>{saveErr}</div>
           {saveErrId && (
             <button onClick={() => copyText(saveErrId)}
               style={{ fontSize: 11, background: "none", border: "none", cursor: "pointer",
-                color: "var(--danger-text)", fontFamily: "inherit", display: "flex",
-                alignItems: "center", gap: 4, padding: 0, opacity: 0.75 }}>
+                color: "inherit", fontFamily: "inherit", display: "flex",
+                alignItems: "center", gap: 4, padding: 0, opacity: 0.75, marginTop: 4 }}>
               <Copy size={10}/> Request ID: {saveErrId}
             </button>
           )}
-        </div>
+        </Alert>
       )}
 
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 4 }}>
-        <button onClick={onClose}
-          style={{ padding: "9px 18px", fontSize: 13, borderRadius: 9, border: "1px solid var(--border)",
-            background: "var(--surface-sunken)", color: "var(--text-primary)", cursor: "pointer", fontFamily: "inherit" }}>
-          Cancel
-        </button>
-        <button onClick={submitAction.execute} disabled={submitAction.loading || validationOk === false}
-          style={{ padding: "9px 20px", fontSize: 13, fontWeight: 600, borderRadius: 9,
-            border: "none", background: "var(--brand)", color: "white", fontFamily: "inherit",
-            cursor: submitAction.loading || validationOk === false ? "not-allowed" : "pointer",
-            opacity: submitAction.loading || validationOk === false ? 0.6 : 1,
-            display: "flex", alignItems: "center", gap: 6 }}>
-          {submitAction.loading
-            ? <><RefreshCw size={12} style={{ animation: "spin 1s linear infinite" }}/> Submitting…</>
-            : "Submit for Approval"}
-        </button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={submitAction.execute}
+          disabled={validationOk === false} loading={submitAction.loading}>
+          Submit for Approval
+        </Button>
       </div>
     </div>
   );
@@ -622,31 +504,21 @@ export default function PricingPage() {
       </div>
 
       {/* 2. PAGE HEADER */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 4px", letterSpacing: "-0.01em" }}>
-            Pricing Setup
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-            View platform pricing, preview customer estimates, and request approved price overrides for your services.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={() => { pricesApi.refetch(); servicesApi.refetch(); activityApi.refetch(); }}
-            style={{ padding: "8px 14px", fontSize: 12, fontWeight: 600, borderRadius: 9,
-              border: "1px solid var(--border)", background: "var(--surface-sunken)",
-              color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", gap: 5 }}>
-            <RefreshCw size={12}/> Refresh
-          </button>
-          <button onClick={() => setOverrideOpen(true)}
-            style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius: 9,
-              border: "none", background: "var(--brand)", color: "white",
-              cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", gap: 6 }}>
-            <Tag size={13}/> Request Override
-          </button>
-        </div>
+      <div style={{ marginBottom: 24 }}>
+        <PageHeader
+          title="Pricing Setup"
+          description="View platform pricing, preview customer estimates, and request approved price overrides for your services."
+          actions={<>
+            <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={12}/>}
+              onClick={() => { pricesApi.refetch(); servicesApi.refetch(); activityApi.refetch(); }}>
+              Refresh
+            </Button>
+            <Button variant="primary" size="sm" leftIcon={<Tag size={13}/>}
+              onClick={() => setOverrideOpen(true)}>
+              Request Override
+            </Button>
+          </>}
+        />
       </div>
 
       <div className="pg-grid">
@@ -780,19 +652,15 @@ export default function PricingPage() {
               <SectionError title="Could not load tenant price list" error={pricesApi.error}
                 requestId={pricesApi.requestId} onRetry={pricesApi.refetch}/>
               {/* Show baseline even if tenant-specific prices fail */}
-              <div style={{ marginTop: 16, padding: "14px 16px", background: "var(--warning-bg)",
-                border: "1px solid var(--warning-border)", borderRadius: 10,
-                fontSize: 12, color: "var(--warning-text)", display: "flex", gap: 7 }}>
-                <Info size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
-                Showing baseline platform pricing below. Use Price Preview to resolve pricing for your enabled services.
+              <div style={{ marginTop: 16 }}>
+                <Alert tone="warning">
+                  Showing baseline platform pricing below. Use Price Preview to resolve pricing for your enabled services.
+                </Alert>
               </div>
             </div>
           ) : pricesApi.loading ? (
-            <div style={{ padding: "16px 20px" }}>
-              {[...Array(2)].map((_,i) => (
-                <div key={i} style={{ height: 52, background: "var(--surface-sunken)", borderRadius: 8,
-                  marginBottom: 10, animation: "pulse 1.5s ease-in-out infinite" }}/>
-              ))}
+            <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+              {[...Array(2)].map((_,i) => <Skeleton key={i} height="3.25rem" radius="8px"/>)}
             </div>
           ) : null}
 
@@ -867,25 +735,15 @@ export default function PricingPage() {
               display: "flex", alignItems: "center", gap: 8 }}>
               <FileText size={15}/> Override Request History
             </p>
-            <button onClick={() => setOverrideOpen(true)}
-              style={{ fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 8,
-                border: "1px solid var(--border)", background: "var(--surface-sunken)",
-                color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit" }}>
-              + New Request
-            </button>
+            <Button variant="secondary" size="sm" onClick={() => setOverrideOpen(true)}>+ New Request</Button>
           </div>
           <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 16px" }}>
             Your submitted override requests and their admin approval status.
           </p>
 
           {overrideHistory.length === 0 ? (
-            <div style={{ padding: "28px", textAlign: "center", color: "var(--text-tertiary)" }}>
-              <FileText size={28} style={{ opacity: 0.25, marginBottom: 8 }}/>
-              <p style={{ fontSize: 13, margin: 0 }}>No override requests submitted yet.</p>
-              <p style={{ fontSize: 12, margin: "4px 0 0" }}>
-                Use the Request Override button to submit a pricing override for admin approval.
-              </p>
-            </div>
+            <EmptyState title="No override requests submitted yet"
+              description="Use the Request Override button to submit a pricing override for admin approval."/>
           ) : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -915,7 +773,7 @@ export default function PricingPage() {
                         {req.reason}
                       </td>
                       <td style={{ padding: "11px 14px" }}>
-                        <StatusBadge raw={req.status}/>
+                        <DsStatusBadge status={req.status ?? "pending"}/>
                       </td>
                       <td style={{ padding: "11px 14px", fontSize: 11, color: "var(--text-tertiary)" }}>
                         {safeDate(req.submitted_at)}
@@ -928,11 +786,10 @@ export default function PricingPage() {
           )}
 
           {/* Note about self-approval */}
-          <div style={{ marginTop: 14, padding: "10px 14px", background: "var(--warning-bg)",
-            border: "1px solid var(--warning-border)", borderRadius: 9,
-            fontSize: 12, color: "var(--warning-text)", display: "flex", gap: 7 }}>
-            <Shield size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
-            Tenants cannot approve or reject override requests. Admin approval is required.
+          <div style={{ marginTop: 14 }}>
+            <Alert tone="warning">
+              Tenants cannot approve or reject override requests. Admin approval is required.
+            </Alert>
           </div>
         </div>
 
@@ -957,17 +814,11 @@ export default function PricingPage() {
               requestId={activityApi.requestId} onRetry={activityApi.refetch}/>
           ) : activityApi.loading ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {[...Array(3)].map((_,i) => (
-                <div key={i} style={{ height: 44, background: "var(--surface-sunken)", borderRadius: 8,
-                  animation: "pulse 1.5s ease-in-out infinite" }}/>
-              ))}
+              {[...Array(3)].map((_,i) => <Skeleton key={i} height="2.75rem" radius="8px"/>)}
             </div>
           ) : activities.length === 0 ? (
-            <div style={{ padding: "24px", textAlign: "center", color: "var(--text-tertiary)" }}>
-              <Activity size={28} style={{ opacity: 0.25, marginBottom: 8 }}/>
-              <p style={{ fontSize: 13, margin: 0 }}>No pricing activity yet.</p>
-              <p style={{ fontSize: 12, margin: "4px 0 0" }}>Price previews and override requests will appear here.</p>
-            </div>
+            <EmptyState title="No pricing activity yet"
+              description="Price previews and override requests will appear here."/>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
               {activities.map((ev: unknown, i: number) => {
@@ -1005,48 +856,22 @@ export default function PricingPage() {
       </div>
 
       {/* OVERRIDE WIZARD MODAL */}
-      {overrideOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
-          display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ background: "var(--surface)", borderRadius: 14, maxWidth: 560, width: "100%",
-            maxHeight: "92vh", display: "flex", flexDirection: "column",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.2)", border: "1px solid var(--border)" }}>
-            <div style={{ padding: "18px 24px", borderBottom: "1px solid var(--border)",
-              display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-              <div>
-                <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-                  Request Price Override
-                </h2>
-                <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "2px 0 0" }}>
-                  Submit for admin approval — you cannot self-approve
-                </p>
-              </div>
-              <button onClick={() => setOverrideOpen(false)}
-                style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid var(--border)",
-                  background: "var(--surface-sunken)", cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
-                <X size={14}/>
-              </button>
-            </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-              <OverrideWizard
-                onClose={() => setOverrideOpen(false)}
-                onSubmitted={() => {
-                  notify("Override request submitted for admin approval.");
-                  setOverrideHistory(prev => [{
-                    id: String(Date.now()),
-                    service: "AC Repair",
-                    requested_price: 900,
-                    reason: "Local market rate",
-                    status: "pending",
-                    submitted_at: new Date().toISOString(),
-                  }, ...prev]);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal open={overrideOpen} onClose={() => setOverrideOpen(false)} title="Request Price Override">
+        <OverrideWizard
+          onClose={() => setOverrideOpen(false)}
+          onSubmitted={() => {
+            notify("Override request submitted for admin approval.");
+            setOverrideHistory(prev => [{
+              id: String(Date.now()),
+              service: "AC Repair",
+              requested_price: 900,
+              reason: "Local market rate",
+              status: "pending",
+              submitted_at: new Date().toISOString(),
+            }, ...prev]);
+          }}
+        />
+      </Modal>
     </TenantLayout>
   );
 }
