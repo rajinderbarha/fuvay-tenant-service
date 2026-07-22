@@ -1,11 +1,13 @@
 "use client";
 import React, { useCallback, useState } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
-import { Card, Badge, Btn, Modal, Input, Skeleton } from "../../../components/shared/ui";
+import {
+  PageHeader, Card, Button, Modal, Input, Skeleton,
+  StatusBadge as DsStatusBadge, Alert, EmptyState,
+} from "@serviceos/design-system";
 import { serviceAreaApi } from "../../../lib/api";
 import type { GeoZone, GeoZoneCreatePayload } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
-import { MapPin } from "lucide-react";
 
 const ZONE_TYPE_OPTIONS = [
   { value: "pincode", label: "Pincodes" },
@@ -50,101 +52,108 @@ export default function ServiceAreasPage() {
 
   return (
     <TenantLayout activeNav="service-areas">
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24 }}>
-        <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:"var(--text-primary)", margin:"0 0 4px" }}>
-            Service Areas
-          </h1>
-          <p style={{ fontSize:13, color:"var(--text-secondary)", margin:0 }}>
-            Configure which cities, pincodes, or zones your business covers.
-          </p>
-        </div>
-        <Btn variant="primary" size="sm" onClick={() => setCreateModal(true)}>+ Add Zone</Btn>
+      <div style={{ marginBottom: 24 }}>
+        <PageHeader
+          title="Service Areas"
+          description="Configure which cities, pincodes, or zones your business covers."
+          actions={<Button variant="primary" size="sm" onClick={() => setCreateModal(true)}>+ Add Zone</Button>}
+        />
       </div>
 
       {toast && (
-        <div style={{ padding:"10px 16px", background:"var(--success-bg)", border:"1px solid var(--success-border)",
-          borderRadius:10, color:"var(--success-text)", fontSize:13, marginBottom:16 }}>
-          ✓ {toast}
+        <div style={{ marginBottom: 16 }}>
+          <Alert tone="success">{toast}</Alert>
         </div>
       )}
 
       {!areas.loading && list.length === 0 && (
-        <div style={{ padding:"12px 16px", borderRadius:10, background:"var(--warning-bg)",
-          border:"1px solid var(--warning-border)", marginBottom:16 }}>
-          <p style={{ fontSize:13, color:"var(--warning-text)", margin:0 }}>
-            ⚠ No service zones configured — customers won&apos;t be matched to your business until you add at least one.
-          </p>
+        <div style={{ marginBottom: 16 }}>
+          <Alert tone="warning">
+            No service zones configured — customers won&apos;t be matched to your business until you add at least one.
+          </Alert>
         </div>
       )}
 
       {areas.loading ? (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-          {[...Array(4)].map((_, i) => <Skeleton key={i} height={64} style={{ borderRadius:10 }}/>)}
+          {[...Array(4)].map((_, i) => <Skeleton key={i} height="4rem" radius="10px"/>)}
         </div>
       ) : list.length === 0 ? (
-        <Card padding={48} style={{ textAlign:"center" }}>
-          <MapPin size={32} style={{ color:"var(--text-tertiary)", margin:"0 auto 12px" }}/>
-          <p style={{ fontSize:14, color:"var(--text-secondary)", margin:0 }}>No service zones yet</p>
+        <Card padding="lg">
+          <EmptyState
+            title="No service zones yet"
+            description="Add a zone to start matching customers to your business."
+          />
         </Card>
       ) : (
-        <Card padding={0}>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
-            <thead>
-              <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
-                {["Zone Name","Type","Coverage","Surcharge","Status","Actions"].map(h => (
-                  <th key={h} style={{ padding:"10px 16px", textAlign:"left", fontSize:11, fontWeight:700,
-                    color:"var(--text-tertiary)", textTransform:"uppercase", letterSpacing:"0.06em" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((zone, i) => (
-                <tr key={zone.zone_id} style={{ borderBottom: i < list.length-1 ? "1px solid var(--border)" : "none" }}>
-                  <td style={{ padding:"12px 16px", fontWeight:600, fontSize:13, color:"var(--text-primary)" }}>
-                    {zone.zone_name}
-                  </td>
-                  <td style={{ padding:"12px 16px" }}>
-                    <Badge variant="muted">{zone.zone_type}</Badge>
-                  </td>
-                  <td style={{ padding:"12px 16px", fontSize:12, color:"var(--text-secondary)" }}>
-                    {zone.zone_type === "radius" && zone.radius_km
-                      ? `${zone.radius_km} km radius`
-                      : zone.identifiers.length > 0
-                        ? `${zone.identifiers.slice(0,4).join(", ")}${zone.identifiers.length > 4 ? ` +${zone.identifiers.length-4}` : ""}`
-                        : "—"}
-                  </td>
-                  <td style={{ padding:"12px 16px", fontSize:13, color:"var(--text-secondary)" }}>
-                    {zone.surcharge_pct > 0 ? `+${zone.surcharge_pct}%` : "None"}
-                  </td>
-                  <td style={{ padding:"12px 16px" }}>
-                    <Badge variant={zone.is_active ? "success" : "muted"}>{zone.is_active ? "Active" : "Inactive"}</Badge>
-                  </td>
-                  <td style={{ padding:"12px 16px" }}>
-                    {zone.is_active && (
-                      <Btn variant="ghost" size="xs" loading={deactivateAction.loading}
-                        onClick={() => deactivateAction.execute(zone.zone_id)}>
-                        Deactivate
-                      </Btn>
-                    )}
-                  </td>
+        <Card padding="none">
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <thead>
+                <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
+                  {["Zone Name","Type","Coverage","Surcharge","Status","Actions"].map(h => (
+                    <th key={h} style={{ padding:"10px 16px", textAlign:"left", fontSize:11, fontWeight:700,
+                      color:"var(--text-tertiary)", textTransform:"uppercase", letterSpacing:"0.06em" }}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {list.map((zone, i) => (
+                  <tr key={zone.zone_id} style={{ borderBottom: i < list.length-1 ? "1px solid var(--border)" : "none" }}>
+                    <td style={{ padding:"12px 16px", fontWeight:600, fontSize:13, color:"var(--text-primary)" }}>
+                      {zone.zone_name}
+                    </td>
+                    <td style={{ padding:"12px 16px" }}>
+                      <DsStatusBadge status={zone.zone_type}/>
+                    </td>
+                    <td style={{ padding:"12px 16px", fontSize:12, color:"var(--text-secondary)" }}>
+                      {zone.zone_type === "radius" && zone.radius_km
+                        ? `${zone.radius_km} km radius`
+                        : zone.identifiers.length > 0
+                          ? `${zone.identifiers.slice(0,4).join(", ")}${zone.identifiers.length > 4 ? ` +${zone.identifiers.length-4}` : ""}`
+                          : "—"}
+                    </td>
+                    <td style={{ padding:"12px 16px", fontSize:13, color:"var(--text-secondary)" }}>
+                      {zone.surcharge_pct > 0 ? `+${zone.surcharge_pct}%` : "None"}
+                    </td>
+                    <td style={{ padding:"12px 16px" }}>
+                      <DsStatusBadge status={zone.is_active ? "active" : "inactive"}/>
+                    </td>
+                    <td style={{ padding:"12px 16px" }}>
+                      {zone.is_active && (
+                        <Button variant="ghost" size="sm" loading={deactivateAction.loading}
+                          onClick={() => deactivateAction.execute(zone.zone_id)}>
+                          Deactivate
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
 
-      <Modal open={createModal} onClose={() => setCreateModal(false)} title="Add Service Zone">
+      <Modal
+        open={createModal}
+        onClose={() => setCreateModal(false)}
+        title="Add Service Zone"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setCreateModal(false)}>Cancel</Button>
+          <Button variant="primary" size="sm" loading={createAction.loading}
+            disabled={!form.zone_name.trim()}
+            onClick={handleSubmit}>
+            Add Zone
+          </Button>
+        </>}
+      >
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
           {createAction.error && (
-            <div style={{ padding:"10px 14px", borderRadius:9, background:"var(--danger-bg)",
-              border:"1px solid var(--danger-border)" }}>
-              <p style={{ fontSize:12, color:"var(--danger-text)", margin:0 }}>{createAction.error}</p>
-            </div>
+            <Alert tone="danger">{createAction.error}</Alert>
           )}
           <Input label="Zone Name" placeholder="Mumbai North, Delhi NCR…"
-            value={form.zone_name} onChange={v => setForm(f => ({ ...f, zone_name: v }))}/>
+            value={form.zone_name} onChange={e => setForm(f => ({ ...f, zone_name: e.target.value }))}/>
           <div>
             <label style={{ fontSize:12, fontWeight:500, color:"var(--text-secondary)", display:"block", marginBottom:6 }}>
               Zone Type
@@ -182,26 +191,18 @@ export default function ServiceAreasPage() {
             <>
               <Input label="Center Latitude" type="number" placeholder="30.9"
                 value={form.center_lat != null ? String(form.center_lat) : ""}
-                onChange={v => setForm(f => ({ ...f, center_lat: Number(v) || undefined }))}/>
+                onChange={e => setForm(f => ({ ...f, center_lat: Number(e.target.value) || undefined }))}/>
               <Input label="Center Longitude" type="number" placeholder="75.8"
                 value={form.center_lng != null ? String(form.center_lng) : ""}
-                onChange={v => setForm(f => ({ ...f, center_lng: Number(v) || undefined }))}/>
+                onChange={e => setForm(f => ({ ...f, center_lng: Number(e.target.value) || undefined }))}/>
               <Input label="Radius (km)" type="number" placeholder="10"
                 value={form.radius_km != null ? String(form.radius_km) : ""}
-                onChange={v => setForm(f => ({ ...f, radius_km: Number(v) || undefined }))}/>
+                onChange={e => setForm(f => ({ ...f, radius_km: Number(e.target.value) || undefined }))}/>
             </>
           )}
           <Input label="Surcharge %" type="number" placeholder="0"
             value={form.surcharge_pct != null ? String(form.surcharge_pct) : "0"}
-            onChange={v => setForm(f => ({ ...f, surcharge_pct: Number(v) || 0 }))}/>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setCreateModal(false)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" loading={createAction.loading}
-              disabled={!form.zone_name.trim()}
-              onClick={handleSubmit}>
-              Add Zone
-            </Btn>
-          </div>
+            onChange={e => setForm(f => ({ ...f, surcharge_pct: Number(e.target.value) || 0 }))}/>
         </div>
       </Modal>
     </TenantLayout>
