@@ -10,7 +10,8 @@ import {
   Settings as SettingsIcon, Layers, Package, Building2, Flag, ScrollText, History, Download, Upload,
 } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader, Modal, Input, Select, Skeleton } from "../../../components/shared/ui";
+import { Badge, Btn, Modal, Input, Select } from "../../../components/shared/ui";
+import { Card, PageHeader, PageShell, StatusBadge, Skeleton } from "@serviceos/design-system";
 import { SummaryCardsRow } from "../../../components/pricing/SummaryCard";
 import { ActionMenu } from "../../../components/pricing/ActionMenu";
 import {
@@ -73,11 +74,12 @@ export default function SettingsPage() {
 
   return (
     <AdminLayout activeNav="settings">
-      <SectionHeader
+      <PageShell>
+      <PageHeader
         title="Platform Settings"
-        subtitle="Configure global platform, category, package, tenant, finance, security, compliance, and runtime settings."
+        description="Configure global platform, category, package, tenant, finance, security, compliance, and runtime settings."
       />
-      <div style={{ padding: "0 28px 32px" }}>
+      <div>
         <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 20, overflowX: "auto" }}>
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
@@ -100,6 +102,7 @@ export default function SettingsPage() {
         {tab === "audit_log" && <AuditLogTab />}
         {tab === "version_history" && <VersionHistoryTab />}
       </div>
+      </PageShell>
     </AdminLayout>
   );
 }
@@ -193,7 +196,7 @@ function GlobalSettingsTab() {
       )}
 
       {settings.length === 0 && !list.loading ? (
-        <Card padding={0}>
+        <Card padding="none">
           <EmptyState text="No platform settings configured. Seed recommended ServiceOS defaults or create a setting manually." actions={
             <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
               <Btn variant="primary" size="sm" onClick={runSeed}>Seed Defaults</Btn>
@@ -204,7 +207,7 @@ function GlobalSettingsTab() {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "220px 1fr 320px", gap: 16 }}>
           {/* Left category sidebar */}
-          <Card padding={8}>
+          <Card padding="sm">
             <button onClick={() => setCategory(null)} style={{
               display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none",
               background: !category ? "var(--surface-sunken)" : "none", borderRadius: 6, cursor: "pointer",
@@ -223,7 +226,7 @@ function GlobalSettingsTab() {
           </Card>
 
           {/* Main settings table */}
-          <Card padding={0}>
+          <Card padding="none">
             {list.loading ? <Skeleton height={300} /> : (
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr><Th>Setting</Th><Th>Key</Th><Th>Type</Th><Th>Value</Th><Th>Risk</Th><Th>Status</Th><Th>{" "}</Th></tr></thead>
@@ -235,7 +238,7 @@ function GlobalSettingsTab() {
                       <Td>{st.type}</Td>
                       <Td>{st.is_secret ? "••••••••" : fmtValue(st.value)}</Td>
                       <Td><Badge variant={RISK_VARIANT[st.risk_level] ?? "muted"} size="sm">{st.risk_level}</Badge></Td>
-                      <Td><Badge variant={st.status === "active" ? "success" : "muted"} size="sm">{st.status}</Badge></Td>
+                      <Td><StatusBadge status={st.status} size="sm" /></Td>
                       <Td>
                         <ActionMenu items={[
                           { label: "Edit", onClick: () => openEdit(st), disabled: !st.is_runtime_editable },
@@ -255,7 +258,7 @@ function GlobalSettingsTab() {
           </Card>
 
           {/* Right effective value / resolver panel */}
-          <Card padding={16}>
+          <Card padding="md">
             <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Effective Value Resolver</h3>
             <Input label="Setting Key" value={resolverKey} onChange={setResolverKey} />
             {resolver.loading ? <Skeleton height={100} /> : resolver.data && (
@@ -383,7 +386,7 @@ function CategorySettingsTab() {
   const rows = categories.data?.categories ?? [];
 
   return (
-    <Card padding={0}>
+    <Card padding="none">
       {categories.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
         <EmptyState text="No categories found." />
       ) : (
@@ -397,7 +400,7 @@ function CategorySettingsTab() {
                 <Td><code style={{ fontSize: 11 }}>{c.finance_model ?? "—"}</code></Td>
                 <Td><Badge variant={c.payment_collection_enabled ? "warning" : "success"} size="sm">{String(c.payment_collection_enabled)}</Badge></Td>
                 <Td><Badge variant={c.tenant_payouts_enabled ? "warning" : "success"} size="sm">{String(c.tenant_payouts_enabled)}</Badge></Td>
-                <Td><Badge variant={c.is_active ? "success" : "muted"} size="sm">{c.is_active ? "active" : "inactive"}</Badge></Td>
+                <Td><StatusBadge status={c.is_active ? "active" : "inactive"} size="sm" /></Td>
               </tr>
             ))}
           </tbody>
@@ -416,7 +419,7 @@ function PlanSettingsTab() {
   const rows = plans.data?.packages ?? [];
 
   return (
-    <Card padding={0}>
+    <Card padding="none">
       {plans.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
         <EmptyState text="No plan settings configured. Select a package or seed default plan settings." />
       ) : (
@@ -431,7 +434,7 @@ function PlanSettingsTab() {
                 <Td>{p.storage_quota_gb ?? "—"}</Td>
                 <Td>{p.commission_rate != null ? `${p.commission_rate}%` : "—"}</Td>
                 <Td>{p.security_deposit_amount ?? "—"}</Td>
-                <Td><Badge variant={p.is_active ? "success" : "muted"} size="sm">{p.is_active ? "active" : "inactive"}</Badge></Td>
+                <Td><StatusBadge status={p.is_active ? "active" : "inactive"} size="sm" /></Td>
               </tr>
             ))}
           </tbody>
@@ -471,7 +474,7 @@ function TenantOverridesTab() {
       <div style={{ marginBottom: 14 }}>
         <Btn variant="primary" size="sm" onClick={() => setModal(true)}>Create Override</Btn>
       </div>
-      <Card padding={0}>
+      <Card padding="none">
         {overrides.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
           <EmptyState text="No tenant overrides configured." />
         ) : (
@@ -485,7 +488,7 @@ function TenantOverridesTab() {
                   <Td>{fmtValue(o.value)}</Td>
                   <Td>{o.reason ?? "—"}</Td>
                   <Td>{o.expires_at ? new Date(o.expires_at).toLocaleDateString("en-IN") : "Never"}</Td>
-                  <Td><Badge variant={o.status === "active" ? "success" : "muted"} size="sm">{o.status}</Badge></Td>
+                  <Td><StatusBadge status={o.status} size="sm" /></Td>
                   <Td>
                     <ActionMenu items={[
                       { label: "Revoke", onClick: () => revokeAction.execute(o.id, "Revoked by admin").then(() => overrides.refetch()), destructive: true },
@@ -542,7 +545,7 @@ function FeatureFlagsTab() {
       <div style={{ marginBottom: 14 }}>
         <Btn variant="primary" size="sm" icon={<Flag size={14} />} onClick={() => setModal(true)}>Create Flag</Btn>
       </div>
-      <Card padding={0}>
+      <Card padding="none">
         {flags.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
           <EmptyState text="No feature flags configured." />
         ) : (
@@ -553,7 +556,7 @@ function FeatureFlagsTab() {
                 <tr key={f.id}>
                   <Td>{f.label}</Td>
                   <Td><code style={{ fontSize: 11 }}>{f.flag_key}</code></Td>
-                  <Td><Badge variant={f.status === "enabled" ? "success" : "muted"} size="sm">{f.status}</Badge></Td>
+                  <Td><StatusBadge status={f.status} size="sm" /></Td>
                   <Td>{f.rollout_type}{f.rollout_percent != null ? ` (${f.rollout_percent}%)` : ""}</Td>
                   <Td>
                     <ActionMenu items={[
@@ -598,7 +601,7 @@ function AuditLogTab() {
       <div style={{ marginBottom: 14, maxWidth: 320 }}>
         <Input placeholder="Filter by setting key..." value={key} onChange={setKey} />
       </div>
-      <Card padding={0}>
+      <Card padding="none">
         {logs.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
           <EmptyState text="No audit entries." />
         ) : (
@@ -649,7 +652,7 @@ function VersionHistoryTab() {
       <div style={{ marginBottom: 14, maxWidth: 320 }}>
         <Input label="Setting Key" value={key} onChange={setKey} />
       </div>
-      <Card padding={0}>
+      <Card padding="none">
         {history.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
           <EmptyState text="No version history for this setting." />
         ) : (
