@@ -4,7 +4,7 @@ import secrets, uuid
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 import structlog
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.field_ops.constants import (
     JS, ALLOWED_TRANSITIONS, TERMINAL_STATUSES, LOCKED_STATUSES,
@@ -93,6 +93,90 @@ class FieldOpsService:
         except Exception:
             pass
         return allowed
+
+    async def _assert_tenant_customer_relationship(self, tenant_id: uuid.UUID,
+                                                     customer_id: uuid.UUID) -> None:
+        """Slice 2F-14G (tightens Slice 2F-14F's interim policy): NOT every
+        historical Booking/Job row is trustworthy relationship evidence.
+
+        Booking: BookingService.create_booking lets a tenant_owner supply an
+        arbitrary client-side customer_id with no existence/ownership check at
+        all (unlike this service's own create_job, which validates against the
+        User table) -- a malicious tenant_owner could otherwise "self-mint"
+        qualifying evidence for an unrelated real customer by creating a
+        throwaway Booking naming them. A Booking only qualifies once it has
+        reached a status that is UNREACHABLE from the initial
+        draft/pending/pending_confirmation states except by first passing
+        through BS.CONFIRMED (confirmed, scheduled, dispatching, in_progress,
+        completed, converted_to_job -- see BOOKING_TRANSITIONS in
+        app/engines/booking/constants.py). draft/pending/pending_confirmation/
+        rejected/expired/cancelled/voided do not qualify -- cancelled/voided
+        are excluded too because BOOKING_TRANSITIONS allows reaching them from
+        a NON-confirmed state as well, so current status alone cannot prove
+        the booking was ever confirmed.
+
+        Job: a "generic" standalone Job (booking_id and parent_job_id both
+        null) carries no field distinguishing a hardened, post-Slice-2F-14C
+        standalone creation (itself only ever created because qualifying
+        evidence already existed at that time) from an arbitrary pre-hardening
+        row. No deployment marker/timestamp is invented to tell them apart
+        (out of scope) -- generic Job rows are excluded from evidence
+        entirely; only Job rows with a non-null booking_id or parent_job_id
+        qualify, since those are structurally derived from an already-
+        validated Booking or parent Job and carry their trust forward.
+
+        Read-only; raises a single, uniform, privacy-safe error whether the
+        customer is completely unrelated to any tenant, known only to a
+        DIFFERENT one, or has only non-qualifying low-trust records -- never
+        discloses which case applies or any other tenant's identity."""
+        from app.engines.booking.models import Booking, BookingStatusHistory
+        from app.engines.booking.constants import BS
+        QUALIFYING_BOOKING_STATUSES = (
+            BS.CONFIRMED, BS.SCHEDULED, BS.DISPATCHING, BS.IN_PROGRESS,
+            BS.COMPLETED, BS.CONVERTED_TO_JOB,
+        )
+        # Slice 2F-15A: a qualifying-status Booking is no longer sufficient by
+        # itself -- it must additionally be CUSTOMER-originated. Provider-
+        # created Bookings (Slice 2F-15's own "assisted booking" mode) can now
+        # only ever be created when an independent qualifying relationship
+        # already existed (enforced in BookingService.create_booking) -- so a
+        # provider-created Booking is never the FIRST piece of evidence, and
+        # excluding it from being direct evidence here does not break any
+        # legitimate chain (the earlier evidence that justified its creation
+        # remains independently queryable). This also closes legacy risk:
+        # pre-fix provider-created Bookings with no genuine customer
+        # participation can no longer qualify by status alone. The creation
+        # actor's role is read from BookingStatusHistory's creation row
+        # (from_status IS NULL, changed_by_role) -- an existing, unmodified
+        # field written unconditionally by create_booking, not a new column.
+        # Slice 2F-15C: role equality alone ("changed_by_role == customer") is
+        # not sufficient -- it must also be established that the ACTOR who
+        # performed the creation event IS this Booking's own customer, not
+        # merely "a" customer. Binds changed_by (the acting user's ID)
+        # explicitly to Booking.customer_id, closing the theoretical gap
+        # where a differently-derived creation path could otherwise let one
+        # customer's creation event qualify for another customer's Booking.
+        br = await self.db.execute(
+            select(Booking.id)
+            .join(BookingStatusHistory, BookingStatusHistory.booking_id == Booking.id)
+            .where(
+                Booking.tenant_id == tenant_id, Booking.customer_id == customer_id,
+                Booking.status.in_(QUALIFYING_BOOKING_STATUSES),
+                BookingStatusHistory.from_status.is_(None),
+                BookingStatusHistory.changed_by_role == "customer",
+                BookingStatusHistory.changed_by == Booking.customer_id,
+            ).limit(1))
+        if br.scalar_one_or_none():
+            return
+        jr = await self.db.execute(select(Job.id).where(
+            Job.tenant_id == tenant_id, Job.customer_id == customer_id,
+            or_(Job.booking_id.isnot(None), Job.parent_job_id.isnot(None))).limit(1))
+        if jr.scalar_one_or_none():
+            return
+        raise ServiceOSException("CUSTOMER_TENANT_RELATIONSHIP_REQUIRED",
+            "This customer has no existing relationship with your tenant. "
+            "A Job can only be manually created for a customer who already has "
+            "a booking or prior job with your tenant.", status_code=422)
 
     async def _get_job_for_assignment(self, job_id: uuid.UUID) -> Job:
         """Step 6: tenant_owner/super_admin lookup used by assign_staff. 404
@@ -220,10 +304,231 @@ class FieldOpsService:
 
     # ── Job CRUD (3 methods) ──────────────────────────────────────────────────
     async def create_job(self, tenant_id: uuid.UUID, data: dict) -> dict:
+        # Slice 2F-14B: tenant_id was previously taken from the request body
+        # as-is for every persona -- a tenant_owner/staff/technician caller
+        # could create a Job under a DIFFERENT tenant_id simply by putting one
+        # in the request. Tenant-scoped personas are now always pinned to
+        # their own principal tenant, the same pattern already established in
+        # list_jobs. super_admin (and the internal-only
+        # _spawn_repair_from_consultation caller, which passes actor_role
+        # unrelated to the acting user) may still pass an explicit tenant_id.
+        if self.actor_role in ("tenant_owner", "staff", "technician") and self.actor_tenant_id is not None:
+            tenant_id = self.actor_tenant_id
         if data.get("job_type") and data["job_type"] not in JOB_TYPES:
             raise ServiceOSException("INVALID_JOB_TYPE",
                 f"Invalid job_type '{data['job_type']}'.", status_code=422,
                 context={"valid_types": JOB_TYPES})
+
+        # Slice 2F-14C: every tenant-owned linked-record identifier accepted
+        # by this route is now ownership-validated against the (already
+        # server-pinned) tenant_id -- a database FK existing is not
+        # sufficient; a valid record belonging to a DIFFERENT tenant must
+        # still be rejected. Reuses existing services/models only, no new
+        # cross-pipeline adapter.
+        catalog_item = None
+        if data.get("service_type_id"):
+            from app.engines.service_catalog.service import ServiceCatalogService
+            catalog_item = await ServiceCatalogService(self.db).get_by_service_type_id(
+                tenant_id, data["service_type_id"])
+            if not catalog_item:
+                raise ServiceOSException("FOREIGN_SERVICE_TYPE",
+                    f"service_type_id '{data['service_type_id']}' does not belong to this tenant.",
+                    status_code=422)
+            if not catalog_item.is_active:
+                raise ServiceOSException("INACTIVE_SERVICE_TYPE",
+                    f"service_type_id '{data['service_type_id']}' is not active.", status_code=422)
+        # Slice 2F-14E: booking_id and parent_job_id are each independently
+        # cross-checked/duplicate-guarded (below) but no safe combined
+        # semantics for supplying BOTH at once have ever been established
+        # anywhere in this codebase (neither field defers to the other for
+        # customer/service/duplicate authority when both are present) --
+        # per the mission's explicit fallback, simultaneous use is rejected
+        # before persistence rather than silently picking an undocumented
+        # precedence.
+        if data.get("booking_id") and data.get("parent_job_id"):
+            raise ServiceOSException("AMBIGUOUS_JOB_SOURCE",
+                "booking_id and parent_job_id cannot both be supplied.", status_code=422)
+
+        parent = None
+        if data.get("parent_job_id"):
+            pr = await self.db.execute(select(Job).where(Job.id == uuid.UUID(data["parent_job_id"])))
+            parent = pr.scalar_one_or_none()
+            if not parent or parent.tenant_id != tenant_id:
+                raise ServiceOSException("FOREIGN_PARENT_JOB",
+                    f"parent_job_id '{data['parent_job_id']}' does not belong to this tenant.",
+                    status_code=422)
+            # Slice 2F-14D: parent_job_id is customer-authoritative -- a repair/
+            # follow-up Job cannot be linked to a parent belonging to a
+            # DIFFERENT customer than the one explicitly requested. Service
+            # type is intentionally NOT cross-checked here: convert_to_repair's
+            # own established behavior (repair_service_id or job.service_type_id)
+            # already treats a differing repair service as legitimate policy,
+            # not a defect.
+            if data.get("customer_id") and str(parent.customer_id) != str(data["customer_id"]):
+                raise ServiceOSException("CUSTOMER_PARENT_JOB_MISMATCH",
+                    "customer_id does not match parent_job_id's customer.", status_code=422)
+            # Slice 2F-14E: where create_job with a CONSULTATION parent + REPAIR
+            # job_type is semantically equivalent to convert_to_repair's own
+            # dedicated capability, the identical source-state prerequisite
+            # (QUOTE_APPROVED) is now enforced -- mirroring, not inventing,
+            # convert_to_repair's established policy. No status gate is
+            # imposed on other parent/child job_type combinations, since no
+            # established policy exists for those (would be inventing a
+            # broader rule than evidenced).
+            if parent.job_type == JobType.CONSULTATION and data.get("job_type") == JobType.REPAIR:
+                if parent.status != JS.QUOTE_APPROVED:
+                    raise ServiceOSException("CONSULTATION_CONVERSION_NOT_ALLOWED",
+                        f"Consultation must be in 'quote_approved' status. Current: {parent.status}",
+                        status_code=422)
+                # Mirrors convert_to_repair's/spawn_repair's own existing
+                # duplicate-repair guard -- without this, a caller with
+                # create_job's own mutation-scope-aware permission could
+                # bypass that established uniqueness rule simply by posting a
+                # REPAIR job directly with parent_job_id set to a consultation
+                # that already has one.
+                er = await self.db.execute(select(Job).where(
+                    Job.parent_job_id == parent.id, Job.job_type == JobType.REPAIR))
+                if er.scalar_one_or_none():
+                    raise ServiceOSException("CONSULTATION_ALREADY_CONVERTED",
+                        "A repair job already exists for this consultation.", status_code=409)
+        booking = None
+        if data.get("booking_id"):
+            from app.engines.booking.models import Booking
+            try:
+                booking_uuid = uuid.UUID(str(data["booking_id"]))
+            except ValueError:
+                raise ServiceOSException("FOREIGN_BOOKING",
+                    "booking_id is not a valid identifier.", status_code=422)
+            br = await self.db.execute(select(Booking).where(Booking.id == booking_uuid))
+            booking = br.scalar_one_or_none()
+            if not booking or booking.tenant_id != tenant_id:
+                raise ServiceOSException("FOREIGN_BOOKING",
+                    f"booking_id '{data['booking_id']}' does not belong to this tenant.",
+                    status_code=422)
+            # Slice 2F-14D: booking_id is customer- and service-authoritative --
+            # a Job cannot claim a booking reference while showing a DIFFERENT
+            # customer or service than that booking actually has (this would
+            # otherwise silently mislead any downstream consumer -- billing,
+            # notifications, audit -- that trusts job.booking_id to correlate
+            # with the real booking). The canonical, atomic booking-conversion
+            # pipeline remains Booking.convert_to_job (unmodified, out of
+            # scope) -- this only closes the same-tenant cross-field
+            # consistency gap on field_ops.router's own separate, generic
+            # create_job endpoint.
+            if data.get("customer_id") and str(booking.customer_id) != str(data["customer_id"]):
+                raise ServiceOSException("CUSTOMER_BOOKING_MISMATCH",
+                    "customer_id does not match booking_id's customer.", status_code=422)
+            if data.get("service_type_id") and booking.service_type_id != data["service_type_id"]:
+                raise ServiceOSException("SERVICE_BOOKING_MISMATCH",
+                    "service_type_id does not match booking_id's service type.", status_code=422)
+            # Slice 2F-14E: booking_id's customer/service cross-check and
+            # duplicate-conversion guard (both already established) make this
+            # field an AUTHORITATIVE_LINEAGE_REFERENCE, not merely
+            # informational -- so the same source-state prerequisite
+            # Booking.convert_to_job already enforces (BS.CONFIRMED) is now
+            # enforced here too, closing the gap where create_job's own
+            # separate endpoint could reference a draft/pending/cancelled/
+            # rejected/expired/voided booking that convert_to_job itself would
+            # never have accepted. Reuses the existing BS constant; no new
+            # eligibility rule is invented.
+            from app.engines.booking.constants import BS
+            if booking.status != BS.CONFIRMED:
+                raise ServiceOSException("BOOKING_INVALID_STATUS_TRANSITION",
+                    f"Only confirmed bookings can be referenced by a job. Current: {booking.status}",
+                    status_code=422)
+            # Mirrors Booking.convert_to_job's own existing duplicate-conversion
+            # guard (b.converted_job_id / existing-Job-by-booking_id checks) --
+            # without this, create_job's own separate endpoint could create a
+            # second Job referencing a booking that already has one.
+            if booking.converted_job_id:
+                raise ServiceOSException("JOB_ALREADY_EXISTS_FOR_BOOKING",
+                    "A job already exists for this booking.", status_code=409)
+            existing_r = await self.db.execute(select(Job).where(Job.booking_id == str(booking_uuid)))
+            if existing_r.scalar_one_or_none():
+                raise ServiceOSException("JOB_ALREADY_EXISTS_FOR_BOOKING",
+                    "A job already exists for this booking.", status_code=409)
+            # Slice 2F-15A: directly supplying booking_id to create_job must
+            # not bypass the identical provenance protection
+            # Booking.convert_to_job now enforces -- a provider-created
+            # Booking (including a legacy, pre-fix one) requires INDEPENDENT
+            # prior relationship evidence (excluding this same booking)
+            # before it may be used to create a Job here.
+            # Slice 2F-15C: creator_role alone is not sufficient -- the actor
+            # who performed the creation event must also BE this booking's
+            # own customer (changed_by == booking.customer_id), not merely
+            # someone holding the "customer" role. Filtered directly in SQL
+            # (not read-then-compare in Python) so the query shape --
+            # scalar_one_or_none() returning a match-or-None -- stays
+            # consistent with every other provenance check in this file.
+            from app.engines.booking.models import BookingStatusHistory as _BSH
+            creator_r = await self.db.execute(select(_BSH.id).where(
+                _BSH.booking_id == booking.id, _BSH.from_status.is_(None),
+                _BSH.changed_by_role == "customer", _BSH.changed_by == booking.customer_id,
+            ).limit(1))
+            creator_is_customer_originated = creator_r.scalar_one_or_none() is not None
+            if not creator_is_customer_originated:
+                from app.engines.booking.models import Booking as _Booking
+                QUALIFYING_BOOKING_STATUSES = (
+                    BS.CONFIRMED, BS.SCHEDULED, BS.DISPATCHING, BS.IN_PROGRESS,
+                    BS.COMPLETED, BS.CONVERTED_TO_JOB,
+                )
+                indep_br = await self.db.execute(
+                    select(_Booking.id)
+                    .join(_BSH, _BSH.booking_id == _Booking.id)
+                    .where(
+                        _Booking.tenant_id == tenant_id, _Booking.customer_id == booking.customer_id,
+                        _Booking.id != booking.id,
+                        _Booking.status.in_(QUALIFYING_BOOKING_STATUSES),
+                        _BSH.from_status.is_(None), _BSH.changed_by_role == "customer",
+                        _BSH.changed_by == _Booking.customer_id,
+                    ).limit(1))
+                has_independent = indep_br.scalar_one_or_none() is not None
+                if not has_independent:
+                    indep_jr = await self.db.execute(select(Job.id).where(
+                        Job.tenant_id == tenant_id, Job.customer_id == booking.customer_id,
+                        Job.booking_id != str(booking.id),
+                        or_(Job.booking_id.isnot(None), Job.parent_job_id.isnot(None)),
+                    ).limit(1))
+                    has_independent = indep_jr.scalar_one_or_none() is not None
+                if not has_independent:
+                    raise ServiceOSException("CUSTOMER_TENANT_RELATIONSHIP_REQUIRED",
+                        "This booking cannot be used to create a job without "
+                        "independent, established relationship evidence for "
+                        "this customer.", status_code=422)
+        if data.get("customer_id"):
+            from app.engines.auth.models import User
+            customer_uuid = uuid.UUID(data["customer_id"])
+            cr = await self.db.execute(select(User).where(User.id == customer_uuid))
+            customer_user = cr.scalar_one_or_none()
+            if not customer_user or customer_user.role != "customer":
+                raise ServiceOSException("FOREIGN_CUSTOMER",
+                    f"customer_id '{data['customer_id']}' is not a valid customer account.",
+                    status_code=422)
+            # Slice 2F-14F: a deleted/deactivated customer account cannot be
+            # newly associated with a Job -- mirrors the existing
+            # staff.is_active check pattern already used by
+            # Booking.convert_to_job for staff assignment.
+            if not customer_user.is_active or customer_user.deleted_at is not None:
+                raise ServiceOSException("FOREIGN_CUSTOMER",
+                    f"customer_id '{data['customer_id']}' is not a valid customer account.",
+                    status_code=422)
+            # Slice 2F-14F (ratified product decision): a tenant mutation
+            # permission grants authority over the tenant's own operations --
+            # it does not automatically grant authority over every customer
+            # identity on the platform. Booking-referenced and parent-Job-
+            # derived creation already prove the tenant/customer relationship
+            # intrinsically (the Booking/parent Job itself IS the evidence,
+            # already tenant-owned and customer-cross-checked above) -- no
+            # extra query is needed for those. Standalone manual creation
+            # (neither booking_id nor parent_job_id supplied) requires an
+            # existing same-tenant Booking or Job for this customer; a
+            # completely unrelated global customer, or one known only to a
+            # DIFFERENT tenant, is rejected with the same safe, uniform error
+            # regardless of which case applies (never discloses whether the
+            # customer is known to another tenant).
+            if not data.get("booking_id") and not data.get("parent_job_id"):
+                await self._assert_tenant_customer_relationship(tenant_id, customer_uuid)
+
         job = Job(
             tenant_id=tenant_id, job_number=self._generate_job_number(),
             title=data["title"], description=data.get("description"),
@@ -247,9 +552,7 @@ class FieldOpsService:
         # tenant's catalog definitions for checklist, duration, and pricing model.
         if not data.get("job_type") and data.get("service_type_id"):
             try:
-                from app.engines.service_catalog.service import ServiceCatalogService
-                cat = await ServiceCatalogService(self.db).get_by_service_type_id(
-                    tenant_id, data["service_type_id"])
+                cat = catalog_item
                 if cat and cat.is_active:
                     job.job_type = cat.service_type
                     if not data.get("duration_estimate_minutes") and cat.estimated_duration_minutes:
@@ -554,7 +857,11 @@ class FieldOpsService:
             try:
                 from app.engines.document.service import DocumentService
                 amount = job.final_price or job.quoted_price or Decimal("0")
-                await DocumentService(self.db, actor_id=self.actor_id).generate_document(
+                # Phase 2A Slice 2F-35: generate_document now requires trusted
+                # tenant context; this internal system-triggered invoice
+                # generation is explicitly trusted for the job's own tenant.
+                await DocumentService(self.db, actor_id=self.actor_id,
+                                       actor_tenant_id=job.tenant_id).generate_document(
                     job.tenant_id, "invoice", entity_type="job", entity_id=str(job.id),
                     customer_id=job.customer_id,
                     variables={"job_number": job.job_number, "title": job.title,
@@ -700,11 +1007,21 @@ class FieldOpsService:
         }
 
     async def _get_job_for_quote_management(self, job_id: uuid.UUID) -> Job:
-        """Staff (own assigned job) or tenant_owner (own tenant) may manage quotes."""
+        """Staff (own assigned job) or tenant_owner (own tenant) may manage
+        (create/send) a provider quote. Slice 2F-14B: this previously never
+        denied actor_role == "customer" at all -- none of the staff/technician
+        or tenant_owner branches fire for a customer actor, so a customer
+        could create or send a provider-authored quote on ANY job (quote
+        administration is a provider-only capability; customers only ever
+        *respond* to a quote via respond_to_quote/approve_job_quote/
+        reject_job_quote)."""
         r = await self.db.execute(select(Job).where(Job.id == job_id))
         job = r.scalar_one_or_none()
         if not job:
             raise ServiceOSException("JOB_NOT_FOUND", f"Job '{job_id}' not found.", status_code=404)
+        if self.actor_role == "customer":
+            raise ServiceOSException("QUOTE_ACCESS_DENIED",
+                "Customers cannot administer provider quotes.", status_code=403)
         if self.actor_role in ("staff", "technician") and job.assigned_staff_id != self.actor_id:
             raise ServiceOSException("STAFF_NOT_ASSIGNED_TO_JOB",
                 "This job is not assigned to you.", status_code=403)
@@ -1229,6 +1546,21 @@ class FieldOpsService:
         if not item or item.job_id != job.id:
             raise ServiceOSException("CHECKLIST_ITEM_NOT_FOUND",
                 f"Checklist item '{item_id}' not found.", status_code=404)
+        # Slice 2F-14: this method previously had NO status guard at all --
+        # a technician could mutate an item after complete_job_checklist had
+        # already moved the job to CHECKLIST_COMPLETE (or the job had moved
+        # further, e.g. WORK_COMPLETE), silently un-doing a required item on
+        # an already-finalized checklist with no re-validation of the
+        # completion gate. Item mutation is only meaningful while the
+        # checklist is actively being worked (CHECKLIST_STARTED) --
+        # complete_job_checklist itself requires this same status before it
+        # will finalize, so this mirrors the existing, established gate
+        # rather than inventing a new one.
+        if job.status != JS.CHECKLIST_STARTED:
+            raise ServiceOSException("CHECKLIST_NOT_ACTIVE",
+                f"Checklist items can only be changed while the checklist is "
+                f"in progress. Current job status: {job.status}", status_code=422,
+                context={"current_status": job.status})
         if is_completed:
             if item.requires_note and not (notes or "").strip():
                 raise ServiceOSException("CHECKLIST_ITEM_NOTE_REQUIRED",
@@ -1309,9 +1641,11 @@ class FieldOpsService:
                             notes: str | None, expiry_days: int = 7) -> dict:
         """Staff/tenant sends a price quote after assessment. Repair: optional
         ('quote if needed'). Consultation: this IS the deliverable."""
-        r = await self.db.execute(select(Job).where(Job.id == job_id))
-        job = r.scalar_one_or_none()
-        if not job: raise NotFoundException("Job", str(job_id))
+        # Slice 2F-14B: previously loaded the job with NO ownership check at
+        # all -- any authenticated user could create a price quote on any
+        # job in any tenant. Reuses the same helper already used by
+        # create_job_quote/send_job_quote for the identical JobQuote model.
+        job = await self._get_job_for_quote_management(job_id)
 
         allowed = _resolve_transitions(job.job_type, job.status)
         if JS.QUOTE_PENDING not in allowed:
@@ -1387,13 +1721,25 @@ class FieldOpsService:
     async def spawn_repair_from_consultation(self, consultation_job_id: uuid.UUID) -> dict:
         """Staff-triggered manual spawn of a repair from a consultation job.
         Automatically uses the most recent approved quote price if one exists."""
-        r = await self.db.execute(select(Job).where(Job.id == consultation_job_id))
-        job = r.scalar_one_or_none()
-        if not job: raise NotFoundException("Job", str(consultation_job_id))
+        # Slice 2F-14B: previously loaded the job with NO ownership check at
+        # all -- any tenant_owner holding TENANT_UPDATE could spawn a repair
+        # from a DIFFERENT tenant's consultation. Reuses the same
+        # tenant_owner-own-tenant/super_admin helper already used by
+        # convert_to_repair. Also previously had no duplicate-repair guard
+        # (unlike convert_to_repair, which checks for an existing repair job
+        # on the same parent) -- repeated calls could create unlimited
+        # duplicate repair jobs. Both fixed here, mirroring convert_to_repair's
+        # existing pattern exactly rather than inventing a new one.
+        job = await self._get_job_for_assignment(consultation_job_id)
         if job.job_type != JobType.CONSULTATION:
             raise ServiceOSException("INVALID_JOB_TYPE",
                 "Only consultation jobs can spawn repair jobs.",
                 context={"job_type": job.job_type, "job_id": str(consultation_job_id)})
+        er = await self.db.execute(select(Job).where(
+            Job.parent_job_id == job.id, Job.job_type == JobType.REPAIR))
+        if er.scalar_one_or_none():
+            raise ServiceOSException("CONSULTATION_ALREADY_CONVERTED",
+                "A repair job already exists for this consultation.", status_code=409)
         qr = await self.db.execute(
             select(JobQuote).where(JobQuote.job_id == consultation_job_id,
                                    JobQuote.status == "approved")
@@ -1523,8 +1869,19 @@ class FieldOpsService:
         if job.customer_id:
             try:
                 from app.engines.review.service import ReviewService
-                await ReviewService(self.db, actor_id=self.actor_id).create_review_request(
-                    job.job_number, job.tenant_id, job.customer_id, job.assigned_staff_id)
+                # Slice 2F-25A: pass the Job's own tenant as the service's actor
+                # tenant and mark this a trusted internal caller. Slice 2F-25
+                # added tenant pinning to `create_review_request`, and this
+                # call site supplied no tenant context at all -- so every job
+                # close silently failed to create its review request
+                # (TENANT_ACCESS_DENIED, swallowed by the except below). The
+                # Job row is the authoritative source of both tenant and
+                # customer, which is exactly what the pinning wants.
+                await ReviewService(self.db, actor_id=self.actor_id,
+                                    actor_role="system",
+                                    actor_tenant_id=job.tenant_id).create_review_request(
+                    job.job_number, job.tenant_id, job.customer_id, job.assigned_staff_id,
+                    trusted_internal=True)
             except Exception as e:
                 logger.warning("fieldops.review_request_failed", error=str(e))
 
@@ -1543,12 +1900,27 @@ class FieldOpsService:
                                "occurred_at": h.created_at.isoformat()} for h in history]}
 
     # ── Notes (2 methods) ─────────────────────────────────────────────────────
-    async def add_note(self, job_id: uuid.UUID, tenant_id: uuid.UUID,
+    async def add_note(self, job_id: uuid.UUID,
                         content: str, note_type: str, is_internal: bool) -> dict:
+        # Slice 2F-14A: tenant_id was previously a client-supplied query param,
+        # trusted as-is with no job/tenant ownership check at all -- any
+        # authenticated user could write a note onto any job under any tenant_id
+        # they chose. tenant_id is now always derived from the job row itself,
+        # and the same object-ownership check used for job reads (tenant_owner
+        # own-tenant, assigned staff/technician, customer own-job) is enforced
+        # before writing. Notes are a staff/tenant-facing capability -- a
+        # customer has no documented "add a note to my own job" capability
+        # anywhere in this engine, so customers are explicitly denied here
+        # rather than silently allowed through the same access check that
+        # otherwise permits customer reads.
         r = await self.db.execute(select(Job).where(Job.id == job_id))
         job = r.scalar_one_or_none()
         if not job: raise NotFoundException("Job", str(job_id))
-        note = JobNote(job_id=job_id, tenant_id=tenant_id, author_id=self.actor_id,
+        self._assert_can_access_job(job)
+        if self.actor_role == "customer":
+            raise ServiceOSException("NOTE_ACCESS_DENIED",
+                "Customers cannot add notes to a job.", status_code=403)
+        note = JobNote(job_id=job_id, tenant_id=job.tenant_id, author_id=self.actor_id,
             author_role=self.actor_role, content=content, note_type=note_type,
             status_at=job.status, is_internal=is_internal)
         self.db.add(note); await self.db.flush()
@@ -1556,9 +1928,23 @@ class FieldOpsService:
                 "is_internal": is_internal, "created_at": note.created_at.isoformat()}
 
     async def list_notes(self, job_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(JobNote).where(JobNote.job_id == job_id)
+        # Slice 2F-14A: previously read every note for any job_id with zero
+        # tenant/assignment/customer ownership check and no is_internal
+        # filtering -- any authenticated user (including an unrelated customer
+        # or a staff member from a different tenant) could read every
+        # provider-internal note on any job. Now enforces the same
+        # object-ownership check as job reads, and hides is_internal=True
+        # notes from customers (the only persona this engine ever intends
+        # provider-internal notes to be hidden from).
+        r = await self.db.execute(select(Job).where(Job.id == job_id))
+        job = r.scalar_one_or_none()
+        if not job: raise NotFoundException("Job", str(job_id))
+        self._assert_can_access_job(job)
+        r2 = await self.db.execute(select(JobNote).where(JobNote.job_id == job_id)
             .order_by(JobNote.created_at))
-        notes = r.scalars().all()
+        notes = r2.scalars().all()
+        if self.actor_role == "customer":
+            notes = [n for n in notes if not n.is_internal]
         return {"job_id": str(job_id), "notes": [
             {"note_id": str(n.id), "content": n.content, "note_type": n.note_type,
              "author_role": n.author_role, "status_at": n.status_at,
@@ -1566,13 +1952,25 @@ class FieldOpsService:
             for n in notes]}
 
     # ── Media (2 methods) ─────────────────────────────────────────────────────
-    async def add_media(self, job_id: uuid.UUID, tenant_id: uuid.UUID,
+    async def add_media(self, job_id: uuid.UUID,
                          media_id: uuid.UUID | None, media_type: str,
                          caption: str | None, storage_key: str | None) -> dict:
+        # Slice 2F-14A: same class of defect as add_note -- tenant_id was a
+        # client-supplied query param with no job/tenant ownership check.
+        # tenant_id is now always derived from the job row; the same
+        # object-ownership check used for job reads is enforced before
+        # attaching media, and customers are denied (no documented
+        # "customer attaches media to their own job" capability exists here;
+        # this does not build new upload/signature infrastructure -- it only
+        # closes the ownership gap on the existing storage_key-reference field).
         r = await self.db.execute(select(Job).where(Job.id == job_id))
         job = r.scalar_one_or_none()
         if not job: raise NotFoundException("Job", str(job_id))
-        m = JobMedia(job_id=job_id, tenant_id=tenant_id, media_id=media_id,
+        self._assert_can_access_job(job)
+        if self.actor_role == "customer":
+            raise ServiceOSException("MEDIA_ACCESS_DENIED",
+                "Customers cannot attach media to a job.", status_code=403)
+        m = JobMedia(job_id=job_id, tenant_id=job.tenant_id, media_id=media_id,
             uploaded_by=self.actor_id, status_at=job.status,
             media_type=media_type, caption=caption, storage_key=storage_key)
         self.db.add(m); await self.db.flush()
@@ -1580,9 +1978,21 @@ class FieldOpsService:
                 "status_at": job.status, "created_at": m.created_at.isoformat()}
 
     async def list_media(self, job_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(JobMedia).where(JobMedia.job_id == job_id)
+        # Slice 2F-14A: previously read every media row for any job_id with
+        # zero ownership check at all. Now enforces the same job-access check
+        # as list_notes. NOTE: JobMedia has no is_internal-equivalent column
+        # (unlike JobNote), so there is no existing internal/customer-visible
+        # split to enforce at the row level -- any actor who can access the
+        # job at all sees all of its media. This is documented as a product
+        # decision (see product-decisions-required.md), not silently assumed;
+        # no new column/migration was added to invent that distinction.
+        r = await self.db.execute(select(Job).where(Job.id == job_id))
+        job = r.scalar_one_or_none()
+        if not job: raise NotFoundException("Job", str(job_id))
+        self._assert_can_access_job(job)
+        r2 = await self.db.execute(select(JobMedia).where(JobMedia.job_id == job_id)
             .order_by(JobMedia.created_at))
-        items = r.scalars().all()
+        items = r2.scalars().all()
         return {"job_id": str(job_id), "media": [
             {"media_id": str(m.id), "media_type": m.media_type, "caption": m.caption,
              "status_at": m.status_at, "storage_key": m.storage_key,
@@ -1815,9 +2225,14 @@ class FieldOpsService:
 
     # ── Void job ──────────────────────────────────────────────────────────────
     async def void_job(self, job_id: uuid.UUID, reason: str) -> dict:
-        r = await self.db.execute(select(Job).where(Job.id == job_id))
-        job = r.scalar_one_or_none()
-        if not job: raise NotFoundException("Job", str(job_id))
+        # Slice 2F-14A: this method previously loaded the job by ID with no
+        # tenant-ownership check at all -- any tenant_owner holding the
+        # platform-wide TENANT_UPDATE permission could void a job belonging to
+        # a DIFFERENT tenant. _get_job_for_assignment is the existing
+        # tenant_owner-own-tenant/super_admin-platform-wide helper already used
+        # by assign_staff/convert_to_repair -- reused here rather than inventing
+        # a new ownership check.
+        job = await self._get_job_for_assignment(job_id)
         if job.status in TERMINAL_STATUSES:
             raise ServiceOSException("CONFLICT", f"Job already in terminal status: {job.status}")
         if job.status in LOCKED_STATUSES:

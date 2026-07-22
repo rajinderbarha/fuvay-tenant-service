@@ -1,0 +1,8 @@
+module,route,assertion,result
+platform_notifications,POST /v1/provider/notifications/mark-all-read,persona TENANT_PROVIDER via resolved alias,PASS
+customer_reviews,POST /v1/provider/reviews/{review_id}/flag,persona TENANT_PROVIDER,PASS
+legacy review,POST /v1/reviews/{review_id}/reply,persona TENANT_PROVIDER; canonical row present,PASS
+Package Commerce,POST /v1/tenant/packages/{package_id}/purchase,persona TENANT_PROVIDER; is_paid=False intact,PASS
+compliance,POST /v1/provider/compliance/requests,persona TENANT_PROVIDER,PASS
+field_ops,job-close review request behavioural invariant,tenant context + trusted_internal intact,PASS
+legacy review (410),POST /v1/reviews,remains 410 GONE,PASS

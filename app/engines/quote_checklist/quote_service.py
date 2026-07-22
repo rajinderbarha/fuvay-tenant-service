@@ -16,7 +16,7 @@ from app.engines.quote_checklist.constants import (
     QEV_CREATED, QEV_ITEM_ADDED, QEV_ITEM_UPDATED, QEV_ITEM_REMOVED,
     QEV_SENT_TO_CUSTOMER, QEV_CUSTOMER_APPROVED, QEV_CUSTOMER_REJECTED,
     QEV_REVISION_REQUESTED, QEV_CANCELLED, QEV_PROVIDER_APPROVED,
-    QEV_PROVIDER_REJECTED, QEV_SUBMITTED_TO_PROVIDER, QEV_REVISED,
+    QEV_PROVIDER_REJECTED, QEV_SUBMITTED_TO_PROVIDER, QEV_REVISED, QEV_EXPIRED,
     JOB_STATUS_AWAITING_QUOTE_APPROVAL, JOB_STATUS_QUOTE_APPROVED,
     JOB_STATUS_QUOTE_REJECTED, JOB_STATUS_QUOTE_REVISION,
     ERR_QUOTE_NOT_FOUND, ERR_QUOTE_ACCESS_DENIED,
@@ -30,6 +30,29 @@ from app.engines.quote_checklist.models import (
     ServiceJobQuote, ServiceJobQuoteItem, ServiceJobQuoteEvent,
 )
 from app.engines.final_records.models import ServiceJob
+
+
+# Slice 2F-16: add_item/update_item/remove_item previously checked only
+# _assert_not_locked (locked_at is set ONLY on customer approval) -- a quote
+# already in QS_SENT_TO_CUSTOMER (customer is actively deciding), or any
+# terminal status (rejected/expired/cancelled), was NOT "locked" and could
+# still have its line items silently mutated after the fact, changing the
+# total the customer already saw or decided on. Only these statuses permit
+# item mutation -- the same statuses QUOTE_TRANSITIONS treats as still
+# provider-editable, mirroring send_to_customer's own legal-source-state list.
+ITEM_EDITABLE_QUOTE_STATUSES = {
+    QS_DRAFT, QS_SUBMITTED_TO_PROVIDER, QS_PROVIDER_REJECTED,
+    QS_REVISION_REQUESTED, QS_REVISED,
+}
+
+# Slice 2F-16A: event types a customer may see in their own quote's history --
+# excludes internal draft-editing events (item added/updated/removed) and the
+# internal provider-approval-step events, which are provider-side
+# administrative history with no customer-facing relevance.
+CUSTOMER_VISIBLE_QUOTE_EVENT_TYPES = {
+    QEV_SENT_TO_CUSTOMER, QEV_CUSTOMER_APPROVED, QEV_CUSTOMER_REJECTED,
+    QEV_REVISION_REQUESTED, QEV_REVISED, QEV_EXPIRED, QEV_CANCELLED,
+}
 
 
 def _utcnow() -> datetime:
@@ -100,6 +123,23 @@ class ServiceJobQuoteService:
             .where(ServiceJob.id == job_id)
             .values(status=new_status, updated_at=_utcnow())
         )
+
+    async def _customer_dict(self, db: AsyncSession, q: ServiceJobQuote) -> dict:
+        """Slice 2F-16A: customer_approve/reject/request_revision previously
+        returned q.to_dict() directly, exposing provider_internal_notes AND
+        the all-items-inclusive stored total in the decision RESPONSE even
+        after get_quote's own filtering (2F-16) was fixed -- a customer could
+        see internal notes, and a total that did not reconcile to any items
+        list they'd been shown, simply by approving/rejecting a quote,
+        bypassing the read-path fix entirely. Every customer-decision return
+        point now goes through this helper, mirroring get_quote's own
+        customer-view logic exactly."""
+        data = q.to_dict()
+        data.pop("provider_internal_notes", None)
+        res = await db.execute(select(ServiceJobQuoteItem).where(ServiceJobQuoteItem.quote_id == q.id))
+        visible_rows = [i for i in res.scalars().all() if i.is_customer_visible]
+        data.update({k: str(v) for k, v in self._recalculate(visible_rows).items()})
+        return data
 
     def _recalculate(self, items: list[ServiceJobQuoteItem]) -> dict:
         labour = parts = service = discount = tax = Decimal("0")
@@ -175,10 +215,22 @@ class ServiceJobQuoteService:
         q = await self._get_quote(db, quote_id)
         self._assert_tenant(q, tenant_id)
         self._assert_not_locked(q)
+        if q.status not in ITEM_EDITABLE_QUOTE_STATUSES:
+            raise ValueError(ERR_QUOTE_ALREADY_LOCKED)
         if item_type not in VALID_ITEM_TYPES:
             raise ValueError(ERR_QUOTE_ITEM_INVALID)
         qty = Decimal(str(quantity))
         up  = Decimal(str(unit_price))
+        # Slice 2F-16: negative quantity/price were previously unvalidated --
+        # a negative unit_price on a non-discount item (or a negative
+        # quantity on any item) would silently reduce the quote total below
+        # what the visible line items represent. Discount items are
+        # intentionally allowed to reduce the total (that's their purpose,
+        # subtracted in _recalculate) but must themselves be non-negative
+        # inputs -- a "negative discount" is not a supported way to inflate
+        # a total; increasing price is done via labour/parts/service items.
+        if qty < 0 or up < 0:
+            raise ValueError(ERR_QUOTE_ITEM_INVALID)
         total = qty * up
         item = ServiceJobQuoteItem(
             id=uuid.uuid4(),
@@ -222,6 +274,8 @@ class ServiceJobQuoteService:
         q = await self._get_quote(db, quote_id)
         self._assert_tenant(q, tenant_id)
         self._assert_not_locked(q)
+        if q.status not in ITEM_EDITABLE_QUOTE_STATUSES:
+            raise ValueError(ERR_QUOTE_ALREADY_LOCKED)
         res = await db.execute(
             select(ServiceJobQuoteItem).where(
                 ServiceJobQuoteItem.id == uuid.UUID(item_id),
@@ -233,8 +287,16 @@ class ServiceJobQuoteService:
             raise ValueError(ERR_QUOTE_ITEM_INVALID)
         if item_name is not None:        item.item_name = item_name
         if item_description is not None: item.item_description = item_description
-        if quantity is not None:         item.quantity = Decimal(str(quantity))
-        if unit_price is not None:       item.unit_price = Decimal(str(unit_price))
+        if quantity is not None:
+            new_qty = Decimal(str(quantity))
+            if new_qty < 0:
+                raise ValueError(ERR_QUOTE_ITEM_INVALID)
+            item.quantity = new_qty
+        if unit_price is not None:
+            new_up = Decimal(str(unit_price))
+            if new_up < 0:
+                raise ValueError(ERR_QUOTE_ITEM_INVALID)
+            item.unit_price = new_up
         if is_customer_visible is not None: item.is_customer_visible = is_customer_visible
         item.line_total = item.quantity * item.unit_price
         await db.flush()
@@ -259,6 +321,8 @@ class ServiceJobQuoteService:
         q = await self._get_quote(db, quote_id)
         self._assert_tenant(q, tenant_id)
         self._assert_not_locked(q)
+        if q.status not in ITEM_EDITABLE_QUOTE_STATUSES:
+            raise ValueError(ERR_QUOTE_ALREADY_LOCKED)
         res = await db.execute(
             select(ServiceJobQuoteItem).where(
                 ServiceJobQuoteItem.id == uuid.UUID(item_id),
@@ -331,9 +395,16 @@ class ServiceJobQuoteService:
         q = await self._get_quote(db, quote_id)
         if str(q.customer_id) != customer_id:
             raise ValueError(ERR_QUOTE_CUSTOMER_APPROVAL_NOT_ALLOWED)
-        # idempotency: already approved with same key → return as-is
+        # idempotency: already approved with same key → return as-is.
+        # Kept as a lightweight, query-free strip (not the full
+        # _customer_dict/_recalculate reconciliation) -- an already-approved
+        # quote's stored total was already correctly reconciled at the
+        # moment of approval (this same method, non-idempotent branch below),
+        # so no additional item query is needed here.
         if q.status == QS_CUSTOMER_APPROVED and q.idempotency_key == idempotency_key:
-            return q.to_dict()
+            data = q.to_dict()
+            data.pop("provider_internal_notes", None)
+            return data
         # conflict: different key but already approved
         if q.status == QS_CUSTOMER_APPROVED:
             raise ValueError(ERR_QUOTE_IDEMPOTENCY_CONFLICT)
@@ -362,7 +433,7 @@ class ServiceJobQuoteService:
         await notify_provider_quote_decision(db, q, "approved")
         await db.commit()
         await db.refresh(q)
-        return q.to_dict()
+        return await self._customer_dict(db, q)
 
     # ── Customer reject ────────────────────────────────────────────────────────
 
@@ -399,7 +470,7 @@ class ServiceJobQuoteService:
         await notify_provider_quote_decision(db, q, "rejected")
         await db.commit()
         await db.refresh(q)
-        return q.to_dict()
+        return await self._customer_dict(db, q)
 
     # ── Customer request revision ──────────────────────────────────────────────
 
@@ -430,7 +501,7 @@ class ServiceJobQuoteService:
         await notify_provider_quote_decision(db, q, "revision")
         await db.commit()
         await db.refresh(q)
-        return q.to_dict()
+        return await self._customer_dict(db, q)
 
     # ── Cancel quote ───────────────────────────────────────────────────────────
 
@@ -461,12 +532,51 @@ class ServiceJobQuoteService:
 
     async def get_quote(
         self, db: AsyncSession, quote_id: str,
+        tenant_id: str | None = None, customer_id: str | None = None,
     ) -> dict:
+        """Slice 2F-16: previously had NO ownership filter at all -- any
+        authenticated user of any tenant could fetch ANY quote's full detail
+        (including provider_internal_notes) by ID alone. Callers now pass
+        their own scoping identifier: provider/staff/admin pass tenant_id,
+        customer passes customer_id.
+
+        Slice 2F-16A: a foreign-owner mismatch now raises the SAME
+        ERR_QUOTE_NOT_FOUND code as a genuinely missing quote (previously
+        raised ERR_QUOTE_ACCESS_DENIED, which maps to a different HTTP status
+        via the app's ValueError->4xx handler -- "exists but isn't yours" was
+        externally distinguishable from "doesn't exist", disclosing existence
+        of another tenant's/customer's record). Mirrors the established
+        privacy-safe 404 pattern used by Booking's _assert_can_access_booking."""
         q = await self._get_quote(db, quote_id)
+        if tenant_id is not None and str(q.tenant_id) != tenant_id:
+            raise ValueError(ERR_QUOTE_NOT_FOUND)
+        if customer_id is not None and str(q.customer_id) != customer_id:
+            raise ValueError(ERR_QUOTE_NOT_FOUND)
         res = await db.execute(select(ServiceJobQuoteItem).where(ServiceJobQuoteItem.quote_id == q.id))
-        items = [i.to_dict() for i in res.scalars().all()]
+        rows = res.scalars().all()
         data = q.to_dict()
-        data["items"] = items
+        # Slice 2F-16: a customer caller (identified by the presence of
+        # customer_id) must never see provider-internal fields or
+        # non-customer-visible line items -- previously to_dict() returned
+        # provider_internal_notes and ALL items unconditionally to every
+        # caller, including the customer.
+        if customer_id is not None:
+            data.pop("provider_internal_notes", None)
+            rows = [i for i in rows if i.is_customer_visible]
+            # Slice 2F-16A: q.total_amount/customer_payable_amount (and the
+            # per-bucket labour/parts/service/discount/tax amounts) are
+            # computed from ALL items including hidden internal ones
+            # (_recalculate has no visibility filter -- correct for the
+            # PROVIDER view, which needs the true full cost). Returning that
+            # SAME total to a customer alongside only the customer-visible
+            # items would show a total that does not reconcile to the listed
+            # items -- a customer approving that total would be approving an
+            # undisclosed hidden charge. The customer-facing totals are
+            # recomputed here from ONLY the customer-visible items, so what
+            # is displayed always reconciles to what is itemized.
+            customer_totals = self._recalculate(rows)
+            data.update({k: str(v) for k, v in customer_totals.items()})
+        data["items"] = [i.to_dict() for i in rows]
         return data
 
     # ── List quotes for job ────────────────────────────────────────────────────
@@ -498,17 +608,29 @@ class ServiceJobQuoteService:
     # ── Quote events ───────────────────────────────────────────────────────────
 
     async def list_quote_events(
-        self, db: AsyncSession, quote_id: str, tenant_id: str | None = None,
+        self, db: AsyncSession, quote_id: str,
+        tenant_id: str | None = None, customer_id: str | None = None,
     ) -> list[dict]:
         q = await self._get_quote(db, quote_id)
+        # Slice 2F-16A: privacy-safe 404 for foreign ownership, matching get_quote.
         if tenant_id and str(q.tenant_id) != tenant_id:
-            raise ValueError(ERR_QUOTE_ACCESS_DENIED)
+            raise ValueError(ERR_QUOTE_NOT_FOUND)
+        if customer_id and str(q.customer_id) != customer_id:
+            raise ValueError(ERR_QUOTE_NOT_FOUND)
         res = await db.execute(
             select(ServiceJobQuoteEvent)
             .where(ServiceJobQuoteEvent.quote_id == q.id)
             .order_by(ServiceJobQuoteEvent.created_at)
         )
-        return [e.to_dict() for e in res.scalars().all()]
+        events = res.scalars().all()
+        # Slice 2F-16A: draft-editing events (item added/updated/removed,
+        # internal provider-approval-step events) are provider-internal
+        # administrative history -- a customer has no legitimate need to see
+        # how many times staff edited a draft before sending it, and this
+        # was previously exposed unfiltered to the customer_id caller.
+        if customer_id is not None:
+            events = [e for e in events if e.event_type in CUSTOMER_VISIBLE_QUOTE_EVENT_TYPES]
+        return [e.to_dict() for e in events]
 
     # ── Mark as revised (provider updates draft after revision request) ────────
 

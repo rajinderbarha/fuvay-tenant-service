@@ -36,7 +36,39 @@ class RefundRequestService:
         refund_method: str | None = None,
         request_id: str = "—",
     ) -> RefundRequest:
-        complaint = await self._complaint_svc.get_complaint(db, complaint_id)
+        # Slice 2F-10: this was a bare fetch-by-id with NO ownership check
+        # at all -- the only caller is customer_router's request_refund,
+        # which never verified complaint ownership before calling here
+        # (unlike every other customer_router route, which calls
+        # get_customer_complaint first). Any authenticated user could
+        # create a refund request against any complaint_id, for any
+        # customer or tenant. Fixed by requiring ownership when the actor
+        # is a customer, using the same get_customer_complaint check every
+        # other customer route already relies on.
+        if actor_type == ACTOR_CUSTOMER:
+            complaint = await self._complaint_svc.get_customer_complaint(db, actor_user_id, complaint_id)
+        else:
+            complaint = await self._complaint_svc.get_complaint(db, complaint_id)
+
+        # Slice 2F-10A: re-examined this as a possible "persistence before
+        # transition validation" defect (the same class fixed for
+        # resolution accept/reject in Slice 2F-10), but existing test
+        # coverage (test_refund_events_log_the_status_actually_applied,
+        # test_refund_path_advances_and_resolves_the_complaint) proves
+        # this silent-skip-on-illegal-transition behavior is DELIBERATE
+        # and load-bearing across the whole refund lifecycle
+        # (create/admin_approve_refund/record_refund all share this exact
+        # pattern) -- MODULE-L5-02 bug #31 already fixed the one real
+        # defect here (the audit event used to claim the transition
+        # happened even when it didn't); the RefundRequest itself is
+        # intentionally always created as a review request regardless of
+        # whether the complaint's own status field advances. Classified
+        # REQUEST_ALLOWED_WITHOUT_COMPLAINT_TRANSITION_BY_POLICY -- see
+        # docs/workflow-rearchitecture/phase-02a-slice-02f10a/
+        # refund-silent-transition-review.md. NOT reverted to a
+        # validate-before-create ordering; doing so would break this
+        # slice's own re-verified, intentional idempotent-admin-replay
+        # design.
         refund = RefundRequest(
             complaint_id     = complaint_id,
             customer_id      = complaint.customer_id,
@@ -81,8 +113,9 @@ class RefundRequestService:
         actor_user_id: uuid.UUID,
         notes: str | None = None,
         request_id: str = "—",
+        tenant_id: uuid.UUID | None = None,
     ) -> RefundRequest:
-        refund = await self._get_refund(db, refund_id)
+        refund = await self._get_refund(db, refund_id, tenant_id=tenant_id)
         refund.status = REFUND_PROVIDER_REVIEW
         await db.commit()
         return refund
@@ -225,13 +258,22 @@ class RefundRequestService:
         r = await db.execute(q)
         return r.scalars().all()
 
-    async def get_refund(self, db: AsyncSession, refund_id: uuid.UUID) -> RefundRequest:
-        return await self._get_refund(db, refund_id)
+    async def get_refund(self, db: AsyncSession, refund_id: uuid.UUID,
+                          tenant_id: uuid.UUID | None = None) -> RefundRequest:
+        return await self._get_refund(db, refund_id, tenant_id=tenant_id)
 
-    async def _get_refund(self, db: AsyncSession, refund_id: uuid.UUID) -> RefundRequest:
+    async def _get_refund(self, db: AsyncSession, refund_id: uuid.UUID,
+                           tenant_id: uuid.UUID | None = None) -> RefundRequest:
+        # Slice 2F-9: previously loaded by refund_id alone -- ANY authenticated
+        # user of any tenant could review another tenant's refund request.
+        # When tenant_id is supplied (provider-facing callers now always pass
+        # their own principal tenant_id), a mismatch fails closed with the
+        # same not-found error a genuinely missing row would produce.
         r = await db.execute(select(RefundRequest).where(RefundRequest.id == refund_id))
         rf = r.scalars().first()
         if not rf:
+            raise ValueError(ERR_REFUND_NOT_FOUND)
+        if tenant_id is not None and str(rf.tenant_id) != str(tenant_id):
             raise ValueError(ERR_REFUND_NOT_FOUND)
         return rf
 

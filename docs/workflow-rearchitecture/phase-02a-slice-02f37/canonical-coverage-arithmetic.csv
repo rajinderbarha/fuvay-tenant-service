@@ -1,0 +1,5 @@
+metric,starting,delta,final,formula
+protected,294,+19,313,"294 + c(3) + h(16) = 313"
+denominator,297,+16,313,"297 + a(16) = 313"
+unprotected,3,-3,0,"313 - 313 = 0"
+pending_held,17,-17,0,"17 - r(17) = 0"

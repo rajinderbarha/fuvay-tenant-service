@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import UserContext, require_technician
 from app.dependencies.db import get_db
+from app.core.permissions import require_staff_or_above_mutation
 from app.engines.admin_catalog.brand_service import BrandService
 from app.schemas.base import ApiResponse, ok
 
@@ -89,7 +90,7 @@ async def get_supported_brands(
 async def set_supported_brands(
     service_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(require_technician),
+    u: UserContext = Depends(require_staff_or_above_mutation),
     s: BrandService = Depends(_svc),
 ):
     body = await r.json()
@@ -106,7 +107,7 @@ async def set_supported_brands(
 )
 async def create_brand_request(
     r: Request,
-    u: UserContext = Depends(require_technician),
+    u: UserContext = Depends(require_staff_or_above_mutation),
     s: BrandService = Depends(_svc),
 ):
     body = await r.json()

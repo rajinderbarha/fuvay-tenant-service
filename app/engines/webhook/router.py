@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.webhook.service import WebhookService
@@ -12,8 +12,12 @@ logger = structlog.get_logger("webhook.router")
 router = APIRouter(prefix="/v1/webhooks", tags=["Webhook Engine"])
 ENGINE_ID = "webhook"
 def _svc(r: Request, db: AsyncSession=Depends(get_db), u: UserContext=Depends(get_current_user)):
+    # Phase 2A Slice 2F-35: actor_tenant_id is now passed so WebhookService
+    # can independently enforce tenant authority on delete_endpoint, rather
+    # than trusting a client-supplied tenant_id value.
     return WebhookService(db=db, request_id=getattr(r.state,"request_id","—"),
-                           actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role)
+                           actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role,
+                           actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 
 @router.get("/meta", tags=["Engine Registry"])
@@ -51,7 +55,7 @@ async def update_endpoint(endpoint_id: uuid.UUID, r: Request, tenant_id: uuid.UU
 
 @router.delete("/endpoints/{endpoint_id}", response_model=ApiResponse[dict])
 async def delete_endpoint(endpoint_id: uuid.UUID, r: Request, tenant_id: uuid.UUID=Query(...),
-                           u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+                           u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                            s: WebhookService=Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.delete_endpoint(endpoint_id, tenant_id), _rid(r), ENGINE_ID)
 

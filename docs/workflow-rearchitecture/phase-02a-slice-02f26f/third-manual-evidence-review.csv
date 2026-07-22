@@ -1,0 +1,25 @@
+method,path,handler_inspected,qualified_calls_resolved,callee_owner_confirmed,db_writes_searched,flush_commit_checked,external_effects_checked,mutating_get_checked,request_aliases_checked,actor_vs_target_distinguished,ownership_predicate_identified,tenant_direction_identified,capability_from_taxonomy,checklist_pass,reviewer_note
+POST,/v1/tenants/{tenant_id}/data/export,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/tenants/{tenant_id}/engines/{engine_id}/enable,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/tenants/{tenant_id}/suspend,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+PUT,/v1/tenants/{tenant_id},yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+PUT,/v1/tenant/service-areas/{area_id}/services/{mapping_id},yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+GET,/v1/ds/tenants/{tenant_id}/churn/factors,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,checked for mutating GET: no writes
+GET,/v1/ds/tenants/{tenant_id}/customers/{customer_id}/ltv,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,mutating GET CONFIRMED: DSService.get_customer_ltv does db.add(s)+flush
+GET,/v1/ds/tenants/{tenant_id}/pricing/recommendations,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,"checked for mutating GET: only SELECT predicates, no db.add/flush -- PURE_READ"
+DELETE,/v1/pricing/tenants/{tenant_id}/zones/{zone_id},yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/commerce/tenants/{tenant_id}/wallet/purchase/initiate,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/ds/tenants/{tenant_id}/pricing/apply,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/payments/tenants/{tenant_id}/payout,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+PUT,/v1/notifications/tenants/{tenant_id}/channels/{channel},yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+DELETE,/v1/me/profile-photo,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,service takes no arguments; scope entirely internal -- abstain
+POST,/v1/appointments/hold,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/auth/logout,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/bookings,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/compliance/consent/withdraw,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/dispatch/jobs/{job_id}/reassign,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/enterprise/exports/{export_id}/cancel,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/jobs/{job_id}/financial-close,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/payments/orders,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/security/api-keys,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,
+POST,/v1/security/sessions/{session_id}/revoke,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,yes,PASS,no principal use and no tenant; session addressed by id alone -- abstain

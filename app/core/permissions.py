@@ -907,6 +907,147 @@ def require_tenant_mutation_permission(permission: str) -> Callable:
     return _check
 
 
+async def require_tenant_owner_mutation(
+    user: "UserContext" = __import__("fastapi", fromlist=["Depends"]).Depends(
+        __import__("app.dependencies.auth", fromlist=["require_tenant_owner"]).require_tenant_owner
+    )
+) -> "UserContext":
+    """
+    Like require_tenant_owner(), but additionally denies (403) any tenant-side
+    user whose access_scope marks them read-only -- the role-gated analogue of
+    require_tenant_mutation_permission(), for routers (e.g. provider_portal)
+    whose endpoints are gated by the require_tenant_owner ROLE dependency
+    rather than a granular require_permission(P.X) permission. Use this in
+    place of require_tenant_owner on any provider_portal-style mutation
+    endpoint so a read-only-scoped tenant_owner is rejected before any
+    business-rule validation runs, exactly like require_tenant_mutation_permission
+    does for permission-gated endpoints.
+    """
+    from app.exceptions import ServiceOSException
+    if user.role != "super_admin" and getattr(user, "access_scope", None) in TENANT_READONLY_ACCESS_SCOPES:
+        raise ServiceOSException(
+            error_code="PERMISSION_DENIED",
+            detail=(
+                f"Your account has read-only access (access_scope='{user.access_scope}') "
+                "and cannot make changes. Contact an owner or manager to update this "
+                "information."
+            ),
+            blocking_rule=f"tenant_readonly_access_scope: {user.access_scope}",
+            resolution="Contact your tenant owner or manager to request write access.",
+            context={"access_scope": user.access_scope},
+        )
+    return user
+
+
+async def require_staff_or_above_mutation(
+    user: "UserContext" = __import__("fastapi", fromlist=["Depends"]).Depends(
+        __import__("app.dependencies.auth", fromlist=["require_staff_or_above"]).require_staff_or_above
+    )
+) -> "UserContext":
+    """
+    Like require_staff_or_above() (role in {super_admin, tenant_owner, staff,
+    technician}), but additionally denies (403) any tenant-side user whose
+    access_scope marks them read-only -- the access-scope-aware analogue for
+    ServiceJob execution/assignment endpoints (Slice 2F-3B) where the acting
+    persona is a technician/staff member operating on their OWN assigned
+    ServiceJob (or a tenant_owner override), not a granular permission grant.
+    Object/assignment ownership (which specific job the actor may act on) is
+    NOT this dependency's job -- that remains enforced by the existing
+    in-service-layer checks (_assert_staff_owns_job, ServiceJobAssignment
+    matching), which this guard sits in front of, not in place of.
+    """
+    from app.exceptions import ServiceOSException
+    if user.role != "super_admin" and getattr(user, "access_scope", None) in TENANT_READONLY_ACCESS_SCOPES:
+        raise ServiceOSException(
+            error_code="PERMISSION_DENIED",
+            detail=(
+                f"Your account has read-only access (access_scope='{user.access_scope}') "
+                "and cannot make changes. Contact an owner or manager to update this "
+                "information."
+            ),
+            blocking_rule=f"tenant_readonly_access_scope: {user.access_scope}",
+            resolution="Contact your tenant owner or manager to request write access.",
+            context={"access_scope": user.access_scope},
+        )
+    return user
+
+
+async def require_mutation_access_scope(
+    user: "UserContext" = __import__("fastapi", fromlist=["Depends"]).Depends(
+        __import__("app.dependencies.auth", fromlist=["get_current_user"]).get_current_user
+    )
+) -> "UserContext":
+    """
+    Scope-only mutation guard (Slice 2F-31A / N01).
+
+    Unlike require_staff_or_above_mutation and friends, this does NOT restrict
+    the admitted role set at all -- it is for routes whose persona is
+    intentionally mixed (e.g. a customer uploading their own media alongside
+    tenant staff uploading business assets). It adds exactly one thing on top
+    of get_current_user: rejection of a read-only mutation access_scope,
+    using the SAME TENANT_READONLY_ACCESS_SCOPES check and the same
+    before-body-parsing timing as every other *_mutation guard in this file.
+    Object/tenant ownership remains the caller's responsibility (service layer
+    or an explicit follow-up check), exactly as with the other *_mutation
+    guards -- this is a fail-closed floor, not a full authorization decision.
+    """
+    from app.exceptions import ServiceOSException
+    if user.role != "super_admin" and getattr(user, "access_scope", None) in TENANT_READONLY_ACCESS_SCOPES:
+        raise ServiceOSException(
+            error_code="PERMISSION_DENIED",
+            detail=(
+                f"Your account has read-only access (access_scope='{user.access_scope}') "
+                "and cannot make changes. Contact an owner or manager to update this "
+                "information."
+            ),
+            blocking_rule=f"tenant_readonly_access_scope: {user.access_scope}",
+            resolution="Contact your tenant owner or manager to request write access.",
+            context={"access_scope": user.access_scope},
+        )
+    return user
+
+
+async def require_owner_or_office_staff_mutation(
+    user: "UserContext" = __import__("fastapi", fromlist=["Depends"]).Depends(
+        __import__("app.dependencies.auth", fromlist=["get_current_user"]).get_current_user
+    )
+) -> "UserContext":
+    """
+    Slice 2F-6A: role in {super_admin, tenant_owner, staff} -- deliberately
+    EXCLUDES technician, unlike require_staff_or_above_mutation. Use this for
+    back-office/web-only capabilities (e.g. invoice_payment.provider_router's
+    record-payment/create-invoice/add-item) where no mobile/technician client
+    has ever called the endpoint and no product evidence proves technician
+    was an intended actor for this specific capability -- narrower than
+    require_staff_or_above_mutation on purpose, per the "do not infer
+    technician access merely because an existing guard happens to admit it"
+    rule. Also denies (403) any tenant-side user whose access_scope marks
+    them read-only, same as every other *_mutation guard in this module.
+    """
+    from app.exceptions import ServiceOSException
+    from app.dependencies.auth import _check_force_password_change
+    _check_force_password_change(user)
+    if user.role not in ("super_admin", "tenant_owner", "staff"):
+        raise ServiceOSException(
+            error_code="PERMISSION_DENIED",
+            detail=f"Owner or office staff access required. Your role: '{user.role}'.",
+            blocking_rule="required_role: tenant_owner | staff | super_admin",
+        )
+    if user.role != "super_admin" and getattr(user, "access_scope", None) in TENANT_READONLY_ACCESS_SCOPES:
+        raise ServiceOSException(
+            error_code="PERMISSION_DENIED",
+            detail=(
+                f"Your account has read-only access (access_scope='{user.access_scope}') "
+                "and cannot make changes. Contact an owner or manager to update this "
+                "information."
+            ),
+            blocking_rule=f"tenant_readonly_access_scope: {user.access_scope}",
+            resolution="Contact your tenant owner or manager to request write access.",
+            context={"access_scope": user.access_scope},
+        )
+    return user
+
+
 def require_any_permission(*permissions: str) -> Callable:
     """Requires at least one of the listed permissions."""
     async def _check(

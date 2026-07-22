@@ -23,9 +23,38 @@ _GB = 1024 * 1024 * 1024
 
 class MediaService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.request_id = request_id
         self.actor_id = actor_id; self.actor_role = actor_role
+        # Phase 2A Slice 2F-31A (N01 residual): the authoritative tenant of the
+        # calling principal, derived server-side from the token. Every mutation
+        # below MUST compare any client-supplied tenant_id against this value
+        # (never the reverse) -- a route guard alone cannot close this, because
+        # a direct MediaService call bypasses the router entirely.
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> None:
+        """Fail closed unless the caller is platform staff or the requested
+        tenant equals the principal's own authoritative tenant.
+
+        Never raises a message that reveals whether requested_tenant_id itself
+        is real -- the caller compares its own return value/exception, not the
+        tenant's existence.
+        """
+        if self.actor_role == "super_admin":
+            return
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="media_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            # Non-oracular: the caller's own tenant mismatch, not "this other
+            # tenant doesn't exist" -- same PERMISSION_DENIED regardless of
+            # whether requested_tenant_id is real.
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's media.",
+                blocking_rule="media_mutation_cross_tenant_denied")
 
     def _file_dict(self, f: MediaFile, signed_url: str | None = None) -> dict:
         return {"file_id": str(f.id), "tenant_id": str(f.tenant_id),
@@ -58,6 +87,12 @@ class MediaService:
     async def initiate_upload(self, tenant_id: uuid.UUID, file_name: str,
                                mime_type: str, size_bytes: int,
                                entity_type: str | None, entity_id: str | None) -> dict:
+        # Phase 2A Slice 2F-31A (N01 residual): tenant_id previously arrived
+        # straight from the request body with no comparison to the calling
+        # principal -- any authenticated user could reserve quota and mint a
+        # storage-key prefix under an arbitrary tenant. No existing object is
+        # involved yet, so PERMISSION_DENIED (not a 404) is the honest response.
+        self._require_trusted_tenant(tenant_id)
         if size_bytes > MAX_FILE_SIZE_BYTES:
             raise ServiceOSException("VALIDATION_ERROR",
                 f"File exceeds maximum size of {MAX_FILE_SIZE_BYTES // (1024*1024)}MB.")
@@ -76,7 +111,14 @@ class MediaService:
                     context={"used_gb": round(used / _GB, 2),
                              "quota_gb": round(quota_bytes / _GB, 2)})
 
-        storage_key = f"tenants/{tenant_id}/{secrets.token_hex(8)}/{file_name}"
+        # Phase 2A Slice 2F-31A (N01 residual) WS6: file_name is client-supplied
+        # and was previously concatenated into the storage key unsanitized --
+        # a name containing "/" or ".." could escape the tenant-scoped prefix
+        # on some storage backends (path traversal into another tenant's
+        # namespace or outside the intended tree). Strip to the basename only;
+        # the random token_hex segment already guarantees uniqueness.
+        safe_file_name = file_name.replace("\\", "/").rsplit("/", 1)[-1].lstrip(".") or "file"
+        storage_key = f"tenants/{tenant_id}/{secrets.token_hex(8)}/{safe_file_name}"
         expires_at = utcnow() + timedelta(hours=1)
 
         if cloudinary_configured():
@@ -105,6 +147,20 @@ class MediaService:
             MediaUploadSession.id == session_id))
         sess = r.scalar_one_or_none()
         if not sess: raise NotFoundException("UploadSession", str(session_id))
+        # Phase 2A Slice 2F-31A (N01 residual): confirm_upload previously took
+        # no actor/tenant evidence at all -- any authenticated principal could
+        # confirm ANY pending session by guessing/enumerating a session_id,
+        # materializing a MediaFile owned by another tenant. Now requires the
+        # confirming principal to be the session's own owner (the common case
+        # -- initiate_upload sets owner_id from the initiating actor) OR to
+        # belong to the session's tenant (tenant staff completing an upload).
+        # Foreign sessions raise the SAME NotFoundException as a missing
+        # session_id -- no existence oracle.
+        if self.actor_role != "super_admin":
+            owns_session = (self.actor_id is not None and sess.owner_id == self.actor_id)
+            same_tenant = (self.actor_tenant_id is not None and sess.tenant_id == self.actor_tenant_id)
+            if not (owns_session or same_tenant):
+                raise NotFoundException("UploadSession", str(session_id))
         if sess.status == "confirmed":
             raise ServiceOSException("CONFLICT", "Upload already confirmed.")
         if sess.expires_at < utcnow():
@@ -159,6 +215,14 @@ class MediaService:
                 "has_next": has_next, "next_cursor": nc}
 
     async def delete_file(self, file_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
+        # Phase 2A Slice 2F-31A (N01 residual): tenant_id previously came
+        # straight from the request PATH and was used to scope the query with
+        # no comparison to the calling principal's own tenant -- a
+        # TENANT_UPDATE holder in tenant A could delete tenant B's file simply
+        # by naming tenant B in the URL. Reject BEFORE the query runs, with the
+        # same PERMISSION_DENIED regardless of whether the named tenant is
+        # real, so this check itself creates no oracle.
+        self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(MediaFile).where(
             MediaFile.id == file_id, MediaFile.tenant_id == tenant_id))
         f = r.scalar_one_or_none()

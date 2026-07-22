@@ -21,12 +21,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.platform_notifications.constants import (
     THREAD_OPEN, THREAD_CLOSED, THREAD_ARCHIVED, THREAD_BLOCKED,
     TERMINAL_THREAD_STATUSES,
-    MSG_TEXT, MSG_SYSTEM, VIS_THREAD,
-    MSG_SENT, RECIP_CUSTOMER, RECIP_PROVIDER, RECIP_STAFF, RECIP_ADMIN,
+    MSG_TEXT, MSG_SYSTEM, VIS_THREAD, VIS_ADMIN_ONLY, VIS_PROVIDER_ONLY, VIS_CUSTOMER_ONLY,
+    MSG_SENT, RECIP_CUSTOMER, RECIP_PROVIDER, RECIP_STAFF, RECIP_TECHNICIAN, RECIP_ADMIN,
     ERR_CHAT_THREAD_NOT_FOUND, ERR_CHAT_THREAD_ACCESS_DENIED,
     ERR_CHAT_THREAD_CLOSED, ERR_CHAT_MESSAGE_REQUIRED,
     ERR_CHAT_MESSAGE_NOT_FOUND, ERR_CHAT_CANNOT_SEND,
+    ERR_CHAT_RECORD_NOT_FOUND, ERR_CHAT_RECORD_ACCESS_DENIED,
+    ERR_CHAT_INVALID_VISIBILITY,
+    ERR_CHAT_ATTACHMENT_NOT_FOUND, ERR_CHAT_ATTACHMENT_ACCESS_DENIED,
 )
+
+# Record types _resolve_record_parties can actually verify against a real
+# row. Any other record_type legitimately resolves to (None, None) and is
+# not blocked here — but for these types, a caller-supplied record_id that
+# doesn't resolve to a real row (or resolves to a DIFFERENT tenant's row
+# than the caller's own) must never silently create an orphaned/mismatched
+# thread.
+_RESOLVABLE_RECORD_TYPES = ("service_booking", "service_job", "complaint")
+_VALID_VISIBILITIES = {VIS_THREAD, VIS_ADMIN_ONLY, VIS_PROVIDER_ONLY, VIS_CUSTOMER_ONLY}
 from app.engines.platform_notifications.models import (
     ChatThread, ChatThreadParticipant, ChatMessage, ChatMessageRead, InAppNotification,
 )
@@ -147,8 +159,35 @@ class ChatThreadService:
     ) -> ChatThread:
         # Fill in whichever party the caller didn't supply from the linked record,
         # so a customer-created thread still knows its provider (and vice versa).
+        # Real router callers always supply exactly one side (provider/staff
+        # supply tenant_id only; customer supplies customer_id only), so this
+        # is also exactly the branch that needs to verify the record — a
+        # caller supplying BOTH already claims full, pre-validated identity
+        # and skips resolution (as before).
         if tenant_id is None or customer_id is None:
             rec_tenant, rec_customer = await self._resolve_record_parties(db, record_type, record_id)
+            if record_type in _RESOLVABLE_RECORD_TYPES and rec_tenant is None:
+                # The record_id doesn't resolve to a real row of this type —
+                # refuse to create a thread pinned to a record that doesn't exist.
+                raise ValueError(ERR_CHAT_RECORD_NOT_FOUND)
+            if (
+                tenant_id is not None
+                and rec_tenant is not None
+                and str(tenant_id) != str(rec_tenant)
+            ):
+                # Caller's own tenant does not own the referenced record —
+                # refuse to let a provider/staff user pin a thread to another
+                # tenant's job.
+                raise ValueError(ERR_CHAT_RECORD_ACCESS_DENIED)
+            if (
+                customer_id is not None
+                and rec_customer is not None
+                and str(customer_id) != str(rec_customer)
+            ):
+                # Caller-supplied customer_id does not match the record's
+                # actual customer — refuse to let a customer pin a thread to
+                # another customer's booking/job/complaint.
+                raise ValueError(ERR_CHAT_RECORD_ACCESS_DENIED)
             tenant_id = tenant_id or rec_tenant
             customer_id = customer_id or rec_customer
 
@@ -262,29 +301,84 @@ class ChatThreadService:
         actor_type: str,
         tenant_id: uuid.UUID | None,
     ) -> None:
+        # Slice 2F-18A: denial always raises ERR_CHAT_THREAD_NOT_FOUND (not
+        # ERR_CHAT_THREAD_ACCESS_DENIED) so a nonexistent thread and a
+        # real-but-unauthorized thread are externally privacy equivalent
+        # (same error_code -> same 404 via the generic domain-code status
+        # mapping in app/exceptions.py, matching the established
+        # Booking-series precedent). ERR_CHAT_THREAD_ACCESS_DENIED is kept
+        # as a constant for internal/log use only.
         if actor_type == RECIP_ADMIN:
             return  # Admin can access all threads
         if actor_type == RECIP_CUSTOMER:
             # A customer may only touch its own thread — ownership IS the gate.
             if str(thread.customer_id) != str(actor_user_id):
-                raise ValueError(ERR_CHAT_THREAD_ACCESS_DENIED)
+                raise ValueError(ERR_CHAT_THREAD_NOT_FOUND)
+            return
+        if actor_type == RECIP_TECHNICIAN:
+            # Ratified interim policy (Slice 2F-18A): a technician gets NO
+            # tenant-wide access. Access requires either (a) being currently
+            # assigned to the exact parent ServiceJob a resolvable thread is
+            # linked to (live assignment, not a stale participant snapshot —
+            # a technician reassigned off the job loses access even if an
+            # old participant row still exists), or (b) for record types
+            # this service cannot resolve to a Job/assignment, an explicit
+            # ACTIVE (not left) participant row.
+            job = await self._resolve_job_for_thread(db, thread)
+            if job is not None:
+                if str(getattr(job, "assigned_staff_id", None) or "") == str(actor_user_id):
+                    return
+                raise ValueError(ERR_CHAT_THREAD_NOT_FOUND)
+            r = await db.execute(
+                select(ChatThreadParticipant).where(
+                    ChatThreadParticipant.thread_id == thread.id,
+                    ChatThreadParticipant.user_id == actor_user_id,
+                    ChatThreadParticipant.left_at == None,  # noqa: E711
+                )
+            )
+            if not r.scalars().first():
+                raise ValueError(ERR_CHAT_THREAD_NOT_FOUND)
             return
         if actor_type in (RECIP_PROVIDER, RECIP_STAFF):
-            # Tenant match is the gate for the provider side: any authorized user
-            # of the owning tenant may handle its customer threads (not only the
-            # one who happens to be a participant row).
+            # Tenant match is the gate for the office/owner side: any
+            # authorized office user of the owning tenant may handle its
+            # customer threads (not only the one who happens to be a
+            # participant row). Technician is handled separately above and
+            # NEVER reaches this branch.
             if thread.tenant_id and tenant_id and str(thread.tenant_id) == str(tenant_id):
                 return
-            raise ValueError(ERR_CHAT_THREAD_ACCESS_DENIED)
-        # Anyone else must be a participant.
+            raise ValueError(ERR_CHAT_THREAD_NOT_FOUND)
+        # Anyone else must be an active participant.
         r = await db.execute(
             select(ChatThreadParticipant).where(
                 ChatThreadParticipant.thread_id == thread.id,
                 ChatThreadParticipant.user_id == actor_user_id,
+                ChatThreadParticipant.left_at == None,  # noqa: E711
             )
         )
         if not r.scalars().first():
-            raise ValueError(ERR_CHAT_THREAD_ACCESS_DENIED)
+            raise ValueError(ERR_CHAT_THREAD_NOT_FOUND)
+
+    async def _resolve_job_for_thread(self, db: AsyncSession, thread: ChatThread):
+        """The ServiceJob a resolvable thread is linked to, or None.
+
+        Only `service_job`/`service_booking` record types resolve to a real
+        assignment concept — never adapts a ServiceJob id to field_ops.Job
+        or a ServiceBooking id to the legacy Booking model.
+        """
+        try:
+            if thread.record_type == "service_job":
+                from app.engines.final_records.models import ServiceJob
+                return await db.get(ServiceJob, thread.record_id)
+            if thread.record_type == "service_booking":
+                from app.engines.final_records.models import ServiceJob
+                r = await db.execute(
+                    select(ServiceJob).where(ServiceJob.booking_id == thread.record_id)
+                )
+                return r.scalars().first()
+        except Exception:
+            return None
+        return None
 
     async def add_participant(
         self,
@@ -340,6 +434,7 @@ class ChatMessageService:
         visibility: str = VIS_THREAD,
         media_urls: list | None = None,
         metadata: dict | None = None,
+        actor: "UserContext | None" = None,
     ) -> ChatMessage:
         # Validate thread exists and is open
         r = await db.execute(select(ChatThread).where(ChatThread.id == thread_id))
@@ -364,6 +459,19 @@ class ChatMessageService:
         if not message_text and not media_urls:
             raise ValueError(ERR_CHAT_MESSAGE_REQUIRED)
 
+        # Visibility is caller-supplied free text on every router; reject any
+        # value outside the known enum, and only an admin may set a
+        # restricted (non-thread-wide) visibility — a provider/staff/customer
+        # sender cannot mark their own message admin_only/provider_only/
+        # customer_only to hide it from (or fake exclusivity to) the other
+        # side of the conversation.
+        if visibility not in _VALID_VISIBILITIES:
+            raise ValueError(ERR_CHAT_INVALID_VISIBILITY)
+        if visibility != VIS_THREAD and actor_type != RECIP_ADMIN:
+            raise ValueError(ERR_CHAT_INVALID_VISIBILITY)
+
+        await self._validate_attachments(db, thread, media_urls, actor)
+
         msg = ChatMessage(
             thread_id=thread_id,
             sender_user_id=actor_user_id,
@@ -380,6 +488,183 @@ class ChatMessageService:
         await self._notify_other_participants(db, thread, actor_user_id, actor_type, message_text)
         await db.commit()
         return msg
+
+    async def _validate_attachments(
+        self, db: AsyncSession, thread: ChatThread, media_urls, actor,
+    ) -> None:
+        """Slice 2F-18B: ATTACHMENT_MODEL_SUPPORTED disposition, reusing the
+        EXISTING media authorization helper instead of a tenant-only check.
+
+        `media_ids` reference `app.engines.media.models.MediaAsset` rows (a
+        real, existing media engine — not built here). Every referenced ID
+        must, using only EXISTING MediaAsset fields (no new column, no
+        migration):
+
+        1. Resolve to a real, active (not soft-deleted / not
+           `status != "active"`) asset.
+        2. Have `media_context == "chat_attachment"` — the media engine's
+           own pre-existing purpose taxonomy already distinguishes chat
+           attachments from unrelated contexts (`provider_document`,
+           `customer_profile_photo`, ...); using an asset uploaded for a
+           different purpose in a chat message is rejected as an
+           unsupported reference, not silently allowed.
+        3. Belong to the same tenant as the thread (tenant equality; kept
+           from 2F-18A).
+        4. Belong to the same customer as the thread, when BOTH the thread
+           and the asset carry a `customer_id` — this uses the asset's
+           EXISTING `customer_id` column to reject cross-customer
+           substitution within the same tenant (Media B attached to
+           Customer A's thread), which Slice 2F-18A's tenant-only check
+           could not catch.
+        5. Pass `MediaAccessService.assert_can_view(actor, asset)` — the
+           EXISTING, centralized media access-control helper
+           (`app.engines.media.access`), reused directly rather than
+           duplicated. This is what actually proves the ACTING PRINCIPAL
+           (not just the tenant) is authorized to use/view this specific
+           asset: a customer may only view their own uploads; a
+           tenant_owner/staff/technician may view any customer-context
+           asset in their own tenant (existing, tenant-wide-for-media
+           policy — see `known-limitations.md` for why this is not
+           narrowed further here) or their own uploads.
+
+        Every rejection raises the SAME error code regardless of which
+        condition failed — privacy equivalence (a caller cannot
+        distinguish "doesn't exist" from "belongs to someone else" from
+        "wrong context" from "not authorized to view").
+
+        `actor` (a `UserContext`) is optional for backward compatibility
+        with internal/system callers that have no end-user principal; when
+        `None`, step 5 is skipped (there is no principal to check) but
+        steps 1-4 (existence, context, tenant, customer) still apply.
+        """
+        if not media_urls or not isinstance(media_urls, dict):
+            return
+        media_ids = media_urls.get("media_ids")
+        if not media_ids:
+            return
+        from app.engines.media.models import MediaAsset
+        from app.engines.media.asset_service import MediaAssetRecord
+        from app.engines.media.access import MediaAccessService
+        from app.exceptions import ServiceOSException
+
+        access = MediaAccessService()
+        validated_assets = []
+        for mid in media_ids:
+            try:
+                asset_id = uuid.UUID(str(mid))
+            except (ValueError, TypeError, AttributeError):
+                raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+            # Slice 2F-18D: SELECT ... FOR UPDATE, not db.get(), so the row
+            # is locked for the rest of THIS transaction. A concurrent
+            # request attaching the SAME asset to a different thread blocks
+            # here until this transaction commits or rolls back, then
+            # re-reads the now-current claim and correctly loses the race
+            # (see atomic-claiming.md) — no migration, no new mechanism,
+            # just the existing Postgres row-lock the async driver already
+            # supports.
+            r = await db.execute(
+                select(MediaAsset).where(MediaAsset.id == asset_id).with_for_update()
+            )
+            asset = r.scalar_one_or_none()
+            if asset is None:
+                raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+            if getattr(asset, "deleted_at", None) is not None:
+                raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+            if getattr(asset, "status", "active") != "active":
+                raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+            if getattr(asset, "media_context", None) != "chat_attachment":
+                raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+            if (
+                thread.tenant_id is not None
+                and getattr(asset, "tenant_id", None) is not None
+                and str(asset.tenant_id) != str(thread.tenant_id)
+            ):
+                raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+            if (
+                thread.customer_id is not None
+                and getattr(asset, "customer_id", None) is not None
+                and str(asset.customer_id) != str(thread.customer_id)
+            ):
+                raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+            if actor is not None:
+                try:
+                    access.assert_can_view(actor, MediaAssetRecord.from_orm(asset))
+                except ServiceOSException:
+                    raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+
+            # Slice 2F-18D: parse the existing claim defensively — a
+            # malformed metadata_json shape (not a dict, or a
+            # chat_thread_id value that isn't a real UUID) must fail
+            # closed, never be treated as "unclaimed" (which would allow
+            # a stale/corrupt claim to be silently overwritten).
+            meta = asset.metadata_json
+            if not isinstance(meta, dict):
+                raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+            raw_claim = meta.get("chat_thread_id")
+            claimed_thread_id: uuid.UUID | None = None
+            if raw_claim is not None:
+                try:
+                    claimed_thread_id = uuid.UUID(str(raw_claim))
+                except (ValueError, TypeError, AttributeError):
+                    raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+
+            if claimed_thread_id is not None:
+                # Slice 2F-18C: same-customer cross-Job/cross-conversation
+                # reuse guard — already claimed by a DIFFERENT thread.
+                if claimed_thread_id != thread.id:
+                    raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+            else:
+                # Slice 2F-18D: safe first-use destination authority.
+                # `assert_can_view` above proves the sender may VIEW the
+                # asset — necessary, not sufficient, for CHOOSING which
+                # conversation to first-claim it into. A technician's
+                # authority is Job-assignment-scoped, not tenant-oversight-
+                # scoped (unlike tenant_owner/staff, whose tenant-wide
+                # customer oversight is the ratified, existing, unmodified
+                # office policy) — so a technician's OWN upload is the only
+                # evidence this codebase has that they legitimately chose
+                # this destination. Everyone else reaching this point
+                # (customer, tenant_owner, staff) already had their
+                # authority proven above (customer_id match / tenant match
+                # + assert_can_view); "first thread supplied by the caller"
+                # is never, by itself, treated as proof of context for
+                # anyone.
+                if actor is not None and actor.role == "technician":
+                    if str(getattr(asset, "uploaded_by_user_id", None)) != str(actor.user_id):
+                        raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+                # Slice 2F-18E: office (tenant_owner/staff) first-use
+                # destination authority. Tenant equality and customer
+                # equality alone are not sufficient evidence for a
+                # Job-linked customer/technician conversation — the SAME
+                # customer can have multiple concurrent threads (multiple
+                # ServiceJobs), and MediaAsset has no Job/thread column to
+                # disambiguate which one an asset was "for." A thread with
+                # no customer party at all (`thread.customer_id is None`
+                # — a provider-internal conversation) carries no external
+                # audience, so office sharing there needs no further
+                # proof. A thread WITH a customer party is only a safe
+                # office first-use destination when the office actor is
+                # themselves the asset's uploader — the only evidence
+                # available, absent a schema change, that THIS office
+                # user chose THIS specific asset for THIS specific
+                # conversation rather than any of the customer's other
+                # threads.
+                if (
+                    actor is not None
+                    and actor.role in ("tenant_owner", "staff")
+                    and thread.customer_id is not None
+                    and str(getattr(asset, "uploaded_by_user_id", None)) != str(actor.user_id)
+                ):
+                    raise ValueError(ERR_CHAT_ATTACHMENT_NOT_FOUND)
+
+            validated_assets.append(asset)
+
+        for asset in validated_assets:
+            meta = asset.metadata_json if isinstance(asset.metadata_json, dict) else {}
+            if meta.get("chat_thread_id") is None:
+                new_meta = dict(meta)
+                new_meta["chat_thread_id"] = str(thread.id)
+                asset.metadata_json = new_meta
 
     async def _notify_other_participants(
         self, db: AsyncSession, thread: ChatThread, sender_user_id: uuid.UUID,

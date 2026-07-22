@@ -1,0 +1,11 @@
+check,result,evidence
+Customer self-service rows present in the tenant canonical CSV,0,zero rows with a /v1/customer/ path prefix found in tenant-mutation-endpoint-inventory.csv
+Platform-admin rows present in the tenant canonical CSV,0,zero rows with a /v1/admin/ path prefix found
+Platform-internal rows present in the tenant canonical CSV,0,zero rows with a /v1/internal/ path prefix found
+Background-worker rows present in the tenant canonical CSV,0,no worker-gated route exists in this codebase at all (confirmed, see global-persona-classification.csv)
+Public rows present in the tenant canonical CSV,0,no PUBLIC_NO_AUTH-guarded route is present in the tenant CSV (all 39 PUBLIC_NO_AUTH routes application-wide are outside this file)
+False-positive rows present in the tenant canonical CSV,0,the 1 known false positive (preview_matching_inputs) was already removed in Slice 2F-17; re-confirmed absent this slice
+Deprecated rows present in the tenant canonical CSV,0,none found
+Disconnected rows present in the tenant canonical CSV,0,all 226 rows confirmed mounted at runtime
+
+CONCLUSION: zero misclassified rows exist in the canonical tenant CSV. Design A (tenant/provider mutations only, established Slice 2F-15C) has been applied with zero violations across this entire initiative's history.

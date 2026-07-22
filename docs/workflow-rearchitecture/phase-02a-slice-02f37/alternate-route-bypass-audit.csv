@@ -1,0 +1,6 @@
+service,method,alternate_callers_found,finding
+PricingService,"set_tenant_price, set_brand_adjustment, create_zone, update_zone, delete_zone, create_rule, update_rule, delete_rule",none,only called from app/engines/pricing/router.py's own handlers
+CommerceService,"initiate_purchase, submit_claim, recalculate_badges",none,only called from app/engines/platform_commerce/router.py's own handlers
+PaymentService,request_payout,none,only called from app/engines/payment/router.py's own handler
+SubscriptionService,update_plan,none,only called from app/engines/subscription/router.py's own handler
+ComplianceService,"request_deletion, request_export",none,only called from app/engines/compliance/router.py's own handlers

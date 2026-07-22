@@ -1,0 +1,12 @@
+persona,cancellation_authority,classification,evidence,directly_tested
+tenant_owner,business-wide (any same-tenant appointment),TENANT_OWNER_BUSINESS_WIDE_CANCEL,2F-3B approved sibling cancel_job 'tenant-wide provider action' + no assignment check in cancel_appointment,yes (HTTP clears role gate + service business-wide proof)
+canonical_staff,business-wide (any same-tenant appointment),STAFF_BUSINESS_WIDE_CANCEL,same -- cancel_job admits staff business-wide; coaching cancel omits assignment check for the same reason,yes (HTTP clears role gate + test_cancel_succeeds_when_actor_is_not_assigned_staff)
+super_admin,business-wide (existing behavior preserved),EXISTING_BEHAVIOR_PRESERVED,require_owner_or_office_staff_mutation admits super_admin; no override was added or removed,yes (HTTP clears role gate)
+technician,denied,TECHNICIAN_CANCEL_DENIED,require_owner_or_office_staff_mutation excludes technician (2F-12) -- STRICTER than sibling cancel_job's staff_or_above,yes (HTTP 403)
+customer,denied from this provider route,CUSTOMER_CANCEL_DENIED,require_owner_or_office_staff_mutation excludes customer; customers cancel their DRAFT via the distinct coaching_appointment module,yes (HTTP 403)
+guest,denied,fail-closed,require_owner_or_office_staff_mutation,yes (HTTP 403)
+unauthenticated,denied,fail-closed,no bearer token,yes (HTTP 401/403)
+read-only tenant_owner,denied,fail-closed (mutation scope),require_owner_or_office_staff_mutation access-scope deny,yes (HTTP 403)
+read-only staff,denied,fail-closed (mutation scope),same,yes (HTTP 403)
+unknown role,denied,fail-closed,require_owner_or_office_staff_mutation role check,yes (HTTP 403)
+cross-tenant (any role),denied,ownership-rejected (not-found),_get_appt tenant filter,yes (test_cross_tenant_cancel_not_found_no_mutation)

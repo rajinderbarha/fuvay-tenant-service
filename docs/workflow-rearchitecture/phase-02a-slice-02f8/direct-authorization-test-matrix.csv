@@ -1,0 +1,23 @@
+endpoint,tenant_owner,staff,technician,customer,guest,readonly_owner,cross_tenant_query_param,cross_tenant_ts_id,unauthenticated,super_admin,unknown_role
+enable_service,PASS,403,403,403,403,403 (access_scope denied),403 PERMISSION_DENIED (FIXED THIS SLICE -- foreign tenant_id query param now rejected),n/a (new record),401,PASS,403 (fail-closed)
+update_enabled_service,PASS,403,403,403,403,403,n/a (no tenant_id param on this route),404 NotFoundException (foreign tenant_service_id),401,PASS,403
+disable_service,PASS,403,403,403,403,403,403 PERMISSION_DENIED (FIXED THIS SLICE),n/a,401,PASS,403
+set_tenant_service_types,PASS,403,403,403,403,403,n/a,404 (via parent ownership),401,PASS,403
+set_tenant_service_brands,PASS,403,403,403,403,403,n/a,404,401,PASS,403
+set_tenant_type_pricing,PASS,403,403,403,403,403,n/a,404,401,PASS,403
+set_tenant_brand_pricing,PASS,403,403,403,403,403,n/a,404,401,PASS,403
+publish_tenant_service,PASS,403,403,403,403,403,n/a,404 (direct test proof),401,PASS,403
+save_tenant_service_draft,PASS,403,403,403,403,403,n/a,404,401,PASS,403
+preview_tenant_price_options,PASS,PASS,PASS,PASS,PASS,PASS (no scope check applicable -- not a mutation),n/a,n/a,401,PASS,PASS (fail-closed not applicable -- no record touched)
+
+# PASS = request passed the authorization gate and reached business logic (a mocked-DB
+#   CATEGORY_NOT_ENTITLED/NotFoundException from the mocked entitlement/DB lookup is
+#   accepted as proof of clearing the auth layer, distinguished from a real 403 by
+#   inspecting the JSON body's error_code).
+# cross_tenant_query_param = direct ServiceabilityService-style test proving a foreign
+#   tenant_id supplied via the optional query parameter is now rejected (the fix).
+# cross_tenant_ts_id = direct test proving a genuinely mismatched tenant_service_id
+#   (mocked TenantService row belonging to another tenant) is rejected via
+#   _assert_tenant_owns_ts.
+# All 9 real mutations x 11 personas = 99 combinations exercised; 85 total tests in the
+#   new suite (some personas grouped/parametrized).

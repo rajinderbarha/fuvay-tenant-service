@@ -173,6 +173,8 @@ class SavedViewService:
         tenant_id: uuid.UUID | None,
     ) -> EnterpriseSavedView:
         view = await self.get_view(db, view_id, user_id, tenant_id)
+        if str(view.owner_user_id) != str(user_id):
+            raise ValueError(ERR_SAVED_VIEW_ACCESS_DENIED)
         # unset other defaults for this user+resource
         others = await db.execute(
             select(EnterpriseSavedView).where(

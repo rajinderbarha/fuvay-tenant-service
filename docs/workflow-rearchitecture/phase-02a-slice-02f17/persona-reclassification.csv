@@ -1,0 +1,14 @@
+module,route_count,persona,included_in_tenant_denominator,rationale
+app.engines.admin_catalog.brand_provider_router,2,TENANT_PROVIDER_MUTATION,yes,provider-only brand-request routes, no customer/platform reachability
+app.engines.profile.router,3,TENANT_PROVIDER_MUTATION,yes,tenant/staff self-profile mutation, no customer route in this file
+app.engines.platform_notifications.provider_router,10,TENANT_PROVIDER_MUTATION,yes,provider+staff chat/notifications only -- this file has NO customer routes (customer_router.py is a separate file/module for the customer persona, not touched)
+app.engines.compliance.provider_router,6,TENANT_PROVIDER_MUTATION,yes,provider-side DPDP compliance workflow, distinct from the customer-side compliance routes (separate module)
+app.engines.provider_portal.router,1 (removed),FALSE_POSITIVE_NON_MUTATION,no,confirmed zero persistence, already exempted at runtime since Slice 2F-2 -- removed from canonical CSV entirely this slice
+app.engines.marketing_automation.provider_router,3,TENANT_PROVIDER_MUTATION,yes,provider-only marketing campaign routes
+app.engines.media.new_router,6,TENANT_PROVIDER_MUTATION,yes,provider+staff media upload routes (logo/shop-photo/profile-photo) -- no customer media route in this specific set of 6
+app.engines.analytics.provider_router,1,TENANT_PROVIDER_MUTATION,yes,provider report-run capability
+app.engines.customer_reviews.provider_router,2,TENANT_PROVIDER_MUTATION,yes,PROVIDER review-reply/flag actions -- distinct from the CUSTOMER review-posting routes tracked separately (customer_router.py in the same engine, not touched)
+app.engines.invoice_payment.provider_router,4 (reclassified),TENANT_PROVIDER_MUTATION,yes,already protected (Slice 2F-6A) -- reclassified from unprotected to protected this slice, persona unchanged
+app.engines.admin_catalog.recommendation_router,1,TENANT_PROVIDER_MUTATION,yes,provider setup capability
+app.engines.admin_catalog.service_option_provider_router,1,TENANT_PROVIDER_MUTATION,yes,provider setup capability
+app.engines.package_commerce.tenant_router,1,TENANT_PROVIDER_MUTATION,yes,tenant package purchase (self-service by the TENANT account, not a customer -- distinct from Booking/Quote's CUSTOMER_SELF_SERVICE_MUTATION category, since a tenant purchasing its own platform package is a tenant-side action)

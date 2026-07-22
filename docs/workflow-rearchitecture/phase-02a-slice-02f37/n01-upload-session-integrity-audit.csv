@@ -1,0 +1,6 @@
+item,status,note
+confirm_upload verifies storage object exists,NOT_IMPLEMENTED,frozen this slice per n01-final-status.md
+foreign tenant object rejected at confirm,UNKNOWN_NOT_VERIFIED,not audited -- N01 media files out of scope this slice
+missing object prevents MediaFile row creation,UNKNOWN_NOT_VERIFIED,not audited -- N01 media files out of scope this slice
+storage error prevents MediaFile row creation,UNKNOWN_NOT_VERIFIED,not audited -- N01 media files out of scope this slice
+repeated confirmation is idempotent,UNKNOWN_NOT_VERIFIED,not audited -- N01 media files out of scope this slice

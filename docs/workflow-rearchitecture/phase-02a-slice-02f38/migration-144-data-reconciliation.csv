@@ -1,0 +1,7 @@
+metric,before,after,status
+distinct_role_values,not measured,not measured,NOT_EXECUTED_NO_DATABASE
+active_invalid_role_count,2 (known: manager@/readonly@ demo accounts),not measured,NOT_EXECUTED_NO_DATABASE
+migration_revision,not measured,not measured,NOT_EXECUTED_NO_DATABASE
+rows_examined,0,0,NOT_EXECUTED_NO_DATABASE
+rows_changed,0,0,NOT_EXECUTED_NO_DATABASE
+rows_rejected,0,0,NOT_EXECUTED_NO_DATABASE

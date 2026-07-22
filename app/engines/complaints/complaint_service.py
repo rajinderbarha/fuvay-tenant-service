@@ -32,6 +32,7 @@ from app.engines.complaints.constants import (
     ERR_COMPLAINT_NOT_FOUND, ERR_COMPLAINT_ACCESS_DENIED, ERR_COMPLAINT_ALREADY_CLOSED,
     ERR_COMPLAINT_INVALID_TRANSITION, ERR_COMPLAINT_REASON_REQUIRED,
     ERR_COMPLAINT_MESSAGE_REQUIRED, ERR_RESOLUTION_NOT_FOUND,
+    ERR_COMPLAINT_RECORD_NOT_FOUND, ERR_COMPLAINT_NOT_ELIGIBLE,
 )
 from app.engines.complaints.models import (
     CustomerComplaint, ComplaintMessage, ComplaintMedia,
@@ -91,6 +92,29 @@ class ComplaintService:
         # provider_get_complaint denies when it does not match — so the entire
         # provider-side complaint flow was dead. Resolve the owning tenant from
         # the linked record when the caller did not supply one.
+        # Slice 2F-10A: ComplaintEligibilityService.check_eligible is the
+        # canonical creation-eligibility contract, not merely an advisory
+        # preflight -- its own record-status table (ELIGIBLE_STATUSES) has
+        # real, deliberate product history (see MODULE-L5-02 bug #23's
+        # comment in constants.py), and its window/duplicate rules are
+        # backed by a real, configurable ComplaintPolicy model, not a
+        # stub. Slice 2F-10 wired in only the ownership half of this
+        # check directly (duplicating _fetch_record/_customer_owns_record
+        # inline); this call now uses the single, shared, canonical
+        # assertion for ALL of it -- record existence, ownership, status
+        # eligibility, filing window, and duplicate-open-complaint --
+        # so `check_eligible` and `create_complaint` can never disagree
+        # with each other for the same fixture (see
+        # docs/workflow-rearchitecture/phase-02a-slice-02f10a/
+        # complaint-eligibility-contract.md). Raises before any
+        # CustomerComplaint row is constructed.
+        eligibility = await self._eligibility.check_eligible(
+            db, customer_id, record_type, record_id,
+            complaint_type=complaint_type, category_id=category_id,
+        )
+        if not eligibility["eligible"]:
+            raise ValueError(eligibility["reason_code"] or ERR_COMPLAINT_NOT_ELIGIBLE)
+
         if tenant_id is None:
             tenant_id = await self._resolve_tenant_for_record(db, record_type, record_id)
         complaint = CustomerComplaint(
@@ -258,11 +282,27 @@ class ComplaintService:
         resolution_id: uuid.UUID,
         request_id: str = "—",
     ) -> ComplaintResolution:
-        await self.get_customer_complaint(db, customer_id, complaint_id)
-        resolution = await self._get_resolution(db, resolution_id)
-        resolution.status = RES_CUSTOMER_ACCEPTED
+        complaint = await self.get_customer_complaint(db, customer_id, complaint_id)
+        resolution = await self._get_resolution(db, resolution_id, complaint_id=complaint_id)
+        # Slice 2F-10: validate the complaint's state transition *before*
+        # mutating resolution.status or (for a rework resolution)
+        # committing a real ServiceReworkRequest. Previously
+        # resolution.status was flushed, and for rework resolutions a
+        # ServiceReworkRequest was created AND COMMITTED, before
+        # _transition ever checked whether the complaint's current status
+        # legally allows resolved/rework_approved -- an illegal-state
+        # accept still left a resolution marked accepted (and, for
+        # rework, a real rework request row) persisted ahead of the
+        # ValueError. Pre-validate using the same ALLOWED_TRANSITIONS_EXT
+        # map _transition itself uses, so nothing is created or mutated
+        # unless the transition is already known to be legal.
+        target_status = (STATUS_REWORK_APPROVED
+                          if getattr(resolution, "resolution_type", None) == "rework"
+                          else STATUS_RESOLVED)
+        if target_status not in ALLOWED_TRANSITIONS_EXT.get(complaint.status, set()):
+            raise ValueError(f"{ERR_COMPLAINT_INVALID_TRANSITION}: {complaint.status} → {target_status}")
 
-        complaint = await self._get_complaint(db, complaint_id)
+        resolution.status = RES_CUSTOMER_ACCEPTED
         complaint.customer_accepted_resolution_at = datetime.now(timezone.utc)
         await db.flush()
 
@@ -303,11 +343,14 @@ class ComplaintService:
         reason: str,
         request_id: str = "—",
     ) -> ComplaintResolution:
-        await self.get_customer_complaint(db, customer_id, complaint_id)
-        resolution = await self._get_resolution(db, resolution_id)
-        resolution.status = RES_CUSTOMER_REJECTED
+        complaint = await self.get_customer_complaint(db, customer_id, complaint_id)
+        resolution = await self._get_resolution(db, resolution_id, complaint_id=complaint_id)
+        # Slice 2F-10: same ordering fix as customer_accept_resolution --
+        # validate the transition before mutating resolution.status.
+        if STATUS_UNDER_ADMIN_REVIEW not in ALLOWED_TRANSITIONS_EXT.get(complaint.status, set()):
+            raise ValueError(f"{ERR_COMPLAINT_INVALID_TRANSITION}: {complaint.status} → {STATUS_UNDER_ADMIN_REVIEW}")
 
-        complaint = await self._get_complaint(db, complaint_id)
+        resolution.status = RES_CUSTOMER_REJECTED
         await db.flush()
         await self._transition(db, complaint, STATUS_UNDER_ADMIN_REVIEW, ACTOR_CUSTOMER, customer_id,
                                reason=reason, request_id=request_id)
@@ -347,6 +390,14 @@ class ComplaintService:
         complaint = await self.provider_get_complaint(db, tenant_id, complaint_id)
         if not message_text.strip():
             raise ValueError(ERR_COMPLAINT_MESSAGE_REQUIRED)
+        # Slice 2F-9A: previously had no final-state check at all -- the
+        # customer's own analogous add-message method
+        # (customer_add_message, line ~190) already guards this exact
+        # capability with the identical check; provider_add_response was
+        # simply inconsistent with its own sibling method. Mirrors the
+        # existing, established pattern -- not a new rule.
+        if complaint.status in FINAL_STATUSES:
+            raise ValueError(ERR_COMPLAINT_ALREADY_CLOSED)
 
         msg = ComplaintMessage(
             complaint_id   = complaint_id,
@@ -376,6 +427,14 @@ class ComplaintService:
         request_id: str = "—",
     ) -> ComplaintResolution:
         complaint = await self.provider_get_complaint(db, tenant_id, complaint_id)
+        # Slice 2F-9A: validate the state transition *before* creating the
+        # resolution record. Previously the record was added/flushed first
+        # and the transition legality was only checked afterward -- an
+        # illegal-state offer still wrote a ComplaintResolution row to the
+        # session ahead of the ValueError. Reordered so no record is
+        # created at all when the transition is invalid.
+        await self._transition(db, complaint, STATUS_RESOLUTION_PROPOSED, ACTOR_PROVIDER, actor_user_id,
+                               request_id=request_id)
         resolution = ComplaintResolution(
             complaint_id           = complaint_id,
             tenant_id              = tenant_id,
@@ -388,8 +447,6 @@ class ComplaintService:
         )
         db.add(resolution)
         await db.flush()
-        await self._transition(db, complaint, STATUS_RESOLUTION_PROPOSED, ACTOR_PROVIDER, actor_user_id,
-                               request_id=request_id)
         await self._log_event(db, complaint_id, tenant_id, ACTOR_PROVIDER, actor_user_id,
                               EVT_RESOLUTION_PROPOSED, None, None, None, {"type": resolution_type},
                               request_id=request_id)
@@ -768,8 +825,18 @@ class ComplaintService:
         ai_generated: bool = False,
         ai_confidence_score=None,
         request_id: str = "—",
+        tenant_id: uuid.UUID | None = None,
     ) -> SettlementProposal:
-        complaint = await self._get_complaint(db, complaint_id)
+        # Slice 2F-9: previously loaded via _get_complaint (no tenant check)
+        # -- ANY authenticated user of any tenant could create a settlement
+        # proposal on another tenant's complaint. The provider-facing caller
+        # now always supplies its own principal tenant_id; a mismatch fails
+        # closed with the same access-denied error provider_get_complaint
+        # already uses elsewhere in this file.
+        if tenant_id is not None:
+            complaint = await self.provider_get_complaint(db, tenant_id, complaint_id)
+        else:
+            complaint = await self._get_complaint(db, complaint_id)
         proposal = SettlementProposal(
             complaint_id        = complaint_id,
             tenant_id           = complaint.tenant_id,
@@ -824,7 +891,7 @@ class ComplaintService:
         request_id: str = "—",
     ) -> SettlementProposal:
         await self.get_customer_complaint(db, customer_id, complaint_id)
-        proposal = await self._get_settlement_proposal(db, proposal_id)
+        proposal = await self._get_settlement_proposal(db, proposal_id, complaint_id=complaint_id)
 
         now = datetime.now(timezone.utc)
         proposal.customer_response   = response
@@ -890,7 +957,7 @@ class ComplaintService:
         request_id: str = "—",
     ) -> SettlementProposal:
         await self.provider_get_complaint(db, tenant_id, complaint_id)
-        proposal = await self._get_settlement_proposal(db, proposal_id)
+        proposal = await self._get_settlement_proposal(db, proposal_id, complaint_id=complaint_id)
 
         now = datetime.now(timezone.utc)
         proposal.tenant_response   = response
@@ -1069,13 +1136,23 @@ class ComplaintService:
             return None
 
     async def _get_settlement_proposal(
-        self, db: AsyncSession, proposal_id: uuid.UUID
+        self, db: AsyncSession, proposal_id: uuid.UUID,
+        complaint_id: uuid.UUID | None = None,
     ) -> SettlementProposal:
         r = await db.execute(
             select(SettlementProposal).where(SettlementProposal.id == proposal_id)
         )
         p = r.scalars().first()
         if not p:
+            raise ValueError("SETTLEMENT_PROPOSAL_NOT_FOUND")
+        # Slice 2F-9: previously a caller who had already proven ownership of
+        # `complaint_id` could still supply an unrelated (or foreign-tenant)
+        # `proposal_id` -- tenant_respond_to_settlement can trigger a real
+        # credit-wallet/security-deposit payout on dual acceptance, so a
+        # mismatched proposal could be manipulated against the wrong
+        # complaint/tenant/customer. Fail closed the same way a genuinely
+        # missing proposal would.
+        if complaint_id is not None and str(p.complaint_id) != str(complaint_id):
             raise ValueError("SETTLEMENT_PROPOSAL_NOT_FOUND")
         return p
 
@@ -1086,10 +1163,21 @@ class ComplaintService:
             raise ValueError(ERR_COMPLAINT_NOT_FOUND)
         return c
 
-    async def _get_resolution(self, db: AsyncSession, resolution_id: uuid.UUID) -> ComplaintResolution:
+    async def _get_resolution(
+        self, db: AsyncSession, resolution_id: uuid.UUID,
+        complaint_id: uuid.UUID | None = None,
+    ) -> ComplaintResolution:
         r = await db.execute(select(ComplaintResolution).where(ComplaintResolution.id == resolution_id))
         res = r.scalars().first()
         if not res:
+            raise ValueError(ERR_RESOLUTION_NOT_FOUND)
+        # Slice 2F-10: mirrors the identical Slice 2F-9 fix for
+        # _get_settlement_proposal -- a caller who already proved ownership
+        # of `complaint_id` could still supply an unrelated resolution_id
+        # (any other customer's or tenant's), letting them accept/reject a
+        # foreign resolution while mutating their own complaint's status.
+        # Fail closed the same way a genuinely missing resolution would.
+        if complaint_id is not None and str(res.complaint_id) != str(complaint_id):
             raise ValueError(ERR_RESOLUTION_NOT_FOUND)
         return res
 

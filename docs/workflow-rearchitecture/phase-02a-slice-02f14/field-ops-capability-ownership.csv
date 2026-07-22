@@ -1,0 +1,15 @@
+capability,model,ownership_mechanism,in_scope_this_slice
+list/read own jobs,Job,actor_tenant_id+actor_id forced (staff/technician); tenant_owner own-tenant; customer own-job,yes
+assign staff to job,Job,_get_job_for_assignment (tenant_owner own-tenant),yes
+accept/reject assignment,Job,_get_job_for_staff_action (assigned_staff_id==actor_id),yes
+update job status,Job,_assert_can_access_job + job-type lifecycle guard chain,yes
+start job checklist,JobChecklistItem (materialized from ServiceChecklistTemplate),_get_job_for_staff_action + idempotent provisioning,yes
+update checklist item,JobChecklistItem,_get_job_for_staff_action + CHECKLIST_NOT_ACTIVE gate (new this slice),yes
+complete checklist,JobChecklistItem + Job,_get_job_for_staff_action + required-item check,yes
+submit assessment findings,Job,_get_job_for_staff_action,yes
+legacy whole-checklist update,Job.checklist (inert JSONB),_get_job_for_staff_action,yes
+create job,Job,n/a,no (distinct capability)
+quote lifecycle,JobQuote,n/a,no (distinct capability)
+billing/invoicing,Job + PaymentRecord,n/a,no (distinct capability)
+media attach/list,JobMedia,NONE FOUND (see evidence-media-boundary.md),no (distinct capability, finding recorded)
+notes add/list,JobNote,NONE FOUND (see job-note-privacy.md),no (distinct capability, finding recorded)

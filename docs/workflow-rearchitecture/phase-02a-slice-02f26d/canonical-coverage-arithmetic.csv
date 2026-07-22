@@ -1,0 +1,14 @@
+metric,value,note
+canonical_rows_before,257,
+canonical_rows_after,257,unchanged -- strict gate failed
+verified_before,214,
+verified_after,214,unchanged
+unprotected_before,43,
+unprotected_after,43,unchanged
+canonical_hash_before,45244cd9540456db,
+canonical_hash_after,45244cd9540456db,"byte-identical, asserted by test"
+deferred_if_gate_had_passed,214/259 with 45 unprotected,NOT applied
+sample_size,24,required >= 20
+combined_field_agreement,4/24 = 16.7%,required 100%
+persona_agreement,14/24,"2 DISAGREE, 8 REQUIRES_MANUAL_ADJUDICATION"
+tenant_direction_agreement,6/24,

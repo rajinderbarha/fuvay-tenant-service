@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.document.service import DocumentService
@@ -13,9 +13,13 @@ logger = structlog.get_logger("document.router")
 router = APIRouter(prefix="/v1/documents", tags=["Document Engine"])
 ENGINE_ID = "document"
 def _svc(r: Request, db: AsyncSession=Depends(get_db), u: UserContext=Depends(get_current_user)):
+    # Phase 2A Slice 2F-35: actor_tenant_id is now passed so DocumentService
+    # can independently enforce tenant authority on generate_document/
+    # send_for_signature/void_document.
     return DocumentService(db=db, request_id=getattr(r.state,"request_id","—"),
                             actor_id=uuid.UUID(u.user_id) if u.user_id else None,
-                            actor_role=u.role, actor_ip=get_client_ip(r))
+                            actor_role=u.role, actor_ip=get_client_ip(r),
+                            actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 @router.get("/meta", tags=["Engine Registry"])
 async def engine_meta() -> dict:
@@ -27,7 +31,7 @@ async def engine_meta() -> dict:
 @router.post("", status_code=status.HTTP_201_CREATED,
              summary="Validates variables before rendering — 422 with missing list if incomplete",
              response_model=ApiResponse[dict])
-async def generate_doc(r: Request, u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+async def generate_doc(r: Request, u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                         s: DocumentService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.generate_document(uuid.UUID(body["tenant_id"]), body["doc_type"],
@@ -53,7 +57,7 @@ async def list_by_entity(r: Request, tenant_id: uuid.UUID=Query(...),
              summary="Send for signature — generates cryptographic signed URL with 24h expiry",
              response_model=ApiResponse[dict])
 async def send_for_signature(document_id: uuid.UUID, r: Request,
-                              u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+                              u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                               s: DocumentService=Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.send_for_signature(document_id), _rid(r), ENGINE_ID)
 @router.get("/{document_id}/signing-url", response_model=ApiResponse[dict])
@@ -73,7 +77,7 @@ async def record_signature(token: str, r: Request,
              summary="Void document — content preserved as evidence. is_frozen stays True if was signed.",
              response_model=ApiResponse[dict])
 async def void_document(document_id: uuid.UUID, r: Request,
-                         u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+                         u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                          s: DocumentService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.void_document(document_id, body.get("reason","Voided")), _rid(r), ENGINE_ID)

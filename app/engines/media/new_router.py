@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile, 
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import require_staff_or_above_mutation, require_mutation_access_scope
 from app.dependencies.auth import (
     UserContext,
     get_current_user,
@@ -75,7 +76,7 @@ async def upload_media(
     owner_type: Annotated[str, Form(description="Owner type (e.g. tenant, user, customer)")] = "user",
     owner_id: Annotated[str | None, Form(description="Owner UUID")] = None,
     is_public: Annotated[bool, Form(description="Make file publicly accessible")] = False,
-    actor: UserContext = Depends(get_current_user),
+    actor: UserContext = Depends(require_mutation_access_scope),
     svc: MediaAssetService = Depends(_svc),
 ) -> ApiResponse[dict]:
     # Default owner_id to the actor's own ID
@@ -211,7 +212,7 @@ async def replace_media(
     r: Request,
     file: Annotated[UploadFile, File()],
     is_public: Annotated[bool, Form()] = False,
-    actor: UserContext = Depends(get_current_user),
+    actor: UserContext = Depends(require_mutation_access_scope),
     svc: MediaAssetService = Depends(_svc),
 ) -> ApiResponse[dict]:
     data = await svc.replace_asset(media_id=media_id, file=file, is_public=is_public)
@@ -307,7 +308,7 @@ async def remove_customer_profile_photo(
 async def upload_provider_logo(
     r: Request,
     file: Annotated[UploadFile, File()],
-    actor: UserContext = Depends(require_technician),
+    actor: UserContext = Depends(require_staff_or_above_mutation),
     svc: MediaAssetService = Depends(_svc),
 ) -> ApiResponse[dict]:
     data = await svc.set_tenant_business_logo(file)
@@ -322,7 +323,7 @@ async def upload_provider_logo(
 async def remove_provider_logo(
     media_id: uuid.UUID,
     r: Request,
-    actor: UserContext = Depends(require_technician),
+    actor: UserContext = Depends(require_staff_or_above_mutation),
     svc: MediaAssetService = Depends(_svc),
 ) -> ApiResponse[dict]:
     data = await svc.remove_tenant_business_logo(media_id)
@@ -338,7 +339,7 @@ async def remove_provider_logo(
 async def upload_provider_shop_photo(
     r: Request,
     file: Annotated[UploadFile, File()],
-    actor: UserContext = Depends(require_technician),
+    actor: UserContext = Depends(require_staff_or_above_mutation),
     svc: MediaAssetService = Depends(_svc),
 ) -> ApiResponse[dict]:
     data = await svc.set_tenant_shop_photo(file)
@@ -353,7 +354,7 @@ async def upload_provider_shop_photo(
 async def remove_provider_shop_photo(
     media_id: uuid.UUID,
     r: Request,
-    actor: UserContext = Depends(require_technician),
+    actor: UserContext = Depends(require_staff_or_above_mutation),
     svc: MediaAssetService = Depends(_svc),
 ) -> ApiResponse[dict]:
     data = await svc.remove_tenant_shop_photo(media_id)
@@ -369,7 +370,7 @@ async def remove_provider_shop_photo(
 async def upload_staff_profile_photo(
     r: Request,
     file: Annotated[UploadFile, File()],
-    actor: UserContext = Depends(require_technician),
+    actor: UserContext = Depends(require_staff_or_above_mutation),
     svc: MediaAssetService = Depends(_svc),
 ) -> ApiResponse[dict]:
     data = await svc.set_user_profile_photo(file)
@@ -383,7 +384,7 @@ async def upload_staff_profile_photo(
 )
 async def remove_staff_profile_photo(
     r: Request,
-    actor: UserContext = Depends(require_technician),
+    actor: UserContext = Depends(require_staff_or_above_mutation),
     svc: MediaAssetService = Depends(_svc),
 ) -> ApiResponse[dict]:
     data = await svc.remove_user_profile_photo()

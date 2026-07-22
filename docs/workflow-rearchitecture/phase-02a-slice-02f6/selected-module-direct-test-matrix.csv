@@ -1,0 +1,19 @@
+endpoint,tenant_owner,staff,technician,customer,guest,readonly_scope_owner,readonly_scope_staff,cross_tenant,unauthenticated,super_admin,unknown_role
+provider_issue_invoice,PASS (granted -- FIELD_OPS_INVOICE_GEN),403 (ungranted),403 (ungranted),403,403,403 (access_scope denied despite role),n/a,403 business-logic INVOICE_ACCESS_DENIED (tenant_id mismatch at service layer),401,PASS,403 (fail-closed)
+provider_record_payment,PASS (staff-or-above),PASS (staff-or-above),PASS (staff-or-above),403,403,n/a,403 (access_scope denied despite staff role),403 business-logic INVOICE_ACCESS_DENIED,401,PASS,403 (fail-closed)
+staff_create_invoice,PASS (staff-or-above),PASS (staff-or-above),PASS (staff-or-above),403,403,n/a,403 (access_scope denied),403 business-logic INVOICE_ACCESS_DENIED,401,PASS,403 (fail-closed)
+staff_add_invoice_item,PASS (staff-or-above),PASS (staff-or-above),PASS (staff-or-above),403,403,n/a,403 (access_scope denied),403 business-logic INVOICE_ACCESS_DENIED,401,PASS,403 (fail-closed)
+
+# PASS = request passed the authorization gate and reached business logic (mocked-DB
+#   ValueError -> ERR_INVOICE_ACCESS_DENIED against MagicMock rows is accepted as proof
+#   of clearing the auth layer, distinguished from a real authorization-layer 403 by
+#   checking the JSON body's error_code, per the established test convention).
+# readonly_scope_owner/staff = a tenant_owner or staff-role account carrying
+#   access_scope="customer_support_limited" -- denied despite an otherwise-qualifying
+#   role, proving access-scope precedence over role/permission grants.
+# cross_tenant = same-role account, but the invoice/job row (mocked) belongs to a
+#   different tenant -- rejected with a business-logic 403 (INVOICE_ACCESS_DENIED),
+#   pre-existing and unmodified, re-verified via source-inspection tests since the
+#   MagicMock fixture cannot simulate a real cross-tenant row without a live DB.
+# All 4 x 11 = 44 persona/endpoint combinations exercised; 39 total tests in the new
+#   suite (some personas grouped/parametrized rather than 1:1 with this matrix's cells).

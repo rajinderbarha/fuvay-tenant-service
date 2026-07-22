@@ -1,0 +1,3 @@
+method,path,status_before,status_after,disposition
+POST,/v1/geo/tenants/{tenant_id}/zones,PENDING_INDEPENDENT_OR_MODULE_LEVEL_ADJUDICATION,RESOLVED_ADDED_CANONICALLY,TENANT_PROVIDER_MUTATION_ADD -- added canonically and protected in this same slice (WS3 requirement)
+POST,/v1/geo/tenants/{tenant_id}/staff/{staff_id}/location,PENDING_INDEPENDENT_OR_MODULE_LEVEL_ADJUDICATION,RESOLVED_ADDED_CANONICALLY,TENANT_PROVIDER_MUTATION_ADD -- added canonically and protected in this same slice (WS3 requirement)

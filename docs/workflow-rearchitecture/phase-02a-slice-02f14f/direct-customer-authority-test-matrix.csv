@@ -1,0 +1,25 @@
+mode,scenario,expected,verified_by
+BOOKING-REFERENCED,matching Tenant A Booking/customer/service,succeeds; no relationship query issued,test_booking_referenced_creation_does_not_query_relationship
+BOOKING-REFERENCED,Tenant B Booking,422 FOREIGN_BOOKING,test_foreign_booking_rejected (2F-14C, re-verified)
+BOOKING-REFERENCED,Booking/customer mismatch,422 CUSTOMER_BOOKING_MISMATCH,test_customer_booking_mismatch_rejected (2F-14D, re-verified)
+BOOKING-REFERENCED,Booking/service mismatch,422 SERVICE_BOOKING_MISMATCH,test_service_booking_mismatch_rejected (2F-14D, re-verified)
+BOOKING-REFERENCED,non-CONFIRMED Booking,422 BOOKING_INVALID_STATUS_TRANSITION,test_non_confirmed_booking_rejected (2F-14E, re-verified, 12 statuses)
+BOOKING-REFERENCED,duplicate Booking-to-Job,409 JOB_ALREADY_EXISTS_FOR_BOOKING,test_already_converted_booking_rejected / test_duplicate_job_for_booking_rejected (2F-14D, re-verified)
+PARENT-JOB,matching Tenant A parent/customer,succeeds; no relationship query issued,test_parent_derived_creation_does_not_query_relationship
+PARENT-JOB,Tenant B parent,422 FOREIGN_PARENT_JOB,test_foreign_parent_job_rejected (2F-14C, re-verified)
+PARENT-JOB,parent/customer mismatch,422 CUSTOMER_PARENT_JOB_MISMATCH,test_customer_parent_mismatch_rejected (2F-14D, re-verified)
+PARENT-JOB,invalid parent state (CONSULTATION not QUOTE_APPROVED),422 CONSULTATION_CONVERSION_NOT_ALLOWED,test_non_quote_approved_consultation_rejected_as_repair_source (2F-14E, re-verified, 12 statuses)
+PARENT-JOB,duplicate repair,409 CONSULTATION_ALREADY_CONVERTED,test_duplicate_repair_from_consultation_rejected (2F-14D, re-verified)
+STANDALONE MANUAL,customer with prior Tenant A Booking,succeeds,test_customer_with_prior_tenant_booking_succeeds
+STANDALONE MANUAL,customer with prior Tenant A Job,succeeds,test_customer_with_prior_tenant_job_succeeds
+STANDALONE MANUAL,customer known only to Tenant B,422 CUSTOMER_TENANT_RELATIONSHIP_REQUIRED,test_customer_known_only_to_another_tenant_rejected_same_error
+STANDALONE MANUAL,completely unrelated customer,422 CUSTOMER_TENANT_RELATIONSHIP_REQUIRED (identical error to the Tenant-B case),test_completely_unrelated_customer_rejected
+STANDALONE MANUAL,customer known to both tenants -- queried scoped to Tenant A,succeeds for Tenant A (query only checks Tenant A's own rows),test_customer_with_prior_tenant_booking_succeeds (same mechanism)
+STANDALONE MANUAL,wrong-role user (e.g. tenant_owner account) as customer_id,422 FOREIGN_CUSTOMER (rejected before relationship check),test_wrong_role_user_rejected_before_relationship_check
+STANDALONE MANUAL,disabled customer,422 FOREIGN_CUSTOMER,test_deactivated_customer_rejected
+STANDALONE MANUAL,deleted customer,422 FOREIGN_CUSTOMER,test_deleted_customer_rejected
+STANDALONE MANUAL,no customer_id supplied at all,succeeds; no relationship query issued,test_no_customer_id_does_not_trigger_relationship_check
+READ-ONLY / PERSONA,read-only tenant owner,denied at router (require_tenant_mutation_permission),Slice 2F-14B suite, re-verified
+READ-ONLY / PERSONA,technician,denied at router (TENANT_UPDATE not granted to technician),Slice 2F-14B suite, re-verified
+READ-ONLY / PERSONA,customer,denied at router,Slice 2F-14B suite, re-verified
+READ-ONLY / PERSONA,unknown role/scope,fails closed at router,Slice 2F-14B suite, re-verified

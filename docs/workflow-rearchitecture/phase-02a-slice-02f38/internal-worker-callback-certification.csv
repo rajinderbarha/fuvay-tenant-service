@@ -1,0 +1,6 @@
+check,result,note
+trusted_caller_context,PARTIAL,"reviewed for services touched in 2F-35/36/37 only"
+tenant_derivation,PARTIAL,"same scope as above"
+no_public_bypass,PARTIAL,"13 auto-detected CALLBACK_OR_WEBHOOK routes; webhook signature validation reviewed in 2F-35 audit, not re-verified live this slice"
+explicit_authority,NOT_VERIFIED_THIS_SLICE,"no worker process running in this environment"
+audit_trace,NOT_VERIFIED_THIS_SLICE,

@@ -11,9 +11,10 @@ from app.engines.invoice_payment.constants import (
     PAY_STATUS_PENDING, PAY_STATUS_COLLECTED, PAY_STATUS_VERIFIED, PAY_STATUS_FAILED,
     VALID_PAYMENT_MODES, FEV_PAYMENT_RECORDED, FEV_PAYMENT_VERIFIED,
     ERR_INVOICE_NOT_FOUND, ERR_INVOICE_ACCESS_DENIED, ERR_INVOICE_ALREADY_ISSUED,
-    ERR_INVALID_PAYMENT_MODE,
+    ERR_INVALID_PAYMENT_MODE, ERR_INVOICE_INVALID_STATUS,
     ERR_PAYMENT_ALREADY_RECORDED, ERR_PAYMENT_RECORD_NOT_FOUND, ERR_PAYMENT_ACCESS_DENIED,
     ERR_PAYMENT_AMOUNT_MISMATCH,
+    INV_ISSUED, INV_PAYMENT_PENDING,
 )
 from app.engines.invoice_payment.models import (
     ServiceInvoice, ServicePaymentRecord, FinancialEvent,
@@ -108,6 +109,27 @@ class ServicePaymentService:
             raise ValueError(ERR_INVOICE_NOT_FOUND)
         if str(inv.tenant_id) != tenant_id:
             raise ValueError(ERR_INVOICE_ACCESS_DENIED)
+        # Slice 2F-6A: previously no invoice-state precondition existed at all --
+        # a payment could be recorded against a draft (never-issued), cancelled,
+        # or failed invoice. Only ISSUED or PAYMENT_PENDING are legal states to
+        # collect a payment from (mirrors INVOICE_TRANSITIONS' own model of
+        # which states precede payment collection).
+        if inv.status not in (INV_ISSUED, INV_PAYMENT_PENDING):
+            raise ValueError(ERR_INVOICE_INVALID_STATUS)
+        # Slice 2F-6A: previously no amount validation existed at all -- a
+        # negative collected_amount would still mark the invoice "collected"
+        # (paid), and any amount above the invoice's payable total was silently
+        # accepted as an "overpayment" with no account-credit mechanism to
+        # justify it. Reject non-positive amounts and amounts exceeding the
+        # invoice's own customer_payable_amount; exact-remaining-balance
+        # payments (amount == payable) are the expected, common case and
+        # continue to succeed.
+        amount = Decimal(str(collected_amount))
+        if amount <= Decimal("0"):
+            raise ValueError(ERR_PAYMENT_AMOUNT_MISMATCH)
+        payable = Decimal(str(inv.customer_payable_amount or 0))
+        if amount > payable:
+            raise ValueError(ERR_PAYMENT_AMOUNT_MISMATCH)
         # Check for existing payment record
         res2 = await db.execute(
             select(ServicePaymentRecord).where(

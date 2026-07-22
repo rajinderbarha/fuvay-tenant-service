@@ -1,0 +1,7 @@
+stratum,eligible_members,selected,not_representable_reason
+H01_platform_admin_target_tenant,1,1,
+H02_principal_tenant_specific,0,0,ZERO ELIGIBLE MEMBERS -- not representable
+H07_mutating_get_candidate,0,0,ZERO ELIGIBLE MEMBERS -- not representable
+H08_client_asserted_tenant,3,2,
+H09_generic_prefix,22,20,
+H10_delete_action,1,1,

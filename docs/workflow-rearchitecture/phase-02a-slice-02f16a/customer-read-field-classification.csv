@@ -1,0 +1,17 @@
+route,field,classification,notes
+GET /customer/quotes/{quote_id},id/quote_number/status/currency,CUSTOMER_VISIBLE,unchanged
+GET /customer/quotes/{quote_id},labour_amount/parts_amount/service_amount/discount_amount/tax_amount/total_amount/customer_payable_amount,CUSTOMER_VISIBLE,recomputed from visible items only (this slice's fix)
+GET /customer/quotes/{quote_id},provider_internal_notes,NEVER_CUSTOMER_VISIBLE,stripped (2F-16, re-verified this slice)
+GET /customer/quotes/{quote_id},customer_visible_notes,CUSTOMER_VISIBLE,unchanged (field name is self-documenting)
+GET /customer/quotes/{quote_id},rejection_reason/revision_reason,CUSTOMER_VISIBLE_AFTER_APPROVAL_OR_REJECTION,customer's own reason text -- always their own input, no leak
+GET /customer/quotes/{quote_id},items[].item_name/item_description/quantity/unit_price/line_total,CUSTOMER_VISIBLE,only for is_customer_visible=True items (2F-16)
+GET /customer/quotes/{quote_id},items (hidden ones),NEVER_CUSTOMER_VISIBLE,filtered out (2F-16)
+GET /customer/quotes/{quote_id},created_by_user_id/created_by_staff_member_id,PROVIDER_INTERNAL,not present in ServiceJobQuote.to_dict() output at all -- confirmed never serialized to any caller
+GET /customer/quotes/{quote_id}/events,event_type/old_status/new_status/reason/created_at,CUSTOMER_VISIBLE_AFTER_SEND,filtered to CUSTOMER_VISIBLE_QUOTE_EVENT_TYPES (this slice's fix)
+GET /customer/quotes/{quote_id}/events,actor_type,CUSTOMER_VISIBLE,only "customer"/"staff" label -- no raw user ID ever serialized (ServiceJobQuoteEvent.to_dict() never includes actor_user_id)
+GET /customer/quotes/{quote_id}/events,draft-editing events (item_added/updated/removed),NEVER_CUSTOMER_VISIBLE,filtered out (this slice's fix)
+GET /customer/quotes/{quote_id}/events,internal provider-approval-step events,NEVER_CUSTOMER_VISIBLE,filtered out (this slice's fix)
+POST /customer/quotes/{quote_id}/approve,provider_internal_notes,NEVER_CUSTOMER_VISIBLE,stripped (this slice's fix via _customer_dict)
+POST /customer/quotes/{quote_id}/reject,provider_internal_notes,NEVER_CUSTOMER_VISIBLE,stripped (this slice's fix)
+POST /customer/quotes/{quote_id}/request-revision,provider_internal_notes,NEVER_CUSTOMER_VISIBLE,stripped (this slice's fix)
+POST /customer/quotes/{quote_id}/approve|reject|request-revision,total_amount/customer_payable_amount,CUSTOMER_VISIBLE,"Recomputed from visible-only items via _customer_dict (this slice's fix) -- matches get_quote's reconciliation exactly. Exception: the idempotent-repeat-approval short-circuit (same idempotency_key on an already-approved quote) intentionally returns the STORED total without an extra item query, by design (see known-limitations.md) -- the stored total was already correctly reconciled at the moment of the original approval."

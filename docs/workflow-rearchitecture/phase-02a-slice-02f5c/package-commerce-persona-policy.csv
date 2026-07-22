@@ -1,0 +1,22 @@
+endpoint,initiator,approver,executor,required_role,required_permission,reversible,changes_package_definition,creates_tenant_assignment,changes_platform_credit,deducts_commission,records_real_money,requires_confirmation,product_policy_unresolved
+create_package,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_CREATE,YES (can be soft-deleted/deactivated),YES,NO,NO,NO,NO (definition only, no money moves),no,NO
+update_package,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_UPDATE,YES,YES,NO,NO,NO,NO (price is metadata; no assignment repriced),no,NO
+delete_package,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_ARCHIVE,NO (soft-delete; blocked entirely if assignments exist),YES,NO,NO,NO,NO,YES (destructive),NO
+activate_package,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_ACTIVATE,YES (deactivate reverses),YES,NO,NO,NO,NO,no,NO
+deactivate_package,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_DEACTIVATE,YES,YES,NO,NO,NO,NO,no,NO
+clone_package,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_CLONE,YES (clone can be deleted),YES (creates a new definition),NO,NO,NO,NO,no,NO
+create_package_feature,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_UPDATE,YES,YES (sub-resource of definition),NO,NO,NO,NO,no,NO
+update_package_feature,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_UPDATE,YES,YES,NO,NO,NO,NO,no,NO
+delete_package_feature,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_UPDATE,NO (hard delete of sub-resource),YES,NO,NO,NO,NO,YES,NO
+create_package_limit,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_UPDATE,YES,YES,NO,NO,NO,NO,no,NO
+update_package_limit,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_UPDATE,YES,YES,NO,NO,NO,NO,no,NO
+delete_package_limit,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_UPDATE,NO,YES,NO,NO,NO,NO,YES,NO
+admin_purchase_package,super_admin,n/a,PackageCommerceService,super_admin (P.ALL only),PACKAGES_CREATE,partially (assignment can later be rejected by activate_tenant_package_assignment's counterpart),NO,YES,NO,NO,YES (recorded as paid on tenant's behalf),YES,NO
+admin_get_deposit,n/a (blocked),n/a,none,n/a,n/a,n/a,NO,NO,NO,NO,NO,no,NO (fully closed -- canonical replacement is finance_hub)
+admin_mark_deposit_paid,n/a (blocked),n/a,none,n/a,n/a,n/a,NO,NO,NO,NO,NO,no,NO
+admin_refund_deposit,n/a (blocked),n/a,none,n/a,n/a,n/a,NO,NO,NO,NO,NO,no,NO
+admin_forfeit_deposit,n/a (blocked),n/a,none,n/a,n/a,n/a,NO,NO,NO,NO,NO,no,NO
+admin_topup_wallet,admin_finance or super_admin,n/a,UsageCreditService,admin_finance|super_admin,FINANCE_USAGE_CREDITS_TOP_UP,NO (credit issued; no built-in reversal endpoint here),NO,NO,YES,NO,YES (represents platform-internal usage credit, not cash),no,YES -- idempotency contract on omitted key (see credit-wallet-adapter-integrity.md)
+admin_adjust_wallet,admin_finance or super_admin,n/a,UsageCreditService,admin_finance|super_admin,FINANCE_USAGE_CREDITS_ADJUST,depends on direction (credit adjustments are additive; debit adjustments reduce balance, not separately reversible via this endpoint),NO,NO,YES,NO,YES (same internal-credit caveat),no,YES -- same idempotency question
+admin_deduct_commission,super_admin,n/a,PackageCommerceService (writes to platform_commerce's CommissionRecord table),super_admin (role-gated directly, not permission-gated),n/a (require_super_admin),NO (deduction is not separately reversible via this router),NO,NO,YES (debits tenant wallet),YES,YES (represents commission owed on job revenue),YES,YES -- relationship to platform_commerce/invoice_payment's own commission pipeline is a documented open question, see product-decisions-required.md
+admin_calculate_commission,super_admin,n/a,PackageCommerceService,super_admin (role-gated directly),n/a (require_super_admin),YES (calculation-only; no money moved yet),NO,NO,NO,NO (no debit; only creates a pending record),NO,no,YES -- same cross-pipeline question; also job_value is trusted admin input, not independently re-derived from an invoice

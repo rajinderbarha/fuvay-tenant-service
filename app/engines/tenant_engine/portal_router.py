@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import require_tenant_owner, get_current_user, UserContext
+from app.core.permissions import require_tenant_owner_mutation
 from app.dependencies.db import get_db
 from app.engines.tenant_engine.admin_service import AdminTenantService
 from app.engines.tenant_engine.models import Tenant
@@ -60,7 +61,7 @@ async def update_profile(
     payload: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ) -> dict:
     tid = _tenant_id(user)
     # Restrict what tenant can change (no status/verification changes)
@@ -89,7 +90,7 @@ async def update_settings(
     payload: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ) -> dict:
     tid = _tenant_id(user)
     # Tenant cannot change commission_rate (platform-set)
@@ -115,7 +116,7 @@ async def create_user(
     payload: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ) -> dict:
     tid = _tenant_id(user)
     return await _svc(db, request, user).create_user(tid, payload)
@@ -126,7 +127,7 @@ async def suspend_user(
     user_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ) -> dict:
     tid = _tenant_id(user)
     return await _svc(db, request, user).suspend_user(tid, user_id)
@@ -149,7 +150,7 @@ async def create_staff(
     payload: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ) -> dict:
     tid = _tenant_id(user)
     return await _svc(db, request, user).create_staff(tid, payload)
@@ -160,7 +161,7 @@ async def deactivate_staff(
     staff_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ) -> dict:
     tid = _tenant_id(user)
     return await _svc(db, request, user).deactivate_staff(tid, staff_id)
@@ -172,7 +173,7 @@ async def update_staff_photo(
     payload: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ) -> dict:
     tid = _tenant_id(user)
     photo_url = payload.get("photo_url", "")
@@ -397,13 +398,12 @@ async def lock_staff(
     user_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     from app.engines.auth.service import AuthService
     from app.engines.auth.schemas import LockAccountRequest
     body = await request.json()
-    svc = AuthService(db=db, request_id=(getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")),
-                      actor_id=uuid.UUID(user.user_id) if user.user_id else None)
+    svc = AuthService(db=db, request_id=(getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")))
     req = LockAccountRequest(
         reason=body.get("reason", "Admin review"),
         locked_until=body.get("locked_until"),
@@ -420,13 +420,12 @@ async def unlock_staff(
     user_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     from app.engines.auth.service import AuthService
     from app.engines.auth.schemas import UnlockAccountRequest
     body = await request.json()
-    svc = AuthService(db=db, request_id=(getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")),
-                      actor_id=uuid.UUID(user.user_id) if user.user_id else None)
+    svc = AuthService(db=db, request_id=(getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")))
     req = UnlockAccountRequest(reason=body.get("reason", "Issue resolved"))
     data = await svc.unlock_user(admin=user, target_user_id=user_id, reason=req.reason)
     return ok(data, (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")), "tenant_portal")
@@ -437,12 +436,11 @@ async def revoke_staff_sessions(
     user_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner),
+    user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     from app.engines.auth.service import AuthService
     _tenant_id(user)
-    svc = AuthService(db=db, request_id=(getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")),
-                      actor_id=uuid.UUID(user.user_id) if user.user_id else None)
+    svc = AuthService(db=db, request_id=(getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")))
     body = await request.json()
     data = await svc.admin_revoke_all_sessions(user, user_id, body.get("reason", "Tenant admin revoke"))
     return ok(data, (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")), "tenant_portal")
@@ -457,8 +455,7 @@ async def staff_login_history(
     user: UserContext = Depends(require_tenant_owner),
 ):
     from app.engines.auth.service import AuthService
-    svc = AuthService(db=db, request_id=(getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")),
-                      actor_id=uuid.UUID(user.user_id) if user.user_id else None)
+    svc = AuthService(db=db, request_id=(getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")))
     data = await svc.get_audit_log(user_id=user_id, tenant_id=None, role="tenant_owner", limit=limit)
     return ok(data, (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")), "tenant_portal")
 
@@ -471,8 +468,7 @@ async def staff_security_status(
     user: UserContext = Depends(require_tenant_owner),
 ):
     from app.engines.auth.service import AuthService
-    svc = AuthService(db=db, request_id=(getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")),
-                      actor_id=uuid.UUID(user.user_id) if user.user_id else None)
+    svc = AuthService(db=db, request_id=(getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")))
     data = await svc.get_full_security_status(admin=user, target_user_id=user_id)
     return ok(data, (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")), "tenant_portal")
 

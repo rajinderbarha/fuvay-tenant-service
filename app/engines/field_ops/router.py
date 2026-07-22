@@ -4,8 +4,8 @@ from decimal import Decimal
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
-from app.dependencies.auth import get_current_user, UserContext, require_super_admin
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission, require_staff_or_above_mutation
+from app.dependencies.auth import get_current_user, UserContext, require_super_admin, require_staff_or_technician_only, require_customer
 from app.dependencies.db import get_db
 from app.engines.field_ops.service import FieldOpsService
 from app.engines.field_ops.billing_service import BillingService
@@ -43,7 +43,7 @@ async def engine_meta() -> dict:
 @router.post("", summary="Create job from booking", status_code=status.HTTP_201_CREATED,
              response_model=ApiResponse[dict])
 async def create_job(r: Request,
-                      u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                      u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                       s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.create_job(uuid.UUID(body["tenant_id"]), body)
@@ -145,7 +145,7 @@ async def staff_earnings(staff_id: uuid.UUID, r: Request,
              summary="Step 6: Tenant owner assigns job to an active staff member of their own tenant",
              response_model=ApiResponse[dict])
 async def assign_job(job_id: uuid.UUID, r: Request,
-                      u: UserContext = Depends(require_permission(P.FIELD_OPS_JOBS_ASSIGN)),
+                      u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_JOBS_ASSIGN)),
                       s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.assign_staff(job_id, uuid.UUID(body["staff_id"]), body.get("notes"))
@@ -155,11 +155,8 @@ async def assign_job(job_id: uuid.UUID, r: Request,
              summary="Step 6: Staff accepts an assigned job",
              response_model=ApiResponse[dict])
 async def accept_job(job_id: uuid.UUID, r: Request,
-                      u: UserContext = Depends(get_current_user),
+                      u: UserContext = Depends(require_staff_or_technician_only),
                       s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
-    if u.role not in ("staff", "technician"):
-        raise ServiceOSException("STAFF_ACCESS_DENIED",
-            "Only staff can accept job assignments.", status_code=403)
     body = await r.json()
     return ok(await s.accept_job(job_id, body.get("notes")), _rid(r), ENGINE_ID)
 
@@ -167,11 +164,8 @@ async def accept_job(job_id: uuid.UUID, r: Request,
              summary="Step 6: Staff rejects an assigned job — reason required",
              response_model=ApiResponse[dict])
 async def reject_assignment(job_id: uuid.UUID, r: Request,
-                             u: UserContext = Depends(get_current_user),
+                             u: UserContext = Depends(require_staff_or_technician_only),
                              s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
-    if u.role not in ("staff", "technician"):
-        raise ServiceOSException("STAFF_ACCESS_DENIED",
-            "Only staff can reject job assignments.", status_code=403)
     body = await r.json()
     return ok(await s.reject_assignment(job_id, body.get("reason")), _rid(r), ENGINE_ID)
 
@@ -179,7 +173,7 @@ async def reject_assignment(job_id: uuid.UUID, r: Request,
             summary="Transition job status — validated against TRANSITIONS_BY_JOB_TYPE",
             response_model=ApiResponse[dict])
 async def update_status(job_id: uuid.UUID, r: Request,
-                         u: UserContext = Depends(require_permission(P.FIELD_OPS_JOBS_UPDATE)),
+                         u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_JOBS_UPDATE)),
                          s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.update_status(job_id, body["to_status"], body.get("reason"),
@@ -192,16 +186,23 @@ async def update_status(job_id: uuid.UUID, r: Request,
              summary="Step 7: Assigned staff starts assessment (job must be 'arrived')",
              response_model=ApiResponse[dict])
 async def start_assessment(job_id: uuid.UUID, r: Request,
-                            u: UserContext = Depends(get_current_user),
+                            u: UserContext = Depends(require_staff_or_technician_only),
                             s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
+    # Slice 2F-14A: this is the same assigned-technician job-execution
+    # capability class as accept_job/complete_checklist (fixed in 2F-14) --
+    # _get_job_for_staff_action already made this safe via ID-equality (no
+    # other role's actor_id can equal a staff assignment), but it had no named
+    # role dependency, unlike its siblings. Added for consistency and runtime
+    # tool visibility, not because a live bypass existed.
     return ok(await s.start_assessment(job_id), _rid(r), ENGINE_ID)
 
 @router.post("/{job_id}/assessment/complete", tags=["Job Assessment"],
              summary="Step 7: Assigned staff completes assessment with findings/recommendation",
              response_model=ApiResponse[dict])
 async def complete_assessment(job_id: uuid.UUID, r: Request,
-                               u: UserContext = Depends(get_current_user),
+                               u: UserContext = Depends(require_staff_or_technician_only),
                                s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
+    # Slice 2F-14A: same reasoning as start_assessment above.
     body = await r.json()
     labour = body.get("labour_estimate")
     parts = body.get("parts_estimate")
@@ -218,8 +219,13 @@ async def complete_assessment(job_id: uuid.UUID, r: Request,
              summary="Step 7: Create a line-item quote after assessment is complete",
              status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def create_job_quote(job_id: uuid.UUID, r: Request,
-                            u: UserContext = Depends(get_current_user),
+                            u: UserContext = Depends(require_staff_or_above_mutation),
                             s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
+    # Slice 2F-14B: quote administration is a provider-only, tenant-scoped
+    # capability; require_staff_or_above_mutation (excludes customer, denies
+    # read-only tenant access-scope) makes that persona/scope check tool-visible
+    # at the router level, in front of the newly-hardened
+    # _get_job_for_quote_management object-ownership check.
     body = await r.json()
     return ok(await s.create_job_quote(job_id, body), _rid(r), ENGINE_ID)
 
@@ -243,7 +249,7 @@ async def get_job_quote(job_id: uuid.UUID, quote_id: uuid.UUID, r: Request,
              summary="Step 7: Staff/tenant sends the quote to the customer",
              response_model=ApiResponse[dict])
 async def send_job_quote(job_id: uuid.UUID, quote_id: uuid.UUID, r: Request,
-                          u: UserContext = Depends(get_current_user),
+                          u: UserContext = Depends(require_staff_or_above_mutation),
                           s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.send_job_quote(job_id, quote_id), _rid(r), ENGINE_ID)
 
@@ -251,22 +257,16 @@ async def send_job_quote(job_id: uuid.UUID, quote_id: uuid.UUID, r: Request,
              summary="Step 7: Customer approves their own quote",
              response_model=ApiResponse[dict])
 async def approve_job_quote(job_id: uuid.UUID, quote_id: uuid.UUID, r: Request,
-                             u: UserContext = Depends(get_current_user),
+                             u: UserContext = Depends(require_customer),
                              s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
-    if u.role != "customer":
-        raise ServiceOSException("QUOTE_ACCESS_DENIED",
-            "Only the owning customer can approve a quote.", status_code=403)
     return ok(await s.approve_job_quote(job_id, quote_id, uuid.UUID(u.user_id)), _rid(r), ENGINE_ID)
 
 @router.post("/{job_id}/quotes/{quote_id}/reject", tags=["Job Quotes"],
              summary="Step 7: Customer rejects their own quote",
              response_model=ApiResponse[dict])
 async def reject_job_quote(job_id: uuid.UUID, quote_id: uuid.UUID, r: Request,
-                            u: UserContext = Depends(get_current_user),
+                            u: UserContext = Depends(require_customer),
                             s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
-    if u.role != "customer":
-        raise ServiceOSException("QUOTE_ACCESS_DENIED",
-            "Only the owning customer can reject a quote.", status_code=403)
     body = await r.json()
     return ok(await s.reject_job_quote(job_id, quote_id, uuid.UUID(u.user_id), body.get("reason")),
               _rid(r), ENGINE_ID)
@@ -276,7 +276,7 @@ async def reject_job_quote(job_id: uuid.UUID, quote_id: uuid.UUID, r: Request,
              summary="Step 7: Tenant owner converts an approved consultation into a repair job",
              status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def convert_to_repair(job_id: uuid.UUID, r: Request,
-                             u: UserContext = Depends(require_permission(P.FIELD_OPS_JOBS_ASSIGN)),
+                             u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_JOBS_ASSIGN)),
                              s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.convert_to_repair(
@@ -298,7 +298,7 @@ async def get_checklist(job_id: uuid.UUID, r: Request,
                      "(lazily provisions items from the tenant's template)",
              response_model=ApiResponse[dict])
 async def start_checklist(job_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(get_current_user),
+                           u: UserContext = Depends(require_staff_or_technician_only),
                            s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.start_job_checklist(job_id), _rid(r), ENGINE_ID)
 
@@ -307,7 +307,7 @@ async def start_checklist(job_id: uuid.UUID, r: Request,
                     "(validates requires_note / requires_photo)",
             response_model=ApiResponse[dict])
 async def update_checklist_item(job_id: uuid.UUID, item_id: uuid.UUID, r: Request,
-                                 u: UserContext = Depends(get_current_user),
+                                 u: UserContext = Depends(require_staff_or_technician_only),
                                  s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.update_job_checklist_item(
@@ -319,7 +319,7 @@ async def update_checklist_item(job_id: uuid.UUID, item_id: uuid.UUID, r: Reques
              summary="Step 8: Complete the service job's checklist (all required items must be done)",
              response_model=ApiResponse[dict])
 async def complete_checklist(job_id: uuid.UUID, r: Request,
-                              u: UserContext = Depends(get_current_user),
+                              u: UserContext = Depends(require_staff_or_technician_only),
                               s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.complete_job_checklist(job_id), _rid(r), ENGINE_ID)
 
@@ -351,7 +351,7 @@ async def get_transitions(job_id: uuid.UUID, r: Request,
              summary="Technician submits assessment findings (repair/consultation)",
              response_model=ApiResponse[dict])
 async def submit_findings(job_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(get_current_user),
+                           u: UserContext = Depends(require_staff_or_technician_only),
                            s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.submit_findings(job_id, body["findings"], body.get("recommendation")),
@@ -361,7 +361,7 @@ async def submit_findings(job_id: uuid.UUID, r: Request,
             summary="Update a service/maintenance job's checklist",
             response_model=ApiResponse[dict])
 async def update_checklist(job_id: uuid.UUID, r: Request,
-                            u: UserContext = Depends(get_current_user),
+                            u: UserContext = Depends(require_staff_or_technician_only),
                             s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.update_checklist(job_id, body["items"]), _rid(r), ENGINE_ID)
@@ -370,7 +370,7 @@ async def update_checklist(job_id: uuid.UUID, r: Request,
              summary="Send a price quote to the customer (repair: if needed, consultation: always)",
              status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def create_quote(job_id: uuid.UUID, r: Request,
-                        u: UserContext = Depends(get_current_user),
+                        u: UserContext = Depends(require_staff_or_above_mutation),
                         s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     labour = body.get("labour_estimate")
@@ -385,17 +385,26 @@ async def create_quote(job_id: uuid.UUID, r: Request,
                      "quote spawns a new follow-up repair job",
              response_model=ApiResponse[dict])
 async def respond_to_quote(quote_id: uuid.UUID, r: Request,
-                            u: UserContext = Depends(get_current_user),
+                            u: UserContext = Depends(require_customer),
                             s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
+    # Slice 2F-14B: this previously let ANY non-customer authenticated caller
+    # (staff, tenant_owner, technician) supply an arbitrary customer_id in the
+    # request body and have the service record an "approved"/"rejected"
+    # decision indistinguishable from a genuine customer decision -- a
+    # customer-impersonation defect. No established offline-decision policy
+    # (a distinct audit trail, a separate endpoint, product documentation)
+    # exists for a provider to record a customer's decision on their behalf,
+    # so this is closed as a straightforward customer-only self-service route:
+    # customer_id is always derived from the authenticated principal.
     body = await r.json()
-    customer_id = uuid.UUID(u.user_id) if u.role == "customer" else uuid.UUID(body["customer_id"])
+    customer_id = uuid.UUID(u.user_id)
     return ok(await s.respond_to_quote(quote_id, customer_id, body["approved"]), _rid(r), ENGINE_ID)
 
 @router.post("/{job_id}/spawn-repair",
              summary="Manually spawn a repair job from a consultation (any time, not just on quote approval)",
              status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def spawn_repair(job_id: uuid.UUID, r: Request,
-                        u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                        u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                         s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.spawn_repair_from_consultation(job_id), _rid(r), ENGINE_ID)
 
@@ -403,7 +412,7 @@ async def spawn_repair(job_id: uuid.UUID, r: Request,
              summary="Step 9: Close a paid job with commission deducted (closure_notes)",
              response_model=ApiResponse[dict])
 async def close_job(job_id: uuid.UUID, r: Request,
-                     u: UserContext = Depends(require_permission(P.FIELD_OPS_JOBS_CLOSE)),
+                     u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_JOBS_CLOSE)),
                      s: BillingService = Depends(_billing_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.close_job_financial(job_id, body.get("closure_notes")), _rid(r), ENGINE_ID)
@@ -413,7 +422,7 @@ async def close_job(job_id: uuid.UUID, r: Request,
              summary="Step 9: Generate an invoice for a signed-off/completed job",
              status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def generate_invoice(job_id: uuid.UUID, r: Request,
-                            u: UserContext = Depends(require_permission(P.FIELD_OPS_JOBS_CLOSE)),
+                            u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_JOBS_CLOSE)),
                             s: BillingService = Depends(_billing_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.generate_invoice(job_id, body), _rid(r), ENGINE_ID)
@@ -422,7 +431,7 @@ async def generate_invoice(job_id: uuid.UUID, r: Request,
              summary="Step 9: Record an on-site/manual payment against a job's invoice",
              status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def record_payment(job_id: uuid.UUID, r: Request,
-                          u: UserContext = Depends(require_permission(P.FIELD_OPS_JOBS_CLOSE)),
+                          u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_JOBS_CLOSE)),
                           s: BillingService = Depends(_billing_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.record_payment(job_id, body), _rid(r), ENGINE_ID)
@@ -431,7 +440,7 @@ async def record_payment(job_id: uuid.UUID, r: Request,
              summary="Step 9: Deduct platform commission from the tenant wallet for this job",
              response_model=ApiResponse[dict])
 async def deduct_commission(job_id: uuid.UUID, r: Request,
-                             u: UserContext = Depends(require_permission(P.FIELD_OPS_JOBS_CLOSE)),
+                             u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_JOBS_CLOSE)),
                              s: BillingService = Depends(_billing_svc)) -> ApiResponse[dict]:
     return ok(await s.deduct_commission(job_id), _rid(r), ENGINE_ID)
 
@@ -439,7 +448,7 @@ async def deduct_commission(job_id: uuid.UUID, r: Request,
              summary="Step 9: Atomic invoice -> payment -> commission -> close in one call",
              response_model=ApiResponse[dict])
 async def financial_close(job_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(require_permission(P.FIELD_OPS_JOBS_CLOSE)),
+                           u: UserContext = Depends(require_tenant_mutation_permission(P.FIELD_OPS_JOBS_CLOSE)),
                            s: BillingService = Depends(_billing_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.financial_close(job_id, body), _rid(r), ENGINE_ID)
@@ -463,7 +472,7 @@ async def get_job_invoice_for_tenant(job_id: uuid.UUID, r: Request,
 @router.post("/{job_id}/void", summary="Void job (cannot void while work in progress)",
              response_model=ApiResponse[dict])
 async def void_job(job_id: uuid.UUID, r: Request,
-                    u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                     s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.void_job(job_id, body.get("reason","Voided by admin")), _rid(r), ENGINE_ID)
@@ -478,11 +487,19 @@ async def get_timeline(job_id: uuid.UUID, r: Request,
 @router.post("/{job_id}/notes", status_code=status.HTTP_201_CREATED,
              summary="Add note to job", response_model=ApiResponse[dict])
 async def add_note(job_id: uuid.UUID, r: Request,
-                    tenant_id: uuid.UUID = Query(...),
-                    u: UserContext = Depends(get_current_user),
+                    u: UserContext = Depends(require_staff_or_above_mutation),
                     s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
+    # Slice 2F-14A: tenant_id is no longer accepted from the client -- it is
+    # derived server-side from the job row (see FieldOpsService.add_note),
+    # closing a tenant-spoofing/ownership gap.
+    # Slice 2F-14C: router-level persona/mutation-scope enforcement added --
+    # require_staff_or_above_mutation (excludes customer, denies read-only
+    # tenant access-scope) makes canonical persona enforcement tool-visible,
+    # in front of the pre-existing service-level _assert_can_access_job +
+    # customer-denial (which remain unmodified object-ownership checks, not
+    # replaced by this router-level guard).
     body = await r.json()
-    return ok(await s.add_note(job_id, tenant_id, body["content"],
+    return ok(await s.add_note(job_id, body["content"],
               body.get("note_type","staff_note"), body.get("is_internal",True)), _rid(r), ENGINE_ID)
 
 @router.get("/{job_id}/notes", summary="List all notes for a job",
@@ -496,11 +513,14 @@ async def list_notes(job_id: uuid.UUID, r: Request,
              summary="Attach media to job at current status checkpoint",
              response_model=ApiResponse[dict])
 async def add_media(job_id: uuid.UUID, r: Request,
-                     tenant_id: uuid.UUID = Query(...),
-                     u: UserContext = Depends(get_current_user),
+                     u: UserContext = Depends(require_staff_or_above_mutation),
                      s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
+    # Slice 2F-14A: tenant_id is no longer accepted from the client -- see
+    # FieldOpsService.add_media.
+    # Slice 2F-14C: router-level persona/mutation-scope enforcement added --
+    # same reasoning as add_note above.
     body = await r.json()
-    return ok(await s.add_media(job_id, tenant_id,
+    return ok(await s.add_media(job_id,
               uuid.UUID(body["media_id"]) if body.get("media_id") else None,
               body.get("media_type","photo"), body.get("caption"),
               body.get("storage_key")), _rid(r), ENGINE_ID)

@@ -29,10 +29,49 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 class ChatService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id; self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-36: send_message previously trusted a client-supplied
+        `tenant_id` query param with no comparison to the caller's own
+        tenant, letting any authenticated tenant-side principal write into
+        another tenant's conversation by guessing/enumerating a
+        conversation_id + tenant_id pair. super_admin is exempt (platform-
+        wide, matches every other _require_trusted_tenant in this program).
+        """
+        if self.actor_role in ("super_admin", "customer"):
+            # Customers carry no tenant_id (they belong to no single
+            # tenant); their authorization comes from conversation
+            # membership instead (_require_participant), checked after the
+            # conversation is loaded.
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="chat_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's chat data.",
+                blocking_rule="chat_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
+
+    def _require_participant(self, conv: "Conversation") -> None:
+        """Customer principals have no tenant_id to compare -- they are
+        authorized by conversation membership instead. Applied only to the
+        mutation path (send_message); the pre-existing read routes are Set
+        C for this slice and are not touched."""
+        if self.actor_role != "customer":
+            return
+        participants = conv.participants or []
+        actor = str(self.actor_id) if self.actor_id else None
+        ids = {p.get("user_id") or p.get("id") for p in participants if isinstance(p, dict)}
+        if actor is None or actor not in {str(i) for i in ids if i}:
+            raise NotFoundException("Conversation", str(conv.id))
 
     def _conv_dict(self, c: Conversation) -> dict:
         participants = c.participants or []
@@ -151,6 +190,12 @@ class ChatService:
                             message_type: str, content: str,
                             media_id: uuid.UUID | None,
                             idempotency_key: str | None) -> dict:
+        # Slice 2F-36: tenant_id arrives as a client-supplied query param;
+        # reject it up front if it does not match the caller's own trusted
+        # tenant (server-derived, super_admin exempt) before it can be used
+        # to write into another tenant's conversation.
+        tenant_id = self._require_trusted_tenant(tenant_id)
+
         if len(content) > MAX_MESSAGE_SIZE_CHARS:
             raise ServiceOSException("VALIDATION_ERROR",
                 f"Message exceeds {MAX_MESSAGE_SIZE_CHARS} character limit.")
@@ -169,6 +214,9 @@ class ChatService:
             Conversation.tenant_id == tenant_id))
         conv = r.scalar_one_or_none()
         if not conv: raise NotFoundException("Conversation", str(conversation_id))
+        # Customer principals have no tenant_id to compare above -- they
+        # are authorized by conversation membership instead.
+        self._require_participant(conv)
 
         msg = Message(conversation_id=conversation_id, tenant_id=tenant_id,
                        sender_id=sender_id, sender_role=sender_role,
@@ -263,10 +311,17 @@ class ChatService:
 
     async def delete_message(self, message_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
         """PROVEN: soft-delete only — content replaced, row kept for audit."""
+        # Slice 2F-39A3 fix: missing the same sender-ownership check its
+        # sibling edit_message already has -- any authenticated user in
+        # (or claiming, via the client-supplied tenant_id query param) any
+        # tenant could soft-delete any other user's message. Now requires
+        # the caller to be the message's own sender, matching edit_message.
         r = await self.db.execute(select(Message).where(
             Message.id == message_id, Message.tenant_id == tenant_id))
         msg = r.scalar_one_or_none()
         if not msg: raise NotFoundException("Message", str(message_id))
+        if msg.sender_id != self.actor_id:
+            raise ServiceOSException("FORBIDDEN", "You can only delete your own messages.")
         if msg.is_deleted:
             raise ServiceOSException("CONFLICT", "Message is already deleted.")
         msg.is_deleted = True; msg.deleted_at = utcnow()

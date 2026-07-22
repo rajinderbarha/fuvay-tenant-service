@@ -1,0 +1,14 @@
+principal,route_group,expected_outcome,proof_mechanism
+tenant_owner (own tenant),all 6 selected + download_export,ALLOWED,require_tenant_owner_mutation admits tenant_owner (existing role set, unchanged) -- test_admits_tenant_owner
+read-only tenant_owner (access_scope=customer_support_limited),all 6 selected + download_export,DENIED (THIS SLICE),require_tenant_owner_mutation's access-scope check -- test_denies_readonly_tenant_owner
+canonical staff,all 6 selected + download_export,DENIED,require_tenant_owner (underlying role dependency) excludes staff -- test_denies_staff_role; no evidence staff was ever an intended actor (compliance-persona-policy.csv)
+technician,all 6 selected + download_export,DENIED,require_tenant_owner excludes technician -- test_denies_technician
+correct customer/data subject,n/a (customer routes are a separate router, require_customer),n/a,out of this slice's direct-fix scope; customer_router unchanged and independently correctly scoped
+cross-tenant owner,all 6 selected + download_export,DENIED at object level,require_tenant_owner_mutation admits the role but metadata_json[tenant_id] scoping (existing, preserved) denies cross-tenant object access
+cross-tenant staff,n/a,DENIED (role-level, before object check is reached),same as canonical staff
+guest,all 6 selected + download_export,DENIED,get_current_user itself requires a valid authenticated JWT; guest role also fails require_tenant_owner's role allow-list
+unauthenticated actor,all 6 selected + download_export,DENIED (401),get_current_user rejects missing/invalid token before any role dependency runs
+super_admin,all 6 selected + download_export,ALLOWED (explicit exemption from access-scope check),require_tenant_owner_mutation exempts super_admin by name -- test_admits_super_admin_even_with_readonly_scope
+prohibited role alias (office_staff),all 6 selected + download_export,DENIED (fails closed),require_tenant_owner's explicit allow-list never matches an alias string -- test_denies_prohibited_role_alias
+unknown role,all 6 selected + download_export,DENIED (fails closed),same allow-list mechanism
+unknown scope,all 6 selected + download_export,ALLOWED unless the scope IS the specific known readonly value,by design -- matches every other *_mutation guard in this initiative

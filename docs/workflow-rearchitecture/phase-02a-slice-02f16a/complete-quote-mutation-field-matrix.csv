@@ -1,0 +1,16 @@
+route,field,allowed_states
+staff_create_quote,quote_type/currency/status(draft)/labour_amount..total_amount(all zero at creation),IMMUTABLE_AFTER_CREATION (quote_type is set once; amounts start at zero and are only ever changed via item mutations)
+staff_create_quote,provider_internal_notes,ALWAYS_INTERNAL_EDITABLE (see note below)
+staff_add_item/update_item/remove_item,quantity/unit_price/line_total,DRAFT_ONLY (ITEM_EDITABLE_QUOTE_STATUSES: draft/submitted_to_provider/provider_rejected/revision_requested/revised)
+staff_add_item/update_item/remove_item,is_customer_visible (item flag),BEFORE_SEND (same ITEM_EDITABLE_QUOTE_STATUSES gate)
+staff_add_item/update_item/remove_item,labour_amount..total_amount (quote-level, recalculated),BEFORE_SEND (recomputed only while items are editable)
+staff_send_to_customer,status(->sent_to_customer)/sent_to_customer_at/customer_visible_notes,BEFORE_SEND -> SENT_BUT_NOT_DECIDED transition; NEVER_CLIENT_EDITABLE after
+staff_mark_revised,status(->revised),SENT_BUT_NOT_DECIDED or REJECTED -> DRAFT_ONLY again (reopens item editability)
+staff_cancel_quote/provider_cancel_quote,status(->cancelled),ALWAYS reachable from any non-final status; NEVER_CLIENT_EDITABLE after (terminal)
+customer_approve_quote,status(->customer_approved)/approved_at/locked_at/idempotency_key,SENT_BUT_NOT_DECIDED -> APPROVED; NEVER_CLIENT_EDITABLE after (terminal, locked_at set)
+customer_reject_quote,status(->customer_rejected)/rejection_reason/rejected_at,SENT_BUT_NOT_DECIDED -> REJECTED; NEVER_CLIENT_EDITABLE after (terminal)
+customer_request_revision,status(->revision_requested)/revision_reason,SENT_BUT_NOT_DECIDED -> REVISION_REQUESTED; item content unaffected (provider must act next via mark_revised)
+staff_create_checklist,job_id/booking_id/tenant_id/template_id/checklist_type,IMMUTABLE_AFTER_CREATION
+staff_update_checklist_item,value_text/value_number/value_json/media_url/status,BEFORE checklist status == completed (CL_COMPLETED guard, pre-existing)
+staff_complete_checklist,checklist status(->completed)/completed_by_user_id/completed_at,ALWAYS reachable once (not already completed); NEVER_CLIENT_EDITABLE after (terminal)
+(no route),quote.job_id/customer_id/tenant_id/booking_id (association fields),IMMUTABLE_AFTER_CREATION -- no route or service method ever reassigns these after the Quote() constructor call in create_quote (confirmed by source grep for "q.job_id =" / "q.customer_id =" / "q.tenant_id =" outside the constructor -- none found)

@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission, require_mutation_access_scope
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.data_science.service import DSService
@@ -18,7 +18,8 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db),
           u: UserContext = Depends(get_current_user)) -> DSService:
     return DSService(db=db, request_id=getattr(r.state,"request_id","—"),
                       actor_id=uuid.UUID(u.user_id) if u.user_id else None,
-                      actor_role=u.role)
+                      actor_role=u.role,
+                      actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 
 
@@ -93,7 +94,7 @@ async def get_forecast(tenant_id: uuid.UUID, r: Request,
              summary="Force recompute demand forecast immediately",
              response_model=ApiResponse[dict])
 async def trigger_recompute(tenant_id: uuid.UUID, r: Request,
-                             u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                             u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                              s: DSService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.trigger_recompute(tenant_id), _rid(r), ENGINE_ID)
 
@@ -122,7 +123,7 @@ async def pricing_recs(tenant_id: uuid.UUID, r: Request,
              summary="Apply a pricing recommendation — delegates to Pricing Engine",
              response_model=ApiResponse[dict])
 async def apply_pricing(tenant_id: uuid.UUID, r: Request,
-                         u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                         u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                          s: DSService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.apply_pricing_recommendation(
@@ -177,7 +178,7 @@ async def update_staff_signal(tenant_id: uuid.UUID, staff_id: uuid.UUID, r: Requ
             summary="Get customer lifetime value prediction",
             response_model=ApiResponse[dict])
 async def customer_ltv(tenant_id: uuid.UUID, customer_id: uuid.UUID, r: Request,
-                        u: UserContext = Depends(get_current_user),
+                        u: UserContext = Depends(require_mutation_access_scope),
                         s: DSService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_customer_ltv(customer_id, tenant_id), _rid(r), ENGINE_ID)
 
@@ -196,7 +197,7 @@ async def high_value_customers(tenant_id: uuid.UUID, r: Request,
              summary="Force recompute LTV for a customer",
              response_model=ApiResponse[dict])
 async def recompute_ltv(tenant_id: uuid.UUID, customer_id: uuid.UUID, r: Request,
-                         u: UserContext = Depends(get_current_user),
+                         u: UserContext = Depends(require_mutation_access_scope),
                          s: DSService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.recompute_ltv(customer_id, tenant_id), _rid(r), ENGINE_ID)
 
@@ -228,7 +229,7 @@ async def get_anomaly(anomaly_id: uuid.UUID, r: Request,
              summary="Acknowledge anomaly with resolution notes",
              response_model=ApiResponse[dict])
 async def acknowledge_anomaly(anomaly_id: uuid.UUID, r: Request,
-                               u: UserContext = Depends(get_current_user),
+                               u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                                s: DSService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.acknowledge_anomaly(anomaly_id, body.get("notes")), _rid(r), ENGINE_ID)

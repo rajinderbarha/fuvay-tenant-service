@@ -1,0 +1,16 @@
+module,auth_weakness,cross_role_exposure,cross_tenant_write,customer_data_sensitivity,financial_consequence,communication_consequence,identity_session_consequence,destructive_ops,bulk_blast_radius,lifecycle_effect,alternate_route_bypass,caller_evidence,route_count,test_absence,product_decision_dependency,implementation_confidence,final_severity
+app.engines.platform_notifications.provider_router,5 (zero auth),5 (any role),4 (thread/notif creation cross-tenant plausible),3,1,5 (core comms surface),1,1,2,1,1 (none found),5 (confirmed tenant-portal caller),10,5,1,5,CRITICAL
+app.engines.compliance.provider_router,3 (permission exists, scope missing),2,1,5 (DPDP regulatory),2,1,1,2 (export generation semi-irreversible),1,1,1 (none found),3 (uncertain),6,5,3,4,HIGH
+app.engines.package_commerce.tenant_router,3,2,1,1,4 (purchase transaction),1,1,2 (entitlement grant),1,1,1 (none found),3 (likely),1,5,3,4,MEDIUM
+app.engines.customer_reviews.provider_router,5 (zero auth),4,2,3 (public-facing content),1,3 (public review reply),1,1,1,1,1 (none found),4 (likely -- public review system),2,5,1,5,MEDIUM
+app.engines.marketing_automation.provider_router,5 (zero auth),4,2,1,2 (campaign spend),2,1,1,2 (bulk campaign generation),1,1,2 (uncertain),3,5,1,5,MEDIUM
+app.engines.media.new_router,3,2,1,1,1,1,1,3 (delete ops),1,1,1 (none found),3 (likely),6,5,1,5,LOW-MEDIUM
+app.engines.profile.router,3,2,1,1,1,1,2 (business identity),1,1,1,1 (none found),3,3,5,1,5,LOW-MEDIUM
+app.engines.admin_catalog.brand_provider_router,3,2,1,1,1,1,1,1,1,1,1 (none found),2,2,5,1,5,LOW
+app.engines.analytics.provider_router,5 (zero auth),4,1,1,1,1,1,1,2 (report generation cost),1,1 (uncertain),1,5,1,5,LOW
+app.engines.admin_catalog.recommendation_router,3,2,1,1,1,1,1,1,1,1,1 (none found),1,2,5,1,5,LOW
+app.engines.admin_catalog.service_option_provider_router,3,2,1,1,1,1,1,1,1,1,1 (none found),1,2,5,1,5,LOW
+
+Scale: 1 (lowest) to 5 (highest) per dimension. final_severity is an evidence-weighted holistic judgment, not a pure numeric sum -- authentication weakness (zero auth vs. permission-with-missing-scope) and blast radius (core communication surface vs. narrow admin utility) dominate the CRITICAL/HIGH/MEDIUM/LOW assignment, consistent with the rubric's own instruction not to rank by route count alone.
+
+CONCLUSION: platform_notifications.provider_router remains the sole CRITICAL-severity module after the full-application sweep -- no new module was discovered that outranks it, and no previously-unknown module entered the remaining set (missing-tenant-mutations.csv confirms zero genuine additions).

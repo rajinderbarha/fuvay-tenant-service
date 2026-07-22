@@ -1,0 +1,11 @@
+module,router,service,models,permissions,canonical_route_count,same_module_held_candidates,shared_authority_boundary,atomic_closure
+N01_media_assets,app.engines.media.new_router,MediaAssetService/MediaService,"MediaAsset, ProfilePhoto",(none - authenticated/role only),9,3,tenant/provider/staff-owned media objects addressed by id,yes
+N02_enterprise_grid_views,app.engines.enterprise_grid.router,EnterpriseGridService,"SavedView, ColumnPreference, ExportJob",(none),6,0,per-user grid personalization (self-scoped),yes
+N06_provider_catalog_setup,"app.engines.admin_catalog.{brand,recommendation,service_option}_provider_router",TenantCatalogService/BrandService,"BrandRequest, ServiceSupport, RecommendationRule",(role only),4,2,provider catalog/brand setup requests,yes
+N03_profile_self_service,app.engines.profile.router,ProfileService,"User, ProviderBusinessProfile, StaffProfile",(role only),4,0,tenant/staff profile self-service,yes
+N04_marketing_automation,app.engines.marketing_automation.provider_router,MarketingAutomationService,"Campaign, MarketingAsset",(none),3,0,provider campaigns/assets,yes
+N05_security_deposit,app.engines.platform_commerce.router,CommerceService,"SecurityDeposit, DepositTransaction",commerce/deposit permission,3,4,tenant security deposit; client-asserted tenant; two mutating GETs (lazy create),yes
+N07_analytics_reports,app.engines.analytics.provider_router,AnalyticsService,Report,(none),1,0,provider report run,yes
+N08_rag_knowledge,app.engines.rag.router,RAGService,"KnowledgeBase, Document",(none),1,4,RAG query (persists usage),yes
+N09_webhook_integration,app.engines.webhook.router,WebhookService,WebhookEndpoint,tenant:update,1,0,webhook endpoint deletion; client-asserted tenant,yes
+N10_geo_zones,app.engines.geo.router,GeoService,ServiceZone,tenant:update,1,2,geo zone deletion; NO tenant predicate in service,yes

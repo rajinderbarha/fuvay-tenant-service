@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission, require_mutation_access_scope
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.geo.service import GeoService
@@ -16,8 +16,12 @@ ENGINE_ID = "geo"
 
 def _svc(r: Request, db: AsyncSession = Depends(get_db),
           u: UserContext = Depends(get_current_user)) -> GeoService:
+    # Phase 2A Slice 2F-33: actor_tenant_id is now passed so GeoService can
+    # independently enforce tenant authority on every mutation, rather than
+    # trusting client-supplied tenant_id values.
     return GeoService(db=db, request_id=getattr(r.state,"request_id","—"),
-                       actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role)
+                       actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role,
+                       actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 
 @router.get("/meta", tags=["Engine Registry"])
@@ -29,7 +33,7 @@ async def engine_meta() -> dict:
 
 @router.post("/tenants/{tenant_id}/zones", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def create_zone(tenant_id: uuid.UUID, r: Request,
-                       u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: GeoService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.create_zone(tenant_id, await r.json()), _rid(r), ENGINE_ID)
 
@@ -54,7 +58,7 @@ async def update_zone(zone_id: uuid.UUID, r: Request,
 
 @router.delete("/zones/{zone_id}", response_model=ApiResponse[dict])
 async def delete_zone(zone_id: uuid.UUID, r: Request,
-                       u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: GeoService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.delete_zone(zone_id), _rid(r), ENGINE_ID)
 
@@ -67,7 +71,12 @@ async def check_pincode(tenant_id: uuid.UUID, r: Request,
 
 @router.post("/tenants/{tenant_id}/staff/{staff_id}/location", response_model=ApiResponse[dict])
 async def update_location(tenant_id: uuid.UUID, staff_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(get_current_user),
+                           # Phase 2A Slice 2F-33 (Set B TENANT_PROVIDER_MUTATION_ADD):
+                           # mixed persona (technician self-report + tenant
+                           # dispatcher-on-behalf) -- scope-only guard preserves
+                           # every previously-admitted role while rejecting a
+                           # read-only mutation access_scope.
+                           u: UserContext = Depends(require_mutation_access_scope),
                            s: GeoService = Depends(_svc)) -> ApiResponse[dict]:
     # A technician can only report their OWN GPS position, never spoof a colleague's.
     if u.role == "staff" and (not u.user_id or uuid.UUID(u.user_id) != staff_id):

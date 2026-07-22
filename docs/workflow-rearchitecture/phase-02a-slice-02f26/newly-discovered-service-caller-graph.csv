@@ -1,0 +1,9 @@
+route,service_method,other_callers,weakest_caller,tenant_none_risk,swallowed_exception
+PUT /v1/auth/staff/{user_id}/permissions,AuthService.update_permissions,HTTP route only,HTTP route,no -- guarded by `if not user.tenant_id: raise`,no
+POST /v1/auth/staff/invite,AuthService.invite_staff,HTTP route only,HTTP route,not assessed (no implementation this slice),no
+POST /v1/auth/api-keys,AuthService key issuance,HTTP route only,HTTP route,not assessed,no
+GET /v1/commerce/tenants/{id}/deposit,CommerceService.get_deposit_status -> _get_or_create_deposit,"initiate_deposit, confirm_deposit share the helper",HTTP GET route,no -- `_assert_owns_tenant_deposit(tid)` precedes,no
+POST /v1/media/upload,MediaAssetService.upload,chat-media and profile paths share the service,HTTP route,service holds actor context,no
+PUT /v1/me/profile,ProfileService.update_user_profile,staff profile route shares the service,HTTP route,service holds actor context,no
+POST /v1/bookings/{id}/cancel,booking service cancel,customer + provider surfaces share it,HTTP route,not assessed,no
+(reference) field_ops job close -> create_review_request,ReviewService.create_review_request,HTTP route + field_ops internal caller,internal caller (was passing no tenant),FIXED in 2F-25A,YES -- `except Exception` logs a warning only

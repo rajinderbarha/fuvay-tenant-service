@@ -1,0 +1,31 @@
+module,canonical_route_count,held_route_count,assigned_slice,rationale
+webhook_endpoint_management,1,0,2F-35,highest cross-tenant/destructive severity of the remaining canonical routes
+rag_query,1,0,2F-35,newly-confirmed cross-tenant data-exposure gap; highest privacy severity found this slice
+held: security,0,2,2F-35,shares security-sensitive domain with webhook/rag
+held: documents,0,3,2F-35,delete-shaped document/KB boundaries; security-sensitive by capability shape
+held: rag,0,4,2F-35,shares the rag_query module boundary
+enterprise_grid_saved_views,4,0,2F-36,enterprise/tenant-operational; object ownership already mostly present
+enterprise_grid_preferences_exports,2,0,2F-36,enterprise/tenant-operational
+admin_catalog_provider_setup,4,0,2F-36,tenant-operational catalog administration
+profile_technician_self_service,3,0,2F-36,tenant-operational self-service
+profile_universal_self_service,1,0,2F-36,universal self-service
+marketing_automation_provider,3,0,2F-36,tenant-operational marketing administration
+analytics_provider_reports,1,0,2F-36,tenant-operational reporting
+held: appointments,0,7,2F-36,operational scheduling domain
+held: ds,0,6,2F-36,operational (dashboard/data-service) domain
+held: inventory,0,5,2F-36,operational inventory domain
+held: catalog,0,2,2F-36,shares admin_catalog_provider_setup's domain
+held: dispatch,0,2,2F-36,operational dispatch domain
+held: settings,0,2,2F-36,tenant-configuration domain
+held: serviceability,0,1,2F-36,operational serviceability domain
+held: chat,0,1,2F-36,operational communication domain
+held: bookings,0,1,2F-36,operational booking-adjacent domain (not the Booking/ServiceBooking pipeline itself)
+held: notifications,0,1,2F-36,operational notification domain
+platform_commerce_deposit,3,0,2F-37,financial authorization
+held: pricing,0,9,2F-37,financial/commerce domain
+held: commerce,0,4,2F-37,financial/commerce domain
+held: payments,0,1,2F-37,financial domain
+held: subscriptions,0,1,2F-37,financial/product-policy domain
+held: compliance,0,2,2F-37,product-policy-dependent domain (data-deletion/portability requests require an explicit policy decision)
+N01 domain-integrity backlog,0,0,2F-37,non-authorization media-integrity sub-scope, explicitly separate from held-candidate adjudication
+(none),0,0,2F-38,final reconciliation and certification only -- no canonical or held route is directly assigned to 2F-38 implementation; it re-verifies the other three slices' output

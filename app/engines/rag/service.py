@@ -27,12 +27,50 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 class RAGService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db
         self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id
         self.actor_role = actor_role
+        # Phase 2A Slice 2F-35: the authoritative tenant of the calling
+        # principal, derived server-side from the token. The 5 mutation
+        # methods closed this slice (query, delete_kb, ingest_document,
+        # delete_document, reindex_document) MUST scope by this value.
+        # _get_kb (below) is intentionally left untouched -- it backs
+        # several Set C read routes (get_kb, list_documents, update_kb,
+        # search_only) that remain frozen out of this slice's scope; a new
+        # _get_kb_trusted() helper is used instead for the closed methods.
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self) -> uuid.UUID | None:
+        """Returns the authoritative tenant to scope a mutation by (no
+        client-supplied tenant exists on any of the 5 closed methods --
+        kb_id/doc_id are the only path inputs). Fails closed unless the
+        caller is platform staff or has a known tenant context."""
+        if self.actor_role == "super_admin":
+            return None
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="rag_mutation_requires_trusted_tenant_context")
+        return self.actor_tenant_id
+
+    async def _get_kb_trusted(self, kb_id: uuid.UUID) -> KnowledgeBase:
+        """Tenant-scoped KB lookup for the 3 mutation methods that must
+        close this slice (query, delete_kb, ingest_document). Does NOT
+        replace _get_kb, which several frozen Set C read routes still use
+        unmodified."""
+        tenant_id = self._require_trusted_tenant()
+        q = select(KnowledgeBase).where(KnowledgeBase.id == kb_id, KnowledgeBase.is_active == True)
+        if tenant_id is not None:
+            q = q.where(KnowledgeBase.tenant_id == tenant_id)
+        r = await self.db.execute(q)
+        kb = r.scalar_one_or_none()
+        if not kb:
+            raise NotFoundException("KnowledgeBase", str(kb_id))
+        return kb
 
     # ── Private helpers ───────────────────────────────────────────────────────
     async def _get_kb(self, kb_id: uuid.UUID) -> KnowledgeBase:
@@ -141,6 +179,11 @@ class RAGService:
     async def create_kb(self, tenant_id: uuid.UUID, name: str, description: str | None,
                          vertical: str | None, chunk_size: int, chunk_overlap: int,
                          top_k: int) -> dict:
+        trusted_tenant_id = self._require_trusted_tenant()
+        if trusted_tenant_id is not None and tenant_id != trusted_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's knowledge bases.",
+                blocking_rule="rag_mutation_cross_tenant_denied")
         kb = KnowledgeBase(
             tenant_id=tenant_id, name=name, description=description,
             vertical=vertical, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
@@ -179,7 +222,7 @@ class RAGService:
                 "has_next": has_next, "next_cursor": nc}
 
     async def update_kb(self, kb_id: uuid.UUID, data: dict) -> dict:
-        kb = await self._get_kb(kb_id)
+        kb = await self._get_kb_trusted(kb_id)
         for field in ("name", "description", "chunk_size", "chunk_overlap", "top_k"):
             if field in data and data[field] is not None:
                 setattr(kb, field, data[field])
@@ -187,7 +230,7 @@ class RAGService:
         return self._kb_dict(kb)
 
     async def delete_kb(self, kb_id: uuid.UUID) -> dict:
-        kb = await self._get_kb(kb_id)
+        kb = await self._get_kb_trusted(kb_id)
         kb.is_active = False
         await self.db.execute(
             update(DocumentChunk).where(
@@ -202,7 +245,7 @@ class RAGService:
     async def ingest_document(self, kb_id: uuid.UUID, file_name: str,
                                mime_type: str, content: str,
                                source_url: str | None, tags: list) -> dict:
-        kb = await self._get_kb(kb_id)
+        kb = await self._get_kb_trusted(kb_id)
 
         # Idempotency: SHA-256 of content
         content_hash = hashlib.sha256(content.encode()).hexdigest()
@@ -298,7 +341,14 @@ class RAGService:
         return self._doc_dict(d)
 
     async def delete_document(self, doc_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(KBDocument).where(KBDocument.id == doc_id))
+        # Phase 2A Slice 2F-35: previously queried WHERE id==doc_id ONLY --
+        # zero tenant predicate, so any TENANT_UPDATE holder in ANY tenant
+        # could delete another tenant's document. Now scoped server-side.
+        tenant_id = self._require_trusted_tenant()
+        q = select(KBDocument).where(KBDocument.id == doc_id)
+        if tenant_id is not None:
+            q = q.where(KBDocument.tenant_id == tenant_id)
+        r = await self.db.execute(q)
         d = r.scalar_one_or_none()
         if not d:
             raise NotFoundException("KBDocument", str(doc_id))
@@ -324,7 +374,12 @@ class RAGService:
                 "chunks_deactivated": d.chunk_count}
 
     async def reindex_document(self, doc_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(KBDocument).where(KBDocument.id == doc_id))
+        # Phase 2A Slice 2F-35: same cross-tenant fix as delete_document.
+        tenant_id = self._require_trusted_tenant()
+        q = select(KBDocument).where(KBDocument.id == doc_id)
+        if tenant_id is not None:
+            q = q.where(KBDocument.tenant_id == tenant_id)
+        r = await self.db.execute(q)
         d = r.scalar_one_or_none()
         if not d:
             raise NotFoundException("KBDocument", str(doc_id))
@@ -394,15 +449,25 @@ class RAGService:
                     top_k: int | None, plan_type: str | None,
                     idempotency_key: str | None) -> dict:
         """Full RAG pipeline: embed → search → budget → generate → store."""
+        # Phase 2A Slice 2F-35: previously the KB lookup had zero tenant
+        # predicate -- any authenticated user of ANY tenant could query
+        # another tenant's knowledge base by supplying its kb_id, and the
+        # idempotency lookup below could theoretically hand back another
+        # tenant's cached answer on a colliding idempotency key. Both are
+        # now scoped server-side.
+        tenant_id = self._require_trusted_tenant()
+
         # Idempotency
         if idempotency_key:
-            ex = await self.db.execute(select(RAGQuery).where(
-                RAGQuery.idempotency_key == idempotency_key))
+            iq = select(RAGQuery).where(RAGQuery.idempotency_key == idempotency_key)
+            if tenant_id is not None:
+                iq = iq.where(RAGQuery.tenant_id == tenant_id)
+            ex = await self.db.execute(iq)
             existing = ex.scalar_one_or_none()
             if existing:
                 return {**self._query_dict(existing), "idempotent": True}
 
-        kb = await self._get_kb(kb_id)
+        kb = await self._get_kb_trusted(kb_id)
         start_ms = int(time.time() * 1000)
 
         # Check KB has indexed documents

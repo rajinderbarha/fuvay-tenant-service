@@ -1,0 +1,18 @@
+scenario,classification,evidence
+Create complaint for foreign booking/job,OWNERSHIP_REJECTED,test_create_complaint_rejects_unowned_record
+Create complaint for nonexistent record,OWNERSHIP_REJECTED,test_create_complaint_rejects_missing_record
+Create duplicate complaint,DUPLICATE_ALLOWED,pre-existing behavior -- check_duplicate_open_complaint exists only in advisory check-eligible, not enforced at creation (unchanged, not a defect introduced this slice)
+Message after final closure,STATE_TRANSITION_REJECTED,pre-existing FINAL_STATUSES guard in add_customer_message (unmodified, re-verified passing)
+Accept foreign resolution proposal,OWNERSHIP_REJECTED,test_accept_resolution_rejects_foreign_resolution_id
+Reject foreign resolution proposal,OWNERSHIP_REJECTED,same _get_resolution cross-check applies symmetrically to reject_resolution
+Repeat resolution acceptance after complaint moved on,STATE_TRANSITION_REJECTED,test_accept_resolution_illegal_state_creates_no_mutation (closed-state case; same mechanism blocks any post-transition repeat)
+Accept settlement with foreign proposal ID,OWNERSHIP_REJECTED,already fixed Slice 2F-9 (_get_settlement_proposal shared method) -- re-verified via existing Sprint 75/2F-9 tests passing unchanged
+Modify accepted settlement amount,STATE_TRANSITION_REJECTED,no amount field exists in SettlementRespondIn -- not a runtime rejection, a structural absence
+Repeat settlement acceptance,IDEMPOTENT,_check_dual_acceptance + status guard prevents re-payout (unchanged, pre-existing, re-verified via Sprint75 tests)
+Reject settlement after execution,STATE_TRANSITION_REJECTED,proposal.status already terminal; reject branch only sets fields, no payout re-trigger possible
+Request rework from invalid state,PRODUCT_DECISION_REQUIRED,rework only exists as a side effect of accept_resolution; now correctly gated by the same pre-validated transition fix
+Accept foreign rework,DISCONNECTED,no customer route exists to accept/decide rework independently at all (see rework-refund-boundary.md)
+Request refund against foreign complaint,OWNERSHIP_REJECTED,test_customer_cannot_request_refund_on_foreign_complaint
+Withdraw final complaint,STATE_TRANSITION_REJECTED,cancel_customer_complaint's _transition raises on illegal source (unchanged, pre-existing ALLOWED_TRANSITIONS_EXT check)
+Reopen without authority,DISCONNECTED,no reopen route exists in customer_router at all
+Customer attempting provider/platform transition,STATE_TRANSITION_REJECTED,no customer mutation targets a provider/platform-only status (resolution_proposed, refund_approved, refund_recorded, or any AI-internal status) -- structurally impossible, not merely blocked

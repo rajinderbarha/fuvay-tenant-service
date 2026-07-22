@@ -1,0 +1,8 @@
+read,tenant_scoped,secret_redacted,oracle,status
+target user lookup (update_permissions),yes,n/a,removed this slice,CLOSED
+target user lookup (deactivate_staff),yes,n/a,none,CONFIRMED
+API key lookup (update/revoke),yes,no raw key returned,NotFound,CONFIRMED
+API key create response,n/a,raw key returned ONCE by contract,n/a,CONFIRMED
+impersonation target lookup,platform scope,no secret,NotFound,CONFIRMED
+MFA state lookup,self only,secret not returned on disable,n/a,CONFIRMED
+StaffPermission lookup,scoped by target user in tenant,n/a,none,CONFIRMED

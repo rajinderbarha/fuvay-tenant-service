@@ -25,9 +25,28 @@ _JOB_FORWARD_CHAIN = [JS.DRAFT, JS.CONFIRMED, JS.DISPATCHED, JS.ACCEPTED]
 
 class DispatchService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id; self.actor_id = actor_id; self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-36: dispatch_job accepted a client-supplied body
+        tenant_id with no comparison to the caller's own tenant, letting a
+        tenant-side principal dispatch another tenant's job to their own
+        staff pool. super_admin is exempt (platform-wide)."""
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="dispatch_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's dispatch data.",
+                blocking_rule="dispatch_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     async def _get_job(self, job_id: str):
         from app.engines.field_ops.models import Job
@@ -90,6 +109,10 @@ class DispatchService:
                             mode: str, staff_id: uuid.UUID | None,
                             job_lat: float | None, job_lng: float | None,
                             service_type_id: str) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
+        job_check = await self._get_job(job_id)
+        if job_check and job_check.tenant_id != tenant_id:
+            raise NotFoundException("Job", job_id)
         # Idempotency
         ex = await self.db.execute(select(DispatchRecord).where(DispatchRecord.job_id == job_id))
         existing = ex.scalar_one_or_none()
@@ -225,6 +248,10 @@ class DispatchService:
         return {"dispatch_records": [self._rec_dict(x) for x in items], "has_next": has_next, "next_cursor": nc}
 
     async def accept_job(self, job_id: str, staff_id: uuid.UUID) -> dict:
+        if self.actor_role != "super_admin" and staff_id != self.actor_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You can only accept a job as yourself.",
+                blocking_rule="dispatch_accept_identity_spoofing_denied")
         r = await self.db.execute(select(DispatchRecord).where(DispatchRecord.job_id == job_id))
         rec = r.scalar_one_or_none()
         if not rec: raise NotFoundException("DispatchRecord", job_id)
@@ -244,6 +271,10 @@ class DispatchService:
         return self._rec_dict(rec)
 
     async def reject_job(self, job_id: str, staff_id: uuid.UUID, reason: str | None) -> dict:
+        if self.actor_role != "super_admin" and staff_id != self.actor_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You can only reject a job as yourself.",
+                blocking_rule="dispatch_reject_identity_spoofing_denied")
         r = await self.db.execute(select(DispatchRecord).where(DispatchRecord.job_id == job_id))
         rec = r.scalar_one_or_none()
         if not rec: raise NotFoundException("DispatchRecord", job_id)
@@ -260,6 +291,10 @@ class DispatchService:
         r = await self.db.execute(select(DispatchRecord).where(DispatchRecord.job_id == job_id))
         rec = r.scalar_one_or_none()
         if not rec: raise NotFoundException("DispatchRecord", job_id)
+        if self.actor_role != "super_admin" and (
+            self.actor_tenant_id is None or rec.tenant_id != self.actor_tenant_id
+        ):
+            raise NotFoundException("DispatchRecord", job_id)
         old_staff = rec.assigned_staff_id
         rec.assigned_staff_id = new_staff_id
         rec.status = DispatchStatus.ASSIGNED

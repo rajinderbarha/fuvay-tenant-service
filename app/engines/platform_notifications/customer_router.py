@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Request, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import UserContext, require_customer
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.engines.platform_notifications.notification_service import NotificationService
@@ -44,7 +44,7 @@ async def list_notifications(
     read_status: Optional[str] = Query(None, description="unread | read | archived"),
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _notif_svc.get_user_notifications(
@@ -59,7 +59,7 @@ async def list_notifications(
 )
 async def unread_count(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _notif_svc.get_unread_count(db, uuid.UUID(u.user_id))
@@ -73,7 +73,7 @@ async def unread_count(
 async def mark_read(
     notification_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     notif = await _notif_svc.mark_notification_read(db, uuid.UUID(u.user_id), notification_id)
@@ -86,7 +86,7 @@ async def mark_read(
 )
 async def mark_all_read(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _notif_svc.mark_all_read(db, uuid.UUID(u.user_id))
@@ -99,7 +99,7 @@ async def mark_all_read(
 )
 async def get_preferences(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     prefs = await _notif_svc.get_preferences(db, uuid.UUID(u.user_id))
@@ -119,7 +119,7 @@ class UpdatePrefIn(BaseModel):
 async def update_preference(
     body: UpdatePrefIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     pref = await _notif_svc.update_preference(
@@ -141,7 +141,7 @@ async def list_threads(
     status: Optional[str] = Query(None),
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _thread_svc.list_threads(
@@ -164,7 +164,7 @@ class CreateThreadIn(BaseModel):
 async def create_thread(
     body: CreateThreadIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     thread = await _thread_svc.get_or_create_thread(
@@ -182,7 +182,7 @@ async def create_thread(
 async def get_thread(
     thread_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     thread = await _thread_svc.get_thread(
@@ -200,7 +200,7 @@ async def list_messages(
     r: Request,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _msg_svc.list_messages(
@@ -225,7 +225,7 @@ async def send_message(
     thread_id: uuid.UUID,
     body: SendMessageIn,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     msg = await _msg_svc.send_message(
@@ -233,6 +233,7 @@ async def send_message(
         actor_user_id=uuid.UUID(u.user_id), actor_type=RECIP_CUSTOMER,
         tenant_id=None, message_text=body.message_text,
         message_type=body.message_type, visibility=body.visibility,
+        actor=u,
     )
     return ok(msg.to_dict(RECIP_CUSTOMER), _rid(r), "customer.chat.message.send")
 
@@ -244,7 +245,7 @@ async def send_message(
 async def mark_thread_read(
     thread_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     count = await _msg_svc.mark_thread_read(

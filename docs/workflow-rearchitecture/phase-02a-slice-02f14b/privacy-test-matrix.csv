@@ -1,0 +1,8 @@
+check,result,evidence
+Quote/customer records expose no foreign customer PII,PASS,_get_quote_for_customer / respond_to_quote both 404 on customer_id mismatch rather than returning quote content
+Cross-tenant Job/quote IDs return safe denial,PASS,404 JOB_NOT_FOUND across all fixed routes (create_quote, spawn_repair) -- no distinguishing error message between "not found" and "wrong tenant"
+Provider users see only same-tenant quote data,PASS,_get_job_for_quote_management's tenant_owner-own-tenant check (unmodified) + technician assignment check
+Customers see only their own quote decisions,PASS,quote.customer_id == customer_id enforced on every customer-facing quote route
+Customer IDs not exposed or accepted unnecessarily,PASS (fixed this slice),respond_to_quote no longer accepts a client-supplied customer_id at all
+Audit logs identify the real actor,PASS (fixed this slice),respond_to_quote's customer_id is now always the authenticated principal -- _write_history's "Customer approved/rejected quote" reason is now guaranteed accurate
+Internal provider quote notes do not enter customer responses unless intended,N/A,JobQuote has no internal-notes field separate from the customer-facing quote fields (notes/parts/amount are all part of the quote the customer is meant to see)

@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.notification.service import NotificationService
@@ -17,7 +17,8 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db),
           u: UserContext = Depends(get_current_user)) -> NotificationService:
     return NotificationService(db=db, request_id=getattr(r.state,"request_id","—"),
                                 actor_id=uuid.UUID(u.user_id) if u.user_id else None,
-                                actor_role=u.role)
+                                actor_role=u.role,
+                                actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 
 @router.get("/meta", tags=["Engine Registry"])
@@ -31,7 +32,7 @@ async def engine_meta() -> dict:
 @router.post("/send", summary="Send notification (async, idempotent)",
              status_code=status.HTTP_202_ACCEPTED, response_model=ApiResponse[dict])
 async def send_notification(r: Request,
-                             u: UserContext = Depends(get_current_user),
+                             u: UserContext = Depends(require_super_admin),
                              s: NotificationService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     data = await s.send(
@@ -62,7 +63,7 @@ async def list_notifications(tenant_id: uuid.UUID, r: Request,
 
 @router.post("/{notification_id}/retry", response_model=ApiResponse[dict])
 async def retry(notification_id: uuid.UUID, r: Request,
-                 u: UserContext = Depends(get_current_user),
+                 u: UserContext = Depends(require_super_admin),
                  s: NotificationService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.retry_failed(notification_id), _rid(r), ENGINE_ID)
 
@@ -103,7 +104,7 @@ async def list_channels(tenant_id: uuid.UUID, r: Request,
 
 @router.put("/tenants/{tenant_id}/channels/{channel}", response_model=ApiResponse[dict])
 async def set_channel(tenant_id: uuid.UUID, channel: str, r: Request,
-                       u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: NotificationService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.set_channel_config(tenant_id, channel,
@@ -111,6 +112,6 @@ async def set_channel(tenant_id: uuid.UUID, channel: str, r: Request,
 
 @router.post("/tenants/{tenant_id}/channels/{channel}/test", response_model=ApiResponse[dict])
 async def test_channel(tenant_id: uuid.UUID, channel: str, r: Request,
-                        u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                        u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                         s: NotificationService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.test_channel(tenant_id, channel), _rid(r), ENGINE_ID)

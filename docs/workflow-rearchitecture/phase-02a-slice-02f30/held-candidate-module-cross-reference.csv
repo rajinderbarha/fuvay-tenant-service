@@ -1,0 +1,60 @@
+method,path,held_module,related_canonical_module,shares_boundary,mandatory_before_closure,safely_deferrable
+POST,/v1/serviceability/check,serviceability,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/compliance/deletion-requests,compliance,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/compliance/portability-requests,compliance,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/security/api-keys/{key_id}/rotate,security,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/security/api-keys/{key_id}/revoke,security,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/chat/conversations/{conversation_id}/messages,chat,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/payments/tenants/{tenant_id}/payout,payments,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/inventory/tenants/{tenant_id}/items,inventory,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/inventory/items/{item_id}/locations/{location_id}/receive,inventory,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/inventory/reservations,inventory,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/inventory/reservations/confirm,inventory,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/inventory/reservations/release,inventory,no canonical module in the 33-route queue,no,no,yes
+PUT,/v1/subscriptions/tenants/{tenant_id}/plan,subscriptions,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/documents,documents,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/documents/{document_id}/send,documents,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/documents/{document_id}/void,documents,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/bookings,bookings,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/appointments/{appointment_id}/confirm,appointments,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/appointments/{appointment_id}/cancel,appointments,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/appointments/{appointment_id}/reschedule,appointments,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/appointments/{appointment_id}/no-show,appointments,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/appointments/staff/{staff_id}/calendar/block,appointments,no canonical module in the 33-route queue,no,no,yes
+DELETE,/v1/appointments/calendar/blocks/{block_id},appointments,no canonical module in the 33-route queue,no,no,yes
+PUT,/v1/appointments/staff/{staff_id}/working-hours,appointments,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/catalog,catalog,N06_provider_catalog_setup,yes,yes,no
+PUT,/v1/catalog/{item_id},catalog,N06_provider_catalog_setup,yes,yes,no
+POST,/v1/geo/tenants/{tenant_id}/zones,geo,N10_geo_zones,yes,yes,no
+POST,/v1/geo/tenants/{tenant_id}/staff/{staff_id}/location,geo,N10_geo_zones,yes,yes,no
+POST,/v1/dispatch/jobs/{job_id}/dispatch,dispatch,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/dispatch/jobs/{job_id}/reassign,dispatch,no canonical module in the 33-route queue,no,no,yes
+GET,/v1/ds/tenants/{tenant_id}/churn/score,ds,no canonical module in the 33-route queue,no,no,yes
+GET,/v1/ds/tenants/{tenant_id}/demand/forecast,ds,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/ds/tenants/{tenant_id}/demand/recompute,ds,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/ds/tenants/{tenant_id}/pricing/apply,ds,no canonical module in the 33-route queue,no,no,yes
+GET,/v1/ds/tenants/{tenant_id}/customers/{customer_id}/ltv,ds,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/ds/tenants/{tenant_id}/customers/{customer_id}/ltv/recompute,ds,no canonical module in the 33-route queue,no,no,yes
+DELETE,/v1/rag/knowledge-bases/{kb_id},rag,N08_rag_knowledge,yes,yes,no
+POST,/v1/rag/knowledge-bases/{kb_id}/documents,rag,N08_rag_knowledge,yes,yes,no
+DELETE,/v1/rag/documents/{doc_id},rag,N08_rag_knowledge,yes,yes,no
+POST,/v1/rag/documents/{doc_id}/reindex,rag,N08_rag_knowledge,yes,yes,no
+PUT,/v1/settings/tenants/{tenant_id}/{key},settings,no canonical module in the 33-route queue,no,no,yes
+DELETE,/v1/settings/tenants/{tenant_id}/{key},settings,no canonical module in the 33-route queue,no,no,yes
+PUT,/v1/notifications/tenants/{tenant_id}/channels/{channel},notifications,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/media/upload/initiate,media,N01_media_assets,yes,yes,no
+POST,/v1/media/upload/{session_id}/confirm,media,N01_media_assets,yes,yes,no
+DELETE,/v1/media/tenants/{tenant_id}/files/{file_id},media,N01_media_assets,yes,yes,no
+POST,/v1/pricing/tenants/{tenant_id}/prices/set,pricing,no canonical module in the 33-route queue,no,no,yes
+PUT,/v1/pricing/tenants/{tenant_id}/brand-adjustment,pricing,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/pricing/tenants/{tenant_id}/zones,pricing,no canonical module in the 33-route queue,no,no,yes
+PUT,/v1/pricing/tenants/{tenant_id}/zones/{zone_id},pricing,no canonical module in the 33-route queue,no,no,yes
+DELETE,/v1/pricing/tenants/{tenant_id}/zones/{zone_id},pricing,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/pricing/tenants/{tenant_id}/rules,pricing,no canonical module in the 33-route queue,no,no,yes
+PUT,/v1/pricing/tenants/{tenant_id}/rules/{rule_id},pricing,no canonical module in the 33-route queue,no,no,yes
+DELETE,/v1/pricing/tenants/{tenant_id}/rules/{rule_id},pricing,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/pricing/compute,pricing,no canonical module in the 33-route queue,no,no,yes
+POST,/v1/commerce/tenants/{tenant_id}/deposit/admin-adjust,commerce,N05_security_deposit,yes,yes,no
+POST,/v1/commerce/tenants/{tenant_id}/wallet/purchase/initiate,commerce,N05_security_deposit,yes,yes,no
+POST,/v1/commerce/warranty/claims,commerce,N05_security_deposit,yes,yes,no
+POST,/v1/commerce/tenants/{tenant_id}/badges/recalculate,commerce,N05_security_deposit,yes,yes,no

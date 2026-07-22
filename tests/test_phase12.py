@@ -195,15 +195,23 @@ def test_session_unique_constraint():
     assert "uq_si_session_id" in constraints
 
 def test_revoke_session_deletes_redis_first():
-    """PROVEN: revoke_session deletes Redis key before DB update."""
+    # PROTECTED_BY_LATER_SLICE: 2F-39A2R. revoke_session now performs a
+    # read-only ownership lookup before the Redis delete (Slice 2F-39A2R
+    # fixed a HIGH-severity gap -- "any authenticated principal could
+    # revoke any other user's session given only its id", documented
+    # unremediated since Slice 2F-26D/F/G/H). The original immediacy
+    # guarantee this test protects is preserved for the *write* path:
+    # Redis is still cleared before any DB mutation (the revocation
+    # record / audit write), just not before the read needed to confirm
+    # the caller actually owns the session being revoked.
+    """PROVEN: revoke_session deletes Redis key before the DB *write* (audit record)."""
     import inspect as pyinspect
     from app.engines.security.service import SecurityService
     src = pyinspect.getsource(SecurityService.revoke_session)
     redis_pos = src.find("self.redis.delete")
-    db_pos    = src.find("await self.db")
-    # Redis delete must come before any DB operation
+    write_pos = src.find("await self._revoke_session_record")
     assert redis_pos != -1, "revoke_session must delete Redis key"
-    assert redis_pos < db_pos, "Redis delete must happen BEFORE DB update"
+    assert redis_pos < write_pos, "Redis delete must happen BEFORE the DB write"
 
 def test_revoke_all_sessions_clears_redis_set():
     """PROVEN: revoke_all_sessions clears Redis user session set first."""

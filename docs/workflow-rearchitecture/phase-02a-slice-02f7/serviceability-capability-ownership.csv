@@ -1,0 +1,13 @@
+capability,routes,model,table,owner_module,classification
+Customer address self-service,create_my_address+update_my_address+delete_my_address+set_default_address,CustomerAddress,customer_addresses,serviceability,CUSTOMER_MUTATION (not tenant-facing)
+Tenant service-area creation/update/deactivation,create_tenant_service_area+update_tenant_service_area+delete_tenant_service_area,TenantServiceArea,tenant_service_areas,serviceability,TENANT_OWNER_SERVICE_AREA
+Tenant service-area validation (dry-run),validate_tenant_service_area,none (no write),n/a,serviceability,TENANT_OWNER_SERVICE_AREA (no real mutation)
+Tenant service-area primary designation,set_primary_tenant_service_area,TenantServiceArea,tenant_service_areas,serviceability,TENANT_OWNER_SERVICE_AREA
+Tenant service-specific coverage (add/update/remove),add_service_mapping+update_service_mapping+delete_service_mapping,TenantServiceAreaService,tenant_service_area_services,serviceability,TENANT_OWNER_SERVICE_COVERAGE
+Platform admin tenant service-area management,admin_create_service_area+admin_update_service_area+admin_delete_service_area,TenantServiceArea,tenant_service_areas,serviceability,PLATFORM_GEOGRAPHY_ADMIN_ONLY (platform admin acting on tenant coverage, not shared geography)
+Serviceability check (customer/tenant query),check_serviceability,ServiceabilityAuditLog (audit side-effect),serviceability_audit_logs,serviceability,CUSTOMER_SERVICEABILITY_CHECK
+Ranked tenant matching (query),matching_tenants,none,n/a,serviceability,MATCHING_INPUT (not a mutation)
+Available-services-at-location (query),available_services,none,n/a,serviceability,MATCHING_INPUT (not a mutation)
+Platform admin serviceability debug test,admin_serviceability_test,none,n/a,serviceability,PLATFORM_GEOGRAPHY_ADMIN_ONLY (debug tool)
+Platform zone reference (read-only from this module),n/a (no mutation route in serviceability.router),ServiceZone,service_zones,app.engines.geo,PLATFORM_GEOGRAPHY (not owned or mutated by serviceability)
+Platform city-tier configuration (not referenced at all),n/a (zero references found),CityTierConfig,city_tier_configs,app.engines.pricing,PLATFORM_TIER_CONFIGURATION (entirely separate, not touched)

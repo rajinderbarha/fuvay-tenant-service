@@ -1,0 +1,34 @@
+method,path,route,module,genuine_mutation,persona,dependency_before,dependency_after,tenant_ownership,customer_ownership,protected,runtime_verified
+GET,/provider/quotes/jobs/{job_id},provider_list_job_quotes,provider_router,no,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,get_current_user (unchanged -- tenant_id passed to service),yes,no,yes,yes
+GET,/provider/quotes/{quote_id},provider_get_quote,provider_router,no,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,get_current_user (tenant_id now passed to get_quote -- IDOR fix),yes,no,yes,yes
+GET,/provider/quotes/{quote_id}/events,provider_quote_events,provider_router,no,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,get_current_user (unchanged -- tenant_id already passed),yes,no,yes,yes
+POST,/provider/quotes/{quote_id}/cancel,provider_cancel_quote,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+POST,/staff/quotes,staff_create_quote,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+GET,/staff/quotes/jobs/{job_id},staff_list_job_quotes,provider_router,no,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,get_current_user (unchanged),yes,no,yes,yes
+GET,/staff/quotes/{quote_id},staff_get_quote,provider_router,no,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,get_current_user (tenant_id now passed to get_quote -- IDOR fix),yes,no,yes,yes
+POST,/staff/quotes/{quote_id}/items,staff_add_item,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+PUT,/staff/quotes/{quote_id}/items/{item_id},staff_update_item,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+DELETE,/staff/quotes/{quote_id}/items/{item_id},staff_remove_item,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+POST,/staff/quotes/{quote_id}/send-to-customer,staff_send_to_customer,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+POST,/staff/quotes/{quote_id}/mark-revised,staff_mark_revised,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+GET,/staff/quotes/{quote_id}/events,staff_quote_events,provider_router,no,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,get_current_user (unchanged),yes,no,yes,yes
+POST,/staff/quotes/{quote_id}/cancel,staff_cancel_quote,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+POST,/staff/checklists,staff_create_checklist,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+GET,/staff/checklists/jobs/{job_id},staff_list_job_checklists,provider_router,no,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,get_current_user (unchanged),yes,no,yes,yes
+GET,/staff/checklists/{checklist_id},staff_get_checklist,provider_router,no,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,get_current_user (tenant_id now passed to get_checklist -- IDOR fix),yes,no,yes,yes
+PUT,/staff/checklists/{checklist_id}/items/{item_id},staff_update_checklist_item,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+POST,/staff/checklists/{checklist_id}/complete,staff_complete_checklist,provider_router,yes,TENANT_PROVIDER_QUOTE_ADMIN,get_current_user,require_owner_or_office_staff_mutation,yes,no,yes,yes
+GET,/customer/quotes/jobs/{job_id},customer_list_quotes,customer_router,no,CUSTOMER_QUOTE_APPROVAL,get_current_user,require_customer,no,yes,yes,yes
+GET,/customer/quotes/{quote_id},customer_get_quote,customer_router,no,CUSTOMER_QUOTE_APPROVAL,get_current_user,require_customer (customer_id now passed to get_quote -- IDOR fix),no,yes,yes,yes
+POST,/customer/quotes/{quote_id}/approve,customer_approve_quote,customer_router,yes,CUSTOMER_QUOTE_APPROVAL,get_current_user,require_customer,no,yes,yes,yes
+POST,/customer/quotes/{quote_id}/reject,customer_reject_quote,customer_router,yes,CUSTOMER_QUOTE_REJECTION,get_current_user,require_customer,no,yes,yes,yes
+POST,/customer/quotes/{quote_id}/request-revision,customer_request_revision,customer_router,yes,CUSTOMER_QUOTE_CHANGE_REQUEST,get_current_user,require_customer,no,yes,yes,yes
+GET,/customer/quotes/{quote_id}/events,customer_quote_events,customer_router,no,CUSTOMER_QUOTE_APPROVAL,get_current_user,require_customer (customer_id now passed -- IDOR fix),no,yes,yes,yes
+POST,/admin/checklist-templates,admin_create_template,admin_router,yes,PLATFORM_QUOTE_ADMIN,require_super_admin,require_super_admin (unchanged),no,no,yes,yes
+GET,/admin/checklist-templates,admin_list_templates,admin_router,no,PLATFORM_QUOTE_ADMIN,require_super_admin,require_super_admin (unchanged),no,no,yes,yes
+GET,/admin/checklist-templates/{template_id},admin_get_template,admin_router,no,PLATFORM_QUOTE_ADMIN,require_super_admin,require_super_admin (unchanged),no,no,yes,yes
+POST,/admin/checklist-templates/{template_id}/items,admin_add_template_item,admin_router,yes,PLATFORM_QUOTE_ADMIN,require_super_admin,require_super_admin (unchanged),no,no,yes,yes
+GET,/admin/checklist-templates/jobs/{job_id},admin_job_checklists,admin_router,no,PLATFORM_QUOTE_ADMIN,require_super_admin,require_super_admin (unchanged; admin bypasses tenant filter intentionally),no,no,yes,yes
+GET,/admin/quotes/jobs/{job_id},admin_list_job_quotes,admin_router,no,PLATFORM_QUOTE_ADMIN,require_super_admin,require_super_admin (unchanged),no,no,yes,yes
+GET,/admin/quotes/{quote_id},admin_get_quote,admin_router,no,PLATFORM_QUOTE_ADMIN,require_super_admin,require_super_admin (unchanged; admin bypasses ownership intentionally),no,no,yes,yes
+GET,/admin/quotes/{quote_id}/events,admin_quote_events,admin_router,no,PLATFORM_QUOTE_ADMIN,require_super_admin,require_super_admin (unchanged),no,no,yes,yes

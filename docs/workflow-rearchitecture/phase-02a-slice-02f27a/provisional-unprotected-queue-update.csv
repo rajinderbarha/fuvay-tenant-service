@@ -1,0 +1,3 @@
+module,route,canonical_status,risk_level,primary_gap,count
+app.engines.webhook.router,DELETE /v1/webhooks/endpoints/{endpoint_id},PERMISSION_ONLY_NOT_SCOPE_AWARE,MEDIUM,no principal-vs-target tenant check (client-asserted tenant_id),1
+app.engines.geo.router,DELETE /v1/geo/zones/{zone_id},PERMISSION_ONLY_NOT_SCOPE_AWARE,HIGH,no tenant/ownership predicate at all (deletes by zone_id),1

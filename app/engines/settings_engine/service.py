@@ -36,12 +36,30 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 class SettingsService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db
         self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id
         self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-36: set/delete tenant setting accepted a client-
+        supplied tenant_id path param with no comparison to the caller's
+        own tenant. super_admin is exempt (platform-wide)."""
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="settings_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's settings.",
+                blocking_rule="settings_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     async def _audit(self, tier: str, key: str, old_value: Any,
                      new_value: Any, tenant_id: uuid.UUID | None = None, reason: str | None = None,
@@ -313,6 +331,7 @@ class SettingsService:
                                   value: Any, setting_type: str, reason: str | None,
                                   expires_at: datetime | None = None,
                                   requires_approval: bool = False) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         if not reason:
             raise ServiceOSException("VALIDATION_ERROR", "A reason is required to create a tenant override.")
         r = await self.db.execute(select(TenantSetting).where(
@@ -334,6 +353,7 @@ class SettingsService:
 
     async def delete_tenant_setting(self, tenant_id: uuid.UUID, key: str,
                                      reason: str | None = None) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(TenantSetting).where(
             TenantSetting.tenant_id == tenant_id, TenantSetting.key == key))
         s = r.scalar_one_or_none()

@@ -1,0 +1,13 @@
+scenario,expected_result,test
+Correct approved Quote creates correct Invoice,succeeds,test_matching_servicejob_and_customer_succeeds
+Quote A cannot invoice ServiceJob B (same tenant),INVOICE_ACCESS_DENIED,test_quote_from_different_servicejob_same_tenant_rejected
+Quote A cannot invoice Customer B (same tenant, same job_id defensive case),INVOICE_ACCESS_DENIED,test_quote_for_different_customer_same_tenant_same_job_id_rejected
+Tenant B Quote denied (cross-tenant),INVOICE_ACCESS_DENIED,test_wrong_tenant_quote_rejected_before_persistence (2F-16)
+Unapproved Quote denied,INVOICE_INVALID_STATUS,test_non_approved_quote_rejected_before_persistence (2F-16, re-verified with updated fixture)
+Rejected/expired Quote denied,INVOICE_INVALID_STATUS (status != customer_approved covers both -- no writer ever produces an expired quote, so this collapses to the same check),same mechanism as above
+Request-supplied amount cannot override Quote,not applicable -- create_invoice accepts no amount field at all,invoice-source-authority.md
+Request-supplied customer cannot override Quote/ServiceJob,not applicable -- create_invoice accepts no customer_id field at all; always job.customer_id,quote-servicejob-customer-lineage.md
+Hidden internal items cannot create undisclosed charges,confirmed -- _copy_from_quote already filtered to is_customer_visible=True (pre-existing); customer-facing display now also reconciles (this slice),hidden-item-total-test-matrix.csv
+Duplicate Invoice behavior matches established policy,INVOICE_ALREADY_EXISTS (pre-existing, unaffected),duplicate-invoice-policy.md
+Denied creation produces no Invoice or InvoiceItem,confirmed,db.add.assert_not_called() in all 3 rejection tests
+No success audit/event/notification on rejection,confirmed,_log_event/notification calls are positioned after all validation and persistence in source order -- never reached on any rejection path

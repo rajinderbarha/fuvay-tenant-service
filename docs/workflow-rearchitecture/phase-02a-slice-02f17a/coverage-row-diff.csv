@@ -1,0 +1,4 @@
+route,action,previous_status,new_status,reason
+(all 226 canonical rows),unchanged,190 protected / 36 unprotected,190 protected / 36 unprotected,full-application sweep found zero row-level corrections required -- 2F-17's reconciliation was already globally complete
+preview_matching_inputs,unchanged (already removed in 2F-17),excluded,excluded,re-confirmed correct disposition
+preview_tenant_price_options,unchanged (never added to canonical CSV),excluded,excluded,re-confirmed correct disposition -- this slice's full sweep discovered this route independently and confirmed it was ALREADY correctly excluded, not a new finding requiring action

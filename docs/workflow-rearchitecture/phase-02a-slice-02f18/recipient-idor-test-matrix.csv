@@ -1,0 +1,15 @@
+scenario,route/method,proof,classification
+Provider creates thread pinned to a service_booking belonging to a foreign tenant,ChatThreadService.create_thread,test_provider_create_thread_rejects_foreign_tenant_booking,TENANT_OWNERSHIP_REJECTED
+Provider creates thread pinned to a nonexistent service_job,ChatThreadService.create_thread,test_provider_create_thread_rejects_nonexistent_service_job,OBJECT_OWNERSHIP_REJECTED
+Customer creates thread pinned to another customer's booking,ChatThreadService.create_thread,test_customer_create_thread_rejects_foreign_customer_booking,RECIPIENT_AUTHORITY_REJECTED
+Message ID belonging to another conversation,n/a -- no route accepts a bare message_id as a mutation target on this router (edit/delete not implemented),UNSUPPORTED_CAPABILITY,UNSUPPORTED_CAPABILITY
+Notification ID belonging to another user,NotificationService.mark_notification_read,pre-existing service-layer WHERE id=... AND user_id=caller filter -- raises IN_APP_NOTIFICATION_NOT_FOUND (unchanged, re-confirmed by code read),OBJECT_OWNERSHIP_REJECTED
+Device token belonging to another user,n/a -- no device-token model/route exists in this module,UNSUPPORTED_CAPABILITY,UNSUPPORTED_CAPABILITY
+Parent Job belonging to another tenant,ChatThreadService.create_thread (record_type=service_job),covered by the service_booking test case (same code path via _resolve_record_parties),TENANT_OWNERSHIP_REJECTED
+Mixed-tenant bulk recipient list,n/a -- no bulk/broadcast capability exists on this router,UNSUPPORTED_CAPABILITY,UNSUPPORTED_CAPABILITY
+Customer-facing message marked internal (visibility=admin_only by non-admin),ChatMessageService.send_message,test_non_admin_cannot_set_restricted_visibility,VISIBILITY_REJECTED
+Internal message exposed to customer via unrecognized visibility string,ChatMessage.is_visible_to,test_unrecognized_visibility_fails_closed_on_read,VISIBILITY_REJECTED
+Provider marks a customer's notification read,NotificationService.mark_notification_read,same user_id-scoped WHERE clause as above -- a provider's own user_id will never match a customer's notification row,OBJECT_OWNERSHIP_REJECTED
+User modifies another user's preference,NotificationService.update_preference,user_id always derived from caller's own JWT, never accepted from the request body (schema has no user_id field),SENDER_IMPERSONATION_REJECTED
+Message sender ID substitution,ChatMessageService.send_message,SendMsgIn schema has no sender_id/sender_user_id field (test_send_msg_schema_has_no_sender_or_tenant_field),SENDER_IMPERSONATION_REJECTED
+Notification/thread tenant ID substitution via request body,provider_router.py / chat_service.py,tenant_id always derived from JWT (_tid(u)) not request body; CreateThreadIn schema has no tenant_id field (test_create_thread_schema_has_no_tenant_or_customer_override),SENDER_IMPERSONATION_REJECTED

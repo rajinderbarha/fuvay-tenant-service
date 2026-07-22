@@ -1,0 +1,25 @@
+scenario,classification,test
+Quote for foreign Job,OWNERSHIP_REJECTED,create_quote's job.tenant_id == tenant_id check (pre-existing, re-verified)
+Quote/Job mismatch,OWNERSHIP_REJECTED,same
+Foreign quote item substituted,OWNERSHIP_REJECTED,compound id==item_id AND quote_id==q.id filter (pre-existing)
+Mixed bulk items from different quotes,OWNERSHIP_REJECTED,no bulk-item endpoint exists -- items are added/updated/removed one at a time, each independently ownership-checked (structurally impossible to mix)
+Negative quantity,AMOUNT_VALIDATION_REJECTED,test_add_item_negative_quantity_rejected / test_update_item_negative_quantity_rejected
+Negative unit price,AMOUNT_VALIDATION_REJECTED,test_add_item_negative_price_rejected
+Invalid discount (negative),AMOUNT_VALIDATION_REJECTED,same non-negative constraint applies to discount item_type
+Client-supplied incorrect total,UNSUPPORTED_CAPABILITY,total_amount is never accepted as router input -- always server-recalculated; no client-total field exists to be inconsistent
+Edit sent quote,STATE_TRANSITION_REJECTED,test_add_item_after_sent_to_customer_rejected
+Edit approved quote,STATE_TRANSITION_REJECTED,locked_at set on approval (pre-existing) + ITEM_EDITABLE_QUOTE_STATUSES exclusion (this slice)
+Approve draft quote,STATE_TRANSITION_REJECTED,_assert_transition (QUOTE_TRANSITIONS[QS_DRAFT] excludes QS_CUSTOMER_APPROVED) -- existing test_sprint22 coverage, re-verified
+Approve expired quote,STATE_TRANSITION_REJECTED,QUOTE_TRANSITIONS[QS_EXPIRED] == set() -- moot since no writer ever reaches QS_EXPIRED (known-limitations.md)
+Reject approved quote,STATE_TRANSITION_REJECTED,QUOTE_TRANSITIONS[QS_CUSTOMER_APPROVED] == set()
+Repeated approval,IDEMPOTENT (same key) / DUPLICATE_REJECTED (different key),existing customer_approve idempotency-key logic, re-verified
+Repeated rejection,STATE_TRANSITION_REJECTED,QUOTE_TRANSITIONS[QS_CUSTOMER_REJECTED] == set()
+Provider fabricates customer approval,IMPERSONATION_REJECTED,require_customer denies non-customer roles at the router; customer_id is never client-suppliable in the customer decision payload
+Customer changes amount,UNSUPPORTED_CAPABILITY,customer decision payloads accept no amount field at all (approve: idempotency_key only; reject/request-revision: reason only)
+Approval creates duplicate invoice,DUPLICATE_REJECTED,create_invoice's pre-existing duplicate-active-invoice-per-job guard (unaffected by this slice, re-verified)
+Rejection creates financial side effect,UNSUPPORTED_CAPABILITY,no financial code exists in quote_checklist at all (quote-financial-boundary.md)
+Quote approval mutates wrong Job pipeline,OWNERSHIP_REJECTED,_sync_job_status targets ServiceJob exclusively; job_id is validated as a real ServiceJob at quote-creation time
+Concurrent approve/reject,CONCURRENCY_SAFE (idempotency-key + terminal-state guard) / CONCURRENCY_RISK_DOCUMENTED (item-total race, see duplicate-concurrency-review.md),n/a (no live-DB concurrency test performed -- documented via code-path analysis)
+Invoice from wrong-tenant quote,OWNERSHIP_REJECTED,test_wrong_tenant_quote_rejected_before_persistence (this slice's invoice_payment fix)
+Invoice from non-approved quote,STATE_TRANSITION_REJECTED,test_non_approved_quote_rejected_before_persistence (this slice's invoice_payment fix)
+Customer reads provider-internal notes,OWNERSHIP_REJECTED (field-level),test_get_quote_hides_internal_notes_and_hidden_items_from_customer (this slice's privacy fix)

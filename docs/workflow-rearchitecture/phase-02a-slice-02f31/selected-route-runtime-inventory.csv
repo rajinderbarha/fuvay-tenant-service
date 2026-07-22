@@ -1,0 +1,13 @@
+method,path,endpoint,source_line,mounted_count,permission,access_scope_final,principal_tenant_source,qualified_service,final_status
+DELETE,/v1/provider/profile/logo,remove_provider_logo,app/engines/media/new_router.py,1,(none - role based),yes,actor.tenant_id (server-derived),MediaAssetService.remove_tenant_business_logo,STAFF_EXECUTION_ROLE_SCOPE_AWARE
+DELETE,/v1/provider/profile/shop-photo,remove_provider_shop_photo,app/engines/media/new_router.py,1,(none - role based),yes,actor.tenant_id (server-derived),MediaAssetService.remove_tenant_shop_photo,STAFF_EXECUTION_ROLE_SCOPE_AWARE
+DELETE,/v1/staff/profile/photo,remove_staff_profile_photo,app/engines/media/new_router.py,1,(none - role based),yes,n/a (self),MediaAssetService.remove_user_profile_photo,STAFF_EXECUTION_ROLE_SCOPE_AWARE
+POST,/v1/me/profile-photo,upload_my_profile_photo,app/engines/media/new_router.py,1,(none - role based),n/a (self-scoped),n/a (self),MediaAssetService.set_user_profile_photo,FULLY_PROTECTED
+POST,/v1/media/upload,upload_media,app/engines/media/new_router.py,1,(none - role based),NO - unresolved,n/a (self),MediaAssetService.upload_asset,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK
+POST,/v1/media/{media_id}/replace,replace_media,app/engines/media/new_router.py,1,(none - role based),NO - unresolved,n/a (self),MediaAssetService.replace_asset,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK
+POST,/v1/provider/profile/logo,upload_provider_logo,app/engines/media/new_router.py,1,(none - role based),yes,actor.tenant_id (server-derived),MediaAssetService.set_tenant_business_logo,STAFF_EXECUTION_ROLE_SCOPE_AWARE
+POST,/v1/provider/profile/shop-photo,upload_provider_shop_photo,app/engines/media/new_router.py,1,(none - role based),yes,actor.tenant_id (server-derived),MediaAssetService.set_tenant_shop_photo,STAFF_EXECUTION_ROLE_SCOPE_AWARE
+POST,/v1/staff/profile/photo,upload_staff_profile_photo,app/engines/media/new_router.py,1,(none - role based),yes,n/a (self),MediaAssetService.set_user_profile_photo,STAFF_EXECUTION_ROLE_SCOPE_AWARE
+POST,/v1/media/upload/initiate,(Set B),app/engines/media/router.py,1,(none),NO - unresolved (out of allow-list),client-asserted body/path tenant_id,MediaService.initiate_upload,"TENANT_USER_MUTATION (added, unprotected)"
+POST,/v1/media/upload/{session_id}/confirm,(Set B),app/engines/media/router.py,1,(none),NO - unresolved (out of allow-list),client-asserted body/path tenant_id,MediaService.confirm_upload,"TENANT_USER_MUTATION (added, unprotected)"
+DELETE,/v1/media/tenants/{tenant_id}/files/{file_id},(Set B),app/engines/media/router.py,1,tenant:update,NO - unresolved (out of allow-list),client-asserted body/path tenant_id,MediaService.delete_file,"TENANT_USER_MUTATION (added, unprotected)"

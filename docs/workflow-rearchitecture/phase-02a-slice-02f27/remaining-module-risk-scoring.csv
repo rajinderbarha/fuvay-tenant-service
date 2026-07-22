@@ -1,0 +1,25 @@
+module,route_count,cross_tenant_risk,note
+tenants,18,HIGH,provisional; not a module selection
+pricing,9,HIGH,provisional; not a module selection
+tenant,7,HIGH,provisional; not a module selection
+appointments,7,HIGH,provisional; not a module selection
+ds,6,HIGH,provisional; not a module selection
+inventory,5,HIGH,provisional; not a module selection
+rag,4,MEDIUM,provisional; not a module selection
+commerce,4,MEDIUM,provisional; not a module selection
+documents,3,MEDIUM,provisional; not a module selection
+media,3,MEDIUM,provisional; not a module selection
+compliance,2,MEDIUM,provisional; not a module selection
+security,2,MEDIUM,provisional; not a module selection
+catalog,2,MEDIUM,provisional; not a module selection
+geo,2,MEDIUM,provisional; not a module selection
+dispatch,2,MEDIUM,provisional; not a module selection
+settings,2,MEDIUM,provisional; not a module selection
+provider,2,MEDIUM,provisional; not a module selection
+serviceability,1,MEDIUM,provisional; not a module selection
+chat,1,MEDIUM,provisional; not a module selection
+payments,1,MEDIUM,provisional; not a module selection
+subscriptions,1,MEDIUM,provisional; not a module selection
+bookings,1,MEDIUM,provisional; not a module selection
+jobs,1,MEDIUM,provisional; not a module selection
+notifications,1,MEDIUM,provisional; not a module selection

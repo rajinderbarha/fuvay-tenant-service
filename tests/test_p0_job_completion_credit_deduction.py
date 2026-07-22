@@ -139,15 +139,21 @@ def test_close_job_financial_propagates_booking_completion():
 # ── Role-naming fix: "technician" vs "staff" ─────────────────────────────────
 
 def test_staff_router_accepts_real_technician_role():
+    # PROTECTED_BY_LATER_SLICE: 2F-39. Slice 2F-14 replaced this router's
+    # inline `if u.role not in ("staff", "technician"):` check with the
+    # named dependency require_staff_or_technician_only (same policy,
+    # centralized) -- this assertion predates that refactor.
     src = _read(STAFF_ROUTER)
-    assert 'if u.role not in ("staff", "technician"):' in src
+    assert "require_staff_or_technician_only" in src
     assert 'if u.role != "staff":' not in src
 
 
 def test_field_ops_router_accepts_real_technician_role():
+    # PROTECTED_BY_LATER_SLICE: 2F-39, same reason as
+    # test_staff_router_accepts_real_technician_role above.
     src = _read(FIELD_OPS_ROUTER)
     assert 'u.role != "staff"' not in src
-    assert 'u.role not in ("staff", "technician")' in src
+    assert "require_staff_or_technician_only" in src
 
 
 def test_field_ops_service_actor_role_checks_include_technician():

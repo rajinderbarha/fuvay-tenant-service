@@ -1,0 +1,5 @@
+change_type,node_id_or_file,note
+added,tests/test_phase2f39a_canonical_additions.py (4 node IDs),new file, all passing
+modified_assertion,tests/test_sprint27_notifications.py::test_chat_thread_customer_cannot_access_other_customer,now asserts ERR_CHAT_THREAD_NOT_FOUND instead of stale ERR_CHAT_THREAD_ACCESS_DENIED
+modified_assertion,tests/test_sprint27_notifications.py::test_chat_thread_provider_cannot_access_other_tenant,same fix
+removed,none,no test was removed or renamed this slice

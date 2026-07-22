@@ -1,0 +1,8 @@
+method,caller_file,caller_line_context,supplies_actor_context,notes
+MediaService.__init__,app/engines/media/router.py,_svc() dependency factory,yes (actor_id/actor_role/actor_tenant_id all passed from UserContext),only construction site in the repository
+MediaService.initiate_upload,app/engines/media/router.py,initiate_upload route handler,n/a (called on an already-constructed trusted instance),only call site
+MediaService.confirm_upload,app/engines/media/router.py,confirm_upload route handler,n/a (called on an already-constructed trusted instance),only call site
+MediaService.delete_file,app/engines/media/router.py,delete_file route handler,n/a (called on an already-constructed trusted instance),only call site
+MediaService.get_file,app/engines/media/router.py,get_file route handler,n/a (read-only; out of residual mutation scope),only call site
+MediaService.list_files,app/engines/media/router.py,list_files route handler,n/a (read-only; out of residual mutation scope),only call site
+MediaService.get_storage_quota,app/engines/media/router.py,storage_quota route handler,n/a (read-only; out of residual mutation scope),only call site

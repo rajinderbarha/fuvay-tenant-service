@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 from app.engines.auth.utils import hash_password
+from app.core.permissions import ROLE_PERMISSIONS
 
 ALLOWED_ENVIRONMENTS = {"local", "development", "dev", "test", "e2e", "certification"}
 FORBIDDEN_ENVIRONMENTS = {"production", "prod", "staging-live", "live"}
@@ -65,11 +66,38 @@ def _safety_guard() -> None:
 LEGACY_FIXTURE_PASSWORDS = {"admin@serviceos.local": "Password123!"}
 
 
+# Not a second hardcoded list -- derived from the one authoritative
+# registry (app.core.permissions.ROLE_PERMISSIONS) so the two can never
+# drift apart. tests/test_phase2d_tenant_access_model.py asserts this
+# equals the 10-role set.
+CANONICAL_ROLES = frozenset(ROLE_PERMISSIONS.keys())
+
+
+def _require_canonical_role(role: str) -> None:
+    """Fail closed before any database call. Slice 2F-39 fix for a gap
+    2F-38 found where this function had zero role validation at all.
+    """
+    if not role or role not in CANONICAL_ROLES:
+        raise ValueError(
+            f"non-canonical role {role!r}: seed scripts may only create users "
+            f"with one of the 10 canonical roles {sorted(ROLE_PERMISSIONS.keys())}. "
+            f"Aliases/designations (manager, readonly, tenant_manager, "
+            f"tenant_readonly, etc.) are never valid role values."
+        )
+
+
 async def get_or_create_user(db, email, full_name, role, tenant_id=None, platform_role=None, is_active=True):
-    row = (await db.execute(text("SELECT id FROM users WHERE email = :e"), {"e": email})).first()
+    _require_canonical_role(role)
+    row = (await db.execute(text("SELECT id, role FROM users WHERE email = :e"), {"e": email})).first()
     if row:
-        print(f"[SKIP]   user {email} (exists)")
-        return row[0]
+        existing_id, existing_role = row[0], row[1]
+        if existing_role != role:
+            print(f"[SKIP]   user {email} (exists, role mismatch: requested {role!r} "
+                  f"but existing row has {existing_role!r} -- NOT modified; "
+                  f"seed scripts never promote/change an existing user's role)")
+        else:
+            print(f"[SKIP]   user {email} (exists)")
+        return existing_id
     uid = uuid.uuid4()
     password = LEGACY_FIXTURE_PASSWORDS.get(email, CANONICAL_TEST_PASSWORD)
     await db.execute(text("""
@@ -148,10 +176,16 @@ async def run():
         # ── 3. Tenant A users: Owner / Manager / Read Only ──────────────────
         owner = await get_or_create_user(db, "owner@demo-ac-services.local", "Tenant Owner",
                                           "tenant_owner", tenant_id=tenant_id)
-        manager = await get_or_create_user(db, "manager@demo-ac-services.local", "Tenant Manager",
-                                            "tenant_manager", tenant_id=tenant_id)
-        readonly = await get_or_create_user(db, "readonly@demo-ac-services.local", "Tenant Read Only",
-                                             "tenant_readonly", tenant_id=tenant_id)
+        # manager@/readonly@demo-ac-services.local are intentionally NOT
+        # (re)created here. Slice 2F-38/2F-39 found this script previously
+        # hardcoded "tenant_manager"/"tenant_readonly" -- neither is a
+        # canonical role -- which is exactly how the two known
+        # MANUAL_ROLE_CONFIRMATION_REQUIRED demo accounts came to exist.
+        # No canonical replacement value is authorized (no evidence-backed
+        # mapping exists; see docs/workflow-rearchitecture/phase-02a-slice-02f38/
+        # manual-role-confirmation-request.md) and this script must not
+        # guess one. Once a human decision is recorded, update this seed
+        # accordingly -- do not restore the old literals.
         await db.execute(text("UPDATE tenants SET owner_user_id=:o WHERE id=:t AND owner_user_id IS NULL"),
                           {"o": str(owner), "t": str(tenant_id)})
 

@@ -1,0 +1,20 @@
+scenario,classification,evidence
+Duplicate Job creation via create_job,UNSUPPORTED_CAPABILITY (no duplicate-title/idempotency-key guard exists or was requested; each call creates a new Job by design -- this is a create endpoint, not evaluated as a bug),code inspection
+Create Job for foreign customer,PRODUCT_DECISION_ALREADY_RESOLVED (customer_id is a legitimate FK attachment; no ownership escalation possible),creation-route-authority.md
+Create Job with foreign tenant ID,OWNERSHIP_REJECTED,test_tenant_owner_cannot_override_tenant_id
+Convert foreign source (convert_to_repair),OWNERSHIP_REJECTED,pre-existing _get_job_for_assignment (re-verified)
+Convert source twice,DUPLICATE_REJECTED,pre-existing dual guard (re-verified, unmodified)
+Spawn repair twice,DUPLICATE_REJECTED (fixed this slice -- was DUPLICATE_ALLOWED),test_duplicate_spawn_rejected
+Spawn from invalid source state,STATE_TRANSITION_REJECTED,test_wrong_job_type_rejected
+Quote for foreign Job (create_quote),OWNERSHIP_REJECTED (fixed this slice -- was previously no check at all),test_foreign_job_rejected / test_cross_tenant_owner_denied
+Quote ID / Job ID mismatch (send_job_quote),OWNERSHIP_REJECTED,pre-existing quote.job_id != job.id check (re-verified, unmodified)
+Respond as foreign customer,OWNERSHIP_REJECTED,test_foreign_customer_denied
+Provider fabricates customer acceptance,IMPERSONATION_REJECTED (fixed this slice -- was INTEGRITY_DEFECT_CONFIRMED),test_respond_to_quote_uses_require_customer + require_customer's role gate
+Respond twice,DUPLICATE_REJECTED,test_repeated_response_rejected
+Accept rejected quote,STATE_TRANSITION_REJECTED,pre-existing quote.status != "pending" check (re-verified, unmodified)
+Reject accepted quote,STATE_TRANSITION_REJECTED,same mechanism as above
+Send unsendable quote,STATE_TRANSITION_REJECTED,pre-existing JS.QUOTE_SENT not in allowed check (re-verified, unmodified)
+Modify final quote,STATE_TRANSITION_REJECTED,no route accepts an amount field on any customer-decision route (quote-ownership-state-machine.md)
+Quote decision triggers duplicate invoice,STATE_TRANSITION_REJECTED / N/A,no quote route calls BillingService at all (quote-financial-boundary.md)
+Quote decision triggers unauthorized payment,STATE_TRANSITION_REJECTED / N/A,same as above
+Invalid request creates partial child record,STATE_TRANSITION_REJECTED,all validation raises before any db.add across create_job/spawn_repair/create_quote/create_job_quote (code inspection)

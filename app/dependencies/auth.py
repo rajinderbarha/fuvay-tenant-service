@@ -109,6 +109,16 @@ async def get_current_user(
             onboarding_complete=payload.get("onboarding_complete", True),
             force_password_change=force_change,
             access_scope=payload.get("access_scope"),
+            # Phase 2A Slice 2E: closes the gap found in Slices 2C/2D. The
+            # JWT has carried this claim since app.engines.auth.service's
+            # _build_token_pair loaded real StaffPermission rows into
+            # `extra_claims["permission_overrides"]` at login -- but this
+            # constructor call never read it back out, so every
+            # PermissionChecker.has(overrides=user.permission_overrides)
+            # call always received None regardless of what was actually
+            # granted/denied in the database. StaffPermission grants/denies
+            # now take effect for real.
+            permission_overrides=payload.get("permission_overrides"),
         )
 
     except ServiceOSException:
@@ -200,6 +210,29 @@ async def require_technician(user: UserContext = Depends(get_current_user)) -> U
             error_code="PERMISSION_DENIED",
             detail=f"Technician access required. Your role: '{user.role}'.",
             blocking_rule="required_role: technician | staff | tenant_owner | super_admin",
+        )
+    return user
+
+
+async def require_staff_or_technician_only(user: UserContext = Depends(get_current_user)) -> UserContext:
+    """Slice 2F-14: named dependency for the field_ops staff/technician
+    self-service and execution surface (`field_ops.staff_router`'s "my
+    jobs" section and the equivalent job-execution/checklist routes in
+    `field_ops.router`). Deliberately narrower than `require_technician`
+    (which also admits tenant_owner/super_admin) -- this is a staff/
+    technician *execution* capability, not a tenant-oversight one
+    (tenant_owner already has separate, tenant-scoped routes for that).
+    Replaces the equivalent inline `if u.role not in ("staff",
+    "technician")` checks that existed in both routers -- same policy,
+    now a properly named dependency so runtime guard-status verification
+    can recognize it (an inline body check is invisible to dependency-
+    based introspection)."""
+    _check_force_password_change(user)
+    if user.role not in ("staff", "technician"):
+        raise ServiceOSException(
+            error_code="STAFF_ACCESS_DENIED",
+            detail=f"This endpoint is for staff/technician accounts only. Your role: '{user.role}'.",
+            blocking_rule="required_role: staff | technician",
         )
     return user
 

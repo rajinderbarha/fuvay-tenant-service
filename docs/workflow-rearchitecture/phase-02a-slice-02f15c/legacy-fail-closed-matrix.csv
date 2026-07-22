@@ -1,0 +1,14 @@
+legacy_row_shape,field_ops_relationship,direct_create_job,convert_to_job,result
+no history,denied,denied,denied,fails closed (JOIN/filter produces no match)
+provider-only creation history,denied,denied,denied,fails closed (actor-role filter excludes non-customer role)
+provider-confirmation-only history (no creation row recorded as customer),denied,denied,denied,fails closed (no from_status IS NULL row with changed_by_role==customer AND changed_by==booking.customer_id)
+customer-cancellation-only history,denied,denied,denied,fails closed (cancellation row has from_status populated, never satisfies creation filter)
+customer-reschedule-only history,denied,denied,denied,fails closed (request_reschedule never writes BookingStatusHistory at all)
+customer-note-only activity,denied,denied,denied,fails closed (notes write to BookingNote, a different table)
+NULL actor (changed_by IS NULL),denied,denied,denied,fails closed (NULL == Booking.customer_id is false/unknown at SQL level)
+invalid actor (changed_by references no real user),denied,denied,denied,fails closed unless it coincidentally equals the booking's own customer_id (in which case it is not actually invalid for this purpose)
+wrong-customer actor (changed_by belongs to a different real customer),denied,denied,denied,fails closed -- this slice's core fix (changed_by == Booking.customer_id)
+conflicting customer/provider creation rows (theoretical -- unreachable via any writer),would match the customer row if the SQL evaluates it as satisfying the bound predicate,same,same,not reachable in this codebase (see known-limitations.md); no incorrect outcome even if it occurred, since only a genuinely actor-bound customer row could match
+duplicate creation rows (theoretical -- unreachable via any writer),same as above,same,same,not reachable; documented, not fixed with a DB constraint (out of scope)
+unexpected initial state (to_status != PENDING_CONFIRMATION),not separately filtered but structurally impossible under the current single writer (see initial-status-semantics.md),same,same,forward-looking note only
+unknown role (changed_by_role not "customer" or any known tenant role),denied,denied,denied,fails closed (fails the == "customer" equality regardless of what the unknown value is)

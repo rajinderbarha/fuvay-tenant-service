@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.core.security import get_client_ip
 from app.dependencies.auth import UserContext, require_tenant_owner, require_technician, get_current_user
+from app.core.permissions import require_tenant_owner_mutation
 from app.dependencies.db import get_db
 from app.engines.compliance.enterprise_service import ComplianceEnterpriseService
 from app.engines.compliance.models import (
@@ -298,7 +299,7 @@ async def list_my_requests(
 async def create_my_request(
         r: Request,
         db: AsyncSession = Depends(get_db),
-        u: UserContext = Depends(require_tenant_owner),
+        u: UserContext = Depends(require_tenant_owner_mutation),
         s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
 
     tenant_id_str = _require_tenant(u)
@@ -353,14 +354,11 @@ async def create_my_request(
         },
     })
 
-    # Store tenant_id in the metadata after creation
-    created_req = await db.scalar(
-        select(ComplianceRequest).where(ComplianceRequest.id == uuid.UUID(result["id"])))
-    if created_req:
-        created_req.metadata_json = {
-            **(created_req.metadata_json or {}),
-            "tenant_id": tenant_id_str,
-        }
+    # Slice 2F-20: tenant_id is now set atomically inside create_request's
+    # own INSERT (see enterprise_service.create_request) -- the request row
+    # is never persisted without its tenant-ownership metadata already in
+    # place, closing the prior window where a created-but-not-yet-stamped
+    # row briefly existed with no tenant scoping at all.
 
     _audit(db, uuid.UUID(tenant_id_str), actor_id, u.role, get_client_ip(r),
            "compliance.tenant_request_created",
@@ -445,7 +443,7 @@ async def get_my_request(
 async def cancel_my_request(
         request_id: uuid.UUID, r: Request,
         db: AsyncSession = Depends(get_db),
-        u: UserContext = Depends(require_tenant_owner)) -> ApiResponse[dict]:
+        u: UserContext = Depends(require_tenant_owner_mutation)) -> ApiResponse[dict]:
 
     tenant_id_str = _require_tenant(u)
     req = await db.scalar(
@@ -476,7 +474,7 @@ async def cancel_my_request(
 async def generate_export(
         request_id: uuid.UUID, r: Request,
         db: AsyncSession = Depends(get_db),
-        u: UserContext = Depends(require_tenant_owner)) -> ApiResponse[dict]:
+        u: UserContext = Depends(require_tenant_owner_mutation)) -> ApiResponse[dict]:
 
     tenant_id_str = _require_tenant(u)
     req = await db.scalar(
@@ -587,7 +585,7 @@ async def get_export(
 async def download_export(
         export_id: uuid.UUID, r: Request,
         db: AsyncSession = Depends(get_db),
-        u: UserContext = Depends(require_tenant_owner)) -> ApiResponse[dict]:
+        u: UserContext = Depends(require_tenant_owner_mutation)) -> ApiResponse[dict]:
 
     tenant_id_str = _require_tenant(u)
     actor_id = uuid.UUID(u.user_id)
@@ -662,7 +660,7 @@ async def list_consents(
 async def withdraw_consent(
         consent_type: str, r: Request,
         db: AsyncSession = Depends(get_db),
-        u: UserContext = Depends(require_tenant_owner),
+        u: UserContext = Depends(require_tenant_owner_mutation),
         s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
 
     if consent_type not in TENANT_WITHDRAWABLE_CONSENT_TYPES:
@@ -677,7 +675,11 @@ async def withdraw_consent(
                             RATE_LIMIT_CONSENT_WITHDRAW_PER_DAY)
 
     body = await r.json()
-    result = await s.revoke_consent(actor_id, consent_type, body.get("reason"))
+    # Slice 2F-20: pass the caller's real, server-derived tenant_id through
+    # -- previously this call always resulted in tenant_id=None being
+    # written to the ConsentRecord regardless of caller.
+    result = await s.revoke_consent(actor_id, consent_type, body.get("reason"),
+                                     tenant_id=uuid.UUID(tenant_id_str))
 
     _audit(db, uuid.UUID(tenant_id_str), actor_id, u.role, get_client_ip(r),
            "compliance.tenant_consent_withdrawn",
@@ -761,7 +763,7 @@ async def get_staff_request(
 async def staff_tenant_response(
         request_id: uuid.UUID, r: Request,
         db: AsyncSession = Depends(get_db),
-        u: UserContext = Depends(require_tenant_owner)) -> ApiResponse[dict]:
+        u: UserContext = Depends(require_tenant_owner_mutation)) -> ApiResponse[dict]:
 
     tenant_id_str = _require_tenant(u)
     req = await db.scalar(
@@ -872,7 +874,7 @@ async def get_customer_request(
 async def customer_tenant_response(
         request_id: uuid.UUID, r: Request,
         db: AsyncSession = Depends(get_db),
-        u: UserContext = Depends(require_tenant_owner)) -> ApiResponse[dict]:
+        u: UserContext = Depends(require_tenant_owner_mutation)) -> ApiResponse[dict]:
 
     tenant_id_str = _require_tenant(u)
     req = await db.scalar(

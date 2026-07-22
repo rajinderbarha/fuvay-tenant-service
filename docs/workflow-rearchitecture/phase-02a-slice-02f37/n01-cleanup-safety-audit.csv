@@ -1,0 +1,5 @@
+safety_property,status,note
+confirmed active media never deleted,N/A,no cleanup implementation exists to audit
+another tenant's media never deleted,N/A,no cleanup implementation exists to audit
+still-valid upload session never deleted,N/A,no cleanup implementation exists to audit
+unestablished-ownership object never deleted,N/A,no cleanup implementation exists to audit

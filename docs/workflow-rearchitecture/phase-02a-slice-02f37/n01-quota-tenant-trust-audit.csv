@@ -1,0 +1,4 @@
+item,status,note
+GET /v1/media/tenants/{tenant_id}/quota tenant_id server-derived,NOT_IMPLEMENTED,frozen this slice; N01 media files explicitly out of scope per slice-2f37-implementation-contract.md
+client tenant cannot select another tenant's quota,UNKNOWN_NOT_FIXED,pre-existing gap, unchanged
+platform-admin governance preserved,UNKNOWN_NOT_AUDITED,not audited this slice

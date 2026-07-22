@@ -36,10 +36,28 @@ PLAN_JOB_LIMITS = {"starter": 100, "growth": 500, "enterprise": 9999}
 
 class SubscriptionService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id; self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-37: update_plan accepted a client-supplied tenant_id
+        with no comparison to the caller's own tenant. super_admin is
+        exempt (platform-wide)."""
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="subscription_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's subscription.",
+                blocking_rule="subscription_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     # PROVEN LEVEL 5: proration from immutable SubscriptionPeriod
     def _compute_proration(self, period: SubscriptionPeriod, change_date: datetime) -> Decimal:
@@ -114,6 +132,7 @@ class SubscriptionService:
     # PROVEN LEVEL 5: plan change uses immutable period for proration
     async def update_plan(self, tenant_id: uuid.UUID, new_plan: str,
                            billing_cycle: str) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
         sub = r.scalar_one_or_none()
         if not sub: raise NotFoundException("Subscription", str(tenant_id))

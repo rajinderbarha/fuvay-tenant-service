@@ -36,10 +36,19 @@ from app.exceptions import ServiceOSException, NotFoundException
 logger = structlog.get_logger("admin_tenant.service")
 utcnow = lambda: datetime.now(timezone.utc)
 
-VALID_TENANT_ROLES = {
-    "tenant_owner", "tenant_manager", "tenant_staff_admin",
-    "tenant_finance", "tenant_support", "staff",
-}
+
+# Phase 2A Slice 2 (non-canonical entry restriction): this set previously
+# included "tenant_manager", "tenant_staff_admin", "tenant_finance",
+# "tenant_support" -- none of which exist in app.core.permissions
+# .ROLE_PERMISSIONS (the actual enforced 10-role RBAC set). A user created
+# with one of those role strings got a User.role value the permission
+# checker doesn't recognize, so PermissionChecker.has() would silently deny
+# every permission check for them forever -- a real, previously-unconfirmed
+# bug (distinct from the already-known roles_permissions/service.py
+# aspirational-role UI, which is honest about is_implemented=false; this one
+# was live-written to the User.role column with no such warning). Restricted
+# to the two real, enforced roles this endpoint can legitimately grant.
+VALID_TENANT_ROLES = {"tenant_owner", "staff"}
 VALID_VERIFICATION_STATUSES = {"not_started", "pending", "approved", "rejected", "changes_requested"}
 VALID_TENANT_STATUSES = {
     "pending_verification", "active", "suspended", "rejected", "archived",
@@ -825,8 +834,41 @@ class AdminTenantService:
     async def deactivate_staff(self, tenant_id: uuid.UUID, staff_id: uuid.UUID) -> dict:
         staff = await self._load_tenant_staff(tenant_id, staff_id)
         staff.is_active = False
-        await self._audit(tenant_id, "admin_deactivate_staff", entity_type="staff", entity_id=str(staff_id))
-        return self._user_dict(staff)
+        # Phase 2A Slice 2F-4, Workstream 8/9: this method previously only
+        # flipped is_active, unlike the frontend-canonical
+        # AuthService.deactivate_staff (app/engines/auth/service.py, fixed
+        # in Slice 2F-1) which also revokes DB + Redis sessions -- a
+        # directly-connected weaker alternate route for the same
+        # capability on the same User table (this router's path is
+        # /v1/tenant/staff/{id}/deactivate, the auth router's is
+        # /v1/auth/staff/{id}/deactivate; both are live and reachable).
+        # Closing it here with the identical proven pattern.
+        from app.engines.auth.models import UserSession
+        from app.engines.auth.constants import ACCESS_TOKEN_EXPIRE_MINUTES
+        from app.redis_client import get_redis
+        active_sessions = await self.db.execute(
+            select(UserSession.id).where(UserSession.user_id == staff_id, UserSession.revoked_at.is_(None))
+        )
+        session_ids = [row[0] for row in active_sessions]
+        sessions_revoked = 0
+        if session_ids:
+            await self.db.execute(
+                update(UserSession).where(
+                    UserSession.user_id == staff_id, UserSession.revoked_at.is_(None)
+                ).values(revoked_at=utcnow(), revocation_reason="staff_deactivated")
+            )
+            sessions_revoked = len(session_ids)
+            redis = get_redis()
+            for sid in session_ids:
+                try:
+                    await redis.setex(f"serviceos:session:revoked:{sid}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, "1")
+                except Exception:
+                    pass
+        await self._audit(tenant_id, "admin_deactivate_staff", entity_type="staff", entity_id=str(staff_id),
+                          after={"is_active": False, "sessions_revoked": sessions_revoked})
+        result = self._user_dict(staff)
+        result["sessions_revoked"] = sessions_revoked
+        return result
 
     async def reset_staff_password(self, tenant_id: uuid.UUID, staff_id: uuid.UUID) -> dict:
         staff = await self._load_tenant_staff(tenant_id, staff_id)

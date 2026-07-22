@@ -12,7 +12,7 @@ from app.engines.complaints.constants import (
     STATUS_UNDER_ADMIN_REVIEW, STATUS_RESOLUTION_PROPOSED,
     ERR_COMPLAINT_INVALID_RECORD_TYPE, ERR_COMPLAINT_RECORD_NOT_FOUND,
     ERR_COMPLAINT_NOT_ELIGIBLE, ERR_COMPLAINT_WINDOW_EXPIRED,
-    ERR_COMPLAINT_DUPLICATE_OPEN,
+    ERR_COMPLAINT_DUPLICATE_OPEN, ERR_COMPLAINT_ACCESS_DENIED,
 )
 from app.engines.complaints.models import CustomerComplaint, ComplaintPolicy
 
@@ -44,10 +44,12 @@ class ComplaintEligibilityService:
         status = getattr(record, "status", None)
         eligible_set = ELIGIBLE_STATUSES.get(record_type, set())
         if status not in eligible_set:
-            return {"eligible": False, "reason": f"Record status '{status}' not eligible for complaint."}
+            return {"eligible": False, "reason": f"Record status '{status}' not eligible for complaint.",
+                    "reason_code": ERR_COMPLAINT_NOT_ELIGIBLE}
 
         if not await self._customer_owns_record(db, customer_id, record_type, record):
-            return {"eligible": False, "reason": "Not the customer for this record."}
+            return {"eligible": False, "reason": "Not the customer for this record.",
+                    "reason_code": ERR_COMPLAINT_ACCESS_DENIED}
 
         policy = await self.get_complaint_policy(db, category_id, tenant_id)
         window_hours = policy.complaint_window_hours if policy else 168
@@ -58,7 +60,8 @@ class ComplaintEligibilityService:
                 created_at = created_at.replace(tzinfo=timezone.utc)
             age = datetime.now(timezone.utc) - created_at
             if age > timedelta(hours=window_hours):
-                return {"eligible": False, "reason": f"Complaint window of {window_hours}h has expired."}
+                return {"eligible": False, "reason": f"Complaint window of {window_hours}h has expired.",
+                        "reason_code": ERR_COMPLAINT_WINDOW_EXPIRED}
 
         allow_dup = policy.allow_duplicate_open_complaints if policy else False
         if not allow_dup and complaint_type:
@@ -66,11 +69,13 @@ class ComplaintEligibilityService:
                 db, customer_id, record_type, record_id, complaint_type
             )
             if has_open:
-                return {"eligible": False, "reason": "An open complaint already exists for this record."}
+                return {"eligible": False, "reason": "An open complaint already exists for this record.",
+                        "reason_code": ERR_COMPLAINT_DUPLICATE_OPEN}
 
         return {
             "eligible": True,
             "reason":   None,
+            "reason_code": None,
             "policy":   policy.to_dict() if policy else None,
         }
 

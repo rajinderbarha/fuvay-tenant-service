@@ -131,8 +131,15 @@ _PRE_EXISTING_APP_WIDE_DUPLICATE_METHOD_PATH_ALLOWLIST: set[tuple[str, str]] = {
     ("GET", "/v1/admin/service-options/summary"),
     ("GET", "/v1/admin/service-options/{option_id}"),
     ("PUT", "/v1/admin/service-options/{option_id}"),
-    ("POST", "/v1/staff/service-jobs/{job_id}/accept"),
-    ("POST", "/v1/staff/service-jobs/{job_id}/reject"),
+    # PROTECTED_BY_LATER_SLICE: 2F-39 removed
+    # ("POST", "/v1/staff/service-jobs/{job_id}/accept") and
+    # ("POST", "/v1/staff/service-jobs/{job_id}/reject") from this
+    # allowlist -- verified live via app.routes introspection that neither
+    # path is registered at all anymore (0 matches, not merely
+    # de-duplicated to 1), so keeping them allowlisted would have made
+    # this test over-broad (silently permitting a future real duplicate
+    # at either path without detection). A real fix this program's own
+    # test-history discipline hadn't caught until this slice's run.
     ("GET", "/v1/admin/analytics/operational-alerts"),
 }
 

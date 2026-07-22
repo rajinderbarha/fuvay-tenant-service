@@ -1,0 +1,25 @@
+module,tenant_mutation_route_count,status
+tenants,18,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+pricing,9,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+tenant,7,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+appointments,7,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+ds,6,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+inventory,5,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+rag,4,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+commerce,4,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+documents,3,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+media,3,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+compliance,2,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+security,2,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+catalog,2,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+geo,2,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+dispatch,2,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+settings,2,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+provider,2,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+serviceability,1,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+chat,1,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+payments,1,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+subscriptions,1,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+bookings,1,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+jobs,1,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established
+notifications,1,PROVISIONAL -- canonical unchanged; not authoritative until reviewer independence established

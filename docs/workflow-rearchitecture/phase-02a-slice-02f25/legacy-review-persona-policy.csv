@@ -1,0 +1,16 @@
+path,primary_persona,intended_actor,admitted_actor_after,in_tenant_xy
+/v1/reviews,DEPRECATED_410,none -- retired,get_current_user then 410,NO
+/v1/reviews/{review_id}/reply,TENANT_OWNER_MUTATION,tenant principal with P.TENANT_UPDATE,require_tenant_mutation_permission(P.TENANT_UPDATE),YES -- added 2F-25
+/v1/reviews/{review_id}/flag,TENANT_OWNER_MUTATION,tenant principal with P.TENANT_UPDATE,require_tenant_mutation_permission(P.TENANT_UPDATE),YES -- added 2F-25
+/v1/reviews/{review_id}/resolve,PLATFORM_ADMIN,platform admin,require_super_admin,NO
+/v1/reviews/requests,TENANT_OWNER_MUTATION,tenant principal with P.TENANT_UPDATE,require_tenant_mutation_permission(P.TENANT_UPDATE),YES -- added 2F-25
+/v1/reviews,PROVIDER_READ,tenant principal,get_current_user,NO
+/v1/reviews/{review_id},PROVIDER_READ,tenant principal,get_current_user,NO
+/v1/reviews/staff/{staff_id},PROVIDER_READ,tenant principal,get_current_user,NO
+/v1/reviews/customers/{customer_id},CUSTOMER_SELF_SERVICE,the review's own customer,get_current_user,NO
+/v1/reviews/aggregates/{entity_type}/{entity_id},PROVIDER_READ,tenant principal,get_current_user,NO
+/v1/reviews/requests,PROVIDER_READ,tenant principal,get_current_user,NO
+/v1/reviews/requests/jobs/{job_id},PROVIDER_READ,tenant principal,get_current_user,NO
+/v1/reviews/tenants/{tenant_id}/requests,PROVIDER_READ,tenant principal,get_current_user,NO
+/v1/reviews/tenants/{tenant_id}/recent,PROVIDER_READ,tenant principal,get_current_user,NO
+/v1/reviews/meta,PUBLIC_READ,tenant principal,(none),NO

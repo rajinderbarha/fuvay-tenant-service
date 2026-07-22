@@ -1,0 +1,12 @@
+route,actor,target,expected,verified_by
+GET /v1/staff/me/jobs/{job_id},technician not assigned to job,foreign job,404,test_phase2f14 TestAssignmentOwnershipReVerified
+PUT /v1/staff/me/jobs/{job_id}/status,technician not assigned,foreign job,404,test_phase2f14 TestAssignmentOwnershipReVerified
+GET /v1/jobs/{job_id},tenant_owner tenant A,job belonging to tenant B,404,test_phase2f14 TestAssignmentOwnershipReVerified
+POST /v1/jobs/{job_id}/assign,tenant_owner tenant A,job belonging to tenant B,404,pre-existing _get_job_for_assignment (re-verified)
+PUT /v1/staff/me/jobs/{job_id}/checklist/items/{item_id},technician assigned to job A,item belonging to job B,404 CHECKLIST_ITEM_NOT_FOUND,test_phase2f14 TestChecklistItemCompletionGateIntegrity::test_foreign_job_item_rejected
+PUT /v1/staff/me/jobs/{job_id}/checklist/items/{item_id},technician assigned,own job item after CHECKLIST_COMPLETE,422 CHECKLIST_NOT_ACTIVE,test_phase2f14 test_cannot_mutate_item_after_checklist_complete
+PUT /v1/staff/me/jobs/{job_id}/checklist/items/{item_id},technician assigned,own job item after WORK_COMPLETE,422 CHECKLIST_NOT_ACTIVE,test_phase2f14 test_cannot_mutate_item_after_job_moved_past_checklist
+PUT /v1/staff/me/jobs/{job_id}/checklist/items/{item_id},technician assigned,own job item while CHECKLIST_STARTED,200,test_phase2f14 test_mutation_allowed_while_checklist_started
+POST /v1/jobs/{job_id}/accept,tenant_owner,own tenant's job,403 (execution alternate excludes tenant_owner),test_phase2f14 test_tenant_owner_denied_from_execution_alternates
+any staff_router / execution-alternate route,customer,any job,403/404 (role gate + ownership),test_phase2f14 TestRequireStaffOrTechnicianOnlyGuard (parametrized)
+any staff_router / execution-alternate route,unknown/bogus role,any job,403,test_phase2f14 TestRequireStaffOrTechnicianOnlyGuard (parametrized)

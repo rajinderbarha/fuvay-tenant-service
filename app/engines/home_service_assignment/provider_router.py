@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import require_tenant_owner_mutation
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
@@ -127,7 +128,7 @@ async def assign_job(
     job_id: uuid.UUID,
     body:   AssignRequest,
     r:      Request      = ...,
-    user:   UserContext  = Depends(get_current_user),
+    user:   UserContext  = Depends(require_tenant_owner_mutation),
     db:     AsyncSession = Depends(get_db),
 ):
     tenant_id = uuid.UUID(user.tenant_id)  # HS8 fix: was user_id, never matched any real job's tenant_id
@@ -153,7 +154,7 @@ async def reassign_job(
     job_id: uuid.UUID,
     body:   ReassignRequest,
     r:      Request      = ...,
-    user:   UserContext  = Depends(get_current_user),
+    user:   UserContext  = Depends(require_tenant_owner_mutation),
     db:     AsyncSession = Depends(get_db),
 ):
     tenant_id = uuid.UUID(user.tenant_id)  # HS8 fix: was user_id, never matched any real job's tenant_id
@@ -177,7 +178,7 @@ async def cancel_assignment(
     job_id: uuid.UUID,
     body:   CancelAssignmentRequest,
     r:      Request      = ...,
-    user:   UserContext  = Depends(get_current_user),
+    user:   UserContext  = Depends(require_tenant_owner_mutation),
     db:     AsyncSession = Depends(get_db),
 ):
     tenant_id = uuid.UUID(user.tenant_id)  # HS8 fix: was user_id, never matched any real job's tenant_id
@@ -200,7 +201,7 @@ async def schedule_job(
     job_id: uuid.UUID,
     body:   ScheduleRequest,
     r:      Request      = ...,
-    user:   UserContext  = Depends(get_current_user),
+    user:   UserContext  = Depends(require_tenant_owner_mutation),
     db:     AsyncSession = Depends(get_db),
 ):
     tenant_id = uuid.UUID(user.tenant_id)  # HS8 fix: was user_id, never matched any real job's tenant_id

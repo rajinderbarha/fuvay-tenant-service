@@ -1,0 +1,5 @@
+source,count,explanation
+Collected before Slice 2F-33,2319,confirmed live at the start of 2F-33
+New file tests/test_phase2f33_geo_zone_closure.py,25,net new tests added
+Net change to all other files,0,rebaseline touched ~21 files via literal-value/formula edits and 6 classifier-corpus files via documented per-route exceptions -- none added or removed a test
+Collected after Slice 2F-33 (and confirmed live this slice),2344,2319 + 25 + 0 = 2344, matches exactly

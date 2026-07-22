@@ -1,0 +1,7 @@
+slice,canonical_routes_targeted,held_routes_adjudicated,potential_denominator_additions,best_case_protected,worst_case_protected,remaining_unprotected_best,remaining_unprotected_worst,remaining_held_after,product_decision_count_estimate
+2F-35,2,9,0-9 (only routes adjudicated TENANT_PROVIDER_MUTATION_ADD increase the denominator),252 (241+2+9 if all close),243 (241+2 if all 9 held excluded/deferred),12,21,45,0-3
+2F-36,18,28,0-28,270 (post-2F-35 best case +18+? depends on held additions),best-case-carry-forward+18,varies -- computed live at execution,varies,17,2-5
+2F-37,3,17,0-17,post-2F-36 best case +3+?,post-2F-36 worst case +3,varies,varies,0,2-4 (compliance items likely)
+2F-38,0,0,0,no new canonical routes -- certification only,same,final figure = whatever 2F-35/36/37 actually achieved,same,0 (all resolved by end of 2F-37),final registry consolidation
+
+NOTE: This forecast is illustrative, not a promise. Per the mission's explicit instruction, zero unprotected routes is NOT promised before adjudication -- several held candidates (especially compliance/product-policy items) may legitimately end as PRODUCT_DECISION_REQUIRED rather than closed, which keeps them out of the denominator and out of "unprotected" counts entirely (they simply never become canonical). The final denominator is expected to grow beyond 264 as TENANT_PROVIDER_MUTATION_ADD adjudications land, but the exact amount depends on each future slice's own evidence-based adjudication, not this forecast.

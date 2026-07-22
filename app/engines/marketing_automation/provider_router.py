@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
+from app.core.permissions import require_mutation_access_scope
 from app.engines.marketing_automation.models import MarketingCampaignEvent
 from app.schemas.base import ok
 
@@ -229,7 +230,7 @@ async def get_provider_campaign(
 @provider_marketing_router.post("/campaigns/generate-launch", summary="Generate a launch marketing campaign")
 async def generate_launch_campaign(
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_mutation_access_scope),
     db: AsyncSession = Depends(get_db),
 ):
     tid = _tid(u)
@@ -269,7 +270,7 @@ async def generate_launch_campaign(
 async def submit_campaign_review(
     campaign_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_mutation_access_scope),
     db: AsyncSession = Depends(get_db),
 ):
     tid = _tid(u)
@@ -327,7 +328,7 @@ async def list_provider_assets(
 async def update_asset_provider_notes(
     asset_id: uuid.UUID,
     r: Request,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_mutation_access_scope),
     db: AsyncSession = Depends(get_db),
 ):
     tid = _tid(u)

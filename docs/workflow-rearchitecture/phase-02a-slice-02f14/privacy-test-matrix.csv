@@ -1,0 +1,5 @@
+surface,check,result,scope
+JobChecklistItem via staff_router/execution alternates,item content scoped to assigned technician + tenant,PASS (_get_job_for_staff_action),in scope
+JobNote via field_ops.router add_note/list_notes,tenant/role/is_internal filtering,FAIL -- no filtering exists (any authenticated user can read all notes incl. internal),out of scope this slice (see job-note-privacy.md); NOT fixed
+JobMedia via field_ops.router add_media/list_media,tenant/role/ownership filtering,FAIL -- no filtering exists,out of scope this slice (see evidence-media-boundary.md); NOT fixed
+Customer PII on my_job_detail/my_job_checklist,scoped via _assert_can_access_job; no note/media embedded in _job_dict,PASS,in scope

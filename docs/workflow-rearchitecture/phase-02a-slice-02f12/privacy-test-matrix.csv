@@ -1,0 +1,11 @@
+read,mechanism,verified
+Tenant coaching lead list/detail,UNSUPPORTED_CAPABILITY (no separate lead model; appointment itself is the record),n/a
+Lead timeline (staff_timeline/provider_timeline),tenant_id filter + require_owner_or_office_staff_read (fixed),true
+Lead notes (provider read),tenant_id filter + require_owner_or_office_staff_read (fixed),true
+Slot list/detail,UNSUPPORTED_CAPABILITY,n/a
+Hold detail,UNSUPPORTED_CAPABILITY,n/a
+Consultation/session detail (customer tracking),customer_id filter + require_customer (fixed),true
+Enrolment detail,UNSUPPORTED_CAPABILITY,n/a
+Customer session history,covered by customer_tracking (single appointment; no history-list route exists),true (for what exists)
+Assignment context,covered by _assert_staff_owns_appt (existing),true
+GET routes have no mutation side effects,all 4 read routes (staff_timeline, provider_timeline, customer_tracking, admin_timeline) call only get_timeline/get_notes/a plain select -- no db.add/flush/commit in any read path,true

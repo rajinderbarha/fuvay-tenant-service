@@ -1,0 +1,7 @@
+source_state,result_state,trigger,persona,payment_evidence,activation_effect,credit_effect,audit_event,reversible
+(none),pending_review,POST purchase (tenant),tenant_owner,NONE required -- unpaid by construction,none (starts_at/expires_at NULL),none,tenant.package_selected,yes -- admin may reject
+(none),paid_pending_approval,signup registration,guest->new tenant,Razorpay HMAC verified (verify_payment_signature),none,none,tenant.package_selected,yes
+(none),paid_pending_approval,admin purchase on behalf,admin w/ P.PACKAGES_CREATE,admin attestation (human),none,none,tenant.package_selected,yes
+pending_review|paid_pending_approval|selected|pending_payment,active,admin verify_tenant,platform admin,inherited from assignment,starts_at/expires_at set; quota+commission applied,wallet credits issued (idempotency_key per assignment),tenant.package_activated_after_approval,no -- final
+pending_review|paid_pending_approval|selected|pending_payment,rejected,admin reject_verification,platform admin,n/a,none,none,tenant.package_rejected_before_activation,no -- final
+pending_review,pending_review (rejected duplicate),repeat POST purchase,tenant_owner,n/a,none,none,none -- PACKAGE_ALREADY_PENDING raised pre-persistence,n/a

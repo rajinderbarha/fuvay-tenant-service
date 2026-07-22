@@ -1,0 +1,108 @@
+app,route,disposition,consolidation_group,notes
+super-admin,/admin/dashboard,PRIMARY_NAVIGATION,Home,gains My Work panel
+super-admin,/admin/tenants,PRIMARY_NAVIGATION,Businesses,list view
+super-admin,/admin/tenants/onboarding,DETAIL_TAB,Business Approval Workspace,merge target TBD - pick more complete impl
+super-admin,/admin/onboarding/providers,DETAIL_TAB,Business Approval Workspace,merge source or retire per implementation review
+super-admin,/admin/packages,PRIMARY_NAVIGATION,Businesses,
+super-admin,/admin/trust-quality,PRIMARY_NAVIGATION,Businesses,
+super-admin,/admin/bookings,PRIMARY_NAVIGATION (kept, not retired),Operations,VERIFICATION REVERSAL: confirmed active caller (10 call sites in super-admin lib/api.ts) - cannot be retired from nav; shown as a labeled secondary view distinct from canonical Home Services Jobs view
+super-admin,/admin/home-services/service-jobs,PRIMARY_NAVIGATION,Operations,canonical
+super-admin,/admin/customers,PRIMARY_NAVIGATION,Operations,
+super-admin,/admin/staff,PRIMARY_NAVIGATION,Operations,
+super-admin,/admin/reviews,BLOCKED,-,pending verification of which review stack this page targets
+super-admin,/admin/complaints,PRIMARY_NAVIGATION,Operations,
+super-admin,/admin/complaint-policies,DETAIL_TAB,Operations > Complaints,
+super-admin,/admin/verticals,PRIMARY_NAVIGATION,Services,
+super-admin,/admin/categories,DETAIL_TAB,Services,
+super-admin,/admin/pricing-tiers,DETAIL_TAB,Services > Pricing,
+super-admin,/admin/location-mapping,DETAIL_TAB,Services > Pricing,
+super-admin,/admin/pricing/provider-overrides,DETAIL_TAB,Services > Pricing,
+super-admin,/admin/pricing/commission,DETAIL_TAB,Services > Pricing,
+super-admin,/admin/home-services/*,CONVERT_TO_WORKSPACE,Services > Home Services,9 pages -> 1 workspace w/ tabs
+super-admin,/admin/finance,PRIMARY_NAVIGATION,Finance,landing
+super-admin,/admin/finance/usage-credits,DETAIL_TAB,Finance,
+super-admin,/admin/finance/deposits,DETAIL_TAB,Finance,BLOCKED content pending security deposit decision
+super-admin,/admin/finance/topups,DETAIL_TAB,Finance,
+super-admin,/admin/finance/claims,DETAIL_TAB,Finance,
+super-admin,/admin/finance/payouts,DETAIL_TAB,Finance,
+super-admin,/admin/service-invoices,DETAIL_TAB,Finance,re-added from orphaned nav
+super-admin,/admin/provider-wallets,DETAIL_TAB,Finance,re-added from orphaned nav
+super-admin,/admin/commission-records,DETAIL_TAB,Finance,re-added from orphaned nav
+super-admin,/admin/payments,DETAIL_TAB,Finance,re-added from orphaned nav
+super-admin,/admin/financial-events,DETAIL_TAB,Finance,re-added from orphaned nav
+super-admin,/admin/compliance,PRIMARY_NAVIGATION (moved),Governance,relocated out of Finance
+super-admin,/admin/marketing,DETAIL_TAB,Reports,merged as saved view
+super-admin,/admin/notifications,PRIMARY_NAVIGATION,Settings,
+super-admin,/admin/notifications/settings,DETAIL_TAB,Settings > Notifications,
+super-admin,/admin/analytics,DETAIL_TAB,Reports,merged as saved view
+super-admin,/admin/reports,PRIMARY_NAVIGATION,Reports,landing; re-added from orphaned nav
+super-admin,/admin/intelligence,DETAIL_TAB,Reports,merged as saved view
+super-admin,/admin/engines,DETAIL_TAB,Governance,
+super-admin,/admin/security,PRIMARY_NAVIGATION,Governance,landing
+super-admin,/admin/workflow-templates,DETAIL_TAB,Governance,
+super-admin,/admin/audit-logs,DETAIL_TAB,Governance,
+super-admin,/admin/users,DETAIL_TAB,Governance,
+super-admin,/admin/users/roles,DETAIL_TAB,Governance,
+super-admin,/admin/users/permissions,DETAIL_TAB,Governance,
+super-admin,/admin/media,PRIMARY_NAVIGATION,Settings,
+super-admin,/admin/settings,PRIMARY_NAVIGATION,Settings,
+super-admin,/admin/ai,CONTEXTUAL_ROUTE,-,surfaced from within job/thread context only, pending Decision 4
+super-admin,/admin/ai-chat,CONTEXTUAL_ROUTE,-,same as above
+super-admin,/admin/real-estate/*,HIDDEN_BUT_SUPPORTED,-,not in default nav until vertical launches
+super-admin,/admin/coaching/*,HIDDEN_BUT_SUPPORTED,-,same
+super-admin,/admin/bookability,DETAIL_TAB,Services > Home Services > Matching diagnostics,
+super-admin,/admin/catalog-module/[key],HIDDEN_BUT_SUPPORTED,-,honest placeholder, unchanged
+tenant-portal,/dashboard,PRIMARY_NAVIGATION,Home,gains My Work panel
+tenant-portal,/provider/status,DETAIL_TAB,Home,setup checklist folds into Home
+tenant-portal,/profile,WORKFLOW_STEP,Setup Wizard,also DETAIL_TAB of Business 360 post-setup
+tenant-portal,/provider/service-areas,WORKFLOW_STEP,Setup Wizard,
+tenant-portal,/tenant/setup/services,WORKFLOW_STEP,Setup Wizard,
+tenant-portal,/provider/service-coverage,WORKFLOW_STEP,Setup Wizard,
+tenant-portal,/tenant/setup/availability,WORKFLOW_STEP,Setup Wizard,
+tenant-portal,/provider/staff,PRIMARY_NAVIGATION,Team,
+tenant-portal,/jobs,PRIMARY_NAVIGATION,Jobs,canonical field_ops view - confirmed active, keep
+tenant-portal,/bookings,DETAIL_TAB,Jobs,VERIFICATION REVERSAL: confirmed active caller - kept as labeled sub-tab, NOT retired, until backend read-aggregation BFF exists (see booking-job-canonical-decision.md)
+tenant-portal,/appointments,DETAIL_TAB,Jobs,kept as labeled sub-tab pending same BFF
+tenant-portal,/service-jobs,DETAIL_TAB,Jobs,canonical ServiceJob view - kept as labeled sub-tab (this is the intended long-term target per booking-job-canonical-decision.md)
+tenant-portal,/finance/package,DETAIL_TAB,Credits,
+tenant-portal,/finance/usage-credit-ledger,DETAIL_TAB,Credits,
+tenant-portal,/finance/security-deposit,DETAIL_TAB,Credits,BLOCKED pending security deposit decision
+tenant-portal,/reviews,PRIMARY_NAVIGATION,Customers,
+tenant-portal,/provider/reviews,RETIRE,Customers,confirmed duplicate
+tenant-portal,/provider/complaints,DETAIL_TAB,Customers,
+tenant-portal,/marketing,DETAIL_TAB,Customers,
+tenant-portal,/provider/marketing,RETIRE,Customers,confirmed duplicate
+tenant-portal,/customers,PRIMARY_NAVIGATION,Customers,
+tenant-portal,/chat,DETAIL_TAB,Customers,pending Decision 4
+tenant-portal,/provider/chat,RETIRE,Customers,confirmed duplicate
+tenant-portal,/analytics,RETIRE,Home (Reports link),merged
+tenant-portal,/reports,SECONDARY_NAVIGATION,-,demoted from top-level per approved nav list
+tenant-portal,/insights,RETIRE,-,merged into /reports
+tenant-portal,/documents,DETAIL_TAB,Business,
+tenant-portal,/provider/compliance,DETAIL_TAB,Business,
+tenant-portal,/account/privacy,DETAIL_TAB,Business,
+tenant-portal,/settings,PRIMARY_NAVIGATION,Settings,
+tenant-portal,/settings/engines,DETAIL_TAB,Settings,
+tenant-portal,/staff/dashboard,PRIMARY_NAVIGATION,Today,
+tenant-portal,/staff/jobs,PRIMARY_NAVIGATION,My Jobs,
+tenant-portal,/staff/home-services/jobs,RETIRE,My Jobs,confirmed duplicate
+tenant-portal,/staff/chat,DETAIL_TAB,My Jobs (contextual),pending Decision 4
+tenant-portal,/staff/profile,DETAIL_TAB,Profile,
+tenant-portal,/staff/skills,DETAIL_TAB,Profile,
+tenant-portal,/staff/service-areas,DETAIL_TAB,Profile,
+tenant-portal,/staff/availability,DETAIL_TAB,Profile,
+tenant-portal,/staff/documents,ADVANCED_SETTINGS,Profile,
+tenant-portal,/staff/security/sessions,ADVANCED_SETTINGS,Profile,
+tenant-portal,/staff/activity,ADVANCED_SETTINGS,Profile,
+tenant-portal,/staff/notifications,ADVANCED_SETTINGS,Profile,
+mobile-customer,Home,PRIMARY_NAVIGATION,Home,unchanged
+mobile-customer,BookingAssistant..BookingSuccess,WORKFLOW_STEP,Book,unchanged
+mobile-customer,BookingsList/BookingDetail/Tracking,PRIMARY_NAVIGATION,My Bookings,unchanged
+mobile-customer,QuoteDecision,PRIMARY_NAVIGATION,Quotes,fix /v1 prefix
+mobile-customer,LegacyApp (19 screens),HIDDEN_BUT_SUPPORTED,-,unchanged, future consolidation not in Phase 2 scope
+mobile-staff,HomeScreen,PRIMARY_NAVIGATION,Today,
+mobile-staff,JobsListScreen/JobDetailScreen,PRIMARY_NAVIGATION,My Jobs,
+mobile-staff,ChatListScreen/ChatRoomScreen,DETAIL_TAB,My Jobs (contextual),pending Decision 4
+mobile-staff,EarningsScreen,BLOCKED,-,backing endpoint unconfirmed
+mobile-staff,ProfileScreen,PRIMARY_NAVIGATION,Profile,parity gap vs web tracked in backend-blockers.md
+mobile-staff,NotificationsScreen,ADVANCED_SETTINGS,Profile,

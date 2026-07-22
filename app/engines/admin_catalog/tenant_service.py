@@ -39,8 +39,27 @@ class TenantCatalogService:
         self.actor_tenant_id = actor_tenant_id
 
     def _require_tenant_id(self, tenant_id_raw) -> uuid.UUID:
+        # Slice 2F-8: enable_service/disable_service accept an optional
+        # `tenant_id` query parameter (originally intended to let a platform
+        # role act on a specific tenant's behalf), but this method previously
+        # used ANY supplied tenant_id_raw unconditionally -- a tenant_owner
+        # (who legitimately holds TENANT_UPDATE) could pass a foreign
+        # tenant_id and enable/disable a service for a tenant they do not
+        # belong to. Mirrors the FINAL-L5-05Q pattern already used in
+        # serviceability's admin router: a non-platform actor's supplied
+        # tenant_id must match their own actor_tenant_id, or the request is
+        # rejected outright.
         if tenant_id_raw:
-            return uuid.UUID(str(tenant_id_raw))
+            candidate = tenant_id_raw if isinstance(tenant_id_raw, uuid.UUID) else uuid.UUID(str(tenant_id_raw))
+            if (self.actor_role not in self.PLATFORM_ROLES
+                    and self.actor_tenant_id is not None
+                    and candidate != self.actor_tenant_id):
+                raise ServiceOSException(
+                    "PERMISSION_DENIED",
+                    "Cannot act on another tenant's catalog.",
+                    status_code=403,
+                )
+            return candidate
         if self.actor_tenant_id:
             return self.actor_tenant_id
         raise ServiceOSException("TENANT_NOT_FOUND", "tenant_id is required.", status_code=422)

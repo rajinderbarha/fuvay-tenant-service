@@ -1,0 +1,15 @@
+scenario,classification,evidence
+Duplicate active service area (same tenant+coverage_type+city+zipcode),DUPLICATE_REJECTED,_check_duplicate_area (pre-existing, unmodified) -- ERR_DUPLICATE_AREA 409; TestDuplicateServiceAreaGuardUnchanged::test_source_confirms_duplicate_guard
+Duplicate active service mapping (same area+service+job_type),DUPLICATE_REJECTED,add_service_mapping's dup check (pre-existing) -- ERR_DUPLICATE_MAPPING 409
+Concurrent duplicate-create race,DUPLICATE_REJECTED (via advisory lock),pg_advisory_xact_lock keyed on tenant+coverage tuple (FINAL-L5-05Q, pre-existing, re-verified) -- TestDuplicateServiceAreaGuardUnchanged::test_source_confirms_advisory_lock_for_concurrent_create
+Invalid coverage_type,INTEGRITY_DEFECT_CONFIRMED_AND_ALREADY_FIXED (pre-existing guard),_validate_coverage rejects any coverage_type not in CoverageType.ALL (422)
+Missing required fields per coverage_type (e.g. city coverage without state),INTEGRITY_DEFECT_CONFIRMED_AND_ALREADY_FIXED (pre-existing guard),_validate_coverage's per-type required-field checks (422)
+Wrong-country postal code,PRODUCT_DECISION_REQUIRED,no country/zipcode cross-validation exists anywhere in the platform (see geography-reference-integrity.md) -- not conclusively provable as a defect since no canonical reference exists to validate against
+City/district mismatch,PRODUCT_DECISION_REQUIRED,district is stored but never validated against city/state anywhere -- same reasoning as above
+Foreign tenant service (service_id not owned/enabled by tenant),PRODUCT_DECISION_REQUIRED,_assert_service_active validates against the canonical platform-wide catalog only, not a tenant-specific enablement table (see service-catalog-ownership.md) -- open question, not a proven defect
+Disabled/inactive service mapped to area,DUPLICATE_REJECTED (effectively -- rejected outright),_assert_service_active rejects if MasterService.is_active is False (422)
+Empty bulk input / duplicate bulk input / mixed valid-foreign bulk input,N/A,no bulk endpoint exists in this module (see bulk-operation-security.md)
+Remove nonexistent coverage (foreign or already-removed area_id),DUPLICATE_REJECTED (idempotent-safe, not silently allowed),get_service_area raises 404 for a missing/foreign/inactive area -- cannot be removed twice
+Repeated enable/disable (deactivate an already-inactive area),IDEMPOTENT,deactivate_service_area sets is_active=False unconditionally once ownership passes -- re-deactivating an already-inactive area is a safe no-op-ish re-write (not independently guarded against re-invocation, but produces no incorrect state)
+Serviceability before and after coverage mutation,DUPLICATE_REJECTED / verified,match_tenants_for_location's WHERE clause filters on is_active/is_available at query time -- disabling coverage immediately removes matching eligibility (see matching-serviceability-impact.md)
+Matching after coverage disablement,verified correct,same evidence as above

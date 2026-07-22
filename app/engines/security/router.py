@@ -3,10 +3,11 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.core.security import get_client_ip
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
+from app.exceptions import ServiceOSException
 from app.engines.security.service import SecurityService
 from app.schemas.base import ApiResponse, ok
 
@@ -17,9 +18,13 @@ ENGINE_ID = "security"
 
 def _svc(r: Request, db: AsyncSession = Depends(get_db),
           u: UserContext = Depends(get_current_user)) -> SecurityService:
+    # Phase 2A Slice 2F-35: actor_tenant_id is now passed so SecurityService
+    # can independently enforce tenant authority on rotate_api_key/
+    # revoke_api_key, rather than trusting a client-supplied tenant_id.
     return SecurityService(db=db, request_id=getattr(r.state, "request_id", "—"),
                             actor_id=uuid.UUID(u.user_id) if u.user_id else None,
-                            actor_role=u.role, actor_ip=get_client_ip(r))
+                            actor_role=u.role, actor_ip=get_client_ip(r),
+                            actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state, "request_id", "—")
 
 
@@ -46,11 +51,23 @@ async def engine_meta() -> dict:
              status_code=status.HTTP_201_CREATED,
              response_model=ApiResponse[dict])
 async def create_api_key(r: Request,
-                          u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                          u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                           s: SecurityService = Depends(_svc)) -> ApiResponse[dict]:
+    # Slice 2F-39A2 fix: this endpoint previously (a) used require_permission
+    # instead of require_tenant_mutation_permission, letting a tenant-side
+    # read-only access_scope (customer_support_limited) create API keys
+    # despite the explicit read-only restriction that guard exists to
+    # enforce, and (b) trusted a client-supplied tenant identifier in the
+    # request payload with zero comparison to the caller's own tenant --
+    # any tenant_owner in any tenant could create an API key scoped to any
+    # OTHER tenant. The tenant identifier is now server-derived from the
+    # authenticated user's own token/session, matching every other tenant
+    # mutation in this codebase.
+    if not u.tenant_id:
+        raise ServiceOSException("PERMISSION_DENIED", "No tenant context.")
     body = await r.json()
     return ok(await s.create_api_key(
-        uuid.UUID(body["tenant_id"]), body["name"],
+        uuid.UUID(u.tenant_id), body["name"],
         body.get("description"), body.get("scopes", []),
         body.get("environment", "live"), body.get("expires_days")),
         _rid(r), ENGINE_ID)
@@ -90,7 +107,7 @@ async def verify_api_key(r: Request,
              response_model=ApiResponse[dict])
 async def rotate_api_key(key_id: uuid.UUID, r: Request,
                           tenant_id: uuid.UUID = Query(...),
-                          u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                          u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                           s: SecurityService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.rotate_api_key(key_id, tenant_id), _rid(r), ENGINE_ID)
 
@@ -100,7 +117,7 @@ async def rotate_api_key(key_id: uuid.UUID, r: Request,
              response_model=ApiResponse[dict])
 async def revoke_api_key(key_id: uuid.UUID, r: Request,
                           tenant_id: uuid.UUID = Query(...),
-                          u: UserContext = Depends(require_permission(P.TENANT_UPDATE)),
+                          u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                           s: SecurityService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.revoke_api_key(key_id, tenant_id,

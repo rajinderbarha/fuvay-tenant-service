@@ -1,0 +1,5 @@
+route,error_behavior,non_oracular
+pricing zone/rule update-delete (foreign tenant),NotFoundException (same as missing zone/rule),YES
+commerce warranty claim (foreign tenant/job),NotFoundException (same as missing job),YES
+pricing/payments/subscriptions/commerce (foreign tenant via trusted-tenant check),PERMISSION_DENIED before any DB read reaches the target row,YES
+compliance deletion/portability (foreign user_id),PERMISSION_DENIED at router layer before service call,YES

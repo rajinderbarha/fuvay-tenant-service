@@ -1,0 +1,8 @@
+service_method,internal_callers_found,preserved,evidence
+AuthService.update_permissions,none,n/a - no internal caller to preserve,grep app/ for the method name returns only the Set A route
+AuthService.invite_staff,none,n/a - no internal caller to preserve,grep app/ for the method name returns only the Set A route
+AuthService.deactivate_staff,none,n/a - no internal caller to preserve,grep app/ for the method name returns only the Set A route
+AuthService.create_api_key,none,n/a - no internal caller to preserve,grep app/ for the method name returns only the Set A route
+AuthService.update_api_key,none,n/a - no internal caller to preserve,grep app/ for the method name returns only the Set A route
+AuthService.revoke_api_key,none,n/a - no internal caller to preserve,grep app/ for the method name returns only the Set A route
+AuthService.impersonate,none,n/a - no internal caller to preserve,grep app/ for the method name returns only the Set A route

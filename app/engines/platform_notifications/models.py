@@ -263,7 +263,9 @@ class ChatMessage(ServiceOSBase):
             return viewer_type in ("provider", "staff", "admin")
         if self.visibility == "customer_only":
             return viewer_type in ("customer", "admin")
-        return True
+        # Fail closed: an unrecognized visibility value must never be treated
+        # as visible to everyone (only recognized values above grant access).
+        return viewer_type == "admin"
 
     def to_dict(self, viewer_type: str = "admin") -> dict:
         if not self.is_visible_to(viewer_type):

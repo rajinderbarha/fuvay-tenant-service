@@ -1,0 +1,3 @@
+method,path,endpoint,module,repository_boundary,reason_for_inclusion
+DELETE,/v1/webhooks/endpoints/{endpoint_id},delete_endpoint,webhook_endpoint_management,app.engines.webhook.router + WebhookService,Client-asserted tenant_id never verified against actor -- cross-tenant destructive gap
+POST,/v1/rag/query,query,rag_query,app.engines.rag.router + RAGService,Zero tenant predicate on knowledge-base lookup -- cross-tenant data-exposure gap

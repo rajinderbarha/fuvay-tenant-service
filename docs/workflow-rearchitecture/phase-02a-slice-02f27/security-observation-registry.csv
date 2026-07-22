@@ -1,0 +1,9 @@
+route,static_evidence,suspected_weakness,confidence,executed,inventory_effect,recommended_module
+POST /v1/security/sessions/{session_id}/revoke,revokes by session id; principal never referenced,cross-user session revocation,HIGH,no,none (security not inventory),security_audit
+POST /v1/security/audit-log,accepts arbitrary authenticated audit entries,audit forgery,MEDIUM,no,none,security_audit
+DELETE /v1/pricing/tenants/{tenant_id}/rules/{rule_id},delete_rule(rule_id) discards URL tenant_id,cross-tenant delete,HIGH,no,tenant mutation (already tracked),pricing
+DELETE /v1/rag/knowledge-bases/{kb_id},delete_kb(kb_id) no tenant,cross-tenant delete,MEDIUM,no,tenant mutation add-candidate,rag
+DELETE /v1/media/{media_id},delete_asset(media_id) no tenant,cross-tenant delete,MEDIUM,no,tenant mutation add-candidate,media
+DELETE /v1/rag/documents/{doc_id},delete_document(doc_id) no tenant,cross-tenant delete,MEDIUM,no,tenant mutation add-candidate,rag
+POST /v1/commerce/tenants/{tenant_id}/badges/recalculate,read permission gating a write,privilege mismatch,MEDIUM,no,tenant mutation (tracked),package_commerce
+(+30 more carried from 26H security-observations-not-remediated.md),static reading only,various,LOW-MEDIUM,no,see 26H registry,various

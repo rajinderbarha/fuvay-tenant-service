@@ -41,7 +41,17 @@ class ChecklistTemplateService:
         if not t or t.deleted_at is not None:
             raise ServiceOSException("CHECKLIST_TEMPLATE_NOT_FOUND",
                 f"Checklist template '{template_id}' not found.", status_code=404)
-        if (self.actor_role == "tenant_owner" and self.actor_tenant_id is not None
+        # Slice 2F-13: the tenant-ownership check previously fired ONLY when
+        # actor_role == "tenant_owner". FIELD_OPS_CHECKLIST_MANAGE is
+        # tenant_owner-only by default role grant, but a `staff` member can be
+        # granted it via a StaffPermission override -- in which case the old
+        # condition skipped the tenant filter entirely, letting that staff
+        # member read/update/delete ANY tenant's template by ID (cross-tenant
+        # IDOR). Fixed to enforce tenant ownership for every tenant-scoped
+        # actor (i.e. anyone except super_admin, who is the intentional
+        # platform-wide exemption). Same fail-closed NOT_FOUND response, so no
+        # foreign-record existence is leaked.
+        if (self.actor_role != "super_admin" and self.actor_tenant_id is not None
                 and t.tenant_id != self.actor_tenant_id):
             raise ServiceOSException("CHECKLIST_TEMPLATE_NOT_FOUND",
                 f"Checklist template '{template_id}' not found.", status_code=404)
@@ -86,7 +96,7 @@ class ChecklistTemplateService:
 
     async def get_template(self, template_id: uuid.UUID) -> dict:
         t = await self._get_template_for_tenant(template_id)
-        items = await self.list_items(template_id)
+        items = await self._list_items_unchecked(template_id)  # ownership already verified above
         return {**self._template_dict(t), "items": items["items"]}
 
     async def update_template(self, template_id: uuid.UUID, data: dict) -> dict:
@@ -108,6 +118,16 @@ class ChecklistTemplateService:
 
     # ── Items ──────────────────────────────────────────────────────────────────
     async def list_items(self, template_id: uuid.UUID) -> dict:
+        # Slice 2F-13: the standalone GET /{template_id}/items route reached
+        # this method WITHOUT any tenant-ownership check, letting a caller
+        # read another tenant's template item titles by supplying a foreign
+        # template_id (cross-tenant read IDOR). Enforce ownership here (the
+        # route-facing entry point); callers that have already verified
+        # ownership use _list_items_unchecked to avoid a redundant fetch.
+        await self._get_template_for_tenant(template_id)
+        return await self._list_items_unchecked(template_id)
+
+    async def _list_items_unchecked(self, template_id: uuid.UUID) -> dict:
         r = await self.db.execute(select(ServiceChecklistItem).where(
             ServiceChecklistItem.template_id == template_id,
             ServiceChecklistItem.deleted_at.is_(None)).order_by(ServiceChecklistItem.sort_order))

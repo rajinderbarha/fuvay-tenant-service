@@ -6,7 +6,7 @@ from typing import Optional
 import uuid
 from decimal import Decimal
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import require_customer, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.engines.complaints.eligibility_service import ComplaintEligibilityService
@@ -65,7 +65,7 @@ async def check_eligible(
     complaint_type: Optional[str] = None,
     category_id:    Optional[uuid.UUID] = None,
     r: Request     = None,
-    u: UserContext = Depends(get_current_user),
+    u: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -81,7 +81,7 @@ async def check_eligible(
 async def create_complaint(
     body: CreateComplaintIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -105,7 +105,7 @@ async def create_complaint(
 async def list_complaints(
     status: Optional[str] = None,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -118,7 +118,7 @@ async def list_complaints(
 async def get_complaint(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -132,7 +132,7 @@ async def add_message(
     complaint_id: uuid.UUID,
     body: AddMessageIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -147,7 +147,7 @@ async def add_message(
 async def list_messages(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -162,7 +162,7 @@ async def list_messages(
 async def list_resolutions(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     """MODULE-L5-02 bug #35: the customer could accept or reject a resolution
@@ -190,7 +190,7 @@ class AIAnswersIn(BaseModel):
 async def get_ai_session(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     """The customer must be able to SEE the questions the AI asked them."""
@@ -215,7 +215,7 @@ async def submit_ai_answers(
     complaint_id: uuid.UUID,
     body: AIAnswersIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     """MODULE-L5-02 bug #37: the AI settlement session asked the customer
@@ -237,7 +237,7 @@ async def cancel_complaint(
     complaint_id: uuid.UUID,
     body: CancelComplaintIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -251,7 +251,7 @@ async def accept_resolution(
     complaint_id:  uuid.UUID,
     resolution_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -266,7 +266,7 @@ async def reject_resolution(
     resolution_id: uuid.UUID,
     body: ResolutionActionIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -282,7 +282,7 @@ async def request_refund(
     complaint_id: uuid.UUID,
     body: CreateRefundIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -307,7 +307,7 @@ class SettlementRespondIn(BaseModel):
 async def list_settlement_proposals(
     complaint_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"
@@ -322,7 +322,7 @@ async def respond_to_settlement(
     proposal_id:  uuid.UUID,
     body: SettlementRespondIn,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     rid = getattr(r.state, "request_id", "—") if r else "—"

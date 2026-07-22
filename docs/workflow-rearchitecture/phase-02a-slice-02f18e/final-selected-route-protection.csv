@@ -1,0 +1,19 @@
+route_function,capability,persona_scope,attachment_relevance,office_first_use_relevance,replacement_relevance,transaction_relevance,retrieval_relevance,lifecycle_relevance,final_status,fully_protected
+provider_mark_read,in_app_notification_mark_read,VERIFIED (unchanged),no,n/a,n/a,n/a,n/a,n/a,VERIFIED,YES
+provider_mark_all_read,in_app_notification_mark_all_read,VERIFIED (unchanged),no,n/a,n/a,n/a,n/a,n/a,VERIFIED,YES
+provider_update_pref,notification_preference_update,VERIFIED (unchanged),no,n/a,n/a,n/a,n/a,n/a,VERIFIED,YES
+provider_create_thread,conversation_create,VERIFIED (unchanged),no,n/a,n/a,n/a,n/a,n/a,VERIFIED,YES
+provider_send_message,message_send,VERIFIED (unchanged persona/scope),YES,VERIFIED (THIS SLICE -- office ambiguity rule applies directly to this route's office callers),relevant only indirectly (replace_asset is a different route, not reachable from this one),VERIFIED (THIS SLICE -- transaction trace + no-intermediate-commit proof apply directly to this route's own send_message call),VERIFIED (unchanged from 2F-18C),VERIFIED (attach-time lifecycle unchanged from 2F-18B; retrieval-time lifecycle is a DIFFERENT route),VERIFIED,YES
+provider_mark_thread_read,message_mark_read,VERIFIED (unchanged),no,n/a,n/a,n/a,n/a,n/a,VERIFIED,YES
+staff_mark_read,in_app_notification_mark_read,VERIFIED (unchanged),no,n/a,n/a,n/a,n/a,n/a,VERIFIED,YES
+staff_mark_all_read,in_app_notification_mark_all_read,VERIFIED (unchanged),no,n/a,n/a,n/a,n/a,n/a,VERIFIED,YES
+staff_send_message,message_send,VERIFIED (unchanged persona/scope),YES,not directly relevant (staff_send_message's office-role callers get the SAME office-ambiguity rule as provider_send_message; technician callers are governed by the separate 2F-18D uploader rule, unaffected by this slice's office-specific fix),relevant only indirectly,VERIFIED (same mechanism as provider_send_message -- both call the SAME ChatMessageService.send_message),VERIFIED (unchanged from 2F-18C),VERIFIED,VERIFIED,YES
+staff_mark_thread_read,message_mark_read,VERIFIED (unchanged),no,n/a,n/a,n/a,n/a,n/a,VERIFIED,YES
+
+Fully protected: 10 of 10 selected routes.
+Blocked selected routes: 0.
+Final tenant X/Y: 190 (baseline) + 10 (this module) = 200/226.
+Fully protected notification routes: 10.
+Blocked notification routes: 0.
+Remaining unprotected routes: 26.
+Remaining module count: unchanged from 2F-18 through 2F-18D -- 10 non-selected modules, see remaining-module-queue-update.csv.

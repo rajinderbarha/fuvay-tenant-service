@@ -10,7 +10,7 @@ import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.core.security import rate_limiter, get_client_ip
 from app.dependencies.auth import (
     get_current_user, UserContext,
@@ -502,7 +502,7 @@ async def approve_device(
 async def invite_staff(
     body: InviteStaffRequest,
     request: Request,
-    user: UserContext = Depends(require_permission(P.AUTH_STAFF_INVITE)),
+    user: UserContext = Depends(require_tenant_mutation_permission(P.AUTH_STAFF_INVITE)),
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
     if not user.tenant_id:
@@ -559,7 +559,7 @@ async def update_permissions(
     user_id: uuid.UUID,
     body: UpdatePermissionsRequest,
     request: Request,
-    user: UserContext = Depends(require_permission(P.AUTH_PERMISSIONS_MANAGE)),
+    user: UserContext = Depends(require_tenant_mutation_permission(P.AUTH_PERMISSIONS_MANAGE)),
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
     if not user.tenant_id:
@@ -582,7 +582,7 @@ async def update_permissions(
 async def deactivate_staff(
     user_id: uuid.UUID,
     request: Request,
-    user: UserContext = Depends(require_permission(P.AUTH_STAFF_MANAGE)),
+    user: UserContext = Depends(require_tenant_mutation_permission(P.AUTH_STAFF_MANAGE)),
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
     if not user.tenant_id:
@@ -704,7 +704,7 @@ async def list_impersonations(
 async def create_api_key(
     body: CreateApiKeyRequest,
     request: Request,
-    user: UserContext = Depends(require_permission(P.AUTH_APIKEYS_MANAGE)),
+    user: UserContext = Depends(require_tenant_mutation_permission(P.AUTH_APIKEYS_MANAGE)),
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
     if not user.tenant_id:
@@ -746,7 +746,7 @@ async def list_api_keys(
 async def revoke_api_key(
     key_id: uuid.UUID,
     request: Request,
-    user: UserContext = Depends(require_permission(P.AUTH_APIKEYS_MANAGE)),
+    user: UserContext = Depends(require_tenant_mutation_permission(P.AUTH_APIKEYS_MANAGE)),
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
     if not user.tenant_id:
@@ -765,7 +765,7 @@ async def update_api_key(
     key_id: uuid.UUID,
     body: UpdateApiKeyRequest,
     request: Request,
-    user: UserContext = Depends(require_permission(P.AUTH_APIKEYS_MANAGE)),
+    user: UserContext = Depends(require_tenant_mutation_permission(P.AUTH_APIKEYS_MANAGE)),
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
     if not user.tenant_id:

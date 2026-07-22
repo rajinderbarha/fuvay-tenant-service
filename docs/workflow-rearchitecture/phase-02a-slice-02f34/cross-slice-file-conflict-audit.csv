@@ -1,0 +1,14 @@
+file,modules_touching_it,slices_touching_it,conflict,resolution
+app/engines/webhook/router.py + service.py,webhook_endpoint_management,2F-35 only,NO,single slice
+app/engines/rag/router.py + service.py,rag_query,2F-35 only,NO,single slice
+app/engines/enterprise_grid/router.py + services.py,enterprise_grid_saved_views + enterprise_grid_preferences_exports,2F-36 only (both modules assigned to the same slice),NO -- same file touched by 2 modules but both are in 2F-36,sequenced within 2F-36 itself; a single implementation slice may safely touch one file for two of its own modules
+app/engines/admin_catalog/brand_provider_router.py + brand_service.py,admin_catalog_provider_setup,2F-36 only,NO,single slice
+app/engines/admin_catalog/recommendation_router.py + recommendation_engine_service.py,admin_catalog_provider_setup,2F-36 only,NO,single slice
+app/engines/admin_catalog/service_option_provider_router.py,admin_catalog_provider_setup,2F-36 only,NO,single slice
+app/engines/profile/router.py + service.py,profile_technician_self_service + profile_universal_self_service,2F-36 only (both modules assigned to the same slice),NO -- same file touched by 2 modules but both are in 2F-36,sequenced within 2F-36 itself
+app/engines/marketing_automation/provider_router.py,marketing_automation_provider,2F-36 only,NO,single slice
+app/engines/analytics/provider_router.py,analytics_provider_reports,2F-36 only,NO,single slice
+app/engines/platform_commerce/router.py + service.py,platform_commerce_deposit,2F-37 only,NO,single slice
+app/core/permissions.py,potentially all of 2F-35/36/37 IF a new guard is needed,2F-35 + 2F-36 + 2F-37 (append-only, shared),LOW RISK -- every module identified this slice can reuse an EXISTING guard (require_tenant_mutation_permission, require_mutation_access_scope); no new guard function is anticipated,"if a future slice discovers it genuinely needs a new guard function, that slice must add it as a strictly additive, non-conflicting function (same discipline as require_mutation_access_scope in 2F-31A) -- never modify an existing guard's signature/behavior that another slice also relies on"
+docs/workflow-rearchitecture/phase-02a-slice-02f/tenant-mutation-endpoint-inventory.csv,ALL modules (every slice adds/updates canonical rows),2F-35 + 2F-36 + 2F-37 (sequential, not parallel),SEQUENCING REQUIRED,"each slice must re-read the live canonical hash immediately before writing (same discipline every slice in this program already follows) -- slices must run in numeric order (2F-35 before 2F-36 before 2F-37 before 2F-38), not in parallel, since each expects the prior slice's exact final hash as its own frozen starting position"
+docs/workflow-rearchitecture/phase-02a-slice-02f/mutation-enforcement-matrix.csv,ALL modules,2F-35 + 2F-36 + 2F-37,SEQUENCING REQUIRED,same as canonical CSV -- sequential execution, not parallel

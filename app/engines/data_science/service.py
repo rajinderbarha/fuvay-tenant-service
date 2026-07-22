@@ -31,12 +31,31 @@ today  = lambda: utcnow().date()
 
 class DSService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db
         self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id
         self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-36: demand-forecast recompute, pricing-recommendation
+        apply, and customer-LTV recompute accepted a client-supplied
+        tenant_id path param with no comparison to the caller's own
+        tenant. super_admin is exempt (platform-wide)."""
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="ds_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's data science records.",
+                blocking_rule="ds_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     # ── Phase detection ───────────────────────────────────────────────────────
     async def _get_ds_phase(self, tenant_id: uuid.UUID) -> int:
@@ -320,6 +339,7 @@ class DSService:
         }
 
     async def trigger_recompute(self, tenant_id: uuid.UUID) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(DemandForecast).where(
             DemandForecast.tenant_id == tenant_id,
             DemandForecast.forecast_date == today()))
@@ -395,6 +415,7 @@ class DSService:
 
     async def apply_pricing_recommendation(self, tenant_id: uuid.UUID,
                                             service_type_id: str, target_price: float) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         return {
             "tenant_id": str(tenant_id), "service_type_id": service_type_id,
             "applied_price": target_price, "applied": True,
@@ -478,6 +499,11 @@ class DSService:
 
     # ── Customer LTV (3 methods) ───────────────────────────────────────────────
     async def get_customer_ltv(self, customer_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
+        # Slice 2F-36: this is a "mutating GET" (lazy-creates a
+        # CustomerLTVScore row on first access, same pattern as the 2F-26
+        # commerce-deposit routes) -- tenant_id must be trusted, not
+        # accepted from the client path unchecked.
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(CustomerLTVScore).where(
             CustomerLTVScore.customer_id == customer_id,
             CustomerLTVScore.tenant_id == tenant_id))
@@ -519,6 +545,7 @@ class DSService:
         }
 
     async def recompute_ltv(self, customer_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(CustomerLTVScore).where(
             CustomerLTVScore.customer_id == customer_id,
             CustomerLTVScore.tenant_id == tenant_id))
@@ -558,6 +585,10 @@ class DSService:
         r = await self.db.execute(select(AnomalyRecord).where(AnomalyRecord.id == anomaly_id))
         a = r.scalar_one_or_none()
         if not a: raise NotFoundException("AnomalyRecord", str(anomaly_id))
+        if self.actor_role != "super_admin" and (
+            self.actor_tenant_id is None or a.tenant_id != self.actor_tenant_id
+        ):
+            raise NotFoundException("AnomalyRecord", str(anomaly_id))
         if a.status == "acknowledged":
             raise ServiceOSException("CONFLICT", "Anomaly already acknowledged.")
         a.status = "acknowledged"; a.acknowledged_by = self.actor_id

@@ -1,0 +1,15 @@
+module,csv_rows,runtime_unverified_count,agreement,notes
+app.engines.admin_catalog.brand_provider_router,2,2,AGREE,both genuinely unverified at runtime (PERMISSION_ONLY_NOT_SCOPE_AWARE)
+app.engines.profile.router,3,3,AGREE,genuinely unverified (PERMISSION_ONLY_NOT_SCOPE_AWARE)
+app.engines.platform_notifications.provider_router,10,10,AGREE,genuinely unverified (AUTHENTICATED_ONLY_NO_PERMISSION_CHECK) -- zero authorization at all, most severe class in the remaining set
+app.engines.compliance.provider_router,6,6,AGREE,genuinely unverified (PERMISSION_ONLY_NOT_SCOPE_AWARE)
+app.engines.provider_portal.router,1,0,DISAGREE (CSV stale),runtime tool reports 0 unverified for this module (preview_matching_inputs already in CONFIRMED_FALSE_POSITIVE_ROUTES since Slice 2F-2) -- CSV row removed this slice
+app.engines.marketing_automation.provider_router,3,3,AGREE,genuinely unverified (AUTHENTICATED_ONLY_NO_PERMISSION_CHECK)
+app.engines.media.new_router,6,6,AGREE,genuinely unverified (PERMISSION_ONLY_NOT_SCOPE_AWARE)
+app.engines.analytics.provider_router,1,1,AGREE,genuinely unverified (AUTHENTICATED_ONLY_NO_PERMISSION_CHECK)
+app.engines.customer_reviews.provider_router,2,2,AGREE,genuinely unverified (AUTHENTICATED_ONLY_NO_PERMISSION_CHECK)
+app.engines.invoice_payment.provider_router,4,0,DISAGREE (CSV stale),runtime tool reports 0 unverified for this module (fixed in Slice 2F-6A) -- CSV guard_status reclassified this slice
+app.engines.admin_catalog.recommendation_router,1,1,AGREE,genuinely unverified (PERMISSION_ONLY_NOT_SCOPE_AWARE)
+app.engines.admin_catalog.service_option_provider_router,1,1,AGREE,genuinely unverified (PERMISSION_ONLY_NOT_SCOPE_AWARE)
+app.engines.package_commerce.tenant_router,1,1,AGREE,genuinely unverified (PERMISSION_ONLY_NOT_SCOPE_AWARE)
+TOTAL,41,36,,5 rows reclassified (1 false positive removed, 4 already-protected rows corrected) -- 36 genuinely remain unverified

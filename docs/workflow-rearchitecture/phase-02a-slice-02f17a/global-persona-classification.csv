@@ -1,0 +1,10 @@
+persona,route_count,included_in_tenant_denominator,evidence
+TENANT_PROVIDER_MUTATION,226,yes,canonical tenant-mutation-endpoint-inventory.csv -- confirmed zero misclassified non-tenant rows (misclassified-non-tenant-rows.csv), confirmed zero missing tenant mutations (missing-tenant-mutations.csv)
+CUSTOMER_SELF_SERVICE_MUTATION,~102 (24 CUSTOMER_ROLE_ONLY_NOT_TENANT_SCOPED tracked in tenant-adjacent modules + additional customer-prefixed routes outside this initiative's tracked scope -- see known-limitations.md for the precision caveat),no,routes gated by require_customer / customer-only permission grants; tracked separately per-module (Booking: 3, quote_checklist: 3, others historically tracked per-slice) -- no single consolidated customer canonical CSV exists in this codebase, consistent with every prior slice's approach
+PLATFORM_ADMIN_MUTATION,487 + 39 (526),no,require_super_admin / admin-only permission grants -- the large majority of the application's total mutation surface; not tracked in the tenant CSV per Design A
+PLATFORM_INTERNAL_MUTATION,not separately enumerated this slice,no,no dedicated "internal worker" persona bucket exists distinct from PLATFORM_ADMIN_MUTATION in this codebase's current guard_status taxonomy
+TRUSTED_BACKGROUND_WORKER,0 confirmed,no,no mounted HTTP route in this codebase is gated by an internal-worker-only secret/dependency distinct from require_super_admin (searched; none found)
+PUBLIC_MUTATION,39,no,PUBLIC_NO_AUTH guard_status
+FALSE_POSITIVE_NON_MUTATION,10,no,CONFIRMED_FALSE_POSITIVE_ROUTES
+DEPRECATED,0,no,none found
+DISCONNECTED,0,no,zero canonical rows found unmounted (see full-runtime-route-export.csv)

@@ -1,0 +1,21 @@
+canonical_row_key,method,path,prior_guard_status,reverified_guard_status,change,evidence
+R-02,POST,/v1/provider/brands/requests,PERMISSION_ONLY_NOT_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv (live walk 2026-07-18)
+R-03,POST,/v1/provider/brands/services/{service_id}/supported,PERMISSION_ONLY_NOT_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-04,PUT,/v1/provider/business-profile,PERMISSION_ONLY_NOT_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-05,POST,/v1/provider/business-profile/submit-review,PERMISSION_ONLY_NOT_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-12,PUT,/v1/provider/marketing/assets/{asset_id}/provider-notes,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,NONE,runtime-reverification.csv
+R-13,POST,/v1/provider/marketing/campaigns/generate-launch,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,NONE,runtime-reverification.csv
+R-14,POST,/v1/provider/marketing/campaigns/{campaign_id}/submit-review,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,NONE,runtime-reverification.csv
+R-15,POST,/v1/provider/profile/logo,STAFF_EXECUTION_ROLE_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-16,DELETE,/v1/provider/profile/logo,STAFF_EXECUTION_ROLE_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-17,POST,/v1/provider/profile/shop-photo,STAFF_EXECUTION_ROLE_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-18,DELETE,/v1/provider/profile/shop-photo,STAFF_EXECUTION_ROLE_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-19,POST,/v1/provider/reports/run,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,NONE,runtime-reverification.csv
+R-20,POST,/v1/provider/reviews/{review_id}/flag,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,NONE,runtime-reverification.csv
+R-21,POST,/v1/provider/reviews/{review_id}/reply,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,NONE,runtime-reverification.csv
+R-22,POST,/v1/provider/setup/recommendations,PERMISSION_ONLY_NOT_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-23,POST,/v1/provider/setup/services/{service_id}/supported-options,PERMISSION_ONLY_NOT_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-24,PUT,/v1/staff/profile,PERMISSION_ONLY_NOT_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-25,POST,/v1/staff/profile/photo,STAFF_EXECUTION_ROLE_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-26,DELETE,/v1/staff/profile/photo,STAFF_EXECUTION_ROLE_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv
+R-27,POST,/v1/tenant/packages/{package_id}/purchase,PERMISSION_ONLY_NOT_SCOPE_AWARE,PERMISSION_ONLY_NOT_SCOPE_AWARE,NONE,runtime-reverification.csv

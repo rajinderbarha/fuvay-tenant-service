@@ -1,0 +1,5 @@
+alternate_route,reaches,classification,guard,action
+POST /v1/tenant/staff/{staff_id}/deactivate,tenant_engine staff deactivate,Protected equivalent,require_tenant_owner_mutation,no change (already closed 2F-4)
+POST /v1/admin/platform-users/{user_id}/deactivate,platform user deactivate,Separate subsystem (platform),require_platform_mutate,no change
+POST /v1/admin/tenants/{tenant_id}/staff/{staff_id}/deactivate,admin staff deactivate,Separate subsystem (platform admin),platform admin,no change
+POST /v1/security/api-keys/{key_id}/rotate|revoke,SecurityService APIKey,Separate subsystem (tenant_api_keys),n/a,OUT OF SCOPE - untouched

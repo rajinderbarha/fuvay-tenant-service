@@ -1,0 +1,9 @@
+route,error_behavior,non_oracular
+send_message (foreign tenant/conversation),NotFoundException (same as missing conversation),YES
+create_item/receive_stock/reservations (foreign tenant),PERMISSION_DENIED with no object existence disclosure,YES
+appointments confirm/cancel/reschedule/no-show (foreign appointment),NotFoundException (same as missing appointment),YES
+unblock_calendar (foreign tenant block),NotFoundException (same as missing block),YES
+catalog update_item (foreign tenant item),NotFoundException (same as missing item),YES
+dispatch reassign_job (foreign tenant record),NotFoundException (same as missing record),YES
+dispatch dispatch_job (job exists in foreign tenant),NotFoundException (same as missing job),YES
+ds/settings/notifications (foreign tenant),PERMISSION_DENIED before any DB read reaches the target row,YES

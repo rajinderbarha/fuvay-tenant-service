@@ -1,0 +1,8 @@
+route,service_method,other_callers_checked,bypass_found,evidence
+create_api_key,SecurityService.create_api_key,"grep for SecurityService(...).create_api_key( across app/ -- only called from security.router",NO,test_phase2f39a2_security_apikey_fix.py
+record_activity,SecurityService.record_activity,"grep across app/ -- zero callers outside security.router itself",UNKNOWN,"no internal caller found; cannot rule in or out an intended-internal-only design without a product decision"
+write_audit,SecurityService.write_audit_entry,"grep across app/ -- zero callers outside security.router itself",UNKNOWN,"same reasoning"
+create_session,SecurityService.create_session,"grep across app/ -- zero callers outside security.router itself",UNKNOWN,"same reasoning"
+revoke_session,SecurityService.revoke_session,"grep across app/ -- zero callers outside security.router itself",UNKNOWN,"same reasoning"
+activate_rule,PricingService.activate_rule (assumed method name),NOT CHECKED THIS SLICE,UNVERIFIED,"guard-pattern evidence only"
+deactivate_rule,PricingService.deactivate_rule (assumed method name),NOT CHECKED THIS SLICE,UNVERIFIED,"guard-pattern evidence only"

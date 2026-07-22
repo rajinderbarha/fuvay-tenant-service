@@ -1,0 +1,10 @@
+method,path,endpoint,repository_boundary,guard_status,capability_family,capability_action,mutated_resource
+DELETE,/v1/provider/profile/logo,remove_provider_logo,app.engines.media.new_router,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,media,delete,MediaAsset + Tenant.business_logo_media_id
+DELETE,/v1/provider/profile/shop-photo,remove_provider_shop_photo,app.engines.media.new_router,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,media,delete,MediaAsset + Tenant.shop_photo_media_id
+DELETE,/v1/staff/profile/photo,remove_staff_profile_photo,app.engines.media.new_router,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,media,delete,MediaAsset + User.profile_photo_media_id
+POST,/v1/me/profile-photo,upload_my_profile_photo,app.engines.media.new_router,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,media,create,MediaAsset + User.profile_photo_media_id
+POST,/v1/media/upload,upload_media,app.engines.media.new_router,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,media,create,MediaAsset
+POST,/v1/media/{media_id}/replace,replace_media,app.engines.media.new_router,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,media,update,MediaAsset
+POST,/v1/provider/profile/logo,upload_provider_logo,app.engines.media.new_router,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,media,create,MediaAsset + Tenant.business_logo_media_id
+POST,/v1/provider/profile/shop-photo,upload_provider_shop_photo,app.engines.media.new_router,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,media,create,MediaAsset + Tenant.shop_photo_media_id
+POST,/v1/staff/profile/photo,upload_staff_profile_photo,app.engines.media.new_router,ROLE_ONLY_NOT_ACCESS_SCOPE_AWARE,media,create,MediaAsset + User.profile_photo_media_id

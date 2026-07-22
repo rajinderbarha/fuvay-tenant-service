@@ -1,0 +1,5 @@
+suite,result,note
+tests/test_phase2f26e_classifier_repair.py,38 passed,
+"all phase-2F suites (17A,26,26B,26C,26D,26E)",161 passed,zero regressions
+verifier main,exit 1 on N09 only,honest gate failure
+verifier --selftest,"exit 0, 19/19 fixtures fire",

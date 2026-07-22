@@ -30,12 +30,30 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 class PricingService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db
         self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id
         self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-37: set_tenant_price/set_brand_adjustment/create_zone/
+        create_rule accepted a client-supplied tenant_id with no comparison
+        to the caller's own tenant. super_admin is exempt (platform-wide)."""
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="pricing_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's pricing.",
+                blocking_rule="pricing_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     async def _publish(self, event_type: str, tenant_id: str, entity_id: str, payload: dict) -> None:
         try:
@@ -230,6 +248,7 @@ class PricingService:
         return self._stp_dict(s)
 
     async def set_tenant_price(self, tenant_id: uuid.UUID, data: dict) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         service_type_id = data["service_type_id"]
         new_price = Decimal(str(data["base_price"]))
 
@@ -302,6 +321,7 @@ class PricingService:
 
     async def set_brand_adjustment(self, tenant_id: uuid.UUID, adjustment_pct: Decimal,
                                     label: str | None, reason: str | None) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         if abs(adjustment_pct) > MAX_BRAND_ADJUSTMENT_PCT:
             raise ServiceOSException("VALIDATION_ERROR",
                 f"Brand adjustment cannot exceed ±{MAX_BRAND_ADJUSTMENT_PCT}%.",
@@ -328,6 +348,7 @@ class PricingService:
         return {"zones": [self._zone_dict(z) for z in zones], "total": len(zones)}
 
     async def create_zone(self, tenant_id: uuid.UUID, data: dict) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         if Decimal(str(data["surcharge_pct"])) > MAX_ZONE_SURCHARGE_PCT:
             raise ServiceOSException("VALIDATION_ERROR",
                 f"Zone surcharge cannot exceed {MAX_ZONE_SURCHARGE_PCT}%.")
@@ -346,10 +367,14 @@ class PricingService:
         if not z: raise NotFoundException("ZoneSurcharge", str(zone_id))
         return self._zone_dict(z)
 
-    async def update_zone(self, zone_id: uuid.UUID, data: dict) -> dict:
+    async def update_zone(self, zone_id: uuid.UUID, data: dict, tenant_id: uuid.UUID | None = None) -> dict:
+        if tenant_id is not None:
+            tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(ZoneSurcharge).where(ZoneSurcharge.id == zone_id))
         z = r.scalar_one_or_none()
         if not z: raise NotFoundException("ZoneSurcharge", str(zone_id))
+        if tenant_id is not None and z.tenant_id != tenant_id:
+            raise NotFoundException("ZoneSurcharge", str(zone_id))
         if "zone_name" in data and data["zone_name"]: z.zone_name = data["zone_name"]
         if "zone_identifiers" in data and data["zone_identifiers"]: z.zone_identifiers = data["zone_identifiers"]
         if "surcharge_pct" in data and data["surcharge_pct"]:
@@ -361,10 +386,14 @@ class PricingService:
         await self._invalidate_tenant_cache(str(z.tenant_id))
         return self._zone_dict(z)
 
-    async def delete_zone(self, zone_id: uuid.UUID) -> dict:
+    async def delete_zone(self, zone_id: uuid.UUID, tenant_id: uuid.UUID | None = None) -> dict:
+        if tenant_id is not None:
+            tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(ZoneSurcharge).where(ZoneSurcharge.id == zone_id))
         z = r.scalar_one_or_none()
         if not z: raise NotFoundException("ZoneSurcharge", str(zone_id))
+        if tenant_id is not None and z.tenant_id != tenant_id:
+            raise NotFoundException("ZoneSurcharge", str(zone_id))
         await self.db.delete(z)
         await self._invalidate_tenant_cache(str(z.tenant_id))
         return {"zone_id": str(zone_id), "deleted": True}
@@ -379,6 +408,7 @@ class PricingService:
         return {"rules": [self._rule_dict(rule) for rule in rules], "total": len(rules)}
 
     async def create_rule(self, tenant_id: uuid.UUID, data: dict) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         adj = Decimal(str(data["adjustment_pct"]))
         if adj > MAX_DYNAMIC_SURGE_PCT:
             raise ServiceOSException("VALIDATION_ERROR", f"Surge cannot exceed +{MAX_DYNAMIC_SURGE_PCT}%.")
@@ -402,10 +432,14 @@ class PricingService:
         if not rule: raise NotFoundException("DynamicPricingRule", str(rule_id))
         return self._rule_dict(rule)
 
-    async def update_rule(self, rule_id: uuid.UUID, data: dict) -> dict:
+    async def update_rule(self, rule_id: uuid.UUID, data: dict, tenant_id: uuid.UUID | None = None) -> dict:
+        if tenant_id is not None:
+            tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(DynamicPricingRule).where(DynamicPricingRule.id == rule_id))
         rule = r.scalar_one_or_none()
         if not rule: raise NotFoundException("DynamicPricingRule", str(rule_id))
+        if tenant_id is not None and rule.tenant_id != tenant_id:
+            raise NotFoundException("DynamicPricingRule", str(rule_id))
         for f in ("rule_name","conditions","applies_to","priority"):
             if f in data and data[f] is not None: setattr(rule, f, data[f])
         if "adjustment_pct" in data and data["adjustment_pct"] is not None:
@@ -417,10 +451,18 @@ class PricingService:
         await self._invalidate_tenant_cache(str(rule.tenant_id))
         return self._rule_dict(rule)
 
-    async def activate_rule(self, rule_id: uuid.UUID) -> dict:
+    async def activate_rule(self, rule_id: uuid.UUID, tenant_id: uuid.UUID | None = None) -> dict:
+        # Slice 2F-39A2R fix: previously had zero tenant scoping at all --
+        # rule_id alone determined the target, so any tenant-permitted
+        # caller could activate another tenant's pricing rule. Now matches
+        # update_rule/delete_rule's established ownership-check pattern.
+        if tenant_id is not None:
+            tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(DynamicPricingRule).where(DynamicPricingRule.id == rule_id))
         rule = r.scalar_one_or_none()
         if not rule: raise NotFoundException("DynamicPricingRule", str(rule_id))
+        if tenant_id is not None and rule.tenant_id != tenant_id:
+            raise NotFoundException("DynamicPricingRule", str(rule_id))
         if rule.is_active: raise ServiceOSException("CONFLICT", "Rule is already active.")
         rule.is_active = True
         await self._invalidate_tenant_cache(str(rule.tenant_id))
@@ -428,18 +470,27 @@ class PricingService:
                             {"rule_name": rule.rule_name})
         return self._rule_dict(rule)
 
-    async def deactivate_rule(self, rule_id: uuid.UUID) -> dict:
+    async def deactivate_rule(self, rule_id: uuid.UUID, tenant_id: uuid.UUID | None = None) -> dict:
+        # Slice 2F-39A2R fix: same zero-tenant-scoping gap as activate_rule.
+        if tenant_id is not None:
+            tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(DynamicPricingRule).where(DynamicPricingRule.id == rule_id))
         rule = r.scalar_one_or_none()
         if not rule: raise NotFoundException("DynamicPricingRule", str(rule_id))
+        if tenant_id is not None and rule.tenant_id != tenant_id:
+            raise NotFoundException("DynamicPricingRule", str(rule_id))
         rule.is_active = False
         await self._invalidate_tenant_cache(str(rule.tenant_id))
         return self._rule_dict(rule)
 
-    async def delete_rule(self, rule_id: uuid.UUID) -> dict:
+    async def delete_rule(self, rule_id: uuid.UUID, tenant_id: uuid.UUID | None = None) -> dict:
+        if tenant_id is not None:
+            tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(DynamicPricingRule).where(DynamicPricingRule.id == rule_id))
         rule = r.scalar_one_or_none()
         if not rule: raise NotFoundException("DynamicPricingRule", str(rule_id))
+        if tenant_id is not None and rule.tenant_id != tenant_id:
+            raise NotFoundException("DynamicPricingRule", str(rule_id))
         if rule.is_active: raise ServiceOSException("CONFLICT",
             "Deactivate the rule before deleting.", resolution="POST /rules/{id}/deactivate first.")
         await self.db.delete(rule)

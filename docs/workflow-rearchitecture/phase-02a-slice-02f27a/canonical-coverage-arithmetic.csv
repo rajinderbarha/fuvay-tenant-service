@@ -1,0 +1,13 @@
+metric,value,note
+protected_before,214,
+new_protected_additions,0,both added routes are UNPROTECTED
+protected_after,214,
+denominator_before,257,
+authorized_missing_tenant_mutations_added,2,
+denominator_after,259,
+unprotected_before,43,
+unprotected_after,45,259 - 214
+canonical_hash_before,45244cd9540456db,
+canonical_hash_after,e7a89231207221aa,
+matrix_hash_before,4c7c3bce02096a43,
+matrix_hash_after,ee6011f6ce6a97ab,

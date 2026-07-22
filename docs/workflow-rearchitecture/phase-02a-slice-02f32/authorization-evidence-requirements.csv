@@ -1,0 +1,9 @@
+requirement,applies_to,evidence_type
+Route guard preserved (require_permission(P.TENANT_UPDATE)) not narrowed or removed,DELETE /v1/geo/zones/{zone_id},live route_guards() introspection before/after
+Service-layer tenant derivation added (actor_tenant_id from UserContext, never client-supplied),GeoService constructor,inspect.getsource(GeoService.__init__)
+Tenant predicate added to the delete_zone query,GeoService.delete_zone,inspect.getsource(GeoService.delete_zone); must contain a ServiceZone.tenant_id comparison
+Foreign-tenant and missing-zone responses indistinguishable,DELETE /v1/geo/zones/{zone_id},exception-type/message equality check, mirroring MediaService pattern
+No direct GeoService(...) construction site outside the router,app/ (whole tree),git grep GeoService(
+No direct .delete_zone( call site outside service.py/router.py,app/ (whole tree),git grep .delete_zone(
+Coverage arithmetic 238+1=239 / 262 unchanged / 23 unprotected,canonical CSV,recount script
+No Set B or Set C route touched,app/engines/geo/*, app/engines/webhook/*, all other 23 canonical routers,file-diff review against the frozen allow-list

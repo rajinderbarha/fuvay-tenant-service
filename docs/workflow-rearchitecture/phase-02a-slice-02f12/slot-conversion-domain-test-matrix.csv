@@ -1,0 +1,14 @@
+scenario,classification,evidence
+Hold inactive/full/foreign slot,UNSUPPORTED_CAPABILITY,no slot-hold model exists in execution.coaching_router
+Confirm expired/released/already-converted hold,UNSUPPORTED_CAPABILITY,same
+Repeat hold request / concurrent capacity use / release hold twice,UNSUPPORTED_CAPABILITY,same
+Convert foreign lead / convert twice / convert to foreign programme,UNSUPPORTED_CAPABILITY,no enrolment/conversion model exists in this router
+Target created before transition validation (conversion),UNSUPPORTED_CAPABILITY,same
+Converted flag without target record / target without converted flag,UNSUPPORTED_CAPABILITY,same
+Cancelled consultation rescheduled,STATE_TRANSITION_REJECTED,cancelled has an empty APPT_TRANSITIONS target set
+Completed session modified,STATE_TRANSITION_REJECTED,completed has an empty APPT_TRANSITIONS target set
+Customer marks provider completion,OWNERSHIP_REJECTED (structurally impossible),no customer mutation route exists in this router at all
+Unassigned technician completes session,OWNERSHIP_REJECTED (moot -- role-denied first),technician now denied by require_owner_or_office_staff_mutation before reaching assignment check
+Provider modifies customer decision,UNSUPPORTED_CAPABILITY,no customer-decision concept exists in this router (no accept/reject-by-customer route)
+Internal notes returned to customer,OWNERSHIP_REJECTED,customer_tracking uses get_notes(customer_only=True) and never calls get_timeline
+Customer PII returned publicly,OWNERSHIP_REJECTED (no public route exists),every read route requires an authenticated, role-appropriate, ownership-checked principal

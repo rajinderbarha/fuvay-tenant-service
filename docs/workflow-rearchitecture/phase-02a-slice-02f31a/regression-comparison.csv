@@ -1,0 +1,21 @@
+test_file,status_before_2f31a,status_after_2f31a,reason
+tests/test_phase2f14a_field_ops_alternate_route_and_coverage.py,failing (1),fixed,protected count literal 233->238
+tests/test_phase2f17a_global_mutation_inventory.py,failing (1),fixed,protected count literal 233->238
+tests/test_phase2f19_remaining_queue_reconciliation.py,failing (2),fixed,protected 233->238; unprotected 29->24
+tests/test_phase2f21_remaining_queue_reconciliation_and_selection.py,failing (3),fixed,protected/unprotected literals + PROTECTED_BY_LATER_SLICE entries added for 6 media routes
+tests/test_phase2f23_remaining_queue_reconciliation_and_selection.py,failing (2),fixed,protected/unprotected literals updated
+tests/test_phase2f25_legacy_review_engine_authorization.py,failing (2),fixed,protected 233->238; unprotected 29->24
+tests/test_phase2f25a_legacy_review_residual_closure.py,failing (1),fixed,protected/unprotected literals updated
+tests/test_phase2f26_application_wide_inventory.py,failing (2),fixed,protected 233->238; unprotected 29->24
+tests/test_phase2f26b_classifier_foundation.py,failing (1),fixed,protected count literal updated
+tests/test_phase2f26c_foundation_validation.py,failing (1),fixed,protected count literal updated
+tests/test_phase2f26d_blinded_validation.py,failing (1),fixed,protected count literal updated
+tests/test_phase2f26e_classifier_repair.py,failing (1),fixed,protected count literal updated
+tests/test_phase2f26f_alias_actor_scope.py,failing (1),fixed,protected count literal updated
+tests/test_phase2f27_dual_review.py,failing,fixed,protected count literal updated + verify_dualreview_2f27.py V11 rebaselined
+tests/test_phase2f27a_two_route_expansion.py,failing (2),fixed,protected/unprotected literals + test renames
+tests/test_phase2f28_module_selection.py,failing (2),fixed,queue reconciliation formula updated for full Set A + Set B closure; verify_selection_2f28.py S01/S04/S05 updated in parallel
+tests/test_phase2f29_m01_identity_closure.py,failing (2),fixed,protected/unprotected literals + verify_m01_2f29.py M24 +5 term added
+tests/test_phase2f30_post_m01_selection.py,failing (5),fixed,protected/unprotected literals + queue reconciliation formula + verify_selection_2f30.py Q01/Q02/Q04/Q05 updated in parallel
+tests/test_phase2f31_n01_media_closure.py,already passing (pre-updated in this slice's main work),34/34,test file rewritten as part of the primary N01 closure work, not a rebaseline artifact
+tests/test_phase2f31a_n01_residual_closure.py,did not exist,30/30 (new),new WS10 test matrix

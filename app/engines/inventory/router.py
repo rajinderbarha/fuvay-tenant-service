@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.engines.inventory.service import InventoryService
@@ -13,7 +13,8 @@ router = APIRouter(prefix="/v1/inventory", tags=["Inventory Engine"])
 ENGINE_ID = "inventory"
 def _svc(r: Request, db: AsyncSession=Depends(get_db), u: UserContext=Depends(get_current_user)):
     return InventoryService(db=db, request_id=getattr(r.state,"request_id","—"),
-                             actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role)
+                             actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role,
+                             actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 @router.get("/meta", tags=["Engine Registry"])
 async def engine_meta() -> dict:
@@ -22,7 +23,7 @@ async def engine_meta() -> dict:
             "capabilities":["select_for_update","append_only_ledger","ledger_reconciliation",
                             "reservation_ttl","low_stock_alerts","cycle_count"]}
 @router.post("/tenants/{tenant_id}/items", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
-async def create_item(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+async def create_item(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                        s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.create_item(tenant_id, await r.json()), _rid(r), ENGINE_ID)
 @router.get("/items/{item_id}", response_model=ApiResponse[dict])
@@ -36,7 +37,7 @@ async def list_items(tenant_id: uuid.UUID, r: Request, limit: int=Query(50,ge=1,
     return ok(await s.list_items(tenant_id, limit, cursor), _rid(r), ENGINE_ID)
 @router.post("/items/{item_id}/locations/{location_id}/receive", response_model=ApiResponse[dict])
 async def receive_stock(item_id: uuid.UUID, location_id: uuid.UUID, r: Request,
-                         u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+                         u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                          s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.receive_stock(item_id, location_id, uuid.UUID(body["tenant_id"]),
@@ -54,20 +55,20 @@ async def list_txns(item_id: uuid.UUID, location_id: uuid.UUID, r: Request,
 @router.post("/reservations", status_code=status.HTTP_201_CREATED,
              summary="Reserve stock for a job — SELECT FOR UPDATE prevents race conditions",
              response_model=ApiResponse[dict])
-async def create_reservation(r: Request, u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+async def create_reservation(r: Request, u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                               s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.create_reservation(body["job_id"], uuid.UUID(body["item_id"]),
               uuid.UUID(body["location_id"]), uuid.UUID(body["tenant_id"]),
               body["quantity"]), _rid(r), ENGINE_ID)
 @router.post("/reservations/confirm", response_model=ApiResponse[dict])
-async def confirm_reservation(r: Request, u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+async def confirm_reservation(r: Request, u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                                s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.confirm_reservation(body["job_id"], uuid.UUID(body["item_id"]),
               uuid.UUID(body["location_id"]), uuid.UUID(body["tenant_id"])), _rid(r), ENGINE_ID)
 @router.post("/reservations/release", response_model=ApiResponse[dict])
-async def release_reservation(r: Request, u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+async def release_reservation(r: Request, u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                                s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.release_reservation(body["job_id"], uuid.UUID(body["item_id"]),
@@ -78,7 +79,7 @@ async def low_stock(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(get
     return ok(await s.list_below_minimum(tenant_id), _rid(r), ENGINE_ID)
 @router.post("/tenants/{tenant_id}/items/{item_id}/replenish", response_model=ApiResponse[dict])
 async def replenish(tenant_id: uuid.UUID, item_id: uuid.UUID, r: Request,
-                     u: UserContext=Depends(require_permission(P.TENANT_UPDATE)),
+                     u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                      s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.request_replenishment(tenant_id, item_id, body["quantity"]), _rid(r), ENGINE_ID)

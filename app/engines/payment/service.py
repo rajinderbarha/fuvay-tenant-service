@@ -26,10 +26,28 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 class PaymentService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id; self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-37: request_payout accepted a client-supplied tenant_id
+        with no comparison to the caller's own tenant. super_admin is
+        exempt (platform-wide)."""
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="payment_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's payments.",
+                blocking_rule="payment_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     # PROVEN LEVEL 5: atomic sequential invoice number via Redis INCR
     async def _next_invoice_number(self, tenant_id: uuid.UUID) -> str:
@@ -74,6 +92,7 @@ class PaymentService:
     async def create_payment_order(self, tenant_id: uuid.UUID, booking_id: str | None,
                                     customer_id: uuid.UUID | None, amount: Decimal,
                                     payment_type: str, gateway: str) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         receipt = f"pay_{tenant_id}_{booking_id or secrets.token_hex(4)}"
         order = await razorpay_client.create_order(
             amount, receipt=receipt,
@@ -199,6 +218,7 @@ class PaymentService:
                                 booking_id: str | None, amount: Decimal,
                                 tax_amount: Decimal, line_items: list,
                                 invoice_type: str) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         invoice_number = await self._next_invoice_number(tenant_id)
         total = amount + tax_amount
         inv = InvoiceRecord(
@@ -235,6 +255,15 @@ class PaymentService:
 
     async def request_payout(self, tenant_id: uuid.UUID, amount: Decimal,
                               bank_account: dict) -> dict:
+        # Slice 2F-37: tenant_id is now server-trusted (see
+        # _require_trusted_tenant). The requested `amount` itself remains
+        # fully client-supplied with no authoritative balance/eligibility
+        # check -- no payout-eligible-balance ledger exists anywhere in
+        # this codebase to validate against, and the mission's canonical
+        # rule forbids inventing payout/withdrawal behavior. This is an
+        # open PRODUCT_DECISION_REQUIRED financial-integrity gap, not
+        # remediated this slice -- see known-limitations.md.
+        tenant_id = self._require_trusted_tenant(tenant_id)
         payout = PayoutRecord(
             tenant_id=tenant_id, amount=amount, status=PayoutStatus.PENDING,
             gateway=PaymentGateway.RAZORPAY, bank_account=bank_account,

@@ -1,0 +1,20 @@
+id,condition,fixture_forces,exits_non_zero,restores_clean
+N01,unresolved alias,condition injected False,YES,YES
+N02,unresolved wrapper/factory target,condition injected False,YES,YES
+N03,runtime-extensible permission reduced to super-admin-only,condition injected False,YES,YES
+N04,principal and target tenant conflated,condition injected False,YES,YES
+N05,platform-admin target route classified tenant/provider,condition injected False,YES,YES
+N06,provider route classified platform/internal (persona AND direction),condition injected False,YES,YES
+N07,unsupported taxonomy value,condition injected False,YES,YES
+N08,sample smaller than required,condition injected False,YES,YES
+N09,manual/tool disagreement,condition injected False,YES,YES
+N10,abstention treated as agreement,condition injected False,YES,YES
+N11,hidden-side-effect candidate unresolved,condition injected False,YES,YES
+N12,closed-module canary regression,condition injected False,YES,YES
+N13,canonical edit before gate completion,condition injected False,YES,YES
+N14,missing canonical row,condition injected False,YES,YES
+N15,duplicate canonical row,condition injected False,YES,YES
+N16,unknown protection / count mismatch,condition injected False,YES,YES
+N17,queue arithmetic mismatch,condition injected False,YES,YES
+N18,premature completeness claim,condition injected False,YES,YES
+N19,burned route reused in fresh holdout,condition injected False,YES,YES

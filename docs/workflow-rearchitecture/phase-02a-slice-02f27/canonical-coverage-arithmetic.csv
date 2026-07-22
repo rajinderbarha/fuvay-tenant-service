@@ -1,0 +1,10 @@
+metric,value,note
+protected_before,214,
+protected_after,214,unchanged
+denominator_before,257,
+denominator_after,257,unchanged -- gate not satisfied
+unprotected,43,unchanged
+add_candidates_found,59,NOT applied (single-agent authority insufficient)
+proposed_hand_verified,2,reconfirmed NOT applied
+canonical_hash,45244cd9540456db,before==after
+matrix_hash,4c7c3bce02096a43,before==after

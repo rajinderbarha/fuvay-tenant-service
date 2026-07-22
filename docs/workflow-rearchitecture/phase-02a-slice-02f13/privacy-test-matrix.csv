@@ -1,0 +1,10 @@
+read,mechanism,verified
+Template list,list_templates query filtered by principal _tenant_id(u),true
+Template detail,get_template -> _get_template_for_tenant (tenant ownership),true
+Template items,list_items -> _get_template_for_tenant (fixed this slice -- was unchecked cross-tenant read),true (test_list_items_enforces_tenant_ownership)
+Cross-tenant template ID (read),NOT_FOUND fail-closed (no existence leak),true
+Read-only tenant user retains reads,require_permission on reads (not scope-blocked),true (test_readonly_tenant_owner_retains_reads)
+Public route leak,none -- all routes require FIELD_OPS_CHECKLIST_MANAGE,true (no unauthenticated/public route)
+Customer PII in responses,n/a -- templates contain no customer/student PII (tenant-authored catalog defs),true
+Provider-internal notes to customer,n/a -- no customer route in this module,true
+GET routes have no mutation side effects,list/get/list_items perform only selects (+ ownership select),true

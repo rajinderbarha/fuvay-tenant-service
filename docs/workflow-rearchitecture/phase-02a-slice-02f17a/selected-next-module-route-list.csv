@@ -1,0 +1,11 @@
+method,path,endpoint_name,router_variable,mounted,current_dependency
+POST,/v1/provider/chat/threads,provider_create_thread,provider_chat_router,yes,get_current_user
+POST,/v1/provider/chat/threads/{thread_id}/messages,provider_send_message,provider_chat_router,yes,get_current_user
+POST,/v1/provider/chat/threads/{thread_id}/read,provider_mark_thread_read,provider_chat_router,yes,get_current_user
+POST,/v1/provider/notifications/mark-all-read,provider_mark_all_read,provider_notif_router,yes,get_current_user
+PUT,/v1/provider/notifications/preferences,provider_update_pref,provider_notif_router,yes,get_current_user
+POST,/v1/provider/notifications/{notification_id}/read,provider_mark_read,provider_notif_router,yes,get_current_user
+POST,/v1/staff/chat/threads/{thread_id}/messages,staff_send_message,staff_chat_router,yes,get_current_user
+POST,/v1/staff/chat/threads/{thread_id}/read,staff_mark_thread_read,staff_chat_router,yes,get_current_user
+POST,/v1/staff/notifications/mark-all-read,staff_mark_all_read,staff_notif_router,yes,get_current_user
+POST,/v1/staff/notifications/{notification_id}/read,staff_mark_read,staff_notif_router,yes,get_current_user

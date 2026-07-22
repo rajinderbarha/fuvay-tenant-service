@@ -135,7 +135,7 @@ class MediaAssetService:
             access_level="public" if is_public else self._default_access_level(media_context),
             status="active",
             checksum=stored.checksum,
-            metadata_json=extra_metadata or {},
+            metadata_json=self._strip_claim_key(extra_metadata),
         )
         self.db.add(asset)
         await self.db.flush()
@@ -161,9 +161,12 @@ class MediaAssetService:
 
     async def get_asset(self, media_id: uuid.UUID) -> dict:
         asset = await self._load(media_id)
+        self._assert_chat_attachment_lifecycle(asset, media_id)
         rec = MediaAssetRecord.from_orm(asset)
         try:
             self._access.assert_can_view(self.actor, rec)
+            if asset.media_context == "chat_attachment":
+                await self._assert_chat_thread_authority(asset)
         except ServiceOSException as exc:
             if exc.error_code in ("MEDIA_ACCESS_DENIED", "MEDIA_CUSTOMER_SCOPE_VIOLATION", "MEDIA_TENANT_SCOPE_VIOLATION"):
                 await record_platform_audit(
@@ -176,15 +179,23 @@ class MediaAssetService:
                     actor_role=self.actor.role,
                     after={"error_code": exc.error_code, "media_context": asset.media_context},
                 )
+            if asset.media_context == "chat_attachment":
+                # Slice 2F-18C: missing vs. unauthorized must be externally
+                # privacy equivalent for chat attachments -- re-raise as the
+                # SAME not-found error a nonexistent media_id would produce.
+                raise NotFoundException("Media", str(media_id))
             raise
         return asset.to_dict(view_url=self._view_url(asset))
 
     async def get_local_file_for_serve(self, media_id: uuid.UUID) -> tuple[pathlib.Path, str]:
         """Return (path, mime_type) for serving local files through the API."""
         asset = await self._load(media_id)
+        self._assert_chat_attachment_lifecycle(asset, media_id)
         rec = MediaAssetRecord.from_orm(asset)
         try:
             self._access.assert_can_view(self.actor, rec)
+            if asset.media_context == "chat_attachment":
+                await self._assert_chat_thread_authority(asset)
         except ServiceOSException as exc:
             if exc.error_code in ("MEDIA_ACCESS_DENIED", "MEDIA_CUSTOMER_SCOPE_VIOLATION", "MEDIA_TENANT_SCOPE_VIOLATION"):
                 await record_platform_audit(
@@ -197,6 +208,8 @@ class MediaAssetService:
                     actor_role=self.actor.role,
                     after={"error_code": exc.error_code, "media_context": asset.media_context},
                 )
+            if asset.media_context == "chat_attachment":
+                raise NotFoundException("Media", str(media_id))
             raise
         if asset.storage_driver != "local":
             raise ServiceOSException(
@@ -261,8 +274,31 @@ class MediaAssetService:
         is_public: bool | None = None,
     ) -> dict:
         old_asset = await self._load(media_id)
+        self._assert_chat_attachment_lifecycle(old_asset, media_id)
         rec = MediaAssetRecord.from_orm(old_asset)
-        self._access.assert_can_replace(self.actor, rec)
+        if old_asset.media_context == "chat_attachment":
+            # Slice 2F-18E: view/retrieval permission is not replacement
+            # permission — assert_can_replace (below, used for every OTHER
+            # context) reuses assert_can_delete's tenant-wide-for-media
+            # rule, which is exactly the "read authority == replace
+            # authority" conflation this slice's mission forbids for chat
+            # attachments specifically.
+            await self._assert_chat_attachment_replace_authority(old_asset)
+        else:
+            self._access.assert_can_replace(self.actor, rec)
+        if old_asset.media_context == "chat_attachment":
+            # Slice 2F-18D: assert_can_replace reuses assert_can_delete's
+            # generic (tenant-wide, for office/technician roles) ownership
+            # rule -- it knows nothing about a claimed chat asset's
+            # conversation. Without this, a same-tenant user authorized to
+            # "replace" media in general could swap the file content of an
+            # asset referenced in a conversation they have no thread
+            # authority over. Claimed-asset replacement must pass the same
+            # thread-authority check retrieval already requires.
+            try:
+                await self._assert_chat_thread_authority(old_asset)
+            except ServiceOSException:
+                raise NotFoundException("Media", str(media_id))
 
         file_bytes = await file.read()
         original_name = file.filename or "upload"
@@ -486,6 +522,130 @@ class MediaAssetService:
         return result
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _assert_chat_attachment_lifecycle(self, asset: MediaAsset, media_id: uuid.UUID) -> None:
+        """Slice 2F-18E: every private chat-attachment retrieval (and
+        replacement) path must reject assets that are soft-deleted or not
+        `status == "active"` (covers quarantined/failed/any non-active
+        state generically) — `_load`'s own filter only excludes the
+        literal string `status == "deleted"`, which is narrower than the
+        `status != "active"` strictness `chat_service`'s ATTACH-time
+        validation already uses (2F-18B). Scoped to `chat_attachment`
+        context only; every other media context's lifecycle handling is
+        unchanged. Raises the SAME `NotFoundException` a missing asset
+        would — privacy equivalent, not a distinguishable "exists but
+        unavailable" response."""
+        if asset.media_context != "chat_attachment":
+            return
+        if getattr(asset, "deleted_at", None) is not None or getattr(asset, "status", "active") != "active":
+            raise NotFoundException("Media", str(media_id))
+
+    async def _assert_chat_attachment_replace_authority(self, asset: MediaAsset) -> None:
+        """Slice 2F-18E: view/retrieval permission is not replacement
+        permission. A `chat_attachment` asset may be replaced only by:
+        (a) its own uploader, or (b) a canonical tenant_owner/staff actor
+        holding the SAME existing mutation-capable-access-scope check
+        (`require_owner_or_office_staff_mutation`) reused everywhere else
+        in this series, whose tenant matches the asset's tenant. A
+        customer or technician who can merely VIEW a same-tenant/
+        same-customer asset (per `MediaAccessService`'s existing,
+        unmodified tenant-wide-for-media policy) cannot replace someone
+        else's upload — read authority and replace authority are
+        deliberately different questions here."""
+        if self.actor.role == "super_admin":
+            return
+        if str(getattr(asset, "uploaded_by_user_id", None)) == str(self.actor.user_id):
+            return
+        if self.actor.role in ("tenant_owner", "staff"):
+            from app.core.permissions import require_owner_or_office_staff_mutation
+            try:
+                await require_owner_or_office_staff_mutation(self.actor)
+            except ServiceOSException:
+                raise ServiceOSException("MEDIA_ACCESS_DENIED", "Access denied.")
+            if getattr(asset, "tenant_id", None) is not None and str(asset.tenant_id) == str(self.actor.tenant_id):
+                return
+        raise ServiceOSException("MEDIA_ACCESS_DENIED", "Access denied.")
+
+    async def _assert_chat_thread_authority(self, asset: MediaAsset) -> None:
+        """Slice 2F-18C: retrieval-time authority for `chat_attachment`
+        assets must be equivalent to the message/thread authority that
+        gated seeing it in the first place — a known `media_id` must never
+        bypass thread membership (technician assignment/participant policy,
+        customer ownership, removed-participant denial). This is the
+        smallest safe correction reusing `platform_notifications`' OWN
+        thread-access rule (`ChatThreadService.validate_thread_access`),
+        imported lazily to avoid a module-load-time circular import between
+        the media and platform_notifications engines.
+
+        Only enforced once an asset has been CLAIMED by a thread (see
+        `chat_service._validate_attachments`'s first-use lock, stored in
+        the asset's own EXISTING `metadata_json` column — no new column,
+        no migration). An asset never yet attached to any chat message has
+        no claim and falls back to `MediaAccessService`'s own tenant/
+        customer rule only (unchanged, `assert_can_view` already ran
+        before this method is called).
+        """
+        if self.actor.role == "super_admin":
+            return
+        meta = asset.metadata_json
+        if not isinstance(meta, dict):
+            meta = {}
+        thread_id = meta.get("chat_thread_id")
+        if not thread_id:
+            # Slice 2F-18D — unclaimed-asset policy: tenant membership
+            # alone (which MediaAccessService's own CUSTOMER_CONTEXTS
+            # branch already grants to any same-tenant tenant_owner/staff/
+            # technician) is not sufficient for a TECHNICIAN to view a
+            # private, not-yet-attached chat asset — only the uploader.
+            # Customer-owner and office (tenant_owner/staff) access, both
+            # already proven by `assert_can_view` before this method runs,
+            # are unaffected — office tenant-wide oversight is the same
+            # ratified, established policy reused unmodified since 2F-18B.
+            if self.actor.role == "technician":
+                if str(getattr(asset, "uploaded_by_user_id", None)) != str(self.actor.user_id):
+                    raise ServiceOSException("MEDIA_ACCESS_DENIED", "Access denied.")
+            return
+        from app.engines.platform_notifications.chat_service import ChatThreadService
+        from app.engines.platform_notifications.models import ChatThread
+        from app.engines.platform_notifications.constants import (
+            RECIP_CUSTOMER, RECIP_TECHNICIAN, RECIP_STAFF,
+        )
+        role_map = {
+            "customer": RECIP_CUSTOMER,
+            "technician": RECIP_TECHNICIAN,
+            "staff": RECIP_STAFF,
+            "tenant_owner": RECIP_STAFF,
+        }
+        actor_type = role_map.get(self.actor.role)
+        if actor_type is None:
+            raise ServiceOSException("MEDIA_ACCESS_DENIED", "Access denied.")
+        try:
+            thread_uuid = uuid.UUID(str(thread_id))
+        except (ValueError, TypeError):
+            raise ServiceOSException("MEDIA_ACCESS_DENIED", "Access denied.")
+        thread = await self.db.get(ChatThread, thread_uuid)
+        if thread is None:
+            raise ServiceOSException("MEDIA_ACCESS_DENIED", "Access denied.")
+        tenant_id = uuid.UUID(self.actor.tenant_id) if self.actor.tenant_id else None
+        try:
+            await ChatThreadService().validate_thread_access(
+                self.db, thread, uuid.UUID(self.actor.user_id), actor_type, tenant_id,
+            )
+        except ValueError:
+            raise ServiceOSException("MEDIA_ACCESS_DENIED", "Access denied.")
+
+    @staticmethod
+    def _strip_claim_key(extra_metadata: dict | None) -> dict:
+        """Slice 2F-18D: the chat-thread claim key (`chat_thread_id`) is
+        server-owned and may ONLY be written by
+        `chat_service.ChatMessageService._validate_attachments`'s atomic
+        first-use claim. No upload caller may pre-seed it — defensive even
+        though the current, sole upload route never passes `extra_metadata`
+        at all, so a future caller can never smuggle a forged claim in
+        through this path."""
+        meta = dict(extra_metadata or {})
+        meta.pop("chat_thread_id", None)
+        return meta
 
     async def _load(self, media_id: uuid.UUID) -> MediaAsset:
         r = await self.db.execute(

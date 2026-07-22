@@ -1,0 +1,6 @@
+method,path,guard_status_before,guard_status_after,row_added,row_removed
+POST,/v1/media/upload,PERMISSION_ONLY_NOT_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE,no,no
+POST,/v1/media/{media_id}/replace,PERMISSION_ONLY_NOT_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE,no,no
+POST,/v1/media/upload/initiate,PERMISSION_ONLY_NOT_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE,no,no
+POST,/v1/media/upload/{session_id}/confirm,PERMISSION_ONLY_NOT_SCOPE_AWARE,TENANT_MUTATION_ROLE_SCOPE_AWARE,no,no
+DELETE,/v1/media/tenants/{tenant_id}/files/{file_id},PERMISSION_ONLY_NOT_SCOPE_AWARE,TENANT_MUTATION_PERMISSION_SCOPE_AWARE,no,no

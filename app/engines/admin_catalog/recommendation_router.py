@@ -21,6 +21,7 @@ from app.dependencies.auth import (
     require_technician,
     require_customer,
 )
+from app.core.permissions import require_staff_or_above_mutation
 from app.engines.admin_catalog.recommendation_engine_service import (
     AdminRecommendationRuleService,
     RecommendationEngineService,
@@ -319,7 +320,7 @@ async def provider_setup_recommendations(
     r: Request,
     body: dict | None = None,
     db: AsyncSession = Depends(get_db),
-    u: UserContext = Depends(require_technician),
+    u: UserContext = Depends(require_staff_or_above_mutation),
 ):
     ctx = {**(body or {}), "context_type": "tenant_setup"}
     engine = RecommendationEngineService(db)

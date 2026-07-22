@@ -1,0 +1,5 @@
+suite,result,note
+tests/test_phase2f27a_two_route_expansion.py,19 passed,
+full phase-2F suite,2136 passed 0 failed,
+rebaselined current assertions,23,257->259 / 43->45 / new hashes
+historical slice docs,unchanged,preserved

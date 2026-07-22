@@ -1,0 +1,3 @@
+caller,change_required,preserved
+app/engines/geo/router.py _svc(),YES -- must supply actor_tenant_id to the new constructor parameter,YES -- updated this slice, verified live (access_scope_gated wiring confirmed for all 3 routes)
+app/engines/booking/service.py preflight check,NO -- calls only the untouched check_pincode_in_zone (never a mutation method),YES -- unmodified, confirmed still functions identically (positional GeoService(self.db) construction unaffected since actor_tenant_id defaults to None and is never required by a read-only method)

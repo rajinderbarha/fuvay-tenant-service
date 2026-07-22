@@ -1,0 +1,25 @@
+method,path,guard_status,access_scope_enforced,role_enforced,tenant_scoping_enforced,object_ownership_enforced,tested
+POST,/v1/provider/team-members,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES (tenant_owner|super_admin),YES,n/a (new row),YES -- readonly/owner/unauthorized-role direct HTTP tests
+PUT,/v1/provider/team-members/{id},TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (fixed read-back leak this slice),YES
+DELETE,/v1/provider/team-members/{id},TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES,YES
+POST,/v1/provider/team-members/{id}/activate,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (fixed read-back leak this slice),YES
+POST,/v1/provider/team-members/{id}/deactivate,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (fixed read-back leak + added session revocation this slice),YES
+POST,/v1/provider/team-members/{id}/create-login,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,n/a (stub),YES
+POST,/v1/provider/availability,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,n/a (new row),YES
+PUT,/v1/provider/availability/{id},TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (fixed read-back leak this slice),YES
+DELETE,/v1/provider/availability/{id},TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES,YES
+POST,/v1/provider/availability/exceptions,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,n/a (new row),YES
+PUT,/v1/provider/availability/exceptions/{id},TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (already safe pre-slice),YES
+DELETE,/v1/provider/availability/exceptions/{id},TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES,YES
+PUT,/v1/provider/booking-window,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,n/a (single row per tenant),YES
+POST,/v1/provider/availability/preset/{key},TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES,YES
+DELETE,/v1/provider/availability/preset/{key},TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES,YES
+POST,/v1/provider/offerings/enabled,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,n/a (upsert),YES
+PUT,/v1/provider/offerings/enabled/{id},TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (fixed read-back leak this slice),YES
+POST,/v1/provider/offerings/enabled/{id}/activate,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (fixed read-back leak this slice),YES
+POST,/v1/provider/offerings/enabled/{id}/deactivate,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (fixed read-back leak this slice),YES
+POST,/v1/provider/offerings/enabled/{id}/refresh-readiness,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,YES (fixed read-back leak this slice),YES
+PUT,/v1/provider/service-areas/{id}/coverage,TENANT_MUTATION_PERMISSION_SCOPE_AWARE,YES (pre-existing),YES (permission-based),YES,YES (pre-existing),YES (pre-existing, unchanged)
+POST,/v1/provider/status/refresh,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,n/a (upsert),YES
+POST,/v1/provider/onboarding/refresh,TENANT_MUTATION_ROLE_SCOPE_AWARE,YES (new),YES,YES,n/a (stub),YES
+POST,/v1/provider/home-services/matching-inputs/preview,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK (correct -- not a mutation),n/a (not a mutation),n/a,YES (tenant_id from principal),n/a,YES (classification regression guard)

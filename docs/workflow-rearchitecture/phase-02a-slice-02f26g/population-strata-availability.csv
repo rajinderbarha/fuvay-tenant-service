@@ -1,0 +1,10 @@
+stratum,eligible_members,selected,not_representable_reason
+G01_platform_admin_target_tenant,6,5,
+G02_principal_tenant_nested_specific,0,0,ZERO ELIGIBLE MEMBERS -- not representable
+G03_provider_surface,0,0,ZERO ELIGIBLE MEMBERS -- not representable
+G04_customer_self_service,0,0,ZERO ELIGIBLE MEMBERS -- not representable
+G05_internal_branch,0,0,ZERO ELIGIBLE MEMBERS -- not representable
+G06_trusted_callback,0,0,ZERO ELIGIBLE MEMBERS -- not representable
+G07_mutating_get_candidate,1,1,
+G08_client_asserted_tenant,9,6,
+G09_generic_prefix,35,12,

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import UserContext, get_current_user, require_customer, require_technician
 from app.dependencies.db import get_db
+from app.core.permissions import require_mutation_access_scope, require_staff_or_above_mutation
 from app.engines.profile.schemas import UpdateUserProfileRequest, UpdateBusinessProfileRequest
 from app.engines.profile.service import ProfileService
 from app.schemas.base import ApiResponse, ok
@@ -87,7 +88,7 @@ async def get_my_profile(
 async def update_my_profile(
     body: UpdateUserProfileRequest,
     r: Request,
-    actor: UserContext = Depends(get_current_user),
+    actor: UserContext = Depends(require_mutation_access_scope),
     svc: ProfileService = Depends(_svc),
 ) -> ApiResponse[dict]:
     data = await svc.update_user_profile(body)
@@ -126,7 +127,7 @@ async def get_business_profile(
 async def update_business_profile(
     body: UpdateBusinessProfileRequest,
     r: Request,
-    actor: UserContext = Depends(require_technician),
+    actor: UserContext = Depends(require_staff_or_above_mutation),
     svc: ProfileService = Depends(_svc_technician),
 ) -> ApiResponse[dict]:
     data = await svc.update_business_profile(body)
@@ -147,7 +148,7 @@ async def update_business_profile(
 )
 async def submit_business_profile_for_review(
     r: Request,
-    actor: UserContext = Depends(require_technician),
+    actor: UserContext = Depends(require_staff_or_above_mutation),
     svc: ProfileService = Depends(_svc_technician),
 ) -> ApiResponse[dict]:
     data = await svc.submit_business_profile_for_review()
@@ -181,7 +182,7 @@ async def get_staff_profile(
 async def update_staff_profile(
     body: UpdateUserProfileRequest,
     r: Request,
-    actor: UserContext = Depends(require_technician),
+    actor: UserContext = Depends(require_staff_or_above_mutation),
     svc: ProfileService = Depends(_svc_technician),
 ) -> ApiResponse[dict]:
     data = await svc.update_user_profile(body)

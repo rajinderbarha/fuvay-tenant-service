@@ -1,0 +1,12 @@
+principal,expected,mechanism,outcome
+tenant_owner (mutation scope),ALLOW -- creates pending_review,require_tenant_owner_mutation,ALLOWED
+tenant_owner (read-only access_scope),DENY,access_scope check in dependency,ACCESS_SCOPE_REJECTED
+super_admin,"ALLOW (explicit, shared dependency)",require_tenant_owner_mutation,ALLOWED
+staff,DENY -- no policy supports staff purchasing,role not admitted,PERSONA_REJECTED
+technician,DENY,role not admitted,PERSONA_REJECTED
+customer,DENY,role not admitted,PERSONA_REJECTED
+guest / unauthenticated,DENY,auth dependency,PERSONA_REJECTED
+cross-tenant owner,DENY -- tenant from JWT only; cannot target another tenant,_tenant_id(user),TENANT_OWNERSHIP_REJECTED
+prohibited role alias (tenant_manager etc.),DENY,unknown role fails closed,PERSONA_REJECTED
+unknown role,DENY,fails closed,PERSONA_REJECTED
+unknown access scope,DENY,fails closed,ACCESS_SCOPE_REJECTED

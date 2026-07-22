@@ -1,8 +1,11 @@
 """Sprint 24 — Customer Review endpoints."""
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_customer
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
@@ -13,6 +16,21 @@ customer_review_router = APIRouter(prefix="/v1/customer/reviews", tags=["custome
 
 _svc = ReviewService()
 _elig = ReviewEligibilityService()
+
+
+class CustomerFlagRequest(BaseModel):
+    """Slice 2F-24 — strict body for a customer flagging a review.
+
+    The previous untyped body read `body["tenant_id"]` and passed it to the
+    service as the flag's tenant, i.e. the client chose the tenant a
+    moderation record was attributed to (CLIENT_TENANT_TRUSTED). `tenant_id`
+    is no longer accepted at all: `extra="forbid"` rejects it explicitly
+    rather than ignoring it, and the flag's tenant is now taken from the
+    review itself. No actor or status field is accepted either.
+    """
+    model_config = ConfigDict(extra="forbid")
+    reason_code: Literal["spam", "fake", "offensive", "irrelevant", "other"] = "other"
+    reason_text: str | None = Field(default=None, max_length=2000)
 
 
 @customer_review_router.get("/eligibility")
@@ -88,7 +106,11 @@ async def get_my_review(
 ):
     import uuid
     rid = getattr(r.state, "request_id", "—")
-    review = await _svc.get_review(db, uuid.UUID(review_id))
+    # Slice 2F-24: the route is named `get_my_review` but was an unscoped
+    # primary-key read -- any authenticated principal could read any review in
+    # any tenant. Now scoped to the caller's own reviews, matching the route's
+    # own contract and the `list_my_reviews` sibling directly above.
+    review = await _svc.get_review(db, uuid.UUID(review_id), customer_id=user.user_id)
     return ok(review.to_dict(), rid, "review.fetched")
 
 
@@ -109,21 +131,39 @@ async def edit_review(
 @customer_review_router.post("/{review_id}/flag")
 async def flag_review(
     review_id: str,
-    body: dict,
+    body: CustomerFlagRequest,
     r: Request,
-    user=Depends(get_current_user),
+    user=Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
+    # Slice 2F-24 — same-record alternate to the provider flag route.
+    #
+    # Before: `tenant_id` came from the request body, so a customer chose the
+    # tenant its moderation record was attributed to, and the service applied
+    # no ownership check at all -- any authenticated principal could flag any
+    # review in any tenant through this path too.
+    #
+    # After: the customer may flag only its OWN review (scoped by
+    # `customer_id` from the principal), and the flag's tenant is derived from
+    # the review. Whether a customer should be able to flag someone else's
+    # review is a product question, deliberately NOT invented here -- see
+    # customer-flag-authority.md. Self-scoping is the established, provable
+    # relationship in this model (`CustomerReview.customer_id` is NOT NULL).
     import uuid
     rid = getattr(r.state, "request_id", "—")
     flag = await _svc.flag_review(
         db,
         review_id          = uuid.UUID(review_id),
         flagged_by_user_id = user.user_id,
+        # Server-set: this is the customer surface.
         flagged_by_type    = "customer",
-        reason_code        = body.get("reason_code", "other"),
-        reason_text        = body.get("reason_text"),
-        tenant_id          = uuid.UUID(str(body["tenant_id"])) if body.get("tenant_id") else None,
+        reason_code        = body.reason_code,
+        reason_text        = body.reason_text,
+        # Tenant authority is NEVER taken from the client; the scoped lookup
+        # resolves the review by customer ownership and the flag inherits the
+        # review's own tenant.
+        tenant_id          = None,
+        customer_id        = user.user_id,
         request_id         = rid,
     )
     return ok(flag.to_dict(), rid, "review.flagged")

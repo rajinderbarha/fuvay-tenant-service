@@ -1,0 +1,10 @@
+category,baseline_2f36,final_2f37,delta,detail
+collected_total,2418,2445,+27,all from tests/test_phase2f37_financial_product_policy_batch.py (new file)
+added_node_ids,0,27,+27,TestScopeGuardsLive(1);TestTrustedTenantHelpers(6);TestPricingZoneRuleOwnership(2);TestCommerceOwnershipFixes(3);TestComplianceSelfOnly(1);TestReadPermissionMisuseFixed(1);TestSetBAdjudication(3);TestCanonicalClosure(4);TestM01GeoAnd2F35And2F36NonRegression(4);TestN01FrozenNotRemediated(2)
+removed_node_ids,0,0,0,none
+renamed_node_ids,0,0,0,none
+rebaselined_assertions,n/a,18,n/a,pre-existing historical test files (2F-14A/17A/19/21/23/25/25A/26/26B/26C/26D/26E/26F/26G/26H/27/27A) whose inline live-canonical-CSV literals and classifier tenant_direction/persona exception sets were updated in place from 297/294/3 to 313/313/0; see documentation-corrections.md
+passed,2418,2445,+27,
+failed,0,0,0,
+errors,0,0,0,
+environmental_exclusions,0,0,0,none

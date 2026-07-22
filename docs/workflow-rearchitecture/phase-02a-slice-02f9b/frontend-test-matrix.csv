@@ -1,0 +1,24 @@
+test_name,scenario,expected,passed
+PROVIDER_RESOLUTION_LEGAL_SOURCE_STATES is exactly the 2 backend-legal states,constant equality check,{"awaiting_provider_response","under_admin_review"},true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=open,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=awaiting_provider_response,tenant_owner mutation scope,true,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=awaiting_customer_response,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=under_admin_review,tenant_owner mutation scope,true,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=resolution_proposed,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=rework_approved,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=refund_requested,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=refund_approved,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=refund_recorded,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=resolved,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=settled,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=closed,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=cancelled,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: tenant_owner + full_access + status=rejected,tenant_owner mutation scope,false,true
+canOfferProviderComplaintResolution: read-only scope denies even in a legal state,tenant_owner + customer_support_limited scope,false,true
+canOfferProviderComplaintResolution: staff denied even in a legal state,staff role,false,true
+canOfferProviderComplaintResolution: technician denied even in a legal state,technician role,false,true
+canOfferProviderComplaintResolution: customer/guest denied even in a legal state,customer and guest roles,false,true
+canOfferProviderComplaintResolution: unknown role fails closed even in a legal state,bogus role string,false,true
+canOfferProviderComplaintResolution: unknown access scope value does not bypass,unrecognized scope string + role/state gating,role-dependent (see test body),true
+canOfferProviderComplaintResolution: missing status fails closed,null/undefined/empty status,false,true
+canOfferProviderComplaintResolution: unknown/unrecognized status fails closed,made-up status string,false,true

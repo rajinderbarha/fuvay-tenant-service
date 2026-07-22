@@ -1,0 +1,20 @@
+route,client_supplied_tenant_field,server_derivation_added,exemption
+GET /v1/commerce/tenants/{tenant_id}/deposit,tenant_id (path),_assert_owns_tenant_deposit [pre-existing],platform staff roles
+POST /v1/commerce/tenants/{tenant_id}/deposit/initiate,tenant_id (path),_assert_owns_tenant_deposit [pre-existing],platform staff roles
+GET /v1/commerce/tenants/{tenant_id}/deposit/transactions,tenant_id (path),_assert_owns_tenant_deposit [pre-existing],platform staff roles
+POST /v1/pricing/tenants/{tenant_id}/prices/set,tenant_id (path),PricingService._require_trusted_tenant,super_admin
+PUT /v1/pricing/tenants/{tenant_id}/brand-adjustment,tenant_id (path),PricingService._require_trusted_tenant,super_admin
+POST /v1/pricing/tenants/{tenant_id}/zones,tenant_id (path),PricingService._require_trusted_tenant,super_admin
+PUT /v1/pricing/tenants/{tenant_id}/zones/{zone_id},tenant_id (path) + zone.tenant_id,PricingService._require_trusted_tenant + zone ownership check,super_admin
+DELETE /v1/pricing/tenants/{tenant_id}/zones/{zone_id},tenant_id (path) + zone.tenant_id,PricingService._require_trusted_tenant + zone ownership check,super_admin
+POST /v1/pricing/tenants/{tenant_id}/rules,tenant_id (path),PricingService._require_trusted_tenant,super_admin
+PUT /v1/pricing/tenants/{tenant_id}/rules/{rule_id},tenant_id (path) + rule.tenant_id,PricingService._require_trusted_tenant + rule ownership check,super_admin
+DELETE /v1/pricing/tenants/{tenant_id}/rules/{rule_id},tenant_id (path) + rule.tenant_id,PricingService._require_trusted_tenant + rule ownership check,super_admin
+POST /v1/pricing/compute,tenant_id (body),(none -- third-party provider tenant being priced, not actor's own),N/A -- mixed persona by design
+POST /v1/commerce/tenants/{tenant_id}/wallet/purchase/initiate,tenant_id (path),_assert_owns_tenant_deposit [existing helper, newly called],platform staff roles
+POST /v1/commerce/warranty/claims,tid (query) + job parent,ServiceJob parent-ownership check (new),N/A
+POST /v1/commerce/tenants/{tenant_id}/badges/recalculate,tenant_id (path),_assert_owns_tenant_deposit [existing helper, newly called],platform staff roles
+POST /v1/payments/tenants/{tenant_id}/payout,tenant_id (path),PaymentService._require_trusted_tenant,super_admin
+PUT /v1/subscriptions/tenants/{tenant_id}/plan,tenant_id (path),SubscriptionService._require_trusted_tenant,super_admin
+POST /v1/compliance/deletion-requests,user_id (body),self-only ownership check (new),super_admin
+POST /v1/compliance/portability-requests,user_id (body),self-only ownership check (new),super_admin

@@ -30,7 +30,7 @@ async def engine_meta() -> dict:
 
 @router.post("/events/ingest", status_code=status.HTTP_202_ACCEPTED, response_model=ApiResponse[dict])
 async def ingest_event(r: Request,
-                        u: UserContext = Depends(get_current_user),
+                        u: UserContext = Depends(require_super_admin),
                         s: AnalyticsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     tid = uuid.UUID(body["tenant_id"]) if body.get("tenant_id") else None

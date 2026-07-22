@@ -1,0 +1,24 @@
+field,client_supplied,server_derived,referenced_model,tenant_or_platform_owned,ownership_check_before,ownership_check_after,db_fk_behavior,cross_tenant_risk_before,fix,direct_test
+tenant_id,yes (body),yes (pinned for tenant-scoped roles since 2F-14B),n/a,n/a,pinned (2F-14B),unchanged this slice,none (application field),closed in 2F-14B,none needed this slice,test_tenant_owner_cannot_override_tenant_id (2F-14B)
+title,yes,no,n/a,n/a,none needed (free text),unchanged,none,none,none needed,n/a
+description,yes,no,n/a,n/a,none needed (free text),unchanged,none,none,none needed,n/a
+service_type_id,yes,no,ServiceCatalogItem,tenant-owned,NONE when job_type explicitly supplied (auto-detect branch validated only when job_type omitted),tenant-validated + active-required always (fixed),none (String column, no FK constraint),confirmed real gap -- fixed this slice,ServiceCatalogService.get_by_service_type_id(tenant_id, ...) now called unconditionally,test_foreign_service_type_rejected / test_inactive_service_type_rejected
+service_category,yes,no,n/a,n/a,none needed (free text/default),unchanged,none,none,none needed,n/a
+job_type,yes,no (validated against JOB_TYPES enum),n/a,n/a,enum-validated (pre-existing),unchanged,none,none,none needed,pre-existing test coverage
+parent_job_id,yes,no,field_ops.Job,tenant-owned,NONE at all,existence + tenant match required (fixed),none (UUID column, no FK constraint),confirmed real gap -- fixed this slice,select(Job).where(Job.id==...) + tenant_id match,test_foreign_parent_job_rejected / test_missing_parent_job_rejected
+findings/recommendation,yes,no,n/a,n/a,none needed (free text),unchanged,none,none,none needed,n/a
+checklist,yes,no,n/a,n/a,none needed (client-provided JSONB, overridden by catalog template if present),unchanged,none,none,none needed,n/a
+duration_estimate_minutes,yes,no,n/a,n/a,none needed (numeric),unchanged,none,none,none needed,n/a
+booking_id,yes,no,Booking,tenant-owned,NONE at all (not even cast to UUID),existence + tenant match required (fixed),none (stored as opaque string/UUID, no FK constraint),confirmed real gap -- fixed this slice,select(Booking).where(Booking.id==...) + tenant_id match,test_foreign_booking_rejected
+customer_id,yes,no,auth.User,platform-owned (customers are not tenant-scoped),NONE at all,existence + role=='customer' required (fixed),none (UUID column, no FK constraint),confirmed real gap -- fixed this slice,select(User).where(User.id==...) + role check,test_foreign_customer_rejected / test_missing_customer_rejected
+address (dict)/pincode/latitude/longitude,yes,no,n/a,n/a,none needed (free-form address fields, not a normalized address_id reference),unchanged,none,none,none needed,n/a
+scheduled_at,yes,no,n/a,n/a,none needed (timestamp),unchanged,none,none,none needed,n/a
+quoted_price,yes,no,n/a,n/a,none needed (overridden by catalog base_price if present and unset),unchanged,none,none,none needed,n/a
+tags,yes,no,n/a,n/a,none needed (free-form list),unchanged,none,none,none needed,n/a
+address_id,NOT ACCEPTED,n/a,n/a,n/a,n/a,n/a,n/a,n/a,UNSUPPORTED_FIELD -- this route accepts a free-form address dict, not a normalized address_id,n/a
+zone_id,NOT ACCEPTED,n/a,n/a,n/a,n/a,n/a,n/a,n/a,UNSUPPORTED_FIELD,n/a
+quote_id,NOT ACCEPTED,n/a,n/a,n/a,n/a,n/a,n/a,n/a,UNSUPPORTED_FIELD -- quotes are created after the Job via separate routes,n/a
+assigned_staff_id/assigned_technician_id,NOT ACCEPTED,n/a,n/a,n/a,n/a,n/a,n/a,n/a,UNSUPPORTED_FIELD -- assignment happens via the separate assign_job route,n/a
+category_id/provider_id,NOT ACCEPTED,n/a,n/a,n/a,n/a,n/a,n/a,n/a,UNSUPPORTED_FIELD,n/a
+checklist_template_id,NOT ACCEPTED,n/a,n/a,n/a,n/a,n/a,n/a,n/a,UNSUPPORTED_FIELD -- checklist is auto-derived from the tenant-validated service_type_id's catalog entry, not a client-supplied template ID,n/a
+schedule/slot ID,NOT ACCEPTED,n/a,n/a,n/a,n/a,n/a,n/a,n/a,UNSUPPORTED_FIELD -- only a free-form scheduled_at timestamp is accepted,n/a

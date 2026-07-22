@@ -1,0 +1,6 @@
+metric,before_2f23_baseline,after_2f24,new_node_ids,resolved_node_ids,unchanged,verdict
+failing node IDs,86,86,0,0,86,IDENTICAL -- comm empty both directions
+error node IDs,111,111,0,0,111,IDENTICAL -- comm empty both directions
+passed,11146,11192,-,-,-,+46 = exactly the 46 new tests
+skipped,14,14,0,0,14,IDENTICAL
+duration,673.80s,686.56s,-,-,-,comparable

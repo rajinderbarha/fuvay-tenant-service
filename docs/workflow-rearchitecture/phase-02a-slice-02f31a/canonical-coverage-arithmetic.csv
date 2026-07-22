@@ -1,0 +1,4 @@
+metric,before_2f31a,delta,after_2f31a,formula
+denominator,262,0,262,unchanged -- no canonical row added or removed
+protected,233,5,238,233 + r where r = 5 (all 5 residual routes closed)
+unprotected,29,-5,24,denominator - protected = 262 - 238

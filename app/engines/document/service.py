@@ -26,10 +26,27 @@ utcnow = lambda: datetime.now(timezone.utc)
 class DocumentService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
                  actor_id: uuid.UUID | None = None, actor_role: str | None = None,
-                 actor_ip: str | None = None):
+                 actor_ip: str | None = None, actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id; self.actor_role = actor_role; self.actor_ip = actor_ip
+        # Phase 2A Slice 2F-35: the authoritative tenant of the calling
+        # principal, derived server-side from the token. generate_document/
+        # send_for_signature/void_document MUST scope by this value.
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID | None = None) -> uuid.UUID | None:
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="document_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id is not None and requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's documents.",
+                blocking_rule="document_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     # PROVEN LEVEL 5: is_frozen guard — hard check at top of every write
     def _assert_not_frozen(self, doc: Document, operation: str = "modify"):
@@ -99,6 +116,10 @@ class DocumentService:
     async def generate_document(self, tenant_id: uuid.UUID, doc_type: str,
                                  entity_type: str | None, entity_id: str | None,
                                  customer_id: uuid.UUID | None, variables: dict) -> dict:
+        # Phase 2A Slice 2F-35: tenant_id previously arrived straight from
+        # the request body with no comparison to the calling principal --
+        # verified server-side before any row is created.
+        tenant_id = self._require_trusted_tenant(tenant_id)
         # Resolve template
         tmpl_r = await self.db.execute(select(DocumentTemplate).where(
             DocumentTemplate.tenant_id == tenant_id, DocumentTemplate.doc_type == doc_type,
@@ -165,7 +186,14 @@ class DocumentService:
                 "has_next": has_next, "next_cursor": nc}
 
     async def send_for_signature(self, document_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(Document).where(Document.id == document_id))
+        # Phase 2A Slice 2F-35: previously queried WHERE id==document_id
+        # ONLY -- zero tenant predicate, so any TENANT_UPDATE holder in ANY
+        # tenant could send another tenant's legal document for signature.
+        tenant_id = self._require_trusted_tenant()
+        q = select(Document).where(Document.id == document_id)
+        if tenant_id is not None:
+            q = q.where(Document.tenant_id == tenant_id)
+        r = await self.db.execute(q)
         doc = r.scalar_one_or_none()
         if not doc: raise NotFoundException("Document", str(document_id))
         # PROVEN: is_frozen checked first
@@ -252,7 +280,12 @@ class DocumentService:
 
     # PROVEN LEVEL 5: void requires is_frozen check
     async def void_document(self, document_id: uuid.UUID, reason: str) -> dict:
-        r = await self.db.execute(select(Document).where(Document.id == document_id))
+        # Phase 2A Slice 2F-35: same cross-tenant fix as send_for_signature.
+        tenant_id = self._require_trusted_tenant()
+        q = select(Document).where(Document.id == document_id)
+        if tenant_id is not None:
+            q = q.where(Document.tenant_id == tenant_id)
+        r = await self.db.execute(q)
         doc = r.scalar_one_or_none()
         if not doc: raise NotFoundException("Document", str(document_id))
         if doc.status == DocStatus.VOIDED:

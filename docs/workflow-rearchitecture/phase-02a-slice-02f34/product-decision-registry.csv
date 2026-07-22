@@ -1,0 +1,11 @@
+item,module,question,assigned_slice,status
+Should /me/profile-style self-service ever require a role/permission check?,profile_universal_self_service / profile_technician_self_service,unresolved -- current design is intentionally unrestricted self-service,2F-36,OPEN
+Should delete_zone-style deletion be blocked when dependent records exist?,geo_zone_management (carried from 2F-33),existing behavior allows it; no product decision made,future geo follow-up (not assigned to 2F-35/36/37 -- geo is already closed),OPEN (carried forward, informational only)
+Should ServiceZone gain a uniqueness constraint on (tenant_id, zone_name)?,geo_zone_management (carried from 2F-33),no such constraint exists today,future geo follow-up,OPEN (carried forward, informational only)
+Should mutation audit-log rows be emitted for geo mutations?,geo_zone_management (carried from 2F-33),none of the 3 closed geo routes emits a dedicated audit-log entry,future geo follow-up,OPEN (carried forward, informational only)
+Should compliance deletion/portability-request routes be added canonically?,held: compliance (2 candidates),depends on whether an existing data-deletion/portability workflow already exists to attach authorization to,2F-37,OPEN -- to be resolved by 2F-37's own evidence-based adjudication, not by this slice
+confirm_upload storage-existence verification approach (sync HEAD-check vs async reconciliation),N01 domain-integrity backlog (carried from 2F-31A/32/33),unresolved cost/latency tradeoff,2F-37 (freeze only, not resolve),OPEN
+Expired upload-session / orphaned-storage cleanup ownership,N01 domain-integrity backlog,unresolved -- no owner assigned,2F-37 (freeze only),OPEN
+Media quota GET tenant-trust tightening priority,N01 domain-integrity backlog,unresolved -- read-path gap, not yet prioritized,2F-37 (freeze only),OPEN
+Migration 144 application timing,program-wide,gated on 6 explicit readiness conditions,2F-38,OPEN (deliberately deferred)
+readonly@demo-ac-services.local remediation approach,program-wide,gated on final read-only enforcement proof,2F-38,OPEN (deliberately deferred)

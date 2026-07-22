@@ -1,0 +1,19 @@
+scenario,classification,evidence
+Duplicate acknowledgement / duplicate provider response,DUPLICATE_ALLOWED (no defect -- no dedup mechanism exists, and none is evidenced as required; multiple provider messages on one complaint are a normal conversation),no precondition found in provider_add_response
+Response after closure,PRODUCT_DECISION_REQUIRED,no FINAL_STATUSES check exists in respond_to_complaint/offer_resolution -- plausible gap, not conclusively proven exploitable (see complaint-state-machine.md)
+Resolution from invalid state,PRODUCT_DECISION_REQUIRED,same reasoning -- offer_resolution has no state precondition at all
+Repeated resolution (complete_rework called twice),STATE_TRANSITION_REJECTED (effectively),ALLOWED_TRANSITIONS check on the complaint-resolve side-effect means calling complete_rework again when already resolved is a safe no-op on the complaint (rework status itself has no re-completion guard, but no harmful effect was found)
+Repeated closure,N/A,no close route exists in this router
+Reopen without authority,N/A,no reopen route exists in this router
+Provider accepting customer decision,STATE_TRANSITION_REJECTED (by construction),tenant_respond_to_settlement and customer_respond_to_settlement are separate methods -- a provider cannot call the customer's method through this router
+Customer evidence modified by provider,N/A,no evidence-mutation route exists in this router
+Internal note exposed to customer,N/A,no internal-note capability exists at all (see note-evidence-privacy.md) -- visibility is hardcoded public
+Complaint linked to foreign ServiceJob,PRODUCT_DECISION_REQUIRED,not independently re-traced this slice -- job_id linkage is set at complaint-creation time (a different, unaudited router)
+Complaint linked to foreign customer,PRODUCT_DECISION_REQUIRED,same -- customer_id linkage set at creation time, not re-traced
+Rework linked to wrong complaint,DUPLICATE_REJECTED (by construction),rework.complaint_id is set at creation time (not reachable from this router) and never re-targeted by schedule/start/complete
+Duplicate rework request,N/A,rework creation is not reachable from this router
+Credit recommendation submitted twice,DUPLICATE_ALLOWED (no dedup found),create_settlement_proposal has no duplicate-proposal check -- multiple proposals per complaint appear to be an intended, normal negotiation pattern (counter-proposals exist in the customer-side method)
+Provider attempting direct credit issuance,STATE_TRANSITION_REJECTED (by construction),the only credit mechanism requires dual acceptance (_check_dual_acceptance) -- a provider's own accept alone cannot trigger a payout
+Provider attempting refund or balance mutation,INTEGRITY_DEFECT_CONFIRMED_AND_FIXED,create_settlement_proposal + respond_to_settlement's proposal/complaint cross-reference gaps (now fixed) were the actual paths that could have let a provider manipulate a foreign complaint/proposal toward this mechanism
+Escalation after final closure,N/A,no escalation route exists in this router
+SLA reset through repeated status mutation,N/A,no SLA-mutating route exists in this router

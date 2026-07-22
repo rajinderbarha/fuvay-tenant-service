@@ -1,0 +1,21 @@
+endpoint,actor,target,method,result,mutation_occurred,leak_check,test
+provider_issue_invoice,tenant_owner (tenant A),invoice belonging to tenant B,service-level direct call,rejected (ERR_INVOICE_ACCESS_DENIED -> 403 via router mapping),NO (db.commit not called),no distinguishing error/detail beyond generic access-denied,test_issue_cross_tenant_rejected_no_mutation
+provider_record_payment,staff (tenant A),invoice belonging to tenant B,service-level direct call,rejected (ERR_INVOICE_ACCESS_DENIED -> 403),NO (db.add/db.commit not called),same generic error,test_cross_tenant_payment_rejected_no_mutation
+staff_create_invoice,staff (tenant A),ServiceJob belonging to tenant B,service-level direct call,rejected (ERR_INVOICE_ACCESS_DENIED -> 403),NO (db.add/db.commit not called),same generic error,test_create_invoice_cross_tenant_rejected_no_mutation
+staff_add_invoice_item,staff (tenant A),invoice belonging to tenant B,service-level direct call,rejected (ERR_INVOICE_ACCESS_DENIED -> 403),NO (db.add not called),same generic error,test_cross_tenant_item_add_rejected_no_mutation
+
+# Notes:
+# tenant_id is never a client-supplied request-body/schema field on any of the 4
+#   routes -- it is always str(user.tenant_id), server-derived from the caller's own
+#   authenticated UserContext. There is therefore no "request-body tenant ID override"
+#   vector to test on this module (unlike modules that accept a tenant_id path/body
+#   parameter for a platform-admin persona) -- confirmed via source read of
+#   provider_router.py, re-verified this slice.
+# The tenant-ownership rejection path is IDENTICAL for tenant_owner/staff/technician
+#   actors (the same _assert_tenant / direct tenant_id comparison fires regardless of
+#   role, since it runs after the role/permission guard already passed) -- tested once
+#   per endpoint with a representative authorized-role actor, not per-role-repeated,
+#   since the ownership check itself has no role branching.
+# All 4 tests use a real mismatched tenant UUID (OTHER_TENANT), not a bare unset
+#   MagicMock, and assert db.add/db.commit were never called -- a genuine dependency-
+#   level proof, not a source-string assertion.

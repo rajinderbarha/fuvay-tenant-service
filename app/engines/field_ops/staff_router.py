@@ -3,7 +3,7 @@ Logged-in staff context only — staff can never pass staff_id manually."""
 import uuid
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import get_current_user, require_staff_or_technician_only, UserContext
 from app.dependencies.db import get_db
 from app.engines.field_ops.service import FieldOpsService
 from app.exceptions import ServiceOSException
@@ -14,15 +14,15 @@ ENGINE_ID = "field_ops"
 
 
 def _svc(r: Request, db: AsyncSession = Depends(get_db),
-         u: UserContext = Depends(get_current_user)) -> FieldOpsService:
+         u: UserContext = Depends(require_staff_or_technician_only)) -> FieldOpsService:
     # Deliberately narrower than require_technician (which also allows
     # tenant_owner/super_admin) — this is a staff/technician *self-service* app
     # section, not a tenant-oversight one (tenant_owner already has /v1/jobs for
     # that). The real seeded role is "technician", not "staff"; a bare
     # `u.role != "staff"` check here previously rejected every real account.
-    if u.role not in ("staff", "technician"):
-        raise ServiceOSException("STAFF_ACCESS_DENIED",
-            "This endpoint is for staff/technician accounts only.", status_code=403)
+    # Slice 2F-14: the role check itself now lives in the named
+    # `require_staff_or_technician_only` dependency (same policy) so
+    # runtime guard-status verification can recognize it as protected.
     return FieldOpsService(db=db, request_id=getattr(r.state, "request_id", "—"),
                             actor_id=uuid.UUID(u.user_id) if u.user_id else None,
                             actor_role=u.role,

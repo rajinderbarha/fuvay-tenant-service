@@ -1,0 +1,15 @@
+status,respond_to_complaint,offer_resolution,disposition_category,evidence
+open,ALLOWED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (offer) / active (respond),offer: not in ALLOWED_TRANSITIONS_EXT[open]; respond: not in FINAL_STATUSES
+awaiting_provider_response,ALLOWED,ALLOWED,ACTIVE,legal source for both; offer's target resolution_proposed is in ALLOWED_TRANSITIONS_EXT[awaiting_provider_response]
+awaiting_customer_response,ALLOWED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (offer),offer: resolution_proposed not in ALLOWED_TRANSITIONS_EXT[awaiting_customer_response]
+under_admin_review,ALLOWED,ALLOWED,ACTIVE,legal source for both
+resolution_proposed,ALLOWED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (offer),resolution_proposed not in ALLOWED_TRANSITIONS_EXT[resolution_proposed] as a self-transition
+rework_approved,ALLOWED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (offer),resolution_proposed not in ALLOWED_TRANSITIONS_EXT[rework_approved]
+refund_requested,ALLOWED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (offer),resolution_proposed not in ALLOWED_TRANSITIONS_EXT[refund_requested]
+refund_approved,ALLOWED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (offer),resolution_proposed not in ALLOWED_TRANSITIONS_EXT[refund_approved]
+refund_recorded,ALLOWED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (offer),resolution_proposed not in ALLOWED_TRANSITIONS_EXT[refund_recorded]
+resolved,ALLOWED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (offer),resolved not final in FINAL_STATUSES so respond allowed; resolution_proposed not in ALLOWED_TRANSITIONS_EXT[resolved]
+closed,PROHIBITED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (both),closed in FINAL_STATUSES; closed has no key in ALLOWED_TRANSITIONS_EXT
+cancelled,PROHIBITED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (both),cancelled in FINAL_STATUSES; no outgoing transitions
+rejected,PROHIBITED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (both),rejected in FINAL_STATUSES; no outgoing transitions
+settled,ALLOWED,PROHIBITED,FINAL_STATE_MUTATION_PROHIBITED (offer),settled not in base FINAL_STATUSES so respond allowed (product-decision-required: see product-decisions-required.md); resolution_proposed not in ALLOWED_TRANSITIONS_EXT[settled] (settled's only target is closed)

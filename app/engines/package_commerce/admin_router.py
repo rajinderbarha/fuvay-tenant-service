@@ -360,6 +360,11 @@ async def admin_purchase_package(
         tenant_id, package_id,
         payment_reference=payload.get("payment_reference"),
         is_paid=True,
+        # Slice 2F-22: an admin holding P.PACKAGES_CREATE is recording an
+        # out-of-band payment on the tenant's behalf -- a human attestation,
+        # which is an accepted authority for paid state (unlike a tenant's
+        # own self-declaration, which this slice removed).
+        payment_authority="admin_attestation",
     )
     await db.commit()
     return _ok(result, request)

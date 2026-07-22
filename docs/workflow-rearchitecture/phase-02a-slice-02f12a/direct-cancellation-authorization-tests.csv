@@ -1,0 +1,22 @@
+test_name,scenario,expected,passed
+test_unauthenticated_denied,no bearer token,401/403,true
+test_denied_role_rejected[technician],technician,403,true
+test_denied_role_rejected[customer],customer,403,true
+test_denied_role_rejected[guest],guest,403,true
+test_denied_role_rejected[totally_bogus_role],unknown role,403,true
+test_readonly_tenant_owner_denied,tenant_owner + customer_support_limited,403,true
+test_readonly_staff_denied,staff + customer_support_limited,403,true
+test_authorized_persona_clears_role_gate[tenant_owner],tenant_owner,role gate passes,true
+test_authorized_persona_clears_role_gate[staff],staff,role gate passes,true
+test_authorized_persona_clears_role_gate[super_admin],super_admin,role gate passes,true
+test_cancel_succeeds_when_actor_is_not_assigned_staff,acting user != appt.staff_member_id,cancel succeeds (business-wide),true
+test_accept_by_contrast_IS_assignment_limited,non-assigned staff calls accept,ERR_STAFF_NOT_ASSIGNED,true
+test_cross_tenant_cancel_not_found_no_mutation,foreign tenant_id,ERR_RECORD_NOT_FOUND + no add/flush/commit,true
+test_legal_source_states_succeed[confirmed/accepted/scheduled],legal cancel source states,status=cancelled,true
+test_illegal_source_states_rejected_no_mutation[started/completed/no_show/rejected/cancelled],illegal cancel source states,ERR_INVALID_TRANSITION + status unchanged + no add/flush,true
+test_repeated_cancel_rejected,cancel an already-cancelled appt,ERR_INVALID_TRANSITION + no add,true
+test_empty_reason_rejected_before_any_lookup,reason='',ERR_REASON_REQUIRED + no db.execute/add,true
+test_whitespace_reason_rejected,reason='   ',ERR_REASON_REQUIRED + no add,true
+test_cancel_appointment_has_no_assignment_check,source inspection,_assert_staff_owns_appt absent,true
+test_accept_appointment_has_assignment_check,source inspection,_assert_staff_owns_appt present,true
+test_sibling_cancel_job_also_omits_assignment_check,source inspection (home_service),_assert_staff_owns_job absent,true

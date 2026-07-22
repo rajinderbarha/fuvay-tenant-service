@@ -15,11 +15,13 @@ from app.engines.quote_checklist.constants import (
     ERR_CHECKLIST_ALREADY_COMPLETED, ERR_CHECKLIST_ITEM_NOT_FOUND,
     ERR_CHECKLIST_ITEM_VALUE_REQUIRED, ERR_CHECKLIST_PHOTO_REQUIRED,
     ERR_CHECKLIST_TEMPLATE_NOT_FOUND,
+    ERR_QUOTE_JOB_NOT_FOUND,
 )
 from app.engines.quote_checklist.models import (
     SjChecklistTemplate, SjChecklistTemplateItem,
     ServiceJobChecklist, ServiceJobChecklistItem,
 )
+from app.engines.final_records.models import ServiceJob
 
 
 def _utcnow() -> datetime:
@@ -115,6 +117,18 @@ class ServiceChecklistService:
         checklist_type: str, template_id: str | None,
         user_id: str, custom_items: list[dict] | None,
     ) -> dict:
+        # Slice 2F-16: previously trusted job_id/booking_id/tenant_id from
+        # the request body with NO validation that the job exists or belongs
+        # to the caller's tenant -- a checklist could be fabricated against
+        # an arbitrary/nonexistent job_id, or one belonging to a different
+        # tenant. Mirrors ServiceJobQuoteService.create_quote's own
+        # job-ownership check.
+        res = await db.execute(select(ServiceJob).where(ServiceJob.id == uuid.UUID(job_id)))
+        job = res.scalar_one_or_none()
+        if not job:
+            raise ValueError(ERR_QUOTE_JOB_NOT_FOUND)
+        if str(job.tenant_id) != tenant_id:
+            raise ValueError(ERR_CHECKLIST_ACCESS_DENIED)
         cl = ServiceJobChecklist(
             id=uuid.uuid4(),
             booking_id=uuid.UUID(booking_id),
@@ -242,9 +256,19 @@ class ServiceChecklistService:
     # ── Get checklist with items ───────────────────────────────────────────────
 
     async def get_checklist(
-        self, db: AsyncSession, checklist_id: str,
+        self, db: AsyncSession, checklist_id: str, tenant_id: str | None = None,
     ) -> dict:
+        """Slice 2F-16: previously had NO tenant ownership filter -- any
+        authenticated user of any tenant could fetch ANY job's checklist by
+        ID alone. Callers now pass their own tenant_id to scope the read.
+
+        Slice 2F-16A: foreign-tenant ownership now raises the same
+        ERR_CHECKLIST_NOT_FOUND as a genuinely missing checklist (was
+        ERR_CHECKLIST_ACCESS_DENIED, externally distinguishable via a
+        different HTTP status) -- privacy-safe 404, matching get_quote."""
         cl = await self._get_checklist(db, checklist_id)
+        if tenant_id is not None and str(cl.tenant_id) != tenant_id:
+            raise ValueError(ERR_CHECKLIST_NOT_FOUND)
         res = await db.execute(
             select(ServiceJobChecklistItem)
             .where(ServiceJobChecklistItem.checklist_id == cl.id)

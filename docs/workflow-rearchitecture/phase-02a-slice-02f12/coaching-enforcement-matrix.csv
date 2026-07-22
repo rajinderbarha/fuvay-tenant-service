@@ -1,0 +1,13 @@
+endpoint_name,role_dependency,access_scope_aware,tenant_ownership,assignment_ownership,state_validation,verification_level
+staff_accept,require_owner_or_office_staff_mutation,yes (denies customer_support_limited),tenant_id filter in _get_appt,_assert_staff_owns_appt,APPT_TRANSITIONS via _set_status,SLICE_2F12_VERIFIED
+staff_reject,require_owner_or_office_staff_mutation,yes,same,same,same + reason required,SLICE_2F12_VERIFIED
+staff_start,require_owner_or_office_staff_mutation,yes,same,same,same,SLICE_2F12_VERIFIED
+staff_complete,require_owner_or_office_staff_mutation,yes,same,same,same,SLICE_2F12_VERIFIED
+staff_no_show,require_owner_or_office_staff_mutation,yes,same,same,same,SLICE_2F12_VERIFIED
+staff_reschedule,require_owner_or_office_staff_mutation,yes,same,same,same,SLICE_2F12_VERIFIED
+staff_add_note,require_owner_or_office_staff_mutation,yes,same,same,n/a (append-only),SLICE_2F12_VERIFIED
+provider_cancel,require_owner_or_office_staff_mutation,yes,same,NONE (confirmed absent -- documented, not fixed),same + reason required,SLICE_2F12_VERIFIED
+staff_timeline,require_owner_or_office_staff_read,no (read, not gated on access_scope),tenant_id filter,n/a (read),n/a,SLICE_2F12_VERIFIED
+provider_timeline,require_owner_or_office_staff_read,no,tenant_id filter,n/a,n/a,SLICE_2F12_VERIFIED
+customer_tracking,require_customer,n/a (customer route),n/a,customer_id filter (inline query),n/a,SLICE_2F12_VERIFIED
+admin_timeline,require_super_admin,n/a (platform),n/a,n/a,n/a,unmodified

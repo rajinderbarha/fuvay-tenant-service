@@ -21,6 +21,9 @@ from sqlalchemy import select, text
 from app.database import init_db, close_db, get_db_session
 from app.engines.auth.models import User
 from app.engines.auth.utils import hash_password
+from app.core.permissions import ROLE_PERMISSIONS
+
+CANONICAL_ROLES = frozenset(ROLE_PERMISSIONS.keys())
 
 DEMO_PASSWORD = "Password123!"
 
@@ -101,6 +104,15 @@ async def get_or_create_demo_tenant(db) -> uuid.UUID:
 
 
 async def upsert_user(db, email: str, full_name: str, role: str, tenant_id) -> None:
+    # Slice 2F-39: fail closed before any database write. This function
+    # previously had zero role validation and unconditionally set
+    # user.role = role on an EXISTING user (silent promotion) -- the same
+    # class of gap 2F-38 found in canonical_seed_final_l5_01.py.
+    if not role or role not in CANONICAL_ROLES:
+        raise ValueError(
+            f"non-canonical role {role!r}: seed scripts may only create/update "
+            f"users with one of the 10 canonical roles {sorted(CANONICAL_ROLES)}."
+        )
     hashed = hash_password(DEMO_PASSWORD)
 
     row = await db.execute(select(User).where(User.email == email))

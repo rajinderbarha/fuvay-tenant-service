@@ -37,12 +37,31 @@ class SecurityService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
                  actor_id: uuid.UUID | None = None,
                  actor_role: str | None = None,
-                 actor_ip: str | None = None):
+                 actor_ip: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id
         self.actor_role = actor_role
         self.actor_ip = actor_ip
+        # Phase 2A Slice 2F-35: the authoritative tenant of the calling
+        # principal, derived server-side from the token. rotate_api_key/
+        # revoke_api_key MUST scope by this value (never trust a
+        # client-supplied tenant_id as ownership evidence).
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID | None = None) -> uuid.UUID | None:
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="security_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id is not None and requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's API keys.",
+                blocking_rule="security_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     async def _publish(self, event_type: str, tenant_id: str, entity_id: str, payload: dict):
         try:
@@ -173,6 +192,10 @@ class SecurityService:
 
     async def rotate_api_key(self, key_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
         """PROVEN: old key marked ROTATED atomically. New key issued. One transaction."""
+        # Phase 2A Slice 2F-35: tenant_id previously arrived straight from
+        # the request Query param and was never compared to the actor's
+        # own tenant -- verified server-side before the query runs.
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(APIKey).where(
             APIKey.id == key_id, APIKey.tenant_id == tenant_id))
         old_key = r.scalar_one_or_none()
@@ -204,6 +227,8 @@ class SecurityService:
 
     async def revoke_api_key(self, key_id: uuid.UUID, tenant_id: uuid.UUID,
                               reason: str) -> dict:
+        # Phase 2A Slice 2F-35: same cross-tenant fix as rotate_api_key.
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(APIKey).where(
             APIKey.id == key_id, APIKey.tenant_id == tenant_id))
         key = r.scalar_one_or_none()
@@ -371,6 +396,15 @@ return redis.call('ZCARD', key)
     async def record_activity(self, tenant_id: uuid.UUID | None, entity_id: str,
                                entity_type: str, activity_type: str,
                                ip_address: str) -> dict:
+        # Slice 2F-39A2R fix: any authenticated caller could previously
+        # attribute suspicious-activity log entries to any tenant via a
+        # client-supplied tenant_id -- observed and recorded, unremediated,
+        # since Slice 2F-26D/F/G/H's security-observations-not-remediated.md
+        # ("same family as the audit-log observation"). tenant_id is now
+        # cross-checked against the caller's own tenant (super_admin
+        # exempt), matching the same _require_trusted_tenant pattern
+        # already used for the API-key mutations in this service.
+        tenant_id = self._require_trusted_tenant(tenant_id)
         result = await self._record_suspicious_activity(
             tenant_id, entity_id, entity_type, activity_type, ip_address)
         return result or {"recorded": True, "threshold_not_reached": True}
@@ -432,6 +466,14 @@ return redis.call('ZCARD', key)
                                  entity_id: str, tenant_id: uuid.UUID | None,
                                  entity_type: str | None,
                                  before: dict | None, after: dict | None) -> dict:
+        # Slice 2F-39A2R fix: any authenticated caller could previously
+        # append arbitrary audit entries attributed to another tenant --
+        # observed and recorded, unremediated, since Slice
+        # 2F-26D/F/G/H's security-observations-not-remediated.md
+        # ("weakening every control that cites the audit log as
+        # evidence"). tenant_id is now cross-checked against the caller's
+        # own tenant (super_admin exempt).
+        tenant_id = self._require_trusted_tenant(tenant_id)
         await self._write_audit(operation, engine_id, entity_id,
                                  tenant_id, entity_type, before, after)
         await self.db.flush()
@@ -476,6 +518,17 @@ return redis.call('ZCARD', key)
                               ip_address: str | None, user_agent: str | None,
                               ttl_seconds: int) -> dict:
         """Register session in both Redis (primary) and DB (audit)."""
+        # Slice 2F-39A2R fix: user_id/tenant_id previously arrived
+        # unchecked from the request body -- any authenticated caller
+        # could register a session record attributed to a different user.
+        # Only the caller's own user_id is accepted (super_admin exempt,
+        # matching every other server-derived-identity guard in this
+        # service).
+        if self.actor_role != "super_admin" and self.actor_id is not None and user_id != self.actor_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "Cannot create a session for another user.",
+                blocking_rule="security_session_create_actor_mismatch")
+        tenant_id = self._require_trusted_tenant(tenant_id)
         # Enforce max concurrent sessions
         active_r = await self.db.execute(select(func.count(SessionInventory.id)).where(
             SessionInventory.user_id == user_id,
@@ -526,18 +579,33 @@ return redis.call('ZCARD', key)
                                "expires_at": s.expires_at.isoformat()} for s in sessions]}
 
     async def revoke_session(self, session_id: str, reason: str) -> dict:
-        """PROVEN: Redis DELETE first (immediate effect), then DB update (audit)."""
-        # Redis first — immediate invalidation
-        try:
-            await self.redis.delete(REDIS_SESSION.format(session_id=session_id))
-        except Exception:
-            pass
+        """PROVEN: ownership read, then Redis DELETE (immediate effect), then DB write (audit).
+        The ownership read is a read-only lookup, not the audit write --
+        Redis is still cleared before any DB mutation, preserving the
+        original immediate-invalidation guarantee for the write path."""
+        # Slice 2F-39A2R fix (HIGH severity, observed and recorded
+        # unremediated since Slice 2F-26D/F/G/H's
+        # security-observations-not-remediated.md): the caller's own
+        # identity was never checked against the session being revoked --
+        # any authenticated principal could revoke any other user's
+        # session given only its id. Ownership is now verified
+        # (super_admin exempt) before the Redis delete or DB update runs;
+        # a foreign session is treated identically to a missing one
+        # (non-oracular), consistent with this program's established
+        # object-ownership pattern.
         r = await self.db.execute(select(SessionInventory).where(
             SessionInventory.session_id == session_id,
             SessionInventory.is_active == True))
         session = r.scalar_one_or_none()
         if not session:
             return {"session_id": session_id, "revoked": True, "note": "Already expired"}
+        if self.actor_role != "super_admin" and self.actor_id is not None and session.user_id != self.actor_id:
+            return {"session_id": session_id, "revoked": True, "note": "Already expired"}
+        # Redis delete only after ownership is confirmed.
+        try:
+            await self.redis.delete(REDIS_SESSION.format(session_id=session_id))
+        except Exception:
+            pass
         await self._revoke_session_record(session, reason)
         await self._write_audit("session.revoke", "security", session_id,
                                  after={"reason": reason})

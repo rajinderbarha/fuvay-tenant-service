@@ -28,10 +28,31 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 class InventoryService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
-                 actor_id: uuid.UUID | None = None, actor_role: str | None = None):
+                 actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+                 actor_tenant_id: uuid.UUID | None = None):
         self.db = db; self.redis = get_redis()
         self.request_id = request_id
         self.actor_id = actor_id; self.actor_role = actor_role
+        self.actor_tenant_id = actor_tenant_id
+
+    def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
+        """Slice 2F-36: every held inventory mutation accepted a client-
+        supplied tenant_id (path or body) with no comparison to the
+        caller's own tenant, letting any tenant-side principal create
+        items/receive stock/reserve stock against another tenant by
+        supplying that tenant's id. super_admin is exempt (platform-wide,
+        matches every other _require_trusted_tenant in this program)."""
+        if self.actor_role == "super_admin":
+            return requested_tenant_id
+        if self.actor_tenant_id is None:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "No tenant context.",
+                blocking_rule="inventory_mutation_requires_trusted_tenant_context")
+        if requested_tenant_id != self.actor_tenant_id:
+            raise ServiceOSException(
+                "PERMISSION_DENIED", "You do not have access to this tenant's inventory.",
+                blocking_rule="inventory_mutation_cross_tenant_denied")
+        return self.actor_tenant_id
 
     # PROVEN LEVEL 5: SELECT FOR UPDATE on balance row
     async def _get_balance_locked(self, item_id: uuid.UUID,
@@ -114,6 +135,7 @@ class InventoryService:
 
     # Item CRUD
     async def create_item(self, tenant_id: uuid.UUID, data: dict) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         item = InventoryItem(tenant_id=tenant_id, name=data["name"], sku=data["sku"],
             category=data.get("category"), unit=data.get("unit","unit"),
             unit_cost=Decimal(str(data.get("unit_cost","0"))),
@@ -152,6 +174,7 @@ class InventoryService:
                              tenant_id: uuid.UUID, quantity: int,
                              unit_cost: Decimal | None, reference_id: str | None,
                              notes: str | None) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         if quantity <= 0:
             raise ServiceOSException("VALIDATION_ERROR", "Quantity must be positive for receipt.")
         bal = await self._get_balance_locked(item_id, location_id)
@@ -203,6 +226,7 @@ class InventoryService:
     # Reservations
     async def create_reservation(self, job_id: str, item_id: uuid.UUID, location_id: uuid.UUID,
                                   tenant_id: uuid.UUID, quantity: int) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         bal = await self._get_balance_locked(item_id, location_id)
         available = bal.quantity - bal.reserved_qty
         if available < quantity:
@@ -223,9 +247,11 @@ class InventoryService:
 
     async def confirm_reservation(self, job_id: str, item_id: uuid.UUID,
                                    location_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(StockReservation).where(
             StockReservation.job_id == job_id, StockReservation.item_id == item_id,
             StockReservation.location_id == location_id,
+            StockReservation.tenant_id == tenant_id,
             StockReservation.status == ReservationStatus.ACTIVE))
         res = r.scalar_one_or_none()
         if not res: raise NotFoundException("StockReservation", f"{job_id}:{item_id}")
@@ -236,9 +262,11 @@ class InventoryService:
 
     async def release_reservation(self, job_id: str, item_id: uuid.UUID,
                                    location_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         r = await self.db.execute(select(StockReservation).where(
             StockReservation.job_id == job_id, StockReservation.item_id == item_id,
             StockReservation.location_id == location_id,
+            StockReservation.tenant_id == tenant_id,
             StockReservation.status == ReservationStatus.ACTIVE))
         res = r.scalar_one_or_none()
         if not res: raise NotFoundException("StockReservation", f"{job_id}:{item_id}")
@@ -263,6 +291,7 @@ class InventoryService:
 
     async def request_replenishment(self, tenant_id: uuid.UUID, item_id: uuid.UUID,
                                      quantity: int) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
         await self._publish("inventory.replenishment_requested", str(tenant_id), str(item_id),
                             {"quantity": quantity, "item_id": str(item_id)})
         return {"item_id": str(item_id), "quantity_requested": quantity,

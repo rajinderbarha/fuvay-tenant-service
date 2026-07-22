@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from app.dependencies.auth import get_current_user, require_super_admin
 from app.dependencies.db import get_db
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_staff_or_above_mutation
 from app.schemas.base import ApiResponse, ok
 from app.engines.execution.home_service_service import HomeServiceJobExecutionService
 from app.engines.execution.admin_job_actions import AdminJobActionsService
@@ -110,7 +110,16 @@ class CompleteJobBody(BaseModel):
     technician_note: Optional[str] = None
 
 
-@staff_router.post("/{job_id}/accept")
+# Phase 2A Slice 2F-3B, Workstream 2: the route decorators for accept/reject
+# were REMOVED here (not the functions) -- these two paths are confirmed
+# shadowed/unreachable duplicates of home_service_assignment.staff_router's
+# accept_job/reject_job (registered first in app/main.py, so it always
+# wins; see docs/workflow-rearchitecture/phase-02a-slice-02f3a/canonical-route-disposition.csv
+# for the live-HTTP proof). De-registering the decorator removes the dead
+# collision entirely (OpenAPI now has exactly one operation per path)
+# without deleting the function body, in case any internal caller still
+# references it directly (grepped this session: none found, but preserved
+# per the brief's explicit "do not delete unless separately justified").
 async def staff_accept_job(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.accept_job(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), request_id=rid)
@@ -118,7 +127,6 @@ async def staff_accept_job(job_id: uuid.UUID, r: Request, user=Depends(get_curre
     return ok(result, rid, "staff-exec-accept")
 
 
-@staff_router.post("/{job_id}/reject")
 async def staff_reject_job(job_id: uuid.UUID, body: RejectBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.reject_job(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
@@ -127,7 +135,7 @@ async def staff_reject_job(job_id: uuid.UUID, body: RejectBody, r: Request, user
 
 
 @staff_router.post("/{job_id}/on-the-way")
-async def staff_on_the_way(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_on_the_way(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.mark_on_the_way(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
@@ -135,7 +143,7 @@ async def staff_on_the_way(job_id: uuid.UUID, r: Request, user=Depends(get_curre
 
 
 @staff_router.post("/{job_id}/reached-site")
-async def staff_reached_site(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_reached_site(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.mark_reached_site(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
@@ -143,7 +151,7 @@ async def staff_reached_site(job_id: uuid.UUID, r: Request, user=Depends(get_cur
 
 
 @staff_router.post("/{job_id}/start-inspection")
-async def staff_start_inspection(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_start_inspection(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.start_inspection(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
@@ -151,7 +159,7 @@ async def staff_start_inspection(job_id: uuid.UUID, r: Request, user=Depends(get
 
 
 @staff_router.post("/{job_id}/complete-inspection")
-async def staff_complete_inspection(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_complete_inspection(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.complete_inspection(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
@@ -159,7 +167,7 @@ async def staff_complete_inspection(job_id: uuid.UUID, r: Request, user=Depends(
 
 
 @staff_router.post("/{job_id}/start-service")
-async def staff_start_service(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_start_service(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.start_service(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
@@ -167,7 +175,7 @@ async def staff_start_service(job_id: uuid.UUID, r: Request, user=Depends(get_cu
 
 
 @staff_router.post("/{job_id}/work-done")
-async def staff_work_done(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_work_done(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.mark_work_done(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
@@ -175,7 +183,7 @@ async def staff_work_done(job_id: uuid.UUID, r: Request, user=Depends(get_curren
 
 
 @staff_router.post("/{job_id}/customer-not-available")
-async def staff_customer_not_available(job_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_customer_not_available(job_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.mark_customer_not_available(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), notes=body.note_text, request_id=rid)
     await db.commit()
@@ -183,7 +191,7 @@ async def staff_customer_not_available(job_id: uuid.UUID, body: NoteBody, r: Req
 
 
 @staff_router.post("/{job_id}/quote-required")
-async def staff_quote_required(job_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_quote_required(job_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.mark_quote_required(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), notes=body.note_text, request_id=rid)
     await db.commit()
@@ -191,7 +199,7 @@ async def staff_quote_required(job_id: uuid.UUID, body: NoteBody, r: Request, us
 
 
 @staff_router.post("/{job_id}/parts-required")
-async def staff_parts_required(job_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_parts_required(job_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.mark_parts_required(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), notes=body.note_text, request_id=rid)
     await db.commit()
@@ -199,7 +207,7 @@ async def staff_parts_required(job_id: uuid.UUID, body: NoteBody, r: Request, us
 
 
 @staff_router.post("/{job_id}/notes")
-async def staff_add_note(job_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_add_note(job_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     note_type = body.note_text  # type annotation only; determine note type by endpoint
     result = await _svc.add_work_note(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), note_text=body.note_text, is_customer_visible=body.is_customer_visible, request_id=rid)
@@ -208,7 +216,7 @@ async def staff_add_note(job_id: uuid.UUID, body: NoteBody, r: Request, user=Dep
 
 
 @staff_router.post("/{job_id}/diagnosis-notes")
-async def staff_add_diagnosis_note(job_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_add_diagnosis_note(job_id: uuid.UUID, body: NoteBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.add_diagnosis_note(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), note_text=body.note_text, is_customer_visible=body.is_customer_visible, request_id=rid)
     await db.commit()
@@ -216,7 +224,7 @@ async def staff_add_diagnosis_note(job_id: uuid.UUID, body: NoteBody, r: Request
 
 
 @staff_router.post("/{job_id}/media")
-async def staff_upload_media(job_id: uuid.UUID, body: MediaBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_upload_media(job_id: uuid.UUID, body: MediaBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.upload_job_media(
         db, job_id, uuid.UUID(str(user.tenant_id)),
@@ -238,7 +246,7 @@ async def staff_get_timeline(job_id: uuid.UUID, r: Request, user=Depends(get_cur
 
 # HS8B — real parts request creation
 @staff_router.post("/{job_id}/parts-requests")
-async def staff_create_parts_request(job_id: uuid.UUID, body: PartsRequestBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_create_parts_request(job_id: uuid.UUID, body: PartsRequestBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     staff_id = await _staff_member_id(user, db)
     result = await _svc.create_parts_request(
@@ -260,7 +268,7 @@ async def staff_list_parts_requests(job_id: uuid.UUID, r: Request, user=Depends(
 
 # HS8B — single validated completion action
 @staff_router.post("/{job_id}/complete")
-async def staff_complete_job(job_id: uuid.UUID, body: CompleteJobBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_complete_job(job_id: uuid.UUID, body: CompleteJobBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     staff_id = await _staff_member_id(user, db)
     result = await _svc.complete_job(
@@ -280,7 +288,7 @@ provider_router = APIRouter(prefix="/v1/provider/service-jobs", tags=["Sprint21-
 
 
 @provider_router.post("/{job_id}/cancel")
-async def provider_cancel_job(job_id: uuid.UUID, body: CancelBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def provider_cancel_job(job_id: uuid.UUID, body: CancelBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.cancel_job(db, job_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)), reason=body.reason, actor_role="provider", request_id=rid)
     await db.commit()
@@ -317,7 +325,7 @@ async def provider_list_parts_requests(job_id: uuid.UUID, r: Request, user=Depen
 
 
 @provider_router.post("/{job_id}/parts-requests/{parts_request_id}/approve")
-async def provider_approve_parts_request(job_id: uuid.UUID, parts_request_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def provider_approve_parts_request(job_id: uuid.UUID, parts_request_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.approve_parts_request(db, parts_request_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
@@ -325,7 +333,7 @@ async def provider_approve_parts_request(job_id: uuid.UUID, parts_request_id: uu
 
 
 @provider_router.post("/{job_id}/parts-requests/{parts_request_id}/reject")
-async def provider_reject_parts_request(job_id: uuid.UUID, parts_request_id: uuid.UUID, body: PartsRejectBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def provider_reject_parts_request(job_id: uuid.UUID, parts_request_id: uuid.UUID, body: PartsRejectBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.reject_parts_request(db, parts_request_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
     await db.commit()
@@ -333,7 +341,7 @@ async def provider_reject_parts_request(job_id: uuid.UUID, parts_request_id: uui
 
 
 @provider_router.post("/{job_id}/parts-requests/{parts_request_id}/install")
-async def provider_install_parts_request(job_id: uuid.UUID, parts_request_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def provider_install_parts_request(job_id: uuid.UUID, parts_request_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.install_parts_request(db, parts_request_id, uuid.UUID(str(user.tenant_id)), request_id=rid)
     await db.commit()

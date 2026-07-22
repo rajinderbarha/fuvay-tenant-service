@@ -447,6 +447,11 @@ async def complete_registration(
                         package_id=uuid.UUID(body.selected_package_id),
                         payment_reference=body.razorpay_payment_id,
                         is_paid=True,
+                        # Slice 2F-22: authoritative -- verify_payment_signature()
+                        # above (line ~353) already rejected this request if the
+                        # Razorpay HMAC did not validate, so payment really is
+                        # proven by the time execution reaches here.
+                        payment_authority="gateway_signature_verified",
                     )
             except Exception as exc:
                 logger.warning("registration.package_assignment_failed",

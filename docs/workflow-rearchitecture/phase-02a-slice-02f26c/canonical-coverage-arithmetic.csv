@@ -1,0 +1,5 @@
+metric,before,delta_applied,after,delta_deferred
+denominator,257,0,257,"+2 proposed, not applied"
+numerator (protected),214,0,214,0 -- both proposals are unprotected
+unprotected,43,0,43,+2 if proposals were applied
+canonical hash,45244cd9540456db,none,45244cd9540456db,-

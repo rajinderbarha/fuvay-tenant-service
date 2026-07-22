@@ -1,0 +1,12 @@
+check,before_2f33,after_2f33,delta
+collected test count,2319,2344,25 (new test_phase2f33_geo_zone_closure.py)
+passed,2344 (after full rebaseline),2344,0
+failed,0,0,0
+errors,0,0,0
+canonical hash,1f7891798eb8382f,d4900ce03daa5437,changed (2 rows added + 1 modified)
+matrix hash,abac4ae72e8ab1d4,abfa5d030b1cfeee,changed (geo module row updated)
+protected count,238,241,+3
+denominator,262,264,+2
+unprotected count,24,23,-1
+pending held candidates,56,54,-2
+application files changed,0 (this slice's own baseline),2 (app/engines/geo/router.py, app/engines/geo/service.py),2 -- exactly the allow-listed files

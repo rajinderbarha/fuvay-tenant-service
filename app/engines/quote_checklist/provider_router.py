@@ -6,6 +6,16 @@ from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.engines.quote_checklist.quote_service import ServiceJobQuoteService
 from app.engines.quote_checklist.checklist_service import ServiceChecklistService
+# Slice 2F-16: every mutation route in this file previously used only
+# get_current_user -- ANY authenticated user of ANY role/tenant (a customer,
+# a technician, a cross-tenant staff member) could create/edit/delete quote
+# items, send quotes to customers, cancel quotes, or complete checklists for
+# ANY job in ANY tenant. require_owner_or_office_staff_mutation (existing
+# dependency, no new role/permission) admits tenant_owner/staff/super_admin,
+# excludes customer AND technician (no technician frontend caller was found
+# for these routes -- only frontend/tenant-portal's web staff UI calls them),
+# and denies read-only tenant access_scope. See provider-quote-authorization.md.
+from app.core.permissions import require_owner_or_office_staff_mutation
 
 quote_svc = ServiceJobQuoteService()
 checklist_svc = ServiceChecklistService()
@@ -35,7 +45,7 @@ async def provider_get_quote(
     quote_id: str, r: Request,
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
-    data = await quote_svc.get_quote(db, quote_id)
+    data = await quote_svc.get_quote(db, quote_id, tenant_id=str(user.tenant_id))
     return ok(data, _rid(r), "provider_get_quote")
 
 
@@ -51,7 +61,7 @@ async def provider_quote_events(
 @provider_router.post("/{quote_id}/cancel")
 async def provider_cancel_quote(
     quote_id: str, body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await quote_svc.cancel_quote(
         db, quote_id, str(user.tenant_id),
@@ -65,7 +75,7 @@ async def provider_cancel_quote(
 @staff_router.post("")
 async def staff_create_quote(
     body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await quote_svc.create_quote(
         db,
@@ -96,14 +106,14 @@ async def staff_get_quote(
     quote_id: str, r: Request,
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
-    data = await quote_svc.get_quote(db, quote_id)
+    data = await quote_svc.get_quote(db, quote_id, tenant_id=str(user.tenant_id))
     return ok(data, _rid(r), "staff_get_quote")
 
 
 @staff_router.post("/{quote_id}/items")
 async def staff_add_item(
     quote_id: str, body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await quote_svc.add_item(
         db, quote_id, str(user.tenant_id),
@@ -123,7 +133,7 @@ async def staff_add_item(
 @staff_router.put("/{quote_id}/items/{item_id}")
 async def staff_update_item(
     quote_id: str, item_id: str, body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await quote_svc.update_item(
         db, quote_id, item_id, str(user.tenant_id),
@@ -141,7 +151,7 @@ async def staff_update_item(
 @staff_router.delete("/{quote_id}/items/{item_id}")
 async def staff_remove_item(
     quote_id: str, item_id: str, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await quote_svc.remove_item(
         db, quote_id, item_id, str(user.tenant_id),
@@ -153,7 +163,7 @@ async def staff_remove_item(
 @staff_router.post("/{quote_id}/send-to-customer")
 async def staff_send_to_customer(
     quote_id: str, body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await quote_svc.send_to_customer(
         db, quote_id, str(user.tenant_id),
@@ -167,7 +177,7 @@ async def staff_send_to_customer(
 @staff_router.post("/{quote_id}/mark-revised")
 async def staff_mark_revised(
     quote_id: str, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await quote_svc.mark_revised(
         db, quote_id, str(user.tenant_id),
@@ -188,7 +198,7 @@ async def staff_quote_events(
 @staff_router.post("/{quote_id}/cancel")
 async def staff_cancel_quote(
     quote_id: str, body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await quote_svc.cancel_quote(
         db, quote_id, str(user.tenant_id),
@@ -203,7 +213,7 @@ async def staff_cancel_quote(
 @checklist_router.post("")
 async def staff_create_checklist(
     body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await checklist_svc.create_checklist(
         db,
@@ -232,14 +242,14 @@ async def staff_get_checklist(
     checklist_id: str, r: Request,
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
-    data = await checklist_svc.get_checklist(db, checklist_id)
+    data = await checklist_svc.get_checklist(db, checklist_id, tenant_id=str(user.tenant_id))
     return ok(data, _rid(r), "staff_get_checklist")
 
 
 @checklist_router.put("/{checklist_id}/items/{item_id}")
 async def staff_update_checklist_item(
     checklist_id: str, item_id: str, body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await checklist_svc.update_checklist_item(
         db, checklist_id, item_id, str(user.tenant_id),
@@ -256,7 +266,7 @@ async def staff_update_checklist_item(
 @checklist_router.post("/{checklist_id}/complete")
 async def staff_complete_checklist(
     checklist_id: str, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_owner_or_office_staff_mutation), db: AsyncSession = Depends(get_db),
 ):
     data = await checklist_svc.complete_checklist(
         db, checklist_id, str(user.tenant_id), str(user.user_id),

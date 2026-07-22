@@ -7,7 +7,7 @@ import structlog
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.permissions import P, require_permission
+from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.engines.serviceability.service import ServiceabilityService
@@ -150,7 +150,7 @@ async def list_tenant_service_areas(
              response_model=ApiResponse[dict])
 async def create_tenant_service_area(
     body: ServiceAreaCreate, r: Request,
-    u: UserContext = Depends(require_permission(P.TENANT_SERVICE_AREA_CREATE)),
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_CREATE)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.create_service_area(uuid.UUID(u.tenant_id), body.model_dump())
     return ok(data, _rid(r), ENGINE_ID)
@@ -168,7 +168,7 @@ async def get_tenant_service_area_limits(
              summary="Validate a candidate service area before saving", response_model=ApiResponse[dict])
 async def validate_tenant_service_area(
     body: ServiceAreaValidateRequest, r: Request,
-    u: UserContext = Depends(require_permission(P.TENANT_SERVICE_AREA_CREATE)),
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_CREATE)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.validate_service_area(uuid.UUID(u.tenant_id), body.model_dump())
     return ok(data, _rid(r), ENGINE_ID)
@@ -187,7 +187,7 @@ async def get_tenant_service_area(
             summary="Update a service area", response_model=ApiResponse[dict])
 async def update_tenant_service_area(
     area_id: uuid.UUID, body: ServiceAreaUpdate, r: Request,
-    u: UserContext = Depends(require_permission(P.TENANT_SERVICE_AREA_UPDATE)),
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_UPDATE)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     payload = {k: v for k, v in body.model_dump().items() if v is not None}
     return ok(await s.update_service_area(area_id, payload), _rid(r), ENGINE_ID)
@@ -197,7 +197,7 @@ async def update_tenant_service_area(
                summary="Deactivate a service area", response_model=ApiResponse[dict])
 async def delete_tenant_service_area(
     area_id: uuid.UUID, r: Request,
-    u: UserContext = Depends(require_permission(P.TENANT_SERVICE_AREA_DELETE)),
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_DELETE)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.deactivate_service_area(area_id), _rid(r), ENGINE_ID)
 
@@ -206,7 +206,7 @@ async def delete_tenant_service_area(
              summary="Set a service area as the primary coverage area", response_model=ApiResponse[dict])
 async def set_primary_tenant_service_area(
     area_id: uuid.UUID, r: Request,
-    u: UserContext = Depends(require_permission(P.TENANT_SERVICE_AREA_UPDATE)),
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_UPDATE)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.set_primary_service_area(area_id), _rid(r), ENGINE_ID)
 
@@ -216,7 +216,7 @@ async def set_primary_tenant_service_area(
              response_model=ApiResponse[dict])
 async def add_service_mapping(
     area_id: uuid.UUID, body: ServiceMappingCreate, r: Request,
-    u: UserContext = Depends(require_permission(P.TENANT_SERVICE_AREA_SERVICE_CREATE)),
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_SERVICE_CREATE)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.add_service_mapping(area_id, body.model_dump())
     return ok(data, _rid(r), ENGINE_ID)
@@ -235,7 +235,7 @@ async def list_service_mappings(
             summary="Update a service mapping", response_model=ApiResponse[dict])
 async def update_service_mapping(
     area_id: uuid.UUID, mapping_id: uuid.UUID, body: ServiceMappingUpdate, r: Request,
-    u: UserContext = Depends(require_permission(P.TENANT_SERVICE_AREA_SERVICE_UPDATE)),
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_SERVICE_UPDATE)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     payload = {k: v for k, v in body.model_dump().items() if v is not None}
     return ok(await s.update_service_mapping(area_id, mapping_id, payload), _rid(r), ENGINE_ID)
@@ -245,7 +245,7 @@ async def update_service_mapping(
                summary="Remove a service mapping", response_model=ApiResponse[dict])
 async def delete_service_mapping(
     area_id: uuid.UUID, mapping_id: uuid.UUID, r: Request,
-    u: UserContext = Depends(require_permission(P.TENANT_SERVICE_AREA_SERVICE_DELETE)),
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_SERVICE_DELETE)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.delete_service_mapping(area_id, mapping_id), _rid(r), ENGINE_ID)
 

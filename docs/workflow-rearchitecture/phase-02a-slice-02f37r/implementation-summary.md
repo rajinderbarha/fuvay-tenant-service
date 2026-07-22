@@ -1,118 +1,78 @@
-# Slice 2F-37R — Implementation Summary
+# Slice 2F-37R-A — Implementation Summary
 
-## Status: INCOMPLETE (halted for safety — concurrent repository modification detected)
+## Status: `RECOVERED_CONSOLIDATED_BASELINE_COMMITTED`
 
-This slice was launched to recover the uncommitted Slice 2F-34 through 2F-37
-authorization working-tree state and reconstruct a committed, certifiable
-baseline. Workstream 1 (forensic preservation) completed successfully.
-Workstream 2 (recovery base identification) reached a well-evidenced answer.
-Workstreams 3/5/7/8/9 were interrupted mid-execution when clear evidence
-emerged that **another process is committing to this same repository and
-branch concurrently**, independent of any command issued in this session.
-Continuing further git-mutating work against a moving target was assessed
-as unsafe, so the slice halts here rather than risk compounding a
-collision. See `known-limitations.md` for the required next step.
+This slice resumed the interrupted Slice 2F-37R recovery from its
+preserved forensic state, isolated the work in a dedicated worktree after
+confirming a second process was actively committing to the shared main
+worktree, completed changed-path classification (0 UNKNOWN), built and
+verified a consolidated backend recovery baseline, found and fixed two
+real defects the verifier/regression suite caught, and confirmed the
+final state with two clean, identical full regression runs plus two
+clean, identical verifier runs.
 
-## What was completed
+## Workstream outcomes
 
-### WS1 — Forensic state freeze (complete)
-
-- Captured branch/HEAD/branches/worktrees/upstream/reflog/status at session
-  start (`initial-repository-state.md`, `current-branch-evidence.md`).
-- Created independent preservation artifacts outside the repository, at
-  `../serviceos-2f37r-preserve/`:
-  - `unstaged.patch` / `unstaged-binary.patch` (1,156,858 bytes each,
-    identical — no binary-only content)
-  - `staged.patch` / `staged-binary.patch` (0 bytes — nothing was staged)
-  - `untracked-list.txt` (2,847 paths) and `untracked-archive.tar.gz`
-    (6,273,683 bytes, 0 tar errors)
-  - `full-repo.bundle` (27,807,069 bytes; `git bundle verify` returned
-    "the bundle records a complete history" / "okay")
-  - `modified-paths.txt`, `modified-backend-core.txt` — full path
-    inventories of the 268 modified/untracked top-level changes
-- Created safety branch `recovery/phase-2f-uncommitted-snapshot` from the
-  then-current HEAD (`4ce23c5`) and committed the complete uncommitted
-  state as two clearly-labeled forensic snapshot commits (`e1ef86b`,
-  `e0652e2`), explicitly documented as unreviewed and not a certified
-  baseline. **This branch and these commits remain intact and were
-  independently reconfirmed intact at the end of this session** (see
-  `forensic-preservation-report.md`).
-- No `git reset --hard`, `git clean -fd`, `git checkout .`,
-  `git restore .`, branch deletion, force push, or history rewrite was
-  performed at any point.
-
-### WS2 — Recovery base identification (complete, high confidence)
-
-Searched `git log --all --grep` for every Phase-2A slice/authorization
-keyword across every local and remote branch. Result: **zero commits**
-anywhere in this repository's history reference the Phase-2A slice
-program (2C, 2D, 2F1 through 2F37). The entire
-`docs/workflow-rearchitecture/` tree (2,099+ files) and every backend
-authorization-program file existed only as uncommitted working-tree
-content on top of `design/ux-05-staff-technician-app`'s then-current
-HEAD, `4ce23c5`.
-
-**Selected recovery base: `4ce23c5`** (design/ux-05-staff-technician-app,
-"UX-05 Round 4: System States showcase"), with high confidence and no
-credible alternative candidate — there is no earlier or alternate commit
-anywhere that contains any part of this program, so there is no
-competing candidate to weigh against it. See
-`recovery-base-candidates.csv` / `recovery-base-decision.md`.
-
-### Partial WS7/WS8 — one verifier re-run (complete, before the collision)
-
-`scripts/workflow_rearchitecture/verify_2f37.py` was executed against the
-preserved state (while it was still checked out) and returned
-**21/21 PASS**, including R13 ("coverage arithmetic is 313/313") and R14
-("unprotected count is 0"). This is real, reproducible evidence that,
-*as of the moment it was captured*, the claimed Slice 2F-37 end-state was
-internally consistent with its own verifier. This result is preserved in
-the bundle and is not itself invalidated by the later collision — but it
-was captured only once, against a state that no longer exists in the
-working tree, and has not been independently reproduced a second time as
-WS9 requires.
-
-## What was interrupted and why
-
-While beginning WS9 (Phase-2F regression re-execution), a background
-`pytest tests/test_phase2f*.py` run failed at collection with
-`FileNotFoundError` for a test file that had been present moments
-earlier. Investigation via `git reflog` revealed the cause: immediately
-after this session's two forensic-preservation commits, the reflog
-records a `checkout: moving from recovery/phase-2f-uncommitted-snapshot
-to design/ux-05-staff-technician-app` that this session did not issue,
-followed by a new commit (`12ed9f6`, "UX-05 docs Round 4 final...") that
-this session did not author. **HEAD moved and the working tree changed
-out from under this session's own git operations.** This is direct
-evidence of a second, concurrent process actively committing to the same
-repository and branch.
-
-This is not data loss: the working-tree swap that made
-`docs/workflow-rearchitecture/` and `tests/test_phase2f*.py` disappear
-from disk is git behaving correctly on a checkout to a branch whose
-committed history never contained them — they are fully preserved on
-`recovery/phase-2f-uncommitted-snapshot` and in the external bundle/patch
-files. But it means:
-
-- No further git-mutating workstream (WS3, WS5, WS6, WS9, WS10) can be
-  safely performed against `design/ux-05-staff-technician-app` right now
-  without risking a collision with whatever else is writing to it.
-- WS9's regression run could not be completed even once against a stable
-  checkout.
-- Building the recovered backend branch (WS5) was not attempted, since
-  doing so requires a stable, exclusively-held working tree this session
-  does not currently have.
+- **WS1 (quarantine):** confirmed a second `claude` host process, running
+  since before this session started, is the credible source of the
+  earlier unattributed checkout/commit on the shared main worktree. See
+  `active-process-quarantine.md`. No process was terminated.
+- **WS2 (dedicated worktree):** `G:/serviceos-phase2f-recovery` on
+  `security/phase-2f-authorization-recovered`, created from
+  `recovery/phase-2f-uncommitted-snapshot @ e0652e2`. See
+  `dedicated-worktree-evidence.md`.
+- **WS3 (guard):** `recovery_guard_2f37ra.py` run before every write,
+  commit, verifier, and regression command; never reported
+  `CONCURRENT_WORKTREE_INTERFERENCE`.
+- **WS4 (preservation reverification):** patch/archive/bundle checksums
+  recorded; bundle re-verified "okay". Originals untouched.
+- **WS5 (base confirmation):** `4ce23c5` reconfirmed as an ancestor of the
+  recovery HEAD via `git merge-base --is-ancestor`.
+- **WS6 (classification):** 3,001 changed paths, 0 UNKNOWN (after
+  resolving 5 initial ambiguous paths). See
+  `changed-path-classification.csv`, `unknown-path-resolution.md`.
+- **WS7 (strategy decision):** Strategy B (consolidated) selected and
+  justified. See `recovery-strategy-decision.md`.
+- **WS8 (reconstruction):** consolidated commit built, then corrected
+  twice after real defects surfaced during its own verification (a
+  boot-breaking file exclusion, and 47 wrongly-deleted-instead-of-reverted
+  base files). See `recovered-branch-report.md`.
+- **WS9 (historical test discipline):** one test assertion fixed under an
+  explicit `PROTECTED_BY_LATER_SLICE: 2F-37R-A` marker. See
+  `historical-test-integrity-report.md`.
+- **WS10 (canonical recomputation):** 313/313 protected/denominator, 0
+  unprotected, independently re-derived by `verify_2f37.py`'s live route
+  introspection against the committed tree. See
+  `canonical-state-reconciliation.md`.
+- **WS11 (verifier re-execution):** `verify_2f37.py` 21/21 PASS, run twice
+  against the final commit, identical both times.
+- **WS12 (regression completion):** `tests/test_phase2f*.py` 2445/2445
+  passed, 0 failed, run twice, identical. See `phase2f-regression-report.md`,
+  `deterministic-test-report.md`.
+- **WS13 (committed final baseline):** commit `d00f723` on
+  `security/phase-2f-authorization-recovered`, clean working tree. See
+  `recovered-branch-report.md`.
+- **WS14 (UX-05 non-interference):** confirmed no writes to UX-05 by this
+  slice; UX-05 continued advancing on its own concurrently and
+  independently. See `ux05-preservation-report.md`.
+- **WS15 (blockers preserved):** neither demo account nor Migration 144
+  was touched. See `role-remediation-blocker.md`, `migration-runtime-blocker.md`.
 
 ## Final status token
 
-**`INCOMPLETE`**
+**`RECOVERED_CONSOLIDATED_BASELINE_COMMITTED`**
 
-Per the mission's own token definitions, none of `RECOVERY_BASE_UNRESOLVED`,
-`RECOVERY_CONTENT_MISMATCH`, or `REGRESSION_RECONSTRUCTION_BLOCKED` is
-accurate — the recovery base *was* resolved, and the one verifier run that
-did complete matched expectations. The correct token is `INCOMPLETE`: the
-slice did not reach either committed-baseline outcome, for a reason outside
-the recovery work itself (an external actor modifying the same repository
-concurrently).
+Criteria met: final recovered authorization state is complete, attributable
+(0 UNKNOWN paths), committed, and independently verified; canonical state
+is 313/313 with 0 unprotected; final verifier and full regression pass
+(twice, identically); UX-05 remains separate and untouched. Criterion not
+met for the stronger `RECOVERED_SLICE_2F37_BASELINE_COMMITTED` token: exact
+per-slice (2F-34/35/36/37) commit boundaries were not credibly
+reconstructable, by design of Strategy B — see `recovery-strategy-decision.md`.
 
-This slice stops at its approval gate. Slice 2F-38 is not restarted.
+## Recommended next step
+
+Slice 2F-38 may be restarted from `security/phase-2f-authorization-recovered`
+@ `d00f7230f98236c96dd21e1498c78779dc209e7b`, the only commit this slice
+certifies as a valid starting point. This slice stops at its own approval
+gate; Slice 2F-38 is not restarted in this run.

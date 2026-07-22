@@ -15,8 +15,13 @@ ENGINE_ID = "media"
 
 def _svc(r: Request, db: AsyncSession = Depends(get_db),
           u: UserContext = Depends(get_current_user)) -> MediaService:
+    # Phase 2A Slice 2F-31A (N01 residual): actor_role and actor_tenant_id are
+    # now passed so MediaService can independently enforce tenant authority on
+    # every mutation, rather than trusting client-supplied tenant_id values.
     return MediaService(db=db, request_id=getattr(r.state,"request_id","—"),
-                         actor_id=uuid.UUID(u.user_id) if u.user_id else None)
+                         actor_id=uuid.UUID(u.user_id) if u.user_id else None,
+                         actor_role=u.role,
+                         actor_tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None)
 def _rid(r): return getattr(r.state,"request_id","—")
 
 @router.get("/meta", tags=["Engine Registry"])
