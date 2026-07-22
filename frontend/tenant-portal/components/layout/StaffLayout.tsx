@@ -70,10 +70,10 @@ export function StaffLayout({ activeNav, children }: { activeNav: string; childr
         <nav style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
           {NAV.map(item => (
             <a key={item.id} href={item.href} style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8,
+              display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: "var(--radius-full)",
               textDecoration: "none", fontSize: 13,
-              color: activeNav === item.id ? "var(--brand)" : "var(--text-secondary)",
-              background: activeNav === item.id ? "var(--brand-muted, rgba(37,99,235,0.08))" : "transparent",
+              color: activeNav === item.id ? "var(--brand-hover)" : "var(--text-secondary)",
+              background: activeNav === item.id ? "var(--accent-muted)" : "transparent",
               fontWeight: activeNav === item.id ? 600 : 400,
             }}>
               {item.icon}{item.label}

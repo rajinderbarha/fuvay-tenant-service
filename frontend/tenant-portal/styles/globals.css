@@ -10,8 +10,8 @@
   --bg:               #F7F7F4;
   --bg-soft:          #F3F1EF;
   --bg-muted:         #EFEDEA;
-  --bg-gradient:      radial-gradient(circle at top left, rgba(255, 214, 156, 0.28), transparent 34%),
-                      radial-gradient(circle at top right, rgba(210, 218, 255, 0.30), transparent 38%),
+  --bg-gradient:      radial-gradient(circle at top left, rgba(255, 214, 156, 0.30), transparent 34%),
+                      radial-gradient(circle at top right, rgba(255, 180, 92, 0.14), transparent 38%),
                       linear-gradient(180deg, #FBFAF7 0%, #F7F7F4 100%);
 
   /* ── Surfaces ── */
@@ -20,35 +20,35 @@
   --surface-sunken:   #F3F1EF;
 
   /* ── Borders ── */
-  --border:           rgba(0, 0, 0, 0.06);
-  --border-strong:    rgba(0, 0, 0, 0.12);
-  --border-focus:     #5A8DFF;
+  --border:           rgba(34, 29, 20, 0.08);
+  --border-strong:    rgba(34, 29, 20, 0.15);
+  --border-focus:     #F2994A;
 
   /* ── Text ── */
-  --text-primary:     #0B0B0B;
-  --text-secondary:   #7A7A7A;
-  --text-tertiary:    #9A9A9A;
-  --text-link:        #5A8DFF;
+  --text-primary:     #221D14;
+  --text-secondary:   #6B6153;
+  --text-tertiary:    #A39A8A;
+  --text-link:        #E0812F;
   --text-on-brand:    #FFFFFF;
 
-  /* ── Brand / Primary ── */
-  --brand:            #5A8DFF;
-  --brand-hover:      #3F72E8;
-  --primary-gradient: linear-gradient(135deg, #5A8DFF 0%, #70CFA0 100%);
+  /* ── Brand / Primary — warm orange (matches super-admin) ── */
+  --brand:            #F2994A;
+  --brand-hover:      #E0812F;
+  --primary-gradient: linear-gradient(135deg, #F2994A 0%, #FFB45C 100%);
 
   /* ── Accent ── */
   --accent:           #FFB45C;
   --accent-hover:     #F0A047;
   --accent-muted:     #FFF4E6;
 
-  /* ── Sidebar — deep navy ── */
-  --sidebar-bg:           #0F172A;
-  --sidebar-text:         rgba(148, 163, 184, 0.85);
-  --sidebar-text-active:  #F8FAFC;
-  --sidebar-active:       rgba(99, 102, 241, 0.18);
-  --sidebar-hover:        rgba(255, 255, 255, 0.05);
-  --sidebar-border:       rgba(255, 255, 255, 0.07);
-  --sidebar-category:     rgba(148, 163, 184, 0.50);
+  /* ── Sidebar — light warm cream, theme-aware (see dark block) ── */
+  --sidebar-bg:           #FFFFFF;
+  --sidebar-text:         #6B6153;
+  --sidebar-text-active:  #E0812F;
+  --sidebar-active:       #FDECD8;
+  --sidebar-hover:        #FBF3E9;
+  --sidebar-border:       #EFEAE1;
+  --sidebar-category:     #A39A8A;
 
   /* ── Semantic — Success ── */
   --success:          #70CFA0;
@@ -80,62 +80,62 @@
   --golden-border:    rgba(255, 180, 92, 0.35);
   --golden-text:      #B9791E;
 
-  /* ── Terra ── */
-  --terra:            #5A8DFF;
-  --terra-bg:         #EEF3FF;
-  --terra-border:     rgba(90, 141, 255, 0.30);
-  --terra-text:       #3B63C7;
+  /* ── Terra — true warm terracotta, was blue despite the name ── */
+  --terra:            #E0812F;
+  --terra-bg:         #FFF4E6;
+  --terra-border:     rgba(224, 129, 47, 0.30);
+  --terra-text:       #B4601C;
 
-  /* ── Shadows — soft ── */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow:    0 8px 24px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.10);
+  /* ── Shadows — warm-neutral tint ── */
+  --shadow-sm: 0 1px 2px rgba(38, 30, 20, 0.05);
+  --shadow:    0 8px 24px rgba(38, 30, 20, 0.08);
+  --shadow-md: 0 16px 40px rgba(38, 30, 20, 0.09);
+  --shadow-lg: 0 30px 80px rgba(38, 30, 20, 0.11);
 }
 
-/* ─── DARK MODE (CHARCOAL SLATE) ──────────────────────────────────────────── */
+/* ─── DARK MODE (TRUE CHARCOAL — neutral, no blue undertone) ─────────────── */
 [data-theme="dark"] {
   /* ── Backgrounds ── */
-  --bg:               #111827;
-  --bg-soft:          #0F172A;
-  --bg-muted:         #1E293B;
-  --bg-gradient:      linear-gradient(160deg, #111827 0%, #0F172A 55%, #111827 100%);
+  --bg:               #171614;
+  --bg-soft:          #121110;
+  --bg-muted:         #211F1C;
+  --bg-gradient:      linear-gradient(160deg, #171614 0%, #121110 55%, #171614 100%);
 
   /* ── Surfaces ── */
-  --surface:          #1F2937;
-  --surface-elevated: #243244;
-  --surface-sunken:   #111827;
+  --surface:          #201E1B;
+  --surface-elevated: #2A2724;
+  --surface-sunken:   #171614;
 
   /* ── Borders ── */
-  --border:           #334155;
-  --border-strong:    #475569;
-  --border-focus:     #60A5FA;
+  --border:           #38352F;
+  --border-strong:    #4A463E;
+  --border-focus:     #F2994A;
 
   /* ── Text ── */
-  --text-primary:     #F8FAFC;
-  --text-secondary:   #CBD5E1;
-  --text-tertiary:    #64748B;
-  --text-link:        #60A5FA;
-  --text-on-brand:    #FFFFFF;
+  --text-primary:     #F5F3EF;
+  --text-secondary:   #C9C3B7;
+  --text-tertiary:    #8A8375;
+  --text-link:        #FFB45C;
+  --text-on-brand:    #171614;
 
-  /* ── Brand / Primary ── */
-  --brand:            #60A5FA;
-  --brand-hover:      #3B82F6;
-  --primary-gradient: linear-gradient(135deg, #60A5FA 0%, #A78BFA 100%);
+  /* ── Brand / Primary — warm orange ── */
+  --brand:            #F2994A;
+  --brand-hover:      #FFB45C;
+  --primary-gradient: linear-gradient(135deg, #F2994A 0%, #FFB45C 100%);
 
   /* ── Accent ── */
-  --accent:           #A78BFA;
-  --accent-hover:     #7C3AED;
-  --accent-muted:     rgba(96, 165, 250, 0.14);
+  --accent:           #FFB45C;
+  --accent-hover:     #F2994A;
+  --accent-muted:     rgba(242, 153, 74, 0.16);
 
-  /* ── Sidebar ── */
-  --sidebar-bg:           #0F172A;
-  --sidebar-text:         rgba(148, 163, 184, 0.80);
-  --sidebar-text-active:  #F8FAFC;
-  --sidebar-active:       rgba(99, 102, 241, 0.22);
-  --sidebar-hover:        rgba(255, 255, 255, 0.05);
-  --sidebar-border:       rgba(255, 255, 255, 0.07);
-  --sidebar-category:     rgba(148, 163, 184, 0.45);
+  /* ── Sidebar — true charcoal, theme-aware (was navy in both modes) ── */
+  --sidebar-bg:           #171614;
+  --sidebar-text:         #A39A8A;
+  --sidebar-text-active:  #FFB45C;
+  --sidebar-active:       rgba(242, 153, 74, 0.18);
+  --sidebar-hover:        rgba(255, 255, 255, 0.04);
+  --sidebar-border:       rgba(255, 255, 255, 0.06);
+  --sidebar-category:     #6B6557;
 
   /* ── Semantic — Success ── */
   --success:          #22C55E;
@@ -168,10 +168,10 @@
   --golden-text:      #FCD34D;
 
   /* ── Terra ── */
-  --terra:            #A78BFA;
-  --terra-bg:         rgba(167, 139, 250, 0.12);
-  --terra-border:     rgba(167, 139, 250, 0.25);
-  --terra-text:       #C4B5FD;
+  --terra:            #FFB45C;
+  --terra-bg:         rgba(255, 180, 92, 0.14);
+  --terra-border:     rgba(255, 180, 92, 0.28);
+  --terra-text:       #FFCB8A;
 
   /* ── Shadows ── */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.40), 0 1px 2px rgba(0, 0, 0, 0.30);

@@ -18,3 +18,7 @@ export * from "./components/Skeleton";
 export * from "./components/StateViews";
 export * from "./components/PageShell";
 export * from "./components/DataTable";
+export * from "./components/StatCard";
+export * from "./components/Avatar";
+export * from "./components/IconButton";
+export * from "./components/QuickActionGrid";

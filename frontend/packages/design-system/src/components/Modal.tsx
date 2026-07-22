@@ -75,7 +75,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
         style={{
           background: "var(--surface)",
           border: "1px solid var(--border)",
-          borderRadius: "var(--radius-lg)",
+          borderRadius: "var(--radius-xl, 1rem)",
           boxShadow: "var(--shadow-overlay)",
           minWidth: "min(28rem, 90vw)",
           maxWidth: "90vw",

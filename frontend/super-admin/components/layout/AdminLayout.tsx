@@ -360,16 +360,15 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
         }}>
           <div style={{
             width: 34, height: 34, borderRadius: "var(--radius-lg)",
-            background: "rgba(255,255,255,0.15)",
-            backdropFilter: "blur(4px)",
+            background: "var(--brand)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0, border: "1px solid rgba(255,255,255,0.2)",
+            flexShrink: 0,
           }}>
-            <Zap size={16} color="white" fill="white"/>
+            <Zap size={16} color="var(--text-on-brand)" fill="var(--text-on-brand)"/>
           </div>
           {!collapsed && (
             <div>
-              <p style={{ color: "#fff", fontWeight: 700, fontSize: 14, margin: 0, letterSpacing: "-0.02em" }}>ServiceOS</p>
+              <p style={{ color: "var(--sidebar-text-active)", fontWeight: 700, fontSize: 14, margin: 0, letterSpacing: "-0.02em" }}>ServiceOS</p>
               <p style={{ color: "var(--sidebar-category)", fontSize: 10, margin: 0, fontWeight: 600, letterSpacing: "0.08em" }}>SUPER ADMIN</p>
             </div>
           )}
@@ -495,7 +494,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed }: {
         title={vertical.vertical_label}
         style={{
           display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "9px 0", borderRadius: "var(--radius-md)", textDecoration: "none",
+          padding: "9px 0", borderRadius: "var(--radius-full)", textDecoration: "none",
           color: isActiveSection ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
           background: isActiveSection ? "var(--sidebar-active)" : "transparent",
           marginBottom: 1,
@@ -512,7 +511,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed }: {
         onClick={() => setExpanded(e => !e)}
         style={{
           width: "100%", display: "flex", alignItems: "center", gap: 10,
-          padding: "8px 10px", borderRadius: "var(--radius-md)", border: "none",
+          padding: "8px 12px", borderRadius: "var(--radius-full)", border: "none",
           background: isActiveSection ? "var(--sidebar-active)" : "transparent",
           color: isActiveSection ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
           cursor: "pointer", fontFamily: "inherit", fontSize: 13,
@@ -529,7 +528,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed }: {
         {vertical.is_beta && (
           <span style={{
             fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4,
-            background: "rgba(124,58,237,0.2)", color: "#7c3aed", flexShrink: 0,
+            background: "var(--terra-bg)", color: "var(--terra-text)", flexShrink: 0,
           }}>BETA</span>
         )}
         <ChevronRight size={12} style={{
@@ -573,9 +572,9 @@ function SidebarItem({
       onMouseLeave={() => setHov(false)}
       style={{
         display: "flex", alignItems: "center", gap: 10,
-        padding: collapsed ? "9px 0" : "8px 10px",
+        padding: collapsed ? "9px 0" : "8px 12px",
         justifyContent: collapsed ? "center" : undefined,
-        borderRadius: "var(--radius-md)", textDecoration: "none",
+        borderRadius: "var(--radius-full)", textDecoration: "none",
         background: active ? "var(--sidebar-active)" : hov ? "var(--sidebar-hover)" : "transparent",
         color: active ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
         fontWeight: active ? 600 : 400,
@@ -585,14 +584,6 @@ function SidebarItem({
         marginBottom: 1,
       }}
     >
-      {/* Active indicator */}
-      {active && (
-        <span style={{
-          position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)",
-          width: 3, height: 20, borderRadius: "0 3px 3px 0",
-          background: "rgba(255,255,255,0.9)",
-        }}/>
-      )}
       <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: active ? 1 : 0.75 }}>
         {item.icon}
       </span>

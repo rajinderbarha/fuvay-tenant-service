@@ -14,7 +14,7 @@ export function Card({ title, actions, padding = "md", children, style, ...rest 
       style={{
         background: "var(--surface)",
         border: "1px solid var(--border)",
-        borderRadius: "var(--radius-lg)",
+        borderRadius: "var(--radius-xl, 1rem)",
         boxShadow: "var(--shadow-sm)",
         overflow: "hidden",
         ...style,

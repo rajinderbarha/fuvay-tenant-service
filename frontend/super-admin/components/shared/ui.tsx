@@ -464,7 +464,7 @@ export function StatCard({ label, value, change, trend, icon, onClick, alert, ac
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={onClick} style={{
       background: alert ? "var(--danger-bg)" : "var(--surface)",
       border: `1px solid ${alert ? "var(--danger-border)" : hov && onClick ? "var(--border-strong)" : "var(--border)"}`,
-      borderRadius: 14, padding: "18px 20px",
+      borderRadius: "var(--radius-xl, 1rem)", padding: "18px 20px",
       boxShadow: hov && onClick ? "var(--shadow-md)" : "var(--shadow-sm)",
       display: "flex", flexDirection: "column", gap: 12,
       cursor: onClick ? "pointer" : undefined,
@@ -479,7 +479,7 @@ export function StatCard({ label, value, change, trend, icon, onClick, alert, ac
         }}>{label}</p>
         {icon && (
           <div style={{
-            width: 36, height: 36, borderRadius: 10,
+            width: 36, height: 36, borderRadius: "var(--radius-lg)",
             background: iconBg,
             display: "flex", alignItems: "center", justifyContent: "center",
             color: iconColor, flexShrink: 0,
