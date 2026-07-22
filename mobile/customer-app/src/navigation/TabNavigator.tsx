@@ -38,7 +38,8 @@ function TabIcon({ icon, label, focused }:{ icon:keyof typeof Ionicons.glyphMap;
   const { theme } = useTheme();
   return (
     <View style={{ alignItems:"center", gap:2, paddingTop:6 }}
-      accessible accessibilityLabel={`${label} tab${focused ? ", selected" : ""}`}>
+      accessible accessibilityRole="tab" accessibilityState={{ selected: focused }}
+      accessibilityLabel={`${label} tab${focused ? ", selected" : ""}`}>
       <Ionicons name={icon} size={22} color={focused ? theme.colors.tabActive : theme.colors.tabInactive}/>
       <Text numberOfLines={1} style={{ fontSize:9, fontWeight:"600",
         color:focused?theme.colors.tabActive:theme.colors.tabInactive }}>{label}</Text>

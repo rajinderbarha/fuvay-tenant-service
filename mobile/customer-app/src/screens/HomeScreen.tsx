@@ -101,12 +101,14 @@ export default function HomeScreen({ navigation }: Props) {
         <View style={s.topIcons}>
           <TouchableOpacity style={s.iconBtn}
             onPress={() => (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"Notifications" })}
-            accessible accessibilityRole="button" accessibilityLabel="Notifications">
+            accessible accessibilityRole="button" accessibilityLabel="Notifications"
+            hitSlop={{ top:6, bottom:6, left:6, right:6 }}>
             <Ionicons name="notifications-outline" size={20} color={theme.colors.textInverse}/>
           </TouchableOpacity>
           <TouchableOpacity style={s.avatarBtn}
             onPress={() => (navigation.navigate as (...args: unknown[]) => void)("Tabs", { screen:"Profile" })}
             accessible accessibilityRole="button" accessibilityLabel="Open profile"
+            hitSlop={{ top:6, bottom:6, left:6, right:6 }}
             testID="home-profile-avatar">
             <Text style={s.avatarInitial}>{(firstName ?? "?")[0]?.toUpperCase()}</Text>
           </TouchableOpacity>

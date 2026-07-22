@@ -73,4 +73,22 @@ describe("TabNavigator (UX-07 Pass 3d: exactly 5 non-wrapping tabs)", () => {
     );
     expect(queryAllByText("Chat").length).toBe(0);
   });
+
+  // UX-07 Pass 3f accessibility remediation: the focused tab (Home, the
+  // navigator's initial route) must expose accessibilityRole="tab" and
+  // accessibilityState={{selected:true}} via TabIcon, not just a visual
+  // color change -- a screen-reader user has no other way to know which
+  // tab is active.
+  it("marks the initially-focused tab as selected for assistive tech", () => {
+    const { getByLabelText } = render(
+      <ThemeProvider>
+        <NavigationContainer>
+          <TabNavigator />
+        </NavigationContainer>
+      </ThemeProvider>
+    );
+    const homeTab = getByLabelText("Home tab, selected");
+    expect(homeTab.props.accessibilityRole).toBe("tab");
+    expect(homeTab.props.accessibilityState).toEqual({ selected: true });
+  });
 });
