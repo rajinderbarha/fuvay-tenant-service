@@ -14,6 +14,8 @@ import { ServiceOSError, trustBadgesApi } from "../../../lib/api";
 import { TrustBadgeChip } from "../../../components/TrustBadges";
 import type { EarnedBadge } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
+import { useSetupStatus } from "../../../hooks/useSetupStatus";
+import { SetupWizardDrawer } from "../../../components/layout/TenantLayout";
 import {
   Building2, User, Mail, Phone, Globe, Clock, Camera, AlertTriangle,
   CheckCircle2, XCircle, Info, RefreshCw, ChevronRight, Shield, Loader,
@@ -251,6 +253,11 @@ export default function ProviderProfilePage() {
   const [tab, setTab] = useState<TabKey>("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [setupWizardOpen, setSetupWizardOpen] = useState(false);
+  // Shared hook (same one TenantLayout uses to hide the "Setup" nav group
+  // once complete) -- this is the one-stop place users land on to reach
+  // setup/config after that group disappears from the sidebar.
+  const setupStatus = useSetupStatus();
 
   // Personal form state
   const [fullName,   setFullName]   = useState("");
@@ -675,6 +682,45 @@ export default function ProviderProfilePage() {
               </div>
             </div>
           )}
+
+          {/* 4b. BUSINESS SETUP -- consolidation point for setup/config pages
+              now that the sidebar's "Setup" nav group hides itself once
+              setup is complete. Links to all 10 real setup steps (via the
+              shared useSetupStatus hook) and can also reopen the full
+              SetupWizardDrawer. Stays visible even after setup is complete
+              so users always have somewhere to reach these pages. */}
+          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, padding:"16px 24px" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:8 }}>
+              <div>
+                <p className="section-title" style={{ margin:"0 0 2px" }}><Package size={15}/> Business Setup</p>
+                <p className="section-sub" style={{ margin:0 }}>
+                  {setupStatus.loading ? "Checking setup status…" :
+                    setupStatus.isComplete ? "All setup steps are complete." :
+                    `${setupStatus.doneCount} of ${setupStatus.total} setup steps complete.`}
+                </p>
+              </div>
+              <Btn variant="secondary" size="sm" onClick={()=>setSetupWizardOpen(true)}>
+                <CheckCircle2 size={13}/> {setupStatus.isComplete ? "View Setup Checklist" : "Continue Setup"}
+              </Btn>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:10 }}>
+              {setupStatus.steps
+                .filter(s => ["service_areas_count","active_services_count","coverage_configured","availability_configured"].includes(s.key))
+                .map(s => (
+                  <a key={s.key} href={s.href} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px",
+                    borderRadius:9, border:"1px solid var(--border)", background:"var(--surface-sunken)", textDecoration:"none" }}>
+                    {s.done
+                      ? <CheckCircle2 size={15} style={{ color:"var(--success-text)", flexShrink:0 }}/>
+                      : <XCircle size={15} style={{ color:"var(--text-tertiary)", flexShrink:0 }}/>}
+                    <div style={{ minWidth:0 }}>
+                      <p style={{ fontSize:12.5, fontWeight:600, color:"var(--text-primary)", margin:0 }}>{s.label}</p>
+                      <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.desc}</p>
+                    </div>
+                  </a>
+              ))}
+            </div>
+          </div>
+          <SetupWizardDrawer open={setupWizardOpen} onClose={()=>setSetupWizardOpen(false)}/>
 
           {/* 5. TABS */}
           <div>
