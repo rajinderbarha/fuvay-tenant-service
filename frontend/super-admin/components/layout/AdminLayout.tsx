@@ -332,8 +332,9 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
         style={{
           position: "absolute", left: -9999, top: 0, zIndex: 1000,
           padding: "10px 16px", background: "var(--surface-elevated)",
-          color: "var(--text-primary)", borderRadius: 8,
+          color: "var(--text-primary)", borderRadius: "var(--radius-md)",
           border: "1px solid var(--border)", fontSize: 13, fontWeight: 600,
+          boxShadow: "var(--shadow-md)",
         }}
         onFocus={e => { e.currentTarget.style.left = "12px"; e.currentTarget.style.top = "12px"; }}
         onBlur={e => { e.currentTarget.style.left = "-9999px"; }}
@@ -358,7 +359,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
           borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0,
         }}>
           <div style={{
-            width: 34, height: 34, borderRadius: 10,
+            width: 34, height: 34, borderRadius: "var(--radius-lg)",
             background: "rgba(255,255,255,0.15)",
             backdropFilter: "blur(4px)",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -465,7 +466,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
 function footerBtnStyle(collapsed: boolean): React.CSSProperties {
   return {
     width: "100%", display: "flex", alignItems: "center",
-    gap: 8, padding: "8px 10px", borderRadius: 8,
+    gap: 8, padding: "8px 10px", borderRadius: "var(--radius-md)",
     border: "none", background: "transparent", cursor: "pointer",
     color: "var(--sidebar-text)", fontFamily: "inherit",
     justifyContent: collapsed ? "center" : undefined,
@@ -494,7 +495,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed }: {
         title={vertical.vertical_label}
         style={{
           display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "9px 0", borderRadius: 8, textDecoration: "none",
+          padding: "9px 0", borderRadius: "var(--radius-md)", textDecoration: "none",
           color: isActiveSection ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
           background: isActiveSection ? "var(--sidebar-active)" : "transparent",
           marginBottom: 1,
@@ -511,7 +512,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed }: {
         onClick={() => setExpanded(e => !e)}
         style={{
           width: "100%", display: "flex", alignItems: "center", gap: 10,
-          padding: "8px 10px", borderRadius: 8, border: "none",
+          padding: "8px 10px", borderRadius: "var(--radius-md)", border: "none",
           background: isActiveSection ? "var(--sidebar-active)" : "transparent",
           color: isActiveSection ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
           cursor: "pointer", fontFamily: "inherit", fontSize: 13,
@@ -574,7 +575,7 @@ function SidebarItem({
         display: "flex", alignItems: "center", gap: 10,
         padding: collapsed ? "9px 0" : "8px 10px",
         justifyContent: collapsed ? "center" : undefined,
-        borderRadius: 8, textDecoration: "none",
+        borderRadius: "var(--radius-md)", textDecoration: "none",
         background: active ? "var(--sidebar-active)" : hov ? "var(--sidebar-hover)" : "transparent",
         color: active ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
         fontWeight: active ? 600 : 400,
@@ -650,7 +651,7 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [bellOpen]);
   const iconBtnStyle: React.CSSProperties = {
-    width: 36, height: 36, borderRadius: 10,
+    width: 36, height: 36, borderRadius: "var(--radius-lg)",
     border: "1px solid var(--border)", background: "var(--surface)",
     cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
     color: "var(--text-secondary)",
@@ -676,7 +677,7 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
             style={{
               width: "100%", height: 36, padding: "0 12px 0 34px", fontSize: 13,
               background: "var(--surface-sunken)", border: "1px solid var(--border)",
-              borderRadius: 10, color: "var(--text-primary)", outline: "none",
+              borderRadius: "var(--radius-lg)", color: "var(--text-primary)", outline: "none",
               fontFamily: "inherit", transition: "border-color 0.15s, background 0.15s",
             }}
             onFocus={e => { e.currentTarget.style.borderColor = "var(--border-focus)"; e.currentTarget.style.background = "var(--surface)"; }}
@@ -721,8 +722,8 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
         {bellOpen && (
           <div style={{
             position: "absolute", top: 44, right: 0, width: 340, maxHeight: 440,
-            background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12,
-            boxShadow: "0 12px 40px rgba(0,0,0,0.22)", zIndex: 300, overflow: "hidden",
+            background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)",
+            boxShadow: "var(--shadow-lg)", zIndex: 300, overflow: "hidden",
             display: "flex", flexDirection: "column",
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
