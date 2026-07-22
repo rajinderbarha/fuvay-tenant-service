@@ -21,9 +21,8 @@ import React, { useCallback, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { TenantLayout } from "../../../../../components/layout/TenantLayout";
-import {
-  Card, CardHeader, SectionHeader, Btn, Badge, Spinner, Input, Select, Modal,
-} from "../../../../../components/shared/ui";
+import { Card, PageHeader, Button, Spinner, Modal, Select, Input, Textarea } from "@serviceos/design-system";
+import { Badge } from "../../../../../components/shared/ui";
 import { apiFetch } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
 
@@ -165,7 +164,7 @@ export default function ProviderComplaintDetailPage() {
   if (complaint.error) {
     return (
       <TenantLayout activeNav="provider">
-        <Card><p style={{ color: "var(--danger)" }}>{complaint.error}</p>
+        <Card><p style={{ color: "var(--danger-text)" }}>{complaint.error}</p>
           <Link href="/provider/complaints">← Back to complaints</Link>
         </Card>
       </TenantLayout>
@@ -178,18 +177,18 @@ export default function ProviderComplaintDetailPage() {
         <Link href="/provider/complaints" style={{ fontSize: 13 }}>← Back to complaints</Link>
       </div>
 
-      <SectionHeader
+      <PageHeader
         title={`${s(c.complaint_number) || "Complaint"} — ${s(c.title) || s(c.complaint_type)}`}
-        subtitle={s(c.description)}
+        description={s(c.description)}
         actions={
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="secondary" onClick={() => setPropOpen(true)}>Propose settlement</Btn>
-            <Btn onClick={() => setResOpen(true)}>Offer resolution</Btn>
+            <Button variant="secondary" size="sm" onClick={() => setPropOpen(true)}>Propose settlement</Button>
+            <Button variant="primary" size="sm" onClick={() => setResOpen(true)}>Offer resolution</Button>
           </div>
         }
       />
 
-      <Card style={{ marginBottom: 16 }}>
+      <Card style={{ margin: "16px 0" }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <Badge variant={STATUS_COLOR[status] ?? "default"}>{status.replace(/_/g, " ") || "—"}</Badge>
           {sla && <Badge variant={SLA_COLOR[sla] ?? "muted"}>SLA: {sla.replace(/_/g, " ")}</Badge>}
@@ -204,16 +203,17 @@ export default function ProviderComplaintDetailPage() {
 
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         {(["messages", "resolutions", "settlement", "ai"] as const).map(t => (
-          <Btn key={t} variant={tab === t ? "primary" : "ghost"} size="sm" onClick={() => setTab(t)}>
+          <Button key={t} variant={tab === t ? "primary" : "ghost"} size="sm" onClick={() => setTab(t)}>
             {t === "messages" ? "Messages" : t === "resolutions" ? "Resolutions"
               : t === "settlement" ? "Settlement" : "AI settlement"}
-          </Btn>
+          </Button>
         ))}
       </div>
 
       {tab === "messages" && (
         <Card>
-          <CardHeader title="Conversation" subtitle="Replying marks your first response for SLA purposes." />
+          <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600 }}>Conversation</h3>
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-tertiary)" }}>Replying marks your first response for SLA purposes.</p>
           {messages.loading ? <Spinner /> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
               {(messages.data ?? []).length === 0 && (
@@ -222,7 +222,7 @@ export default function ProviderComplaintDetailPage() {
               {(messages.data ?? []).map(m => (
                 <div key={s(m.id)} style={{
                   padding: "10px 12px", borderRadius: 8,
-                  background: s(m.sender_type) === "provider" ? "var(--surface-2)" : "var(--surface)",
+                  background: s(m.sender_type) === "provider" ? "var(--surface-sunken)" : "var(--surface)",
                   border: "1px solid var(--border)",
                 }}>
                   <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
@@ -233,22 +233,24 @@ export default function ProviderComplaintDetailPage() {
               ))}
             </div>
           )}
-          <Input label="Reply to customer" rows={3} value={reply} onChange={setReply}
+          <Textarea label="Reply to customer" rows={3} value={reply} onChange={e => setReply(e.target.value)}
                  placeholder="Explain what you will do to resolve this…" />
-          {respond.error && <p style={{ color: "var(--danger)", fontSize: 12 }}>{respond.error}</p>}
+          {respond.error && <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{respond.error}</p>}
           <div style={{ marginTop: 10 }}>
-            <Btn disabled={!reply.trim() || respond.loading}
+            <Button disabled={!reply.trim() || respond.loading} loading={respond.loading}
                  onClick={() => respond.execute(reply.trim())}>
-              {respond.loading ? "Sending…" : "Send reply"}
-            </Btn>
+              Send reply
+            </Button>
           </div>
         </Card>
       )}
 
       {tab === "resolutions" && (
         <Card>
-          <CardHeader title="Resolutions offered"
-                      subtitle="A rework resolution, once the customer accepts it, creates a rework request." />
+          <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600 }}>Resolutions offered</h3>
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-tertiary)" }}>
+            A rework resolution, once the customer accepts it, creates a rework request.
+          </p>
           {resolutions.loading ? <Spinner /> : (
             (resolutions.data ?? []).length === 0
               ? <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No resolution offered yet.</p>
@@ -273,8 +275,10 @@ export default function ProviderComplaintDetailPage() {
 
       {tab === "settlement" && (
         <Card>
-          <CardHeader title="Settlement proposals"
-                      subtitle="A settlement only takes effect once BOTH you and the customer accept it." />
+          <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600 }}>Settlement proposals</h3>
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-tertiary)" }}>
+            A settlement only takes effect once BOTH you and the customer accept it.
+          </p>
           {proposals.loading ? <Spinner /> : (
             (proposals.data ?? []).length === 0
               ? <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No settlement proposals yet.</p>
@@ -304,10 +308,10 @@ export default function ProviderComplaintDetailPage() {
                     </div>
                     {awaitingMe && !mine && (
                       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                        <Btn size="sm" disabled={respondProposal.loading}
-                             onClick={() => respondProposal.execute(s(p.id), "accept")}>Accept</Btn>
-                        <Btn size="sm" variant="secondary" disabled={respondProposal.loading}
-                             onClick={() => respondProposal.execute(s(p.id), "reject")}>Reject</Btn>
+                        <Button size="sm" disabled={respondProposal.loading}
+                             onClick={() => respondProposal.execute(s(p.id), "accept")}>Accept</Button>
+                        <Button size="sm" variant="secondary" disabled={respondProposal.loading}
+                             onClick={() => respondProposal.execute(s(p.id), "reject")}>Reject</Button>
                       </div>
                     )}
                   </div>
@@ -315,15 +319,17 @@ export default function ProviderComplaintDetailPage() {
               })
           )}
           {respondProposal.error && (
-            <p style={{ color: "var(--danger)", fontSize: 12 }}>{respondProposal.error}</p>
+            <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{respondProposal.error}</p>
           )}
         </Card>
       )}
 
       {tab === "ai" && (
         <Card>
-          <CardHeader title="AI settlement"
-            subtitle="If the customer's issue reaches AI mediation, answer these so it can weigh both sides. Running AI settlement is charged to your account." />
+          <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600 }}>AI settlement</h3>
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-tertiary)" }}>
+            If the customer's issue reaches AI mediation, answer these so it can weigh both sides. Running AI settlement is charged to your account.
+          </p>
           {aiSession.loading ? <Spinner /> : !aiSession.data ? (
             <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
               No AI settlement session for this complaint.
@@ -345,23 +351,24 @@ export default function ProviderComplaintDetailPage() {
                     {qs.map((q, i) => (
                       <div key={i} style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{q}</div>
-                        <Input rows={2} value={aiAnswers[i] ?? ""}
-                          onChange={(v: string) => setAiAnswers(a => { const n = [...a]; n[i] = v; return n; })}
+                        <Textarea rows={2} value={aiAnswers[i] ?? ""}
+                          onChange={e => setAiAnswers(a => { const n = [...a]; n[i] = e.target.value; return n; })}
                           placeholder="Your response…" />
                       </div>
                     ))}
                     {submitAiAnswers.error && (
-                      <p style={{ color: "var(--danger)", fontSize: 12 }}>{submitAiAnswers.error}</p>
+                      <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{submitAiAnswers.error}</p>
                     )}
-                    <Btn disabled={submitAiAnswers.loading ||
+                    <Button disabled={submitAiAnswers.loading ||
                                    qs.length === 0 ||
                                    qs.some((_, i) => !(aiAnswers[i] ?? "").trim())}
+                         loading={submitAiAnswers.loading}
                          onClick={() => submitAiAnswers.execute(qs.map((_, i) => aiAnswers[i] ?? ""))}>
-                      {submitAiAnswers.loading ? "Submitting…" : "Submit answers"}
-                    </Btn>
+                      Submit answers
+                    </Button>
                   </>
                 ) : (
-                  <p style={{ fontSize: 13, color: "var(--success)" }}>
+                  <p style={{ fontSize: 13, color: "var(--success-text)" }}>
                     ✓ Your answers are recorded. The AI will propose an outcome once both sides have responded.
                   </p>
                 )}
@@ -371,36 +378,48 @@ export default function ProviderComplaintDetailPage() {
         </Card>
       )}
 
-      <Modal open={resOpen} onClose={() => setResOpen(false)} title="Offer a resolution">
-        <Select label="Resolution type" value={resType} onChange={setResType} options={RESOLUTION_TYPES} />
-        <Input label="Description" rows={3} value={resDesc} onChange={setResDesc}
-               placeholder="What are you offering the customer?" />
-        {offerResolution.error && (
-          <p style={{ color: "var(--danger)", fontSize: 12 }}>{offerResolution.error}</p>
-        )}
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <Btn disabled={!resDesc.trim() || offerResolution.loading}
+      <Modal
+        open={resOpen}
+        onClose={() => setResOpen(false)}
+        title="Offer a resolution"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setResOpen(false)}>Cancel</Button>
+          <Button variant="primary" size="sm" disabled={!resDesc.trim()} loading={offerResolution.loading}
                onClick={() => offerResolution.execute()}>
-            {offerResolution.loading ? "Offering…" : "Offer resolution"}
-          </Btn>
-          <Btn variant="ghost" onClick={() => setResOpen(false)}>Cancel</Btn>
+            Offer resolution
+          </Button>
+        </>}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Select label="Resolution type" value={resType} onChange={e => setResType(e.target.value)} options={RESOLUTION_TYPES} />
+          <Textarea label="Description" rows={3} value={resDesc} onChange={e => setResDesc(e.target.value)}
+                 placeholder="What are you offering the customer?" />
+          {offerResolution.error && (
+            <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{offerResolution.error}</p>
+          )}
         </div>
       </Modal>
 
-      <Modal open={propOpen} onClose={() => setPropOpen(false)} title="Propose a settlement">
-        <Select label="Proposal type" value={propType} onChange={setPropType} options={PROPOSAL_TYPES} />
-        <Input label="Amount (optional)" value={propAmt} onChange={setPropAmt} placeholder="e.g. 75" />
-        <Input label="Description" rows={3} value={propDesc} onChange={setPropDesc}
-               placeholder="Describe the settlement you are proposing…" />
-        {createProposal.error && (
-          <p style={{ color: "var(--danger)", fontSize: 12 }}>{createProposal.error}</p>
-        )}
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <Btn disabled={!propDesc.trim() || createProposal.loading}
+      <Modal
+        open={propOpen}
+        onClose={() => setPropOpen(false)}
+        title="Propose a settlement"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setPropOpen(false)}>Cancel</Button>
+          <Button variant="primary" size="sm" disabled={!propDesc.trim()} loading={createProposal.loading}
                onClick={() => createProposal.execute()}>
-            {createProposal.loading ? "Proposing…" : "Propose settlement"}
-          </Btn>
-          <Btn variant="ghost" onClick={() => setPropOpen(false)}>Cancel</Btn>
+            Propose settlement
+          </Button>
+        </>}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Select label="Proposal type" value={propType} onChange={e => setPropType(e.target.value)} options={PROPOSAL_TYPES} />
+          <Input label="Amount (optional)" value={propAmt} onChange={e => setPropAmt(e.target.value)} placeholder="e.g. 75" />
+          <Textarea label="Description" rows={3} value={propDesc} onChange={e => setPropDesc(e.target.value)}
+                 placeholder="Describe the settlement you are proposing…" />
+          {createProposal.error && (
+            <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{createProposal.error}</p>
+          )}
         </div>
       </Modal>
     </TenantLayout>

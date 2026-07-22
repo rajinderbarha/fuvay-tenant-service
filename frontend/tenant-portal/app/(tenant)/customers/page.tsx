@@ -5,10 +5,10 @@
  */
 import React, { useCallback, useState } from "react";
 import { TenantLayout }                 from "../../../components/layout/TenantLayout";
-import { Card, Skeleton, SectionHeader, HealthMeter, Badge } from "../../../components/shared/ui";
+import { Card, Skeleton, PageHeader, Input, Button, EmptyState } from "@serviceos/design-system";
+import { HealthMeter, Badge }            from "../../../components/shared/ui";
 import { customersApi }                 from "../../../lib/api";
 import { useApi }                       from "../../../hooks/useApi";
-import { Search, UserCheck }            from "lucide-react";
 
 const HEALTH_TABS = [
   { key:"",         label:"All Customers", color:"" },
@@ -60,13 +60,13 @@ export default function CustomersPage() {
 
   return (
     <TenantLayout activeNav="customers">
-      <SectionHeader
+      <PageHeader
         title="Customers"
-        subtitle={customers.loading ? "Loading…" : `${customers.data?.total ?? 0} customers`}
+        description={customers.loading ? "Loading…" : `${customers.data?.total ?? 0} customers`}
       />
 
       {/* Health band tabs */}
-      <div style={{ display:"flex", gap:4, marginBottom:14, flexWrap:"wrap",
+      <div style={{ display:"flex", gap:4, marginBottom:14, marginTop:16, flexWrap:"wrap",
         padding:"4px", background:"var(--surface-sunken)",
         borderRadius:10, border:"1px solid var(--border)", width:"fit-content" }}>
         {HEALTH_TABS.map(t => (
@@ -83,35 +83,26 @@ export default function CustomersPage() {
       </div>
 
       {/* Search */}
-      <div style={{ position:"relative", marginBottom:14 }}>
-        <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)",
-          color:"var(--text-tertiary)", fontSize:14, pointerEvents:"none", display:"flex" }}><Search size={14}/></span>
-        <input value={search} onChange={e => setSearch(e.target.value)}
+      <div style={{ marginBottom:14, maxWidth:400 }}>
+        <Input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search by name or phone…"
-          style={{ width:"100%", maxWidth:400, height:36, padding:"0 12px 0 36px",
-            fontSize:13, fontFamily:"inherit", background:"var(--surface-base)",
-            border:"1px solid var(--border)", borderRadius:8,
-            color:"var(--text-primary)", outline:"none", boxSizing:"border-box" as const }}
-          onFocus={e => e.currentTarget.style.borderColor="var(--accent)"}
-          onBlur={e  => e.currentTarget.style.borderColor="var(--border)"}
         />
       </div>
 
       {/* Table */}
       {customers.loading ? (
         <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-          {[...Array(6)].map((_,i) => <Skeleton key={i} height={56} style={{ borderRadius:8 }} />)}
+          {[...Array(6)].map((_,i) => <Skeleton key={i} height="3.5rem" radius="8px" />)}
         </div>
       ) : filtered.length === 0 ? (
-        <Card padding={48} style={{ textAlign:"center" }}>
-          <div style={{ display:"flex", justifyContent:"center", marginBottom:10, color:"var(--text-tertiary)" }}><UserCheck size={32}/></div>
-          <p style={{ fontSize:14, color:"var(--text-secondary)", margin:0 }}>
-            {search ? `No customers matching "${search}"` : "No customers in this health band"}
-          </p>
+        <Card style={{ textAlign:"center" }}>
+          <EmptyState
+            title={search ? `No customers matching "${search}"` : "No customers in this health band"}
+          />
         </Card>
       ) : (
         <>
-          <Card padding={0} style={{ overflow:"hidden" }}>
+          <Card padding="none" style={{ overflow:"hidden" }}>
             <div style={{ overflowX:"auto" }}>
               <table style={{ width:"100%", borderCollapse:"collapse" }}>
                 <thead>
@@ -187,20 +178,10 @@ export default function CustomersPage() {
             </span>
             <div style={{ display:"flex", gap:8 }}>
               {prevStack.length > 0 && (
-                <button onClick={handlePrev}
-                  style={{ padding:"6px 14px", borderRadius:8, border:"1px solid var(--border)",
-                    background:"var(--surface-base)", color:"var(--text-secondary)",
-                    cursor:"pointer", fontSize:12, fontFamily:"inherit" }}>
-                  ← Prev
-                </button>
+                <Button variant="secondary" size="sm" onClick={handlePrev}>← Prev</Button>
               )}
               {customers.data?.has_next && (
-                <button onClick={handleNext}
-                  style={{ padding:"6px 14px", borderRadius:8, border:"none",
-                    background:"var(--brand)", color:"white",
-                    cursor:"pointer", fontSize:12, fontFamily:"inherit", fontWeight:600 }}>
-                  Next →
-                </button>
+                <Button variant="primary" size="sm" onClick={handleNext}>Next →</Button>
               )}
             </div>
           </div>
