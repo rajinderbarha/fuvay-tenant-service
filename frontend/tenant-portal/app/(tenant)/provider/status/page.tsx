@@ -23,6 +23,7 @@ import {
   TenantFinanceReadinessPanel, TenantOperationalReadinessPanel,
   TenantVisibilityRulesPanel, TenantStatusActivityTimeline, type ActivityRow,
 } from "../../../../components/status/TenantStatusPanels";
+import { PageHeader, Card, Button, Alert } from "@serviceos/design-system";
 
 export default function ProviderStatusPage() {
   const tenant = useTenant();
@@ -202,23 +203,18 @@ export default function ProviderStatusPage() {
       </div>
 
       {/* Page Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: "-0.01em" }}>Provider Visibility & Bookability</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>Track whether your business is visible to customers and ready to receive bookings.</p>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={refreshAll} disabled={refreshAction.loading} style={{
-            display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 8, fontSize: 13,
-            fontWeight: 500, cursor: "pointer", border: "1px solid var(--border)", background: "transparent", color: "var(--text-primary)" }}>
-            <RefreshCw size={13}/> Refresh Status
-          </button>
+      <PageHeader
+        title="Provider Visibility & Bookability"
+        description="Track whether your business is visible to customers and ready to receive bookings."
+        actions={<>
+          <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={13}/>} onClick={refreshAll} disabled={refreshAction.loading}>
+            Refresh Status
+          </Button>
           {canRecalculate ? (
-            <button onClick={() => refreshAction.execute()} disabled={refreshAction.loading} style={{
-              display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 8, fontSize: 13,
-              fontWeight: 500, cursor: "pointer", border: "none", background: "var(--brand)", color: "#fff" }}>
-              <RefreshCw size={13}/> {refreshAction.loading ? "Recalculating…" : "Recalculate Readiness"}
-            </button>
+            <Button variant="primary" size="sm" leftIcon={<RefreshCw size={13}/>} loading={refreshAction.loading}
+              onClick={() => refreshAction.execute()}>
+              Recalculate Readiness
+            </Button>
           ) : (
             <span title="Permission required: only the tenant owner can recalculate readiness." style={{
               display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 8, fontSize: 13,
@@ -226,21 +222,19 @@ export default function ProviderStatusPage() {
               <RefreshCw size={13}/> Recalculate Readiness — Permission required
             </span>
           )}
-          <Link href="/provider/status"><button style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px",
-            borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: "pointer", border: "1px solid var(--border)", background: "transparent" }}>
-            <ClipboardList size={13}/> View Setup Checklist
-          </button></Link>
-          <Link href="/provider/offerings"><button style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px",
-            borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: "pointer", border: "1px solid var(--border)", background: "transparent" }}>
-            <Wrench size={13}/> Manage Offerings
-          </button></Link>
-        </div>
-      </div>
+          <Link href="/provider/status"><Button variant="secondary" size="sm" leftIcon={<ClipboardList size={13}/>}>
+            View Setup Checklist
+          </Button></Link>
+          <Link href="/provider/offerings"><Button variant="secondary" size="sm" leftIcon={<Wrench size={13}/>}>
+            Manage Offerings
+          </Button></Link>
+        </>}
+      />
 
       {refreshAction.error && (
-        <p style={{ fontSize: 12, color: "var(--danger-text, #b91c1c)" }}>
+        <Alert tone="danger">
           {refreshAction.error} {refreshAction.requestId && `(Request ID: ${refreshAction.requestId})`}
-        </p>
+        </Alert>
       )}
 
       {/* Hero */}
@@ -267,8 +261,7 @@ export default function ProviderStatusPage() {
       <TenantReadinessScoreCards cards={scoreCards}/>
 
       {/* Trust Badges — what customers see on your profile */}
-      <div style={{ background: "var(--surface, #fff)", border: "1px solid var(--border, #e5e5e5)",
-        borderRadius: 14, padding: 18 }}>
+      <Card padding="md">
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
           <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Trust Badges</h2>
           <span style={{ fontSize: 12, color: "var(--text-tertiary, #888)" }}>
@@ -277,7 +270,7 @@ export default function ProviderStatusPage() {
         </div>
         <TrustBadges badges={badgesApi.data ?? []}
           empty="No badges earned yet. Keep your ratings high and jobs completed to earn them." />
-      </div>
+      </Card>
 
       {/* Offerings Status */}
       {(enabledOfferingsApi.error || offeringStatusApi.error) ? (
