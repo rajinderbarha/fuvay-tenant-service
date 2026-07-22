@@ -38,3 +38,39 @@ WSL Debian, clean install each run (`rm -rf node_modules` not needed — fresh
 - Text-scaling, reduced-motion (beyond Skeleton), and full accessibility audit across
   all screens — only the migrated screens/components got real a11y attributes; the
   14 not-yet-migrated screens were not audited this pass.
+
+## Pass 3d addendum
+
+### Counts
+- Before this pass: **58/58** (7 suites) — independently re-confirmed by
+  extracting HEAD `8a78724`'s `mobile/customer-app` tree standalone and
+  running its test suite in isolation.
+- After this pass: **69/69** (10 suites) — 58 pre-existing + 11 new.
+- Consecutive full-suite runs: 5/5 clean runs, 69/69 every time.
+
+### New test files (11 new tests, all real/behavioral, no snapshots)
+
+| File | Tests | Covers |
+|---|---|---|
+| `src/screens/__tests__/HomeScreen.test.tsx` | 6 | real-name greeting; honest no-fake-name fallback; real active-booking card; light empty state when no active job; SmartBot CTA navigation (no params); popular-service tile navigation (carries label) |
+| `src/navigation/__tests__/TabNavigator.test.tsx` | 2 | exactly 5 required tabs with short, non-wrapping labels; "Chat" no longer a primary tab label |
+| `src/screens/__tests__/DeepSeekChatScreen.handoff.test.tsx` | 3 | category auto-match skips re-asking; honest fallback notice on no match; language switch preserves category/booking state |
+
+### The 5 non-negotiable areas from the brief — confirmed passing
+
+1. **Home greeting fallback logic** — PASS (`HomeScreen.test.tsx`).
+2. **Home active-booking real-vs-empty state** — PASS (`HomeScreen.test.tsx`).
+3. **Bottom-nav 5-item non-wrapping structure** — PASS (`TabNavigator.test.tsx`).
+4. **Category-context handoff to SmartBot (category not asked twice)** — PASS (`DeepSeekChatScreen.handoff.test.tsx`).
+5. **Language switch preserving conversation state** — PASS (`DeepSeekChatScreen.handoff.test.tsx`).
+
+### Test-environment workaround (documented, not hidden)
+
+Several new tests render `Skeleton`, `TouchableOpacity`, or
+`@react-navigation/bottom-tabs`' `BottomTabBar`, all of which internally
+call `Animated.timing().start()`, hitting a real pre-existing
+environment-level version mismatch (react-native 0.85.0 peer-depends on
+react ^19.2.3; this repo pins react 19.2.0 — see `known-limitations.md`).
+Scoped, test-file-local workarounds only (`jest.mock` stubbing `Skeleton`
+to a plain `View`; `jest.spyOn(Animated, "timing")` stubbing only the
+native-driver hookup) — neither changes app behavior.

@@ -166,3 +166,43 @@
     bubbles/composer/language modal). No CSV audit artifact and no
     systematic pass over the other 14 screens exists yet.
 28. **ESLint was not run this session** (see `typecheck-build-lint-report.md`).
+
+## Pass 3d addendum (Home + SmartBot redesign)
+
+1. **react/react-native-renderer version mismatch (real, environment-level,
+   pre-existing)**: `mobile/customer-app/package.json` pins `react` at
+   `19.2.0`, but the installed `react-native@0.85.0`'s `peerDependencies`
+   requires `react ^19.2.3`. This does not appear to break the real app at
+   runtime (Expo's managed runtime resolves its own React copy), but it
+   does throw `Incompatible React versions` inside Jest the moment any
+   component's `Animated.timing().start()` actually executes during a test
+   (e.g. `Skeleton`'s pulse animation, `TouchableOpacity`'s internal opacity
+   animation, `@react-navigation/bottom-tabs`' tab-indicator animation).
+   This was previously invisible because no test rendered `HomeScreen`,
+   `TabNavigator`, or any screen using `Skeleton`/`TouchableOpacity` under
+   `react-test-renderer`. Pass 3d's new tests are the first to exercise
+   these paths, and hit it directly. Not fixed by bumping dependency
+   versions (out of this pass's presentation-only scope, and Expo SDK 56's
+   managed workflow pins specific React versions for native/build
+   compatibility that were not independently re-verified against
+   `19.2.3`); worked around with a scoped, test-file-local
+   `jest.spyOn(Animated, "timing")` stub (see `theme-stability-non-
+   regression.md`) that only fakes the native-driver hookup, not any real
+   Animated Value semantics. Flagged here for whoever eventually resolves
+   the underlying dependency-version inconsistency for real.
+2. **Home's saved-location chip is a placeholder, not real data**: no
+   customer-facing "default/current service address" endpoint was found
+   wired to Home (only the full `addressApi` CRUD list). The chip always
+   reads "Choose service location" and routes to the real Address Book
+   rather than fabricating a location string.
+3. **Guided SmartBot restructuring is partial**: only the category-handoff
+   mechanism and a compact context header were built this pass; the fuller
+   "Step X of Y" progress indicator / expandable "answers so far" summary /
+   auto-advance-vs-Continue differentiation from the brief's Part B was not
+   built. See `guided-smartbot-design-contract.md` and
+   `deferred-pass-4-work.md`.
+4. **Responsive width matrix / 320px certification / accessibility audit /
+   Playwright visual evidence for the redesigned Home and SmartBot screens**
+   were NOT performed this pass (out of time budget given the redesign
+   itself). No documents claiming this work were written. See
+   `deferred-pass-4-work.md`.

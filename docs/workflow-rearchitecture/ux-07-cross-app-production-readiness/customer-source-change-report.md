@@ -15,3 +15,22 @@ downgrade, caused by an external `expo start` process auto-adjusting
 versions) was found in the working tree before this pass began and was
 reverted via `git checkout --` without being committed — it is not part of
 this pass's change set and predates it.
+
+## Pass 3d addendum
+
+8 files changed across 3 commits (`13c818f`, `be43db2`, `b3a0fa0`):
+
+| File | Reason |
+|---|---|
+| `mobile/customer-app/src/screens/HomeScreen.tsx` | Full IA rebuild: search entry, SmartBot CTA, real active-booking/empty states, popular-service tiles (no premature badges, no emoji), trust row, honest greeting fallback. |
+| `mobile/customer-app/src/screens/__tests__/HomeScreen.test.tsx` | New — 6 real behavioral tests for the above. |
+| `mobile/customer-app/src/screens/DeepSeekChatScreen.tsx` | Added optional `route.params.initialCategoryLabel` handling: auto-session-start, auto-open booking flow, real-category fuzzy match (skip re-asking), honest no-match notice, compact category-context header. |
+| `mobile/customer-app/src/screens/__tests__/DeepSeekChatScreen.handoff.test.tsx` | New — 3 real behavioral tests for category handoff + language-switch state preservation. |
+| `mobile/customer-app/src/navigation/TabNavigator.tsx` | Narrowed to exactly 5 tabs (Home/Bookings/SmartBot/Notifications/Profile); emoji → `@expo/vector-icons`; typed `AIAssistant` route params. |
+| `mobile/customer-app/src/navigation/AppNavigator.tsx` | Added a `Chat` root-stack screen (title "Messages") so the human/provider support surface stays reachable after leaving the primary tab bar. |
+| `mobile/customer-app/src/screens/ProfileScreen.tsx` | Added a "Messages" row under Support, navigating to the new `Chat` stack route. |
+| `mobile/customer-app/src/navigation/__tests__/TabNavigator.test.tsx` | New — 2 real behavioral tests (exactly 5 non-wrapping tabs; no standalone "Chat" tab label). |
+
+No backend file, no other mobile app (`staff-app`), no `app.json`, and no
+dependency version in `package.json` was changed this pass (confirmed —
+see `package-config-drift-report.md`).

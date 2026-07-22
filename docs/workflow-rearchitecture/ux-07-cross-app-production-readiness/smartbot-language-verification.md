@@ -33,3 +33,20 @@ that no other screen imports it).
 - No component test exists specifically for the language selector; the
   existing test suite was not re-run against this specific file this round
   (see `unit-component-test-report.md` for what WAS run).
+
+## Pass 3d addendum — language switch preserves category-handoff state
+
+Re-verified against this pass's new category-handoff mechanism specifically
+(not just the general chat-language wiring documented above): a real test
+(`src/screens/__tests__/DeepSeekChatScreen.handoff.test.tsx`, third case)
+arrives with `initialCategoryLabel: "Plumbing"`, confirms the real category
+match succeeded (`catalogApi.categoryOfferings` called with the real
+`plumbing` slug and the category-context header rendered), switches the
+conversation language via the real `chat-language-btn` → 
+`chat-language-option-hi` UI path, and asserts the category-context header
+and flow state are still present afterward (not reset back to the category
+list). This is structurally guaranteed by `language` and `booking` being
+independent React state (a `useState` and a `useReducer` respectively) on
+the same component — switching one never dispatches against the other — but
+this pass adds a real assertion of that behavior rather than relying on
+reading the code.

@@ -28,3 +28,21 @@ worktree and freshly `npm install`-ed (866 packages).
 
 All three were caught and fixed via the WSL `npx tsc --noEmit` loop before committing;
 final state is 0 errors.
+
+## Pass 3d addendum
+
+Ran in WSL Debian against a clean rsynced copy (`~/work/customer-app`,
+excluding `node_modules`/`.expo`), one `npm install --legacy-peer-deps
+--no-audit --no-fund`, then iterated.
+
+| Check | Command | Result |
+|---|---|---|
+| Typecheck | `npx tsc --noEmit` | **0 errors**, both before and after this pass's edits (re-run after each fix) |
+| Tests | `npx jest` | **58/58 real baseline** (independently re-confirmed by extracting HEAD `8a78724`'s `mobile/customer-app` into a clean tree and running its test suite standalone, not just trusting the brief's stated number) → **69/69 after** this pass's 3 commits (58 pre-existing + 11 new) |
+| Full-suite repeat runs | `npx jest` × 5 consecutive | 69/69 every run |
+| ThemeContext targeted repeat runs | `npx jest src/context/__tests__/ThemeContext.test.tsx` × 10 consecutive | 5/5 every run (no regression of Pass 3c's fix) |
+| Lint | `eslint src --ext .ts,.tsx` | Not run this session either (same honest gap as Pass 2 — no claim made about lint cleanliness beyond what `tsc` catches) |
+| Build/export | n/a | Same as Pass 2 — no static export script exists for customer-app; not run |
+
+Full detail (file list, exact counts, per-test breakdown) in
+`customer-test-report.md` and `theme-stability-non-regression.md`.

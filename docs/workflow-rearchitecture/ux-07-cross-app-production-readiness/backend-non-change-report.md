@@ -98,3 +98,16 @@ accessibility attributes) — no API payload, booking-state, or pricing
 logic was touched, and the 48 pre-existing tests (auth, chat/booking
 contract, no-internal-jargon, booking-state reducer) pass unchanged,
 confirming no behavioral regression alongside the 10 new theme tests.
+
+## Pass 3d addendum
+
+`git diff --stat` for this pass's 3 commits (`13c818f`, `be43db2`,
+`b3a0fa0`) touches exactly 8 files, all under `mobile/customer-app/src/` —
+`HomeScreen.tsx`, `DeepSeekChatScreen.tsx`, `TabNavigator.tsx`,
+`AppNavigator.tsx`, `ProfileScreen.tsx`, and 3 new test files. Zero backend
+(`app/`), zero super-admin, zero tenant-portal, zero staff-app files
+touched. No new API route, request/response shape, or backend-facing
+contract was added or changed — `HomeScreen`/`DeepSeekChatScreen` call the
+exact same `bookingsApi`/`fieldOpsJobsApi`/`catalogApi`/
+`homeServiceDraftApi`/`bookingConfirmApi`/`aiConversationApi` functions with
+the exact same signatures as before this pass.
