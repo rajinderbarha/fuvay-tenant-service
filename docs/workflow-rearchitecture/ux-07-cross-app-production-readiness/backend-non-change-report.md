@@ -1,5 +1,13 @@
 # Backend Non-Change Report (Workstream 21)
 
+## Pass 3c addendum
+
+`git diff --stat 68aa6c1..e627214` (Pass 3c's full range) shows exactly one
+file changed: `mobile/customer-app/src/context/__tests__/ThemeContext.test.tsx`.
+Zero backend, zero super-admin, zero tenant-portal, zero staff-app files
+touched.
+
+
 `git status --short` and `git diff --stat cb2ede0..HEAD` at end of Round 1
 show exactly:
 
