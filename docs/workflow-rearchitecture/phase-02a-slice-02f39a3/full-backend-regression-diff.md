@@ -48,6 +48,13 @@ appeared as failed in the full-suite run only.
   changes. It is not one of this slice's fixed or touched files, so it
   is out of this slice's remediation scope; recorded here for honesty
   and left for a future slice to root-cause if it recurs.
+- **Disposition (per Slice 2F-39A3 review): `PRE_EXISTING_TEST_ORDER_POLLUTION`.**
+  This is a valid disposition, but it is explicitly **not** equivalent to
+  a passing complete regression — the full suite is not yet stable, and
+  the contaminating predecessor test / shared-state leak still needs
+  identification before any future final recertification claim. Logged
+  as a carry-forward item for Slice 2F-39C (remaining complete-suite
+  failures and test-order pollution), not closed by this slice.
 
 **No new failure caused by this slice's application changes.** The
 previously fixed defects (`security.router::create_api_key`,

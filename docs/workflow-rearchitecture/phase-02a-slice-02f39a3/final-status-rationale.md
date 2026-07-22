@@ -2,6 +2,14 @@
 
 ## Selected token: `AUTHORIZATION_REMEDIATION_BLOCKED`
 
+**Preferred wording (per Slice 2F-39A3 review):** The mounted-route
+census is complete: 261/261 previously unresolved route records now have
+final classifications. Authorization certification remains blocked
+because 21 routes require explicit product/caller-policy decisions and
+service-layer verification. Always state this as "261/261 classified;
+0 unclassified" — never as "0/261 unclassified" standing alone, which
+reads ambiguously.
+
 ## The classification-volume blocker is closed; a different kind of blocker replaces it
 
 The original 261-route census is now **100% classified** (0 unresolved
@@ -58,3 +66,19 @@ routes with the same rigor as the confirmed defects — prioritizing the
 
 This slice stops at its own approval gate. Demo-role migration, Migration
 144 execution, and Slice 2F-40 are not started.
+
+## Reviewer-clarified bar for closing a `PRODUCT_DECISION_REQUIRED` row
+
+Per the Slice 2F-39A3 review, `PRODUCT_DECISION_REQUIRED` is a valid
+final census classification only when the row already records: fully
+qualified route identity, persistent mutation behavior, current
+authentication, current permission/scope, tenant/principal derivation,
+client-controlled identifiers, service-layer method, known callers, the
+exact missing product/caller-model decision, risk if left unchanged, and
+safe candidate dispositions. These 21 rows must stay outside any
+protected numerator until each is individually resolved to one of:
+canonical tenant/provider mutation, customer self-service mutation,
+platform-admin mutation, trusted internal operation, signed
+callback/webhook, safely deprecated/unmounted route, or proven
+non-business/read-only route. They must not be bulk-resolved by path
+name or HTTP verb pattern-matching.
