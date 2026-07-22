@@ -6,20 +6,11 @@
  */
 import React, { useCallback, useState } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
-import { Card, Badge, Btn, Modal, Select, Input, Skeleton, SectionHeader, EmptyState } from "../../../components/shared/ui";
+import { PageHeader, Card, StatusBadge, Button, Modal, Select, Textarea, Skeleton } from "@serviceos/design-system";
+import { Badge, EmptyState } from "../../../components/shared/ui";
 import { dispatchApi, staffApi } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import type { DispatchRecord } from "../../../lib/api";
-
-const STATUS_VARIANT: Record<string, "default"|"success"|"warning"|"danger"|"info"|"muted"> = {
-  pending: "warning",
-  assigned: "info",
-  accepted: "success",
-  rejected: "danger",
-  expired: "danger",
-  escalated: "danger",
-  completed: "success",
-};
 
 export default function DispatchQueuePage() {
   const queue = useApi(useCallback(() => dispatchApi.getQueue(), []));
@@ -67,25 +58,25 @@ export default function DispatchQueuePage() {
 
   return (
     <TenantLayout activeNav="dispatch">
-      <SectionHeader
+      <PageHeader
         title="Dispatch Queue"
-        subtitle={queue.loading ? "Loading..." : `${records.length} jobs in queue`}
-        actions={<Btn variant="ghost" size="sm" onClick={queue.refetch}>↻ Refresh</Btn>}
+        description={queue.loading ? "Loading..." : `${records.length} jobs in queue`}
+        actions={<Button variant="ghost" size="sm" onClick={queue.refetch}>Refresh</Button>}
       />
 
       {!queue.loading && records.length > 0 && (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:16 }}>
-          <Card padding={16}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:16, marginTop:16 }}>
+          <Card padding="md">
             <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"0 0 4px" }}>Total Queued</p>
             <p style={{ fontSize:22, fontWeight:700, color:"var(--text-primary)", margin:0 }}>{records.length}</p>
           </Card>
-          <Card padding={16}>
+          <Card padding="md">
             <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"0 0 4px" }}>Unassigned</p>
             <p style={{ fontSize:22, fontWeight:700, color: unassignedCount>0 ? "var(--warning-text)" : "var(--text-primary)", margin:0 }}>
               {unassignedCount}
             </p>
           </Card>
-          <Card padding={16}>
+          <Card padding="md">
             <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"0 0 4px" }}>Escalated</p>
             <p style={{ fontSize:22, fontWeight:700, color: escalatedCount>0 ? "var(--danger-text)" : "var(--text-primary)", margin:0 }}>
               {escalatedCount}
@@ -103,14 +94,14 @@ export default function DispatchQueuePage() {
 
       {queue.loading ? (
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-          {[...Array(4)].map((_,i) => <Skeleton key={i} height={110} style={{ borderRadius:14 }}/>)}
+          {[...Array(4)].map((_,i) => <Skeleton key={i} height="6.875rem"/>)}
         </div>
       ) : records.length === 0 ? (
         <EmptyState icon="📭" title="Queue is empty" description="No jobs currently awaiting dispatch."/>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
           {records.map(d => (
-            <Card key={d.job_id} padding={18}>
+            <Card key={d.job_id} padding="md">
               <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
                 gap:16, flexWrap:"wrap" }}>
                 <div style={{ flex:1, minWidth:220 }}>
@@ -119,7 +110,7 @@ export default function DispatchQueuePage() {
                       color:"var(--text-link)", textDecoration:"none" }}>
                       Job {d.job_id.slice(0,8)}
                     </a>
-                    <Badge variant={STATUS_VARIANT[d.status] ?? "muted"}>{d.status.replace(/_/g," ")}</Badge>
+                    <StatusBadge status={d.status} />
                     <Badge variant="muted">{d.dispatch_mode.replace(/_/g," ")}</Badge>
                     {d.escalation_count > 0 && <Badge variant="danger">Escalated ×{d.escalation_count}</Badge>}
                   </div>
@@ -138,10 +129,10 @@ export default function DispatchQueuePage() {
                   </div>
                 </div>
                 <div style={{ display:"flex", gap:8 }}>
-                  <Btn variant="ghost" size="sm" onClick={() => openScoring(d.job_id)}>View Scoring</Btn>
-                  <Btn variant="secondary" size="sm" onClick={() => openAssign(d)}>
+                  <Button variant="ghost" size="sm" onClick={() => openScoring(d.job_id)}>View Scoring</Button>
+                  <Button variant="secondary" size="sm" onClick={() => openAssign(d)}>
                     {d.assigned_staff_id ? "Reassign" : "Assign"}
-                  </Btn>
+                  </Button>
                 </div>
               </div>
             </Card>
@@ -150,27 +141,30 @@ export default function DispatchQueuePage() {
       )}
 
       {/* Assign / reassign modal */}
-      <Modal open={assignModal} onClose={() => setAssignModal(false)}
-        title={assignRecord?.assigned_staff_id ? "Reassign Staff" : "Assign Staff"}>
+      <Modal
+        open={assignModal}
+        onClose={() => setAssignModal(false)}
+        title={assignRecord?.assigned_staff_id ? "Reassign Staff" : "Assign Staff"}
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setAssignModal(false)}>Cancel</Button>
+          <Button variant="primary" size="sm" loading={assignAction.loading}
+            disabled={!assignStaffId} onClick={handleAssign}>
+            {assignRecord?.assigned_staff_id ? "Reassign" : "Assign"}
+          </Button>
+        </>}
+      >
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          {staffList.loading ? <Skeleton height={38}/> : (
-            <Select label="Staff member *" value={assignStaffId} onChange={setAssignStaffId}
+          {staffList.loading ? <Skeleton height="2.375rem"/> : (
+            <Select label="Staff member" required value={assignStaffId} onChange={e => setAssignStaffId(e.target.value)}
               placeholder="Select staff member…"
               options={activeStaff.map(s => ({
                 value: s.user_id,
                 label: s.full_name,
               }))}/>
           )}
-          <Input label="Reason (optional)" placeholder="Reason for assignment..."
-            value={assignReason} onChange={setAssignReason} rows={2}/>
+          <Textarea label="Reason (optional)" placeholder="Reason for assignment..."
+            value={assignReason} onChange={e => setAssignReason(e.target.value)} rows={2}/>
           {assignAction.error && <p style={{ fontSize:12, color:"var(--danger-text)", margin:0 }}>{assignAction.error}</p>}
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setAssignModal(false)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" loading={assignAction.loading}
-              disabled={!assignStaffId} onClick={handleAssign}>
-              {assignRecord?.assigned_staff_id ? "Reassign" : "Assign"}
-            </Btn>
-          </div>
         </div>
       </Modal>
 
@@ -179,7 +173,7 @@ export default function DispatchQueuePage() {
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
           {(() => { const sd = scoring.data; return scoring.loading ? (
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              {[...Array(3)].map((_,i) => <Skeleton key={i} height={40}/>)}
+              {[...Array(3)].map((_,i) => <Skeleton key={i} height="2.5rem"/>)}
             </div>
           ) : !sd || sd.candidates.length === 0 ? (
             <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No candidates scored.</p>
