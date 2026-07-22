@@ -56,18 +56,22 @@ logic defect in any tested route.
   pure unit-level, no live server dependency) passed cleanly in this run,
   as it did in isolation and in both Phase-2F runs.
 
-## Disposition
+## Disposition: `LIVE_TEST_INFRASTRUCTURE_CAPACITY_BLOCKED`
 
-This is recorded as a **NEW, larger-scale test-infrastructure instability**
-(live-server capacity under a long full-suite run), separate from and in
-addition to the already-tracked `PRE_EXISTING_TEST_ORDER_POLLUTION`
-finding from Slice 2F-39A3. Per the reviewer's own sequencing, remaining
-complete-suite failures and test-order/infrastructure instability belong
-to **Slice 2F-39C** — not resolved or hidden here. This slice's own
-19 targeted tests and both Phase-2F full runs (2519/2519, twice) remain
-the authoritative evidence that the 9 fixes themselves are correct;
-this full-suite run is evidence about environment capacity, not about
-this slice's code changes.
+Per the Slice 2F-39A4 review, these 31 failures + 111 errors are labeled
+**`LIVE_TEST_INFRASTRUCTURE_CAPACITY_BLOCKED`** — a distinct disposition
+from the already-tracked `PRE_EXISTING_TEST_ORDER_POLLUTION` finding from
+Slice 2F-39A3. This label remains in effect until Slice 2F-39C reproduces
+these failures under a controlled server-capacity setup (rather than
+inside one very long, ~15.5-minute, all-12,000-tests run) to confirm the
+root cause and establish whether it is a fixed-capacity ceiling, a
+timeout-configuration issue, or a resource leak accumulating over the
+run. Per the reviewer's own sequencing, remaining complete-suite failures
+and test-order/infrastructure instability belong to **Slice 2F-39C** —
+not resolved or hidden here. This slice's own 19 targeted tests and both
+Phase-2F full runs (2519/2519, twice) remain the authoritative evidence
+that the 9 fixes themselves are correct; this full-suite run is evidence
+about environment capacity, not about this slice's code changes.
 
 **This full-backend run is NOT presented as a clean regression pass.**
 It surfaced a real, disclosed problem — full-suite live-test-server
