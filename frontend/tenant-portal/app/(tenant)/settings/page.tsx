@@ -1,7 +1,10 @@
 "use client";
 import React, { useState, useCallback } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
-import { Card, Badge, Btn, Skeleton, SectionHeader, Modal, Input, Spinner, EditBtn, DeleteBtn, AddBtn } from "../../../components/shared/ui";
+import {
+  PageHeader, Card, Button, Modal, Input, Skeleton,
+  StatusBadge as DsStatusBadge, Alert,
+} from "@serviceos/design-system";
 import {
   settingsApi, complianceApi, securityApi,
   type SettingEntry, type Webhook, type WebhookDelivery,
@@ -10,7 +13,7 @@ import {
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 
-const SOURCE_BADGE: Record<string,string> = { tenant:"success", plan:"info", platform:"muted", code_default:"muted" };
+const SOURCE_STATUS: Record<string,string> = { tenant:"active", plan:"info", platform:"neutral", code_default:"neutral" };
 const SOURCE_LABEL: Record<string,string> = { tenant:"Your Override", plan:"Plan Default", platform:"Platform Default", code_default:"System Default" };
 
 const CONSENT_TYPES = [
@@ -189,14 +192,9 @@ export default function SettingsPage() {
   return (
     <TenantLayout activeNav="settings">
       <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
-        <SectionHeader title="Settings" subtitle="Configure your tenant settings, webhooks and integrations" />
+        <PageHeader title="Settings" description="Configure your tenant settings, webhooks and integrations" />
 
-        {toast && (
-          <div style={{ padding:"10px 16px", background:"var(--success-bg,#d1fae5)", border:"1px solid var(--success,#10b981)",
-            borderRadius:8, color:"var(--success-text,#065f46)", fontSize:13 }}>
-            {toast}
-          </div>
-        )}
+        {toast && <Alert tone="success">{toast}</Alert>}
 
         {/* Tabs */}
         <div style={{ display:"flex", gap:4, borderBottom:"1px solid var(--border)" }}>
@@ -216,52 +214,57 @@ export default function SettingsPage() {
         {tab === "general" && (
           settings.loading ? (
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              {[...Array(8)].map((_,i) => <Skeleton key={i} height={44} />)}
+              {[...Array(8)].map((_,i) => <Skeleton key={i} height="2.75rem" />)}
             </div>
           ) : (
-            <Card padding={0}>
-              <table style={{ width:"100%", borderCollapse:"collapse" }}>
-                <thead>
-                  <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
-                    {["Setting Key","Value","Source",""].map(h => (
-                      <th key={h} style={{ padding:"10px 16px", textAlign:"left", fontSize:11, fontWeight:700,
-                        color:"var(--text-tertiary)", letterSpacing:"0.06em", textTransform:"uppercase" }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(settings.data?.settings ?? []).map((s: SettingEntry, i: number) => (
-                    <tr key={s.key} style={{
-                      borderBottom: i < (settings.data?.settings.length ?? 0)-1 ? "1px solid var(--border)" : "none",
-                      background: s.is_override ? "rgba(16,185,129,0.05)" : "transparent",
-                    }}>
-                      <td style={{ padding:"11px 16px", fontSize:12, fontWeight:600, fontFamily:"monospace" }}>{s.key}</td>
-                      <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-secondary)", maxWidth:240,
-                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                        {JSON.stringify(s.value)}
-                      </td>
-                      <td style={{ padding:"11px 16px" }}>
-                        <Badge variant={SOURCE_BADGE[s.source] as "success"} size="sm">{SOURCE_LABEL[s.source]}</Badge>
-                      </td>
-                      <td style={{ padding:"11px 16px" }}>
-                        <div style={{ display:"flex", gap:6 }}>
-                          <EditBtn tooltip="Edit" onClick={() => {
-                            setEditKey(s.key);
-                            setEditVal(typeof s.value === "string" ? s.value : JSON.stringify(s.value));
-                            setEditModal(true);
-                          }}/>
-                          {s.is_override && (
-                            <DeleteBtn tooltip="Reset" onClick={() => {
-                              setDeleteKey(s.key);
-                              setConfirmDel(true);
-                            }}/>
-                          )}
-                        </div>
-                      </td>
+            <Card padding="none">
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                  <thead>
+                    <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
+                      {["Setting Key","Value","Source",""].map(h => (
+                        <th key={h} style={{ padding:"10px 16px", textAlign:"left", fontSize:11, fontWeight:700,
+                          color:"var(--text-tertiary)", letterSpacing:"0.06em", textTransform:"uppercase" }}>{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {(settings.data?.settings ?? []).map((s: SettingEntry, i: number) => (
+                      <tr key={s.key} style={{
+                        borderBottom: i < (settings.data?.settings.length ?? 0)-1 ? "1px solid var(--border)" : "none",
+                        background: s.is_override ? "rgba(16,185,129,0.05)" : "transparent",
+                      }}>
+                        <td style={{ padding:"11px 16px", fontSize:12, fontWeight:600, fontFamily:"monospace" }}>{s.key}</td>
+                        <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-secondary)", maxWidth:240,
+                          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                          {JSON.stringify(s.value)}
+                        </td>
+                        <td style={{ padding:"11px 16px" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                            <DsStatusBadge status={SOURCE_STATUS[s.source] ?? "neutral"} variant="dot" size="sm"/>
+                            <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>{SOURCE_LABEL[s.source]}</span>
+                          </span>
+                        </td>
+                        <td style={{ padding:"11px 16px" }}>
+                          <div style={{ display:"flex", gap:6 }}>
+                            <Button variant="icon" size="sm" aria-label="Edit" onClick={() => {
+                              setEditKey(s.key);
+                              setEditVal(typeof s.value === "string" ? s.value : JSON.stringify(s.value));
+                              setEditModal(true);
+                            }}>Edit</Button>
+                            {s.is_override && (
+                              <Button variant="icon" size="sm" aria-label="Reset" onClick={() => {
+                                setDeleteKey(s.key);
+                                setConfirmDel(true);
+                              }}>Reset</Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </Card>
           )
         )}
@@ -270,10 +273,14 @@ export default function SettingsPage() {
         {tab === "webhooks" && (
           <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
             <div style={{ display:"flex", justifyContent:"flex-end" }}>
-              <AddBtn label="Add Webhook" size="sm" onClick={() => setWhModal(true)}/>
+              <Button variant="primary" size="sm" onClick={() => setWhModal(true)}>+ Add Webhook</Button>
             </div>
             <Card>
-              {webhooks.loading ? <Spinner /> : (
+              {webhooks.loading ? (
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {[...Array(3)].map((_,i) => <Skeleton key={i} height="4rem" />)}
+                </div>
+              ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
                   {(webhooks.data?.webhooks ?? []).map((w: Webhook) => (
                     <div key={w.id} style={{ padding:"14px 16px", border:"1px solid var(--border)", borderRadius:10 }}>
@@ -285,21 +292,22 @@ export default function SettingsPage() {
                           </p>
                         </div>
                         <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-                          <Badge variant={w.status === "active" ? "success" : w.status === "paused" ? "warning" : "danger"}>
-                            {w.status}
-                          </Badge>
+                          <DsStatusBadge status={w.status === "active" ? "active" : w.status === "paused" ? "pending" : "inactive"}/>
                           {w.consecutive_failures > 0 && (
-                            <Badge variant="danger" size="sm">{w.consecutive_failures} failures</Badge>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                              background: "var(--danger-bg)", color: "var(--danger-text)" }}>
+                              {w.consecutive_failures} failures
+                            </span>
                           )}
                         </div>
                       </div>
                       <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                        <Btn size="xs" variant="ghost" onClick={() => testWebhook.execute(w.id)}>Test</Btn>
+                        <Button size="sm" variant="ghost" onClick={() => testWebhook.execute(w.id)}>Test</Button>
                         {w.status === "active"
-                          ? <Btn size="xs" variant="ghost" onClick={() => pauseWebhook.execute(w.id)}>Pause</Btn>
-                          : <Btn size="xs" variant="ghost" onClick={() => resumeWebhook.execute(w.id)}>Resume</Btn>
+                          ? <Button size="sm" variant="ghost" onClick={() => pauseWebhook.execute(w.id)}>Pause</Button>
+                          : <Button size="sm" variant="ghost" onClick={() => resumeWebhook.execute(w.id)}>Resume</Button>
                         }
-                        <Btn size="xs" variant="danger" onClick={() => deleteWebhook.execute(w.id)}>Delete</Btn>
+                        <Button size="sm" variant="destructive" onClick={() => deleteWebhook.execute(w.id)}>Delete</Button>
                       </div>
                     </div>
                   ))}
@@ -318,14 +326,18 @@ export default function SettingsPage() {
         {tab === "deliveries" && (
           <Card>
             <p style={{ fontWeight:600, margin:"0 0 16px" }}>Recent Webhook Deliveries</p>
-            {deliveries.loading ? <Spinner /> : (
+            {deliveries.loading ? (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {[...Array(4)].map((_,i) => <Skeleton key={i} height="3rem" />)}
+              </div>
+            ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                 {(deliveries.data?.deliveries ?? []).map((d: WebhookDelivery) => (
                   <div key={d.delivery_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
                     padding:"10px 14px", border:"1px solid var(--border)", borderRadius:8 }}>
                     <div>
                       <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:4 }}>
-                        <Badge variant={d.status === "success" ? "success" : "danger"}>{d.status}</Badge>
+                        <DsStatusBadge status={d.status === "success" ? "completed" : "failed"}/>
                         <span style={{ fontSize:12, fontWeight:600 }}>{d.event_type}</span>
                       </div>
                       <p style={{ margin:0, fontSize:11, color:"var(--text-secondary)" }}>
@@ -356,7 +368,7 @@ export default function SettingsPage() {
               </p>
               {consents.loading ? (
                 <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  {[...Array(5)].map((_,i) => <Skeleton key={i} height={48} />)}
+                  {[...Array(5)].map((_,i) => <Skeleton key={i} height="3rem" />)}
                 </div>
               ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
@@ -369,15 +381,15 @@ export default function SettingsPage() {
                         <div>
                           <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:2 }}>
                             <span style={{ fontWeight:600, fontSize:13 }}>{c.label}</span>
-                            <Badge variant={granted ? "success" : "muted"}>{granted ? "Granted" : "Not granted"}</Badge>
+                            <DsStatusBadge status={granted ? "active" : "not_granted"}/>
                           </div>
                           <p style={{ margin:0, fontSize:11, color:"var(--text-secondary)" }}>{c.hint}</p>
                         </div>
-                        <Btn variant={granted ? "ghost" : "primary"} size="sm"
+                        <Button variant={granted ? "ghost" : "primary"} size="sm"
                           loading={toggleConsent.loading}
                           onClick={() => toggleConsent.execute(c.key, granted)}>
                           {granted ? "Withdraw" : "Grant"}
-                        </Btn>
+                        </Button>
                       </div>
                     );
                   })}
@@ -393,23 +405,23 @@ export default function SettingsPage() {
               {exportResult ? (
                 <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                   <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                    <Badge variant={exportResult.status === "ready" ? "success" : "warning"}>{exportResult.status}</Badge>
+                    <DsStatusBadge status={exportResult.status === "ready" ? "completed" : "pending"}/>
                     <span style={{ fontSize:12, color:"var(--text-secondary)" }}>
                       SLA: {new Date(exportResult.sla_deadline).toLocaleString()}
                     </span>
                   </div>
                   {exportResult.download_url ? (
                     <a href={exportResult.download_url} target="_blank" rel="noreferrer">
-                      <Btn size="sm">Download Export ({exportResult.record_count} records)</Btn>
+                      <Button size="sm">Download Export ({exportResult.record_count} records)</Button>
                     </a>
                   ) : (
-                    <Btn size="sm" variant="ghost" onClick={refreshExport.execute} loading={refreshExport.loading}>
+                    <Button size="sm" variant="ghost" onClick={refreshExport.execute} loading={refreshExport.loading}>
                       Refresh Status
-                    </Btn>
+                    </Button>
                   )}
                 </div>
               ) : (
-                <Btn size="sm" onClick={requestExport.execute} loading={requestExport.loading}>Request Data Export</Btn>
+                <Button size="sm" onClick={requestExport.execute} loading={requestExport.loading}>Request Data Export</Button>
               )}
               {requestExport.error && <p style={{ color:"var(--danger)", fontSize:12, marginTop:8 }}>{requestExport.error}</p>}
             </Card>
@@ -423,8 +435,8 @@ export default function SettingsPage() {
               {deletionResult ? (
                 <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                   <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                    <Badge variant={deletionResult.status === "completed" ? "success"
-                      : deletionResult.sla_breached ? "danger" : "warning"}>{deletionResult.status}</Badge>
+                    <DsStatusBadge status={deletionResult.status === "completed" ? "completed"
+                      : deletionResult.sla_breached ? "failed" : "pending"}/>
                     <span style={{ fontSize:12, color:"var(--text-secondary)" }}>
                       {deletionResult.hours_until_sla > 0
                         ? `${deletionResult.hours_until_sla.toFixed(1)}h until SLA deadline`
@@ -436,12 +448,12 @@ export default function SettingsPage() {
                       Exempt (legal): {deletionResult.tables_exempted.join(", ")}
                     </p>
                   )}
-                  <Btn size="sm" variant="ghost" onClick={refreshDeletion.execute} loading={refreshDeletion.loading}>
+                  <Button size="sm" variant="ghost" onClick={refreshDeletion.execute} loading={refreshDeletion.loading}>
                     Refresh Status
-                  </Btn>
+                  </Button>
                 </div>
               ) : (
-                <Btn variant="danger" size="sm" onClick={() => setDeleteConfirm(true)}>Request Account Deletion</Btn>
+                <Button variant="destructive" size="sm" onClick={() => setDeleteConfirm(true)}>Request Account Deletion</Button>
               )}
             </Card>
           </div>
@@ -453,12 +465,16 @@ export default function SettingsPage() {
             <Card>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
                 <p style={{ fontWeight:600, margin:0 }}>Integration API Keys</p>
-                <AddBtn label="New Key" size="sm" onClick={() => { setSecKeyResult(null); setSecKeyModal(true); }}/>
+                <Button variant="primary" size="sm" onClick={() => { setSecKeyResult(null); setSecKeyModal(true); }}>+ New Key</Button>
               </div>
               <p style={{ fontSize:12, color:"var(--text-secondary)", margin:"0 0 16px" }}>
                 Keys for third-party integrations. Only a hash is stored — the raw key is shown once.
               </p>
-              {secKeys.loading ? <Spinner /> : (
+              {secKeys.loading ? (
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {[...Array(3)].map((_,i) => <Skeleton key={i} height="3rem" />)}
+                </div>
+              ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                   {(secKeys.data?.api_keys ?? []).map((k: SecurityApiKey) => (
                     <div key={k.key_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
@@ -466,7 +482,7 @@ export default function SettingsPage() {
                       <div>
                         <div style={{ display:"flex", gap:8, marginBottom:4 }}>
                           <span style={{ fontWeight:600, fontSize:13 }}>{k.name}</span>
-                          <Badge variant={k.status === "active" ? "success" : "muted"}>{k.status}</Badge>
+                          <DsStatusBadge status={k.status === "active" ? "active" : "inactive"}/>
                         </div>
                         <p style={{ margin:0, fontSize:11, color:"var(--text-secondary)" }}>
                           {k.key_prefix} · {k.scopes.join(", ")} · used {k.use_count}x
@@ -474,10 +490,10 @@ export default function SettingsPage() {
                       </div>
                       {k.status === "active" && (
                         <div style={{ display:"flex", gap:6 }}>
-                          <Btn variant="ghost" size="sm" loading={rotateSecKey.loading}
-                            onClick={() => rotateSecKey.execute(k.key_id)}>Rotate</Btn>
-                          <Btn variant="danger" size="sm" loading={revokeSecKey.loading}
-                            onClick={() => revokeSecKey.execute(k.key_id)}>Revoke</Btn>
+                          <Button variant="ghost" size="sm" loading={rotateSecKey.loading}
+                            onClick={() => rotateSecKey.execute(k.key_id)}>Rotate</Button>
+                          <Button variant="destructive" size="sm" loading={revokeSecKey.loading}
+                            onClick={() => revokeSecKey.execute(k.key_id)}>Revoke</Button>
                         </div>
                       )}
                     </div>
@@ -498,15 +514,13 @@ export default function SettingsPage() {
               </p>
               <div style={{ display:"flex", gap:8, alignItems:"flex-end", maxWidth:420 }}>
                 <div style={{ flex:1 }}>
-                  <Input label="IP Address" placeholder="103.21.45.67" value={ipQuery} onChange={setIpQuery} />
+                  <Input label="IP Address" placeholder="103.21.45.67" value={ipQuery} onChange={e => setIpQuery(e.target.value)} />
                 </div>
-                <Btn size="sm" onClick={checkIp.execute} loading={checkIp.loading}>Check</Btn>
+                <Button size="sm" onClick={checkIp.execute} loading={checkIp.loading}>Check</Button>
               </div>
               {ipResult && (
                 <div style={{ marginTop:12, display:"flex", gap:8, alignItems:"center" }}>
-                  <Badge variant={ipResult.blocked ? "danger" : "success"}>
-                    {ipResult.blocked ? "Blocked" : "Not blocked"}
-                  </Badge>
+                  <DsStatusBadge status={ipResult.blocked ? "conflict" : "active"}/>
                   {ipResult.reason && <span style={{ fontSize:12, color:"var(--text-secondary)" }}>{ipResult.reason}</span>}
                 </div>
               )}
@@ -523,7 +537,7 @@ export default function SettingsPage() {
                     background:"var(--surface)", color:"var(--text-primary)", fontSize:13, flex:1, minWidth:240 }}>
                   {ACTIVITY_TYPES.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
                 </select>
-                <Btn size="sm" variant="danger" onClick={reportActivity.execute} loading={reportActivity.loading}>Report</Btn>
+                <Button size="sm" variant="destructive" onClick={reportActivity.execute} loading={reportActivity.loading}>Report</Button>
               </div>
             </Card>
           </div>
@@ -531,85 +545,78 @@ export default function SettingsPage() {
       </div>
 
       {/* Edit modal */}
-      <Modal open={editModal} onClose={() => setEditModal(false)} title={`Edit: ${editKey}`} size="md">
-        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <Input label="Value" value={editVal} onChange={v => setEditVal(v)} />
-          <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" onClick={() => setEditModal(false)}>Cancel</Btn>
-            <Btn onClick={updateSetting.execute} loading={updateSetting.loading}>Save</Btn>
-          </div>
-        </div>
+      <Modal open={editModal} onClose={() => setEditModal(false)} title={`Edit: ${editKey}`}
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setEditModal(false)}>Cancel</Button>
+          <Button size="sm" onClick={updateSetting.execute} loading={updateSetting.loading}>Save</Button>
+        </>}>
+        <Input label="Value" value={editVal} onChange={e => setEditVal(e.target.value)} />
       </Modal>
 
       {/* Delete/reset modal */}
-      <Modal open={confirmDel} onClose={() => setConfirmDel(false)} title="Reset Setting" size="sm">
-        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <p style={{ margin:0, fontSize:13 }}>Remove your override for <code>{deleteKey}</code>? It will revert to the plan/platform default.</p>
-          <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" onClick={() => setConfirmDel(false)}>Cancel</Btn>
-            <Btn variant="danger" onClick={deleteSetting.execute} loading={deleteSetting.loading}>Reset</Btn>
-          </div>
-        </div>
+      <Modal open={confirmDel} onClose={() => setConfirmDel(false)} title="Reset Setting"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setConfirmDel(false)}>Cancel</Button>
+          <Button variant="destructive" size="sm" onClick={deleteSetting.execute} loading={deleteSetting.loading}>Reset</Button>
+        </>}>
+        <p style={{ margin:0, fontSize:13 }}>Remove your override for <code>{deleteKey}</code>? It will revert to the plan/platform default.</p>
       </Modal>
 
       {/* Webhook modal */}
-      <Modal open={whModal} onClose={() => setWhModal(false)} title="Add Webhook Endpoint" size="md">
+      <Modal open={whModal} onClose={() => setWhModal(false)} title="Add Webhook Endpoint"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setWhModal(false)}>Cancel</Button>
+          <Button size="sm" onClick={createWebhook.execute} loading={createWebhook.loading}>Create Webhook</Button>
+        </>}>
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <Input label="URL" value={whUrl} onChange={v => setWhUrl(v)}
-            hint="https://your-server.com/webhook" />
-          <Input label="Events (comma-separated)" value={whEvents} onChange={v => setWhEvents(v)}
-            hint="e.g. job.completed,booking.confirmed,payment.received" />
-          <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" onClick={() => setWhModal(false)}>Cancel</Btn>
-            <Btn onClick={createWebhook.execute} loading={createWebhook.loading}>Create Webhook</Btn>
-          </div>
+          <Input label="URL" value={whUrl} onChange={e => setWhUrl(e.target.value)}
+            description="https://your-server.com/webhook" />
+          <Input label="Events (comma-separated)" value={whEvents} onChange={e => setWhEvents(e.target.value)}
+            description="e.g. job.completed,booking.confirmed,payment.received" />
           {createWebhook.error && <p style={{ color:"var(--danger)", fontSize:12 }}>{createWebhook.error}</p>}
         </div>
       </Modal>
 
       {/* Account deletion confirmation */}
-      <Modal open={deleteConfirm} onClose={() => setDeleteConfirm(false)} title="Confirm Account Deletion" size="sm">
+      <Modal open={deleteConfirm} onClose={() => setDeleteConfirm(false)} title="Confirm Account Deletion"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+          <Button variant="destructive" size="sm" onClick={requestDeletion.execute} loading={requestDeletion.loading}>
+            Confirm Deletion
+          </Button>
+        </>}>
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <div style={{ padding:12, background:"var(--danger-bg)", border:"1px solid var(--danger-border)", borderRadius:8 }}>
-            <p style={{ margin:0, fontSize:12, color:"var(--danger-text)" }}>
-              This will anonymise your PII within 72 hours under DPDP Act 2023. Financial records
-              required by law (GST Act, 7 years) will be retained with a stated legal exemption.
-              This action cannot be undone.
-            </p>
-          </div>
-          <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" onClick={() => setDeleteConfirm(false)}>Cancel</Btn>
-            <Btn variant="danger" onClick={requestDeletion.execute} loading={requestDeletion.loading}>
-              Confirm Deletion
-            </Btn>
-          </div>
+          <Alert tone="danger">
+            This will anonymise your PII within 72 hours under DPDP Act 2023. Financial records
+            required by law (GST Act, 7 years) will be retained with a stated legal exemption.
+            This action cannot be undone.
+          </Alert>
           {requestDeletion.error && <p style={{ color:"var(--danger)", fontSize:12 }}>{requestDeletion.error}</p>}
         </div>
       </Modal>
 
       {/* Integration API key create/rotate result modal */}
       <Modal open={secKeyModal} onClose={() => { setSecKeyModal(false); setSecKeyResult(null); }}
-        title={secKeyResult ? "Key Created" : "New Integration API Key"} size="md">
+        title={secKeyResult ? "Key Created" : "New Integration API Key"}
+        footer={secKeyResult
+          ? <Button size="sm" onClick={() => { setSecKeyModal(false); setSecKeyResult(null); }}>Done</Button>
+          : <>
+              <Button variant="ghost" size="sm" onClick={() => setSecKeyModal(false)}>Cancel</Button>
+              <Button size="sm" onClick={createSecKey.execute} loading={createSecKey.loading}>Create</Button>
+            </>}>
         {secKeyResult ? (
-          <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-            <div style={{ padding:12, background:"var(--success-bg,#d1fae5)", borderRadius:8, border:"1px solid var(--success,#10b981)" }}>
-              <p style={{ margin:"0 0 8px", fontWeight:600 }}>{secKeyResult.warning}</p>
-              <code style={{ display:"block", wordBreak:"break-all", fontSize:12, padding:"8px 10px",
-                background:"white", border:"1px solid var(--border)", borderRadius:6 }}>
-                {secKeyResult.raw_key}
-              </code>
-            </div>
-            <Btn onClick={() => { setSecKeyModal(false); setSecKeyResult(null); }}>Done</Btn>
+          <div style={{ padding:12, background:"var(--success-bg,#d1fae5)", borderRadius:8, border:"1px solid var(--success,#10b981)" }}>
+            <p style={{ margin:"0 0 8px", fontWeight:600 }}>{secKeyResult.warning}</p>
+            <code style={{ display:"block", wordBreak:"break-all", fontSize:12, padding:"8px 10px",
+              background:"white", border:"1px solid var(--border)", borderRadius:6 }}>
+              {secKeyResult.raw_key}
+            </code>
           </div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-            <Input label="Name" value={secKeyName} onChange={v => setSecKeyName(v)} />
-            <Input label="Scopes (comma-separated)" value={secKeyScopes} onChange={v => setSecKeyScopes(v)}
-              hint="e.g. read:jobs,write:bookings,read:analytics" />
-            <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-              <Btn variant="ghost" onClick={() => setSecKeyModal(false)}>Cancel</Btn>
-              <Btn onClick={createSecKey.execute} loading={createSecKey.loading}>Create</Btn>
-            </div>
+            <Input label="Name" value={secKeyName} onChange={e => setSecKeyName(e.target.value)} />
+            <Input label="Scopes (comma-separated)" value={secKeyScopes} onChange={e => setSecKeyScopes(e.target.value)}
+              description="e.g. read:jobs,write:bookings,read:analytics" />
             {createSecKey.error && <p style={{ color:"var(--danger)", fontSize:12 }}>{createSecKey.error}</p>}
           </div>
         )}
