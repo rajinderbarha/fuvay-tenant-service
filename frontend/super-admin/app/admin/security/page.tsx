@@ -11,7 +11,8 @@ import {
   RefreshCw, Download, Ban, Shield, Key, UserCheck, ScrollText, SlidersHorizontal, AlertTriangle,
 } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader, Modal, Input, Skeleton } from "../../../components/shared/ui";
+import { Badge, Btn, Modal, Input } from "../../../components/shared/ui";
+import { Card, PageHeader, PageShell, StatusBadge, Skeleton } from "@serviceos/design-system";
 import { SummaryCardsRow } from "../../../components/pricing/SummaryCard";
 import { ActionMenu } from "../../../components/pricing/ActionMenu";
 import {
@@ -55,11 +56,12 @@ export default function SecurityPage() {
   return (
     <AdminLayout activeNav="security">
       <RequirePermission requiredPermission="security:read" parentLabel="Dashboard">
-      <SectionHeader
+      <PageShell>
+      <PageHeader
         title="Security & Threats"
-        subtitle="Threats, active sessions, IP blocklist, API keys, audit trail, and security policies."
+        description="Threats, active sessions, IP blocklist, API keys, audit trail, and security policies."
       />
-      <div style={{ padding: "0 28px 32px" }}>
+      <div>
         <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 20, overflowX: "auto" }}>
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
@@ -82,6 +84,7 @@ export default function SecurityPage() {
         {tab === "audit_logs" && <AuditLogsTab />}
         {tab === "policies" && <PoliciesTab />}
       </div>
+      </PageShell>
       </RequirePermission>
     </AdminLayout>
   );
@@ -96,7 +99,7 @@ function OverviewTab() {
   const o = overview.data;
 
   if (overview.loading) return <Skeleton height={300} />;
-  if (overview.error || !o) return <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Could not load overview. {overview.error}</p></Card>;
+  if (overview.error || !o) return <Card padding="md"><p style={{ color: "var(--danger-text)" }}>Could not load overview. {overview.error}</p></Card>;
 
   const c = o.summary_cards;
   return (
@@ -113,7 +116,7 @@ function OverviewTab() {
       ]} />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <Card padding={16}>
+        <Card padding="md">
           <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Recent Threats</h3>
           {o.recent_threats.length === 0 ? <EmptyState text="No open threats." /> : o.recent_threats.map(t => (
             <div key={t.threat_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
@@ -126,7 +129,7 @@ function OverviewTab() {
           ))}
         </Card>
 
-        <Card padding={16}>
+        <Card padding="md">
           <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Recent High-Risk Audit Events</h3>
           {o.recent_high_risk_audit.length === 0 ? <EmptyState text="No high-risk actions recorded." /> : o.recent_high_risk_audit.map(a => (
             <div key={a.log_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
@@ -139,7 +142,7 @@ function OverviewTab() {
           ))}
         </Card>
 
-        <Card padding={16}>
+        <Card padding="md">
           <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Top Blocked IPs</h3>
           {o.top_blocked_ips.length === 0 ? <EmptyState text="No active IP blocks." /> : o.top_blocked_ips.map(e => (
             <div key={e.entry_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
@@ -180,7 +183,7 @@ function ThreatsTab({ router }: { router: ReturnType<typeof useRouter> }) {
           </Btn>
         ))}
       </div>
-      <Card padding={0}>
+      <Card padding="none">
         {threats.loading ? <Skeleton height={200} /> : (threats.data?.threats.length ?? 0) === 0 ? <EmptyState text="No threats match this filter." /> : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><Th>Threat #</Th><Th>Type</Th><Th>Level</Th><Th>Risk</Th><Th>IP</Th><Th>Status</Th><Th>Detected</Th><Th>{" "}</Th></tr></thead>
@@ -192,7 +195,7 @@ function ThreatsTab({ router }: { router: ReturnType<typeof useRouter> }) {
                   <Td><Badge variant={LEVEL_VARIANT[t.threat_level] ?? "muted"} size="sm">{t.threat_level}</Badge></Td>
                   <Td>{t.risk_score}</Td>
                   <Td>{t.ip_address ?? "—"}</Td>
-                  <Td><Badge variant={t.status === "open" ? "danger" : t.status === "resolved" ? "success" : "muted"} size="sm">{t.status}</Badge></Td>
+                  <Td><StatusBadge status={t.status} size="sm" /></Td>
                   <Td>{new Date(t.created_at).toLocaleString("en-IN")}</Td>
                   <Td>
                     <ActionMenu items={[
@@ -238,7 +241,7 @@ function SessionsTab() {
       <div style={{ marginBottom: 14, maxWidth: 320 }}>
         <Input placeholder="Search by user, email, or IP..." value={q} onChange={setQ} />
       </div>
-      <Card padding={0}>
+      <Card padding="none">
         {sessions.loading ? <Skeleton height={200} /> : (sessions.data?.sessions.length ?? 0) === 0 ? <EmptyState text="No active sessions." /> : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><Th>User</Th><Th>Role</Th><Th>Device</Th><Th>IP</Th><Th>Status</Th><Th>Last Active</Th><Th>{" "}</Th></tr></thead>
@@ -249,7 +252,7 @@ function SessionsTab() {
                   <Td>{s.user_role}</Td>
                   <Td>{s.device_name}</Td>
                   <Td>{s.ip_address ?? "—"}</Td>
-                  <Td><Badge variant={s.status === "active" ? "success" : "muted"} size="sm">{s.status}</Badge></Td>
+                  <Td><StatusBadge status={s.status} size="sm" /></Td>
                   <Td>{s.last_active_at ? new Date(s.last_active_at).toLocaleString("en-IN") : "—"}</Td>
                   <Td>
                     {perm.has("security:sessions:revoke") && (
@@ -298,7 +301,7 @@ function IpBlocklistTab() {
           <Btn variant="danger" size="sm" icon={<Ban size={14} />} onClick={() => setModal(true)}>Block IP</Btn>
         )}
       </div>
-      <Card padding={0}>
+      <Card padding="none">
         {blocklist.loading ? <Skeleton height={200} /> : (blocklist.data?.entries.length ?? 0) === 0 ? <EmptyState text="No IP blocks configured." /> : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><Th>IP / CIDR</Th><Th>Reason</Th><Th>Level</Th><Th>Scope</Th><Th>Status</Th><Th>Hits</Th><Th>{" "}</Th></tr></thead>
@@ -309,7 +312,7 @@ function IpBlocklistTab() {
                   <Td>{e.reason}</Td>
                   <Td><Badge variant={LEVEL_VARIANT[e.threat_level] ?? "muted"} size="sm">{e.threat_level}</Badge></Td>
                   <Td>{e.scope}</Td>
-                  <Td><Badge variant={e.status === "active" ? "danger" : "muted"} size="sm">{e.status}</Badge></Td>
+                  <Td><StatusBadge status={e.status} size="sm" /></Td>
                   <Td>{e.hit_count}</Td>
                   <Td>
                     {perm.has("security:ip_blocklist:revoke") && (
@@ -379,7 +382,7 @@ function ApiKeysTab() {
           <Btn variant="primary" size="sm" icon={<Key size={14} />} onClick={() => setModal(true)}>Create API Key</Btn>
         )}
       </div>
-      <Card padding={0}>
+      <Card padding="none">
         {keys.loading ? <Skeleton height={200} /> : (keys.data?.api_keys.length ?? 0) === 0 ? <EmptyState text="No API keys created yet." /> : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><Th>Name</Th><Th>Prefix</Th><Th>Environment</Th><Th>Status</Th><Th>Uses</Th><Th>Created</Th><Th>{" "}</Th></tr></thead>
@@ -389,7 +392,7 @@ function ApiKeysTab() {
                   <Td>{k.name}</Td>
                   <Td><code>{k.key_prefix}</code></Td>
                   <Td>{k.environment}</Td>
-                  <Td><Badge variant={k.status === "active" ? "success" : "muted"} size="sm">{k.status}</Badge></Td>
+                  <Td><StatusBadge status={k.status} size="sm" /></Td>
                   <Td>{k.use_count}</Td>
                   <Td>{new Date(k.created_at).toLocaleDateString("en-IN")}</Td>
                   <Td>
@@ -466,7 +469,7 @@ function AuditLogsTab() {
           </Btn>
         )}
       </div>
-      <Card padding={0}>
+      <Card padding="none">
         {logs.loading ? <Skeleton height={200} /> : (logs.data?.audit_logs.length ?? 0) === 0 ? <EmptyState text="No audit entries match this filter." /> : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><Th>Operation</Th><Th>Engine</Th><Th>Actor Role</Th><Th>IP</Th><Th>Risk</Th><Th>When</Th></tr></thead>
@@ -522,7 +525,7 @@ function PoliciesTab() {
 
   return (
     <div>
-      <Card padding={0}>
+      <Card padding="none">
         {policies.loading ? <Skeleton height={200} /> : (policies.data?.policies.length ?? 0) === 0 ? <EmptyState text="No security policies configured." /> : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><Th>Policy</Th><Th>Value</Th><Th>Description</Th><Th>{" "}</Th></tr></thead>
