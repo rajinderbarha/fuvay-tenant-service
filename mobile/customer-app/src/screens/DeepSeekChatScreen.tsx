@@ -3,6 +3,7 @@ import {
   FlatList, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text,
   TextInput, TouchableOpacity, View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import {
   aiConversationApi, catalogApi, homeServiceDraftApi, bookingConfirmApi,
   type AISession, type ServiceCategory, type ServiceOffering,
@@ -44,9 +45,15 @@ type Msg = { id:string; role:"user"|"assistant"; content:string };
 
 interface Props {
   navigation?: { navigate: (screen: string, params?: unknown) => void };
+  // UX-07 Pass 3d: category-handoff context from Home (see HomeScreen.tsx's
+  // category tiles/search box, TabNavigator's AIAssistant route param). Only
+  // ever a free-text label matched against the REAL backend category list
+  // below (categoryMatchLabel) -- never assumed to equal a real slug/id, per
+  // category-smartbot-handoff.md.
+  route?: { params?: { initialCategoryLabel?: string } };
 }
 
-export function DeepSeekChatScreen({ navigation }: Props) {
+export function DeepSeekChatScreen({ navigation, route }: Props) {
   const { theme } = useTheme();
   const s = makeStyles(theme);
   const [session, setSession]   = useState<AISession | null>(null);
@@ -69,6 +76,9 @@ export function DeepSeekChatScreen({ navigation }: Props) {
   const [addressText, setAddressText] = useState("");
   const [cityText, setCityText]       = useState("");
   const [brands, setBrands]           = useState<{ brand_id:string; name:string }[]>([]);
+  const categoryMatchLabel = route?.params?.initialCategoryLabel;
+  const [handoffNotice, setHandoffNotice] = useState<string|null>(null);
+  const [handoffConsumed, setHandoffConsumed] = useState(false);
 
   const startSession = useCallback(async () => {
     setStarting(true); setError(null);
@@ -101,15 +111,48 @@ export function DeepSeekChatScreen({ navigation }: Props) {
   }
 
   async function openBookingFlow() {
-    setFlowOpen(true); setFlowLoading(true); setFlowError(null);
+    setFlowOpen(true); setFlowLoading(true); setFlowError(null); setHandoffNotice(null);
     dispatch({ type:"RESET", aiSessionId: session?.id ?? null });
     try {
       const res = await catalogApi.categories();
       setCategories(res.items);
+      // UX-07 Pass 3d: if we arrived here carrying category context from
+      // Home (a category tile tap or a search-box query), try to match it
+      // against the REAL backend category list by name -- fuzzy substring,
+      // case-insensitive, both directions. If found, auto-select it so the
+      // customer is never asked "what service do you need" a second time.
+      // If not found, fall back honestly to the full category list (no fake
+      // selection) and show a small notice instead of silently dropping it.
+      if (categoryMatchLabel && !handoffConsumed) {
+        setHandoffConsumed(true);
+        const q = categoryMatchLabel.trim().toLowerCase();
+        const match = res.items.find(c =>
+          c.name.toLowerCase().includes(q) || q.includes(c.name.toLowerCase()) ||
+          c.slug.toLowerCase().replace(/_/g," ").includes(q));
+        if (match) {
+          setHandoffNotice(null);
+          await pickCategory(match);
+          return;
+        }
+        setHandoffNotice(`We couldn't find an exact match for "${categoryMatchLabel}" — please choose below.`);
+        setIssueText(categoryMatchLabel);
+      }
     } catch (e:unknown) {
       setFlowError(e instanceof Error ? e.message : "Could not load services.");
     } finally { setFlowLoading(false); }
   }
+
+  // Auto-open the guided booking flow when arriving with category context
+  // from Home, so the customer lands directly in the flow rather than on
+  // the free-text chat screen first.
+  React.useEffect(() => {
+    if (!categoryMatchLabel || handoffConsumed || flowOpen) return;
+    (async () => {
+      if (!session) await startSession();
+      openBookingFlow();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryMatchLabel, session]);
 
   async function pickCategory(cat: ServiceCategory) {
     dispatch({ type:"SELECT_CATEGORY", category: cat });
@@ -348,6 +391,13 @@ export function DeepSeekChatScreen({ navigation }: Props) {
       {/* ── Real, canonical booking journey ─────────────────────────────────── */}
       <Modal visible={flowOpen} animationType="slide" onRequestClose={()=>setFlowOpen(false)}>
         <View style={s.flowModal}>
+          {categoryMatchLabel && (
+            <View style={s.handoffHeader} testID="booking-category-context">
+              <Ionicons name="pricetag-outline" size={14} color={theme.colors.textInverse}/>
+              <Text style={s.handoffHeaderText} numberOfLines={1}>{categoryMatchLabel} Assistant</Text>
+            </View>
+          )}
+          {handoffNotice && <Text style={s.handoffNotice} testID="booking-handoff-notice">{handoffNotice}</Text>}
           {flowError && <Text style={s.errorText}>{flowError}</Text>}
 
           {booking.step === "submitted" ? (
@@ -534,6 +584,11 @@ function makeStyles(theme: Theme) {
     sendBtnText: { color:theme.colors.textInverse, fontWeight:"700" },
     langModal: { flex:1, backgroundColor:theme.colors.bg, paddingTop:60, paddingHorizontal:16 },
     flowModal: { flex:1, backgroundColor:theme.colors.bg, paddingTop:60 },
+    handoffHeader: { flexDirection:"row", alignItems:"center", gap:6, backgroundColor:theme.colors.brand,
+                     paddingVertical:8, paddingHorizontal:16 },
+    handoffHeaderText: { fontSize:theme.font.size.sm, fontWeight:"700", color:theme.colors.textInverse },
+    handoffNotice: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, textAlign:"center",
+                     paddingHorizontal:16, paddingTop:8 },
     langSearch: { height:44, borderWidth:1, borderColor:theme.colors.border, borderRadius:theme.radius.lg,
                   paddingHorizontal:14, fontSize:theme.font.size.base, color:theme.colors.textPrimary,
                   backgroundColor:theme.colors.surfaceSunken, marginBottom:12, marginHorizontal:16 },
