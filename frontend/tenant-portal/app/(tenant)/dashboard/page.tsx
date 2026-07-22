@@ -14,7 +14,8 @@ import {
   type TenantStatusAuditLogEntry,
 } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
-import { Btn, Card, Badge, Skeleton } from "../../../components/shared/ui";
+import { PageHeader, Card, Button } from "@serviceos/design-system";
+import { Badge, Skeleton } from "../../../components/shared/ui";
 
 const safeNum = (v: unknown): number => (typeof v === "number" && isFinite(v)) ? v : 0;
 function safeStr(v: unknown, fb = "—"): string { const s = String(v ?? "").trim(); return s || fb; }
@@ -120,6 +121,9 @@ export default function DashboardPage() {
 
   return (
     <div>
+      <div style={{ marginBottom: 20 }}>
+        <PageHeader title="Dashboard" description={`${tenantName} — services, staff, service areas, pricing, package, credits, and setup readiness.`} />
+      </div>
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <div style={{ background: "linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f172a 100%)",
         borderRadius: 20, padding: "26px 28px", color: "#fff", marginBottom: 24 }}>
@@ -143,10 +147,10 @@ export default function DashboardPage() {
               Manage your services, staff, service areas, pricing, package, credits, and setup readiness.
             </p>
           </div>
-          <Btn variant="secondary" size="sm" icon={<RefreshCw size={13} />} onClick={refreshAll}
+          <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={13} />} onClick={refreshAll}
             style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.18)", color: "#fff" }}>
             Refresh
-          </Btn>
+          </Button>
         </div>
 
         <div style={{ display: "flex", gap: 32, flexWrap: "wrap", marginTop: 22, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
@@ -220,7 +224,7 @@ export default function DashboardPage() {
           </Card>
 
           {/* Enabled Services */}
-          <Card padding={0}>
+          <Card padding="none">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px 14px" }}>
               <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
                 <Wrench size={16} color="var(--brand)" /> Enabled Services
@@ -376,7 +380,7 @@ export default function DashboardPage() {
             { icon: <Package size={18} />, title: "Package & Credits", desc: "View usage credits and package", href: "/finance/package" },
           ].map((a) => (
             <a key={a.title} href={a.href} style={{ textDecoration: "none" }}>
-              <Card hover onClick={() => { window.location.href = a.href; }}>
+              <Card onClick={() => { window.location.href = a.href; }} style={{ cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                   <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--accent-muted)", color: "var(--brand)",
                     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{a.icon}</div>

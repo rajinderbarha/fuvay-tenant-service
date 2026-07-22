@@ -10,11 +10,12 @@
  */
 import React, { useState, useMemo, useCallback } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
-import { Card, Badge, JobStatusBadge, Btn, Select, Input, SectionHeader, Skeleton } from "../../../components/shared/ui";
+import { PageHeader, Card, StatusBadge, DataTable, Button, type DataTableColumn } from "@serviceos/design-system";
+import { Badge, Select, Input } from "../../../components/shared/ui";
 import { serviceJobsApi, getUserRole } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
 import type { ServiceJobRecord } from "../../../lib/api";
-import { ClipboardList, RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 import ReadOnlyBanner from "../../../components/shared/ReadOnlyBanner";
 
 const shortId = (id?: string | null) => (id ? `${id.slice(0, 8)}…` : "—");
@@ -35,20 +36,34 @@ export default function JobsPage() {
     });
   }, [jobs.data, statusFilter, search]);
 
+  const columns: DataTableColumn<ServiceJobRecord>[] = [
+    { key: "job_number", header: "Job", render: (j) => (
+      <a href={`/jobs/${j.id}`} style={{ fontWeight: 600, color: "var(--text-link)" }}>{j.job_number}</a>
+    ) },
+    { key: "location", header: "Zipcode", accessor: (j) => j.zipcode ?? j.city ?? "—" },
+    { key: "status", header: "Status", render: (j) => <StatusBadge status={j.status} /> },
+    { key: "assignment_status", header: "Assignment", render: (j) => (
+      <Badge variant={j.assignment_status === "unassigned" ? "warning" : "success"}>
+        {j.assignment_status.replace(/_/g, " ")}
+      </Badge>
+    ) },
+    { key: "assigned_staff_id", header: "Staff", accessor: (j) => shortId(j.assigned_staff_id) },
+    { key: "scheduled_date", header: "Scheduled", accessor: (j) => j.scheduled_date ? `${j.scheduled_date} ${j.scheduled_time_window ?? ""}` : "—" },
+  ];
+
   return (
     <TenantLayout activeNav="jobs">
       <ReadOnlyBanner role={getUserRole()}/>
-      <SectionHeader
+      <PageHeader
         title="Jobs"
-        subtitle={jobs.loading ? "Loading..." : `${filtered.length} of ${jobs.data?.total ?? 0} jobs`}
-        icon={<ClipboardList/>}
+        description={jobs.loading ? "Loading..." : `${filtered.length} of ${jobs.data?.total ?? 0} jobs — ServiceBooking -> ServiceJob pipeline`}
         actions={
-          <Btn variant="secondary" size="sm" icon={<RefreshCw size={14}/>} onClick={() => jobs.refetch()}>Refresh</Btn>
+          <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={14}/>} onClick={() => jobs.refetch()}>Refresh</Button>
         }
       />
 
       {/* Filters */}
-      <Card padding={14} style={{ marginBottom:16 }}>
+      <Card padding="sm" style={{ marginBottom: 16 }}>
         <div style={{ display:"grid", gridTemplateColumns:"1fr auto auto", gap:12, alignItems:"end" }}>
           <Input placeholder="Search job number, zipcode..." value={search} onChange={setSearch} icon={<Search/>}/>
           <Select label="" value={statusFilter} onChange={setStatusFilter} placeholder="All statuses" options={[
@@ -59,60 +74,15 @@ export default function JobsPage() {
         </div>
       </Card>
 
-      {jobs.error && (
-        <div style={{ padding:"12px 16px", borderRadius:10, background:"var(--danger-bg)",
-          border:"1px solid var(--danger-border)", marginBottom:16 }}>
-          <p style={{ fontSize:13, color:"var(--danger-text)", margin:0 }}>{jobs.error}</p>
-        </div>
-      )}
-
       {/* Jobs table */}
-      <Card padding={0}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
-          <thead>
-            <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
-              {["Job","Zipcode","Status","Assignment","Staff","Scheduled"].map(h => (
-                <th key={h} style={{ padding:"11px 16px", textAlign:"left", fontSize:11,
-                  fontWeight:700, color:"var(--text-tertiary)",
-                  letterSpacing:"0.06em", textTransform:"uppercase" }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.loading ? [...Array(6)].map((_,i) => (
-              <tr key={i}><td colSpan={6} style={{ padding:"10px 16px" }}><Skeleton height={18}/></td></tr>
-            )) : filtered.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding:"48px", textAlign:"center", color:"var(--text-tertiary)", fontSize:13 }}>
-                No jobs match your filters
-              </td></tr>
-            ) : filtered.map((j, i) => (
-                <tr key={j.id} onClick={() => window.location.href=`/jobs/${j.id}`}
-                  style={{ borderBottom:i<filtered.length-1?"1px solid var(--border)":"none", cursor:"pointer" }}
-                  onMouseEnter={e=>(e.currentTarget as HTMLTableRowElement).style.background="var(--surface-sunken)"}
-                  onMouseLeave={e=>(e.currentTarget as HTMLTableRowElement).style.background="transparent"}>
-                  <td style={{ padding:"11px 16px", fontSize:12, fontWeight:600, color:"var(--text-link)" }}>
-                    {j.job_number}
-                  </td>
-                  <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-secondary)" }}>
-                    {j.zipcode ?? j.city ?? "—"}
-                  </td>
-                  <td style={{ padding:"11px 16px" }}><JobStatusBadge status={j.status}/></td>
-                  <td style={{ padding:"11px 16px" }}>
-                    <Badge variant={j.assignment_status === "unassigned" ? "warning" : "success"}>
-                      {j.assignment_status.replace(/_/g," ")}
-                    </Badge>
-                  </td>
-                  <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-secondary)" }}>
-                    {shortId(j.assigned_staff_id)}
-                  </td>
-                  <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-tertiary)" }}>
-                    {j.scheduled_date ? `${j.scheduled_date} ${j.scheduled_time_window ?? ""}` : "—"}
-                  </td>
-                </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+      <DataTable<ServiceJobRecord>
+        columns={columns}
+        rows={filtered}
+        rowKey={(j) => j.id}
+        loading={jobs.loading}
+        error={jobs.error ?? undefined}
+        emptyTitle="No jobs match your filters"
+      />
     </TenantLayout>
   );
 }
