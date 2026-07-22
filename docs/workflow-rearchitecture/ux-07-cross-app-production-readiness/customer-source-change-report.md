@@ -34,3 +34,31 @@ this pass's change set and predates it.
 No backend file, no other mobile app (`staff-app`), no `app.json`, and no
 dependency version in `package.json` was changed this pass (confirmed —
 see `package-config-drift-report.md`).
+
+## Pass 3f addendum (accessibility remediation)
+
+Files changed (all `mobile/customer-app/`):
+
+- `src/screens/HomeScreen.tsx` — added `hitSlop` to the notifications-icon
+  and profile-avatar icon-only touchables (both 36x36 visual boxes, under
+  the ~44x44 recommended touch target).
+- `src/navigation/TabNavigator.tsx` — `TabIcon` now sets
+  `accessibilityRole="tab"` and `accessibilityState={{selected:focused}}`
+  in addition to its pre-existing `accessibilityLabel`.
+- `src/screens/DeepSeekChatScreen.tsx` — see
+  `accessibility-remediation-report.md` for the full itemized list;
+  summary: added accessibility props (role/label/state) to the
+  language-picker option rows (was a CRITICAL gap — no props at all),
+  the 3 price-tier buttons (was HIGH), the guided-flow modal
+  (`accessibilityViewIsModal`, was HIGH), the guided-flow back button
+  (`hitSlop`), the issue/address/city text inputs
+  (`accessibilityLabel`), and the Start Conversation / Check availability
+  / Confirm Booking / Continue with this price / View Booking buttons
+  (role/label/disabled+busy state where applicable).
+- `src/navigation/__tests__/TabNavigator.test.tsx` — 1 new test.
+- `src/screens/__tests__/DeepSeekChatScreen.guidedFlow.test.tsx` — 2 new
+  tests.
+
+No screen outside this named scope (Home / SmartBot / booking-flow modal
+/ bottom nav) was touched. No backend file was touched (see
+`backend-non-change-report.md`).

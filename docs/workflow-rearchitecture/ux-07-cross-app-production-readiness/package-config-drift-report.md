@@ -34,3 +34,13 @@ Exactly 8 source/test files across 3 commits (`13c818f`, `be43db2`,
 `b3a0fa0`) — see `customer-source-change-report.md` for the full list. No
 `package.json`, `package-lock.json`, `app.json`, or `eas.json` change is
 part of any commit this pass.
+
+## Pass 3f addendum
+
+Verified before AND after this pass's install/build/typecheck/export
+commands: `mobile/customer-app/app.json` and
+`mobile/customer-app/package.json` show **zero diff** against git HEAD
+(`git diff --stat` empty for both). Drift guard held throughout —
+Expo SDK / react / react-native / react-test-renewer versions were
+never altered by any command run this pass (fresh WSL npm install, jest
+runs, tsc, expo export).

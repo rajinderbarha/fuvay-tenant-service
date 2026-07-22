@@ -48,3 +48,18 @@ Run 5: Test Suites: 10 passed, 10 total | Tests: 69 passed, 69 total
   added this pass (`HomeScreen.test.tsx`, `TabNavigator.test.tsx`,
   `DeepSeekChatScreen.handoff.test.tsx`) and do not touch
   `ThemeContext.test.tsx` or any of Pass 3c's fixed test infrastructure.
+
+## Pass 3f addendum (accessibility remediation)
+
+- `ThemeContext.tsx` and `theme.ts` were **not touched** this pass (no
+  diff).
+- Targeted `ThemeContext.test.tsx` re-run **5 times consecutively** in a
+  fresh WSL install: **5/5 tests passing every run**, 0 flakes.
+- Full suite (76/76, up from baseline 73/73 — see
+  `customer-test-report.md`) run 3 consecutive times with 0 failures,
+  which also exercises `ThemeProvider` indirectly through every screen
+  test.
+- No regression in dark-mode rendering: the new Playwright screenshots
+  (`screenshots/default-light.png`, `screenshots/default-dark.png`) show
+  the theme system correctly switching the LoginScreen's sign-in card
+  between light/dark surfaces in an actual browser render.

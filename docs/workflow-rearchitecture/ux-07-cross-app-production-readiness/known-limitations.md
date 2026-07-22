@@ -229,3 +229,38 @@
    narrowed to the SmartBot guided-flow restructure plus targeted
    accessibility labels on its option rows, given the time/effort budget
    available. No documents claiming this broader work exist.
+
+## Pass 3f addendum (accessibility + visual-evidence pass)
+
+8. **Responsive/width-specific certification (Part 1 of this pass's
+   original brief) was intentionally descoped mid-task**, per explicit
+   user direction relayed by the coordinator: the design is expected to
+   change, so certifying exact pixel-width layouts (320/360/390/430px)
+   now would be wasted work. No `responsive-width-matrix.csv` or
+   `customer-320px-certification.md` was written this pass — this is a
+   deliberate scope decision, not a failure or a skipped task.
+9. **Home/SmartBot/bottom-nav Playwright visual evidence with real
+   authenticated data was not captured**: no backend was reachable in
+   this worktree (localhost:8000 refused; the only other configured API
+   URL, a stale ngrok tunnel, 404'd). Only the unauthenticated
+   LoginScreen was captured (light + dark, 412px, real Playwright
+   screenshots against a real `npx expo export -p web` build) as proof
+   that web rendering and the theme system both function in a browser.
+   See `playwright-pass-3f-report.md`.
+10. **Accessibility audit is a bounded critical-pass, not a WCAG
+    certification**: manual source review of Home/SmartBot/booking-flow
+    modal/bottom-nav only; no axe-core or other automated a11y linter was
+    run; no live screen-reader (VoiceOver/TalkBack) walkthrough was
+    performed. Every CRITICAL and HIGH finding was fixed with real props;
+    several MEDIUM/LOW findings were deferred and are itemized with
+    reasoning in `home-smartbot-accessibility-audit.csv` and
+    `accessibility-remediation-report.md` — most notably: no separate
+    `accessibilityLiveRegion` announcement was added for in-flight
+    "Checking…/Confirming…" button-label changes (the same buttons'
+    `accessibilityState={{busy:true}}` was judged sufficient signal for
+    assistive tech that honors it), and the handoff/serviceability notice
+    text has no live-region marking.
+11. **No screen outside Home/SmartBot/booking-flow modal/bottom nav was
+    audited or touched this pass** (LoginScreen, BookingsListScreen,
+    NotificationsScreen, ProfileScreen, etc. are out of this pass's named
+    scope).

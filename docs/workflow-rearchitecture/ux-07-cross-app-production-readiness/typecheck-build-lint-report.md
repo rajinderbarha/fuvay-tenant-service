@@ -46,3 +46,14 @@ excluding `node_modules`/`.expo`), one `npm install --legacy-peer-deps
 
 Full detail (file list, exact counts, per-test breakdown) in
 `customer-test-report.md` and `theme-stability-non-regression.md`.
+
+## Pass 3f addendum
+
+- `npx tsc --noEmit` after this pass's accessibility changes: **0
+  errors**, run against a fresh `npm install --legacy-peer-deps
+  --no-audit --no-fund` in WSL.
+- `npx expo export -p web` (used for the Playwright evidence in
+  `playwright-pass-3f-report.md`) also succeeded with no bundling errors
+  — a real, additional build-health signal beyond `tsc`.
+- No lint config change; no new lint tooling run beyond what prior passes
+  already established.

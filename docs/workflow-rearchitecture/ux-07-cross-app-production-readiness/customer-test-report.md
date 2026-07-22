@@ -74,3 +74,25 @@ react ^19.2.3; this repo pins react 19.2.0 — see `known-limitations.md`).
 Scoped, test-file-local workarounds only (`jest.mock` stubbing `Skeleton`
 to a plain `View`; `jest.spyOn(Animated, "timing")` stubbing only the
 native-driver hookup) — neither changes app behavior.
+
+## Pass 3f addendum (accessibility remediation)
+
+- Baseline confirmed at HEAD f9bf68f before changes: 73/73 tests passing.
+- After this pass's changes (3 new accessibility-assertion tests added,
+  no existing test modified except additions): **76/76 tests passing**,
+  confirmed with **3 consecutive fresh `npx jest` runs** (11 suites, 76
+  tests each run, 0 failures) in a from-scratch WSL `npm install
+  --legacy-peer-deps --no-audit --no-fund`.
+- New tests added:
+  - `src/navigation/__tests__/TabNavigator.test.tsx`: asserts the focused
+    (Home) tab exposes `accessibilityRole="tab"` and
+    `accessibilityState={{selected:true}}`.
+  - `src/screens/__tests__/DeepSeekChatScreen.guidedFlow.test.tsx`: (1)
+    asserts the guided-flow modal's back/close control has an accessible
+    label, role, and `hitSlop`; (2) asserts the language picker's English
+    row exposes `accessibilityRole="button"` and
+    `accessibilityState={{selected:true}}` when English is active.
+- No test file for HomeScreen's `hitSlop` additions was added — hitSlop
+  is not observable via React Native Testing Library's DOM-less renderer
+  in a way distinct from a visual/E2E check, so this was verified by
+  source review only (documented, not silently skipped).

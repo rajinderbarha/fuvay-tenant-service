@@ -111,3 +111,14 @@ contract was added or changed — `HomeScreen`/`DeepSeekChatScreen` call the
 exact same `bookingsApi`/`fieldOpsJobsApi`/`catalogApi`/
 `homeServiceDraftApi`/`bookingConfirmApi`/`aiConversationApi` functions with
 the exact same signatures as before this pass.
+
+## Pass 3f addendum
+
+No backend file was read, touched, or run this pass. `app/` was not
+modified. A backend was not started in this worktree (attempts to reach
+`http://localhost:8000` failed with connection-refused, and the only
+other configured API URL — a stale ngrok tunnel in `.env` — returned
+HTTP 404); this pass's frontend-only accessibility remediation did not
+require one, and the Playwright visual-evidence gap for Home/SmartBot is
+a direct, honestly-documented consequence (see
+`playwright-pass-3f-report.md`), not a backend change of any kind.
