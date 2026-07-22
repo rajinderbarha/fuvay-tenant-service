@@ -13,7 +13,8 @@
  */
 import React, { useCallback, useState } from "react";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
-import { Card, Badge, JobStatusBadge, Btn, Modal, Input, Skeleton } from "../../../../components/shared/ui";
+import { PageHeader, Card, StatusBadge, Button, Modal, Input, Skeleton } from "@serviceos/design-system";
+import { Badge } from "../../../../components/shared/ui";
 import { serviceJobsApi, serviceJobAssignmentApi, mediaAssetApi, getUserRole } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import ReadOnlyBanner, { isReadOnly } from "../../../../components/shared/ReadOnlyBanner";
@@ -65,7 +66,7 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
 
   return (
     <TenantLayout activeNav="jobs">
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16,
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8,
         fontSize:12, color:"var(--text-tertiary)" }}>
         <a href="/jobs" style={{ color:"var(--text-link)", textDecoration:"none" }}>Jobs</a>
         <span>›</span>
@@ -74,26 +75,28 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
         </span>
       </div>
 
+      <PageHeader title={job.loading ? "Loading..." : (j?.job_number ?? "Job")} description="ServiceBooking -> ServiceJob pipeline" />
+
       <ReadOnlyBanner role={getUserRole()}/>
 
       {job.loading ? (
-        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <Skeleton height={140} style={{ borderRadius:14 }}/>
-          <Skeleton height={200} style={{ borderRadius:14 }}/>
+        <div style={{ display:"flex", flexDirection:"column", gap:16, marginTop:16 }}>
+          <Skeleton height="8.75rem"/>
+          <Skeleton height="12.5rem"/>
         </div>
       ) : !j ? (
         <div style={{ textAlign:"center", padding:60 }}>
           <p style={{ color:"var(--text-tertiary)" }}>Job not found</p>
         </div>
       ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:16, marginTop:16 }}>
           {/* Hero */}
-          <Card padding={24}>
+          <Card padding="lg">
             <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:16 }}>
               <div>
                 <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
                   <h1 style={{ fontSize:20, fontWeight:700, color:"var(--text-primary)", margin:0 }}>{j.job_number}</h1>
-                  <JobStatusBadge status={j.status}/>
+                  <StatusBadge status={j.status}/>
                   <Badge variant={j.assignment_status === "unassigned" ? "warning" : "success"}>
                     {j.assignment_status.replace(/_/g," ")}
                   </Badge>
@@ -107,18 +110,18 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
               </div>
               {!readOnly && (
                 <div style={{ display:"flex", gap:8 }}>
-                  <Btn variant="secondary" size="sm" onClick={() => setScheduleModal(true)}>Schedule</Btn>
-                  <Btn variant="primary" size="sm" onClick={() => setAssignModal(true)}>
+                  <Button variant="secondary" size="sm" onClick={() => setScheduleModal(true)}>Schedule</Button>
+                  <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>
                     {j.assignment_status === "unassigned" ? "Assign" : "Reassign"}
-                  </Btn>
-                  <Btn variant="danger" size="sm" onClick={() => setCancelModal(true)}>Cancel</Btn>
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => setCancelModal(true)}>Cancel</Button>
                 </div>
               )}
             </div>
           </Card>
 
           {/* Real canonical fields */}
-          <Card padding={20}>
+          <Card padding="md">
             <h3 style={{ fontSize:14, fontWeight:700, margin:"0 0 12px" }}>Job Details</h3>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px,1fr))", gap:14 }}>
               <Field label="Job ID" value={j.id}/>
@@ -135,7 +138,7 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
 
           {/* Completion proof — only for completed jobs, real data only */}
           {j.completion_data && (
-            <Card padding={20}>
+            <Card padding="md">
               <h3 style={{ fontSize:14, fontWeight:700, margin:"0 0 12px" }}>Completion Proof</h3>
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px,1fr))", gap:14 }}>
                 <Field label="Technician" value={j.completion_data.technician ?? "—"}/>
@@ -151,7 +154,7 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
               Deduction is tracked in the ledger (per-job drill-down not returned
               by this canonical endpoint yet), linked below rather than fabricated. */}
           {j.completion_data && (
-            <Card padding={20}>
+            <Card padding="md">
               <h3 style={{ fontSize:14, fontWeight:700, margin:"0 0 12px" }}>Payment Collection</h3>
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px,1fr))", gap:14 }}>
                 <Field label="Collected Amount" value={j.completion_data.collected_amount != null ? `₹${j.completion_data.collected_amount}` : "—"}/>
@@ -166,7 +169,7 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
 
           {/* Job Photos — real MediaUploader/MediaGallery, wired to /v1/media
               (owner_type=service_job), previously orphaned dead code. */}
-          <Card padding={20}>
+          <Card padding="md">
             <h3 style={{ fontSize:14, fontWeight:700, margin:"0 0 16px" }}>Job Photos</h3>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
               <div>
@@ -205,9 +208,9 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
           </Card>
 
           {/* Assignment timeline — real data from serviceJobAssignmentApi */}
-          <Card padding={20}>
+          <Card padding="md">
             <h3 style={{ fontSize:14, fontWeight:700, margin:"0 0 12px" }}>Assignment Timeline</h3>
-            {timeline.loading ? <Skeleton height={60}/> : (timeline.data?.events?.length ?? 0) === 0 ? (
+            {timeline.loading ? <Skeleton height="3.75rem"/> : (timeline.data?.events?.length ?? 0) === 0 ? (
               <p style={{ fontSize:12, color:"var(--text-tertiary)" }}>No assignment events yet.</p>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
@@ -225,7 +228,7 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
 
       {/* Assign modal */}
       <Modal open={assignModal} onClose={() => setAssignModal(false)} title="Assign Technician">
-        {eligible.loading ? <Skeleton height={80}/> : (
+        {eligible.loading ? <Skeleton height="5rem"/> : (
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
             {(eligible.data?.eligible_staff ?? []).map(s => (
               <label key={s.staff_member_id} style={{ display:"flex", alignItems:"center", gap:8, fontSize:13 }}>
@@ -238,23 +241,23 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
             {(eligible.data?.eligible_staff ?? []).length === 0 && (
               <p style={{ fontSize:12, color:"var(--text-tertiary)" }}>No eligible staff found.</p>
             )}
-            <Btn variant="primary" size="sm" onClick={handleAssign} disabled={!selectedStaff}
-              style={{ marginTop:8 }}>Confirm Assignment</Btn>
+            <Button variant="primary" size="sm" onClick={handleAssign} disabled={!selectedStaff}
+              style={{ marginTop:8 }}>Confirm Assignment</Button>
           </div>
         )}
       </Modal>
 
       {/* Cancel modal */}
       <Modal open={cancelModal} onClose={() => setCancelModal(false)} title="Cancel Assignment">
-        <Input label="Reason" value={cancelReason} onChange={setCancelReason} placeholder="Reason for cancellation"/>
-        <Btn variant="danger" size="sm" onClick={handleCancel} style={{ marginTop:12 }}>Confirm Cancel</Btn>
+        <Input label="Reason" value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="Reason for cancellation"/>
+        <Button variant="destructive" size="sm" onClick={handleCancel} style={{ marginTop:12 }}>Confirm Cancel</Button>
       </Modal>
 
       {/* Schedule modal */}
       <Modal open={scheduleModal} onClose={() => setScheduleModal(false)} title="Schedule Job">
-        <Input label="Date (YYYY-MM-DD)" value={schedDate} onChange={setSchedDate} placeholder="2026-07-15"/>
-        <Input label="Time Window" value={schedWindow} onChange={setSchedWindow} placeholder="10:00-12:00"/>
-        <Btn variant="primary" size="sm" onClick={handleSchedule} style={{ marginTop:12 }}>Confirm Schedule</Btn>
+        <Input label="Date (YYYY-MM-DD)" value={schedDate} onChange={e => setSchedDate(e.target.value)} placeholder="2026-07-15"/>
+        <Input label="Time Window" value={schedWindow} onChange={e => setSchedWindow(e.target.value)} placeholder="10:00-12:00"/>
+        <Button variant="primary" size="sm" onClick={handleSchedule} style={{ marginTop:12 }}>Confirm Schedule</Button>
       </Modal>
     </TenantLayout>
   );
