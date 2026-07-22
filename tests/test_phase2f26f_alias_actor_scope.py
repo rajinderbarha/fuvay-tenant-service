@@ -241,6 +241,12 @@ class TestBurnedCorpora:
             ("POST", "/v1/commerce/tenants/{tenant_id}/badges/recalculate"),
             ("POST", "/v1/pricing/tenants/{tenant_id}/zones"),
             ("POST", "/v1/commerce/warranty/claims"),
+            # Slice 2F-39A4: payment.router::generate_invoice gained
+            # _require_trusted_tenant (was missing it entirely while sibling
+            # request_payout already had it); classifier now correctly reads
+            # PRINCIPAL_TENANT where the frozen pre-fix label read
+            # CLIENT_ASSERTED_TARGET_TENANT.
+            ("POST", "/v1/payments/invoices"),
         }
         PERSONA_EXEMPT = {("POST", "/v1/appointments/{appointment_id}/reschedule")}
         p = d = n = 0

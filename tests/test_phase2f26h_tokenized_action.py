@@ -226,7 +226,15 @@ class TestBurnedCorporaStableFields:
                      # token instead of trusted from the request body, so
                      # the live classifier correctly resolves
                      # PRINCIPAL_TENANT here now.
-                     ("POST", "/v1/security/api-keys")):
+                     ("POST", "/v1/security/api-keys"),
+                     # Slice 2F-39A4 fixed payment.router::generate_invoice
+                     # and payment.router::create_order, both missing
+                     # _require_trusted_tenant entirely while sibling
+                     # request_payout already had it; the live classifier now
+                     # correctly resolves PRINCIPAL_TENANT here instead of
+                     # the frozen pre-fix CLIENT_ASSERTED_TARGET_TENANT label.
+                     ("POST", "/v1/payments/invoices"),
+                     ("POST", "/v1/payments/orders")):
                 d += r["tenant_direction"] == "PRINCIPAL_TENANT"
                 continue
             d += (e is None) or r["tenant_direction"] == e
