@@ -206,3 +206,26 @@
    were NOT performed this pass (out of time budget given the redesign
    itself). No documents claiming this work were written. See
    `deferred-pass-4-work.md`.
+
+## Pass 3e addendum (guided-SmartBot-flow restructure)
+
+5. **Guided restructure targeted the real structured surface, not the
+   free-text chat.** The free-text DeepSeek chat has no backend-exposed
+   question/options/step contract (`/messages` only returns `tools_called`
+   names + a synthesized `reply` string). The compact header, honest progress
+   indicator, collapsed-by-default answers summary, and accessible option
+   names were added to the guided booking-flow modal
+   (`chatBookingReducer`-driven), which is the one surface with real
+   structured turns. See `pass-3e-status-rationale.md`.
+6. **"Start over" instead of a fabricated partial-edit system**: editing an
+   earlier answer from the summary resets local booking state only (same AI
+   session id reused, verified by test); it does not attempt to model which
+   downstream answers a backend-side partial edit would invalidate, because
+   the real backend draft binds category/offering/brand at creation time —
+   there is no real contract for in-place editing to honestly emulate.
+7. **Home screen, photo-upload flow, segmented-control language redesign,
+   full accessibility audit CSV, responsive width matrix, and Playwright/
+   Expo-web visual evidence were NOT attempted this pass** — scope was
+   narrowed to the SmartBot guided-flow restructure plus targeted
+   accessibility labels on its option rows, given the time/effort budget
+   available. No documents claiming this broader work exist.
