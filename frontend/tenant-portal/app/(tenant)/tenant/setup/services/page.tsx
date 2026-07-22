@@ -1,7 +1,11 @@
 "use client";
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { TenantLayout } from "../../../../../components/layout/TenantLayout";
-import { Card, Btn, Badge, Skeleton, EmptyState, Modal } from "../../../../../components/shared/ui";
+import { Badge } from "../../../../../components/shared/ui";
+import {
+  Card as DsCard, Button as DsButton, Skeleton as DsSkeleton,
+  EmptyState as DsEmptyState, Modal as DsModal,
+} from "@serviceos/design-system";
 import {
   homeServicesSetupApi, providerServiceAreasApi, providerStatusApi, ServiceOSError,
   isTenantReadOnly,
@@ -32,6 +36,68 @@ const safeCur = (v: unknown, fb = "—"): string => {
 
 function copyText(t: string) {
   if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {});
+}
+
+// ── Design-system-backed adapters (preserve existing call-site prop API) ──────
+type BV = "primary" | "secondary" | "ghost" | "danger" | "success" | "warning";
+type BS = "xs" | "sm" | "md" | "lg";
+function Btn({
+  children, variant = "primary", size = "md", loading, icon, fullWidth,
+  onClick, type = "button", disabled, style = {},
+}: {
+  children?: React.ReactNode; variant?: BV; size?: BS; loading?: boolean;
+  icon?: React.ReactNode; fullWidth?: boolean; onClick?: () => void;
+  type?: "button" | "submit"; disabled?: boolean; style?: React.CSSProperties;
+}) {
+  const dsVariant = variant === "danger" ? "destructive"
+    : variant === "success" || variant === "warning" ? "secondary"
+    : variant;
+  const toneStyle: React.CSSProperties = variant === "success"
+    ? { color: "var(--success-text)", borderColor: "var(--success-border)" }
+    : variant === "warning" ? { color: "var(--warning-text)", borderColor: "var(--warning-border)" } : {};
+  return (
+    <DsButton type={type} onClick={onClick} disabled={disabled} loading={loading}
+      variant={dsVariant} size={size === "xs" ? "sm" : size} leftIcon={icon}
+      style={{ width: fullWidth ? "100%" : undefined, ...toneStyle, ...style }}>
+      {children}
+    </DsButton>
+  );
+}
+
+function Card({ children, style = {}, padding = 20, hover = false, onClick }: {
+  children: React.ReactNode; style?: React.CSSProperties; padding?: number; hover?: boolean; onClick?: () => void;
+}) {
+  const [hov, setHov] = useState(false);
+  const dsPadding = padding <= 0 ? "none" : padding <= 12 ? "sm" : padding <= 20 ? "md" : "lg";
+  return (
+    <DsCard padding={dsPadding} onClick={onClick}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{
+        boxShadow: hov && hover ? "var(--shadow-md)" : undefined,
+        transform: hov && hover ? "translateY(-1px)" : "none",
+        transition: "all 0.15s ease", cursor: onClick ? "pointer" : undefined, ...style,
+      }}>
+      {children}
+    </DsCard>
+  );
+}
+
+function Skeleton({ width, height = 20, radius = 6 }: {
+  width?: number | string; height?: number; radius?: number; style?: React.CSSProperties;
+}) {
+  return <DsSkeleton width={width ?? "100%"} height={height} radius={`${radius}px`} />;
+}
+
+function EmptyState({ title, description, action }: {
+  icon?: React.ReactNode; title: string; description?: string; action?: React.ReactNode;
+}) {
+  return <DsEmptyState title={title} description={description} primaryAction={action} />;
+}
+
+function Modal({ open, onClose, title, children }: {
+  open: boolean; onClose: () => void; title?: string; children: React.ReactNode; size?: "sm" | "md" | "lg";
+}) {
+  return <DsModal open={open} onClose={onClose} title={title ?? ""}>{children}</DsModal>;
 }
 
 // ── Error banner ──────────────────────────────────────────────────────────────
