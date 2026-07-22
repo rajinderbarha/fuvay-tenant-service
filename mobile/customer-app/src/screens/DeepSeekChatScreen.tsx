@@ -43,6 +43,40 @@ import type { Theme } from "../styles/theme";
  */
 type Msg = { id:string; role:"user"|"assistant"; content:string };
 
+// UX-07 Pass 3e: honest, real-state-derived progress for the guided booking
+// flow (the only surface here with actual question->option turns; the free-
+// text DeepSeek chat above has no backend-exposed step count -- see the file
+// header comment on why). Ordered list of REAL steps that can occur; brand and
+// offering-type steps are conditionally included only when the real backend
+// data requires them (brands.length>0 / ac_repair), never assumed constant.
+const BASE_STEPS = ["category","offering","issue_address","serviceability","price","confirm"] as const;
+function stepsFor(hasBrandStep: boolean): string[] {
+  const steps: string[] = [...BASE_STEPS];
+  if (hasBrandStep) steps.splice(2, 0, "brand");
+  return steps;
+}
+function currentStepIndex(booking: import("../lib/chatBookingState").ChatBookingState, hasBrandStep: boolean): number {
+  const steps = stepsFor(hasBrandStep);
+  if (!booking.category) return 0;
+  if (!booking.offering) return steps.indexOf("category");
+  if (hasBrandStep && !booking.brandId) return steps.indexOf("offering");
+  if (!booking.issueDescription || !booking.addressLine) return steps.indexOf(hasBrandStep ? "brand" : "offering");
+  if (booking.step === "not_yet_bookable" || (booking.serviceable === false)) return steps.indexOf("serviceability");
+  if (!booking.priceSnapshot) return steps.indexOf("issue_address");
+  if (!booking.selectedTier) return steps.indexOf("price");
+  return steps.indexOf("confirm");
+}
+function progressLabel(booking: import("../lib/chatBookingState").ChatBookingState, hasBrandStep: boolean): string {
+  const steps = stepsFor(hasBrandStep);
+  const idx = currentStepIndex(booking, hasBrandStep);
+  return `Step ${Math.min(idx + 1, steps.length)} of ${steps.length}`;
+}
+function progressPct(booking: import("../lib/chatBookingState").ChatBookingState, hasBrandStep: boolean): number {
+  const steps = stepsFor(hasBrandStep);
+  const idx = currentStepIndex(booking, hasBrandStep);
+  return Math.round(((idx + 1) / steps.length) * 100);
+}
+
 interface Props {
   navigation?: { navigate: (screen: string, params?: unknown) => void };
   // UX-07 Pass 3d: category-handoff context from Home (see HomeScreen.tsx's
@@ -79,6 +113,9 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
   const categoryMatchLabel = route?.params?.initialCategoryLabel;
   const [handoffNotice, setHandoffNotice] = useState<string|null>(null);
   const [handoffConsumed, setHandoffConsumed] = useState(false);
+  // UX-07 Pass 3e: collapsed by default per the guided-flow restructure --
+  // see docs/workflow-rearchitecture/.../smartbot-answer-summary-behavior.md.
+  const [summaryOpen, setSummaryOpen] = useState(false);
 
   const startSession = useCallback(async () => {
     setStarting(true); setError(null);
@@ -391,6 +428,60 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
       {/* ── Real, canonical booking journey ─────────────────────────────────── */}
       <Modal visible={flowOpen} animationType="slide" onRequestClose={()=>setFlowOpen(false)}>
         <View style={s.flowModal}>
+          <View style={s.flowHeader}>
+            <TouchableOpacity onPress={()=>setFlowOpen(false)} testID="booking-flow-back"
+              accessible accessibilityRole="button" accessibilityLabel="Close guided booking"
+              style={s.flowBackBtn}>
+              <Ionicons name="chevron-back" size={22} color={theme.colors.textPrimary}/>
+            </TouchableOpacity>
+            <Text style={s.flowHeaderTitle} numberOfLines={1} accessibilityRole="header">
+              {(booking.category?.name ?? categoryMatchLabel ?? "Book a Service")} Assistant
+            </Text>
+            <View style={{ width:32 }} />
+          </View>
+
+          {/* Progress indicator: derived only from real reducer step transitions
+              (chatBookingState.ts) -- never a fabricated fixed step count. Some
+              offerings have extra real steps (brand/offering-type), so the total
+              is computed per-booking rather than assumed constant. */}
+          {booking.step !== "idle" && booking.step !== "submitted" && (
+            <View style={s.progressRow} accessible accessibilityLabel={progressLabel(booking, brands.length > 0)}>
+              <Text style={s.progressText}>{progressLabel(booking, brands.length > 0)}</Text>
+              <View style={s.progressTrack}>
+                <View style={[s.progressFill, { width: `${progressPct(booking, brands.length > 0)}%` }]} />
+              </View>
+            </View>
+          )}
+
+          {/* Compact, collapsed-by-default summary of answers so far. Editing is
+              honestly limited to "Start over" -- the real backend draft binds
+              category/offering/brand at creation time, so there is no real
+              partial-edit/re-validate contract to fabricate here. */}
+          {(booking.category || booking.offering) && booking.step !== "submitted" && (
+            <View style={s.summaryBox}>
+              <TouchableOpacity onPress={()=>setSummaryOpen(o=>!o)} testID="booking-summary-toggle"
+                accessible accessibilityRole="button"
+                accessibilityLabel={summaryOpen ? "Collapse answers so far" : "Expand answers so far"}
+                accessibilityState={{ expanded: summaryOpen }}
+                style={s.summaryHeader}>
+                <Text style={s.summaryHeaderText}>Answers so far</Text>
+                <Ionicons name={summaryOpen ? "chevron-up" : "chevron-down"} size={16} color={theme.colors.textSecondary}/>
+              </TouchableOpacity>
+              {summaryOpen && (
+                <View style={{ gap:6 }}>
+                  {booking.category && <Text style={s.summaryLine}>Service: {booking.category.name}</Text>}
+                  {booking.offering && <Text style={s.summaryLine}>Type: {booking.offering.name}</Text>}
+                  {booking.issueDescription ? <Text style={s.summaryLine}>Issue: {booking.issueDescription}</Text> : null}
+                  {booking.addressLine ? <Text style={s.summaryLine}>Address: {booking.addressLine}, {booking.city}</Text> : null}
+                  <TouchableOpacity onPress={openBookingFlow} testID="booking-start-over"
+                    accessible accessibilityRole="button" accessibilityLabel="Start over from the beginning">
+                    <Text style={s.summaryEditLink}>Start over</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
           {categoryMatchLabel && (
             <View style={s.handoffHeader} testID="booking-category-context">
               <Ionicons name="pricetag-outline" size={14} color={theme.colors.textInverse}/>
@@ -473,7 +564,8 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
               data={brands} keyExtractor={b=>b.brand_id}
               ListHeaderComponent={<Text style={[s.title,{padding:16}]}>Select your appliance brand</Text>}
               renderItem={({item}) => (
-                <TouchableOpacity style={s.langRow} onPress={()=>pickBrand(item.brand_id)} testID={`brand-${item.brand_id}`}>
+                <TouchableOpacity style={s.langRow} onPress={()=>pickBrand(item.brand_id)} testID={`brand-${item.brand_id}`}
+                  accessible accessibilityRole="button" accessibilityLabel={`Select brand: ${item.name}`}>
                   <Text style={s.langRowNative}>{item.name}</Text>
                 </TouchableOpacity>
               )}
@@ -483,7 +575,8 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
               data={AC_REPAIR_TYPES} keyExtractor={t=>t.id}
               ListHeaderComponent={<Text style={[s.title,{padding:16}]}>Select service type</Text>}
               renderItem={({item}) => (
-                <TouchableOpacity style={s.langRow} onPress={()=>pickOfferingType(item.id)} testID={`offering-type-${item.id}`}>
+                <TouchableOpacity style={s.langRow} onPress={()=>pickOfferingType(item.id)} testID={`offering-type-${item.id}`}
+                  accessible accessibilityRole="button" accessibilityLabel={`Select service type: ${item.label}`}>
                   <Text style={s.langRowNative}>{item.label}</Text>
                 </TouchableOpacity>
               )}
@@ -510,13 +603,15 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
               ListHeaderComponent={<Text style={[s.title,{padding:16}]}>Choose a service</Text>}
               renderItem={({item}) => (
                 <View style={[s.langRow, { flexDirection:"row", alignItems:"center", justifyContent:"space-between" }]}>
-                  <TouchableOpacity style={{ flex:1 }} onPress={()=>pickOffering(item)} testID={`offering-${item.slug}`}>
+                  <TouchableOpacity style={{ flex:1 }} onPress={()=>pickOffering(item)} testID={`offering-${item.slug}`}
+                    accessible accessibilityRole="button" accessibilityLabel={`Select service: ${item.name}`}>
                     <Text style={s.langRowNative}>{item.name}</Text>
                   </TouchableOpacity>
                   {booking.category && (
                     <TouchableOpacity
                       onPress={()=>{ setFlowOpen(false); navigation?.navigate("ServiceDetail", { categorySlug: booking.category!.slug, offeringSlug: item.slug }); }}
-                      testID={`offering-details-${item.slug}`}>
+                      testID={`offering-details-${item.slug}`}
+                      accessible accessibilityRole="button" accessibilityLabel={`View details for ${item.name}`}>
                       <Text style={{ color:theme.colors.accent, fontSize:theme.font.size.sm }}>Details ⓘ</Text>
                     </TouchableOpacity>
                   )}
@@ -528,7 +623,8 @@ export function DeepSeekChatScreen({ navigation, route }: Props) {
               data={categories} keyExtractor={c=>c.id}
               ListHeaderComponent={<Text style={[s.title,{padding:16}]}>What do you need help with?</Text>}
               renderItem={({item}) => (
-                <TouchableOpacity style={s.langRow} onPress={()=>pickCategory(item)} testID={`category-${item.slug}`}>
+                <TouchableOpacity style={s.langRow} onPress={()=>pickCategory(item)} testID={`category-${item.slug}`}
+                  accessible accessibilityRole="button" accessibilityLabel={`Select category: ${item.name}`}>
                   <Text style={s.langRowNative}>{item.name}</Text>
                 </TouchableOpacity>
               )}
@@ -595,5 +691,20 @@ function makeStyles(theme: Theme) {
     langRow: { paddingVertical:12, paddingHorizontal:16, minHeight:44, borderBottomWidth:1, borderBottomColor:theme.colors.border },
     langRowNative: { fontSize:theme.font.size.base, fontWeight:"600", color:theme.colors.textPrimary },
     langRowEnglish: { fontSize:theme.font.size.xs, color:theme.colors.textTertiary, marginTop:2 },
+    flowHeader: { flexDirection:"row", alignItems:"center", justifyContent:"space-between",
+                  paddingHorizontal:12, paddingBottom:10, gap:8 },
+    flowBackBtn: { width:32, height:32, alignItems:"center", justifyContent:"center" },
+    flowHeaderTitle: { flex:1, textAlign:"center", fontSize:theme.font.size.base, fontWeight:"700",
+                       color:theme.colors.textPrimary },
+    progressRow: { paddingHorizontal:16, paddingBottom:10, gap:6 },
+    progressText: { fontSize:theme.font.size.xs, color:theme.colors.textSecondary, fontWeight:"600" },
+    progressTrack: { height:6, borderRadius:3, backgroundColor:theme.colors.surfaceSunken, overflow:"hidden" },
+    progressFill: { height:6, borderRadius:3, backgroundColor:theme.colors.brand },
+    summaryBox: { marginHorizontal:16, marginBottom:10, borderWidth:1, borderColor:theme.colors.border,
+                  borderRadius:theme.radius.lg, padding:12, backgroundColor:theme.colors.surface, gap:8 },
+    summaryHeader: { flexDirection:"row", alignItems:"center", justifyContent:"space-between", minHeight:24 },
+    summaryHeaderText: { fontSize:theme.font.size.sm, fontWeight:"700", color:theme.colors.textPrimary },
+    summaryLine: { fontSize:theme.font.size.xs, color:theme.colors.textSecondary },
+    summaryEditLink: { fontSize:theme.font.size.xs, fontWeight:"700", color:theme.colors.accent, paddingTop:4 },
   });
 }
