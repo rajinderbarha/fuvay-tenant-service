@@ -19,7 +19,7 @@ import { Toaster, type ToastItem } from "../shared/ui";
 import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "./Breadcrumbs";
-import { authApi, providerStatusApi, entitlementApi } from "../../lib/api";
+import { authApi, providerStatusApi, entitlementApi, providerNotifApi, type InAppNotificationItem } from "../../lib/api";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
 
 // FINAL-L5-04B: live tenant module/category entitlement state, fetched once
@@ -97,10 +97,15 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "More",
     items: [
-      { id: "documents",     href: "/documents",     label: "Documents",     icon: <FileText size={16}/> },
+      // Documents: sidebar entry removed per product decision -- policies/
+      // e-signature docs will be universal, admin-managed across all home
+      // service tenants, so no per-tenant Documents section belongs here.
+      // The page/API remain live (unlinked); only this nav entry is hidden.
       { id: "provider-compliance", href: "/provider/compliance", label: "Compliance", icon: <Shield size={16}/> },
       { id: "privacy",       href: "/account/privacy", label: "Privacy & Data", icon: <Shield size={16}/> },
-      { id: "notifications", href: "/notifications", label: "Notifications", icon: <Bell size={16}/> },
+      // Notifications: sidebar entry removed -- the header bell dropdown is
+      // now the primary access point (see TopNav-equivalent bell below).
+      // The /notifications page remains live and reachable from elsewhere.
       { id: "activity",      href: "/activity",      label: "Activity",      icon: <Activity size={16}/> },
       { id: "settings",      href: "/settings",      label: "Settings",      icon: <Settings size={16}/> },
     ],
@@ -302,6 +307,40 @@ function TenantShellInner({ children, activeNav }: {
   const [setupPct,     setSetupPct]     = useState<number | null>(null);
   const [entitledModuleKeys, setEntitledModuleKeys] = useState<string[]>([]);
   const [entitlementsLoaded, setEntitlementsLoaded] = useState(false);
+
+  // Notification bell dropdown: real data via providerNotifApi (backs the
+  // /provider/notifications inbox -- same InAppNotificationItem model).
+  // Replaces the old plain bell-link-to-page with an in-place popover.
+  const [unreadCount, setUnreadCount] = useState<number | null>(null);
+  const [bellOpen, setBellOpen] = useState(false);
+  const [recentNotifs, setRecentNotifs] = useState<InAppNotificationItem[] | null>(null);
+  const bellRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    providerNotifApi.unreadCount().then(r => setUnreadCount(r.unread_count)).catch(() => setUnreadCount(null));
+  }, []);
+
+  const openBell = () => {
+    setBellOpen(o => !o);
+    if (!bellOpen) {
+      providerNotifApi.list({ limit: 7 })
+        .then(r => setRecentNotifs(r.items ?? [])).catch(() => setRecentNotifs([]));
+    }
+  };
+
+  useEffect(() => {
+    if (!bellOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setBellOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [bellOpen]);
 
   const loadEntitlements = useCallback(() => {
     entitlementApi.getMyModules()
@@ -518,9 +557,100 @@ function TenantShellInner({ children, activeNav }: {
           <button onClick={toggle} title={theme === "dark" ? "Light mode" : "Dark mode"} style={{ width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
             {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
           </button>
-          <a href="/notifications" aria-label="Notifications" title="Notifications" style={{ width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", textDecoration: "none" }}>
-            <Bell size={16}/>
-          </a>
+          <div ref={bellRef} style={{ position: "relative" }}>
+            <button onClick={openBell}
+              aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
+              title="Notifications"
+              style={{ width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", position: "relative" }}>
+              <Bell size={16}/>
+              {!!unreadCount && unreadCount > 0 && (
+                <span style={{
+                  position: "absolute", top: 3, right: 3, minWidth: 15, height: 15, padding: "0 3px",
+                  borderRadius: "50%", background: "var(--danger)", border: "2px solid var(--surface)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 9, fontWeight: 700, color: "#fff", lineHeight: 1,
+                }}>{unreadCount > 99 ? "99+" : unreadCount}</span>
+              )}
+            </button>
+
+            {bellOpen && (
+              <div style={{
+                position: "absolute", top: 44, right: 0, width: 340, maxHeight: 440,
+                background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)",
+                boxShadow: "var(--shadow-lg)", zIndex: 300, overflow: "hidden",
+                display: "flex", flexDirection: "column",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Notifications</span>
+                  {!!unreadCount && unreadCount > 0 && (
+                    <button
+                      onClick={() => { providerNotifApi.markAllRead().then(() => {
+                        setUnreadCount(0);
+                        setRecentNotifs(rs => (rs ?? []).map(n => ({ ...n, read_status: "read" })));
+                      }).catch(() => {}); }}
+                      style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none",
+                        cursor: "pointer", padding: 0 }}>
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ overflowY: "auto", flex: 1 }}>
+                  {recentNotifs === null ? (
+                    <div style={{ padding: 16, fontSize: 13, color: "var(--text-tertiary)" }}>Loading…</div>
+                  ) : recentNotifs.length === 0 ? (
+                    <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--text-tertiary)" }}>
+                      No notifications
+                    </div>
+                  ) : recentNotifs.map(n => {
+                    const unread = n.read_status !== "read";
+                    const dot = n.severity === "critical" || n.severity === "danger" ? "var(--danger)"
+                              : n.severity === "warning" ? "var(--warning, #b45309)" : "var(--accent)";
+                    const go = () => {
+                      if (unread) {
+                        providerNotifApi.markRead(n.id).catch(() => {});
+                        setUnreadCount(c => (c ?? 1) > 0 ? (c as number) - 1 : 0);
+                        setRecentNotifs(rs => (rs ?? []).map(x => x.id === n.id ? { ...x, read_status: "read" } : x));
+                      }
+                      setBellOpen(false);
+                      if (n.action_url) window.location.href = n.action_url;
+                    };
+                    return (
+                      <div key={n.id} onClick={go} style={{
+                        display: "flex", gap: 10, padding: "11px 16px", cursor: "pointer",
+                        borderBottom: "1px solid var(--border)",
+                        background: unread ? "var(--surface-2, rgba(0,0,0,0.02))" : "transparent",
+                      }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", marginTop: 5,
+                          background: unread ? dot : "transparent", flexShrink: 0 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: unread ? 700 : 500, color: "var(--text-primary)",
+                            marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {n.title}
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4,
+                            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                            {n.body}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 3 }}>
+                            {new Date(n.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <a href="/provider/notifications" onClick={() => setBellOpen(false)}
+                  style={{ display: "block", textAlign: "center", padding: "12px 16px",
+                    borderTop: "1px solid var(--border)", fontSize: 13, fontWeight: 600,
+                    color: "var(--accent)", textDecoration: "none" }}>
+                  View all notifications
+                </a>
+              </div>
+            )}
+          </div>
           <a href="/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
             <div style={{ textAlign: "right" }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{myName || tenant.tenantName || "Owner"}</p>
