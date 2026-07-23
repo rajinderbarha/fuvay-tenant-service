@@ -6,13 +6,15 @@ import { useApi, useAction } from "../../../hooks/useApi";
 import {
   inventoryApi,
   engineApi,
+  entitlementApi,
   type InventoryItem,
   type InventoryDraftItem,
-  type LowStockItem,
-  type StockTransaction,
 } from "../../../lib/api";
 
-type Tab = "items" | "stock" | "low";
+// Stock-level tracking (balances/receipts/low-stock alerts) is not
+// maintained by this tenant -- removed per explicit request. Items view
+// now supports table (default, best for hundreds of rows) and card views.
+type ItemsView = "table" | "card";
 const EXTRACTION_ENGINE_KEY = "inventory_document_extraction";
 
 // Shared labeled-field styling for the clean modal forms below.
@@ -27,43 +29,23 @@ const fieldInputStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-/** Combo box: pick from known values (real distinct categories already in
- * use for this tenant) or type a new one. Kept intentionally simple (no
- * extra dependency) — a native <select> with an "+ Add new…" sentinel that
- * reveals a free-text input. */
+/** Category select strictly limited to this provider's real active service
+ * categories -- no free-text entry, since a provider cannot stock inventory
+ * for a category they don't offer as a service. */
 function CategoryField({ value, onChange, options }: {
   value: string; onChange: (v: string) => void; options: string[];
 }) {
-  const [customMode, setCustomMode] = useState(() => !!value && !options.includes(value));
-  if (customMode) {
-    return (
-      <div style={{ display: "flex", gap: 6 }}>
-        <input value={value} onChange={e => onChange(e.target.value)}
-          placeholder="New category name" style={fieldInputStyle} />
-        {options.length > 0 && (
-          <button type="button" onClick={() => { setCustomMode(false); onChange(""); }}
-            style={{ height: 34, padding: "0 10px", borderRadius: 7, border: "1px solid var(--border)",
-              background: "transparent", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer",
-              fontFamily: "inherit", whiteSpace: "nowrap" }}>
-            Choose existing
-          </button>
-        )}
-      </div>
-    );
-  }
   return (
-    <select value={value}
-      onChange={e => { if (e.target.value === "__new__") { setCustomMode(true); onChange(""); } else { onChange(e.target.value); } }}
+    <select value={value} onChange={e => onChange(e.target.value)}
       style={{ ...fieldInputStyle, cursor: "pointer" }}>
       <option value="">— None —</option>
       {options.map(o => <option key={o} value={o}>{o}</option>)}
-      <option value="__new__">+ Add new category…</option>
     </select>
   );
 }
 
 export default function InventoryPage() {
-  const [tab, setTab] = useState<Tab>("items");
+  const [view, setView] = useState<ItemsView>("table");
 
   // ── Items tab ────────────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
@@ -89,14 +71,20 @@ export default function InventoryPage() {
     []
   );
 
-  // Real distinct categories already in use for this tenant's inventory —
-  // used to pre-populate the Category combo (per user request "category
-  // data we have so show that as well"), not a fabricated taxonomy.
+  // Category dropdown is restricted to the real service categories this
+  // provider is actively entitled/enabled for -- per explicit request
+  // "category will show in dropdown only in which provider providing
+  // service. no other category should show." Not derived from inventory
+  // data, and no free-text "add new" option (a provider cannot stock
+  // inventory for a category they don't offer as a service).
+  const myCategories = useApi(useCallback(() => entitlementApi.getMyCategories(), []), []);
   const knownCategories = useMemo(() => {
-    const set = new Set<string>();
-    for (const i of itemList.data?.items ?? []) { if (i.category) set.add(i.category); }
-    return Array.from(set).sort();
-  }, [itemList.data]);
+    return (myCategories.data?.categories ?? [])
+      .filter(c => c.status === "ACTIVE" && c.category_label)
+      .map(c => c.category_label as string)
+      .filter((v, i, arr) => arr.indexOf(v) === i)
+      .sort();
+  }, [myCategories.data]);
 
   // ── PDF -> AI extraction (draft review + publish) ───────────────────────
   // Only shown/usable if the inventory_document_extraction plugin engine is
@@ -188,59 +176,6 @@ export default function InventoryPage() {
     }
   }
 
-  // ── Stock tab ────────────────────────────────────────────────────────────
-  const [stockItemId,   setStockItemId]   = useState("");
-  const [stockLocId,    setStockLocId]    = useState("");
-  const [receiveQty,    setReceiveQty]    = useState("");
-  const [receiveNotes,  setReceiveNotes]  = useState("");
-
-  const balance = useApi(
-    useCallback(async () => {
-      if (!stockItemId || !stockLocId) return null;
-      return inventoryApi.getBalance(stockItemId, stockLocId);
-    }, [stockItemId, stockLocId]),
-    [stockItemId, stockLocId]
-  );
-
-  const transactions = useApi(
-    useCallback(async () => {
-      if (!stockItemId || !stockLocId) return null;
-      return inventoryApi.listTransactions(stockItemId, stockLocId);
-    }, [stockItemId, stockLocId]),
-    [stockItemId, stockLocId]
-  );
-
-  const { execute: receive, loading: receiving, error: receiveError } = useAction(
-    useCallback(async () => {
-      if (!stockItemId || !stockLocId || !receiveQty) return null;
-      const res = await inventoryApi.receiveStock(
-        stockItemId, stockLocId, parseFloat(receiveQty),
-        receiveNotes || undefined
-      );
-      if (res) { setReceiveQty(""); setReceiveNotes(""); balance.refetch(); transactions.refetch(); }
-      return res;
-    }, [stockItemId, stockLocId, receiveQty, receiveNotes, balance, transactions])
-  );
-
-  // ── Low stock tab ─────────────────────────────────────────────────────────
-  const lowStock = useApi(
-    useCallback(() => inventoryApi.getLowStock(), []),
-    []
-  );
-
-  const { execute: replenish, loading: replenishing } = useAction(
-    useCallback(async (itemId: string, qty: number) => {
-      const res = await inventoryApi.replenish(itemId, qty);
-      if (res) lowStock.refetch();
-      return res;
-    }, [lowStock])
-  );
-
-  const txnTypeColor: Record<string, string> = {
-    receive:"var(--success)", consume:"#ef4444", adjust:"var(--warning)",
-    reserve:"#8b5cf6", release:"var(--brand)",
-  };
-
   return (
     <TenantLayout activeNav="inventory">
       <div style={{ maxWidth:1100 }}>
@@ -248,24 +183,24 @@ export default function InventoryPage() {
           Inventory
         </h1>
 
-        {/* Tabs */}
+        {/* View toggle (table default -- best for hundreds of rows; card
+            for a more visual browse). Stock-level tracking removed --
+            not maintained by this tenant. */}
         <div style={{ display:"flex", gap:4, marginBottom:24 }}>
-          {(["items","stock","low"] as Tab[]).map(t => (
-            <button key={t} onClick={() => setTab(t)}
+          {(["table","card"] as ItemsView[]).map(t => (
+            <button key={t} onClick={() => setView(t)}
               style={{ padding:"8px 18px", borderRadius:"var(--radius-md)",
-                border: tab === t ? "2px solid var(--accent)" : "1px solid var(--border)",
-                background: tab === t ? "var(--accent-bg)" : "var(--surface)",
-                color: tab === t ? "var(--accent)" : "var(--text-secondary)",
-                fontWeight: tab === t ? 600 : 400, fontSize:13, cursor:"pointer",
+                border: view === t ? "2px solid var(--accent)" : "1px solid var(--border)",
+                background: view === t ? "var(--accent-bg)" : "var(--surface)",
+                color: view === t ? "var(--accent)" : "var(--text-secondary)",
+                fontWeight: view === t ? 600 : 400, fontSize:13, cursor:"pointer",
                 fontFamily:"inherit" }}>
-              {{ items:"Items", stock:"Stock Levels", low:"Low Stock Alerts" }[t]}
+              {{ table:"Table View", card:"Card View" }[t]}
             </button>
           ))}
         </div>
 
-        {/* ── Items Tab ── */}
-        {tab === "items" && (
-          <div>
+        <div>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
               <span style={{ fontSize:13, color:"var(--text-secondary)" }}>
                 {itemList.data ? `${itemList.data.items.length} items` : ""}
@@ -501,186 +436,69 @@ export default function InventoryPage() {
 
             {itemList.loading && <p style={{ color:"var(--text-tertiary)", fontSize:13 }}>Loading…</p>}
             {itemList.error  && <p style={{ color:"var(--danger)", fontSize:13 }}>{itemList.error}</p>}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px,1fr))", gap:10 }}>
-              {itemList.data?.items.map((item: InventoryItem) => (
-                <div key={item.item_id}
-                  style={{ background:"var(--surface)", border:"1px solid var(--border)",
-                    borderRadius:"var(--radius-lg)", padding:"14px 16px" }}>
-                  <div style={{ display:"flex", justifyContent:"space-between" }}>
-                    <p style={{ margin:"0 0 3px", fontWeight:600, fontSize:14, color:"var(--text-primary)" }}>
-                      {item.name}
-                    </p>
-                    <span style={{ fontSize:11, color:"var(--text-tertiary)" }}>{item.sku}</span>
-                  </div>
-                  <p style={{ margin:"0 0 6px", fontSize:12, color:"var(--text-secondary)" }}>
-                    {item.category ?? "—"} · {item.unit}{item.unit_cost != null ? ` · ₹${item.unit_cost}` : ""}
-                  </p>
-                  <p style={{ margin:0, fontSize:11, color:"var(--text-tertiary)" }}>
-                    Min qty: {item.min_quantity}
-                    {item.gst != null ? ` · GST ${item.gst}%` : ""}
-                    {item.warranty ? ` · Warranty ${item.warranty}` : ""}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {/* ── Stock Tab ── */}
-        {tab === "stock" && (
-          <div>
-            <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
-              <input value={stockItemId} onChange={e => setStockItemId(e.target.value)}
-                placeholder="Item UUID"
-                style={{ height:36, padding:"0 10px", borderRadius:"var(--radius-md)", width:220,
-                  border:"1px solid var(--border)", background:"var(--surface)",
-                  color:"var(--text-primary)", fontSize:13, fontFamily:"inherit" }}/>
-              <input value={stockLocId} onChange={e => setStockLocId(e.target.value)}
-                placeholder="Location UUID"
-                style={{ height:36, padding:"0 10px", borderRadius:"var(--radius-md)", width:220,
-                  border:"1px solid var(--border)", background:"var(--surface)",
-                  color:"var(--text-primary)", fontSize:13, fontFamily:"inherit" }}/>
-            </div>
-
-            {!stockItemId || !stockLocId
-              ? <p style={{ color:"var(--text-tertiary)", fontSize:13 }}>Enter item and location IDs above.</p>
-              : <>
-                  {/* Balance card */}
-                  {balance.loading && <p style={{ color:"var(--text-tertiary)", fontSize:13 }}>Loading balance…</p>}
-                  {balance.data && (
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12,
-                      marginBottom:20, maxWidth:500 }}>
-                      {[
-                        ["On Hand", balance.data.quantity],
-                        ["Reserved", balance.data.reserved_qty],
-                        ["Available", balance.data.available_qty],
-                      ].map(([label, val]) => (
-                        <div key={label as string} style={{ background:"var(--surface)",
-                          border:"1px solid var(--border)", borderRadius:10, padding:"14px 16px",
-                          textAlign:"center" }}>
-                          <p style={{ margin:"0 0 4px", fontSize:22, fontWeight:700, color:"var(--text-primary)" }}>
-                            {val}
-                          </p>
-                          <p style={{ margin:0, fontSize:11, color:"var(--text-tertiary)" }}>{label}</p>
-                        </div>
+            {view === "table" ? (
+              <div style={{ overflowX:"auto", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                  <thead>
+                    <tr style={{ background:"var(--surface-sunken)", textAlign:"left" }}>
+                      {["Name","SKU","Category","Unit","Unit Cost (₹)","Min Qty","GST %","Warranty"].map(h => (
+                        <th key={h} style={{ padding:"10px 12px", fontSize:11, fontWeight:700,
+                          color:"var(--text-secondary)", textTransform:"uppercase", letterSpacing:"0.03em",
+                          borderBottom:"1px solid var(--border)", whiteSpace:"nowrap" }}>{h}</th>
                       ))}
-                    </div>
-                  )}
-
-                  {/* Receive form */}
-                  <div style={{ background:"var(--surface)", border:"1px solid var(--border)",
-                    borderRadius:"var(--radius-lg)", padding:"16px 18px", maxWidth:400, marginBottom:20 }}>
-                    <h3 style={{ margin:"0 0 12px", fontSize:14, fontWeight:600, color:"var(--text-primary)" }}>
-                      Receive Stock
-                    </h3>
-                    {receiveError && <p style={{ color:"var(--danger)", fontSize:12, marginBottom:8 }}>{receiveError}</p>}
-                    <div style={{ display:"flex", gap:8, marginBottom:8 }}>
-                      <input type="number" value={receiveQty} onChange={e => setReceiveQty(e.target.value)}
-                        placeholder="Quantity *"
-                        style={{ flex:1, height:34, padding:"0 9px", borderRadius:7,
-                          border:"1px solid var(--border)", background:"var(--surface)",
-                          color:"var(--text-primary)", fontSize:13, fontFamily:"inherit" }}/>
-                      <input value={receiveNotes} onChange={e => setReceiveNotes(e.target.value)}
-                        placeholder="Notes"
-                        style={{ flex:2, height:34, padding:"0 9px", borderRadius:7,
-                          border:"1px solid var(--border)", background:"var(--surface)",
-                          color:"var(--text-primary)", fontSize:13, fontFamily:"inherit" }}/>
-                    </div>
-                    <button onClick={() => receive()} disabled={receiving || !receiveQty}
-                      style={{ height:34, padding:"0 16px", borderRadius:7, border:"none",
-                        background:"var(--accent)", color:"white", fontWeight:600, fontSize:13,
-                        cursor:(!receiveQty) ? "not-allowed" : "pointer",
-                        opacity:!receiveQty ? 0.5 : 1, fontFamily:"inherit" }}>
-                      {receiving ? "Recording…" : "Record Receipt"}
-                    </button>
-                  </div>
-
-                  {/* Transaction ledger */}
-                  <h3 style={{ fontSize:14, fontWeight:600, color:"var(--text-primary)", margin:"0 0 10px" }}>
-                    Transaction Ledger
-                  </h3>
-                  {transactions.loading && <p style={{ color:"var(--text-tertiary)", fontSize:13 }}>Loading…</p>}
-                  {transactions.data?.transactions.length === 0 && (
-                    <p style={{ color:"var(--text-tertiary)", fontSize:13 }}>No transactions yet.</p>
-                  )}
-                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                    {transactions.data?.transactions.map((txn: StockTransaction) => (
-                      <div key={txn.txn_id}
-                        style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                          background:"var(--surface)", border:"1px solid var(--border)",
-                          borderRadius:9, padding:"10px 14px" }}>
-                        <div>
-                          <span style={{ fontSize:12, fontWeight:600,
-                            color: txnTypeColor[txn.txn_type] ?? "var(--text-primary)" }}>
-                            {txn.txn_type.toUpperCase()}
-                          </span>
-                          {txn.notes && <span style={{ fontSize:12, color:"var(--text-tertiary)", marginLeft:8 }}>{txn.notes}</span>}
-                        </div>
-                        <div style={{ textAlign:"right" }}>
-                          <p style={{ margin:"0 0 1px", fontSize:13, fontWeight:600, color:"var(--text-primary)" }}>
-                            {txn.quantity > 0 ? "+" : ""}{txn.quantity}
-                          </p>
-                          <p style={{ margin:0, fontSize:11, color:"var(--text-tertiary)" }}>
-                            {txn.balance_before} → {txn.balance_after}
-                          </p>
-                        </div>
-                      </div>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itemList.data?.items.map((item: InventoryItem) => (
+                      <tr key={item.item_id} style={{ borderBottom:"1px solid var(--border)" }}>
+                        <td style={{ padding:"9px 12px", fontWeight:600, color:"var(--text-primary)" }}>{item.name}</td>
+                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.sku}</td>
+                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.category ?? "—"}</td>
+                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.unit}</td>
+                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>
+                          {item.unit_cost != null ? `₹${item.unit_cost}` : "—"}
+                        </td>
+                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.min_quantity}</td>
+                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>
+                          {item.gst != null ? `${item.gst}%` : "—"}
+                        </td>
+                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.warranty ?? "—"}</td>
+                      </tr>
                     ))}
+                    {(itemList.data?.items.length ?? 0) === 0 && !itemList.loading && (
+                      <tr><td colSpan={8} style={{ padding:"20px 12px", textAlign:"center", color:"var(--text-tertiary)" }}>
+                        No items yet.
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px,1fr))", gap:10 }}>
+                {itemList.data?.items.map((item: InventoryItem) => (
+                  <div key={item.item_id}
+                    style={{ background:"var(--surface)", border:"1px solid var(--border)",
+                      borderRadius:"var(--radius-lg)", padding:"14px 16px" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between" }}>
+                      <p style={{ margin:"0 0 3px", fontWeight:600, fontSize:14, color:"var(--text-primary)" }}>
+                        {item.name}
+                      </p>
+                      <span style={{ fontSize:11, color:"var(--text-tertiary)" }}>{item.sku}</span>
+                    </div>
+                    <p style={{ margin:"0 0 6px", fontSize:12, color:"var(--text-secondary)" }}>
+                      {item.category ?? "—"} · {item.unit}{item.unit_cost != null ? ` · ₹${item.unit_cost}` : ""}
+                    </p>
+                    <p style={{ margin:0, fontSize:11, color:"var(--text-tertiary)" }}>
+                      Min qty: {item.min_quantity}
+                      {item.gst != null ? ` · GST ${item.gst}%` : ""}
+                      {item.warranty ? ` · Warranty ${item.warranty}` : ""}
+                    </p>
                   </div>
-                </>
-            }
-          </div>
-        )}
-
-        {/* ── Low Stock Tab ── */}
-        {tab === "low" && (
-          <div>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-              <span style={{ fontSize:13, color:"var(--text-secondary)" }}>
-                Items below minimum quantity
-              </span>
-              <button onClick={lowStock.refetch}
-                style={{ height:34, padding:"0 14px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
-                  background:"var(--surface)", color:"var(--text-secondary)", fontSize:13,
-                  cursor:"pointer", fontFamily:"inherit" }}>
-                Refresh
-              </button>
-            </div>
-            {lowStock.loading && <p style={{ color:"var(--text-tertiary)", fontSize:13 }}>Loading…</p>}
-            {lowStock.error  && <p style={{ color:"var(--danger)", fontSize:13 }}>{lowStock.error}</p>}
-            {lowStock.data?.items.length === 0 && (
-              <div style={{ textAlign:"center", padding:"40px 0" }}>
-                <p style={{ fontSize:32, margin:"0 0 8px" }}>✅</p>
-                <p style={{ fontSize:14, color:"var(--text-secondary)" }}>All items are adequately stocked.</p>
+                ))}
               </div>
             )}
-            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-              {lowStock.data?.items.map((item: LowStockItem) => (
-                <div key={item.item_id}
-                  style={{ background:"var(--surface)", border:"1px solid #ef444444",
-                    borderLeft:"3px solid #ef4444",
-                    borderRadius:10, padding:"14px 18px",
-                    display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <div>
-                    <p style={{ margin:"0 0 3px", fontWeight:600, fontSize:14, color:"var(--text-primary)" }}>
-                      {item.name}
-                    </p>
-                    <p style={{ margin:0, fontSize:12, color:"var(--text-secondary)" }}>
-                      On hand: <strong>{item.current_qty}</strong> ·
-                      Min: {item.min_quantity} · Shortfall: <strong style={{ color:"#ef4444" }}>{item.deficit}</strong>
-                    </p>
-                  </div>
-                  <button onClick={() => replenish(item.item_id, item.deficit)} disabled={replenishing}
-                    style={{ padding:"7px 14px", borderRadius:"var(--radius-md)", border:"none",
-                      background:"var(--accent)", color:"white", fontWeight:600, fontSize:12,
-                      cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
-                    {replenishing ? "…" : `Request +${item.deficit}`}
-                  </button>
-                </div>
-              ))}
-            </div>
           </div>
-        )}
       </div>
     </TenantLayout>
   );
