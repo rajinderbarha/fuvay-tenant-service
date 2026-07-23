@@ -388,6 +388,21 @@ def _seed_registry() -> None:
             is_enabled_by_default=False,
         ),
         EngineDefinition(
+            engine_id="inventory_document_extraction",
+            name="Inventory Document Extraction Engine",
+            description="Tenant uploads a PDF (price list/stock sheet); extracted text is sent to the "
+                         "platform LLM client which identifies inventory line items (name, SKU, quantity, "
+                         "unit, unit cost, category) and creates draft InventoryItem rows for the provider "
+                         "to review, edit, and publish. Requires the core Inventory Engine.",
+            engine_type="plugin",
+            version="1.0.0",
+            dependencies=["auth", "inventory", "rag"],
+            api_prefix="/v1/inventory/extraction",
+            endpoint_count=4,
+            category="operations",
+            is_enabled_by_default=False,
+        ),
+        EngineDefinition(
             engine_id="form_builder",
             name="Form Builder Engine",
             description="Custom inspection checklists · conditional field logic · mandatory before job status transitions · answers stored per job · feeds quote builder.",
