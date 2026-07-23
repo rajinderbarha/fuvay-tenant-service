@@ -269,9 +269,10 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # Phase 10 — Payment + Inventory + Subscription + Document
     from app.engines.payment.router      import router as payment_router
     from app.engines.inventory.router    import router as inventory_router
+    from app.engines.inventory.extraction_router import router as inventory_extraction_router
     from app.engines.subscription.router import router as subscription_router
     from app.engines.document.router     import router as document_router
-    for _r in [payment_router, inventory_router, subscription_router, document_router]:
+    for _r in [payment_router, inventory_router, inventory_extraction_router, subscription_router, document_router]:
         app.include_router(_r)
 
     # Phase 9 — Booking + Appointment

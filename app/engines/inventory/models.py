@@ -24,6 +24,29 @@ class InventoryItem(ServiceOSBase):
     min_quantity:Mapped[int]       = mapped_column(Integer, default=5, nullable=False)
     is_active:   Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
     meta:        Mapped[dict]      = mapped_column(JSONB, default=dict, nullable=False)
+    # MODULE inventory_document_extraction: "draft" rows come from PDF
+    # extraction and are not yet live; "published" is the normal/legacy
+    # state (existing rows default here via migration 145's server_default).
+    status:      Mapped[str]       = mapped_column(String(20), default="published", nullable=False)
+    source_upload_id: Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
+class InventoryExtractionUpload(ServiceOSBase):
+    """One row per PDF uploaded for AI extraction. Idempotent on content_hash
+    per tenant (mirrors KBDocument's idempotency pattern in the RAG engine)."""
+    __tablename__ = "inventory_extraction_uploads"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "content_hash", name="uq_ieu_tenant_hash"),
+        Index("ix_ieu_tenant", "tenant_id"),
+    )
+    tenant_id:             Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    file_name:             Mapped[str]       = mapped_column(String(255), nullable=False)
+    content_hash:          Mapped[str]       = mapped_column(String(64), nullable=False)
+    status:                Mapped[str]       = mapped_column(String(20), default="processing", nullable=False)
+    error_message:         Mapped[str|None]  = mapped_column(String(1000), nullable=True)
+    extracted_item_count:  Mapped[int]       = mapped_column(Integer, default=0, nullable=False)
+    raw_llm_response:      Mapped[str|None]  = mapped_column(Text, nullable=True)
+    uploaded_by:           Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class StockLocation(ServiceOSBase):
