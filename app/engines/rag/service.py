@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import structlog
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.rag.constants import (
@@ -15,8 +15,12 @@ from app.engines.rag.constants import (
     EMBEDDING_MODEL, GENERATION_MODEL, LOW_CONFIDENCE_THRESHOLD,
     TOKEN_BUDGET, DEFAULT_TOKEN_BUDGET, DocStatus, QueryStatus,
     MIN_DOCS_BY_VERTICAL, REDIS_KB_CACHE, REDIS_DOC_STATUS,
+    RRF_K, HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, HYBRID_CANDIDATE_POOL,
 )
+from app.engines.rag.embedding_service import embed_text, embed_batch
+from app.engines.rag.graph_service import extract_graph_for_chunk, expand_via_graph
 from app.engines.rag.models import KnowledgeBase, KBDocument, DocumentChunk, RAGQuery
+from app.engines.ai_conversation.deepseek_client import DeepSeekClientService
 from app.exceptions import ServiceOSException, NotFoundException
 from app.redis_client import get_redis, cache_set, cache_get, cache_delete
 from app.schemas.base import encode_cursor, decode_cursor
@@ -115,20 +119,42 @@ class RAGService:
                 break
         return chunks or [text[:500]]
 
-    def _mock_embed(self, text: str) -> list[float]:
-        """Mock embedding — returns deterministic float list. Real: OpenAI API."""
-        import hashlib
-        h = hashlib.md5(text.encode()).digest()
-        base = [((b / 255.0) - 0.5) * 2 for b in h]
-        return (base * 96)[:1536]
+    def _embed(self, text: str) -> list[float]:
+        """Real embedding via sentence-transformers (all-MiniLM-L6-v2, local,
+        no API key). See embedding_service.py for the provider decision."""
+        return embed_text(text)
 
-    def _mock_generate(self, question: str, chunks: list[dict]) -> str:
-        """Mock LLM generation. Real: OpenAI chat completion with retrieved context."""
+    async def _generate(self, question: str, chunks: list[dict]) -> str:
+        """Real LLM generation via DeepSeekClientService — the platform's
+        existing DeepSeek chat client — grounded on the retrieved (hybrid +
+        graph expanded) chunks. Falls back to an honest no-context message
+        when there is nothing to ground on; falls back to a clearly-labeled
+        degraded response if the LLM call itself fails, rather than faking
+        a generated answer."""
         if not chunks:
             return "No relevant information found in the knowledge base."
-        top = chunks[0]
-        return (f"Based on the knowledge base: {top['content'][:200]}... "
-                f"(Generated answer for: {question[:100]})")
+
+        context = "\n\n".join(
+            f"[Source {i+1}]: {c['content']}" for i, c in enumerate(chunks))
+        system_prompt = (
+            "You are a knowledge-base assistant. Answer the user's question "
+            "using ONLY the information in the provided sources. If the "
+            "sources do not contain the answer, say so plainly. Be concise. "
+            "Cite sources inline as [Source N] where relevant."
+        )
+        try:
+            llm = DeepSeekClientService(db=self.db, request_id=self.request_id)
+            response = await llm.chat(messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Sources:\n{context}\n\nQuestion: {question}"},
+            ])
+            answer = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+            return answer.strip() or "The AI assistant returned an empty response."
+        except ServiceOSException as e:
+            logger.warning("rag.generation_failed", error=str(e))
+            top = chunks[0]
+            return (f"AI generation is temporarily unavailable, showing the top matching "
+                    f"source instead: {top['content'][:300]}")
 
     def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
         if not a or not b:
@@ -137,6 +163,87 @@ class RAGService:
         norm_a = sum(x * x for x in a) ** 0.5
         norm_b = sum(x * x for x in b) ** 0.5
         return dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
+
+    # ── Hybrid retrieval (real vector + real keyword, fused via RRF) ──────────
+    async def _vector_search(self, kb_id: uuid.UUID, query_embedding: list[float],
+                              limit: int) -> list[tuple[uuid.UUID, float]]:
+        """Real pgvector cosine-distance search using the `<=>` operator and
+        the ivfflat index (migration 147). Returns (chunk_id, similarity)
+        ranked best-first. Replaces the prior in-Python full-scan mock."""
+        vec_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
+        rows = await self.db.execute(text(
+            "SELECT id, 1 - (embedding <=> (:qvec)::vector) AS similarity "
+            "FROM document_chunks "
+            "WHERE kb_id = :kb_id AND is_active = true AND embedding IS NOT NULL "
+            "ORDER BY embedding <=> (:qvec)::vector ASC LIMIT :limit"
+        ), {"qvec": vec_literal, "kb_id": str(kb_id), "limit": limit})
+        return [(row.id, float(row.similarity)) for row in rows.all()]
+
+    async def _keyword_search(self, kb_id: uuid.UUID, question: str,
+                               limit: int) -> list[tuple[uuid.UUID, float]]:
+        """Real Postgres full-text search using ts_rank + plainto_tsquery
+        against the content_tsv column (migration 147, kept in sync by a
+        DB trigger). This is the real keyword-search leg of hybrid
+        retrieval — not a substring/LIKE approximation."""
+        rows = await self.db.execute(text(
+            "SELECT id, ts_rank(content_tsv, plainto_tsquery('english', :q)) AS rank "
+            "FROM document_chunks "
+            "WHERE kb_id = :kb_id AND is_active = true "
+            "AND content_tsv @@ plainto_tsquery('english', :q) "
+            "ORDER BY rank DESC LIMIT :limit"
+        ), {"q": question, "kb_id": str(kb_id), "limit": limit})
+        return [(row.id, float(row.rank)) for row in rows.all()]
+
+    def _reciprocal_rank_fusion(self, vector_ranked: list[tuple[uuid.UUID, float]],
+                                 keyword_ranked: list[tuple[uuid.UUID, float]]
+                                 ) -> list[tuple[uuid.UUID, float]]:
+        """Standard Reciprocal Rank Fusion (Cormack et al. 2009):
+        score(d) = sum_over_legs( weight / (RRF_K + rank_in_leg) ).
+        Combines the two independently-ranked lists into one fused ranking
+        without needing to normalize raw similarity/rank scores onto a
+        common scale — RRF only uses each leg's rank position. Weights let
+        the vector leg count for more than keyword by default (0.6 / 0.4),
+        matching this being a semantic-search-first product."""
+        scores: dict[uuid.UUID, float] = {}
+        for rank, (chunk_id, _) in enumerate(vector_ranked):
+            scores[chunk_id] = scores.get(chunk_id, 0.0) + HYBRID_VECTOR_WEIGHT / (RRF_K + rank + 1)
+        for rank, (chunk_id, _) in enumerate(keyword_ranked):
+            scores[chunk_id] = scores.get(chunk_id, 0.0) + HYBRID_KEYWORD_WEIGHT / (RRF_K + rank + 1)
+        return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+    async def _hybrid_search(self, kb_id: uuid.UUID, question: str,
+                              question_embedding: list[float], top_k: int
+                              ) -> list[tuple[DocumentChunk, float]]:
+        """Full hybrid pipeline: real vector search + real keyword search ->
+        RRF fusion -> hydrate top chunk_ids -> optional GraphRAG expansion.
+        Returns (chunk, fused_score) ranked best-first."""
+        vector_ranked = await self._vector_search(kb_id, question_embedding, HYBRID_CANDIDATE_POOL)
+        keyword_ranked = await self._keyword_search(kb_id, question, HYBRID_CANDIDATE_POOL)
+        fused = self._reciprocal_rank_fusion(vector_ranked, keyword_ranked)
+        top_ids = [cid for cid, _ in fused[:top_k]]
+        if not top_ids:
+            return []
+
+        rows = await self.db.execute(select(DocumentChunk).where(
+            DocumentChunk.id.in_(top_ids), DocumentChunk.is_active == True))
+        chunks_by_id = {c.id: c for c in rows.scalars().all()}
+        score_by_id = dict(fused)
+        ranked = [(chunks_by_id[cid], score_by_id[cid]) for cid in top_ids if cid in chunks_by_id]
+
+        # GraphRAG expansion: pull in graph-connected chunks the pure hybrid
+        # search might have missed, scored just below the hybrid tail so
+        # they never outrank a real hybrid match.
+        try:
+            expansion_chunks = await expand_via_graph(self.db, kb_id, top_ids)
+            min_score = ranked[-1][1] if ranked else 0.0
+            existing_ids = set(top_ids)
+            for i, c in enumerate(expansion_chunks):
+                if c.id not in existing_ids:
+                    ranked.append((c, max(0.0, min_score - 0.001 * (i + 1))))
+        except Exception as e:
+            logger.warning("rag.graph_expansion_failed", kb_id=str(kb_id), error=str(e))
+
+        return ranked
 
     def _kb_dict(self, kb: KnowledgeBase) -> dict:
         return {
@@ -277,15 +384,16 @@ class RAGService:
         return {**self._doc_dict(doc), "idempotent": False}
 
     async def _run_indexing_pipeline(self, doc: KBDocument, kb: KnowledgeBase) -> None:
-        """Chunk → embed → store. Celery task in production."""
+        """Chunk → embed (real, local model) → store → GraphRAG entity
+        extraction. Celery task in production."""
         try:
             doc.status = DocStatus.CHUNKING
             chunks = self._chunk_text(doc.raw_text or "", kb.chunk_size, kb.chunk_overlap)
 
             doc.status = DocStatus.EMBEDDING
+            embeddings = embed_batch(chunks)
             chunk_objects = []
-            for i, chunk_text in enumerate(chunks):
-                embedding = self._mock_embed(chunk_text)
+            for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
                 chunk_objects.append(DocumentChunk(
                     kb_id=kb.id, doc_id=doc.id, tenant_id=kb.tenant_id,
                     chunk_index=i, content=chunk_text,
@@ -308,6 +416,15 @@ class RAGService:
 
             await self.db.flush()
             logger.info("rag.indexed", doc_id=str(doc.id), chunks=len(chunks))
+
+            # GraphRAG: extract entities/relationships per chunk. Best-effort
+            # — a failure here degrades gracefully to pure hybrid search
+            # (extract_graph_for_chunk never raises), it must not fail the
+            # document's indexed status.
+            for obj in chunk_objects:
+                await extract_graph_for_chunk(self.db, kb.id, kb.tenant_id, obj,
+                                               request_id=self.request_id)
+            await self.db.flush()
         except Exception as e:
             doc.status = DocStatus.FAILED
             doc.status_message = str(e)[:500]
@@ -496,25 +613,15 @@ class RAGService:
         effective_top_k = min(top_k or kb.top_k, 20)
         token_budget = TOKEN_BUDGET.get(plan_type or "starter", DEFAULT_TOKEN_BUDGET)
 
-        # Step 1: Embed question
-        question_embedding = self._mock_embed(question)
+        # Step 1: Embed question (real local embedding — see embedding_service.py)
+        question_embedding = self._embed(question)
         embedding_tokens = len(question.split())  # approximation
 
-        # Step 2: Vector similarity search (mock — real uses pgvector <=> operator)
-        r = await self.db.execute(select(DocumentChunk).where(
-            DocumentChunk.kb_id == kb_id,
-            DocumentChunk.is_active == True,
-            DocumentChunk.embedding != None,
-        ).limit(200))
-        all_chunks = r.scalars().all()
-
-        scored = []
-        for chunk in all_chunks:
-            if chunk.embedding:
-                score = self._cosine_similarity(question_embedding, chunk.embedding)
-                scored.append((score, chunk))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        top_chunks = scored[:effective_top_k]
+        # Step 2: Hybrid retrieval — real pgvector cosine search + real
+        # Postgres full-text keyword search, fused via Reciprocal Rank
+        # Fusion, then widened via single-hop GraphRAG entity expansion.
+        hybrid_results = await self._hybrid_search(kb_id, question, question_embedding, effective_top_k)
+        top_chunks = [(score, chunk) for chunk, score in hybrid_results]
 
         # Step 3: Token budget enforcement
         context_chunks = []
@@ -524,15 +631,22 @@ class RAGService:
                 context_chunks.append((score, chunk))
                 context_tokens += chunk.token_count
 
-        top_similarity = float(context_chunks[0][0]) if context_chunks else 0.0
+        # top_similarity reported to the caller is the real cosine
+        # similarity of the #1 context chunk (not the RRF fusion score,
+        # which is on a different scale) — this is what LOW_CONFIDENCE_
+        # THRESHOLD (a cosine-similarity threshold) is meant to compare
+        # against.
+        top_similarity = (self._cosine_similarity(question_embedding, context_chunks[0][1].embedding)
+                           if context_chunks and context_chunks[0][1].embedding else 0.0)
         low_confidence = top_similarity < LOW_CONFIDENCE_THRESHOLD
 
-        # Step 4: Generate answer
+        # Step 4: Generate answer — real DeepSeek call grounded on the
+        # hybrid + graph retrieved context (see _generate()).
         chunk_dicts = [{"chunk_id": str(c.id), "content": c.content,
-                        "similarity": round(s, 4), "doc_id": str(c.doc_id)}
+                        "hybrid_score": round(s, 6), "doc_id": str(c.doc_id)}
                        for s, c in context_chunks]
 
-        answer = self._mock_generate(question, chunk_dicts)
+        answer = await self._generate(question, chunk_dicts)
         completion_tokens = len(answer.split())
 
         # Citations
@@ -542,7 +656,7 @@ class RAGService:
             if str(c.doc_id) not in seen_docs:
                 citations.append({"doc_id": str(c.doc_id),
                                   "chunk_id": str(c.id),
-                                  "similarity": round(s, 4)})
+                                  "hybrid_score": round(s, 6)})
                 seen_docs.add(str(c.doc_id))
 
         latency_ms = int(time.time() * 1000) - start_ms
@@ -577,29 +691,21 @@ class RAGService:
         return result
 
     async def search_only(self, kb_id: uuid.UUID, question: str, top_k: int) -> dict:
-        """Vector search only — no LLM generation. Returns ranked chunks."""
+        """Hybrid search only — no LLM generation. Returns ranked chunks
+        (real pgvector similarity + real full-text keyword search, fused
+        via RRF, widened via single-hop GraphRAG expansion)."""
         kb = await self._get_kb(kb_id)
-        question_embedding = self._mock_embed(question)
+        question_embedding = self._embed(question)
 
-        r = await self.db.execute(select(DocumentChunk).where(
-            DocumentChunk.kb_id == kb_id,
-            DocumentChunk.is_active == True,
-            DocumentChunk.embedding != None,
-        ).limit(200))
-        all_chunks = r.scalars().all()
-
-        scored = sorted(
-            [(self._cosine_similarity(question_embedding, c.embedding), c)
-             for c in all_chunks if c.embedding],
-            key=lambda x: x[0], reverse=True
-        )[:min(top_k, 20)]
+        effective_top_k = min(top_k, 20)
+        hybrid_results = await self._hybrid_search(kb_id, question, question_embedding, effective_top_k)
 
         return {
             "kb_id": str(kb_id), "question": question,
             "results": [{"chunk_id": str(c.id), "doc_id": str(c.doc_id),
-                         "content": c.content[:300], "similarity": round(s, 4),
-                         "chunk_index": c.chunk_index} for s, c in scored],
-            "total_searched": len(all_chunks),
+                         "content": c.content[:300], "hybrid_score": round(s, 6),
+                         "chunk_index": c.chunk_index} for c, s in hybrid_results],
+            "total_searched": len(hybrid_results),
         }
 
     async def get_query(self, query_id: uuid.UUID) -> dict:

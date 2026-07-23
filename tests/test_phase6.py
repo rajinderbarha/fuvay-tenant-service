@@ -9,9 +9,12 @@ from app.engines.rag.constants import (
 )
 
 # ── 1. Constants ──────────────────────────────────────────────────────────────
-def test_embedding_model(): assert EMBEDDING_MODEL == "text-embedding-3-small"
-def test_generation_model(): assert GENERATION_MODEL == "gpt-4o-mini"
-def test_embedding_dimensions(): assert EMBEDDING_DIMENSIONS == 1536
+# MODULE-L5-51: these were updated from the never-configured OpenAI values
+# to the real embedding/generation providers actually wired up (local
+# sentence-transformers model + the platform's existing DeepSeek client).
+def test_embedding_model(): assert EMBEDDING_MODEL == "all-MiniLM-L6-v2"
+def test_generation_model(): assert GENERATION_MODEL == "deepseek-chat"
+def test_embedding_dimensions(): assert EMBEDDING_DIMENSIONS == 384
 def test_chunk_defaults():
     assert DEFAULT_CHUNK_SIZE == 512
     assert DEFAULT_CHUNK_OVERLAP == 64

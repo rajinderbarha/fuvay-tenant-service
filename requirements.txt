@@ -35,6 +35,13 @@ httpx==0.28.1
 # ── Document Parsing ───────────────────────────────────────────────
 pypdf==5.1.0  # PDF text extraction (inventory document extraction engine)
 
+# ── RAG Engine — real embeddings + pgvector ────────────────────────
+# MODULE-L5-51: OPENAI_API_KEY was never configured and DeepSeek has no
+# embeddings endpoint, so embeddings are generated locally (no API key
+# needed) via a well-established, free model.
+pgvector==0.5.0
+sentence-transformers==5.6.1  # all-MiniLM-L6-v2, 384-dim, CPU-friendly
+
 # ── Testing ────────────────────────────────────────────────────────
 pytest==8.4.0
 pytest-asyncio==0.26.0

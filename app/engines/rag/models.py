@@ -7,9 +7,11 @@ from sqlalchemy import (
     Boolean, DateTime, Float, Index, Integer,
     Numeric, String, Text, UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+from pgvector.sqlalchemy import Vector
 
+from app.engines.rag.constants import EMBEDDING_DIMENSIONS
 from app.models.base import ServiceOSBase, utcnow
 
 
@@ -79,8 +81,16 @@ class DocumentChunk(ServiceOSBase):
     content:      Mapped[str]        = mapped_column(Text, nullable=False)
     token_count:  Mapped[int]        = mapped_column(Integer, default=0, nullable=False)
     char_count:   Mapped[int]        = mapped_column(Integer, default=0, nullable=False)
-    # Embedding stored as ARRAY(Float) — in production use pgvector Vector(1536)
-    embedding:    Mapped[list | None]= mapped_column(ARRAY(Float), nullable=True)
+    # MODULE-L5-51: real pgvector column (was ARRAY(Float) in the ORM despite
+    # the live column already being `vector(1536)` at the DB level since
+    # migration 006 -- a real type mismatch, now corrected). Dimension is
+    # 384 (all-MiniLM-L6-v2, sentence-transformers) — migration 147 alters
+    # the column from vector(1536) to vector(384) and rebuilds the index.
+    embedding:    Mapped[list | None]= mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
+    # Full-text search column (real keyword-search leg of hybrid retrieval).
+    # Populated via a DB trigger (see migration 147) so it's always in sync
+    # with `content`, including on raw SQL updates.
+    content_tsv:  Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
     is_active:    Mapped[bool]       = mapped_column(Boolean, default=True, nullable=False)
     version:      Mapped[int]        = mapped_column(Integer, default=1, nullable=False)
     meta:         Mapped[dict]       = mapped_column(JSONB, default=dict, nullable=False)
@@ -113,3 +123,61 @@ class RAGQuery(ServiceOSBase):
     model_used:         Mapped[str | None]   = mapped_column(String(80), nullable=True)
     error_message:      Mapped[str | None]   = mapped_column(String(500), nullable=True)
     idempotency_key:    Mapped[str | None]   = mapped_column(String(255), nullable=True, unique=True)
+
+
+# ── GraphRAG (single-hop entity co-occurrence expansion) ──────────────────
+# MODULE-L5-51: a real, bounded graph layer. Entities + relationships are
+# extracted per-chunk by an LLM call (DeepSeekClientService, structured JSON
+# extraction — same "LLM call -> parse JSON -> store rows" pattern as
+# app/engines/inventory/extraction_service.py). At query time, entities
+# mentioned in the top hybrid-ranked chunks are used to pull in OTHER chunks
+# that mention a related/connected entity, widening context beyond pure
+# lexical/semantic similarity. This is single-hop entity co-occurrence
+# expansion, NOT full community detection/summarization as in the original
+# Microsoft GraphRAG paper — documented honestly, not oversold.
+class KBEntity(ServiceOSBase):
+    """A named entity extracted from KB documents (per-tenant, per-KB)."""
+    __tablename__ = "kb_entities"
+    __table_args__ = (
+        UniqueConstraint("kb_id", "name", "entity_type", name="uq_kbentity_kb_name_type"),
+        Index("ix_kbentity_kb", "kb_id"),
+    )
+
+    kb_id:        Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    tenant_id:    Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    name:         Mapped[str]       = mapped_column(String(200), nullable=False)
+    entity_type:  Mapped[str]       = mapped_column(String(50), nullable=False, default="other")
+    description:  Mapped[str | None] = mapped_column(Text, nullable=True)
+    mention_count: Mapped[int]      = mapped_column(Integer, default=0, nullable=False)
+
+
+class KBEntityRelationship(ServiceOSBase):
+    """A directed relationship between two entities, as asserted by the LLM
+    extraction for a specific source chunk (kept for provenance)."""
+    __tablename__ = "kb_entity_relationships"
+    __table_args__ = (
+        Index("ix_kbrel_kb", "kb_id"),
+        Index("ix_kbrel_source", "source_entity_id"),
+        Index("ix_kbrel_target", "target_entity_id"),
+    )
+
+    kb_id:             Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    tenant_id:         Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    source_entity_id:  Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    target_entity_id:  Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    relationship:      Mapped[str]       = mapped_column(String(200), nullable=False)
+    source_chunk_id:   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
+class KBChunkEntity(ServiceOSBase):
+    """Links a chunk to the entities it mentions (many-to-many)."""
+    __tablename__ = "kb_chunk_entities"
+    __table_args__ = (
+        UniqueConstraint("chunk_id", "entity_id", name="uq_kbchunkentity_chunk_entity"),
+        Index("ix_kbchunkentity_chunk", "chunk_id"),
+        Index("ix_kbchunkentity_entity", "entity_id"),
+    )
+
+    chunk_id:  Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    kb_id:     Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

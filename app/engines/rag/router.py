@@ -35,15 +35,18 @@ def _rid(r: Request) -> str:
 @router.get("/meta", summary="RAG engine introspection", tags=["Engine Registry"])
 async def engine_meta() -> dict:
     return {
-        "engine_id": ENGINE_ID, "name": "RAG Engine", "version": "6.0.0",
+        "engine_id": ENGINE_ID, "name": "RAG Engine", "version": "7.0.0",
         "endpoint_count": 18, "status": "active",
-        "embedding_model": "text-embedding-3-small",
-        "generation_model": "gpt-4o-mini",
-        "pipeline": ["embed_question", "vector_search", "token_budget",
+        "embedding_model": "all-MiniLM-L6-v2",
+        "generation_model": "deepseek-chat",
+        "pipeline": ["embed_question", "hybrid_search_vector_plus_keyword",
+                     "graphrag_expansion", "token_budget",
                      "generate_answer", "store_trace"],
         "capabilities": ["knowledge_base_management", "document_ingestion",
-                         "vector_search", "rag_generation", "citation_tracking",
-                         "query_history", "health_signal", "idempotent_ingestion"],
+                         "hybrid_search", "vector_search", "keyword_search",
+                         "graphrag_entity_expansion", "rag_generation",
+                         "citation_tracking", "query_history", "health_signal",
+                         "idempotent_ingestion"],
     }
 
 

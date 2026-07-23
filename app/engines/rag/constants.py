@@ -2,9 +2,33 @@
 from decimal import Decimal
 
 # ── Embedding models ───────────────────────────────────────────────────────
-EMBEDDING_MODEL         = "text-embedding-3-small"
-EMBEDDING_DIMENSIONS    = 1536
-GENERATION_MODEL        = "gpt-4o-mini"
+# MODULE-L5-51: real local embedding model (sentence-transformers), replacing
+# the never-configured "text-embedding-3-small" (OPENAI_API_KEY was always
+# empty in this deployment; DeepSeek's public API has no embeddings endpoint,
+# only /chat/completions — see deepseek_client.py). all-MiniLM-L6-v2 is a
+# well-established, free, no-API-key local model (384-dim) run via the
+# `sentence-transformers` package — a genuinely real embedding provider, not
+# a mock or a placeholder for one.
+EMBEDDING_MODEL         = "all-MiniLM-L6-v2"
+EMBEDDING_DIMENSIONS    = 384
+# Real generation now uses the platform's existing DeepSeekClientService
+# (same client backing the customer-facing AI chat assistant).
+GENERATION_MODEL        = "deepseek-chat"
+
+# ── Hybrid search ──────────────────────────────────────────────────────────
+# Reciprocal Rank Fusion constant (standard default per Cormack et al. 2009).
+RRF_K                   = 60
+# Weights applied to each retrieval leg's RRF contribution before summing.
+HYBRID_VECTOR_WEIGHT    = 0.6
+HYBRID_KEYWORD_WEIGHT   = 0.4
+# How many candidates each leg (vector / keyword) contributes pre-fusion.
+HYBRID_CANDIDATE_POOL   = 40
+
+# ── GraphRAG (single-hop entity co-occurrence expansion) ───────────────────
+# NOT full Microsoft-GraphRAG-paper scope (no community detection/
+# summarization) -- see kb_graph_service.py docstring for the honest scope.
+GRAPH_MAX_ENTITIES_PER_CHUNK   = 8
+GRAPH_MAX_EXPANSION_CHUNKS     = 5   # extra chunks pulled in via graph hops
 
 # ── Chunking defaults ──────────────────────────────────────────────────────
 DEFAULT_CHUNK_SIZE      = 512    # tokens
