@@ -29,6 +29,11 @@ class InventoryItem(ServiceOSBase):
     # state (existing rows default here via migration 145's server_default).
     status:      Mapped[str]       = mapped_column(String(20), default="published", nullable=False)
     source_upload_id: Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # MODULE inventory gst/warranty (migration 146): gst is a plain numeric
+    # percentage (India GST slabs 0/5/12/18/28 are common but not enforced
+    # as an enum); warranty is free text (e.g. "12 months").
+    gst:         Mapped[Decimal|None] = mapped_column(Numeric(5,2), nullable=True)
+    warranty:    Mapped[str|None]  = mapped_column(String(100), nullable=True)
 
 
 class InventoryExtractionUpload(ServiceOSBase):

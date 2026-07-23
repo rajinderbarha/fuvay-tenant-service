@@ -49,7 +49,8 @@ no markdown fences — matching exactly this shape:
 {"items": [
   {"name": "string (required)", "sku": "string or null", "quantity": number or null,
    "unit": "string or null (e.g. pcs, box, litre)", "unit_cost": number or null,
-   "category": "string or null"}
+   "category": "string or null", "gst": "number or null (GST percent, e.g. 18)",
+   "warranty": "string or null (e.g. '12 months')"}
 ]}
 
 Rules:

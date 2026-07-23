@@ -182,6 +182,8 @@ class InventoryExtractionService:
                     min_quantity=int(raw["quantity"]) if isinstance(raw.get("quantity"), (int, float)) else 5,
                     status=ItemStatus.DRAFT, source_upload_id=upload.id,
                     meta={"extracted_quantity": raw.get("quantity")},
+                    gst=self._coerce_decimal(raw.get("gst")),
+                    warranty=(raw.get("warranty") or None),
                 )
                 self.db.add(item)
                 created.append(item)
@@ -214,6 +216,8 @@ class InventoryExtractionService:
         return {"item_id": str(item.id), "name": item.name, "sku": item.sku,
                 "category": item.category, "unit": item.unit,
                 "unit_cost": float(item.unit_cost), "min_quantity": item.min_quantity,
+                "gst": float(item.gst) if item.gst is not None else None,
+                "warranty": item.warranty,
                 "status": item.status, "source_upload_id": str(item.source_upload_id) if item.source_upload_id else None}
 
     # ── Draft CRUD ─────────────────────────────────────────────────────
@@ -239,11 +243,13 @@ class InventoryExtractionService:
             raise ServiceOSException(ERR_NOT_DRAFT,
                 f"Item is '{item.status}', not 'draft'. Only draft items can be edited here.",
                 resolution="Use the standard inventory update endpoint for published items.")
-        for field in ("name", "sku", "category", "unit", "min_quantity"):
+        for field in ("name", "sku", "category", "unit", "min_quantity", "warranty"):
             if field in data and data[field] is not None:
                 setattr(item, field, data[field])
         if "unit_cost" in data and data["unit_cost"] is not None:
             item.unit_cost = self._coerce_decimal(data["unit_cost"]) or item.unit_cost
+        if "gst" in data:
+            item.gst = self._coerce_decimal(data["gst"]) if data["gst"] not in (None, "") else None
         await self.db.flush()
         return self._item_dict(item)
 

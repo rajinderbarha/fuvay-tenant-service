@@ -139,10 +139,15 @@ class InventoryService:
         item = InventoryItem(tenant_id=tenant_id, name=data["name"], sku=data["sku"],
             category=data.get("category"), unit=data.get("unit","unit"),
             unit_cost=Decimal(str(data.get("unit_cost","0"))),
-            min_quantity=data.get("min_quantity",5))
+            min_quantity=data.get("min_quantity",5),
+            gst=Decimal(str(data["gst"])) if data.get("gst") not in (None, "") else None,
+            warranty=data.get("warranty"))
         self.db.add(item); await self.db.flush()
         return {"item_id": str(item.id), "name": item.name, "sku": item.sku,
-                "min_quantity": item.min_quantity, "unit_cost": float(item.unit_cost)}
+                "category": item.category, "unit": item.unit,
+                "min_quantity": item.min_quantity, "unit_cost": float(item.unit_cost),
+                "gst": float(item.gst) if item.gst is not None else None,
+                "warranty": item.warranty}
 
     async def get_item(self, item_id: uuid.UUID) -> dict:
         r = await self.db.execute(select(InventoryItem).where(InventoryItem.id == item_id))
@@ -150,7 +155,9 @@ class InventoryService:
         if not item: raise NotFoundException("InventoryItem", str(item_id))
         return {"item_id": str(item.id), "name": item.name, "sku": item.sku,
                 "category": item.category, "unit": item.unit,
-                "unit_cost": float(item.unit_cost), "min_quantity": item.min_quantity}
+                "unit_cost": float(item.unit_cost), "min_quantity": item.min_quantity,
+                "gst": float(item.gst) if item.gst is not None else None,
+                "warranty": item.warranty}
 
     async def list_items(self, tenant_id: uuid.UUID, limit: int, cursor: str | None) -> dict:
         q = select(InventoryItem).where(InventoryItem.tenant_id == tenant_id,
@@ -166,7 +173,10 @@ class InventoryService:
         has_next = len(items) > limit; items = items[:limit]
         nc = encode_cursor({"name": items[-1].name}) if has_next and items else None
         return {"items": [{"item_id": str(i.id), "name": i.name, "sku": i.sku,
-                "unit": i.unit, "min_quantity": i.min_quantity} for i in items],
+                "category": i.category, "unit": i.unit, "unit_cost": float(i.unit_cost),
+                "min_quantity": i.min_quantity,
+                "gst": float(i.gst) if i.gst is not None else None,
+                "warranty": i.warranty} for i in items],
                 "has_next": has_next, "next_cursor": nc}
 
     # Stock operations
