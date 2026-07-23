@@ -1395,7 +1395,43 @@ export const inventoryApi = {
     return apiFetch<ReplenishResult>(`/v1/inventory/tenants/${tid}/items/${itemId}/replenish`, {
       method:"POST", body:JSON.stringify({ quantity:quantityRequested }) });
   },
+
+  // ── Document extraction (inventory_document_extraction plugin engine) ──
+  // Gated: 403 with error_code ENGINE_DISABLED if the engine isn't enabled
+  // for this tenant. Never auto-publishes -- returns draft rows for review.
+  uploadForExtraction: (file: File) => {
+    const tid = getTenantId();
+    const form = new FormData();
+    form.append("file", file);
+    return apiFetchMultipart<InventoryExtractionResult>(
+      `/v1/inventory/tenants/${tid}/extraction/upload`, form);
+  },
+  listDrafts: () => {
+    const tid = getTenantId();
+    return apiFetch<{ items: InventoryDraftItem[]; total: number }>(
+      `/v1/inventory/tenants/${tid}/extraction/drafts`);
+  },
+  updateDraft: (itemId: string, data: Partial<InventoryDraftItem>) =>
+    apiFetch<InventoryDraftItem>(`/v1/inventory/items/${itemId}/draft`, {
+      method: "PATCH", body: JSON.stringify(data) }),
+  deleteDraft: (itemId: string) =>
+    apiFetch<{ item_id: string; deleted: boolean }>(`/v1/inventory/items/${itemId}/draft`, { method: "DELETE" }),
+  publishItem: (itemId: string) =>
+    apiFetch<InventoryDraftItem>(`/v1/inventory/items/${itemId}/publish`, { method: "POST" }),
+  publishBulk: (itemIds: string[]) =>
+    apiFetch<{ results: Array<{ item_id: string; error?: string }>; published: number; total: number }>(
+      "/v1/inventory/items/publish-bulk", { method: "POST", body: JSON.stringify({ item_ids: itemIds }) }),
 };
+
+export interface InventoryDraftItem {
+  item_id: string; name: string; sku: string; category?: string | null;
+  unit: string; unit_cost: number; min_quantity: number; status: "draft" | "published";
+  source_upload_id?: string | null;
+}
+export interface InventoryExtractionResult {
+  upload_id: string; idempotent: boolean; status: string;
+  extracted_item_count: number; draft_items: InventoryDraftItem[];
+}
 
 // ── Public Registration (no auth) ─────────────────────────────────────────────
 export const publicRegApi = {
@@ -1616,7 +1652,7 @@ export interface SubscriptionInfo { subscription_id?:string; plan_type:string; s
 export interface PayoutRequest  { id:string; amount:number; status:string; created_at:string; }
 export interface Review         { id:string; review_id:string; job_id:string; composite_score:number; comment?:string; status:string; signals:Record<string,number>; has_reply:boolean; reply_text?:string; replied_at?:string; created_at:string; }
 export interface ReviewListResponse { reviews:Review[]; has_next:boolean; next_cursor?:string; }
-export interface ReviewAggregate    { entity_type:string; entity_id:string; review_count:number; avg_composite:number; reply_rate:number; signal_averages:Record<string,number>; last_computed_at?:string; }
+export interface ReviewAggregate    { entity_type:string; entity_id:string; review_count:number; avg_composite:number|null; reply_rate:number|null; signal_averages:Record<string,number>; last_computed_at?:string; }
 export interface ChatRoom       { room_id:string; job_id?:string; job_number?:string; participant_name:string; last_message?:string; last_message_at?:string; unread_count:number; }
 export interface ChatRoomListResponse  { rooms:ChatRoom[]; has_next:boolean; }
 export interface ChatMessage    { message_id:string; room_id:string; sender_id:string; sender_name?:string; content:string; message_type:string; sent_at:string; is_read:boolean; }

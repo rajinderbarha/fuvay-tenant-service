@@ -4,12 +4,15 @@ import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { useApi, useAction } from "../../../hooks/useApi";
 import {
   inventoryApi,
+  engineApi,
   type InventoryItem,
+  type InventoryDraftItem,
   type LowStockItem,
   type StockTransaction,
 } from "../../../lib/api";
 
 type Tab = "items" | "stock" | "low";
+const EXTRACTION_ENGINE_KEY = "inventory_document_extraction";
 
 export default function InventoryPage() {
   const [tab, setTab] = useState<Tab>("items");
@@ -34,6 +37,93 @@ export default function InventoryPage() {
     useCallback(() => inventoryApi.listItems(), []),
     []
   );
+
+  // ── PDF -> AI extraction (draft review + publish) ───────────────────────
+  // Only shown/usable if the inventory_document_extraction plugin engine is
+  // enabled for this tenant -- checked via the same effective-engines
+  // endpoint other engine-gated frontend features use.
+  const effectiveEngines = useApi(useCallback(() => engineApi.getEffectiveEngines(), []), []);
+  const extractionEnabled = !!effectiveEngines.data?.engines?.some(
+    e => e.engine_key === EXTRACTION_ENGINE_KEY && e.effective_enabled
+  );
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+
+  const drafts = useApi(useCallback(() => inventoryApi.listDrafts(), []), []);
+  const [editingDraft, setEditingDraft] = useState<Record<string, Partial<InventoryDraftItem>>>({});
+  const [draftBusy, setDraftBusy] = useState<Record<string, boolean>>({});
+
+  async function handleUploadPdf(file: File) {
+    setUploading(true); setUploadError(null); setUploadNotice(null);
+    try {
+      const res = await inventoryApi.uploadForExtraction(file);
+      setUploadNotice(
+        res.idempotent
+          ? `This file was already processed (${res.extracted_item_count} item(s)).`
+          : `Extracted ${res.extracted_item_count} item(s) — review below before publishing.`
+      );
+      drafts.refetch();
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handlePublishDraft(itemId: string) {
+    setDraftBusy(p => ({ ...p, [itemId]: true }));
+    try {
+      await inventoryApi.publishItem(itemId);
+      drafts.refetch(); itemList.refetch();
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Publish failed.");
+    } finally {
+      setDraftBusy(p => ({ ...p, [itemId]: false }));
+    }
+  }
+
+  async function handleDeleteDraft(itemId: string) {
+    setDraftBusy(p => ({ ...p, [itemId]: true }));
+    try {
+      await inventoryApi.deleteDraft(itemId);
+      drafts.refetch();
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Delete failed.");
+    } finally {
+      setDraftBusy(p => ({ ...p, [itemId]: false }));
+    }
+  }
+
+  async function handleSaveDraftEdit(itemId: string) {
+    const patch = editingDraft[itemId];
+    if (!patch) return;
+    setDraftBusy(p => ({ ...p, [itemId]: true }));
+    try {
+      await inventoryApi.updateDraft(itemId, patch);
+      setEditingDraft(p => { const n = { ...p }; delete n[itemId]; return n; });
+      drafts.refetch();
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Save failed.");
+    } finally {
+      setDraftBusy(p => ({ ...p, [itemId]: false }));
+    }
+  }
+
+  async function handlePublishAllDrafts() {
+    const ids = (drafts.data?.items ?? []).map(i => i.item_id);
+    if (ids.length === 0) return;
+    setUploading(true);
+    try {
+      await inventoryApi.publishBulk(ids);
+      drafts.refetch(); itemList.refetch();
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Bulk publish failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   // ── Stock tab ────────────────────────────────────────────────────────────
   const [stockItemId,   setStockItemId]   = useState("");
@@ -84,8 +174,8 @@ export default function InventoryPage() {
   );
 
   const txnTypeColor: Record<string, string> = {
-    receive:"#10b981", consume:"#ef4444", adjust:"#f59e0b",
-    reserve:"#8b5cf6", release:"#3b82f6",
+    receive:"var(--success)", consume:"#ef4444", adjust:"var(--warning)",
+    reserve:"#8b5cf6", release:"var(--brand)",
   };
 
   return (
@@ -99,7 +189,7 @@ export default function InventoryPage() {
         <div style={{ display:"flex", gap:4, marginBottom:24 }}>
           {(["items","stock","low"] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
-              style={{ padding:"8px 18px", borderRadius:8,
+              style={{ padding:"8px 18px", borderRadius:"var(--radius-md)",
                 border: tab === t ? "2px solid var(--accent)" : "1px solid var(--border)",
                 background: tab === t ? "var(--accent-bg)" : "var(--surface)",
                 color: tab === t ? "var(--accent)" : "var(--text-secondary)",
@@ -117,17 +207,106 @@ export default function InventoryPage() {
               <span style={{ fontSize:13, color:"var(--text-secondary)" }}>
                 {itemList.data ? `${itemList.data.items.length} items` : ""}
               </span>
-              <button onClick={() => setShowCreate(p => !p)}
-                style={{ padding:"8px 16px", borderRadius:8, border:"none",
-                  background:"var(--accent)", color:"white", fontWeight:600, fontSize:13,
-                  cursor:"pointer", fontFamily:"inherit" }}>
-                + New Item
-              </button>
+              <div style={{ display:"flex", gap:8 }}>
+                {extractionEnabled && (
+                  <label style={{ padding:"8px 16px", borderRadius:"var(--radius-md)",
+                    border:"1px solid var(--border)", background:"var(--surface)",
+                    color:"var(--text-primary)", fontWeight:600, fontSize:13,
+                    cursor: uploading ? "wait" : "pointer", fontFamily:"inherit", opacity: uploading ? 0.6 : 1 }}>
+                    {uploading ? "Uploading…" : "Upload Inventory PDF"}
+                    <input type="file" accept="application/pdf" disabled={uploading} style={{ display:"none" }}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadPdf(f); e.target.value = ""; }}/>
+                  </label>
+                )}
+                <button onClick={() => setShowCreate(p => !p)}
+                  style={{ padding:"8px 16px", borderRadius:"var(--radius-md)", border:"none",
+                    background:"var(--accent)", color:"white", fontWeight:600, fontSize:13,
+                    cursor:"pointer", fontFamily:"inherit" }}>
+                  + New Item
+                </button>
+              </div>
             </div>
+
+            {!extractionEnabled && !effectiveEngines.loading && (
+              <p style={{ fontSize:12, color:"var(--text-tertiary)", marginBottom:16 }}>
+                AI PDF extraction is not enabled for your account. Ask your platform admin to enable the
+                &quot;Inventory Document Extraction&quot; engine to upload a price list/stock sheet PDF here.
+              </p>
+            )}
+
+            {(uploadError || uploadNotice) && (
+              <div style={{ marginBottom:16, padding:"10px 14px", borderRadius:"var(--radius-md)",
+                background: uploadError ? "var(--danger-bg, #fef2f2)" : "var(--success-bg, #f0fdf4)",
+                border: `1px solid ${uploadError ? "var(--danger-border, #fecaca)" : "var(--success-border, #bbf7d0)"}`,
+                color: uploadError ? "var(--danger-text, #991b1b)" : "var(--success-text, #166534)", fontSize:13 }}>
+                {uploadError ?? uploadNotice}
+              </div>
+            )}
+
+            {extractionEnabled && (drafts.data?.items?.length ?? 0) > 0 && (
+              <div style={{ background:"var(--surface)", border:"1px solid var(--border)",
+                borderRadius:"var(--radius-lg)", padding:"16px 18px", marginBottom:20 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                  <h3 style={{ margin:0, fontSize:14, fontWeight:600, color:"var(--text-primary)" }}>
+                    Draft items awaiting review ({drafts.data?.items.length})
+                  </h3>
+                  <button onClick={handlePublishAllDrafts} disabled={uploading}
+                    style={{ padding:"6px 14px", borderRadius:"var(--radius-md)", border:"none",
+                      background:"var(--success, #16a34a)", color:"white", fontWeight:600, fontSize:12,
+                      cursor:"pointer", fontFamily:"inherit" }}>
+                    Publish All
+                  </button>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  {drafts.data?.items.map(d => {
+                    const busy = !!draftBusy[d.item_id];
+                    const patch = editingDraft[d.item_id];
+                    return (
+                      <div key={d.item_id} style={{ display:"grid",
+                        gridTemplateColumns:"1.4fr 1fr 0.8fr 0.8fr auto", gap:8, alignItems:"center",
+                        padding:"8px 10px", background:"var(--surface-sunken)", borderRadius:8 }}>
+                        <input value={patch?.name ?? d.name}
+                          onChange={e => setEditingDraft(p => ({ ...p, [d.item_id]: { ...p[d.item_id], name: e.target.value } }))}
+                          style={{ height:32, padding:"0 8px", borderRadius:6, border:"1px solid var(--border)",
+                            background:"var(--surface)", color:"var(--text-primary)", fontSize:12, fontFamily:"inherit" }}/>
+                        <input value={patch?.sku ?? d.sku}
+                          onChange={e => setEditingDraft(p => ({ ...p, [d.item_id]: { ...p[d.item_id], sku: e.target.value } }))}
+                          style={{ height:32, padding:"0 8px", borderRadius:6, border:"1px solid var(--border)",
+                            background:"var(--surface)", color:"var(--text-primary)", fontSize:12, fontFamily:"inherit" }}/>
+                        <input type="number" value={patch?.unit_cost ?? d.unit_cost}
+                          onChange={e => setEditingDraft(p => ({ ...p, [d.item_id]: { ...p[d.item_id], unit_cost: parseFloat(e.target.value) || 0 } }))}
+                          style={{ height:32, padding:"0 8px", borderRadius:6, border:"1px solid var(--border)",
+                            background:"var(--surface)", color:"var(--text-primary)", fontSize:12, fontFamily:"inherit" }}/>
+                        <input type="number" value={patch?.min_quantity ?? d.min_quantity}
+                          onChange={e => setEditingDraft(p => ({ ...p, [d.item_id]: { ...p[d.item_id], min_quantity: parseInt(e.target.value) || 0 } }))}
+                          style={{ height:32, padding:"0 8px", borderRadius:6, border:"1px solid var(--border)",
+                            background:"var(--surface)", color:"var(--text-primary)", fontSize:12, fontFamily:"inherit" }}/>
+                        <div style={{ display:"flex", gap:6 }}>
+                          {patch && (
+                            <button onClick={() => handleSaveDraftEdit(d.item_id)} disabled={busy}
+                              style={{ height:28, padding:"0 10px", borderRadius:6, border:"none",
+                                background:"var(--accent)", color:"white", fontSize:11, fontWeight:600,
+                                cursor:"pointer", fontFamily:"inherit" }}>Save</button>
+                          )}
+                          <button onClick={() => handlePublishDraft(d.item_id)} disabled={busy}
+                            style={{ height:28, padding:"0 10px", borderRadius:6, border:"none",
+                              background:"var(--success, #16a34a)", color:"white", fontSize:11, fontWeight:600,
+                              cursor:"pointer", fontFamily:"inherit" }}>Publish</button>
+                          <button onClick={() => handleDeleteDraft(d.item_id)} disabled={busy}
+                            style={{ height:28, padding:"0 10px", borderRadius:6, border:"1px solid var(--border)",
+                              background:"transparent", color:"var(--danger, #dc2626)", fontSize:11, fontWeight:600,
+                              cursor:"pointer", fontFamily:"inherit" }}>Delete</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {showCreate && (
               <div style={{ background:"var(--surface)", border:"1px solid var(--border)",
-                borderRadius:12, padding:"18px 20px", marginBottom:20, maxWidth:480 }}>
+                borderRadius:"var(--radius-lg)", padding:"18px 20px", marginBottom:20, maxWidth:480 }}>
                 <h3 style={{ margin:"0 0 14px", fontSize:15, fontWeight:600, color:"var(--text-primary)" }}>
                   Create Item
                 </h3>
@@ -156,14 +335,14 @@ export default function InventoryPage() {
                 </div>
                 <div style={{ display:"flex", gap:8, marginTop:14 }}>
                   <button onClick={() => createItem()} disabled={creating || !newItem.name || !newItem.sku}
-                    style={{ padding:"8px 18px", borderRadius:8, border:"none",
+                    style={{ padding:"8px 18px", borderRadius:"var(--radius-md)", border:"none",
                       background:"var(--accent)", color:"white", fontWeight:600, fontSize:13,
                       cursor:"pointer", fontFamily:"inherit",
                       opacity:(!newItem.name || !newItem.sku) ? 0.5 : 1 }}>
                     {creating ? "Creating…" : "Create"}
                   </button>
                   <button onClick={() => setShowCreate(false)}
-                    style={{ padding:"8px 14px", borderRadius:8, border:"1px solid var(--border)",
+                    style={{ padding:"8px 14px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
                       background:"transparent", color:"var(--text-secondary)", fontSize:13,
                       cursor:"pointer", fontFamily:"inherit" }}>
                     Cancel
@@ -178,7 +357,7 @@ export default function InventoryPage() {
               {itemList.data?.items.map((item: InventoryItem) => (
                 <div key={item.item_id}
                   style={{ background:"var(--surface)", border:"1px solid var(--border)",
-                    borderRadius:12, padding:"14px 16px" }}>
+                    borderRadius:"var(--radius-lg)", padding:"14px 16px" }}>
                   <div style={{ display:"flex", justifyContent:"space-between" }}>
                     <p style={{ margin:"0 0 3px", fontWeight:600, fontSize:14, color:"var(--text-primary)" }}>
                       {item.name}
@@ -203,12 +382,12 @@ export default function InventoryPage() {
             <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
               <input value={stockItemId} onChange={e => setStockItemId(e.target.value)}
                 placeholder="Item UUID"
-                style={{ height:36, padding:"0 10px", borderRadius:8, width:220,
+                style={{ height:36, padding:"0 10px", borderRadius:"var(--radius-md)", width:220,
                   border:"1px solid var(--border)", background:"var(--surface)",
                   color:"var(--text-primary)", fontSize:13, fontFamily:"inherit" }}/>
               <input value={stockLocId} onChange={e => setStockLocId(e.target.value)}
                 placeholder="Location UUID"
-                style={{ height:36, padding:"0 10px", borderRadius:8, width:220,
+                style={{ height:36, padding:"0 10px", borderRadius:"var(--radius-md)", width:220,
                   border:"1px solid var(--border)", background:"var(--surface)",
                   color:"var(--text-primary)", fontSize:13, fontFamily:"inherit" }}/>
             </div>
@@ -240,7 +419,7 @@ export default function InventoryPage() {
 
                   {/* Receive form */}
                   <div style={{ background:"var(--surface)", border:"1px solid var(--border)",
-                    borderRadius:12, padding:"16px 18px", maxWidth:400, marginBottom:20 }}>
+                    borderRadius:"var(--radius-lg)", padding:"16px 18px", maxWidth:400, marginBottom:20 }}>
                     <h3 style={{ margin:"0 0 12px", fontSize:14, fontWeight:600, color:"var(--text-primary)" }}>
                       Receive Stock
                     </h3>
@@ -311,7 +490,7 @@ export default function InventoryPage() {
                 Items below minimum quantity
               </span>
               <button onClick={lowStock.refetch}
-                style={{ height:34, padding:"0 14px", borderRadius:8, border:"1px solid var(--border)",
+                style={{ height:34, padding:"0 14px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
                   background:"var(--surface)", color:"var(--text-secondary)", fontSize:13,
                   cursor:"pointer", fontFamily:"inherit" }}>
                 Refresh
@@ -342,7 +521,7 @@ export default function InventoryPage() {
                     </p>
                   </div>
                   <button onClick={() => replenish(item.item_id, item.deficit)} disabled={replenishing}
-                    style={{ padding:"7px 14px", borderRadius:8, border:"none",
+                    style={{ padding:"7px 14px", borderRadius:"var(--radius-md)", border:"none",
                       background:"var(--accent)", color:"white", fontWeight:600, fontSize:12,
                       cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
                     {replenishing ? "…" : `Request +${item.deficit}`}
