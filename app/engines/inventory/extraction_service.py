@@ -133,25 +133,44 @@ class InventoryExtractionService:
         content_hash = hashlib.sha256(pdf_bytes).hexdigest()
 
         # Idempotent on (tenant_id, content_hash) — mirrors KBDocument's pattern.
+        # BUT idempotency only holds while at least one real item from that
+        # upload still exists (draft or published, is_active). If the
+        # provider deleted every item that came from this upload, the
+        # content-hash record must not permanently block re-processing the
+        # same file -- re-run extraction and reuse/reset the same upload row
+        # (its content_hash is uniquely constrained, so we can't insert a
+        # second row for the same tenant+hash).
         ex = await self.db.execute(select(InventoryExtractionUpload).where(
             InventoryExtractionUpload.tenant_id == tenant_id,
             InventoryExtractionUpload.content_hash == content_hash))
         existing = ex.scalar_one_or_none()
         if existing and existing.status == "completed":
-            drafts = await self.db.execute(select(InventoryItem).where(
+            surviving = await self.db.execute(select(InventoryItem.id).where(
                 InventoryItem.source_upload_id == existing.id,
-                InventoryItem.status == ItemStatus.DRAFT))
-            return {
-                "upload_id": str(existing.id), "idempotent": True,
-                "status": existing.status,
-                "extracted_item_count": existing.extracted_item_count,
-                "draft_items": [self._item_dict(i) for i in drafts.scalars().all()],
-            }
-
-        upload = InventoryExtractionUpload(tenant_id=tenant_id, file_name=file_name,
-            content_hash=content_hash, status="processing", uploaded_by=self.actor_id)
-        self.db.add(upload)
-        await self.db.flush()
+                InventoryItem.is_active == True))  # noqa: E712
+            if surviving.first() is not None:
+                drafts = await self.db.execute(select(InventoryItem).where(
+                    InventoryItem.source_upload_id == existing.id,
+                    InventoryItem.status == ItemStatus.DRAFT,
+                    InventoryItem.is_active == True))  # noqa: E712
+                return {
+                    "upload_id": str(existing.id), "idempotent": True,
+                    "status": existing.status,
+                    "extracted_item_count": existing.extracted_item_count,
+                    "draft_items": [self._item_dict(i) for i in drafts.scalars().all()],
+                }
+            # All prior items from this exact upload were deleted -- reuse
+            # the same upload row (reset it) and genuinely re-extract.
+            upload = existing
+            upload.status = "processing"
+            upload.error_message = None
+            upload.extracted_item_count = 0
+            await self.db.flush()
+        else:
+            upload = InventoryExtractionUpload(tenant_id=tenant_id, file_name=file_name,
+                content_hash=content_hash, status="processing", uploaded_by=self.actor_id)
+            self.db.add(upload)
+            await self.db.flush()
 
         try:
             pdf_text = self._extract_pdf_text(pdf_bytes)

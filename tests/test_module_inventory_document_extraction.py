@@ -127,3 +127,52 @@ class TestPublishGuard:
 
         with pytest.raises(ServiceOSException):
             await svc.publish_item(uuid.uuid4())
+
+
+class TestReUploadAfterDeletion:
+    @pytest.mark.asyncio
+    async def test_reupload_reprocesses_when_all_prior_items_deleted(self):
+        """Real bug found live: uploading the same PDF after deleting every
+        item it previously produced returned the stale idempotent response
+        forever (the content_hash record survives deletion of its items).
+        Re-processing must proceed for real once no surviving item remains."""
+        tenant_id = uuid.uuid4()
+        enabled_engine_row = MagicMock(is_enabled=True)
+        existing_upload = MagicMock(id=uuid.uuid4(), status="completed", extracted_item_count=5)
+
+        call_count = [0]
+
+        async def mock_execute(q):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _scalar_result(enabled_engine_row)   # engine-enabled check
+            if call_count[0] == 2:
+                return _scalar_result(existing_upload)      # existing upload found (same hash)
+            if call_count[0] == 3:
+                r = MagicMock(); r.first = MagicMock(return_value=None)  # no surviving active items
+                return r
+            return _scalar_result(None)
+
+        db = AsyncMock()
+        db.execute = mock_execute
+        db.add = MagicMock()
+        db.flush = AsyncMock()
+
+        svc = InventoryExtractionService(db=db, actor_role="tenant_owner", actor_tenant_id=tenant_id)
+
+        fake_llm_json = json.dumps({"items": [
+            {"name": "Test Widget A", "sku": "TWA-100", "quantity": 20,
+             "unit": "pcs", "unit_cost": 50, "category": "electrical"},
+        ]})
+        fake_response = {"choices": [{"message": {"content": fake_llm_json}}]}
+
+        with patch.object(svc, "_extract_pdf_text", return_value="Test Widget A..."), \
+             patch("app.engines.inventory.extraction_service.DeepSeekClientService") as MockClient:
+            MockClient.return_value.chat = AsyncMock(return_value=fake_response)
+            result = await svc.extract_from_pdf(tenant_id, "pricelist.pdf", b"%PDF-1.4 same-file-bytes")
+
+        # Must NOT be the stale idempotent short-circuit -- real re-extraction ran.
+        assert result["idempotent"] is False
+        assert result["extracted_item_count"] == 1
+        assert result["upload_id"] == str(existing_upload.id)  # reused, not a new row
+        assert existing_upload.status == "processing" or existing_upload.status == "completed"
