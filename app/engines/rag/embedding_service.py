@@ -41,8 +41,8 @@ def _get_model():
             from sentence_transformers import SentenceTransformer
             logger.info("rag.embedding_model_loading", model=EMBEDDING_MODEL)
             _model = SentenceTransformer(EMBEDDING_MODEL)
-            logger.info("rag.embedding_model_loaded", model=EMBEDDING_MODEL,
-                        dim=_model.get_sentence_embedding_dimension())
+            dim_fn = getattr(_model, "get_embedding_dimension", None) or _model.get_sentence_embedding_dimension
+            logger.info("rag.embedding_model_loaded", model=EMBEDDING_MODEL, dim=dim_fn())
     return _model
 
 

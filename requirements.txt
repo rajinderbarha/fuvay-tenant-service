@@ -40,6 +40,11 @@ pypdf==5.1.0  # PDF text extraction (inventory document extraction engine)
 # embeddings endpoint, so embeddings are generated locally (no API key
 # needed) via a well-established, free model.
 pgvector==0.5.0
+# torch is a sentence-transformers dependency; installed from the CPU-only
+# wheel index (https://download.pytorch.org/whl/cpu) which is far smaller
+# than the default PyPI wheel (no bundled CUDA) and installs the same on
+# a CPU-only host: pip install --index-url https://download.pytorch.org/whl/cpu torch
+torch==2.13.0
 sentence-transformers==5.6.1  # all-MiniLM-L6-v2, 384-dim, CPU-friendly
 
 # ── Testing ────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ from sqlalchemy import (
     Boolean, DateTime, Float, Index, Integer,
     Numeric, String, Text, UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from pgvector.sqlalchemy import Vector
 
