@@ -3,14 +3,14 @@ import React, { useState, useEffect, createContext, useContext, useCallback } fr
 
 const TenantShellCtx = createContext(false);
 import {
-  LayoutDashboard, Wrench, CalendarDays, Users2,
-  Star, MessageCircle, FileText,
+  LayoutDashboard, Wrench, Users2,
+  MessageCircle, FileText,
   Settings, Sun, Moon, ChevronLeft, ChevronRight,
   Bell, Search, HelpCircle, CalendarCheck, Package, LogOut,
   BarChart2, Megaphone,
   Activity, CheckSquare, X, RefreshCw,
-  CheckCircle2, XCircle, AlertCircle, ArrowRight, Zap,
-  CreditCard, Shield, Receipt,
+  CheckCircle2, XCircle, AlertCircle, ArrowRight,
+  CreditCard, Shield, User,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import { useTour } from "../../hooks/useTour";
@@ -48,11 +48,9 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Overview",
     items: [
       { id: "dashboard", href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={16}/> },
-      // Business Profile stays always-visible even once the "Setup" group
-      // below is hidden (setup complete) -- it's not just a setup step, and
-      // it's the consolidation point where all setup/config now lives
-      // (see the "Business Setup" section on the Profile page).
-      { id: "profile",   href: "/profile",   label: "Business Profile", icon: <Zap size={16}/> },
+      // Business Profile is no longer a sidebar item -- it's reachable from
+      // the top-bar avatar dropdown ("Business Profile" menu entry), which
+      // is also where all setup/config now consolidates.
     ],
   },
   {
@@ -64,37 +62,37 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Operations",
     items: [
-      { id: "jobs",         href: "/jobs",         label: "Jobs",         icon: <Wrench size={16}/>,       badge: 0 },
-      { id: "bookings",     href: "/bookings",     label: "Bookings",     icon: <CalendarDays size={16}/>,  badge: 0 },
-      { id: "appointments", href: "/appointments", label: "Appointments", icon: <CalendarCheck size={16}/> },
+      // Bookings & Jobs: one unified pipeline table, one sidebar entry --
+      // was two separate pages/routes (/bookings, /jobs) for the same
+      // booking->job lifecycle.
+      { id: "jobs",         href: "/jobs",         label: "Bookings & Jobs", icon: <Wrench size={16}/>,       badge: 0 },
+      { id: "appointments", href: "/appointments", label: "Appointments",   icon: <CalendarCheck size={16}/> },
+      { id: "inventory",    href: "/inventory",    label: "Inventory",      icon: <Package size={16}/> },
     ],
   },
   {
-    label: "Finance",
+    label: "Billing",
     items: [
-      { id: "finance-package",       href: "/finance/package",             label: "Package & Credits",   icon: <Package size={16}/> },
-      { id: "finance-credit-ledger", href: "/finance/usage-credit-ledger", label: "Usage Credit Ledger", icon: <Receipt size={16}/> },
-      { id: "finance-deposit",       href: "/finance/security-deposit",    label: "Security Deposit",    icon: <Shield size={16}/> },
+      // Package selection/renewal, instant credit top-up, the usage credit
+      // ledger, and the security deposit view are all tabs on one page now
+      // -- three sidebar entries collapsed into one.
+      { id: "finance-package", href: "/packages", label: "Billing", icon: <Package size={16}/> },
     ],
   },
   {
     label: "Engagement",
     items: [
-      { id: "reviews",   href: "/reviews",   label: "Reviews",   icon: <Star size={16}/> },
-      { id: "provider-complaints", href: "/provider/complaints", label: "Complaints", icon: <AlertCircle size={16}/> },
-      { id: "marketing", href: "/marketing", label: "Marketing", icon: <Megaphone size={16}/> },
+      // Ordered to match the customer-relationship flow: who you serve,
+      // talk to them, resolve issues, then grow.
       { id: "customers", href: "/customers", label: "Customers", icon: <Users2 size={16}/> },
       { id: "chat",      href: "/chat",      label: "Chat",      icon: <MessageCircle size={16}/> },
+      { id: "provider-complaints", href: "/provider/complaints", label: "Complaints", icon: <AlertCircle size={16}/> },
+      { id: "marketing", href: "/marketing", label: "Marketing", icon: <Megaphone size={16}/> },
     ],
   },
   {
-    label: "Insights",
-    items: [
-      { id: "analytics", href: "/analytics", label: "Analytics", icon: <BarChart2 size={16}/> },
-      { id: "reports",   href: "/reports",   label: "Reports",   icon: <FileText size={16}/> },
-    ],
-  },
-  {
+    // Analytics & Reports moved into the top-bar profile dropdown (next to
+    // Billing/Settings/Logout) -- no longer a sidebar group.
     label: "More",
     items: [
       // Documents: sidebar entry removed per product decision -- policies/
@@ -342,6 +340,25 @@ function TenantShellInner({ children, activeNav }: {
     };
   }, [bellOpen]);
 
+  // Profile dropdown — avatar click opens a small menu with profile, billing,
+  // settings, theme switch, current package, and logout (replaces the old
+  // bare avatar-link + standalone logout button).
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = React.useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!profileOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setProfileOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [profileOpen]);
+
   const loadEntitlements = useCallback(() => {
     entitlementApi.getMyModules()
       .then(r => { setEntitledModuleKeys(r.modules.map(m => m.module_key)); setEntitlementsLoaded(true); })
@@ -386,12 +403,24 @@ function TenantShellInner({ children, activeNav }: {
 
   const hasAnyModule = entitlementsLoaded ? entitledModuleKeys.length > 0 : true;
   const ALWAYS_VISIBLE_GROUPS = new Set(["Overview", "More"]);
+  // Nav items that only apply to specific business verticals (e.g.
+  // "Appointments" is the coaching/education vertical's CoachingAppointment
+  // model, not a home-services concept) -- hidden for tenants outside those
+  // verticals so the sidebar only shows menu items relevant to their business.
+  const VERTICAL_ONLY_ITEMS: Record<string, string[]> = { appointments: ["coaching"] };
+  const itemVisible = (itemId: string) => {
+    const allowed = VERTICAL_ONLY_ITEMS[itemId];
+    if (!allowed) return true;
+    return !!tenant.vertical && allowed.includes(tenant.vertical);
+  };
   // Once every real setup step is done (10/10, from the shared hook), the
   // The "Setup" nav group was removed entirely -- Business Profile (in
   // "Overview" above) is now the one-stop place to reach every individual
   // setup page (Service Areas, Service Setup, Service Coverage, Business
   // Hours) or reopen the wizard drawer, via its "Business Setup" section.
-  const visibleNavGroups = hasAnyModule ? NAV_GROUPS : NAV_GROUPS.filter(g => ALWAYS_VISIBLE_GROUPS.has(g.label));
+  const visibleNavGroups = (hasAnyModule ? NAV_GROUPS : NAV_GROUPS.filter(g => ALWAYS_VISIBLE_GROUPS.has(g.label)))
+    .map(g => ({ ...g, items: g.items.filter(it => itemVisible(it.id)) }))
+    .filter(g => g.items.length > 0);
 
   return (
     <TenantShellCtx.Provider value={true}>
@@ -477,11 +506,13 @@ function TenantShellInner({ children, activeNav }: {
             }
 
             return (
+            // Group category headings ("Overview", "Team", "Billing", etc.)
+            // are intentionally not rendered -- the grouping still exists
+            // in data (for entitlement-based show/hide and the collapsed-
+            // rail boxing below) but the sidebar reads as one clean ordered
+            // list rather than labeled sections. A small gap between groups
+            // is kept as the only visual boundary.
             <div key={group.label} style={{ marginBottom: gi < visibleNavGroups.length - 1 ? 8 : 0 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.09em", color: "var(--sidebar-category)", padding: "10px 10px 4px", margin: 0, textTransform: "uppercase" }}>
-                {group.label}
-              </p>
-
               {group.special === "setup-wizard" ? (
                 /* ── Special: Setup wizard button ── */
                 <button
@@ -554,9 +585,6 @@ function TenantShellInner({ children, activeNav }: {
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }}/>
             <span style={{ fontSize: 11, fontWeight: 600, color: "var(--success-text)" }}>Online</span>
           </div>
-          <button onClick={toggle} title={theme === "dark" ? "Light mode" : "Dark mode"} style={{ width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
-            {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
-          </button>
           <div ref={bellRef} style={{ position: "relative" }}>
             <button onClick={openBell}
               aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
@@ -651,16 +679,91 @@ function TenantShellInner({ children, activeNav }: {
               </div>
             )}
           </div>
-          <a href="/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-            <div style={{ textAlign: "right" }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{myName || tenant.tenantName || "Owner"}</p>
-              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>{tenant.planType ?? "plan"}</p>
-            </div>
-            <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={myAvatar} size={34}/>
-          </a>
-          <button onClick={handleLogout} title="Log out" style={{ width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
-            <LogOut size={16}/>
-          </button>
+          <div ref={profileRef} style={{ position: "relative" }}>
+            <button onClick={() => setProfileOpen(o => !o)} style={{
+              display: "flex", alignItems: "center", gap: 10, background: "none", border: "none",
+              cursor: "pointer", padding: "4px 4px 4px 10px", borderRadius: "var(--radius-lg)",
+              fontFamily: "inherit" }}>
+              <div style={{ textAlign: "right" }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{myName || tenant.tenantName || "Owner"}</p>
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>{tenant.planType ?? "plan"}</p>
+              </div>
+              <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={myAvatar} size={34}/>
+            </button>
+
+            {profileOpen && (
+              <div style={{
+                position: "absolute", top: 48, right: 0, width: 288,
+                background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)",
+                boxShadow: "var(--shadow-lg)", zIndex: 60, overflow: "hidden",
+              }}>
+                {/* Identity header */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
+                  <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={myAvatar} size={38}/>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {myName || tenant.tenantName || "Owner"}
+                    </p>
+                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {tenant.tenantName || "Your business"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Current package / plan */}
+                <div style={{ margin: "12px 16px", padding: "10px 12px", borderRadius: "var(--radius-md)",
+                  background: "var(--surface-sunken)", border: "1px solid var(--border)" }}>
+                  {tenant.planType ? (
+                    <>
+                      <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
+                        color: "var(--text-tertiary)", margin: "0 0 2px" }}>Current Plan</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "var(--brand)", margin: 0, textTransform: "capitalize" }}>
+                        {tenant.planType.replace(/_/g, " ")}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 6px" }}>No active package yet</p>
+                      <a href="/packages" onClick={() => setProfileOpen(false)} style={{ fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none" }}>
+                        Choose a plan →
+                      </a>
+                    </>
+                  )}
+                </div>
+
+                {/* Menu items */}
+                <div style={{ padding: "4px 8px" }}>
+                  <a href="/profile" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
+                    <User size={15}/> Business Profile
+                  </a>
+                  <a href="/packages" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
+                    <CreditCard size={15}/> Billing
+                  </a>
+                  <a href="/analytics" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
+                    <BarChart2 size={15}/> Analytics
+                  </a>
+                  <a href="/reports" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
+                    <FileText size={15}/> Reports
+                  </a>
+                  <button onClick={toggle} style={{ ...profileMenuItemStyle, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", justifyContent: "space-between" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      {theme === "dark" ? <Moon size={15}/> : <Sun size={15}/>} Theme
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "capitalize" }}>{theme}</span>
+                  </button>
+                  <a href="/settings" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
+                    <Settings size={15}/> Settings
+                  </a>
+                </div>
+
+                <div style={{ borderTop: "1px solid var(--border)", padding: "4px 8px" }}>
+                  <button onClick={handleLogout} style={{ ...profileMenuItemStyle, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", color: "var(--danger)" }}>
+                    <LogOut size={15}/> Log out
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </header>
 
         <main style={{ flex: 1, overflowY: "auto", padding: "28px 32px", background: "var(--bg-gradient)" }}>
@@ -682,6 +785,11 @@ function TenantShellInner({ children, activeNav }: {
     </TenantShellCtx.Provider>
   );
 }
+
+const profileMenuItemStyle: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: "var(--radius-md)",
+  fontSize: 13, fontWeight: 500, color: "var(--text-primary)", textDecoration: "none",
+};
 
 function footerBtnStyle(collapsed: boolean): React.CSSProperties {
   return { width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: "var(--radius-md)", border: "none", background: "transparent", cursor: "pointer", color: "var(--sidebar-text)", fontFamily: "inherit", justifyContent: collapsed ? "center" : undefined };
