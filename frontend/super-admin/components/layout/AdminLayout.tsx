@@ -173,6 +173,7 @@ const NAV_GROUPS: NavGroup[] = [
 // inside VerticalCatalogSection specifically for vertical_key === "home_services"
 // rather than as their own sidebar group.
 const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
+  { id: "hs-overview", href: "/admin/home-services/overview", label: "Overview", icon: <LayoutGrid size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   { id: "hs-service-catalog", href: "/admin/home-services/service-catalog", label: "Service Catalog", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   { id: "hs-pricing-rules", href: "/admin/home-services/pricing-rules", label: "Pricing Rules", icon: <Sliders size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   { id: "hs-price-experience", href: "/admin/home-services/price-experience", label: "Customer Price Experience", icon: <FlaskConical size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
