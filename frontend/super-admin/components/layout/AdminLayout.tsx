@@ -94,52 +94,15 @@ const NAV_GROUPS: NavGroup[] = [
   {
     // Multi-vertical pricing infrastructure only — genuinely vertical-agnostic
     // (tiers/city-zip mapping/provider overrides apply across all verticals).
-    // Pricing Rules itself moved to the Home Services group below since, in
-    // practice, every active pricing rule today is Home Services scoped —
-    // see HOME_SERVICES_MENU_ORGANIZATION_REPORT.md.
+    // Pricing Rules itself lives in HOME_SERVICES_EXTRA_ITEMS (rendered under
+    // Catalog → Home Services) since, in practice, every active pricing rule
+    // today is Home Services scoped — see HOME_SERVICES_MENU_ORGANIZATION_REPORT.md.
     label: "Pricing & Rules",
     items: [
       { id: "pricing-tiers",       href: "/admin/pricing-tiers",              label: "Pricing Tiers",    icon: <LayoutGrid size={16}/>,     requiredPermission: SUPER_ADMIN_ONLY },
       { id: "location-mapping",    href: "/admin/location-mapping",           label: "City/Zip Mapping", icon: <MapPin size={16}/>,         requiredPermission: SUPER_ADMIN_ONLY },
       { id: "provider-overrides",  href: "/admin/pricing/provider-overrides", label: "Provider Pricing Overrides", icon: <PercentSquare size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "category-commission", href: "/admin/pricing/commission",          label: "Category Rates", icon: <PercentSquare size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-    ],
-  },
-  {
-    // All Home-Services-specific screens live here only — never duplicated
-    // into a common/global menu group. Home Services only (see
-    // matching_engine.assert_home_services_vertical / get_home_services_category_id).
-    label: "Home Services",
-    items: [
-      { id: "hs-service-catalog", href: "/admin/home-services/service-catalog", label: "Service Catalog", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-pricing-rules", href: "/admin/home-services/pricing-rules", label: "Pricing Rules", icon: <Sliders size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-price-experience", href: "/admin/home-services/price-experience", label: "Customer Price Experience", icon: <FlaskConical size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Wrench size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-service-areas", href: "/admin/home-services/service-areas", label: "Service Areas / Zones", icon: <MapPin size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/>, requiredPermission: "finance.completed_job_deduction_rules.read" },
-      { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      // Migrated in from the dynamic per-vertical Catalog sub-menu
-      // (VerticalCatalogSection) — home_services is now excluded from that
-      // loop below to stop the sidebar showing two separate "Home Services"
-      // sections. These are the vertical's real, backend-enabled catalog
-      // modules (from GET /v1/admin/catalog/navigation/effective-menu);
-      // "categories" is intentionally NOT migrated here since it already
-      // exists as the Catalog group's own "Categories" item (same /admin/categories route).
-      { id: "hs-service-groups", href: "/admin/service-groups", label: "Service Groups", icon: <Layers size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-master-services", href: "/admin/master-services", label: "Master Services", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-types-brands", href: "/admin/types-brands", label: "Types & Brands", icon: <Tag size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-service-options", href: "/admin/service-options", label: "Service Options", icon: <Sliders size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-issue-types", href: "/admin/issue-types", label: "Issue Types", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-checklist-templates", href: "/admin/checklists", label: "Checklist Templates", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "hs-service-setup", href: "/admin/service-setup", label: "Service Setup", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      // Phase 2A Slice 2 nav reconciliation: page existed and was fully
-      // built (adminBookabilityApi-backed) but had zero sidebar entry —
-      // confirmed orphaned in the Phase 1 frontend audit and still true.
-      // Grouped here (not a new top-level section) since it's Home
-      // Services matching/bookability diagnostics, same as the two items
-      // above it.
-      { id: "bookability", href: "/admin/bookability/providers", label: "Provider Bookability", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
@@ -197,14 +160,44 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-// Flattened (id, href) list derived from the actual rendered sidebar (NAV_GROUPS),
-// used by app/admin/layout.tsx to compute the active nav id via longest-href-prefix
-// matching. This is the single source of truth for "what's really in the sidebar" —
-// see ADMIN_TENANT_E2E_02_ADMIN_SIDEBAR_ACTIVE_STATE_REPORT.md for why a second,
+// Home Services bespoke admin pages that have no corresponding entry in the
+// real vertical-module system (no `modules[].admin_path` from GET
+// /v1/admin/catalog/navigation/effective-menu) — Overview/Pricing/Matching/
+// Diagnostics/Areas/Deduction/Settings/Bookability, plus (for historical id
+// stability) the "Service Catalog" landing page. Home Services no longer has
+// its own top-level NAV_GROUPS section (it renders through the same
+// per-vertical "Catalog" mechanism as Coaching/Real Estate — see
+// VerticalCatalogSection), so these are kept in a standalone array instead:
+// still real routes, still permission-registered and highlight-resolvable via
+// FLAT_NAV_HREFS/NAV_ITEM_PERMISSIONS below, but rendered as an addendum
+// inside VerticalCatalogSection specifically for vertical_key === "home_services"
+// rather than as their own sidebar group.
+const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
+  { id: "hs-service-catalog", href: "/admin/home-services/service-catalog", label: "Service Catalog", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "hs-pricing-rules", href: "/admin/home-services/pricing-rules", label: "Pricing Rules", icon: <Sliders size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "hs-price-experience", href: "/admin/home-services/price-experience", label: "Customer Price Experience", icon: <FlaskConical size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Wrench size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "hs-service-areas", href: "/admin/home-services/service-areas", label: "Service Areas / Zones", icon: <MapPin size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/>, requiredPermission: "finance.completed_job_deduction_rules.read" },
+  { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // Phase 2A Slice 2 nav reconciliation: page existed and was fully built
+  // (adminBookabilityApi-backed) but had zero sidebar entry — confirmed
+  // orphaned in the Phase 1 frontend audit and still true.
+  { id: "bookability", href: "/admin/bookability/providers", label: "Provider Bookability", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+];
+
+// Flattened (id, href) list derived from the actual rendered sidebar (NAV_GROUPS
+// plus HOME_SERVICES_EXTRA_ITEMS, which render via VerticalCatalogSection instead
+// of their own NAV_GROUPS entry), used by app/admin/layout.tsx to compute the
+// active nav id via longest-href-prefix matching. This is the single source of
+// truth for "what's really in the sidebar" — see
+// ADMIN_TENANT_E2E_02_ADMIN_SIDEBAR_ACTIVE_STATE_REPORT.md for why a second,
 // hand-maintained section-name map (lib/nav-config.ts) drifted out of sync and
 // failed to highlight nested sub-routes correctly.
 export const FLAT_NAV_HREFS: { id: string; href: string }[] =
-  NAV_GROUPS.flatMap(g => g.items.map(item => ({ id: item.id, href: item.href })));
+  NAV_GROUPS.flatMap(g => g.items.map(item => ({ id: item.id, href: item.href })))
+    .concat(HOME_SERVICES_EXTRA_ITEMS.map(item => ({ id: item.id, href: item.href })));
 
 /**
  * Resolve a pathname to the nav item id whose href is the longest matching
@@ -232,7 +225,8 @@ export function resolveActiveNavId(pathname: string): string {
 // giving every reachable /admin/* route real permission coverage without
 // a second, hand-maintained route table.
 const NAV_ITEM_PERMISSIONS: Record<string, string> = Object.fromEntries(
-  NAV_GROUPS.flatMap(g => g.items.map(item => [item.id, item.requiredPermission])),
+  NAV_GROUPS.flatMap(g => g.items.map(item => [item.id, item.requiredPermission]))
+    .concat(HOME_SERVICES_EXTRA_ITEMS.map(item => [item.id, item.requiredPermission])),
 );
 
 // Self-service routes every authenticated admin role may reach regardless
@@ -402,27 +396,21 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
             // empty group (0 permitted items, and no enabled-verticals
             // sub-menu for Catalog) renders nothing at all, per Part 6
             // requirement #2.
-            // Home Services is a static group (its real, backend-enabled catalog
-            // modules were migrated in above, see comment on NAV_GROUPS), but its
-            // *visibility* must still track the real home_services vertical
-            // enable/disable toggle at /admin/verticals — exactly like Coaching/
-            // Real Estate/etc. only appear via VerticalCatalogSection when their
-            // vertical is enabled. While effectiveMenu hasn't loaded yet (null),
-            // show it to avoid flicker/false-hides, matching isNavItemVisible's
-            // own fail-open convention.
-            const isHomeServicesGroupEnabled = group.label !== "Home Services" || !effectiveMenu ||
-              effectiveMenu.enabled_vertical_keys.includes("home_services");
-            const visibleItems = isHomeServicesGroupEnabled
-              ? group.items
-                  .filter(item => isNavItemVisible(item.id, effectiveMenu))
-                  .filter(item => isNavItemPermitted(item, effectivePermissions, effectiveRole))
-              : [];
+            const visibleItems = group.items
+              .filter(item => isNavItemVisible(item.id, effectiveMenu))
+              .filter(item => isNavItemPermitted(item, effectivePermissions, effectiveRole));
+            // Catalog group only: inject one expandable section per real,
+            // backend-enabled vertical (Home Services, Coaching, Real Estate,
+            // etc.) via VerticalCatalogSection — same mechanism, no
+            // special-casing per vertical. Visibility/enable-disable is
+            // automatic: a vertical only appears here when effectiveMenu
+            // reports it enabled, so there is nothing extra to gate.
             const hasVerticalsSubmenu = group.label === "Catalog" && effectiveMenu &&
-              effectiveMenu.verticals.some(v => v.is_enabled && v.vertical_key !== "home_services") &&
-              effectiveRole === "super_admin"; // verticals management is SUPER_ADMIN_ONLY, matching "categories"/"verticals" items above; home_services excluded — its modules live in the static "Home Services" group instead
+              effectiveMenu.verticals.some(v => v.is_enabled) &&
+              effectiveRole === "super_admin"; // verticals management is SUPER_ADMIN_ONLY, matching "categories"/"verticals" items above
             if (visibleItems.length === 0 && !hasVerticalsSubmenu) return null;
             const verticalsForFlyout = hasVerticalsSubmenu
-              ? effectiveMenu!.verticals.filter(v => v.is_enabled && v.vertical_key !== "home_services")
+              ? effectiveMenu!.verticals.filter(v => v.is_enabled)
               : [];
 
             if (collapsed) {
@@ -464,13 +452,10 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
               {visibleItems.map(item => (
                   <SidebarItem key={item.id} item={item} active={activeNav === item.id} collapsed={collapsed}/>
                 ))}
-              {/* After the Catalog group, inject per-vertical sub-menus.
-                  home_services is excluded here: its real catalog modules
-                  (Service Groups, Master Services, Types & Brands, Service
-                  Options, Issue Types, Checklist Templates, Service Setup)
-                  are migrated into the static "Home Services" nav group
-                  above instead, so the sidebar doesn't show two separate
-                  "Home Services" sections for the same vertical. */}
+              {/* After the Catalog group, inject one expandable sub-menu per
+                  enabled vertical (Home Services, Coaching, Real Estate,
+                  etc.) — same VerticalCatalogSection for all, no special
+                  top-level group for any one vertical. */}
               {verticalsForFlyout.map(v => (
                   <VerticalCatalogSection
                     key={v.vertical_key}
@@ -548,6 +533,12 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const flyoutRef = React.useRef<HTMLDivElement>(null);
   const modules = vertical.modules.filter(m => m.is_enabled);
+  // Home Services has no separate top-level nav group (see
+  // HOME_SERVICES_EXTRA_ITEMS above) — its bespoke, non-generic-module admin
+  // pages render as an addendum here, after the real backend modules, so it
+  // reaches full parity with the old static group while using the exact same
+  // expandable-section mechanism as every other vertical.
+  const extraItems = vertical.vertical_key === "home_services" ? HOME_SERVICES_EXTRA_ITEMS : [];
 
   // Close the flyout when the sidebar expands, so it never lingers behind
   // the now-wider expanded rail.
@@ -567,9 +558,10 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
     };
   }, [flyoutOpen]);
 
-  if (modules.length === 0) return null;
+  if (modules.length === 0 && extraItems.length === 0) return null;
 
-  const isActiveSection = modules.some(m => activeNav === `catalog-${vertical.vertical_key}-${m.key}`);
+  const isActiveSection = modules.some(m => activeNav === `catalog-${vertical.vertical_key}-${m.key}`)
+    || extraItems.some(item => activeNav === item.id);
 
   if (collapsed) {
     return (
@@ -649,6 +641,26 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
                   </a>
                 );
               })}
+              {extraItems.map(item => {
+                const isActive = activeNav === item.id;
+                return (
+                  <a
+                    key={item.id} href={item.href} role="menuitem"
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => setFlyoutOpen(false)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
+                      borderRadius: "var(--radius-md)", textDecoration: "none", fontSize: 13,
+                      background: isActive ? "var(--sidebar-active)" : "transparent",
+                      color: isActive ? "var(--sidebar-text-active)" : "var(--text-primary)",
+                      fontWeight: isActive ? 600 : 400,
+                    }}
+                  >
+                    {item.icon}
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
+                  </a>
+                );
+              })}
             </div>
           </div>
         )}
@@ -702,6 +714,14 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
               />
             );
           })}
+          {extraItems.map(item => (
+            <SidebarItem
+              key={item.id}
+              item={item}
+              active={activeNav === item.id}
+              collapsed={false}
+            />
+          ))}
         </div>
       )}
     </div>
