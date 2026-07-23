@@ -555,10 +555,25 @@ async def get_tenant_effective_engines(
     user: UserContext = Depends(get_current_user),
 ):
     from app.engine_registry.registry import registry
+    from app.engine_registry.models import TenantEngine
+
     tid = _tenant_id(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
+
+    rows = (await db.execute(
+        select(TenantEngine).where(TenantEngine.tenant_id == tid, TenantEngine.is_enabled == True)  # noqa: E712
+    )).scalars().all()
+    enabled_ids = {r.engine_id for r in rows}
+
     summary = registry.summary()
     summary["tenant_id"] = str(tid)
+    for e in summary["engines"]:
+        # Core engines are always active; plugin engines reflect this
+        # tenant's real enabled_engines state. Aliased as engine_key /
+        # effective_enabled to match the tenant-portal frontend's contract
+        # (e.g. the Inventory Document Extraction upload gate).
+        e["engine_key"] = e["engine_id"]
+        e["effective_enabled"] = e["type"] == "core" or e["engine_id"] in enabled_ids
     return ok(summary, rid, "tenant_portal")
 
 
