@@ -402,9 +402,21 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
             // empty group (0 permitted items, and no enabled-verticals
             // sub-menu for Catalog) renders nothing at all, per Part 6
             // requirement #2.
-            const visibleItems = group.items
-              .filter(item => isNavItemVisible(item.id, effectiveMenu))
-              .filter(item => isNavItemPermitted(item, effectivePermissions, effectiveRole));
+            // Home Services is a static group (its real, backend-enabled catalog
+            // modules were migrated in above, see comment on NAV_GROUPS), but its
+            // *visibility* must still track the real home_services vertical
+            // enable/disable toggle at /admin/verticals — exactly like Coaching/
+            // Real Estate/etc. only appear via VerticalCatalogSection when their
+            // vertical is enabled. While effectiveMenu hasn't loaded yet (null),
+            // show it to avoid flicker/false-hides, matching isNavItemVisible's
+            // own fail-open convention.
+            const isHomeServicesGroupEnabled = group.label !== "Home Services" || !effectiveMenu ||
+              effectiveMenu.enabled_vertical_keys.includes("home_services");
+            const visibleItems = isHomeServicesGroupEnabled
+              ? group.items
+                  .filter(item => isNavItemVisible(item.id, effectiveMenu))
+                  .filter(item => isNavItemPermitted(item, effectivePermissions, effectiveRole))
+              : [];
             const hasVerticalsSubmenu = group.label === "Catalog" && effectiveMenu &&
               effectiveMenu.verticals.some(v => v.is_enabled && v.vertical_key !== "home_services") &&
               effectiveRole === "super_admin"; // verticals management is SUPER_ADMIN_ONLY, matching "categories"/"verticals" items above; home_services excluded — its modules live in the static "Home Services" group instead
