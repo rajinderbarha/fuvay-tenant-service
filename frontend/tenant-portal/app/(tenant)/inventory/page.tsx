@@ -1,6 +1,7 @@
 "use client";
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
+import { Modal } from "../../../components/shared/ui";
 import { useApi, useAction } from "../../../hooks/useApi";
 import {
   inventoryApi,
@@ -14,12 +15,60 @@ import {
 type Tab = "items" | "stock" | "low";
 const EXTRACTION_ENGINE_KEY = "inventory_document_extraction";
 
+// Shared labeled-field styling for the clean modal forms below.
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: 11, color: "var(--text-secondary)", display: "block", marginBottom: 3,
+  fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em",
+};
+const fieldInputStyle: React.CSSProperties = {
+  width: "100%", height: 34, padding: "0 9px", borderRadius: 7,
+  border: "1px solid var(--border)", background: "var(--surface)",
+  color: "var(--text-primary)", fontSize: 13, fontFamily: "inherit",
+  boxSizing: "border-box",
+};
+
+/** Combo box: pick from known values (real distinct categories already in
+ * use for this tenant) or type a new one. Kept intentionally simple (no
+ * extra dependency) — a native <select> with an "+ Add new…" sentinel that
+ * reveals a free-text input. */
+function CategoryField({ value, onChange, options }: {
+  value: string; onChange: (v: string) => void; options: string[];
+}) {
+  const [customMode, setCustomMode] = useState(() => !!value && !options.includes(value));
+  if (customMode) {
+    return (
+      <div style={{ display: "flex", gap: 6 }}>
+        <input value={value} onChange={e => onChange(e.target.value)}
+          placeholder="New category name" style={fieldInputStyle} />
+        {options.length > 0 && (
+          <button type="button" onClick={() => { setCustomMode(false); onChange(""); }}
+            style={{ height: 34, padding: "0 10px", borderRadius: 7, border: "1px solid var(--border)",
+              background: "transparent", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer",
+              fontFamily: "inherit", whiteSpace: "nowrap" }}>
+            Choose existing
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <select value={value}
+      onChange={e => { if (e.target.value === "__new__") { setCustomMode(true); onChange(""); } else { onChange(e.target.value); } }}
+      style={{ ...fieldInputStyle, cursor: "pointer" }}>
+      <option value="">— None —</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+      <option value="__new__">+ Add new category…</option>
+    </select>
+  );
+}
+
 export default function InventoryPage() {
   const [tab, setTab] = useState<Tab>("items");
 
   // ── Items tab ────────────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
-  const [newItem, setNewItem] = useState({ name:"", sku:"", unit:"pcs", unit_cost:"", category:"", min_quantity:"0" });
+  const emptyNewItem = { name:"", sku:"", unit:"pcs", unit_cost:"", category:"", min_quantity:"0", gst:"", warranty:"" };
+  const [newItem, setNewItem] = useState(emptyNewItem);
   const { execute: createItem, loading: creating, error: createError } = useAction(
     useCallback(async () => {
       const res = await inventoryApi.createItem(
@@ -27,8 +76,10 @@ export default function InventoryPage() {
         parseFloat(newItem.unit_cost) || 0,
         newItem.category || undefined,
         parseInt(newItem.min_quantity) || 0,
+        newItem.gst !== "" ? parseFloat(newItem.gst) : null,
+        newItem.warranty || null,
       );
-      if (res) { setShowCreate(false); setNewItem({ name:"", sku:"", unit:"pcs", unit_cost:"", category:"", min_quantity:"0" }); itemList.refetch(); }
+      if (res) { setShowCreate(false); setNewItem(emptyNewItem); itemList.refetch(); }
       return res;
     }, [newItem]) // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -37,6 +88,15 @@ export default function InventoryPage() {
     useCallback(() => inventoryApi.listItems(), []),
     []
   );
+
+  // Real distinct categories already in use for this tenant's inventory —
+  // used to pre-populate the Category combo (per user request "category
+  // data we have so show that as well"), not a fabricated taxonomy.
+  const knownCategories = useMemo(() => {
+    const set = new Set<string>();
+    for (const i of itemList.data?.items ?? []) { if (i.category) set.add(i.category); }
+    return Array.from(set).sort();
+  }, [itemList.data]);
 
   // ── PDF -> AI extraction (draft review + publish) ───────────────────────
   // Only shown/usable if the inventory_document_extraction plugin engine is
@@ -54,6 +114,8 @@ export default function InventoryPage() {
   const drafts = useApi(useCallback(() => inventoryApi.listDrafts(), []), []);
   const [editingDraft, setEditingDraft] = useState<Record<string, Partial<InventoryDraftItem>>>({});
   const [draftBusy, setDraftBusy] = useState<Record<string, boolean>>({});
+  // item_id of the draft currently open in the edit modal (one modal at a time).
+  const [openDraftModalId, setOpenDraftModalId] = useState<string | null>(null);
 
   async function handleUploadPdf(file: File) {
     setUploading(true); setUploadError(null); setUploadNotice(null);
@@ -103,6 +165,7 @@ export default function InventoryPage() {
     try {
       await inventoryApi.updateDraft(itemId, patch);
       setEditingDraft(p => { const n = { ...p }; delete n[itemId]; return n; });
+      setOpenDraftModalId(id => id === itemId ? null : id);
       drafts.refetch();
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : "Save failed.");
@@ -257,37 +320,28 @@ export default function InventoryPage() {
                     Publish All
                   </button>
                 </div>
-                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                   {drafts.data?.items.map(d => {
                     const busy = !!draftBusy[d.item_id];
-                    const patch = editingDraft[d.item_id];
                     return (
-                      <div key={d.item_id} style={{ display:"grid",
-                        gridTemplateColumns:"1.4fr 1fr 0.8fr 0.8fr auto", gap:8, alignItems:"center",
-                        padding:"8px 10px", background:"var(--surface-sunken)", borderRadius:8 }}>
-                        <input value={patch?.name ?? d.name}
-                          onChange={e => setEditingDraft(p => ({ ...p, [d.item_id]: { ...p[d.item_id], name: e.target.value } }))}
-                          style={{ height:32, padding:"0 8px", borderRadius:6, border:"1px solid var(--border)",
-                            background:"var(--surface)", color:"var(--text-primary)", fontSize:12, fontFamily:"inherit" }}/>
-                        <input value={patch?.sku ?? d.sku}
-                          onChange={e => setEditingDraft(p => ({ ...p, [d.item_id]: { ...p[d.item_id], sku: e.target.value } }))}
-                          style={{ height:32, padding:"0 8px", borderRadius:6, border:"1px solid var(--border)",
-                            background:"var(--surface)", color:"var(--text-primary)", fontSize:12, fontFamily:"inherit" }}/>
-                        <input type="number" value={patch?.unit_cost ?? d.unit_cost}
-                          onChange={e => setEditingDraft(p => ({ ...p, [d.item_id]: { ...p[d.item_id], unit_cost: parseFloat(e.target.value) || 0 } }))}
-                          style={{ height:32, padding:"0 8px", borderRadius:6, border:"1px solid var(--border)",
-                            background:"var(--surface)", color:"var(--text-primary)", fontSize:12, fontFamily:"inherit" }}/>
-                        <input type="number" value={patch?.min_quantity ?? d.min_quantity}
-                          onChange={e => setEditingDraft(p => ({ ...p, [d.item_id]: { ...p[d.item_id], min_quantity: parseInt(e.target.value) || 0 } }))}
-                          style={{ height:32, padding:"0 8px", borderRadius:6, border:"1px solid var(--border)",
-                            background:"var(--surface)", color:"var(--text-primary)", fontSize:12, fontFamily:"inherit" }}/>
-                        <div style={{ display:"flex", gap:6 }}>
-                          {patch && (
-                            <button onClick={() => handleSaveDraftEdit(d.item_id)} disabled={busy}
-                              style={{ height:28, padding:"0 10px", borderRadius:6, border:"none",
-                                background:"var(--accent)", color:"white", fontSize:11, fontWeight:600,
-                                cursor:"pointer", fontFamily:"inherit" }}>Save</button>
-                          )}
+                      <div key={d.item_id} style={{ display:"flex", justifyContent:"space-between",
+                        alignItems:"center", gap:12, padding:"10px 12px", background:"var(--surface-sunken)",
+                        borderRadius:8 }}>
+                        <div style={{ minWidth:0 }}>
+                          <p style={{ margin:"0 0 2px", fontSize:13, fontWeight:600, color:"var(--text-primary)" }}>
+                            {d.name} <span style={{ fontWeight:400, color:"var(--text-tertiary)" }}>({d.sku})</span>
+                          </p>
+                          <p style={{ margin:0, fontSize:11, color:"var(--text-secondary)" }}>
+                            {d.category ?? "No category"} · {d.unit} · ₹{d.unit_cost} · Min qty {d.min_quantity}
+                            {d.gst != null ? ` · GST ${d.gst}%` : ""}
+                            {d.warranty ? ` · Warranty ${d.warranty}` : ""}
+                          </p>
+                        </div>
+                        <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                          <button onClick={() => setOpenDraftModalId(d.item_id)} disabled={busy}
+                            style={{ height:28, padding:"0 10px", borderRadius:6, border:"1px solid var(--border)",
+                              background:"var(--surface)", color:"var(--text-primary)", fontSize:11, fontWeight:600,
+                              cursor:"pointer", fontFamily:"inherit" }}>Edit</button>
                           <button onClick={() => handlePublishDraft(d.item_id)} disabled={busy}
                             style={{ height:28, padding:"0 10px", borderRadius:6, border:"none",
                               background:"var(--success, #16a34a)", color:"white", fontSize:11, fontWeight:600,
@@ -304,36 +358,136 @@ export default function InventoryPage() {
               </div>
             )}
 
-            {showCreate && (
-              <div style={{ background:"var(--surface)", border:"1px solid var(--border)",
-                borderRadius:"var(--radius-lg)", padding:"18px 20px", marginBottom:20, maxWidth:480 }}>
-                <h3 style={{ margin:"0 0 14px", fontSize:15, fontWeight:600, color:"var(--text-primary)" }}>
-                  Create Item
-                </h3>
-                {createError && <p style={{ color:"var(--danger)", fontSize:12, marginBottom:10 }}>{createError}</p>}
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-                  {[
-                    ["name","Name *","text"],
-                    ["sku","SKU *","text"],
-                    ["unit","Unit *","text"],
-                    ["unit_cost","Unit Cost (₹) *","number"],
-                    ["category","Category","text"],
-                    ["min_quantity","Min Qty","number"],
-                  ].map(([key, label, type]) => (
-                    <div key={key}>
-                      <label style={{ fontSize:11, color:"var(--text-secondary)", display:"block", marginBottom:3 }}>
-                        {label}
-                      </label>
-                      <input type={type} value={newItem[key as keyof typeof newItem]}
-                        onChange={e => setNewItem(p => ({ ...p, [key]:e.target.value }))}
-                        style={{ width:"100%", height:34, padding:"0 9px", borderRadius:7,
-                          border:"1px solid var(--border)", background:"var(--surface)",
-                          color:"var(--text-primary)", fontSize:12, fontFamily:"inherit",
-                          boxSizing:"border-box" }}/>
+            {/* Draft edit modal — one draft item at a time. Keeps
+                Publish/Delete on the row itself (outside the modal) for
+                quick access without opening it. */}
+            {openDraftModalId && (() => {
+              const d = drafts.data?.items.find(x => x.item_id === openDraftModalId);
+              if (!d) return null;
+              const busy = !!draftBusy[d.item_id];
+              const patch = editingDraft[d.item_id] ?? {};
+              const set = (field: keyof InventoryDraftItem, value: unknown) =>
+                setEditingDraft(p => ({ ...p, [d.item_id]: { ...p[d.item_id], [field]: value } }));
+              return (
+                <Modal open onClose={() => setOpenDraftModalId(null)} title={`Edit draft — ${d.name}`} size="md">
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                    <div>
+                      <label style={fieldLabelStyle}>Name *</label>
+                      <input aria-label="Item Name" value={patch.name ?? d.name}
+                        onChange={e => set("name", e.target.value)} style={fieldInputStyle}/>
                     </div>
-                  ))}
+                    <div>
+                      <label style={fieldLabelStyle}>SKU *</label>
+                      <input aria-label="SKU" value={patch.sku ?? d.sku}
+                        onChange={e => set("sku", e.target.value)} style={fieldInputStyle}/>
+                    </div>
+                    <div>
+                      <label style={fieldLabelStyle}>Unit</label>
+                      <input aria-label="Unit" value={patch.unit ?? d.unit}
+                        onChange={e => set("unit", e.target.value)} style={fieldInputStyle}/>
+                    </div>
+                    <div>
+                      <label style={fieldLabelStyle}>Category</label>
+                      <CategoryField value={String(patch.category ?? d.category ?? "")}
+                        onChange={v => set("category", v)} options={knownCategories}/>
+                    </div>
+                    <div>
+                      <label style={fieldLabelStyle}>Unit Cost (₹)</label>
+                      <input aria-label="Unit Cost" type="number" value={patch.unit_cost ?? d.unit_cost}
+                        onChange={e => set("unit_cost", parseFloat(e.target.value) || 0)} style={fieldInputStyle}/>
+                    </div>
+                    <div>
+                      <label style={fieldLabelStyle}>Min Quantity</label>
+                      <input aria-label="Min Quantity" type="number" value={patch.min_quantity ?? d.min_quantity}
+                        onChange={e => set("min_quantity", parseInt(e.target.value) || 0)} style={fieldInputStyle}/>
+                    </div>
+                    <div>
+                      <label style={fieldLabelStyle}>GST %</label>
+                      <input aria-label="GST Percent" type="number" step="0.01"
+                        value={patch.gst ?? d.gst ?? ""}
+                        onChange={e => set("gst", e.target.value === "" ? null : parseFloat(e.target.value))}
+                        style={fieldInputStyle}/>
+                    </div>
+                    <div>
+                      <label style={fieldLabelStyle}>Warranty</label>
+                      <input aria-label="Warranty" placeholder="e.g. 12 months"
+                        value={patch.warranty ?? d.warranty ?? ""}
+                        onChange={e => set("warranty", e.target.value)} style={fieldInputStyle}/>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", gap:8, marginTop:20, justifyContent:"flex-end" }}>
+                    <button onClick={() => setOpenDraftModalId(null)}
+                      style={{ padding:"8px 14px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
+                        background:"transparent", color:"var(--text-secondary)", fontSize:13,
+                        cursor:"pointer", fontFamily:"inherit" }}>
+                      Cancel
+                    </button>
+                    <button onClick={() => handleSaveDraftEdit(d.item_id)} disabled={busy}
+                      style={{ padding:"8px 18px", borderRadius:"var(--radius-md)", border:"none",
+                        background:"var(--accent)", color:"white", fontWeight:600, fontSize:13,
+                        cursor:"pointer", fontFamily:"inherit" }}>
+                      {busy ? "Saving…" : "Save"}
+                    </button>
+                  </div>
+                </Modal>
+              );
+            })()}
+
+            {/* Create Item modal — modalized (was inline) for consistency
+                with the draft-edit modal above, per "make form bit clean
+                and should open in modal". */}
+            {showCreate && (
+              <Modal open onClose={() => setShowCreate(false)} title="Create Item" size="md">
+                {createError && <p style={{ color:"var(--danger)", fontSize:12, marginBottom:10 }}>{createError}</p>}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                  <div>
+                    <label style={fieldLabelStyle}>Name *</label>
+                    <input value={newItem.name} onChange={e => setNewItem(p => ({ ...p, name:e.target.value }))}
+                      style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>SKU *</label>
+                    <input value={newItem.sku} onChange={e => setNewItem(p => ({ ...p, sku:e.target.value }))}
+                      style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>Unit *</label>
+                    <input value={newItem.unit} onChange={e => setNewItem(p => ({ ...p, unit:e.target.value }))}
+                      style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>Category</label>
+                    <CategoryField value={newItem.category}
+                      onChange={v => setNewItem(p => ({ ...p, category:v }))} options={knownCategories}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>Unit Cost (₹) *</label>
+                    <input type="number" value={newItem.unit_cost}
+                      onChange={e => setNewItem(p => ({ ...p, unit_cost:e.target.value }))} style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>Min Qty</label>
+                    <input type="number" value={newItem.min_quantity}
+                      onChange={e => setNewItem(p => ({ ...p, min_quantity:e.target.value }))} style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>GST %</label>
+                    <input type="number" step="0.01" value={newItem.gst}
+                      onChange={e => setNewItem(p => ({ ...p, gst:e.target.value }))} style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>Warranty</label>
+                    <input placeholder="e.g. 12 months" value={newItem.warranty}
+                      onChange={e => setNewItem(p => ({ ...p, warranty:e.target.value }))} style={fieldInputStyle}/>
+                  </div>
                 </div>
-                <div style={{ display:"flex", gap:8, marginTop:14 }}>
+                <div style={{ display:"flex", gap:8, marginTop:20, justifyContent:"flex-end" }}>
+                  <button onClick={() => setShowCreate(false)}
+                    style={{ padding:"8px 14px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
+                      background:"transparent", color:"var(--text-secondary)", fontSize:13,
+                      cursor:"pointer", fontFamily:"inherit" }}>
+                    Cancel
+                  </button>
                   <button onClick={() => createItem()} disabled={creating || !newItem.name || !newItem.sku}
                     style={{ padding:"8px 18px", borderRadius:"var(--radius-md)", border:"none",
                       background:"var(--accent)", color:"white", fontWeight:600, fontSize:13,
@@ -341,14 +495,8 @@ export default function InventoryPage() {
                       opacity:(!newItem.name || !newItem.sku) ? 0.5 : 1 }}>
                     {creating ? "Creating…" : "Create"}
                   </button>
-                  <button onClick={() => setShowCreate(false)}
-                    style={{ padding:"8px 14px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
-                      background:"transparent", color:"var(--text-secondary)", fontSize:13,
-                      cursor:"pointer", fontFamily:"inherit" }}>
-                    Cancel
-                  </button>
                 </div>
-              </div>
+              </Modal>
             )}
 
             {itemList.loading && <p style={{ color:"var(--text-tertiary)", fontSize:13 }}>Loading…</p>}
@@ -369,6 +517,8 @@ export default function InventoryPage() {
                   </p>
                   <p style={{ margin:0, fontSize:11, color:"var(--text-tertiary)" }}>
                     Min qty: {item.min_quantity}
+                    {item.gst != null ? ` · GST ${item.gst}%` : ""}
+                    {item.warranty ? ` · Warranty ${item.warranty}` : ""}
                   </p>
                 </div>
               ))}

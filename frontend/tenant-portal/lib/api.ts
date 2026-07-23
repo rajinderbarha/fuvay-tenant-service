@@ -1344,10 +1344,11 @@ export const appointmentApi = {
 // operations; reservation confirm/release identify the reservation by
 // job_id+item_id+location_id in the BODY, not a reservation_id in the path.
 export const inventoryApi = {
-  createItem: (name:string, sku:string, unit:string, unitCost:number, category?:string, minQuantity=0) => {
+  createItem: (name:string, sku:string, unit:string, unitCost:number, category?:string, minQuantity=0,
+               gst?:number|null, warranty?:string|null) => {
     const tid = getTenantId();
     return apiFetch<InventoryItem>(`/v1/inventory/tenants/${tid}/items`, { method:"POST", body:JSON.stringify({
-      name, sku, unit, unit_cost:unitCost, category, min_quantity:minQuantity }) });
+      name, sku, unit, unit_cost:unitCost, category, min_quantity:minQuantity, gst, warranty }) });
   },
   getItem: (itemId:string) =>
     apiFetch<InventoryItem>(`/v1/inventory/items/${itemId}`),
@@ -1427,6 +1428,7 @@ export interface InventoryDraftItem {
   item_id: string; name: string; sku: string; category?: string | null;
   unit: string; unit_cost: number; min_quantity: number; status: "draft" | "published";
   source_upload_id?: string | null;
+  gst?: number | null; warranty?: string | null;
 }
 export interface InventoryExtractionResult {
   upload_id: string; idempotent: boolean; status: string;
@@ -2161,7 +2163,7 @@ export interface StaffWorkingHoursResponse { staff_id:string; tenant_id:string; 
 // current_quantity/shortfall. Corrected to the real service dict outputs.
 // list_items returns only a subset of item fields (no category/unit_cost),
 // so those are optional here.
-export interface InventoryItem { item_id:string; name:string; sku:string; unit:string; min_quantity:number; category?:string|null; unit_cost?:number; }
+export interface InventoryItem { item_id:string; name:string; sku:string; unit:string; min_quantity:number; category?:string|null; unit_cost?:number; gst?:number|null; warranty?:string|null; }
 export interface InventoryItemList { items:InventoryItem[]; has_next:boolean; next_cursor?:string|null; }
 export interface StockBalance { item_id:string; location_id:string; quantity:number; reserved_qty:number; available_qty:number; min_quantity:number; below_minimum:boolean; reconciliation_ok:boolean; }
 export interface StockTransaction { txn_id:string; txn_type:string; quantity:number; balance_before:number; balance_after:number; job_id?:string|null; notes?:string|null; created_at:string; }
