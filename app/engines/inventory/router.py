@@ -35,6 +35,16 @@ async def list_items(tenant_id: uuid.UUID, r: Request, limit: int=Query(50,ge=1,
                       cursor: str|None=Query(None), u: UserContext=Depends(get_current_user),
                       s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.list_items(tenant_id, limit, cursor), _rid(r), ENGINE_ID)
+@router.put("/tenants/{tenant_id}/items/{item_id}", response_model=ApiResponse[dict])
+async def update_item(tenant_id: uuid.UUID, item_id: uuid.UUID, r: Request,
+                       u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                       s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.update_item(item_id, tenant_id, await r.json()), _rid(r), ENGINE_ID)
+@router.delete("/tenants/{tenant_id}/items/{item_id}", response_model=ApiResponse[dict])
+async def delete_item(tenant_id: uuid.UUID, item_id: uuid.UUID, r: Request,
+                       u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                       s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.delete_item(item_id, tenant_id), _rid(r), ENGINE_ID)
 @router.post("/items/{item_id}/locations/{location_id}/receive", response_model=ApiResponse[dict])
 async def receive_stock(item_id: uuid.UUID, location_id: uuid.UUID, r: Request,
                          u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),

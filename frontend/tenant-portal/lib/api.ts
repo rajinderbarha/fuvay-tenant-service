@@ -1352,6 +1352,18 @@ export const inventoryApi = {
   },
   getItem: (itemId:string) =>
     apiFetch<InventoryItem>(`/v1/inventory/items/${itemId}`),
+  updateItem: (itemId:string, patch: Partial<{ name:string; sku:string; unit:string;
+               unit_cost:number; category:string|null; min_quantity:number;
+               gst:number|null; warranty:string|null }>) => {
+    const tid = getTenantId();
+    return apiFetch<InventoryItem>(`/v1/inventory/tenants/${tid}/items/${itemId}`,
+      { method:"PUT", body:JSON.stringify(patch) });
+  },
+  deleteItem: (itemId:string) => {
+    const tid = getTenantId();
+    return apiFetch<{ item_id:string; deleted:boolean }>(`/v1/inventory/tenants/${tid}/items/${itemId}`,
+      { method:"DELETE" });
+  },
   listItems: (cursor?:string) => {
     const tid = getTenantId();
     const q = new URLSearchParams();

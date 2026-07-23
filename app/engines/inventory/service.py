@@ -159,6 +159,40 @@ class InventoryService:
                 "gst": float(item.gst) if item.gst is not None else None,
                 "warranty": item.warranty}
 
+    async def update_item(self, item_id: uuid.UUID, tenant_id: uuid.UUID, data: dict) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
+        r = await self.db.execute(select(InventoryItem).where(
+            InventoryItem.id == item_id, InventoryItem.tenant_id == tenant_id))
+        item = r.scalar_one_or_none()
+        if not item: raise NotFoundException("InventoryItem", str(item_id))
+        for field in ("name", "sku", "category", "unit"):
+            if field in data and data[field] is not None:
+                setattr(item, field, data[field])
+        if "unit_cost" in data and data["unit_cost"] is not None:
+            item.unit_cost = Decimal(str(data["unit_cost"]))
+        if "min_quantity" in data and data["min_quantity"] is not None:
+            item.min_quantity = data["min_quantity"]
+        if "gst" in data:
+            item.gst = Decimal(str(data["gst"])) if data["gst"] not in (None, "") else None
+        if "warranty" in data:
+            item.warranty = data["warranty"]
+        await self.db.flush()
+        return {"item_id": str(item.id), "name": item.name, "sku": item.sku,
+                "category": item.category, "unit": item.unit,
+                "unit_cost": float(item.unit_cost), "min_quantity": item.min_quantity,
+                "gst": float(item.gst) if item.gst is not None else None,
+                "warranty": item.warranty}
+
+    async def delete_item(self, item_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
+        r = await self.db.execute(select(InventoryItem).where(
+            InventoryItem.id == item_id, InventoryItem.tenant_id == tenant_id))
+        item = r.scalar_one_or_none()
+        if not item: raise NotFoundException("InventoryItem", str(item_id))
+        item.is_active = False
+        await self.db.flush()
+        return {"item_id": str(item.id), "deleted": True}
+
     async def list_items(self, tenant_id: uuid.UUID, limit: int, cursor: str | None) -> dict:
         q = select(InventoryItem).where(InventoryItem.tenant_id == tenant_id,
                                          InventoryItem.is_active == True)            .order_by(InventoryItem.name)

@@ -17,6 +17,28 @@ import {
 type ItemsView = "table" | "card";
 const EXTRACTION_ENGINE_KEY = "inventory_document_extraction";
 
+// Real units used for home-service accessories/spare parts (compressors,
+// filters, wiring, pipes, fasteners, chemicals, etc.) -- covers the
+// physical unit types genuinely needed for this domain. Not sourced from
+// a backend table (none exists for this), a fixed curated list per request
+// "add all the units that exist for home service accessories".
+const HOME_SERVICE_UNITS = [
+  "pcs", "set", "pair", "box", "carton", "packet", "bundle", "roll",
+  "coil", "sheet", "bag", "dozen",
+  "meter", "feet", "cm",
+  "kg", "gram", "liter", "ml",
+  "unit",
+] as const;
+
+function UnitField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)}
+      style={{ ...fieldInputStyle, cursor: "pointer" }}>
+      {HOME_SERVICE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+    </select>
+  );
+}
+
 // Shared labeled-field styling for the clean modal forms below.
 const fieldLabelStyle: React.CSSProperties = {
   fontSize: 11, color: "var(--text-secondary)", display: "block", marginBottom: 3,
@@ -70,6 +92,52 @@ export default function InventoryPage() {
     useCallback(() => inventoryApi.listItems(), []),
     []
   );
+
+  // ── Edit/Delete published items ──────────────────────────────────────────
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [itemPatch, setItemPatch] = useState<Partial<InventoryItem>>({});
+  const [itemBusy, setItemBusy] = useState<Record<string, boolean>>({});
+  const [itemActionError, setItemActionError] = useState<string | null>(null);
+
+  function openEditItem(item: InventoryItem) {
+    setEditingItemId(item.item_id);
+    setItemPatch({ ...item });
+    setItemActionError(null);
+  }
+
+  async function handleSaveItemEdit() {
+    if (!editingItemId) return;
+    setItemBusy(p => ({ ...p, [editingItemId]: true }));
+    setItemActionError(null);
+    try {
+      await inventoryApi.updateItem(editingItemId, {
+        name: itemPatch.name, sku: itemPatch.sku, unit: itemPatch.unit,
+        unit_cost: itemPatch.unit_cost, category: itemPatch.category ?? null,
+        min_quantity: itemPatch.min_quantity, gst: itemPatch.gst ?? null,
+        warranty: itemPatch.warranty ?? null,
+      });
+      setEditingItemId(null);
+      itemList.refetch();
+    } catch (e) {
+      setItemActionError(e instanceof Error ? e.message : "Update failed.");
+    } finally {
+      setItemBusy(p => ({ ...p, [editingItemId]: false }));
+    }
+  }
+
+  async function handleDeleteItem(itemId: string) {
+    if (!window.confirm("Delete this inventory item? This cannot be undone.")) return;
+    setItemBusy(p => ({ ...p, [itemId]: true }));
+    setItemActionError(null);
+    try {
+      await inventoryApi.deleteItem(itemId);
+      itemList.refetch();
+    } catch (e) {
+      setItemActionError(e instanceof Error ? e.message : "Delete failed.");
+    } finally {
+      setItemBusy(p => ({ ...p, [itemId]: false }));
+    }
+  }
 
   // Category dropdown is restricted to the real service categories this
   // provider is actively entitled/enabled for -- per explicit request
@@ -318,8 +386,7 @@ export default function InventoryPage() {
                     </div>
                     <div>
                       <label style={fieldLabelStyle}>Unit</label>
-                      <input aria-label="Unit" value={patch.unit ?? d.unit}
-                        onChange={e => set("unit", e.target.value)} style={fieldInputStyle}/>
+                      <UnitField value={patch.unit ?? d.unit} onChange={v => set("unit", v)}/>
                     </div>
                     <div>
                       <label style={fieldLabelStyle}>Category</label>
@@ -368,6 +435,71 @@ export default function InventoryPage() {
               );
             })()}
 
+            {/* Edit published item modal */}
+            {editingItemId && (
+              <Modal open onClose={() => setEditingItemId(null)} title="Edit Item" size="md">
+                {itemActionError && <p style={{ color:"var(--danger)", fontSize:12, marginBottom:10 }}>{itemActionError}</p>}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                  <div>
+                    <label style={fieldLabelStyle}>Name *</label>
+                    <input value={itemPatch.name ?? ""} onChange={e => setItemPatch(p => ({ ...p, name:e.target.value }))}
+                      style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>SKU *</label>
+                    <input value={itemPatch.sku ?? ""} onChange={e => setItemPatch(p => ({ ...p, sku:e.target.value }))}
+                      style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>Unit *</label>
+                    <UnitField value={itemPatch.unit ?? "unit"} onChange={v => setItemPatch(p => ({ ...p, unit:v }))}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>Category</label>
+                    <CategoryField value={itemPatch.category ?? ""}
+                      onChange={v => setItemPatch(p => ({ ...p, category:v }))} options={knownCategories}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>Unit Cost (₹) *</label>
+                    <input type="number" value={itemPatch.unit_cost ?? 0}
+                      onChange={e => setItemPatch(p => ({ ...p, unit_cost:parseFloat(e.target.value) || 0 }))}
+                      style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>Min Qty</label>
+                    <input type="number" value={itemPatch.min_quantity ?? 0}
+                      onChange={e => setItemPatch(p => ({ ...p, min_quantity:parseInt(e.target.value) || 0 }))}
+                      style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>GST %</label>
+                    <input type="number" step="0.01" value={itemPatch.gst ?? ""}
+                      onChange={e => setItemPatch(p => ({ ...p, gst: e.target.value === "" ? null : parseFloat(e.target.value) }))}
+                      style={fieldInputStyle}/>
+                  </div>
+                  <div>
+                    <label style={fieldLabelStyle}>Warranty</label>
+                    <input placeholder="e.g. 12 months" value={itemPatch.warranty ?? ""}
+                      onChange={e => setItemPatch(p => ({ ...p, warranty:e.target.value }))} style={fieldInputStyle}/>
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:8, marginTop:20, justifyContent:"flex-end" }}>
+                  <button onClick={() => setEditingItemId(null)}
+                    style={{ padding:"8px 14px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
+                      background:"transparent", color:"var(--text-secondary)", fontSize:13,
+                      cursor:"pointer", fontFamily:"inherit" }}>
+                    Cancel
+                  </button>
+                  <button onClick={handleSaveItemEdit} disabled={!!itemBusy[editingItemId]}
+                    style={{ padding:"8px 18px", borderRadius:"var(--radius-md)", border:"none",
+                      background:"var(--accent)", color:"white", fontWeight:600, fontSize:13,
+                      cursor:"pointer", fontFamily:"inherit" }}>
+                    {itemBusy[editingItemId] ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </Modal>
+            )}
+
             {/* Create Item modal — modalized (was inline) for consistency
                 with the draft-edit modal above, per "make form bit clean
                 and should open in modal". */}
@@ -387,8 +519,7 @@ export default function InventoryPage() {
                   </div>
                   <div>
                     <label style={fieldLabelStyle}>Unit *</label>
-                    <input value={newItem.unit} onChange={e => setNewItem(p => ({ ...p, unit:e.target.value }))}
-                      style={fieldInputStyle}/>
+                    <UnitField value={newItem.unit} onChange={v => setNewItem(p => ({ ...p, unit:v }))}/>
                   </div>
                   <div>
                     <label style={fieldLabelStyle}>Category</label>
@@ -442,7 +573,7 @@ export default function InventoryPage() {
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                   <thead>
                     <tr style={{ background:"var(--surface-sunken)", textAlign:"left" }}>
-                      {["Name","SKU","Category","Unit","Unit Cost (₹)","Min Qty","GST %","Warranty"].map(h => (
+                      {["Name","SKU","Category","Unit","Unit Cost (₹)","Min Qty","GST %","Warranty",""].map(h => (
                         <th key={h} style={{ padding:"10px 12px", fontSize:11, fontWeight:700,
                           color:"var(--text-secondary)", textTransform:"uppercase", letterSpacing:"0.03em",
                           borderBottom:"1px solid var(--border)", whiteSpace:"nowrap" }}>{h}</th>
@@ -464,10 +595,20 @@ export default function InventoryPage() {
                           {item.gst != null ? `${item.gst}%` : "—"}
                         </td>
                         <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.warranty ?? "—"}</td>
+                        <td style={{ padding:"9px 12px", whiteSpace:"nowrap" }}>
+                          <button onClick={() => openEditItem(item)} disabled={!!itemBusy[item.item_id]}
+                            style={{ height:26, padding:"0 9px", borderRadius:6, border:"1px solid var(--border)",
+                              background:"var(--surface)", color:"var(--text-primary)", fontSize:11, fontWeight:600,
+                              cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Edit</button>
+                          <button onClick={() => handleDeleteItem(item.item_id)} disabled={!!itemBusy[item.item_id]}
+                            style={{ height:26, padding:"0 9px", borderRadius:6, border:"1px solid var(--border)",
+                              background:"transparent", color:"var(--danger, #dc2626)", fontSize:11, fontWeight:600,
+                              cursor:"pointer", fontFamily:"inherit" }}>Delete</button>
+                        </td>
                       </tr>
                     ))}
                     {(itemList.data?.items.length ?? 0) === 0 && !itemList.loading && (
-                      <tr><td colSpan={8} style={{ padding:"20px 12px", textAlign:"center", color:"var(--text-tertiary)" }}>
+                      <tr><td colSpan={9} style={{ padding:"20px 12px", textAlign:"center", color:"var(--text-tertiary)" }}>
                         No items yet.
                       </td></tr>
                     )}
@@ -489,11 +630,21 @@ export default function InventoryPage() {
                     <p style={{ margin:"0 0 6px", fontSize:12, color:"var(--text-secondary)" }}>
                       {item.category ?? "—"} · {item.unit}{item.unit_cost != null ? ` · ₹${item.unit_cost}` : ""}
                     </p>
-                    <p style={{ margin:0, fontSize:11, color:"var(--text-tertiary)" }}>
+                    <p style={{ margin:"0 0 10px", fontSize:11, color:"var(--text-tertiary)" }}>
                       Min qty: {item.min_quantity}
                       {item.gst != null ? ` · GST ${item.gst}%` : ""}
                       {item.warranty ? ` · Warranty ${item.warranty}` : ""}
                     </p>
+                    <div style={{ display:"flex", gap:6 }}>
+                      <button onClick={() => openEditItem(item)} disabled={!!itemBusy[item.item_id]}
+                        style={{ height:26, padding:"0 9px", borderRadius:6, border:"1px solid var(--border)",
+                          background:"var(--surface)", color:"var(--text-primary)", fontSize:11, fontWeight:600,
+                          cursor:"pointer", fontFamily:"inherit" }}>Edit</button>
+                      <button onClick={() => handleDeleteItem(item.item_id)} disabled={!!itemBusy[item.item_id]}
+                        style={{ height:26, padding:"0 9px", borderRadius:6, border:"1px solid var(--border)",
+                          background:"transparent", color:"var(--danger, #dc2626)", fontSize:11, fontWeight:600,
+                          cursor:"pointer", fontFamily:"inherit" }}>Delete</button>
+                    </div>
                   </div>
                 ))}
               </div>
