@@ -173,7 +173,10 @@ const NAV_GROUPS: NavGroup[] = [
 // inside VerticalCatalogSection specifically for vertical_key === "home_services"
 // rather than as their own sidebar group.
 const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
-  { id: "hs-service-catalog", href: "/admin/home-services/service-catalog", label: "Service Catalog", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // hs-service-catalog removed: it was a redirect-only page to
+  // /admin/catalog-workspace, duplicating the real backend-driven Catalog
+  // module entry that already appears for the home_services vertical
+  // (`modules` above) -- two "Catalog" rows under Home Services.
   // hs-overview and hs-pricing-rules removed from nav: Overview's route had
   // no page.tsx (dead link, directory deleted), and Pricing Rules is a
   // retired-notice page that its own comment already says should not be
@@ -182,7 +185,8 @@ const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
   // own service price amounts; see the retired-notice page for details.
   { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Wrench size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  { id: "hs-service-areas", href: "/admin/home-services/service-areas", label: "Service Areas / Zones", icon: <MapPin size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // hs-service-areas removed: /admin/home-services/service-areas has no
+  // page.tsx (dead route, directory doesn't exist) -- confirmed broken link.
   { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/>, requiredPermission: "finance.completed_job_deduction_rules.read" },
   { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   // Phase 2A Slice 2 nav reconciliation: page existed and was fully built
