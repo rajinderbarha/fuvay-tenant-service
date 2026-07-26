@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback, createContext, useContext } from "react";
+import Link from "next/link";
 
 // Prevents double-rendering when a page already wraps itself with AdminLayout
 // AND the route-level layout also renders AdminLayout.
@@ -634,7 +635,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
                 const path = m.admin_path || `/admin/catalog/${vertical.vertical_key}`;
                 const isActive = activeNav === navId;
                 return (
-                  <a
+                  <Link
                     key={m.key} href={path} role="menuitem"
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => setFlyoutOpen(false)}
@@ -648,13 +649,13 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
                   >
                     <Settings2 size={14} style={{ opacity: 0.7, flexShrink: 0 }}/>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.label}</span>
-                  </a>
+                  </Link>
                 );
               })}
               {extraItems.map(item => {
                 const isActive = activeNav === item.id;
                 return (
-                  <a
+                  <Link
                     key={item.id} href={item.href} role="menuitem"
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => setFlyoutOpen(false)}
@@ -668,7 +669,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
                   >
                     {item.icon}
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
-                  </a>
+                  </Link>
                 );
               })}
             </div>
@@ -747,7 +748,7 @@ function SidebarItem({
 
   if (collapsed) {
     return (
-      <a
+      <Link
         href={item.href}
         id={`nav-${item.id}`}
         title={item.label}
@@ -782,12 +783,12 @@ function SidebarItem({
           fontSize: 9.5, fontWeight: active ? 700 : 500, lineHeight: 1.2, textAlign: "center",
           maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         }}>{item.label}</span>
-      </a>
+      </Link>
     );
   }
 
   return (
-    <a
+    <Link
       href={item.href}
       id={`nav-${item.id}`}
       aria-current={active ? "page" : undefined}
@@ -817,7 +818,7 @@ function SidebarItem({
           padding: "1px 7px", flexShrink: 0,
         }}>{item.badge}</span>
       )}
-    </a>
+    </Link>
   );
 }
 
@@ -993,24 +994,24 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
               })}
             </div>
 
-            <a href="/admin/notifications" onClick={() => setBellOpen(false)}
+            <Link href="/admin/notifications" onClick={() => setBellOpen(false)}
               style={{ display: "block", textAlign: "center", padding: "12px 16px",
                 borderTop: "1px solid var(--border)", fontSize: 13, fontWeight: 600,
                 color: "var(--accent)", textDecoration: "none" }}>
               View all notifications
-            </a>
+            </Link>
           </div>
         )}
       </div>
 
       {/* User → My Profile */}
-      <a href="/admin/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+      <Link href="/admin/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
         <div style={{ textAlign: "right" }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{myName || "Super Admin"}</p>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Platform</p>
         </div>
         <DefaultAvatar name={myName || "Super Admin"} src={myAvatar} size={34}/>
-      </a>
+      </Link>
 
       {/* Logout */}
       <button onClick={onLogout} title="Log out" style={iconBtnStyle}>
