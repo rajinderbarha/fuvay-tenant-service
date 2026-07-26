@@ -14,11 +14,28 @@ status vocabulary but branch at a handful of points:
 
 # ── Job Types ─────────────────────────────────────────────────────────────────
 class JobType:
-    REPAIR       = "repair"
-    SERVICE      = "service"
-    CONSULTATION = "consultation"
+    REPAIR         = "repair"
+    SERVICE        = "service"
+    CONSULTATION   = "consultation"
+    # Migration 151: admin_catalog.VALID_JOB_TYPES (service.py) already allows
+    # these 6 additional values -- they previously had no entry here, so
+    # get_allowed_transitions() silently fell back to the full repair graph
+    # (mandatory assessment) for all of them with no way to configure
+    # otherwise. Behavior below now mirrors app.engines.admin_catalog's
+    # job_types table (requires_assessment/allows_quote/requires_checklist
+    # seeded in migration 151) so both stay in sync.
+    INSTALLATION   = "installation"
+    UNINSTALLATION = "uninstallation"
+    INSPECTION     = "inspection"
+    MAINTENANCE    = "maintenance"
+    CLEANING       = "cleaning"
+    CUSTOM         = "custom"
 
-JOB_TYPES = [JobType.REPAIR, JobType.SERVICE, JobType.CONSULTATION]
+JOB_TYPES = [
+    JobType.REPAIR, JobType.SERVICE, JobType.CONSULTATION,
+    JobType.INSTALLATION, JobType.UNINSTALLATION, JobType.INSPECTION,
+    JobType.MAINTENANCE, JobType.CLEANING, JobType.CUSTOM,
+]
 
 # ── Job Statuses ───────────────────────────────────────────────────────────────
 class JS:
@@ -122,6 +139,40 @@ TYPE_TRANSITION_OVERRIDES: dict[str, dict[str, list[str]]] = {
         # billing the consult fee) remains available alongside it.
         JS.QUOTE_APPROVED: [JS.CONVERTED_TO_REPAIR, JS.PENDING_SIGN_OFF],
         JS.QUOTE_REJECTED: [JS.PENDING_SIGN_OFF, JS.CLOSED],
+    },
+    # Migration 151: no assessment, no quote, checklist required before
+    # completion (job_types: requires_assessment=False, allows_quote=False,
+    # requires_checklist=True) — price known upfront, same shape as SERVICE.
+    JobType.INSTALLATION: {
+        JS.ARRIVED: [JS.WORK_STARTED, JS.CANCELLED],
+        JS.WORK_STARTED: [JS.CHECKLIST_STARTED, JS.WORK_COMPLETE, JS.PARTS_REQUIRED, JS.CANCELLED],
+        JS.CHECKLIST_COMPLETE: [JS.WORK_COMPLETE, JS.CANCELLED],
+    },
+    JobType.MAINTENANCE: {
+        JS.ARRIVED: [JS.WORK_STARTED, JS.CANCELLED],
+        JS.WORK_STARTED: [JS.CHECKLIST_STARTED, JS.WORK_COMPLETE, JS.PARTS_REQUIRED, JS.CANCELLED],
+        JS.CHECKLIST_COMPLETE: [JS.WORK_COMPLETE, JS.CANCELLED],
+    },
+    JobType.CLEANING: {
+        JS.ARRIVED: [JS.WORK_STARTED, JS.CANCELLED],
+        JS.WORK_STARTED: [JS.CHECKLIST_STARTED, JS.WORK_COMPLETE, JS.PARTS_REQUIRED, JS.CANCELLED],
+        JS.CHECKLIST_COMPLETE: [JS.WORK_COMPLETE, JS.CANCELLED],
+    },
+    # No assessment, no quote, no checklist (job_types: all three False) —
+    # skip straight from ARRIVED to work, complete directly.
+    JobType.UNINSTALLATION: {
+        JS.ARRIVED: [JS.WORK_STARTED, JS.CANCELLED],
+    },
+    # INSPECTION deliberately has NO override here: its flags (requires_
+    # assessment=True, allows_quote=True, requires_checklist=False) are
+    # already exactly what the base repair-flow graph provides, so the
+    # get_allowed_transitions() fallback to ALLOWED_TRANSITIONS is correct.
+    #
+    # CUSTOM: same assessment/quote shape as repair, but ALSO requires a
+    # checklist before work_complete (job_types: all three True).
+    JobType.CUSTOM: {
+        JS.WORK_STARTED: [JS.CHECKLIST_STARTED, JS.PARTS_REQUIRED, JS.CANCELLED],
+        JS.CHECKLIST_COMPLETE: [JS.WORK_COMPLETE, JS.CANCELLED],
     },
 }
 

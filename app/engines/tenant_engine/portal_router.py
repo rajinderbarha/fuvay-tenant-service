@@ -19,6 +19,7 @@ from app.engines.tenant_engine.admin_service import AdminTenantService
 from app.engines.tenant_engine.models import Tenant
 from app.engines.admin_catalog.models import ServiceCategory
 from app.engines.entitlement.service import entitlement_service
+from app.engines.vertical_catalog.models import Vertical, TenantVerticalEnrollment
 from app.exceptions import ServiceOSException
 from app.schemas.base import ok
 
@@ -348,6 +349,34 @@ async def get_dashboard_runtime(
     }, rid, "tenant_portal")
 
 
+@router.get("/vertical-enrollments",
+            summary="This tenant's own vertical enrollments (approved/active/suspended verticals) -- "
+                    "needed by the service-setup wizard's Category step so only approved, active "
+                    "verticals are selectable")
+async def list_my_vertical_enrollments(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+):
+    from app.engines.vertical_catalog.service import VerticalCatalogService
+    tid = _tenant_id(user)
+    svc = VerticalCatalogService()
+    enrollments = await svc.list_enrollments(db, tenant_id=tid)
+
+    items = []
+    for e in enrollments:
+        v = await db.scalar(select(Vertical).where(Vertical.id == uuid.UUID(e["vertical_id"])))
+        if not v:
+            continue
+        items.append({
+            "vertical_id": e["vertical_id"], "vertical_key": v.key, "vertical_label": v.label,
+            "icon": v.icon, "capabilities": v.capabilities or [],
+            "platform_enabled": v.is_enabled, "enrollment_status": e["status"],
+        })
+    rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
+    return ok({"verticals": items}, rid, "tenant_portal")
+
+
 @router.get("/navigation", summary="Dynamic sidebar navigation for this tenant's category")
 async def get_navigation(
     request: Request,
@@ -375,6 +404,27 @@ async def get_navigation(
     # not category-shaped, and unaffected by this addition).
     entitled_categories = await entitlement_service.get_tenant_categories(db, tid, effective_only=True) if tenant else []
 
+    # Multi-vertical Phase 2: real vertical/capability/enrollment context, the
+    # single source of truth the frontend nav should build itself from
+    # instead of hardcoded per-vertical string lookup tables (VERTICAL_ONLY_
+    # ITEMS/VERTICAL_HIDDEN_ITEMS). Resolved server-side from the tenant's
+    # own row -- never trusts a client-supplied vertical.
+    vertical_context = None
+    if tenant and tenant.vertical:
+        v = await db.scalar(select(Vertical).where(Vertical.key == tenant.vertical))
+        if v:
+            enrollment = await db.scalar(select(TenantVerticalEnrollment).where(
+                TenantVerticalEnrollment.tenant_id == tid,
+                TenantVerticalEnrollment.vertical_id == v.id,
+            ))
+            vertical_context = {
+                "vertical_key": v.key,
+                "vertical_label": v.label,
+                "is_enabled": v.is_enabled,
+                "capabilities": v.capabilities or [],
+                "enrollment_status": enrollment.status if enrollment else None,
+            }
+
     payload = {
         "category": {
             "id":                      str(category.id) if category else None,
@@ -384,6 +434,7 @@ async def get_navigation(
         },
         "items": items,
         "entitled_categories": entitled_categories,
+        "vertical_context": vertical_context,
     }
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     return ok(payload, rid, "tenant_portal")

@@ -4,13 +4,20 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select, update, text
+from sqlalchemy import select, update, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from datetime import datetime, timezone
 
 from app.engines.vertical_catalog.models import (
     Vertical, CatalogModuleDefinition, VerticalCatalogModule, VerticalMenuConfig,
-    VerticalEngineMapping,
+    VerticalEngineMapping, TenantVerticalEnrollment, VerticalAuditLog,
 )
+
+ENROLLMENT_STATUSES = {
+    "draft", "submitted", "under_review", "changes_requested",
+    "approved", "active", "suspended", "rejected",
+}
 
 
 class VerticalCatalogService:
@@ -33,35 +40,158 @@ class VerticalCatalogService:
         d["modules"] = modules
         return d
 
-    async def enable_vertical(self, db: AsyncSession, key: str) -> dict:
+    async def enable_vertical(self, db: AsyncSession, key: str, *, actor_id=None) -> dict:
         v = await self._by_key(db, key)
         if not v:
             raise ValueError(f"Vertical '{key}' not found")
+        before = self._v_dict(v)
         v.is_enabled = True
+        v.enabled_by = actor_id
+        v.enabled_at = datetime.now(timezone.utc)
+        v.disable_reason = None
+        await db.flush()
+        db.add(VerticalAuditLog(vertical_id=v.id, actor_id=actor_id, action_type="vertical.enable",
+                                 before_state=before, after_state=self._v_dict(v)))
         await db.commit()
         await db.refresh(v)
         return self._v_dict(v)
 
-    async def disable_vertical(self, db: AsyncSession, key: str) -> dict:
+    async def disable_vertical(self, db: AsyncSession, key: str, *, actor_id=None, reason: str | None = None) -> dict:
         v = await self._by_key(db, key)
         if not v:
             raise ValueError(f"Vertical '{key}' not found")
+        before = self._v_dict(v)
         v.is_enabled = False
+        v.disabled_by = actor_id
+        v.disabled_at = datetime.now(timezone.utc)
+        v.disable_reason = reason
+        await db.flush()
+        db.add(VerticalAuditLog(vertical_id=v.id, actor_id=actor_id, action_type="vertical.disable",
+                                 before_state=before, after_state=self._v_dict(v), notes=reason))
         await db.commit()
         await db.refresh(v)
         return self._v_dict(v)
 
-    async def update_vertical(self, db: AsyncSession, key: str, payload: dict) -> dict:
+    async def disable_impact(self, db: AsyncSession, key: str) -> dict:
+        """Impact summary shown before a disable confirmation (spec: active
+        tenants/enrollments affected, so admin can't disable blind)."""
         v = await self._by_key(db, key)
         if not v:
             raise ValueError(f"Vertical '{key}' not found")
-        allowed = {"label", "description", "icon", "color", "sort_order", "finance_model", "meta", "is_beta"}
+        rows = (await db.execute(
+            select(TenantVerticalEnrollment.status, func.count())
+            .where(TenantVerticalEnrollment.vertical_id == v.id)
+            .group_by(TenantVerticalEnrollment.status)
+        )).all()
+        by_status = {status: count for status, count in rows}
+        return {
+            "vertical_key": key,
+            "active_tenant_enrollments": by_status.get("active", 0),
+            "under_review_enrollments": by_status.get("under_review", 0) + by_status.get("submitted", 0),
+            "enrollments_by_status": by_status,
+        }
+
+    async def update_vertical(self, db: AsyncSession, key: str, payload: dict, *, actor_id=None) -> dict:
+        v = await self._by_key(db, key)
+        if not v:
+            raise ValueError(f"Vertical '{key}' not found")
+        before = self._v_dict(v)
+        allowed = {
+            "label", "description", "icon", "color", "sort_order", "finance_model", "meta", "is_beta",
+            "capabilities", "onboarding_requirements", "registration_allowed", "lifecycle_status",
+        }
         for k, val in payload.items():
             if k in allowed:
                 setattr(v, k, val)
+        await db.flush()
+        db.add(VerticalAuditLog(vertical_id=v.id, actor_id=actor_id, action_type="vertical.update",
+                                 before_state=before, after_state=self._v_dict(v)))
         await db.commit()
         await db.refresh(v)
         return self._v_dict(v)
+
+    # ── Tenant-Vertical Enrollments ───────────────────────────────────────────
+
+    async def list_enrollments(self, db: AsyncSession, *, vertical_key: str | None = None,
+                                tenant_id=None, status: str | None = None) -> list[dict]:
+        q = select(TenantVerticalEnrollment)
+        if vertical_key:
+            v = await self._by_key(db, vertical_key)
+            if not v:
+                raise ValueError(f"Vertical '{vertical_key}' not found")
+            q = q.where(TenantVerticalEnrollment.vertical_id == v.id)
+        if tenant_id:
+            q = q.where(TenantVerticalEnrollment.tenant_id == tenant_id)
+        if status:
+            q = q.where(TenantVerticalEnrollment.status == status)
+        rows = (await db.execute(q.order_by(TenantVerticalEnrollment.created_at.desc()))).scalars().all()
+        return [self._enrollment_dict(r) for r in rows]
+
+    async def get_or_create_enrollment(self, db: AsyncSession, tenant_id, vertical_key: str) -> dict:
+        v = await self._by_key(db, vertical_key)
+        if not v:
+            raise ValueError(f"Vertical '{vertical_key}' not found")
+        existing = (await db.execute(
+            select(TenantVerticalEnrollment).where(
+                TenantVerticalEnrollment.tenant_id == tenant_id,
+                TenantVerticalEnrollment.vertical_id == v.id,
+            )
+        )).scalar_one_or_none()
+        if existing:
+            return self._enrollment_dict(existing)
+        row = TenantVerticalEnrollment(tenant_id=tenant_id, vertical_id=v.id, status="draft")
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return self._enrollment_dict(row)
+
+    async def transition_enrollment(self, db: AsyncSession, enrollment_id, new_status: str, *,
+                                     actor_id=None, reason: str | None = None) -> dict:
+        if new_status not in ENROLLMENT_STATUSES:
+            raise ValueError(f"Invalid enrollment status '{new_status}'")
+        row = (await db.execute(
+            select(TenantVerticalEnrollment).where(TenantVerticalEnrollment.id == enrollment_id)
+        )).scalar_one_or_none()
+        if not row:
+            raise ValueError("Enrollment not found")
+        before = self._enrollment_dict(row)
+        now = datetime.now(timezone.utc)
+        row.status = new_status
+        row.reviewed_by = actor_id
+        row.reviewed_at = now
+        if new_status == "active":
+            row.activated_at = now
+            row.suspended_at = None
+            row.suspend_reason = None
+        elif new_status == "suspended":
+            row.suspended_at = now
+            row.suspend_reason = reason
+        elif new_status == "rejected":
+            row.rejection_reason = reason
+        elif new_status == "changes_requested":
+            row.changes_requested_note = reason
+        elif new_status == "submitted":
+            row.submitted_at = now
+        await db.flush()
+        db.add(VerticalAuditLog(vertical_id=row.vertical_id, tenant_id=row.tenant_id, actor_id=actor_id,
+                                 action_type=f"enrollment.{new_status}", before_state=before,
+                                 after_state=self._enrollment_dict(row), notes=reason))
+        await db.commit()
+        await db.refresh(row)
+        return self._enrollment_dict(row)
+
+    def _enrollment_dict(self, r: TenantVerticalEnrollment) -> dict:
+        return {
+            "id": str(r.id), "tenant_id": str(r.tenant_id), "vertical_id": str(r.vertical_id),
+            "status": r.status, "requested_at": r.requested_at.isoformat() if r.requested_at else None,
+            "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+            "reviewed_by": str(r.reviewed_by) if r.reviewed_by else None,
+            "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
+            "activated_at": r.activated_at.isoformat() if r.activated_at else None,
+            "suspended_at": r.suspended_at.isoformat() if r.suspended_at else None,
+            "suspend_reason": r.suspend_reason, "rejection_reason": r.rejection_reason,
+            "changes_requested_note": r.changes_requested_note, "admin_notes": r.admin_notes,
+        }
 
     # ── Catalog Modules ───────────────────────────────────────────────────────
 
@@ -230,6 +360,7 @@ class VerticalCatalogService:
         return {
             "id": str(v.id),
             "key": v.key,
+            "slug": v.slug,
             "label": v.label,
             "description": v.description,
             "icon": v.icon,
@@ -239,6 +370,15 @@ class VerticalCatalogService:
             "sort_order": v.sort_order,
             "finance_model": v.finance_model,
             "meta": v.meta,
+            "lifecycle_status": v.lifecycle_status,
+            "registration_allowed": v.registration_allowed,
+            "capabilities": v.capabilities or [],
+            "onboarding_requirements": v.onboarding_requirements,
+            "enabled_by": str(v.enabled_by) if v.enabled_by else None,
+            "disabled_by": str(v.disabled_by) if v.disabled_by else None,
+            "enabled_at": v.enabled_at.isoformat() if v.enabled_at else None,
+            "disabled_at": v.disabled_at.isoformat() if v.disabled_at else None,
+            "disable_reason": v.disable_reason,
         }
 
     def _mod_dict(self, m: CatalogModuleDefinition) -> dict:

@@ -198,6 +198,64 @@ async def preview_tenant_price_options(r: Request,
     return ok(s.price_options_preview(body), _rid(r), ENGINE_ID)
 
 
+@router.get("/enabled-services/{tenant_service_id}/resolve-price", response_model=ApiResponse[dict],
+            summary="Deterministic tenant price resolution for a type/brand combination "
+                    "(exact type+brand > type > brand > tenant default > none)",
+            tags=["Tenant Service Setup Pricing"])
+async def resolve_tenant_price(tenant_service_id: uuid.UUID, r: Request,
+                                service_type_id: uuid.UUID | None = Query(None),
+                                brand_id: uuid.UUID | None = Query(None),
+                                u: UserContext = Depends(get_current_user),
+                                s: TenantCatalogService = Depends(_svc)):
+    return ok(await s.resolve_tenant_price(tenant_service_id, service_type_id, brand_id), _rid(r), ENGINE_ID)
+
+
+@router.put("/enabled-services/{tenant_service_id}/type-coverage-mode", response_model=ApiResponse[dict],
+            summary="Set Type coverage mode: all / selected / all_except", tags=["Tenant Service Setup Pricing"])
+async def set_type_coverage_mode(tenant_service_id: uuid.UUID, r: Request,
+                                  u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                                  s: TenantCatalogService = Depends(_svc)):
+    body = await r.json()
+    return ok(await s.set_type_coverage_mode(tenant_service_id, body["mode"]), _rid(r), ENGINE_ID)
+
+
+@router.put("/enabled-services/{tenant_service_id}/brand-coverage-mode", response_model=ApiResponse[dict],
+            summary="Set Brand coverage mode: all / selected / all_except", tags=["Tenant Service Setup Pricing"])
+async def set_brand_coverage_mode(tenant_service_id: uuid.UUID, r: Request,
+                                   u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                                   s: TenantCatalogService = Depends(_svc)):
+    body = await r.json()
+    return ok(await s.set_brand_coverage_mode(tenant_service_id, body["mode"]), _rid(r), ENGINE_ID)
+
+
+@router.put("/enabled-services/{tenant_service_id}/wizard-step", response_model=ApiResponse[dict],
+            summary="Persist the tenant's last-active wizard step (draft resume pointer)",
+            tags=["Tenant Service Setup Pricing"])
+async def update_last_active_step(tenant_service_id: uuid.UUID, r: Request,
+                                   u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                                   s: TenantCatalogService = Depends(_svc)):
+    body = await r.json()
+    return ok(await s.update_last_active_step(tenant_service_id, body["step"]), _rid(r), ENGINE_ID)
+
+
+@router.get("/enabled-services/{tenant_service_id}/validate-for-publish", response_model=ApiResponse[dict],
+            summary="Field-level publish validation -- {valid, errors:[{step,job_type_id,dimension_path,code,message}]}",
+            tags=["Tenant Service Setup Pricing"])
+async def validate_for_publish(tenant_service_id: uuid.UUID, r: Request,
+                                u: UserContext = Depends(get_current_user),
+                                s: TenantCatalogService = Depends(_svc)):
+    return ok(await s.validate_for_publish(tenant_service_id), _rid(r), ENGINE_ID)
+
+
+@router.get("/enabled-services/{tenant_service_id}/blueprint-update-status", response_model=ApiResponse[dict],
+            summary="Whether this tenant's setup was built against an outdated admin blueprint version",
+            tags=["Tenant Service Setup Pricing"])
+async def get_blueprint_update_status(tenant_service_id: uuid.UUID, r: Request,
+                                       u: UserContext = Depends(get_current_user),
+                                       s: TenantCatalogService = Depends(_svc)):
+    return ok(await s.get_blueprint_update_status(tenant_service_id), _rid(r), ENGINE_ID)
+
+
 @router.post("/enabled-services/{tenant_service_id}/publish", response_model=ApiResponse[dict],
              summary="Publish a service — validates completeness, requires an active service area", tags=["Tenant Service Setup Pricing"])
 async def publish_tenant_service(tenant_service_id: uuid.UUID, r: Request,

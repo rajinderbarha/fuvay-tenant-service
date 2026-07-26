@@ -103,7 +103,7 @@ function StatusRow({ label, enabled, invert, label2 }: { label: string; enabled:
     <div>
       <p style={{ fontSize: 11, color: "var(--muted-text)", textTransform: "uppercase", margin: "0 0 4px" }}>{label}</p>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        {good ? <CheckCircle2 size={16} style={{ color: "var(--success-text, #16a34a)" }}/> : <XCircle size={16} style={{ color: "var(--danger-text)" }}/>}
+        {good ? <CheckCircle2 size={16} style={{ color: "var(--success-text, var(--success))" }}/> : <XCircle size={16} style={{ color: "var(--danger-text)" }}/>}
         <span style={{ fontSize: 14, fontWeight: 700 }}>{label2 ?? (enabled ? "Enabled" : "Disabled")}</span>
       </div>
     </div>

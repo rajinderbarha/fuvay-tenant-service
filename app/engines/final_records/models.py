@@ -28,6 +28,21 @@ class ServiceBooking(ServiceOSBase):
     tenant_id:             Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     category_id:           Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
     offering_id:           Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.1 (migration 168) -- exact
+    # selected Job Type, copied from the booking draft at confirmation and
+    # never accepted from the confirmation payload itself. Compatibility
+    # field: nullable because one Master Service legitimately has multiple
+    # Job Types and legacy/undecided drafts may have none -- callers must
+    # treat null as unresolved, never assume a default.
+    job_type_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (migration 171) -- the exact
+    # catalog link and the exact IMMUTABLE workflow-version row snapshotted
+    # from the draft at finalize() time. Copied once, never re-resolved --
+    # an admin publishing a new blueprint version must not change this
+    # booking's requirements after the fact.
+    master_service_job_type_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    service_job_workflow_id:    Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    selected_problem_id:        Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     ai_session_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     customer_name:         Mapped[str | None]       = mapped_column(String(200), nullable=True)
     customer_phone:        Mapped[str | None]       = mapped_column(String(30),  nullable=True)
@@ -53,6 +68,10 @@ class ServiceBooking(ServiceOSBase):
             "tenant_id":             str(self.tenant_id)   if self.tenant_id   else None,
             "category_id":           str(self.category_id),
             "offering_id":           str(self.offering_id),
+            "job_type_id":           str(self.job_type_id) if self.job_type_id else None,
+            "master_service_job_type_id": str(self.master_service_job_type_id) if self.master_service_job_type_id else None,
+            "service_job_workflow_id":    str(self.service_job_workflow_id) if self.service_job_workflow_id else None,
+            "selected_problem_id":        str(self.selected_problem_id) if self.selected_problem_id else None,
             "ai_session_id":         str(self.ai_session_id) if self.ai_session_id else None,
             "customer_name":         self.customer_name,
             "customer_phone":        self.customer_phone,
@@ -90,6 +109,21 @@ class ServiceJob(ServiceOSBase):
     tenant_id:              Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     category_id:            Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
     offering_id:            Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.1 (migration 168) -- the
+    # AUTHORITATIVE Job Type for execution/quote workflow resolution. Copied
+    # from ServiceBooking.job_type_id at creation; never mutated afterward
+    # (no endpoint accepts a job_type_id on an existing job). Null means
+    # unresolved -- the execution guard must fail closed, never guess.
+    job_type_id:             Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (migration 171) -- the exact
+    # IMMUTABLE workflow-version row this job's approval requirement resolves
+    # against, copied from the booking at creation. The execution resolver
+    # reads THIS id directly (never re-derives from offering_id+job_type_id
+    # live), so an admin publishing a new blueprint version can never change
+    # an in-progress job's requirements.
+    master_service_job_type_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    service_job_workflow_id:    Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    selected_problem_id:        Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     assigned_staff_id:      Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     scheduled_date:         Mapped[date | None]      = mapped_column(Date(), nullable=True)
     scheduled_time_window:  Mapped[str | None]       = mapped_column(String(50), nullable=True)
@@ -114,6 +148,10 @@ class ServiceJob(ServiceOSBase):
             "tenant_id":             str(self.tenant_id)   if self.tenant_id   else None,
             "category_id":           str(self.category_id),
             "offering_id":           str(self.offering_id),
+            "job_type_id":           str(self.job_type_id) if self.job_type_id else None,
+            "master_service_job_type_id": str(self.master_service_job_type_id) if self.master_service_job_type_id else None,
+            "service_job_workflow_id":    str(self.service_job_workflow_id) if self.service_job_workflow_id else None,
+            "selected_problem_id":        str(self.selected_problem_id) if self.selected_problem_id else None,
             "assigned_staff_id":     str(self.assigned_staff_id) if self.assigned_staff_id else None,
             "scheduled_date":        self.scheduled_date.isoformat() if self.scheduled_date else None,
             "scheduled_time_window": self.scheduled_time_window,

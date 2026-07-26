@@ -23,8 +23,15 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 async def get_customer_service_options(r: Request,
                                         service_id: uuid.UUID | None = Query(None),
                                         category_id: uuid.UUID | None = Query(None),
+                                        job_type_id: uuid.UUID | None = Query(None),
+                                        tenant_id: uuid.UUID | None = Query(None),
                                         s: ServiceOptionService = Depends(_svc)):
-    return ok(await s.get_customer_options(service_id, category_id), _rid(r))
+    # job_type_id: only options mapped to this exact Job Type are eligible
+    # (no Master-Service-only fallback). tenant_id: once a provider is
+    # selected/matched, only options with a resolvable tenant price are
+    # returned when they affect the estimate -- customer never sees an
+    # option with no real price behind it.
+    return ok(await s.get_customer_options(service_id, category_id, job_type_id, tenant_id), _rid(r))
 
 
 @router.get("/issue-types", response_model=ApiResponse[list])

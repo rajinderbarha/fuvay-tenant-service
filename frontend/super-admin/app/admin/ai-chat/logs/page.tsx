@@ -29,7 +29,7 @@ function LogDetail({ logId, onClose }: { logId: string; onClose: () => void }) {
           {l.error_message && (
             <div style={{
               background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
-              borderRadius: 8, padding: 12, color: "var(--danger-text)", fontSize: 12,
+              borderRadius:"var(--radius-md)", padding: 12, color: "var(--danger-text)", fontSize: 12,
             }}>
               {l.error_message}
             </div>
@@ -39,7 +39,7 @@ function LogDetail({ logId, onClose }: { logId: string; onClose: () => void }) {
               <h4 style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>Tool Calls</h4>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {l.tool_calls.map(tc => (
-                  <div key={tc.id} style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: 12 }}>
+                  <div key={tc.id} style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                       <span style={{ fontWeight: 500, fontSize: 12 }}>{tc.tool_name}</span>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

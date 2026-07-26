@@ -423,7 +423,7 @@ export default function ProviderOverridesPage() {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {audit.data!.items.map(a => (
-                    <div key={a.id} style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 12 }}>
+                    <div key={a.id} style={{ padding: "10px 12px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", fontSize: 12 }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <strong>{a.action}</strong>
                         <span style={{ color: "var(--muted-text)" }}>{a.created_at}</span>
@@ -449,7 +449,7 @@ function FilterSelect({ label, value, onChange, options }: {
     <div>
       <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>{label}</label>
       <select value={value} onChange={e => onChange(e.target.value)}
-        style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text)", fontSize: 12, minWidth: 150 }}>
+        style={{ padding: "7px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text)", fontSize: 12, minWidth: 150 }}>
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
     </div>
@@ -462,7 +462,7 @@ function SelectField({ label, value, onChange, options }: {
     <div>
       <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 5 }}>{label}</label>
       <select value={value} onChange={e => onChange(e.target.value)}
-        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text)", fontSize: 13 }}>
+        style={{ width: "100%", padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text)", fontSize: 13 }}>
         <option value="">— Select —</option>
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>

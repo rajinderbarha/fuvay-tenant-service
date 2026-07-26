@@ -3,10 +3,10 @@ import { useEffect, useState } from "react";
 import { adminMarketingApi, AutomationTrigger } from "@/lib/api";
 
 const card: React.CSSProperties = {
-  background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20,
+  background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20,
 };
 const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer",
   fontFamily: "inherit", flexShrink: 0,
 };

@@ -326,6 +326,9 @@ export interface TenantEnabledService {
   tenant_base_price?:number|null; tenant_min_price?:number|null; tenant_max_price?:number|null;
   tenant_visit_fee?:number|null; override_allowed:boolean; requires_brand:boolean; requires_type:boolean; is_active:boolean;
   setup_status?: "draft" | "published"; published_at?: string | null;
+  type_coverage_mode?: "all" | "selected" | "all_except";
+  brand_coverage_mode?: "all" | "selected" | "all_except";
+  last_active_step?: string | null;
 }
 export const masterCatalogApi = {
   listAvailable: () => {
@@ -387,6 +390,99 @@ export interface HsBrandPricing {
   tenant_min_price: number | null; tenant_max_price: number | null;
   customer_price_preview: HsPricePreview | null;
 }
+
+// ── Generic, schema-driven Service Setup Wizard (vertical-agnostic) ──────────
+// Reuses the SAME backend endpoints as homeServicesSetupApi below (they were
+// never actually Home-Services-specific on the backend -- only the old
+// frontend naming and the two list-available/list-enabled routes were) plus
+// the new coverage-mode/publish-validation/blueprint-version endpoints. This
+// is the API surface the new schema-driven wizard is built against; it must
+// never hardcode a vertical, service, type or brand name.
+export interface MyVerticalEnrollment {
+  vertical_id: string; vertical_key: string; vertical_label: string;
+  icon: string | null; capabilities: string[];
+  platform_enabled: boolean; enrollment_status: string | null;
+}
+export interface PriceResolution {
+  resolved: boolean;
+  pricing_model?: "FIXED" | "RANGE";
+  minimum_price?: number; maximum_price?: number; currency?: string;
+  source_rule_id?: string;
+  source?: "type_brand_override" | "type_override" | "brand_override" | "tenant_default";
+  inherited_from_rule_id?: string | null;
+  reason?: "NO_TENANT_PRICE_FOR_COMBINATION" | "COMBINATION_NOT_SUPPORTED";
+}
+export interface PublishValidationError {
+  step: string; job_type_id: string;
+  dimension_path: Record<string, string>;
+  code: string; message: string;
+}
+export interface PublishValidationResult {
+  valid: boolean; errors: PublishValidationError[];
+}
+export interface BlueprintUpdateStatus {
+  update_required: boolean;
+  current_version: number | null; latest_version: number | null;
+  changes: string[];
+}
+export type CoverageMode = "all" | "selected" | "all_except";
+
+export const serviceSetupApi = {
+  // Step 1: Category (vertical)
+  getMyVerticalEnrollments: () =>
+    apiFetch<{ verticals: MyVerticalEnrollment[] }>("/v1/tenant/vertical-enrollments"),
+
+  // Step 2: Service (uses the generic, entitlement-filtered available/enabled
+  // services list -- NOT the home-services-branded routes).
+  listAvailableServices: () => masterCatalogApi.listAvailable(),
+  listEnabledServices: () => masterCatalogApi.listEnabled(),
+  enableService: (masterServiceId: string) => masterCatalogApi.enable({ master_service_id: masterServiceId }),
+  getEnabledService: (tenantServiceId: string) => homeServicesSetupApi.getEnabledService(tenantServiceId),
+
+  // Step 3/4: dimensions, coverage, pricing (same generic endpoints)
+  getTypes: (tenantServiceId: string) => homeServicesSetupApi.getTypes(tenantServiceId),
+  setTypes: (tenantServiceId: string, typeIds: string[]) => homeServicesSetupApi.setTypes(tenantServiceId, typeIds),
+  getBrands: (tenantServiceId: string) => homeServicesSetupApi.getBrands(tenantServiceId),
+  setBrands: (tenantServiceId: string, brandIds: string[]) => homeServicesSetupApi.setBrands(tenantServiceId, brandIds),
+  getTypePricing: (tenantServiceId: string) => homeServicesSetupApi.getTypePricing(tenantServiceId),
+  setTypePricing: (tenantServiceId: string, serviceTypeId: string, min: number, max: number) =>
+    homeServicesSetupApi.setTypePricing(tenantServiceId, serviceTypeId, min, max),
+  getBrandPricing: (tenantServiceId: string, serviceTypeId?: string) =>
+    homeServicesSetupApi.getBrandPricing(tenantServiceId, serviceTypeId),
+  setBrandPricing: (tenantServiceId: string, brandId: string, min: number, max: number, serviceTypeId?: string) =>
+    homeServicesSetupApi.setBrandPricing(tenantServiceId, brandId, min, max, serviceTypeId),
+
+  setTypeCoverageMode: (tenantServiceId: string, mode: CoverageMode) =>
+    apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/type-coverage-mode`,
+      { method: "PUT", body: JSON.stringify({ mode }) }),
+  setBrandCoverageMode: (tenantServiceId: string, mode: CoverageMode) =>
+    apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/brand-coverage-mode`,
+      { method: "PUT", body: JSON.stringify({ mode }) }),
+
+  resolvePrice: (tenantServiceId: string, serviceTypeId?: string, brandId?: string) => {
+    const p = new URLSearchParams();
+    if (serviceTypeId) p.set("service_type_id", serviceTypeId);
+    if (brandId) p.set("brand_id", brandId);
+    const qs = p.toString();
+    return apiFetch<PriceResolution>(
+      `/v1/tenant/catalog/enabled-services/${tenantServiceId}/resolve-price${qs ? `?${qs}` : ""}`);
+  },
+
+  updateWizardStep: (tenantServiceId: string, step: string) =>
+    apiFetch<{ tenant_service_id: string; last_active_step: string }>(
+      `/v1/tenant/catalog/enabled-services/${tenantServiceId}/wizard-step`,
+      { method: "PUT", body: JSON.stringify({ step }) }),
+
+  // Step 5: Review & Publish
+  validateForPublish: (tenantServiceId: string) =>
+    apiFetch<PublishValidationResult>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/validate-for-publish`),
+  getBlueprintUpdateStatus: (tenantServiceId: string) =>
+    apiFetch<BlueprintUpdateStatus>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/blueprint-update-status`),
+  publish: (tenantServiceId: string) => homeServicesSetupApi.publish(tenantServiceId),
+  saveDraft: (tenantServiceId: string) => homeServicesSetupApi.saveDraft(tenantServiceId),
+  pricePreview: (data: { tenant_min_price: number; tenant_max_price: number; platform_fee_percent?: number }) =>
+    homeServicesSetupApi.pricePreview(data),
+};
 
 export const homeServicesSetupApi = {
   listAvailable: () => {
@@ -1416,8 +1512,12 @@ export const inventoryApi = {
     const tid = getTenantId();
     const form = new FormData();
     form.append("file", file);
+    // 120s -- a large multi-page PDF (up to the backend's 15MB limit) needs
+    // real time for text extraction + the DeepSeek extraction call; the
+    // default 60s was too tight and could abort a genuinely-in-progress
+    // large upload.
     return apiFetchMultipart<InventoryExtractionResult>(
-      `/v1/inventory/tenants/${tid}/extraction/upload`, form);
+      `/v1/inventory/tenants/${tid}/extraction/upload`, form, "POST", 120_000);
   },
   listDrafts: () => {
     const tid = getTenantId();
@@ -2326,6 +2426,16 @@ export interface ProviderDashboardRuntime {
 export interface ProviderNavigation {
   category: { id: string; name: string; category_type: string | null; provider_dashboard_type: string | null } | null;
   items: Array<{ label: string; route: string; module_key?: string; engine_key?: string }>;
+  // Multi-vertical Phase 2/3: real vertical/capability/enrollment context,
+  // resolved server-side from the tenant's own row. Drives capability-aware
+  // sidebar visibility instead of hardcoded per-vertical-key string lookups.
+  vertical_context?: {
+    vertical_key: string;
+    vertical_label: string;
+    is_enabled: boolean;
+    capabilities: string[];
+    enrollment_status: string | null;
+  } | null;
 }
 
 export const categoryDashboardApi = {
@@ -2684,7 +2794,36 @@ export const providerServiceAreasApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  // Per-area service pricing -- this is the real price the booking engine
+  // uses (TenantServiceAreaService.base_price), set by the provider for
+  // their own service area. Unlike the Offerings page's "Price Override"
+  // (a different, unrelated field the booking pipeline never reads), this
+  // is the price that actually determines what a customer is charged when
+  // matched to this provider in this area. service_id must be a real
+  // enabled offering id (offering_id === master_service_id — see
+  // providerOfferingsApi.listEnabled()).
+  listServiceMappings: (areaId: string) =>
+    apiFetch<{ mappings: AreaServiceMapping[]; total: number }>(`/v1/tenant/service-areas/${areaId}/services`),
+  addServiceMapping: (areaId: string, payload: AreaServiceMappingPayload) =>
+    apiFetch<AreaServiceMapping>(`/v1/tenant/service-areas/${areaId}/services`, { method: "POST", body: JSON.stringify(payload) }),
+  updateServiceMapping: (areaId: string, mappingId: string, payload: Partial<AreaServiceMappingPayload>) =>
+    apiFetch<AreaServiceMapping>(`/v1/tenant/service-areas/${areaId}/services/${mappingId}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteServiceMapping: (areaId: string, mappingId: string) =>
+    apiFetch<{ deleted: boolean }>(`/v1/tenant/service-areas/${areaId}/services/${mappingId}`, { method: "DELETE" }),
 };
+
+export interface AreaServiceMapping {
+  id: string; tenant_service_area_id: string; tenant_id: string;
+  service_id: string; job_type: string; is_available: boolean;
+  sla_minutes: number | null; base_price: number | null;
+  min_price: number | null; max_price: number | null;
+  created_at?: string; updated_at?: string;
+}
+export interface AreaServiceMappingPayload {
+  service_id: string; job_type: string; is_available?: boolean;
+  sla_minutes?: number | null; base_price?: number | null;
+  min_price?: number | null; max_price?: number | null;
+}
 
 // ── Sprint 11 — Provider Team Members ────────────────────────────────────────
 
@@ -3849,6 +3988,28 @@ export interface ProviderAvailableServiceOption {
   is_default: boolean;
   display_order: number;
   option_group_id?: string;
+  // HOME-SERVICES-CATALOG ownership correction (migration 169): every
+  // available option is now scoped to an exact Job-Type mapping. Tenant
+  // pricing is set against mapping_id, never against the option template.
+  mapping_id: string;
+  job_type_id: string | null;
+  usage?: "DISABLED" | "OPTIONAL" | "REQUIRED";
+  quantity_supported?: boolean;
+  minimum_quantity?: number | null;
+  maximum_quantity?: number | null;
+  measurement_unit?: string | null;
+}
+
+export interface TenantOptionPrice {
+  id: string;
+  service_option_mapping_id: string | null;
+  status: string;
+  pricing_model: "FIXED" | "PER_UNIT" | "RANGE" | null;
+  fixed_price: string | null;
+  unit_price: string | null;
+  minimum_price: string | null;
+  maximum_price: string | null;
+  currency: string;
 }
 
 export interface ProviderSupportedServiceOption {
@@ -3891,9 +4052,9 @@ export interface DiagnosticsValidateResult {
 }
 
 export const providerServiceOptionApi = {
-  getAvailableForService: (serviceId: string) =>
+  getAvailableForService: (serviceId: string, jobTypeId?: string | null) =>
     apiFetch<ProviderAvailableServiceOption[]>(
-      `/v1/provider/setup/services/${serviceId}/available-options`),
+      `/v1/provider/setup/services/${serviceId}/available-options${jobTypeId ? `?job_type_id=${jobTypeId}` : ""}`),
   getSupportedForService: (serviceId: string) =>
     apiFetch<ProviderSupportedServiceOption[]>(
       `/v1/provider/setup/services/${serviceId}/supported-options`),
@@ -3901,6 +4062,13 @@ export const providerServiceOptionApi = {
     apiFetch<{ set: number }>(
       `/v1/provider/setup/services/${serviceId}/supported-options`,
       { method: "POST", body: JSON.stringify({ service_option_ids: serviceOptionIds }) }),
+  // Tenant-owned pricing (migration 169) -- admin never sets these.
+  setOptionPrice: (mappingId: string, data: {
+    enabled: boolean; pricing_model?: "FIXED" | "PER_UNIT" | "RANGE";
+    fixed_price?: string; unit_price?: string; minimum_price?: string; maximum_price?: string;
+  }) =>
+    apiFetch<TenantOptionPrice>(`/v1/provider/setup/services/option-mappings/${mappingId}/price`,
+      { method: "PUT", body: JSON.stringify(data) }),
 };
 
 export const customerServiceDiagnosticsApi = {
@@ -4072,6 +4240,11 @@ export interface HomeServiceJobItem {
   status: string; assignment_status: string; failure_reason: string | null;
   completion_data: Record<string, unknown> | null;
   created_at: string; updated_at: string;
+  // Phase 2A.2: backend-authoritative work-start status (get_work_start_status) --
+  // present on the staff job-detail response, absent on plain list rows.
+  job_type_id?: string | null; job_type_key?: string | null; job_type_label?: string | null;
+  quote_approval_required?: boolean | null; quote_state?: string | null;
+  can_start_work?: boolean; start_work_block_code?: string | null;
 }
 export interface PartsRequestItem {
   parts_request_id: string; job_id: string; tenant_id: string; technician_id: string;
@@ -4146,6 +4319,37 @@ export const homeServiceStaffJobsApi = {
   // HS8B — single validated completion action
   complete: (jobId: string, body: { work_summary: string; collected_amount: number; payment_mode?: string; technician_note?: string }) =>
     apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(body) }),
+};
+
+// ── Checklist Catalog Engine — staff execution surface ───────────────────
+// Only checklist instances applicable to this exact job + workflow phase
+// are ever returned here; the backend (not this client) is the sole
+// authority on required/gate enforcement.
+export interface ChecklistExecutionItem {
+  id: string; checklist_section_id: string; item_type: string; label: string;
+  help_text: string | null; is_required: boolean; evidence_required: boolean;
+  min_evidence_count: number; max_evidence_count: number;
+  select_options: { value: string; label: string }[] | null;
+  measurement_unit: string | null; response: {
+    id: string; response_value: unknown; evidence: Record<string, unknown>[] | null;
+    submitted_at: string | null; validation_result: Record<string, unknown> | null;
+  } | null;
+}
+export interface ChecklistInstanceDetail {
+  id: string; job_id: string; mapping_id: string; phase: string; assigned_actor: string;
+  state: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | "BLOCKED" | "WAIVED";
+  started_at: string | null; completed_at: string | null; completed_by: string | null;
+  items: ChecklistExecutionItem[];
+}
+export const checklistExecutionApi = {
+  listForJob: (jobId: string) =>
+    apiFetch<ChecklistInstanceDetail[]>(`/v1/staff/service-jobs/${jobId}/checklists`),
+  saveResponse: (instanceId: string, itemId: string, body: { response_value?: unknown; evidence?: Record<string, unknown>[] }) =>
+    apiFetch<Record<string, unknown>>(`/v1/staff/service-jobs/checklist-instances/${instanceId}/responses/${itemId}`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
+  complete: (instanceId: string) =>
+    apiFetch<ChecklistInstanceDetail>(`/v1/staff/service-jobs/checklist-instances/${instanceId}/complete`, { method: "POST" }),
 };
 
 export const homeServiceProviderJobsApi = {

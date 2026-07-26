@@ -156,6 +156,83 @@ class ServiceGroup(ServiceOSBase):
         }
 
 
+# ── Job Types (migration 151) ─────────────────────────────────────────────────
+class JobTypeDefinition(ServiceOSBase):
+    """Admin-configurable job type (Repair, Installation, Uninstallation, ...).
+
+    Reconciles a real divergence found live: VALID_JOB_TYPES in this engine's
+    service.py already allowed 9 string values (repair/installation/
+    uninstallation/inspection/maintenance/cleaning/consultation/service/
+    custom), but app.engines.field_ops.constants.JobType/TYPE_TRANSITION_
+    OVERRIDES only differentiated 3 (repair/service/consultation) -- every
+    other value silently fell back to the full repair transition graph
+    (mandatory assessment/inspection), with no way to configure otherwise.
+    These flags let field_ops derive sensible per-job-type behavior for the
+    other 6 values without a full data-driven transition-graph rewrite.
+
+    NO monetary fields on this table -- job type is structure/workflow only,
+    per the platform's admin-never-sets-price rule.
+    """
+    __tablename__ = "job_types"
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_job_types_key"),
+        Index("ix_job_types_is_active", "is_active"),
+    )
+
+    key:                    Mapped[str]        = mapped_column(String(30), nullable=False)
+    label:                  Mapped[str]        = mapped_column(String(120), nullable=False)
+    description:            Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Whether ARRIVED must go through ASSESSMENT_STARTED/ASSESSMENT_COMPLETE
+    # before work can begin (mirrors the repair flow) vs skip straight to work.
+    requires_assessment:    Mapped[bool]       = mapped_column(Boolean, nullable=False, default=True)
+    # Whether the quote_sent/quote_approved/quote_rejected workflow applies.
+    allows_quote:           Mapped[bool]       = mapped_column(Boolean, nullable=False, default=True)
+    # Whether a checklist must be completed before work_complete.
+    requires_checklist:     Mapped[bool]       = mapped_column(Boolean, nullable=False, default=False)
+    is_active:              Mapped[bool]       = mapped_column(Boolean, nullable=False, default=True)
+    display_order:          Mapped[int]        = mapped_column(Integer, nullable=False, default=0)
+
+
+# ── Service Blueprint Versions (migration 153) ────────────────────────────────
+class ServiceBlueprintVersion(ServiceOSBase):
+    """Versioned snapshot of a MasterService's admin-owned structural config
+    (requires_type/requires_brand/pricing_model/job_type flags) -- the last
+    of the 4 backend contracts identified missing in the frontend wizard's
+    preflight audit. Lets the wizard detect "this tenant's setup was built
+    against an older blueprint version" without silently mutating or
+    dropping the tenant's existing coverage/price configuration.
+
+    NO monetary fields (structure only, per the admin-never-sets-price rule).
+    """
+    __tablename__ = "service_blueprint_versions"
+    __table_args__ = (
+        UniqueConstraint("master_service_id", "version_number", name="uq_sbv_service_version"),
+        Index("ix_sbv_master_service", "master_service_id"),
+        Index("ix_sbv_status", "status"),
+    )
+
+    master_service_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    version_number:    Mapped[int]       = mapped_column(Integer, nullable=False)
+    # DRAFT -> PUBLISHED -> SUPERSEDED (or ARCHIVED)
+    status:            Mapped[str]       = mapped_column(String(20), nullable=False, default="published")
+    # Structural snapshot at publish time -- job_type, requires_type,
+    # requires_brand, pricing_model, is_active. Not a full field dump; just
+    # enough to detect and describe what changed for the impact preview.
+    snapshot:          Mapped[dict]      = mapped_column(JSONB, nullable=False)
+    change_summary:    Mapped[str | None]= mapped_column(Text, nullable=True)
+    published_at:      Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id), "master_service_id": str(self.master_service_id),
+            "version_number": self.version_number, "status": self.status,
+            "snapshot": self.snapshot, "change_summary": self.change_summary,
+            "published_at": self.published_at.isoformat() if self.published_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 # ── Master Services ───────────────────────────────────────────────────────────
 class MasterService(ServiceOSBase):
     """Platform-defined service: AC Repair (repair), AC Annual Service (service), etc."""
@@ -175,6 +252,9 @@ class MasterService(ServiceOSBase):
     image_url:                 Mapped[str | None]    = mapped_column(String(500), nullable=True)
     icon_url:                  Mapped[str | None]    = mapped_column(String(500), nullable=True)
     job_type:                  Mapped[str]            = mapped_column(String(20), nullable=False)
+    # Migration 151: nullable FK alongside the legacy string column (kept for
+    # compatibility) -- resolved by job_type key, backfilled from `job_type`.
+    job_type_id:               Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     pricing_model:             Mapped[str]            = mapped_column(String(30), nullable=False)
     base_price:                Mapped[Decimal]        = mapped_column(Numeric(12, 2), default=Decimal("0"), nullable=False)
     min_price:                 Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
@@ -204,6 +284,103 @@ class MasterService(ServiceOSBase):
     is_active:                 Mapped[bool]           = mapped_column(Boolean, default=True, nullable=False)
     display_order:             Mapped[int]            = mapped_column(Integer, default=0, nullable=False)
     deleted_at:                Mapped[datetime|None]  = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MasterServiceJobType(ServiceOSBase):
+    """Job Type as an explicit CHILD RECORD of a Master Service (migration 160).
+
+    Corrects a real ownership bug: MasterService.job_type is a scalar field,
+    so "AC Repair" and "AC Installation" were modeled as two separate
+    MasterService rows sharing a service_group, not one "Air Conditioner"
+    Master Service with two Job-Type children -- the canonical hierarchy is
+    Business Vertical -> Service Group -> Master Service -> Job Type ->
+    Job-Type Blueprint. New Master Services are job-type-agnostic at
+    creation; job types are added here afterward in the Master Service
+    workspace. NO monetary or Brand/Type fields -- those stay in the
+    existing generic dimension engine (CatalogDimension/ServiceJobDimension)
+    and service_job_workflow respectively.
+    """
+    __tablename__ = "master_service_job_types"
+    __table_args__ = (
+        UniqueConstraint("master_service_id", "job_type_id", name="uq_msjt_service_job_type"),
+        Index("ix_msjt_master_service", "master_service_id"),
+        Index("ix_msjt_job_type", "job_type_id"),
+    )
+
+    master_service_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    job_type_id:        Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    is_active:          Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
+    display_order:      Mapped[int]       = mapped_column(Integer, default=0, nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id), "master_service_id": str(self.master_service_id),
+            "job_type_id": str(self.job_type_id), "is_active": self.is_active,
+            "display_order": self.display_order,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class ServiceJobWorkflow(ServiceOSBase):
+    """Job-Type Blueprint workflow ownership (migration 160): inspection,
+    quote-approval, checklist, schedule, address, technician, service-area,
+    and availability requirements, plus the ADMIN-PERMITTED pricing BEHAVIOR
+    (never an amount) -- fixed / range / inspection_required / custom_quote.
+
+    Scoped per (master_service, job_type) so changing AC Installation's
+    requirements can never alter AC Repair's, and changing Home Services can
+    never affect Food/Coaching/Real Estate. Brand/Type dimension usage is
+    NOT duplicated here -- see service_job_dimensions (migration 154).
+    """
+    __tablename__ = "service_job_workflow"
+    __table_args__ = (
+        UniqueConstraint("master_service_id", "job_type_id", name="uq_sjw_service_job_type"),
+        Index("ix_sjw_master_service", "master_service_id"),
+        Index("ix_sjw_job_type", "job_type_id"),
+    )
+
+    master_service_id:      Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    job_type_id:             Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    inspection_required:     Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    quote_approval_required: Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    checklist_required:      Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    schedule_required:       Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    address_required:        Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    technician_required:     Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    service_area_required:   Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    availability_required:   Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    # fixed | range | inspection_required | custom_quote -- BEHAVIOR only.
+    pricing_behavior:        Mapped[str]       = mapped_column(String(30), default="fixed", nullable=False)
+    # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (migration 171) -- append-only
+    # version chain. set_workflow() now supersedes rather than mutates, so a
+    # job that snapshotted this row's id at booking time keeps its exact
+    # workflow forever, even after an admin publishes a new version. This
+    # row's own id IS the "Blueprint Version" reference (see module docstring
+    # on ServiceJobWorkflow for why no separate version table exists).
+    version_number:          Mapped[int]       = mapped_column(Integer, default=1, nullable=False)
+    is_current:              Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
+    superseded_at:           Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id), "master_service_id": str(self.master_service_id),
+            "job_type_id": str(self.job_type_id),
+            "inspection_required": self.inspection_required,
+            "quote_approval_required": self.quote_approval_required,
+            "checklist_required": self.checklist_required,
+            "schedule_required": self.schedule_required,
+            "address_required": self.address_required,
+            "technician_required": self.technician_required,
+            "service_area_required": self.service_area_required,
+            "availability_required": self.availability_required,
+            "pricing_behavior": self.pricing_behavior,
+            "version_number": self.version_number,
+            "is_current": self.is_current,
+            "superseded_at": self.superseded_at.isoformat() if self.superseded_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
 
 
 # ── Service Types ─────────────────────────────────────────────────────────────
@@ -609,6 +786,7 @@ class ServicePricingRule(ServiceOSBase):
     master_service_id:   Mapped[uuid.UUID]       = mapped_column(UUID(as_uuid=True), nullable=False)
     category_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     job_type:            Mapped[str]              = mapped_column(String(20), nullable=False)
+    job_type_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     tier_id:             Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     service_type_id:     Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     brand_id:            Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
@@ -772,6 +950,7 @@ class TenantService(ServiceOSBase):
     master_service_id:   Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     category_id:         Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     job_type:            Mapped[str]            = mapped_column(String(20), nullable=False)
+    job_type_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     is_enabled:          Mapped[bool]           = mapped_column(Boolean, default=True, nullable=False)
     tenant_display_name: Mapped[str | None]    = mapped_column(String(200), nullable=True)
     tenant_description:  Mapped[str | None]    = mapped_column(Text, nullable=True)
@@ -787,6 +966,25 @@ class TenantService(ServiceOSBase):
     # Tenant Home Services Service Setup Wizard additions
     setup_status:        Mapped[str]           = mapped_column(String(20), default="draft", nullable=False)
     published_at:        Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Migration 152: coverage modes (frontend-wizard backend contract). Default
+    # "selected" preserves the exact pre-existing behavior (tenant explicitly
+    # enables each TenantServiceType/TenantServiceBrand row) -- "all" and
+    # "all_except" are new, additive interpretations of the SAME rows, not a
+    # new table: "all" means every master-mapped type/brand is supported with
+    # no rows needed; "all_except" inverts the existing rows' meaning to
+    # exclusions instead of inclusions.
+    type_coverage_mode:  Mapped[str]           = mapped_column(String(20), default="selected", nullable=False)
+    brand_coverage_mode: Mapped[str]           = mapped_column(String(20), default="selected", nullable=False)
+    # Minimal draft/resume support: remembers which wizard step the tenant was
+    # last on, so "Save and Exit" -> "Resume" lands them back where they left
+    # off. Not a full versioned draft object (that needs blueprint versioning,
+    # deferred) -- a pragmatic, additive resume pointer on the live row.
+    last_active_step:    Mapped[str | None]    = mapped_column(String(30), nullable=True)
+    # Migration 153: which blueprint version this tenant's setup was last
+    # configured/published against. NULL for setups created before blueprint
+    # versioning existed -- treated as "no update-required check possible",
+    # never as "up to date" (fail closed, not silently assumed current).
+    blueprint_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 # ── Tenant Service Types ──────────────────────────────────────────────────────
@@ -971,7 +1169,15 @@ class MasterIssueType(ServiceOSBase):
 
 # ── Master Service Options ────────────────────────────────────────────────────
 class MasterServiceOption(ServiceOSBase):
-    """Platform-defined service add-ons/extras per service (Sprint 34C/34E). Admin-only write."""
+    """Reusable, admin-owned Service Option TEMPLATE (Sprint 34C/34E; ownership
+    corrected in migration 169 -- HOME-SERVICES-CATALOG). Admin-only write.
+
+    default_price/min_price/max_price/is_customer_selectable are DEPRECATED:
+    kept as legacy columns (not dropped -- ambiguous historical data may still
+    reference them) but no longer written by the admin API. Monetary value is
+    tenant-owned (TenantSupportedServiceOption); customer-selectability is
+    owned per exact Job-Type mapping (ServiceOptionMapping.customer_selectable)
+    since the same template behaves differently per Job Type."""
     __tablename__ = "master_service_options"
     __table_args__ = (
         UniqueConstraint("slug", name="uq_mso_slug"),
@@ -990,9 +1196,15 @@ class MasterServiceOption(ServiceOSBase):
     description:            Mapped[str | None]      = mapped_column(Text, nullable=True)
     option_type:            Mapped[str]              = mapped_column(String(30), nullable=False, default="add_on")
     unit:                   Mapped[str]              = mapped_column(String(30), nullable=False, default="per_unit")
+    # DEPRECATED (migration 169) -- no longer accepted by the admin create/
+    # update API. Left in place for historical rows only; canonical runtime
+    # resolution (customer/tenant/booking) must never read these.
     default_price:          Mapped[Decimal]          = mapped_column(Numeric(12, 2), default=Decimal("0"), nullable=False)
     min_price:              Mapped[Decimal | None]   = mapped_column(Numeric(12, 2), nullable=True)
     max_price:              Mapped[Decimal | None]   = mapped_column(Numeric(12, 2), nullable=True)
+    # DEPRECATED (migration 169) -- global default only, not authoritative.
+    # Real selectability is ServiceOptionMapping.customer_selectable, per
+    # exact Job Type. Kept for backward-compat display in the template list.
     is_customer_selectable: Mapped[bool]             = mapped_column(Boolean, default=True, nullable=False)
     is_active:              Mapped[bool]             = mapped_column(Boolean, default=True, nullable=False)
     display_order:          Mapped[int]              = mapped_column(Integer, default=0, nullable=False)
@@ -1032,21 +1244,54 @@ class MasterServiceOption(ServiceOSBase):
 
 # ── Service Option Mapping (M2M) ──────────────────────────────────────────────
 class ServiceOptionMapping(ServiceOSBase):
-    """Admin-defined M2M: which options are valid for a master service (Sprint 34E)."""
+    """Admin-defined M2M: which options are valid for a master service, scoped
+    to an exact Job Type (migration 169 -- HOME-SERVICES-CATALOG ownership
+    correction). NULL job_type_id is backward-compatible ("applies to all job
+    types"), matching the identical pattern already used by
+    ServiceIssueMapping/catalog_questions; new mappings should set it
+    explicitly so the same option (e.g. Wall Stand) can be customer-selectable
+    under Installation but technician-only under Repair.
+
+    Per-actor selectability/usage/quantity/unit live HERE (mapping level), not
+    on MasterServiceOption (global template) -- the same reusable option can
+    behave differently per Job Type. Monetary values are never set here or on
+    the template; they belong to TenantSupportedServiceOption only."""
     __tablename__ = "service_option_mappings"
     __table_args__ = (
-        UniqueConstraint("master_service_id", "service_option_id", name="uq_som_service_option"),
+        # Uniqueness is enforced as a partial index (WHERE deleted_at IS NULL)
+        # via migration 158, not a flat UniqueConstraint -- soft-deleted
+        # mappings must not block re-adding the same option later.
         Index("ix_som_service", "master_service_id"),
         Index("ix_som_option",  "service_option_id"),
         Index("ix_som_status",  "status"),
+        Index("ix_som_job_type", "job_type_id"),
     )
 
     master_service_id:   Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     service_option_id:   Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     option_group_id:     Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # NULL = applies to all job types for this service (backward-compatible
+    # default); a concrete value scopes this option to one Job Type only --
+    # e.g. Wall Stand mapped separately for Installation vs Repair.
+    job_type_id:          Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     status:              Mapped[str]            = mapped_column(String(30), default="active", nullable=False)
     is_required:         Mapped[bool]           = mapped_column(Boolean, default=False, nullable=False)
     is_default:          Mapped[bool]           = mapped_column(Boolean, default=False, nullable=False)
+    # DISABLED | OPTIONAL | REQUIRED -- kept in sync with is_required by the
+    # service layer; the authoritative field going forward.
+    usage:                      Mapped[str]       = mapped_column(String(20), default="OPTIONAL", nullable=False)
+    customer_selectable:         Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
+    tenant_selectable:           Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
+    technician_selectable:       Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    available_before_booking:    Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
+    available_after_inspection:  Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    affects_estimate:            Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
+    requires_customer_approval:  Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
+    quantity_supported:          Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
+    minimum_quantity:            Mapped[int|None]  = mapped_column(Integer, nullable=True)
+    maximum_quantity:            Mapped[int|None]  = mapped_column(Integer, nullable=True)
+    measurement_unit:            Mapped[str|None]  = mapped_column(String(30), nullable=True)
+    blueprint_version:           Mapped[int|None]  = mapped_column(Integer, nullable=True)
     display_order:       Mapped[int]            = mapped_column(Integer, default=0, nullable=False)
     metadata_json:       Mapped[dict|None]      = mapped_column(JSONB, nullable=True)
     created_by_user_id:  Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
@@ -1058,9 +1303,23 @@ class ServiceOptionMapping(ServiceOSBase):
             "master_service_id":  str(self.master_service_id),
             "service_option_id":  str(self.service_option_id),
             "option_group_id":    str(self.option_group_id) if self.option_group_id else None,
+            "job_type_id":        str(self.job_type_id) if self.job_type_id else None,
             "status":             self.status,
             "is_required":        self.is_required,
             "is_default":         self.is_default,
+            "usage":                       self.usage,
+            "customer_selectable":         self.customer_selectable,
+            "tenant_selectable":           self.tenant_selectable,
+            "technician_selectable":       self.technician_selectable,
+            "available_before_booking":    self.available_before_booking,
+            "available_after_inspection":  self.available_after_inspection,
+            "affects_estimate":            self.affects_estimate,
+            "requires_customer_approval":  self.requires_customer_approval,
+            "quantity_supported":          self.quantity_supported,
+            "minimum_quantity":            self.minimum_quantity,
+            "maximum_quantity":            self.maximum_quantity,
+            "measurement_unit":            self.measurement_unit,
+            "blueprint_version":           self.blueprint_version,
             "display_order":      self.display_order,
             "created_at":         self.created_at.isoformat() if self.created_at else None,
             "updated_at":         self.updated_at.isoformat() if self.updated_at else None,
@@ -1072,7 +1331,9 @@ class ServiceIssueMapping(ServiceOSBase):
     """Admin-defined M2M: which issue types apply to a master service (Sprint 34E)."""
     __tablename__ = "service_issue_mappings"
     __table_args__ = (
-        UniqueConstraint("master_service_id", "issue_type_id", name="uq_sim_service_issue"),
+        # Uniqueness is enforced as a partial index (WHERE deleted_at IS NULL)
+        # via migration 158, not a flat UniqueConstraint -- soft-deleted
+        # mappings must not block re-adding the same Problem later.
         Index("ix_sim_service", "master_service_id"),
         Index("ix_sim_issue",   "issue_type_id"),
         Index("ix_sim_status",  "status"),
@@ -1081,6 +1342,10 @@ class ServiceIssueMapping(ServiceOSBase):
 
     master_service_id:    Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     issue_type_id:        Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
+    # NULL = applies to all job types for this service (backward-compatible
+    # default); a concrete value scopes this Problem to one job-type tab,
+    # matching the approved Admin Catalog mockup.
+    job_type_id:          Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     status:               Mapped[str]            = mapped_column(String(30), default="active", nullable=False)
     is_common:            Mapped[bool]           = mapped_column(Boolean, default=False, nullable=False)
     is_default:           Mapped[bool]           = mapped_column(Boolean, default=False, nullable=False)
@@ -1098,6 +1363,7 @@ class ServiceIssueMapping(ServiceOSBase):
             "id":                   str(self.id),
             "master_service_id":    str(self.master_service_id),
             "issue_type_id":        str(self.issue_type_id),
+            "job_type_id":          str(self.job_type_id) if self.job_type_id else None,
             "status":               self.status,
             "is_common":            self.is_common,
             "is_default":           self.is_default,
@@ -1113,7 +1379,12 @@ class ServiceIssueMapping(ServiceOSBase):
 
 # ── Tenant Supported Service Options ─────────────────────────────────────────
 class TenantSupportedServiceOption(ServiceOSBase):
-    """Provider's explicitly supported service options per service (Sprint 34E)."""
+    """Provider's explicitly supported service options per service (Sprint 34E).
+    Owns ALL monetary values for a Service Option (migration 169 -- HOME-
+    SERVICES-CATALOG ownership correction): admin never sets a price, only
+    the tenant does, scoped to the exact Job-Type mapping via
+    service_option_mapping_id (not just master_service_id+service_option_id,
+    which would incorrectly collapse Installation and Repair pricing)."""
     __tablename__ = "tenant_supported_service_options"
     __table_args__ = (
         UniqueConstraint("tenant_id", "master_service_id", "service_option_id",
@@ -1122,14 +1393,29 @@ class TenantSupportedServiceOption(ServiceOSBase):
         Index("ix_tsso_service", "master_service_id"),
         Index("ix_tsso_option",  "service_option_id"),
         Index("ix_tsso_status",  "status"),
+        Index("ix_tsso_mapping", "service_option_mapping_id"),
     )
 
     tenant_id:           Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     provider_profile_id: Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
     master_service_id:   Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     service_option_id:   Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
+    # The exact Job-Type-scoped mapping this pricing/support applies to.
+    # Nullable for backward compat with pre-migration-169 rows (those apply
+    # across all job types under the service, matching the mapping's own
+    # NULL job_type_id semantics); new writes should always set it.
+    service_option_mapping_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     status:              Mapped[str]            = mapped_column(String(30), default="active", nullable=False)
     notes:               Mapped[str|None]       = mapped_column(Text, nullable=True)
+    # Tenant-owned pricing -- admin never sets any of these.
+    pricing_model:       Mapped[str | None]     = mapped_column(String(20), nullable=True)  # FIXED | PER_UNIT | RANGE
+    fixed_price:         Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    unit_price:          Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    minimum_price:       Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    maximum_price:       Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    currency:            Mapped[str]            = mapped_column(String(3), default="INR", nullable=False)
+    effective_from:      Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    effective_to:        Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by_user_id:  Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
     approved_by_user_id: Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
     deleted_at:          Mapped[datetime|None]  = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1140,12 +1426,70 @@ class TenantSupportedServiceOption(ServiceOSBase):
             "tenant_id":           str(self.tenant_id),
             "master_service_id":   str(self.master_service_id),
             "service_option_id":   str(self.service_option_id),
+            "service_option_mapping_id": str(self.service_option_mapping_id) if self.service_option_mapping_id else None,
             "status":              self.status,
             "notes":               self.notes,
+            "pricing_model":       self.pricing_model,
+            "fixed_price":         str(self.fixed_price) if self.fixed_price is not None else None,
+            "unit_price":          str(self.unit_price) if self.unit_price is not None else None,
+            "minimum_price":       str(self.minimum_price) if self.minimum_price is not None else None,
+            "maximum_price":       str(self.maximum_price) if self.maximum_price is not None else None,
+            "currency":            self.currency,
+            "effective_from":      self.effective_from.isoformat() if self.effective_from else None,
+            "effective_to":        self.effective_to.isoformat() if self.effective_to else None,
             "created_by_user_id":  str(self.created_by_user_id) if self.created_by_user_id else None,
             "approved_by_user_id": str(self.approved_by_user_id) if self.approved_by_user_id else None,
             "created_at":          self.created_at.isoformat() if self.created_at else None,
             "updated_at":          self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ── Booking/Quote Option Snapshot (migration 169) ────────────────────────────
+class BookingOptionSelection(ServiceOSBase):
+    """Immutable snapshot of a Service Option once selected for a booking or
+    estimate. Preserves the resolved tenant price/quantity/unit at selection
+    time so a later tenant price change never retroactively changes a
+    historical booking/quote total (non-negotiable rule)."""
+    __tablename__ = "booking_option_selections"
+    __table_args__ = (
+        Index("ix_bos_booking", "booking_id"),
+        Index("ix_bos_tenant",  "tenant_id"),
+    )
+
+    booking_id:                Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
+    tenant_id:                 Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
+    service_option_id:         Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
+    service_option_mapping_id: Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    option_label:              Mapped[str]            = mapped_column(String(200), nullable=False)
+    quantity:                  Mapped[int]            = mapped_column(Integer, default=1, nullable=False)
+    measurement_unit:          Mapped[str|None]       = mapped_column(String(30), nullable=True)
+    tenant_unit_price:         Mapped[Decimal]        = mapped_column(Numeric(12, 2), nullable=False)
+    calculated_total:          Mapped[Decimal]        = mapped_column(Numeric(12, 2), nullable=False)
+    currency:                  Mapped[str]            = mapped_column(String(3), default="INR", nullable=False)
+    # CUSTOMER | TENANT | TECHNICIAN | SYSTEM
+    selection_source:          Mapped[str]            = mapped_column(String(30), nullable=False)
+    selected_by_user_id:       Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    selected_at:               Mapped[datetime]       = mapped_column(DateTime(timezone=True), nullable=False)
+    quote_version:             Mapped[int|None]       = mapped_column(Integer, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                         str(self.id),
+            "booking_id":                 str(self.booking_id),
+            "tenant_id":                  str(self.tenant_id),
+            "service_option_id":          str(self.service_option_id),
+            "service_option_mapping_id":  str(self.service_option_mapping_id) if self.service_option_mapping_id else None,
+            "option_label":               self.option_label,
+            "quantity":                   self.quantity,
+            "measurement_unit":           self.measurement_unit,
+            "tenant_unit_price":          str(self.tenant_unit_price),
+            "calculated_total":           str(self.calculated_total),
+            "currency":                   self.currency,
+            "selection_source":           self.selection_source,
+            "selected_by_user_id":        str(self.selected_by_user_id) if self.selected_by_user_id else None,
+            "selected_at":                self.selected_at.isoformat() if self.selected_at else None,
+            "quote_version":              self.quote_version,
+            "created_at":                 self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -1285,7 +1629,7 @@ class MasterDataAuditLog(ServiceOSBase):
 
     entity_type:    Mapped[str]              = mapped_column(String(60),  nullable=False)
     entity_id:      Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
-    action:         Mapped[str]              = mapped_column(String(30),  nullable=False)
+    action:         Mapped[str]              = mapped_column(String(60),  nullable=False)
     actor_user_id:  Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     actor_role:     Mapped[str | None]      = mapped_column(String(30),  nullable=True)
     old_value:      Mapped[dict | None]     = mapped_column(JSONB, nullable=True)
@@ -1917,3 +2261,180 @@ class MasterChecklistItem(ServiceOSBase):
             "created_at":        self.created_at.isoformat() if self.created_at else None,
             "updated_at":        self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+# ── Generic Catalog Dimension Engine (migration 154) ──────────────────────────
+class CatalogDimension(ServiceOSBase):
+    """A generic, admin-configurable dimension DEFINITION (Type, Brand,
+    Capacity, Size, Model, Delivery Mode, ...). Replaces the need to
+    hardcode a new table + UI for every future dimension. `legacy_source`
+    marks the two seeded dimensions (type/brand) whose VALUES still live in
+    the existing service_types/brands tables."""
+    __tablename__ = "catalog_dimensions"
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_catalog_dimensions_key"),
+        Index("ix_catalog_dimensions_active", "is_active"),
+    )
+
+    key:           Mapped[str]        = mapped_column(String(40), nullable=False)
+    name:          Mapped[str]        = mapped_column(String(120), nullable=False)
+    description:   Mapped[str | None] = mapped_column(Text, nullable=True)
+    data_type:     Mapped[str]        = mapped_column(String(20), nullable=False, default="single_select")
+    legacy_source: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    is_active:     Mapped[bool]       = mapped_column(Boolean, nullable=False, default=True)
+    display_order: Mapped[int]        = mapped_column(Integer, nullable=False, default=0)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id), "key": self.key, "name": self.name,
+            "description": self.description, "data_type": self.data_type,
+            "legacy_source": self.legacy_source, "is_active": self.is_active,
+            "display_order": self.display_order,
+        }
+
+
+class CatalogDimensionValue(ServiceOSBase):
+    """Allowed values for a generic (non-legacy) dimension."""
+    __tablename__ = "catalog_dimension_values"
+    __table_args__ = (
+        UniqueConstraint("dimension_id", "code", name="uq_cdv_dimension_code"),
+        Index("ix_cdv_dimension", "dimension_id"),
+    )
+
+    dimension_id:  Mapped[uuid.UUID]  = mapped_column(UUID(as_uuid=True), nullable=False)
+    code:          Mapped[str]        = mapped_column(String(60), nullable=False)
+    label:         Mapped[str]        = mapped_column(String(160), nullable=False)
+    meta:          Mapped[dict | None]= mapped_column("metadata", JSONB, nullable=True)
+    display_order: Mapped[int]        = mapped_column(Integer, nullable=False, default=0)
+    is_active:     Mapped[bool]       = mapped_column(Boolean, nullable=False, default=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id), "dimension_id": str(self.dimension_id),
+            "code": self.code, "label": self.label, "metadata": self.meta,
+            "display_order": self.display_order, "is_active": self.is_active,
+        }
+
+
+class ServiceJobDimension(ServiceOSBase):
+    """Per-(master_service, job_type) structural blueprint config for a
+    dimension -- the 'Dimensions tab' grid from the approved admin mockup.
+    NO monetary columns (structure only, per the admin-never-sets-price rule;
+    `affects_price` is a boolean flag meaning 'this dimension MAY affect the
+    TENANT's price', not an amount)."""
+    __tablename__ = "service_job_dimensions"
+    __table_args__ = (
+        UniqueConstraint("master_service_id", "job_type_id", "dimension_id", name="uq_sjd_service_job_dim"),
+        Index("ix_sjd_master_service", "master_service_id"),
+        Index("ix_sjd_job_type", "job_type_id"),
+    )
+
+    master_service_id:        Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    job_type_id:              Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    dimension_id:             Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    enabled:                  Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    required:                 Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ask_customer:             Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    show_during_tenant_setup: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    use_for_matching:         Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    affects_price:            Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    allow_tenant_override:    Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_all_coverage:       Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_selected_coverage:  Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_exclusion_coverage: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    display_order:            Mapped[int]  = mapped_column(Integer, nullable=False, default=0)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id), "master_service_id": str(self.master_service_id),
+            "job_type_id": str(self.job_type_id) if self.job_type_id else None,
+            "dimension_id": str(self.dimension_id),
+            "enabled": self.enabled, "required": self.required, "ask_customer": self.ask_customer,
+            "show_during_tenant_setup": self.show_during_tenant_setup,
+            "use_for_matching": self.use_for_matching, "affects_price": self.affects_price,
+            "allow_tenant_override": self.allow_tenant_override,
+            "allow_all_coverage": self.allow_all_coverage,
+            "allow_selected_coverage": self.allow_selected_coverage,
+            "allow_exclusion_coverage": self.allow_exclusion_coverage,
+            "display_order": self.display_order,
+        }
+
+
+# ── Conditional Question Engine (migration 155) ───────────────────────────────
+class CatalogQuestion(ServiceOSBase):
+    """A conditional question DEFINITION scoped to (master_service, job_type).
+    The authoritative source for what DeepSeek may ask -- DeepSeek asks only
+    questions configured here, never invents parameters. NO monetary columns."""
+    __tablename__ = "catalog_questions"
+    __table_args__ = (
+        UniqueConstraint("master_service_id", "job_type_id", "question_key", name="uq_cq_service_job_key"),
+        Index("ix_cq_master_service", "master_service_id"),
+        Index("ix_cq_job_type", "job_type_id"),
+    )
+
+    master_service_id:     Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    job_type_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    question_key:          Mapped[str]              = mapped_column(String(60), nullable=False)
+    label:                 Mapped[str]              = mapped_column(String(300), nullable=False)
+    input_type:            Mapped[str]              = mapped_column(String(20), nullable=False, default="single_select")
+    answer_source:         Mapped[str]              = mapped_column(String(20), nullable=False, default="static")
+    dimension_id:          Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    required:              Mapped[bool]             = mapped_column(Boolean, nullable=False, default=False)
+    customer_visible:      Mapped[bool]             = mapped_column(Boolean, nullable=False, default=True)
+    tenant_setup_visible:  Mapped[bool]             = mapped_column(Boolean, nullable=False, default=False)
+    deepseek_enabled:      Mapped[bool]             = mapped_column(Boolean, nullable=False, default=True)
+    validation:            Mapped[dict | None]      = mapped_column(JSONB, nullable=True)
+    help_text:             Mapped[str | None]       = mapped_column(Text, nullable=True)
+    display_order:         Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
+    is_active:             Mapped[bool]             = mapped_column(Boolean, nullable=False, default=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id), "master_service_id": str(self.master_service_id),
+            "job_type_id": str(self.job_type_id) if self.job_type_id else None,
+            "question_key": self.question_key, "label": self.label, "input_type": self.input_type,
+            "answer_source": self.answer_source,
+            "dimension_id": str(self.dimension_id) if self.dimension_id else None,
+            "required": self.required, "customer_visible": self.customer_visible,
+            "tenant_setup_visible": self.tenant_setup_visible, "deepseek_enabled": self.deepseek_enabled,
+            "validation": self.validation, "help_text": self.help_text,
+            "display_order": self.display_order, "is_active": self.is_active,
+        }
+
+
+class CatalogQuestionOption(ServiceOSBase):
+    """Static allowed answers for a question whose answer_source is 'static'."""
+    __tablename__ = "catalog_question_options"
+    __table_args__ = (
+        UniqueConstraint("question_id", "code", name="uq_cqo_question_code"),
+        Index("ix_cqo_question", "question_id"),
+    )
+
+    question_id:   Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    code:          Mapped[str]       = mapped_column(String(60), nullable=False)
+    label:         Mapped[str]       = mapped_column(String(200), nullable=False)
+    display_order: Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
+    is_active:     Mapped[bool]      = mapped_column(Boolean, nullable=False, default=True)
+
+    def to_dict(self) -> dict:
+        return {"id": str(self.id), "question_id": str(self.question_id), "code": self.code,
+                "label": self.label, "display_order": self.display_order, "is_active": self.is_active}
+
+
+class CatalogQuestionRule(ServiceOSBase):
+    """A show-when condition for a question. All rules on a question are
+    ANDed. condition_type: job_type / problem / dimension_enabled /
+    answer_equals. The rule builder that avoids exposing raw JSON to admin."""
+    __tablename__ = "catalog_question_rules"
+    __table_args__ = (Index("ix_cqr_question", "question_id"),)
+
+    question_id:    Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    condition_type: Mapped[str]              = mapped_column(String(30), nullable=False)
+    ref_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    expected_value: Mapped[str | None]       = mapped_column(String(200), nullable=True)
+
+    def to_dict(self) -> dict:
+        return {"id": str(self.id), "question_id": str(self.question_id),
+                "condition_type": self.condition_type,
+                "ref_id": str(self.ref_id) if self.ref_id else None,
+                "expected_value": self.expected_value}

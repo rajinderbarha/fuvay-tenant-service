@@ -12,7 +12,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const ago30  = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
 
 const card: React.CSSProperties = {
-  background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20,
+  background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20,
 };
 
 export default function ProvidersAnalyticsPage() {
@@ -77,7 +77,7 @@ export default function ProvidersAnalyticsPage() {
               <Link
                 key={row.tenant_id}
                 href={`/admin/analytics/providers/${row.tenant_id}`}
-                style={{ padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+                style={{ padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
                   color: "var(--text-secondary)", textDecoration: "none", display: "inline-block" }}
               >
                 {row.tenant_name}

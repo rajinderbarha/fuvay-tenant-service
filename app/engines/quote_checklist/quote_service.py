@@ -17,9 +17,9 @@ from app.engines.quote_checklist.constants import (
     QEV_SENT_TO_CUSTOMER, QEV_CUSTOMER_APPROVED, QEV_CUSTOMER_REJECTED,
     QEV_REVISION_REQUESTED, QEV_CANCELLED, QEV_PROVIDER_APPROVED,
     QEV_PROVIDER_REJECTED, QEV_SUBMITTED_TO_PROVIDER, QEV_REVISED, QEV_EXPIRED,
-    JOB_STATUS_AWAITING_QUOTE_APPROVAL, JOB_STATUS_QUOTE_APPROVED,
-    JOB_STATUS_QUOTE_REJECTED, JOB_STATUS_QUOTE_REVISION,
     ERR_QUOTE_NOT_FOUND, ERR_QUOTE_ACCESS_DENIED,
+    ERR_QUOTE_NOT_CURRENT, ERR_APPROVED_ESTIMATE_IMMUTABLE,
+    ERR_INVALID_ESTIMATE_REVISION_STATE, ERR_JOB_CLOSED_ESTIMATE_DECLINED,
     ERR_QUOTE_INVALID_TRANSITION, ERR_QUOTE_ALREADY_LOCKED,
     ERR_QUOTE_ITEM_REQUIRED, ERR_QUOTE_ITEM_INVALID,
     ERR_QUOTE_CUSTOMER_APPROVAL_NOT_ALLOWED,
@@ -30,6 +30,9 @@ from app.engines.quote_checklist.models import (
     ServiceJobQuote, ServiceJobQuoteItem, ServiceJobQuoteEvent,
 )
 from app.engines.final_records.models import ServiceJob
+from app.engines.execution.constants import (
+    JS_QUOTE_REQUIRED, JS_CLOSED_ESTIMATE_DECLINED, JOB_TRANSITIONS,
+)
 
 
 # Slice 2F-16: add_item/update_item/remove_item previously checked only
@@ -118,6 +121,24 @@ class ServiceJobQuoteService:
         db.add(ev)
 
     async def _sync_job_status(self, db: AsyncSession, job_id: uuid.UUID, new_status: str) -> None:
+        """HOME-SERVICES-RUNTIME-SAFETY Phase 2A fix: this previously wrote
+        ServiceJob.status via raw SQL using a string vocabulary
+        (JOB_STATUS_AWAITING_QUOTE_APPROVAL etc.) that did not appear
+        anywhere in execution/constants.py's JOB_TRANSITIONS graph -- a
+        second, unvalidated status-write path that bypassed the execution
+        engine's own transition enforcement entirely and could permanently
+        strand a job in a status _assert_transition had never heard of.
+        Now writes only real JS_* values and validates against the SAME
+        JOB_TRANSITIONS graph the execution engine itself enforces -- no
+        second job-state machine.
+        """
+        res = await db.execute(select(ServiceJob.status).where(ServiceJob.id == job_id))
+        current = res.scalar_one_or_none()
+        if current is None or current == new_status:
+            return
+        allowed = JOB_TRANSITIONS.get(current, set())
+        if new_status not in allowed:
+            raise ValueError(f"QUOTE_JOB_STATUS_SYNC_INVALID_TRANSITION:{current}->{new_status}")
         await db.execute(
             update(ServiceJob)
             .where(ServiceJob.id == job_id)
@@ -173,6 +194,55 @@ class ServiceJobQuoteService:
         job = await self._get_job(db, job_id)
         if str(job.tenant_id) != tenant_id:
             raise ValueError(ERR_QUOTE_ACCESS_DENIED)
+        # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 14): a job
+        # whose estimate was FINALLY rejected (closed_estimate_declined) is
+        # terminal -- creating a replacement quote must fail unless a
+        # separate, explicit reopen workflow exists (none does). This is
+        # distinct from revision_requested, which stays open and DOES permit
+        # a new quote (handled by the is_current-based checks below).
+        if job.status == JS_CLOSED_ESTIMATE_DECLINED:
+            raise ValueError(ERR_JOB_CLOSED_ESTIMATE_DECLINED)
+        # A required pre-estimate checklist (e.g. inspection evidence)
+        # complements the quote-approval gate -- it gates *submitting* an
+        # estimate, not approving one. Independent of, and does not
+        # substitute for, the customer-approval gate enforced elsewhere.
+        from app.engines.checklist_catalog.gate import assert_gate_satisfied
+        from app.engines.checklist_catalog.constants import GATE_BEFORE_ESTIMATE_SUBMISSION
+        await assert_gate_satisfied(db, job, GATE_BEFORE_ESTIMATE_SUBMISSION)
+        # HOME-SERVICES-RUNTIME-SAFETY Phase 2A (spec section 7): previously
+        # nothing stopped a second, fully independent quote row from being
+        # created for a job that already had one in flight -- two rows could
+        # both end up "customer_approved" with no notion of which was
+        # current. A new quote now supersedes the job's existing current
+        # quote (if any), preserving it as read-only history.
+        #
+        # Phase 2A.1 (spec section 10) hardening: an ORDINARY create_quote
+        # call may not silently replace a quote the customer already
+        # approved (immutable -- a real amount/scope change needs a
+        # dedicated change-order workflow, which does not exist yet in this
+        # codebase; fail closed and treat as deferred rather than pretend),
+        # nor one currently sent to the customer and awaiting their decision
+        # (the canonical replacement path there is cancel_quote() first,
+        # which is an explicit, audited action, then create_quote()).
+        # Rejected / revision-requested / expired / cancelled are legitimate
+        # replacement sources -- nothing is pending or locked in those states.
+        prior = (await db.execute(
+            select(ServiceJobQuote).where(
+                ServiceJobQuote.job_id == job.id, ServiceJobQuote.is_current.is_(True),
+            )
+        )).scalar_one_or_none()
+        if prior is not None and prior.status == QS_CUSTOMER_APPROVED:
+            raise ValueError(ERR_APPROVED_ESTIMATE_IMMUTABLE)
+        if prior is not None and prior.status == QS_SENT_TO_CUSTOMER:
+            raise ValueError(ERR_INVALID_ESTIMATE_REVISION_STATE)
+        now = _utcnow()
+        if prior is not None:
+            await db.execute(
+                update(ServiceJobQuote)
+                .where(ServiceJobQuote.id == prior.id)
+                .values(is_current=False, superseded_at=now, updated_at=now)
+            )
+            await db.flush()
         q = ServiceJobQuote(
             id=uuid.uuid4(),
             quote_number=_quote_number(),
@@ -184,6 +254,9 @@ class ServiceJobQuoteService:
             created_by_staff_member_id=uuid.UUID(staff_member_id) if staff_member_id else None,
             status=QS_DRAFT,
             quote_type=quote_type,
+            version_number=(prior.version_number + 1) if prior is not None else 1,
+            is_current=True,
+            supersedes_quote_id=prior.id if prior is not None else None,
             currency="INR",
             labour_amount=Decimal("0"),
             parts_amount=Decimal("0"),
@@ -372,7 +445,7 @@ class ServiceJobQuoteService:
             )
         )
         q.status = QS_SENT_TO_CUSTOMER
-        await self._sync_job_status(db, q.job_id, JOB_STATUS_AWAITING_QUOTE_APPROVAL)
+        await self._sync_job_status(db, q.job_id, JS_QUOTE_REQUIRED)
         await self._log_event(
             db, q, QEV_SENT_TO_CUSTOMER, "staff", user_id,
             old_status=old_status, new_status=QS_SENT_TO_CUSTOMER,
@@ -395,6 +468,13 @@ class ServiceJobQuoteService:
         q = await self._get_quote(db, quote_id)
         if str(q.customer_id) != customer_id:
             raise ValueError(ERR_QUOTE_CUSTOMER_APPROVAL_NOT_ALLOWED)
+        # Phase 2A: a superseded quote (a newer revision now exists) can
+        # never be approved, even by its rightful owner -- approving stale
+        # content could never legitimately authorize work against the
+        # current job. Checked before idempotency so a superseded-but-
+        # previously-approved quote cannot be "re-confirmed" via a matching key.
+        if not q.is_current:
+            raise ValueError(ERR_QUOTE_NOT_CURRENT)
         # idempotency: already approved with same key → return as-is.
         # Kept as a lightweight, query-free strip (not the full
         # _customer_dict/_recalculate reconciliation) -- an already-approved
@@ -419,11 +499,16 @@ class ServiceJobQuoteService:
                 approved_at=now,
                 locked_at=now,
                 idempotency_key=idempotency_key,
+                approved_by=uuid.UUID(customer_id),
                 updated_at=now,
             )
         )
         q.status = QS_CUSTOMER_APPROVED
-        await self._sync_job_status(db, q.job_id, JOB_STATUS_QUOTE_APPROVED)
+        # Phase 2A: no job-status transition on approval -- the job stays at
+        # JS_QUOTE_REQUIRED (a graph-valid predecessor of JS_SERVICE_STARTED);
+        # the work-start guard (assert_job_can_start_work) resolves whether
+        # this specific approved-and-current quote actually authorizes work.
+        await self._sync_job_status(db, q.job_id, JS_QUOTE_REQUIRED)
         await self._log_event(
             db, q, QEV_CUSTOMER_APPROVED, "customer", user_id,
             old_status=old_status, new_status=QS_CUSTOMER_APPROVED,
@@ -446,6 +531,8 @@ class ServiceJobQuoteService:
         q = await self._get_quote(db, quote_id)
         if str(q.customer_id) != customer_id:
             raise ValueError(ERR_QUOTE_CUSTOMER_APPROVAL_NOT_ALLOWED)
+        if not q.is_current:
+            raise ValueError(ERR_QUOTE_NOT_CURRENT)
         self._assert_transition(q, QS_CUSTOMER_REJECTED)
         old_status = q.status
         now = _utcnow()
@@ -460,7 +547,7 @@ class ServiceJobQuoteService:
             )
         )
         q.status = QS_CUSTOMER_REJECTED
-        await self._sync_job_status(db, q.job_id, JOB_STATUS_QUOTE_REJECTED)
+        await self._sync_job_status(db, q.job_id, JS_CLOSED_ESTIMATE_DECLINED)
         await self._log_event(
             db, q, QEV_CUSTOMER_REJECTED, "customer", user_id,
             old_status=old_status, new_status=QS_CUSTOMER_REJECTED,
@@ -483,6 +570,8 @@ class ServiceJobQuoteService:
         q = await self._get_quote(db, quote_id)
         if str(q.customer_id) != customer_id:
             raise ValueError(ERR_QUOTE_CUSTOMER_APPROVAL_NOT_ALLOWED)
+        if not q.is_current:
+            raise ValueError(ERR_QUOTE_NOT_CURRENT)
         self._assert_transition(q, QS_REVISION_REQUESTED)
         old_status = q.status
         await db.execute(
@@ -491,7 +580,9 @@ class ServiceJobQuoteService:
             .values(status=QS_REVISION_REQUESTED, revision_reason=reason, updated_at=_utcnow())
         )
         q.status = QS_REVISION_REQUESTED
-        await self._sync_job_status(db, q.job_id, JOB_STATUS_QUOTE_REVISION)
+        # Revision-requested must NOT close the job (spec section 9) -- job
+        # stays at JS_QUOTE_REQUIRED while the provider sends a new estimate.
+        await self._sync_job_status(db, q.job_id, JS_QUOTE_REQUIRED)
         await self._log_event(
             db, q, QEV_REVISION_REQUESTED, "customer", user_id,
             old_status=old_status, new_status=QS_REVISION_REQUESTED,

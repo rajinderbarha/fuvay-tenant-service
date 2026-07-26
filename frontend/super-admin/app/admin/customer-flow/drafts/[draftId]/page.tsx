@@ -71,7 +71,7 @@ export default function DraftDetailPage() {
           {FIELD_LABELS.map(([field, label]) => (
             <div key={field}>
               <div style={{ fontSize: "0.7rem", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
-              <div style={{ fontSize: "0.85rem", color: "#111827", marginTop: "0.1rem" }}>
+              <div style={{ fontSize: "0.85rem", color: "var(--text-primary)", marginTop: "0.1rem" }}>
                 {draft[field] != null ? String(draft[field]) : <span style={{ color: "#d1d5db" }}>—</span>}
               </div>
             </div>

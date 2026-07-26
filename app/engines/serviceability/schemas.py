@@ -147,6 +147,40 @@ class AdminServiceabilityTestRequest(BaseModel):
     job_type: str
 
 
+class ServiceAreaRequestCreate(BaseModel):
+    category_id: str
+
+
+class ServiceAreaRequestItemCreate(BaseModel):
+    tenant_service_id: str
+    job_type_id: str | None = None
+    applies_to_all_job_types: bool = False
+    country: str = "India"
+    state: str = Field(..., min_length=1, max_length=100)
+    district: str | None = None
+    city: str = Field(..., min_length=1, max_length=100)
+    zipcode: str | None = None
+    requested_effective_date: str | None = None
+
+
+class ServiceAreaItemDecision(BaseModel):
+    item_id: str
+    decision: str = Field(..., description="APPROVED | REJECTED | CHANGES_REQUESTED")
+    reason: str | None = None
+
+
+class ServiceAreaRequestDecide(BaseModel):
+    decisions: list[ServiceAreaItemDecision]
+
+
+class CoverageSuspendRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
+class CoverageRevokeRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
 class BookingPreflightRequest(BaseModel):
     customer_id: str
     address_id: str

@@ -173,7 +173,17 @@ class InventoryExtractionService:
             await self.db.flush()
 
         try:
-            pdf_text = self._extract_pdf_text(pdf_bytes)
+            # _extract_pdf_text is synchronous/CPU-bound (pypdf parses
+            # every page in-process). Running it directly here would block
+            # the single-threaded async event loop for the entire parse
+            # duration -- for a large multi-page PDF (5MB+) that can be
+            # long enough that the connection goes idle and the browser's
+            # fetch gives up with a bare "Failed to fetch" (no clean HTTP
+            # response ever gets a chance to be sent). Offload to a thread
+            # so the event loop -- and this request's own connection --
+            # stays responsive while parsing runs.
+            import asyncio
+            pdf_text = await asyncio.to_thread(self._extract_pdf_text, pdf_bytes)
             # Keep the prompt bounded — a very large PDF is truncated rather
             # than silently failing the LLM call.
             truncated = pdf_text[:24000]
@@ -189,11 +199,28 @@ class InventoryExtractionService:
             parsed_items = self._parse_llm_json(raw_content)
 
             created: list[InventoryItem] = []
+            # inventory_items has a real UNIQUE(tenant_id, sku) constraint,
+            # and it is NOT scoped to active rows -- a soft-deleted item
+            # (is_active=False) still permanently reserves its SKU. A real
+            # document can extract a SKU that collides either within this
+            # batch, or with an existing (even soft-deleted) row from a
+            # prior upload for this tenant. Pre-load every SKU this tenant
+            # has ever used and de-duplicate against that set, rather than
+            # letting the DB reject the insert (which would fail the whole
+            # transaction, see the except block below for why that used to
+            # become an unhandled second exception).
+            existing_skus_result = await self.db.execute(
+                select(InventoryItem.sku).where(InventoryItem.tenant_id == tenant_id)
+            )
+            seen_skus: set[str] = {row[0] for row in existing_skus_result if row[0]}
             for raw in parsed_items:
                 name = (raw.get("name") or "").strip()
                 if not name:
                     continue
                 sku = raw.get("sku") or f"EXTRACT-{uuid.uuid4().hex[:8].upper()}"
+                if sku in seen_skus:
+                    sku = f"{sku}-{uuid.uuid4().hex[:4].upper()}"
+                seen_skus.add(sku)
                 item = InventoryItem(
                     tenant_id=tenant_id, name=name, sku=sku,
                     category=raw.get("category"), unit=raw.get("unit") or "unit",
@@ -219,15 +246,39 @@ class InventoryExtractionService:
                 "draft_items": [self._item_dict(i) for i in created],
             }
         except ServiceOSException as e:
+            # A ServiceOSException here (e.g. from _parse_llm_json) is
+            # raised before any DB write in this block, so the session is
+            # still healthy -- safe to record the failure directly.
             upload.status = "failed"
             upload.error_message = e.detail[:1000]
             await self.db.flush()
             raise
         except Exception as e:
-            upload.status = "failed"
-            upload.error_message = str(e)[:1000]
-            await self.db.flush()
+            # Real bug found live: a genuine DB error here (e.g. the
+            # UNIQUE(tenant_id, sku) constraint, before the in-batch
+            # de-dup above existed) leaves the async session in a failed-
+            # transaction state. The old code then tried to flush() AGAIN
+            # to record upload.status="failed" -- but you cannot issue any
+            # further query on a session that already errored without
+            # rolling back first, so that second flush() itself raised an
+            # unrelated, uncaught exception, surfacing to the client as a
+            # raw 500 with no clean error body. Roll back first, then
+            # (best-effort, in its own try) record the failure on the
+            # now-clean session; if even that fails, still return the
+            # honest, clean error to the caller rather than leaking a
+            # second exception.
             logger.error("inventory_extraction.failed", upload_id=str(upload.id), error=str(e))
+            await self.db.rollback()
+            try:
+                fresh = await self.db.execute(select(InventoryExtractionUpload).where(
+                    InventoryExtractionUpload.id == upload.id))
+                fresh_upload = fresh.scalar_one_or_none()
+                if fresh_upload:
+                    fresh_upload.status = "failed"
+                    fresh_upload.error_message = str(e)[:1000]
+                    await self.db.flush()
+            except Exception:
+                pass
             raise ServiceOSException(ERR_LLM_BAD_RESPONSE,
                 "Extraction failed unexpectedly.", context={"error": str(e)[:300]})
 

@@ -118,7 +118,7 @@ export default function MarketingAutomationPage() {
               <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
                 {STATUS_TABS.map(t => (
                   <button key={t} onClick={() => setTab(t)} style={{
-                    fontSize:12, fontWeight:600, padding:"6px 12px", borderRadius:8, cursor:"pointer",
+                    fontSize:12, fontWeight:600, padding:"6px 12px", borderRadius:"var(--radius-md)", cursor:"pointer",
                     border: tab === t ? "1px solid var(--accent)" : "1px solid var(--border)",
                     background: tab === t ? "var(--accent-muted)" : "var(--surface)",
                     color: tab === t ? "var(--accent)" : "var(--text-secondary)",

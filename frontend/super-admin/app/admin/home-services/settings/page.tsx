@@ -9,14 +9,14 @@ function copyText(t: string) { if (typeof navigator !== "undefined") navigator.c
 
 function SectionError({ title, error, requestId, onRetry }: { title: string; error: string; requestId?: string | null; onRetry: () => void }) {
   return (
-    <div style={{ padding: "16px 20px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12 }}>
+    <div style={{ padding: "16px 20px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-lg)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
         <div>
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--danger-text)", margin: "0 0 4px", display: "flex", alignItems: "center", gap: 6 }}><XCircle size={14}/> {title}</p>
           <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0, opacity: 0.85 }}>{error}</p>
           {requestId && <button onClick={() => copyText(requestId)} style={{ fontSize: 11, color: "var(--danger-text)", background: "none", border: "none", cursor: "pointer", padding: "4px 0 0" }}><Copy size={10} style={{ display: "inline", marginRight: 4 }}/>Request ID: {requestId}</button>}
         </div>
-        <button onClick={onRetry} style={{ padding: "6px 12px", fontSize: 12, borderRadius: 8, border: "1px solid var(--danger-border)", background: "transparent", color: "var(--danger-text)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}><RefreshCw size={11}/> Retry</button>
+        <button onClick={onRetry} style={{ padding: "6px 12px", fontSize: 12, borderRadius:"var(--radius-md)", border: "1px solid var(--danger-border)", background: "transparent", color: "var(--danger-text)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}><RefreshCw size={11}/> Retry</button>
       </div>
     </div>
   );
@@ -62,7 +62,7 @@ export default function AdminHomeServicesSettingsPage() {
       {configApi.error ? (
         <SectionError title="We couldn't load Home Services settings" error={configApi.error} requestId={configApi.requestId} onRetry={configApi.refetch}/>
       ) : configApi.loading || !cfg ? (
-        <div style={{ height: 160, background: "var(--surface-sunken)", borderRadius: 12, animation: "pulse 1.5s ease-in-out infinite" }}/>
+        <div style={{ height: 160, background: "var(--surface-sunken)", borderRadius:"var(--radius-lg)", animation: "pulse 1.5s ease-in-out infinite" }}/>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <FlagRow label="Auto Price Options" on={cfg.auto_price_options_enabled}

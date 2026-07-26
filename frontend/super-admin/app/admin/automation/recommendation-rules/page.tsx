@@ -180,15 +180,15 @@ export default function RecommendationRulesPage() {
                         style={{ fontSize: "0.72rem", color: "#1e3a5f", textDecoration: "none" }}>Edit</a>
                       {rule.status !== "active" && rule.status !== "archived" && (
                         <button onClick={() => handleActivate(rule.id)}
-                          style={{ fontSize: "0.72rem", color: "#16a34a", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Activate</button>
+                          style={{ fontSize: "0.72rem", color: "var(--success)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Activate</button>
                       )}
                       {rule.status === "active" && (
                         <button onClick={() => handleDeactivate(rule.id)}
-                          style={{ fontSize: "0.72rem", color: "#ca8a04", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Deactivate</button>
+                          style={{ fontSize: "0.72rem", color: "var(--warning)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Deactivate</button>
                       )}
                       {rule.status !== "archived" && (
                         <button onClick={() => handleArchive(rule.id)}
-                          style={{ fontSize: "0.72rem", color: "#dc2626", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Archive</button>
+                          style={{ fontSize: "0.72rem", color: "var(--danger)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Archive</button>
                       )}
                     </div>
                   </td>
@@ -204,7 +204,7 @@ export default function RecommendationRulesPage() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div style={{ background: "#fff", borderRadius: "0.75rem", padding: "2rem", width: "600px", maxHeight: "90vh", overflowY: "auto" }}>
             <h2 style={{ margin: "0 0 1.25rem", fontWeight: 700 }}>Create Recommendation Rule</h2>
-            {formError && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", marginBottom: "1rem", fontSize: "0.85rem" }}>{formError}</div>}
+            {formError && <div style={{ background: "#fef2f2", color: "var(--danger)", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", marginBottom: "1rem", fontSize: "0.85rem" }}>{formError}</div>}
 
             {[
               { label: "Code *", field: "code", placeholder: "ac_brand_recommendations" },

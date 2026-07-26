@@ -18,16 +18,16 @@ import {
 const fmt = (n: number | string) => `₹${Number(n).toLocaleString("en-IN")}`;
 
 const PACKAGE_TYPE_TABS = [
-  { value: "onboarding_package",    label: "Onboarding Package",    color: "#7c3aed",
+  { value: "onboarding_package",    label: "Onboarding Package",    color: "var(--accent)",
     hint: "One-time provider onboarding. May include security deposit + starting credits.",
     showDeposit: true,  showCredits: true,  showBilling: false, showLeads: false, showTrial: true },
-  { value: "security_deposit_rule", label: "Security Deposit Rule", color: "#d97706",
+  { value: "security_deposit_rule", label: "Security Deposit Rule", color: "var(--warning)",
     hint: "Defines deposit requirement — held non-spendable trust deposit, not wallet credit.",
     showDeposit: true,  showCredits: false, showBilling: false, showLeads: false, showTrial: false },
-  { value: "credit_topup",          label: "Credit Top-up",         color: "#059669",
+  { value: "credit_topup",          label: "Credit Top-up",         color: "var(--success)",
     hint: "Provider buys spendable credits for commission wallet. No deposit.",
     showDeposit: false, showCredits: true,  showBilling: false, showLeads: false, showTrial: false },
-  { value: "subscription_plan",     label: "Subscription Plan",     color: "#2563eb",
+  { value: "subscription_plan",     label: "Subscription Plan",     color: "var(--brand)",
     hint: "Recurring billing for coaching, real estate, restaurant, etc.",
     showDeposit: false, showCredits: false, showBilling: true,  showLeads: false, showTrial: true },
   { value: "lead_credit_package",   label: "Lead Credit Package",   color: "#db2777",
@@ -166,13 +166,13 @@ function PreviewCard({
 
   return (
     <div style={{
-      border: "2px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 340,
+      border: "2px solid var(--border)", borderRadius:"var(--radius-xl, 1rem)", padding: 24, maxWidth: 340,
       background: "var(--surface-elevated)", position: "relative",
     }}>
       {(form.is_popular || form.badge_label) && (
         <div style={{
           position: "absolute", top: -12, left: 16,
-          background: form.is_popular ? "#7c3aed" : ti.color,
+          background: form.is_popular ? "var(--accent)" : ti.color,
           color: "#fff", fontSize: 11, fontWeight: 700,
           padding: "3px 12px", borderRadius: 100,
         }}>
@@ -221,7 +221,7 @@ function PreviewCard({
         <ul style={{ margin: "12px 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
           {features.filter(f => f.is_included).map(f => (
             <li key={f._key} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13 }}>
-              <CheckCircle2 size={14} color={f.is_highlighted ? "#7c3aed" : "#059669"} style={{ flexShrink: 0, marginTop: 2 }}/>
+              <CheckCircle2 size={14} color={f.is_highlighted ? "var(--accent)" : "var(--success)"} style={{ flexShrink: 0, marginTop: 2 }}/>
               <span style={{ color: "var(--text-primary)", fontWeight: f.is_highlighted ? 600 : 400 }}>
                 {f.feature_label || "Feature"}
               </span>
@@ -245,7 +245,7 @@ function PreviewCard({
       <button style={{
         width: "100%", marginTop: 16, padding: "10px 0",
         background: `linear-gradient(135deg, ${ti.color}, ${ti.color}cc)`,
-        color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700,
+        color: "#fff", border: "none", borderRadius:"var(--radius-md)", fontSize: 14, fontWeight: 700,
         cursor: "pointer",
       }}>
         {form.cta_label || "Get Started"}
@@ -293,9 +293,9 @@ function FeatureRow({
 }) {
   return (
     <div style={{
-      border: "1px solid var(--border)", borderRadius: 8,
+      border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
       background: "var(--surface-elevated)",
-      borderLeft: `3px solid ${feat.is_highlighted ? "#7c3aed" : "var(--border)"}`,
+      borderLeft: `3px solid ${feat.is_highlighted ? "var(--accent)" : "var(--border)"}`,
       overflow: "hidden",
     }}>
       {/* Row header: toggles + reorder + delete */}
@@ -311,7 +311,7 @@ function FeatureRow({
         <label style={{ ...chkLbl, flex: 1 }}>
           <input type="checkbox" checked={feat.is_highlighted}
             onChange={e => onChange({ is_highlighted: e.target.checked })}/>
-          <span style={{ color: feat.is_highlighted ? "#7c3aed" : undefined }}>Highlighted</span>
+          <span style={{ color: feat.is_highlighted ? "var(--accent)" : undefined }}>Highlighted</span>
         </label>
         <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
           <button type="button" onClick={onMoveUp}   style={btnSm} title="Move up"><ChevronUp   size={12}/></button>
@@ -358,7 +358,7 @@ function LimitRow({
 }) {
   return (
     <div style={{
-      border: "1px solid var(--border)", borderRadius: 8,
+      border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
       background: "var(--surface-elevated)", overflow: "hidden",
     }}>
       {/* Row header: type selector + actions */}
@@ -737,12 +737,12 @@ export default function PackagesPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, marginBottom: 20 }}>
         {[
           { label: "Total Packages",      value: summaryData?.total,              color: "var(--primary)" },
-          { label: "Active",              value: summaryData?.active,             color: "#16a34a" },
+          { label: "Active",              value: summaryData?.active,             color: "var(--success)" },
           { label: "Inactive",            value: summaryData?.inactive,           color: "#9ca3af" },
-          { label: "Featured",            value: summaryData?.featured,           color: "#d97706" },
-          { label: "Onboarding",          value: summaryData?.onboarding,         color: "#7c3aed" },
-          { label: "Subscription",        value: summaryData?.subscription,       color: "#2563eb" },
-          { label: "Lead Credits",        value: summaryData?.lead_credit,        color: "#059669" },
+          { label: "Featured",            value: summaryData?.featured,           color: "var(--warning)" },
+          { label: "Onboarding",          value: summaryData?.onboarding,         color: "var(--accent)" },
+          { label: "Subscription",        value: summaryData?.subscription,       color: "var(--brand)" },
+          { label: "Lead Credits",        value: summaryData?.lead_credit,        color: "var(--success)" },
           { label: "Active Assignments",  value: summaryData?.active_assignments, color: "#0891b2" },
         ].map(c => (
           <div key={c.label} style={{
@@ -812,15 +812,15 @@ export default function PackagesPage() {
                 return {
                   name: (
                     <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                      <div style={{ width:32, height:32, borderRadius:8,
+                      <div style={{ width:32, height:32, borderRadius:"var(--radius-md)",
                         background:`${ti.color}20`, display:"flex", alignItems:"center", justifyContent:"center" }}>
                         <Package size={13} style={{ color:ti.color }}/>
                       </div>
                       <div>
                         <p style={{ margin:0, fontSize:13, fontWeight:600, color:"var(--text-primary)" }}>
                           {pkg.name}
-                          {pkg.is_featured   && <Star   size={10} color="#d97706" style={{ marginLeft:4 }}/>}
-                          {pkg.is_recommended && <CheckCircle2 size={10} color="#059669" style={{ marginLeft:4 }}/>}
+                          {pkg.is_featured   && <Star   size={10} color="var(--warning)" style={{ marginLeft:4 }}/>}
+                          {pkg.is_recommended && <CheckCircle2 size={10} color="var(--success)" style={{ marginLeft:4 }}/>}
                         </p>
                         <p style={{ margin:0, fontSize:11, color:"var(--text-tertiary)" }}>
                           {pkg.slug}
@@ -953,7 +953,7 @@ export default function PackagesPage() {
               <Select label="Package Type *" value={form.package_type}
                 onChange={v => F({ package_type: v })}
                 options={PACKAGE_TYPE_TABS.map(t => ({ value:t.value, label:t.label }))}/>
-              <div style={{ padding:"8px 12px", borderRadius:8, background:"var(--surface-sunken)",
+              <div style={{ padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--surface-sunken)",
                 fontSize:12, color:"var(--text-secondary)", borderLeft:`3px solid ${typeInfo.color}` }}>
                 <strong>{typeInfo.label}:</strong> {typeInfo.hint}
               </div>
@@ -1024,7 +1024,7 @@ export default function PackagesPage() {
           {formTab === "pricing" && (
             <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
               {form.package_type === "security_deposit_rule" && (
-                <div style={{ padding:"8px 12px", borderRadius:8, background:"var(--warning-bg)",
+                <div style={{ padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--warning-bg)",
                   border:"1px solid var(--warning-border)", fontSize:12, color:"var(--warning-text)" }}>
                   Security Deposit is <strong>non-spendable</strong> trust/onboarding deposit.
                   It is held and refunded/forfeited per policy — NOT provider wallet credit.
@@ -1232,7 +1232,7 @@ export default function PackagesPage() {
                 ] as const).map(({ key, label, desc }) => (
                   <label key={key} style={{
                     display: "flex", flexDirection: "column", gap: 6, cursor: "pointer",
-                    padding: "10px 12px", borderRadius: 8,
+                    padding: "10px 12px", borderRadius:"var(--radius-md)",
                     background: form[key] ? "var(--accent-muted)" : "var(--surface-sunken)",
                     border: `1.5px solid ${form[key] ? "var(--brand)" : "var(--border)"}`,
                   }}>

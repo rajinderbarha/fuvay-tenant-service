@@ -222,17 +222,23 @@ class TestQuoteCreation:
         job = _mock_job()
         mock_quote = _mock_quote()
 
-        db = _mock_db(_scalars_result([job]))
+        # Phase 2A: create_quote now looks up any existing current quote for
+        # the job first (to supersede it) -- none exists here.
+        db = _mock_db(_scalars_result([]))
         db.flush  = AsyncMock()
         db.commit = AsyncMock()
         db.refresh = AsyncMock(side_effect=lambda obj: None)
 
         with patch.object(svc, "_get_job", AsyncMock(return_value=job)):
             with patch.object(svc, "_log_event", AsyncMock()):
-                result = await svc.create_quote(
-                    db, str(JOB_ID), str(TENANT_ID),
-                    "repair_quote", str(USER_ID), str(STAFF_ID), "test notes", "rid-1",
-                )
+                with patch(
+                    "app.engines.checklist_catalog.gate.assert_gate_satisfied",
+                    AsyncMock(),
+                ):
+                    result = await svc.create_quote(
+                        db, str(JOB_ID), str(TENANT_ID),
+                        "repair_quote", str(USER_ID), str(STAFF_ID), "test notes", "rid-1",
+                    )
         assert db.add.called
 
     @pytest.mark.asyncio
@@ -518,7 +524,11 @@ class TestStatusSync:
                 with patch.object(svc, "_log_event", AsyncMock()):
                     await svc.send_to_customer(db, str(QUOTE_ID), str(TENANT_ID),
                                                None, str(USER_ID), None)
-        assert "awaiting_customer_quote_approval" in synced
+        # Phase 2A fix: job-status sync now uses the SAME JS_* vocabulary the
+        # execution engine's JOB_TRANSITIONS graph validates, not the
+        # previously-disjoint JOB_STATUS_* strings that JOB_TRANSITIONS had
+        # never heard of (a second, unvalidated status-write path).
+        assert "quote_required" in synced
 
     @pytest.mark.asyncio
     async def test_approve_syncs_job_status(self):
@@ -538,7 +548,10 @@ class TestStatusSync:
                         db, str(QUOTE_ID), str(CUSTOMER_ID),
                         "idem-1", str(USER_ID), None,
                     )
-        assert "quote_approved" in synced
+        # Phase 2A: approval no longer moves the job off JS_QUOTE_REQUIRED --
+        # the work-start guard resolves whether THIS approved+current quote
+        # authorizes work, rather than the job status alone carrying that fact.
+        assert "quote_required" in synced
 
     @pytest.mark.asyncio
     async def test_reject_syncs_job_status(self):
@@ -558,7 +571,11 @@ class TestStatusSync:
                         db, str(QUOTE_ID), str(CUSTOMER_ID),
                         "Too expensive", str(USER_ID), None,
                     )
-        assert "quote_rejected" in synced
+        # Phase 2A (spec section 9): rejection now moves the job to a real
+        # terminal status the execution engine's own JOB_TRANSITIONS graph
+        # defines, instead of a string ("quote_rejected") that graph never
+        # recognized.
+        assert "closed_estimate_declined" in synced
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -52,7 +52,21 @@ async def enable_vertical(
     _user=Depends(require_permission(P.VERTICALS_ENABLE)),
 ):
     try:
-        data = await _svc.enable_vertical(db, vertical_key)
+        data = await _svc.enable_vertical(db, vertical_key, actor_id=uuid.UUID(_user.user_id))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return ok(data, _rid())
+
+
+@router.get("/{vertical_key}/disable-impact", response_model=ApiResponse)
+async def get_disable_impact(
+    vertical_key: str,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission(P.VERTICALS_READ)),
+):
+    """Impact preview shown before a disable confirmation."""
+    try:
+        data = await _svc.disable_impact(db, vertical_key)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return ok(data, _rid())
@@ -61,11 +75,14 @@ async def enable_vertical(
 @router.post("/{vertical_key}/disable", response_model=ApiResponse)
 async def disable_vertical(
     vertical_key: str,
+    payload: dict = Body(default={}),
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission(P.VERTICALS_DISABLE)),
 ):
     try:
-        data = await _svc.disable_vertical(db, vertical_key)
+        data = await _svc.disable_vertical(
+            db, vertical_key, actor_id=uuid.UUID(_user.user_id), reason=payload.get("reason"),
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return ok(data, _rid())
@@ -79,7 +96,48 @@ async def update_vertical(
     _user=Depends(require_permission(P.VERTICALS_UPDATE)),
 ):
     try:
-        data = await _svc.update_vertical(db, vertical_key, payload)
+        data = await _svc.update_vertical(db, vertical_key, payload, actor_id=uuid.UUID(_user.user_id))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return ok(data, _rid())
+
+
+# ── Tenant-Vertical Enrollments ────────────────────────────────────────────────
+
+@router.get("/{vertical_key}/enrollments", response_model=ApiResponse)
+async def list_vertical_enrollments(
+    vertical_key: str,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission(P.VERTICALS_READ)),
+):
+    try:
+        data = await _svc.list_enrollments(db, vertical_key=vertical_key, status=status)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return ok({"items": data, "total": len(data)}, _rid())
+
+
+enrollments_router = APIRouter(prefix="/v1/admin/tenant-vertical-enrollments", tags=["admin-verticals"])
+
+
+@enrollments_router.post("/{enrollment_id}/transition", response_model=ApiResponse)
+async def transition_enrollment(
+    enrollment_id: uuid.UUID,
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_permission(P.VERTICALS_UPDATE)),
+):
+    """Approve / reject / request-changes / suspend / reactivate ONE tenant's
+    enrollment in ONE vertical, independent of its other vertical enrollments."""
+    new_status = payload.get("status")
+    if not new_status:
+        raise HTTPException(status_code=400, detail="'status' is required")
+    try:
+        data = await _svc.transition_enrollment(
+            db, enrollment_id, new_status,
+            actor_id=uuid.UUID(_user.user_id), reason=payload.get("reason"),
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return ok(data, _rid())

@@ -334,7 +334,7 @@ function PricingRulesInner() {
         </div>
 
         {advOpen && (
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto auto", gap:10, marginBottom:16, padding:12, background:"var(--surface-sunken)", borderRadius:8 }}>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto auto", gap:10, marginBottom:16, padding:12, background:"var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
             <Select label="Brand" value={brandFilter} onChange={setBrandFilter} placeholder="Any brand" options={brandOptions}/>
             <Select label="Service Type" value={typeFilter} onChange={setTypeFilter} placeholder="Any type" options={typeOptions}/>
             <Select label="Pricing Model" value={modelFilter} onChange={setModelFilter} placeholder="Any model" options={PRICING_MODELS}/>
@@ -343,7 +343,7 @@ function PricingRulesInner() {
           </div>
         )}
 
-        <div style={{ fontSize:12, color:"var(--text-tertiary)", marginBottom:12, padding:"8px 12px", background:"var(--surface-sunken)", borderRadius:8 }}>
+        <div style={{ fontSize:12, color:"var(--text-tertiary)", marginBottom:12, padding:"8px 12px", background:"var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
           Commission is managed in <strong>Finance → Commission Rules</strong>. Pricing Rules only define customer/service pricing and provider allowed price boundaries.
         </div>
         {rules.error && <p style={{ color:"var(--danger-text)", fontSize:13 }}>{rules.error}</p>}
@@ -378,7 +378,7 @@ function PricingRulesInner() {
           </div>
 
           {MODEL_HINTS[pm] && (
-            <div style={{ fontSize:12, color:"var(--text-secondary)", background:"var(--surface-sunken)", padding:"8px 12px", borderRadius:8, borderLeft:"3px solid var(--brand)" }}>
+            <div style={{ fontSize:12, color:"var(--text-secondary)", background:"var(--surface-sunken)", padding:"8px 12px", borderRadius:"var(--radius-md)", borderLeft:"3px solid var(--brand)" }}>
               {MODEL_HINTS[pm]}
             </div>
           )}
@@ -523,7 +523,7 @@ function PricingRulesInner() {
             Compute Price
           </Btn>
           {previewResult && (
-            <div style={{ padding:12, borderRadius:8, background:"var(--surface-sunken)" }}>
+            <div style={{ padding:12, borderRadius:"var(--radius-md)", background:"var(--surface-sunken)" }}>
               <p style={{ margin:0, fontSize:13 }}>Source: <strong>{previewResult.source}</strong></p>
               {previewResult.matched_rule_name && (
                 <p style={{ margin:"4px 0 0", fontSize:13 }}>Matched Rule: <strong>{previewResult.matched_rule_name}</strong></p>
@@ -556,13 +556,14 @@ function PricingRulesPageInner() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <AlertTriangle size={16} style={{ color: "var(--warning-text, #92400e)", flexShrink: 0 }}/>
           <p style={{ fontSize: 13, color: "var(--warning-text, #92400e)", margin: 0 }}>
-            This global Pricing Rules screen is deprecated for Home Services. Manage Home Services
-            price boundaries from the dedicated, vertical-scoped screen instead.
+            This screen is deprecated for Home Services — the dedicated vertical-scoped screen was
+            retired (admin no longer sets price boundaries; providers set their own price). Configure
+            job types and workflow in the Catalog Workspace instead.
           </p>
         </div>
-        <a href="/admin/home-services/pricing-rules" style={{
+        <a href="/admin/catalog-workspace" style={{
           fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none", whiteSpace: "nowrap" }}>
-          Go to Home Services Pricing Rules →
+          Go to Catalog Workspace →
         </a>
       </div>
       <SectionHeader title="Pricing Rules [Deprecated]" subtitle="Configure service pricing by category, service, option/type, brand, tier, city, zone, and zipcode."/>

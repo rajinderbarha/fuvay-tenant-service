@@ -63,7 +63,7 @@ export default function AdminMarketingAssetsPage() {
     }), []));
 
   const selectStyle: React.CSSProperties = {
-    border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px",
+    border: "1px solid var(--border)", borderRadius:"var(--radius-md)", padding: "8px 12px",
     fontSize: 13, background: "var(--surface-sunken)", color: "var(--text-primary)",
     fontFamily: "inherit", outline: "none", minWidth: 200,
   };

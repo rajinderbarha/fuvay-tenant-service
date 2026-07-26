@@ -160,7 +160,7 @@ export default function NotificationTemplatesPage() {
 
       {/* Summary cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginBottom: 20 }}>
-        {summary.loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={90} style={{ borderRadius: 12 }}/>) : <>
+        {summary.loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={90} style={{ borderRadius:"var(--radius-lg)" }}/>) : <>
           <SummaryCard label="Total Templates" value={s?.total_templates ?? 0}/>
           <SummaryCard label="Active" value={s?.active_templates ?? 0} accent/>
           <SummaryCard label="Drafts" value={s?.draft_templates ?? 0}/>
@@ -168,7 +168,7 @@ export default function NotificationTemplatesPage() {
         </>}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginBottom: 20 }}>
-        {summary.loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={90} style={{ borderRadius: 12 }}/>) : <>
+        {summary.loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={90} style={{ borderRadius:"var(--radius-lg)" }}/>) : <>
           <SummaryCard label="Tenant Overrides" value={s?.tenant_overrides ?? 0}/>
           <SummaryCard label="Validation Errors" value={s?.validation_errors ?? 0} danger={!!s?.validation_errors}/>
           <SummaryCard label="Failed Deliveries" value={s?.failed_deliveries ?? 0} danger={!!s?.failed_deliveries}/>
@@ -364,7 +364,7 @@ function CreateTemplateWizard({ onClose, onCreated }: { onClose: () => void; onC
               </label>
               <textarea value={body} onChange={e => setBody(e.target.value)} rows={5}
                 placeholder="Hi {{customer_name}}, ..."
-                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)",
+                style={{ width: "100%", padding: "10px 12px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                   background: "var(--surface)", color: "var(--text-primary)", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }}/>
             </div>
           </div>
@@ -466,7 +466,7 @@ function TemplateDetailDrawer({ template, onClose, onChanged, notify }: {
             <p><strong>Language:</strong> {template.language} · <strong>Priority:</strong> {template.priority}</p>
             {template.subject && <p><strong>Subject:</strong> {template.subject}</p>}
             <p><strong>Body:</strong></p>
-            <p style={{ padding: 12, background: "var(--surface-sunken)", borderRadius: 8, whiteSpace: "pre-wrap" }}>{template.body}</p>
+            <p style={{ padding: 12, background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", whiteSpace: "pre-wrap" }}>{template.body}</p>
             <p><strong>Variables:</strong> {template.variables.map(v => `{{${v}}}`).join(", ") || "—"}</p>
           </div>
         )}
@@ -478,7 +478,7 @@ function TemplateDetailDrawer({ template, onClose, onChanged, notify }: {
                 Sample Event Payload (JSON)
               </label>
               <textarea value={sampleJson} onChange={e => setSampleJson(e.target.value)} rows={3}
-                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+                style={{ width: "100%", padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                   background: "var(--surface)", color: "var(--text-primary)", fontSize: 12, fontFamily: "monospace", boxSizing: "border-box" }}/>
             </div>
             <Input label="Test Recipient" value={recipient} onChange={setRecipient}/>
@@ -507,7 +507,7 @@ function TemplateDetailDrawer({ template, onClose, onChanged, notify }: {
             {versions.loading ? <Skeleton height={120}/> : (versions.data?.items ?? []).length === 0 ? (
               <EmptyState title="No version history yet" description="Versions are created every time this template is updated."/>
             ) : (versions.data?.items ?? []).map(v => (
-              <div key={v.id} style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8, display: "flex", justifyContent: "space-between" }}>
+              <div key={v.id} style={{ padding: 10, border: "1px solid var(--border)", borderRadius:"var(--radius-md)", display: "flex", justifyContent: "space-between" }}>
                 <div>
                   <p style={{ margin: 0, fontSize: 12, fontWeight: 600 }}><History size={12} style={{ marginRight: 4 }}/> v{v.version_number}</p>
                   <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-tertiary)" }}>{v.change_reason || "—"}</p>

@@ -40,17 +40,17 @@ const th: React.CSSProperties = {
 };
 
 const btnStyle: React.CSSProperties = {
-  padding: "6px 14px", fontSize: 13, borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+  padding: "6px 14px", fontSize: 13, borderRadius:"var(--radius-md)", cursor: "pointer", fontFamily: "inherit",
   border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)",
 };
 
 const selStyle: React.CSSProperties = {
-  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit",
 };
 
 const inputStyle: React.CSSProperties = {
-  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--bg)", color: "var(--text-primary)", fontFamily: "inherit",
 };
 
@@ -89,7 +89,7 @@ function DraftDetailModal({ draft, onClose }: { draft: RealEstateLeadDraft; onCl
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex",
       alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
-      <div style={{ background: "var(--surface)", borderRadius: 16, boxShadow: "0 16px 48px rgba(0,0,0,0.22)",
+      <div style={{ background: "var(--surface)", borderRadius:"var(--radius-xl, 1rem)", boxShadow: "0 16px 48px rgba(0,0,0,0.22)",
         maxWidth: 720, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "20px 24px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0,
@@ -181,7 +181,7 @@ function DraftDetailModal({ draft, onClose }: { draft: RealEstateLeadDraft; onCl
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {(draft.provider_options as Record<string, unknown>[]).map((p, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                    background: "var(--surface-sunken)", borderRadius: 8, padding: "8px 14px", fontSize: 13 }}>
+                    background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: "8px 14px", fontSize: 13 }}>
                     <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{p.business_name as string ?? "Provider"}</span>
                     <span style={{ color: "var(--text-tertiary)" }}>{p.city as string} · {p.match_reason as string}</span>
                     {p.rating !== null && p.rating !== undefined && (
@@ -351,7 +351,7 @@ function RoutingRulesTab() {
       {showAdd && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex",
           alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
-          <div style={{ background: "var(--surface)", borderRadius: 16, padding: 24, maxWidth: 560, width: "100%",
+          <div style={{ background: "var(--surface)", borderRadius:"var(--radius-xl, 1rem)", padding: 24, maxWidth: 560, width: "100%",
             display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 16px 48px rgba(0,0,0,0.22)" }}>
             <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Add Routing Rule</h3>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -399,13 +399,13 @@ function RoutingRulesTab() {
             </div>
             <div style={{ display: "flex", gap: 12, paddingTop: 4 }}>
               <button onClick={handleCreate} disabled={saving}
-                style={{ flex: 1, padding: "8px 0", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none",
+                style={{ flex: 1, padding: "8px 0", fontSize: 13, fontWeight: 600, borderRadius:"var(--radius-md)", border: "none",
                   cursor: "pointer", fontFamily: "inherit", background: "var(--brand)", color: "white",
                   opacity: saving ? 0.5 : 1 }}>
                 {saving ? "Saving…" : "Create Rule"}
               </button>
               <button onClick={() => setShowAdd(false)}
-                style={{ flex: 1, padding: "8px 0", fontSize: 13, borderRadius: 8,
+                style={{ flex: 1, padding: "8px 0", fontSize: 13, borderRadius:"var(--radius-md)",
                   border: "1px solid var(--border)", cursor: "pointer", fontFamily: "inherit",
                   background: "var(--surface)", color: "var(--text-secondary)" }}>
                 Cancel
@@ -507,7 +507,7 @@ export default function RealEstateLeadDraftsPage() {
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
                 {total} total · showing {drafts.length}
               </p>
-              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>

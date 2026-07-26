@@ -179,7 +179,7 @@ export default function AdminBrandsPage() {
         {/* Create Brand Modal */}
         <Modal open={showCreate} onClose={() => { setShowCreate(false); setDuplicateWarning(null); }} title="New Brand">
           {duplicateWarning && (
-            <div style={{ background: "var(--warning-bg, #fff8e1)", border: "1px solid var(--warning, #f59e0b)", borderRadius: 6, padding: 12, marginBottom: 16 }}>
+            <div style={{ background: "var(--warning-bg, #fff8e1)", border: "1px solid var(--warning, var(--warning))", borderRadius: 6, padding: 12, marginBottom: 16 }}>
               <div style={{ fontWeight: 600, marginBottom: 6, color: "var(--warning, #b45309)" }}>
                 Possible duplicate detected
               </div>

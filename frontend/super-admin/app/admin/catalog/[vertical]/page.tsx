@@ -32,9 +32,9 @@ const MOD_ICON: Record<string, React.ReactNode> = {
 
 const GROUP_COLOR: Record<string, string> = {
   services:   "var(--brand)",
-  qualifiers: "#7c3aed",
+  qualifiers: "var(--accent)",
   pricing:    "#0891b2",
-  compliance: "#d97706",
+  compliance: "var(--warning)",
   other:      "var(--text-tertiary)",
 };
 
@@ -114,7 +114,7 @@ export default function VerticalCatalogPage({
     <AdminLayout activeNav={`catalog-${verticalKey}`}>
       {loading ? (
         <div>
-          <div className="skeleton" style={{ height: 40, borderRadius: 8, marginBottom: 16, maxWidth: 300 }}/>
+          <div className="skeleton" style={{ height: 40, borderRadius:"var(--radius-md)", marginBottom: 16, maxWidth: 300 }}/>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="skeleton" style={{ height: 70, borderRadius: 10 }}/>

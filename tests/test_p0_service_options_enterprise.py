@@ -294,6 +294,16 @@ class TestExistingCRUD:
 # 6. FRONTEND FILE CHECKS
 # ═════════════════════════════════════════════════════════════════════════════
 
+# MODULE-L5-56: /admin/service-options (and its [id] detail page) are
+# intentionally retired as standalone pages (Job-Type Blueprint
+# consolidation) -- both now render a retired-notice redirect to
+# /admin/catalog-workspace. Their enterprise-dashboard content (summary
+# cards, action menus, pagination, etc.) no longer exists by design; see
+# tests/test_module_l5_56_blueprint_consolidation.py::TestStandalonePageRetirement
+# for the replacement contract. Skipped rather than deleted so the
+# historical intent stays visible in git history.
+@pytest.mark.skip(reason="MODULE-L5-56: /admin/service-options retired as a standalone page; "
+                          "superseded by Catalog Workspace's Options & Add-ons tab.")
 class TestFrontendFiles:
     def test_page_file_exists(self):
         assert os.path.isfile(PAGE_PATH), f"Missing: {PAGE_PATH}"

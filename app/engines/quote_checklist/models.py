@@ -45,6 +45,14 @@ class ServiceJobQuote(ServiceOSBase):
     rejected_at:               Mapped[object | None]     = mapped_column(DateTime(timezone=True), nullable=True)
     sent_to_customer_at:       Mapped[object | None]     = mapped_column(DateTime(timezone=True), nullable=True)
     locked_at:                 Mapped[object | None]     = mapped_column(DateTime(timezone=True), nullable=True)
+    # HOME-SERVICES-RUNTIME-SAFETY Phase 2A -- version lineage (migration 167).
+    # create_quote() supersedes the prior current quote for a job rather than
+    # letting two independent quote rows both claim to be authoritative.
+    version_number:            Mapped[int]               = mapped_column(Integer, nullable=False, default=1)
+    is_current:                Mapped[bool]              = mapped_column(Boolean, nullable=False, default=True)
+    supersedes_quote_id:       Mapped[uuid.UUID | None]  = mapped_column(UUID(as_uuid=True), nullable=True)
+    superseded_at:             Mapped[object | None]     = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by:               Mapped[uuid.UUID | None]  = mapped_column(UUID(as_uuid=True), nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -74,6 +82,11 @@ class ServiceJobQuote(ServiceOSBase):
             "rejected_at":              self.rejected_at.isoformat() if self.rejected_at else None,
             "sent_to_customer_at":      self.sent_to_customer_at.isoformat() if self.sent_to_customer_at else None,
             "locked_at":                self.locked_at.isoformat() if self.locked_at else None,
+            "version_number":           self.version_number,
+            "is_current":               self.is_current,
+            "supersedes_quote_id":      str(self.supersedes_quote_id) if self.supersedes_quote_id else None,
+            "superseded_at":            self.superseded_at.isoformat() if self.superseded_at else None,
+            "approved_by":              str(self.approved_by) if self.approved_by else None,
             "created_at":               self.created_at.isoformat() if self.created_at else None,
             "updated_at":               self.updated_at.isoformat() if self.updated_at else None,
         }

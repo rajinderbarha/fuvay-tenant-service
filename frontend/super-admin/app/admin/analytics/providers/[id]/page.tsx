@@ -12,7 +12,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const ago30  = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
 
 const card: React.CSSProperties = {
-  background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20,
+  background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20,
 };
 const h2: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 12px" };
 

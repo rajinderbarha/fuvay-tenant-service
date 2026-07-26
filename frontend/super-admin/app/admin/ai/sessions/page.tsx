@@ -13,10 +13,10 @@ const STATUS_STYLE: Record<string, React.CSSProperties> = {
 
 const selStyle: React.CSSProperties = {
   height: 34, padding: "0 10px", fontSize: 13, border: "1px solid var(--border)",
-  borderRadius: 8, background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit",
+  borderRadius:"var(--radius-md)", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit",
 };
 const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
 };
 const th: React.CSSProperties = {
@@ -78,7 +78,7 @@ export default function AISessionsPage() {
         <Link href="/admin/ai/metrics"         style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>AI Metrics →</Link>
       </div>
 
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
         {loading ? (
           <div style={{ padding: 32, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Loading sessions…</div>
         ) : sessions.length === 0 ? (

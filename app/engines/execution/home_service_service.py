@@ -37,6 +37,11 @@ from app.engines.execution.constants import (
     ERR_WORK_SUMMARY_REQUIRED, ERR_COLLECTED_AMOUNT_REQUIRED,
     ERR_COLLECTED_AMOUNT_INVALID, ERR_PAYMENT_MODE_INVALID,
     ERR_JOB_NOT_COMPLETABLE, ERR_UNRESOLVED_PARTS_REQUESTS,
+    ERR_ESTIMATE_REQUIRED, ERR_ESTIMATE_APPROVAL_REQUIRED,
+    ERR_ESTIMATE_REVISION_REQUIRED, ERR_ESTIMATE_REJECTED,
+    MSG_ESTIMATE_REQUIRED, MSG_ESTIMATE_APPROVAL_REQUIRED,
+    MSG_ESTIMATE_REVISION_REQUIRED, MSG_ESTIMATE_REJECTED,
+    ERR_JOB_TYPE_CONTEXT_UNRESOLVED, MSG_JOB_TYPE_CONTEXT_UNRESOLVED,
 )
 from app.engines.execution.models import (
     ServiceJobExecutionEvent,
@@ -121,6 +126,142 @@ class HomeServiceJobExecutionService:
         )
         db.add(event)
 
+    async def _resolve_job_type_workflow(self, db: AsyncSession, job):
+        """HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 16):
+        resolve via the job's own STORED booking-time snapshot --
+        ServiceJob.service_job_workflow_id -- an exact, immutable version
+        row, rather than re-deriving "whichever ServiceJobWorkflow row is
+        current right now" (Phase 2A.1's resolver). That mattered because
+        job_type_blueprint_service.set_workflow() is now append-only
+        (migration 171): an admin publishing a new version supersedes the
+        old row but does not delete it, so a job created against version 3
+        must keep resolving version 3 forever, even after version 4 exists.
+
+        Falls back to a live (offering_id, job_type_id) "is_current" lookup
+        ONLY for legacy jobs created before migration 171 added the snapshot
+        column (service_job_workflow_id is NULL) -- those still fail closed
+        on None per Phase 2A.1's existing behavior, and this fallback does
+        not change their resolution for the CURRENT version at all.
+
+        Returns the ServiceJobWorkflow row, or None if unresolved/invalid --
+        callers MUST fail closed on None, never guess.
+        """
+        from app.engines.admin_catalog.models import MasterServiceJobType, ServiceJobWorkflow
+        snapshot_id = getattr(job, "service_job_workflow_id", None)
+        if snapshot_id is not None:
+            return await db.get(ServiceJobWorkflow, snapshot_id)
+
+        offering_id = getattr(job, "offering_id", None)
+        job_type_id = getattr(job, "job_type_id", None)
+        if offering_id is None or job_type_id is None:
+            return None
+        link = (await db.execute(
+            select(MasterServiceJobType).where(
+                MasterServiceJobType.master_service_id == offering_id,
+                MasterServiceJobType.job_type_id == job_type_id,
+                MasterServiceJobType.is_active.is_(True),
+            )
+        )).scalars().first()
+        if link is None:
+            return None  # job type does not belong to this service, or is inactive
+        workflow = (await db.execute(
+            select(ServiceJobWorkflow).where(
+                ServiceJobWorkflow.master_service_id == offering_id,
+                ServiceJobWorkflow.job_type_id == job_type_id,
+                ServiceJobWorkflow.is_current.is_(True),
+            )
+        )).scalars().first()
+        return workflow  # None if no published blueprint workflow exists yet
+
+    async def _assert_quote_approval_satisfied(self, db: AsyncSession, job) -> None:
+        """Central work-start guard (spec section 5, corrected by 2A.1).
+        Called from the ONLY place ServiceJob.status is ever mutated in this
+        engine (_set_status), so every existing and future caller that tries
+        to reach JS_SERVICE_STARTED is covered -- there is no separate
+        router/staff-app/tenant-app path that can bypass this."""
+        workflow = await self._resolve_job_type_workflow(db, job)
+        if workflow is None:
+            raise ServiceOSException(
+                ERR_JOB_TYPE_CONTEXT_UNRESOLVED, MSG_JOB_TYPE_CONTEXT_UNRESOLVED, status_code=409,
+            )
+        if not workflow.quote_approval_required:
+            return
+        from app.engines.quote_checklist.models import ServiceJobQuote
+        from app.engines.quote_checklist.constants import (
+            QS_SENT_TO_CUSTOMER, QS_CUSTOMER_APPROVED,
+            QS_CUSTOMER_REJECTED, QS_REVISION_REQUESTED,
+        )
+        quote = (await db.execute(
+            select(ServiceJobQuote).where(
+                ServiceJobQuote.job_id == job.id,
+                ServiceJobQuote.is_current.is_(True),
+            )
+        )).scalars().first()
+        if quote is None:
+            raise ServiceOSException(ERR_ESTIMATE_REQUIRED, MSG_ESTIMATE_REQUIRED, status_code=409)
+        # Ownership is inherent: quote was looked up by this job's own id, so
+        # it cannot belong to another job/tenant/customer. Only its STATUS
+        # (and is_current, already filtered above) determines the outcome.
+        if quote.status == QS_CUSTOMER_APPROVED:
+            return
+        if quote.status == QS_CUSTOMER_REJECTED:
+            raise ServiceOSException(ERR_ESTIMATE_REJECTED, MSG_ESTIMATE_REJECTED, status_code=409)
+        if quote.status == QS_REVISION_REQUESTED:
+            raise ServiceOSException(ERR_ESTIMATE_REVISION_REQUIRED, MSG_ESTIMATE_REVISION_REQUIRED, status_code=409)
+        if quote.status == QS_SENT_TO_CUSTOMER:
+            raise ServiceOSException(ERR_ESTIMATE_APPROVAL_REQUIRED, MSG_ESTIMATE_APPROVAL_REQUIRED, status_code=409)
+        # draft / submitted_to_provider / provider_approved / provider_rejected
+        # / revised / expired / cancelled -- none of these is a customer
+        # decision in flight; the customer has nothing to approve yet.
+        raise ServiceOSException(ERR_ESTIMATE_REQUIRED, MSG_ESTIMATE_REQUIRED, status_code=409)
+
+    async def get_work_start_status(self, db: AsyncSession, job) -> dict:
+        """HOME-SERVICES-RUNTIME-SAFETY Phase 2A.1 (spec section 12): a
+        read-only projection of the SAME guard logic _assert_quote_approval_
+        satisfied enforces, for staff/tenant/customer API responses. Backend
+        remains authoritative -- this exists so clients display the correct
+        state WITHOUT re-implementing the resolution/decision logic
+        themselves; it is not a second source of truth, it just narrates the
+        one the guard already computes."""
+        from app.engines.admin_catalog.models import JobTypeDefinition
+        result = {
+            "job_type_id": str(job.job_type_id) if getattr(job, "job_type_id", None) else None,
+            "job_type_key": None,
+            "job_type_label": None,
+            "quote_approval_required": None,
+            "quote_state": None,
+            "can_start_work": False,
+            "start_work_block_code": None,
+        }
+        if job.job_type_id:
+            jt = await db.get(JobTypeDefinition, job.job_type_id)
+            if jt:
+                result["job_type_key"] = jt.key
+                result["job_type_label"] = jt.label
+
+        workflow = await self._resolve_job_type_workflow(db, job)
+        if workflow is None:
+            result["start_work_block_code"] = ERR_JOB_TYPE_CONTEXT_UNRESOLVED
+            return result
+        result["quote_approval_required"] = bool(workflow.quote_approval_required)
+
+        try:
+            await self._assert_quote_approval_satisfied(db, job)
+            result["can_start_work"] = True
+        except ServiceOSException as exc:
+            result["start_work_block_code"] = exc.error_code
+
+        if workflow.quote_approval_required:
+            from app.engines.quote_checklist.models import ServiceJobQuote
+            quote = (await db.execute(
+                select(ServiceJobQuote).where(
+                    ServiceJobQuote.job_id == job.id,
+                    ServiceJobQuote.is_current.is_(True),
+                )
+            )).scalars().first()
+            result["quote_state"] = quote.status if quote else None
+        return result
+
     async def _set_status(
         self,
         db: AsyncSession,
@@ -135,6 +276,8 @@ class HomeServiceJobExecutionService:
     ) -> None:
         old = job.status
         self._assert_transition(old, new_status)
+        if new_status == JS_SERVICE_STARTED:
+            await self._assert_quote_approval_satisfied(db, job)
         job.status = new_status
         job.updated_at = _now()
         db.add(job)
@@ -243,6 +386,9 @@ class HomeServiceJobExecutionService:
     async def complete_inspection(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
+        from app.engines.checklist_catalog.gate import assert_gate_satisfied
+        from app.engines.checklist_catalog.constants import GATE_BEFORE_INSPECTION_COMPLETE
+        await assert_gate_satisfied(db, job, GATE_BEFORE_INSPECTION_COMPLETE)
         await self._set_status(db, job, JS_INSPECTION_DONE, EV_INSPECTION_COMPLETED, user_id, "staff", request_id=request_id)
         await db.flush()
         return job.to_dict()
@@ -250,6 +396,13 @@ class HomeServiceJobExecutionService:
     async def start_service(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
+        # Estimate-approval gate is the pre-existing, independent authority
+        # for work start (_set_status -> _assert_quote_approval_satisfied).
+        # A required pre-work checklist gate complements it and never
+        # substitutes for it -- both must pass.
+        from app.engines.checklist_catalog.gate import assert_gate_satisfied
+        from app.engines.checklist_catalog.constants import GATE_BEFORE_WORK_START
+        await assert_gate_satisfied(db, job, GATE_BEFORE_WORK_START)
         await self._set_status(db, job, JS_SERVICE_STARTED, EV_SERVICE_STARTED, user_id, "staff", request_id=request_id)
         await db.flush()
         return job.to_dict()
@@ -571,6 +724,10 @@ class HomeServiceJobExecutionService:
                     "This job has parts requests awaiting approval. Resolve them before completing.",
                     status_code=422,
                 )
+
+        from app.engines.checklist_catalog.gate import assert_gate_satisfied
+        from app.engines.checklist_catalog.constants import GATE_BEFORE_JOB_COMPLETION
+        await assert_gate_satisfied(db, job, GATE_BEFORE_JOB_COMPLETION)
 
         job.completion_data = {
             "work_summary": work_summary.strip(),

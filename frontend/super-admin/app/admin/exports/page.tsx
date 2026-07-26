@@ -128,8 +128,8 @@ export default function ExportJobHistoryPage() {
       />
 
       {actionError && (
-        <Card style={{ marginBottom: 16, borderColor: "var(--color-danger, #dc2626)" }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--color-danger, #dc2626)" }}>
+        <Card style={{ marginBottom: 16, borderColor: "var(--color-danger, var(--danger))" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--color-danger, var(--danger))" }}>
             <AlertTriangle size={16} /> {actionError}
           </div>
         </Card>
@@ -138,7 +138,7 @@ export default function ExportJobHistoryPage() {
       <Card>
         {jobs.loading && !jobs.data && <div style={{ padding: 24 }}>Loading export history…</div>}
         {jobs.error && (
-          <div style={{ padding: 24, color: "var(--color-danger, #dc2626)" }}>
+          <div style={{ padding: 24, color: "var(--color-danger, var(--danger))" }}>
             {jobs.error}{jobs.requestId ? ` (request ${jobs.requestId})` : ""}
           </div>
         )}

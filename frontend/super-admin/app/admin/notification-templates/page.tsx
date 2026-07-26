@@ -13,13 +13,13 @@ const th: React.CSSProperties = {
 };
 
 const inputStyle: React.CSSProperties = {
-  width: "100%", height: 36, padding: "0 12px", fontSize: 13, borderRadius: 8,
+  width: "100%", height: 36, padding: "0 12px", fontSize: 13, borderRadius:"var(--radius-md)",
   border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)",
   fontFamily: "inherit", boxSizing: "border-box",
 };
 
 const selStyle: React.CSSProperties = {
-  width: "100%", height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  width: "100%", height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit", boxSizing: "border-box",
 };
 
@@ -125,7 +125,7 @@ export default function NotificationTemplatesPage() {
     <AdminLayout>
       <SectionHeader title="Notification Templates" subtitle="Event-driven notification templates" />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <select style={{ height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+        <select style={{ height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
           background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit" }}
           value={channelFilter}
           onChange={e => setChannelFilter(e.target.value)}>

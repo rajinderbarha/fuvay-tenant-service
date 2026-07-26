@@ -1031,6 +1031,50 @@ export interface AdminBookingListParams {
   page?: number; page_size?: number;
 }
 
+// HOME-SERVICES-OPERATIONS unified workspace — canonical
+// service_bookings/service_jobs pipeline only (see backend
+// operations_service.py docstring). Read-only projection; no mutation here.
+export interface UnifiedOperationRow {
+  work_id: string; work_type: "REQUEST" | "JOB";
+  booking_id: string | null; job_id: string | null; booking_number: string | null;
+  customer_id: string | null; customer_name: string | null; customer_contact_summary: string | null;
+  master_service: string | null; job_type: string | null;
+  tenant_id: string | null; tenant_name: string | null;
+  technician_id: string | null; technician_name: string | null;
+  current_stage: string; canonical_status: string; assignment_status: string;
+  schedule: { date: string | null; window: string | null };
+  sla_state: "ON_TRACK" | "AT_RISK" | "BREACHED" | "NOT_APPLICABLE";
+  sla_deadline: string | null;
+  amount_summary: Record<string, unknown>;
+  location_summary: string;
+  created_at: string; updated_at: string;
+  available_actions: string[];
+}
+export interface UnifiedOperationsResponse {
+  records: UnifiedOperationRow[];
+  pagination: { page: number; page_size: number; total: number; total_pages: number };
+  unknown_statuses: string[];
+  last_updated_at: string;
+}
+export interface UnifiedOperationsMetrics {
+  active: number; new_requests: number; unassigned: number;
+  in_progress: number; awaiting_approval: number; at_risk: number;
+}
+export const homeServicesOperationsApi = {
+  list: (params: Record<string, string | number | undefined>) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") q.set(k, String(v)); });
+    return apiFetch<UnifiedOperationsResponse>(`/v1/admin/home-services/operations?${q}`);
+  },
+  summary: (tenantId?: string) =>
+    apiFetch<UnifiedOperationsMetrics>(`/v1/admin/home-services/operations/summary${tenantId ? `?tenant_id=${tenantId}` : ""}`),
+  exportUrl: (params: Record<string, string | number | undefined>) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") q.set(k, String(v)); });
+    return `${API_BASE}/v1/admin/home-services/operations/export?${q}`;
+  },
+};
+
 export const adminBookingsApi = {
   filterOptions: () =>
     apiFetch<{ data: AdminBookingFilterOptions }>("/v1/admin/bookings/filters"),
@@ -1357,6 +1401,16 @@ export const catalogApi = {
     apiFetch<ServiceCategory>(`/v1/admin/service-categories/${categoryId}`, { method:"PUT", body:JSON.stringify(data) }),
   deleteCategory: (categoryId: string) =>
     apiFetch<void>(`/v1/admin/service-categories/${categoryId}`, { method:"DELETE" }),
+  // MODULE-L5-52 (migration 160) — canonical Business Vertical creation.
+  // Job-Type Blueprint ownership correction: no Brand/Type/Schedule/Address/
+  // pricing fields -- those vary per service and belong on the Job-Type
+  // Blueprint, never on the vertical itself. Backend rejects them outright.
+  createBusinessVertical: (data: {
+    name: string; description?: string; icon_url?: string; image_url?: string;
+    display_order?: number; is_active?: boolean; finance_model?: string;
+    tenant_selectable?: boolean; is_customer_visible?: boolean; registration_available?: boolean;
+  }) =>
+    apiFetch<ServiceCategory>("/v1/admin/business-verticals", { method: "POST", body: JSON.stringify(data) }),
 
   // MODULE-L5-10: per-category commission rate (was a hardcoded flat 10%).
   listCategoryCommissionRates: () =>
@@ -1385,6 +1439,15 @@ export const catalogApi = {
   },
   createMasterService: (data: Partial<MasterService> & { category_id:string; service_name:string; job_type:string; pricing_model:string; base_price:number }) =>
     apiFetch<MasterService>("/v1/admin/master-services", { method:"POST", body:JSON.stringify(data) }),
+  // MODULE-L5-52 (migration 160) — canonical Master Service creation.
+  // Job-type-agnostic: no job_type, pricing_model, prices, or Brand/Type/
+  // workflow requirement fields -- those are added afterward as Job-Type
+  // Blueprint child records. Backend rejects them outright if sent.
+  createMasterServiceV2: (data: {
+    service_name: string; category_id: string; service_group_id: string;
+    description?: string; icon_url?: string; image_url?: string; display_order?: number;
+  }) =>
+    apiFetch<MasterService>("/v1/admin/master-services-v2", { method: "POST", body: JSON.stringify(data) }),
   updateMasterService: (serviceId: string, data: Partial<MasterService>) =>
     apiFetch<MasterService>(`/v1/admin/master-services/${serviceId}`, { method:"PUT", body:JSON.stringify(data) }),
   deleteMasterService: (serviceId: string) =>
@@ -2755,6 +2818,66 @@ export const serviceabilityApi = {
     apiFetch<ServiceabilityCheckResponse>("/v1/serviceability/check", { method:"POST", body:JSON.stringify(body) }),
   matchingTenants: (body: { city?:string; zipcode?:string; state?:string; service_id:string; job_type:string; address_id?:string }) =>
     apiFetch<{ matched_tenants: MatchedTenant[] }>("/v1/serviceability/matching-tenants", { method:"POST", body:JSON.stringify(body) }),
+};
+
+// ── Service Area Requests / Active Coverage (replaces pricing tiers) ──────────
+export interface ServiceAreaRequestItem {
+  id:string; request_id:string; tenant_service_id:string; master_service_id:string;
+  job_type_id?:string|null; applies_to_all_job_types:boolean;
+  country:string; state:string; district?:string|null; city:string; zipcode?:string|null;
+  requested_effective_date?:string|null;
+  decision_status:"PENDING"|"APPROVED"|"REJECTED"|"CHANGES_REQUESTED";
+  decision_reason?:string|null; reviewed_at?:string|null; reviewed_by?:string|null;
+}
+export interface ServiceAreaRequest {
+  id:string; tenant_id:string; category_id:string;
+  status:"DRAFT"|"SUBMITTED"|"UNDER_REVIEW"|"CHANGES_REQUESTED"|"PARTIALLY_APPROVED"|"APPROVED"|"REJECTED"|"WITHDRAWN";
+  version:number; submitted_at?:string|null; submitted_by?:string|null;
+  reviewed_at?:string|null; reviewed_by?:string|null;
+  tenant_notes?:string|null; admin_notes?:string|null;
+  created_at:string; updated_at:string;
+  items?: ServiceAreaRequestItem[];
+}
+export interface ActiveCoverageRow {
+  id:string; tenant_id:string; category_id?:string|null; coverage_type:string;
+  state:string; district?:string|null; city:string; zipcode?:string|null;
+  status:"ACTIVE"|"SUSPENDED"|"EXPIRED"|"REVOKED";
+  approved_by?:string|null; approved_at?:string|null;
+  suspended_at?:string|null; suspension_reason?:string|null;
+  created_at:string; updated_at:string;
+}
+
+export const serviceAreaRequestAdminApi = {
+  list: (params: { tenant_id?:string; category_id?:string; status_filter?:string; limit?:number; cursor?:string } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined) qs.set(k, String(v)); });
+    return apiFetch<{ requests: ServiceAreaRequest[]; total:number; next_cursor?:string }>(
+      `/v1/admin/service-area-requests?${qs.toString()}`);
+  },
+  get: (requestId: string) =>
+    apiFetch<ServiceAreaRequest>(`/v1/admin/service-area-requests/${requestId}`),
+  startReview: (requestId: string) =>
+    apiFetch<ServiceAreaRequest>(`/v1/admin/service-area-requests/${requestId}/start-review`, { method:"POST" }),
+  decide: (requestId: string, decisions: { item_id:string; decision:string; reason?:string }[]) =>
+    apiFetch<ServiceAreaRequest>(`/v1/admin/service-area-requests/${requestId}/decide`, {
+      method:"POST", body: JSON.stringify({ decisions }),
+    }),
+  listCoverage: (params: { tenant_id?:string; category_id?:string; status_filter?:string; limit?:number; cursor?:string } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined) qs.set(k, String(v)); });
+    return apiFetch<{ coverage: ActiveCoverageRow[]; total:number; next_cursor?:string }>(
+      `/v1/admin/service-coverage?${qs.toString()}`);
+  },
+  suspendCoverage: (areaId: string, reason: string) =>
+    apiFetch<ActiveCoverageRow>(`/v1/admin/service-coverage/${areaId}/suspend`, {
+      method:"POST", body: JSON.stringify({ reason }),
+    }),
+  reactivateCoverage: (areaId: string) =>
+    apiFetch<ActiveCoverageRow>(`/v1/admin/service-coverage/${areaId}/reactivate`, { method:"POST" }),
+  revokeCoverage: (areaId: string, reason: string) =>
+    apiFetch<ActiveCoverageRow>(`/v1/admin/service-coverage/${areaId}/revoke`, {
+      method:"POST", body: JSON.stringify({ reason }),
+    }),
 };
 
 export interface GeoZone {
@@ -10418,4 +10541,296 @@ export const adminEntitlementApi = {
     apiFetch(`/v1/admin/tenants/${tenantId}/entitlements/categories/${categoryId}/disable`, { method: "POST", body: JSON.stringify({ reason }) }),
   reenableCategory: (tenantId: string, categoryId: string) =>
     apiFetch(`/v1/admin/tenants/${tenantId}/entitlements/categories/${categoryId}/reenable`, { method: "POST" }),
+};
+
+// ── MODULE-L5-52 — Admin Catalog Workspace (dimensions / job types /
+// problems & questions / blueprint readiness + impact) ────────────────────────
+export interface CatalogJobType {
+  id: string; key: string; label: string; description: string | null; requires_assessment: boolean;
+  allows_quote: boolean; requires_checklist: boolean; runtime_supported: boolean;
+  is_active: boolean; display_order: number;
+}
+export interface CatalogDimensionDef {
+  id: string; key: string; name: string; description: string | null;
+  data_type: string; legacy_source: string | null; is_active: boolean; display_order: number;
+}
+export interface CatalogDimensionValueItem { id: string; code: string | null; label: string }
+export interface ServiceJobDimensionConfig {
+  enabled: boolean; required: boolean; ask_customer: boolean;
+  show_during_tenant_setup: boolean; use_for_matching: boolean; affects_price: boolean;
+  allow_tenant_override: boolean; allow_all_coverage: boolean; allow_selected_coverage: boolean;
+}
+export interface DimensionGridRow {
+  dimension: CatalogDimensionDef; value_count: number; config: ServiceJobDimensionConfig;
+}
+export interface BlueprintReadinessCheck { key: string; label: string; passed: boolean; detail: string | null }
+export interface BlueprintReadiness {
+  percent: number; ready: boolean; checks: BlueprintReadinessCheck[];
+  actions_required: { key: string; label: string; detail: string | null }[];
+  tenant_setups_affected: number;
+}
+export interface BlueprintImpactChange { field: string; label: string; from: unknown; to: unknown }
+export interface BlueprintImpactReport {
+  master_service_id: string; current_version: number | null; previous_version: number | null;
+  last_change_summary: string | null; last_published_at: string | null;
+  changed_requirements: BlueprintImpactChange[]; added_dimensions: string[]; removed_dimensions: string[];
+  tenants_affected: number; setups_need_review: number;
+}
+export interface BlueprintDraftStatus {
+  master_service_id: string; has_pending_changes: boolean; pending_change_count: number;
+  changed_fields: BlueprintImpactChange[]; current_published_version: number | null;
+}
+export interface CatalogQuestionOption { id: string; code: string; label: string; display_order: number }
+export interface CatalogQuestionRule { id: string; condition_type: string; ref_id: string | null; expected_value: string | null }
+export interface CatalogQuestionItem {
+  id: string; master_service_id: string; job_type_id: string | null; question_key: string;
+  label: string; input_type: string; answer_source: string; dimension_id: string | null;
+  required: boolean; customer_visible: boolean; tenant_setup_visible: boolean; deepseek_enabled: boolean;
+  help_text: string | null; display_order: number; is_active: boolean;
+  options: CatalogQuestionOption[]; rules: CatalogQuestionRule[];
+}
+export interface CatalogIssueTypeMapping {
+  mapping_id: string; issue_type_id: string; name: string;
+  is_common: boolean; is_default: boolean; customer_visible: boolean;
+}
+// Service Option Mapping — exact Job-Type scoping (migration 169). No
+// monetary field here; price is tenant-owned per mapping.
+export interface CatalogOptionMapping {
+  id: string; master_service_id: string; service_option_id: string;
+  job_type_id: string | null; status: string; usage: "DISABLED" | "OPTIONAL" | "REQUIRED";
+  is_required: boolean; is_default: boolean;
+  customer_selectable: boolean; tenant_selectable: boolean; technician_selectable: boolean;
+  available_before_booking: boolean; available_after_inspection: boolean;
+  affects_estimate: boolean; requires_customer_approval: boolean;
+  quantity_supported: boolean; minimum_quantity: number | null; maximum_quantity: number | null;
+  measurement_unit: string | null; display_order: number;
+  option: { id: string; name: string; code: string; option_type: string; unit: string };
+}
+
+export const catalogWorkspaceApi = {
+  // Job types
+  listJobTypes: (includeInactive = false) =>
+    apiFetch<{ items: CatalogJobType[]; total: number }>(
+      `/v1/admin/catalog/job-types${includeInactive ? "?include_inactive=true" : ""}`),
+  createJobType: (data: Record<string, unknown>) =>
+    apiFetch<CatalogJobType>("/v1/admin/catalog/job-types", { method: "POST", body: JSON.stringify(data) }),
+  updateJobType: (id: string, data: Record<string, unknown>) =>
+    apiFetch<CatalogJobType>(`/v1/admin/catalog/job-types/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+
+  // Dimensions
+  listDimensions: (includeInactive = false) =>
+    apiFetch<{ items: CatalogDimensionDef[]; total: number }>(
+      `/v1/admin/catalog/dimensions${includeInactive ? "?include_inactive=true" : ""}`),
+  createDimension: (data: Record<string, unknown>) =>
+    apiFetch<CatalogDimensionDef>("/v1/admin/catalog/dimensions", { method: "POST", body: JSON.stringify(data) }),
+  listDimensionValues: (dimensionId: string) =>
+    apiFetch<{ dimension: CatalogDimensionDef; legacy: boolean; values: CatalogDimensionValueItem[] }>(
+      `/v1/admin/catalog/dimensions/${dimensionId}/values`),
+  addDimensionValue: (dimensionId: string, data: Record<string, unknown>) =>
+    apiFetch<CatalogDimensionValueItem>(`/v1/admin/catalog/dimensions/${dimensionId}/values`,
+      { method: "POST", body: JSON.stringify(data) }),
+  getDimensionGrid: (masterServiceId: string, jobTypeId: string | null) =>
+    apiFetch<{ dimensions: DimensionGridRow[] }>(
+      `/v1/admin/catalog/dimensions/blueprint/config?master_service_id=${masterServiceId}${jobTypeId ? `&job_type_id=${jobTypeId}` : ""}`),
+  setDimensionConfig: (masterServiceId: string, jobTypeId: string | null, dimensionId: string, flags: Record<string, boolean>) =>
+    apiFetch<ServiceJobDimensionConfig>("/v1/admin/catalog/dimensions/blueprint/config", {
+      method: "PUT",
+      body: JSON.stringify({ master_service_id: masterServiceId, job_type_id: jobTypeId, dimension_id: dimensionId, flags }),
+    }),
+  getReadiness: (masterServiceId: string, jobTypeId: string | null) =>
+    apiFetch<BlueprintReadiness>(
+      `/v1/admin/catalog/dimensions/blueprint/readiness?master_service_id=${masterServiceId}${jobTypeId ? `&job_type_id=${jobTypeId}` : ""}`),
+
+  // Impact report
+  getImpactReport: (masterServiceId: string) =>
+    apiFetch<BlueprintImpactReport>(`/v1/admin/catalog/blueprint-impact?master_service_id=${masterServiceId}`),
+
+  // Draft status + explicit publish (real "Draft changes · N")
+  getDraftStatus: (masterServiceId: string) =>
+    apiFetch<BlueprintDraftStatus>(`/v1/admin/catalog/blueprint/draft-status?master_service_id=${masterServiceId}`),
+  publishDraft: (masterServiceId: string) =>
+    apiFetch<{ published: boolean; version_number: number; change_summary: string }>(
+      "/v1/admin/catalog/blueprint/publish", { method: "POST", body: JSON.stringify({ master_service_id: masterServiceId }) }),
+
+  // Questions
+  listQuestions: (masterServiceId: string, jobTypeId: string | null) =>
+    apiFetch<{ questions: CatalogQuestionItem[] }>(
+      `/v1/admin/catalog/questions?master_service_id=${masterServiceId}${jobTypeId ? `&job_type_id=${jobTypeId}` : ""}`),
+  createQuestion: (data: Record<string, unknown>) =>
+    apiFetch<CatalogQuestionItem>("/v1/admin/catalog/questions", { method: "POST", body: JSON.stringify(data) }),
+  updateQuestion: (id: string, data: Record<string, unknown>) =>
+    apiFetch<CatalogQuestionItem>(`/v1/admin/catalog/questions/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  addQuestionOption: (questionId: string, data: Record<string, unknown>) =>
+    apiFetch<CatalogQuestionOption>(`/v1/admin/catalog/questions/${questionId}/options`,
+      { method: "POST", body: JSON.stringify(data) }),
+  addQuestionRule: (questionId: string, data: Record<string, unknown>) =>
+    apiFetch<CatalogQuestionRule>(`/v1/admin/catalog/questions/${questionId}/rules`,
+      { method: "POST", body: JSON.stringify(data) }),
+  deleteQuestionRule: (ruleId: string) =>
+    apiFetch(`/v1/admin/catalog/questions/rules/${ruleId}`, { method: "DELETE" }),
+
+  // Problems (issue types) -- real Sprint 34E surface, now job-type scoped
+  listServiceIssues: (masterServiceId: string, jobTypeId: string | null) =>
+    apiFetch<{ issues: CatalogIssueTypeMapping[] }>(
+      `/v1/admin/master-services/${masterServiceId}/issues${jobTypeId ? `?job_type_id=${jobTypeId}` : ""}`),
+  addServiceIssue: (masterServiceId: string, data: Record<string, unknown>) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/master-services/${masterServiceId}/issues`,
+      { method: "POST", body: JSON.stringify(data) }),
+  updateServiceIssue: (masterServiceId: string, mappingId: string, data: Record<string, unknown>) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/master-services/${masterServiceId}/issues/${mappingId}`,
+      { method: "PUT", body: JSON.stringify(data) }),
+  removeServiceIssue: (masterServiceId: string, mappingId: string) =>
+    apiFetch(`/v1/admin/master-services/${masterServiceId}/issues/${mappingId}`, { method: "DELETE" }),
+  listIssueTypesV2: (params: { search?: string; master_service_id?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (params.search) q.set("search", params.search);
+    if (params.master_service_id) q.set("master_service_id", params.master_service_id);
+    const qs = q.toString();
+    return apiFetch<{ items: Record<string, unknown>[]; total: number }>(`/v1/admin/issue-types-v2${qs ? `?${qs}` : ""}`);
+  },
+  createIssueType: (data: Record<string, unknown>) =>
+    apiFetch<Record<string, unknown>>("/v1/admin/issue-types-v2", { method: "POST", body: JSON.stringify(data) }),
+
+  // Service Options & Add-ons -- HOME-SERVICES-CATALOG ownership correction:
+  // real job-type-exact mapping (job_type_id required to attach), no
+  // monetary field accepted here (admin never sets a price).
+  listServiceOptionMappings: (masterServiceId: string, jobTypeId: string | null) =>
+    apiFetch<CatalogOptionMapping[]>(
+      `/v1/admin/master-services/${masterServiceId}/options${jobTypeId ? `?job_type_id=${jobTypeId}` : ""}`),
+  addServiceOptionMapping: (masterServiceId: string, data: Record<string, unknown>) =>
+    apiFetch<CatalogOptionMapping>(`/v1/admin/master-services/${masterServiceId}/options`,
+      { method: "POST", body: JSON.stringify(data) }),
+  updateServiceOptionMapping: (masterServiceId: string, mappingId: string, data: Record<string, unknown>) =>
+    apiFetch<CatalogOptionMapping>(`/v1/admin/master-services/${masterServiceId}/options/${mappingId}`,
+      { method: "PUT", body: JSON.stringify(data) }),
+  removeServiceOptionMapping: (masterServiceId: string, mappingId: string) =>
+    apiFetch(`/v1/admin/master-services/${masterServiceId}/options/${mappingId}`, { method: "DELETE" }),
+  searchServiceOptionTemplates: (search: string) =>
+    apiFetch<{ items: Record<string, unknown>[]; total: number }>(
+      `/v1/admin/service-options?search=${encodeURIComponent(search)}&page_size=20`),
+
+  // MODULE-L5-52 (migration 160) — Job-Type Blueprint: job type as a child
+  // record of a master service + its workflow ownership (structure/behavior
+  // only, never an amount).
+  listServiceJobTypes: (masterServiceId: string) =>
+    apiFetch<{ items: MasterServiceJobTypeLink[] }>(`/v1/admin/master-services/${masterServiceId}/job-types`),
+  addServiceJobType: (masterServiceId: string, jobTypeId: string) =>
+    apiFetch<MasterServiceJobTypeLink>(`/v1/admin/master-services/${masterServiceId}/job-types`,
+      { method: "POST", body: JSON.stringify({ job_type_id: jobTypeId }) }),
+  getJobTypesForService: (masterServiceId: string) =>
+    apiFetch<{ items: MasterServiceJobTypeLink[] }>(`/v1/admin/master-services/${masterServiceId}/job-types`),
+  getJobTypeWorkflow: (masterServiceId: string, jobTypeId: string) =>
+    apiFetch<ServiceJobWorkflow>(`/v1/admin/master-services/${masterServiceId}/job-types/${jobTypeId}/workflow`),
+  setJobTypeWorkflow: (masterServiceId: string, jobTypeId: string, data: Partial<ServiceJobWorkflow>) =>
+    apiFetch<ServiceJobWorkflow>(`/v1/admin/master-services/${masterServiceId}/job-types/${jobTypeId}/workflow`,
+      { method: "PUT", body: JSON.stringify(data) }),
+};
+
+export interface MasterServiceJobTypeLink {
+  id: string; master_service_id: string; job_type_id: string; is_active: boolean; display_order: number;
+  job_type: CatalogJobType;
+}
+export interface ServiceJobWorkflow {
+  id: string | null; master_service_id: string; job_type_id: string;
+  inspection_required: boolean; quote_approval_required: boolean; checklist_required: boolean;
+  schedule_required: boolean; address_required: boolean; technician_required: boolean;
+  service_area_required: boolean; availability_required: boolean;
+  pricing_behavior: "fixed" | "range" | "inspection_required" | "custom_quote";
+}
+
+// ── Checklist Catalog Engine — canonical, job-type-mapped checklists ───────
+export type ChecklistPurpose =
+  | "PRE_ARRIVAL" | "INSPECTION" | "PRE_WORK" | "EXECUTION" | "SAFETY" | "COMPLETION" | "HANDOVER";
+export type ChecklistItemType =
+  | "CHECKBOX" | "YES_NO" | "SHORT_TEXT" | "LONG_TEXT" | "NUMBER" | "MEASUREMENT"
+  | "SINGLE_SELECT" | "MULTI_SELECT" | "PHOTO" | "DOCUMENT" | "SIGNATURE";
+export type ChecklistUsage = "DISABLED" | "OPTIONAL" | "REQUIRED";
+export type ChecklistActor = "TECHNICIAN" | "STAFF" | "TENANT_ADMIN" | "CUSTOMER";
+export type ChecklistCompletionGate =
+  | "NONE" | "REQUIRE_BEFORE_INSPECTION_COMPLETE" | "REQUIRE_BEFORE_ESTIMATE_SUBMISSION"
+  | "REQUIRE_BEFORE_WORK_START" | "REQUIRE_BEFORE_JOB_COMPLETION" | "REQUIRE_BEFORE_HANDOVER";
+
+export interface ChecklistTemplateVersionSummary {
+  id: string; checklist_template_id: string; version_number: number;
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  change_summary: string | null; published_by: string | null; published_at: string | null;
+  created_at: string | null;
+}
+export interface ChecklistTemplateRow {
+  id: string; name: string; code: string; description: string | null;
+  purpose: ChecklistPurpose; status: "active" | "archived"; owner_scope: "PLATFORM" | "TENANT";
+  tenant_id: string | null; created_at: string | null; updated_at: string | null;
+  latest_version: ChecklistTemplateVersionSummary | null; mapping_count: number;
+}
+export interface ChecklistItemRow {
+  id: string; checklist_section_id: string; item_type: ChecklistItemType; label: string;
+  help_text: string | null; is_required: boolean; evidence_required: boolean;
+  min_evidence_count: number; max_evidence_count: number;
+  allowed_file_types: string[] | null; measurement_unit: string | null;
+  select_options: { value: string; label: string }[] | null;
+  validation_rules: Record<string, unknown> | null; display_order: number;
+  condition_rules: Record<string, unknown> | null; failure_behavior: string | null;
+  customer_visible: boolean;
+}
+export interface ChecklistSectionRow {
+  id: string; checklist_template_version_id: string; title: string; display_order: number;
+  items: ChecklistItemRow[];
+}
+export interface ChecklistTemplateVersionDetail extends ChecklistTemplateVersionSummary {
+  sections: ChecklistSectionRow[];
+}
+export interface ChecklistTemplateDetail extends ChecklistTemplateRow {
+  versions: ChecklistTemplateVersionSummary[];
+}
+export interface JobTypeChecklistMappingRow {
+  id: string; master_service_job_type_id: string; service_job_workflow_id: string | null;
+  checklist_template_version_id: string; phase: string; usage: ChecklistUsage;
+  actor: ChecklistActor; completion_gate: ChecklistCompletionGate;
+  condition_rules: Record<string, unknown> | null; display_order: number;
+  status: "active" | "disabled"; effective_from: string | null; effective_until: string | null;
+  created_by: string | null; updated_by: string | null;
+  created_at: string | null; updated_at: string | null;
+}
+export interface ChecklistExecutionHealth {
+  total_instances: number; completed_instances: number; blocked_instances: number;
+  in_progress_instances: number; required_completion_rate: number | null;
+}
+
+export const checklistCatalogApi = {
+  listTemplates: () => apiFetch<ChecklistTemplateRow[]>("/v1/admin/checklist-catalog/templates"),
+  createTemplate: (data: { name: string; code: string; description?: string; purpose: ChecklistPurpose; owner_scope?: string }) =>
+    apiFetch<ChecklistTemplateRow>("/v1/admin/checklist-catalog/templates", { method: "POST", body: JSON.stringify(data) }),
+  getTemplate: (templateId: string) =>
+    apiFetch<ChecklistTemplateDetail>(`/v1/admin/checklist-catalog/templates/${templateId}`),
+  getOrCreateDraftVersion: (templateId: string) =>
+    apiFetch<ChecklistTemplateVersionDetail>(`/v1/admin/checklist-catalog/templates/${templateId}/draft-version`),
+  archiveTemplate: (templateId: string) =>
+    apiFetch<ChecklistTemplateRow>(`/v1/admin/checklist-catalog/templates/${templateId}/archive`, { method: "POST" }),
+
+  addSection: (versionId: string, title: string, displayOrder = 0) =>
+    apiFetch<ChecklistSectionRow>(`/v1/admin/checklist-catalog/versions/${versionId}/sections`, {
+      method: "POST", body: JSON.stringify({ title, display_order: displayOrder }),
+    }),
+  addItem: (sectionId: string, data: Partial<ChecklistItemRow> & { item_type: ChecklistItemType; label: string }) =>
+    apiFetch<ChecklistItemRow>(`/v1/admin/checklist-catalog/sections/${sectionId}/items`, {
+      method: "POST", body: JSON.stringify(data),
+    }),
+  publishVersion: (versionId: string, changeSummary?: string) =>
+    apiFetch<ChecklistTemplateVersionSummary>(`/v1/admin/checklist-catalog/versions/${versionId}/publish`, {
+      method: "POST", body: JSON.stringify({ change_summary: changeSummary }),
+    }),
+
+  listMappings: () => apiFetch<JobTypeChecklistMappingRow[]>("/v1/admin/checklist-catalog/mappings"),
+  createMapping: (data: {
+    master_service_job_type_id: string; service_job_workflow_id?: string | null;
+    checklist_template_version_id: string; phase: string; usage: ChecklistUsage;
+    actor: ChecklistActor; completion_gate: ChecklistCompletionGate;
+    condition_rules?: Record<string, unknown> | null; display_order?: number;
+  }) => apiFetch<JobTypeChecklistMappingRow>("/v1/admin/checklist-catalog/mappings", {
+    method: "POST", body: JSON.stringify(data),
+  }),
+  disableMapping: (mappingId: string) =>
+    apiFetch<JobTypeChecklistMappingRow>(`/v1/admin/checklist-catalog/mappings/${mappingId}/disable`, { method: "POST" }),
+
+  getExecutionHealth: () => apiFetch<ChecklistExecutionHealth>("/v1/admin/checklist-catalog/execution-health"),
 };

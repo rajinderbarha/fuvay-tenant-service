@@ -83,11 +83,22 @@ export default function CustomerQuotesPage() {
         </div>
       ) : (
         quotes.map((q) => {
-          const actionable = q.status === "sent_to_customer";
+          // Phase 2A: only the current (non-superseded) quote is actionable
+          // -- an older revision that's since been replaced by a newer one
+          // is kept visible for history but can no longer be approved.
+          const actionable = q.status === "sent_to_customer" && q.is_current !== false;
           return (
-            <div key={q.id} className="co-card" style={{ marginBottom: 12 }}>
+            <div key={q.id} className="co-card" style={{ marginBottom: 12, opacity: q.is_current === false ? 0.7 : 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontWeight: 700 }}>Quote #{q.quote_number}</div>
+                <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                  Quote #{q.quote_number}
+                  {q.version_number ? <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)" }}>v{q.version_number}</span> : null}
+                  {q.is_current === false && (
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "#b45309", background: "#fef3c7", padding: "1px 6px", borderRadius: 4 }}>
+                      Superseded
+                    </span>
+                  )}
+                </div>
                 <span style={{ fontSize: 12, fontWeight: 600, color: statusColor(q.status) }}>
                   {STATUS_LABEL[q.status] ?? q.status}
                 </span>

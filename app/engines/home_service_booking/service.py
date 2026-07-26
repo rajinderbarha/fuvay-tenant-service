@@ -37,6 +37,7 @@ from app.engines.home_service_booking.constants import (
     ERR_OFFERING_INVALID, ERR_PHOTO_UPLOAD_FAILED,
     ERR_PRICE_ESTIMATE_FAILED, ERR_PROVIDER_NOT_IN_AREA,
     ERR_REQUIRED_FIELD_MISSING, ERR_TYPE_REQUIRED, MAX_PHOTO_SIZE_BYTES,
+    ERR_INVALID_JOB_TYPE_FOR_SERVICE,
     PRICE_STATUS_ESTIMATED, PRICE_STATUS_FAILED, PRICE_STATUS_PENDING,
     PRICING_MODEL_FIXED, PRICING_MODEL_VISIT_FEE,
     PROVIDER_MATCH_MATCHED, PROVIDER_MATCH_NO_PROVIDER,
@@ -196,6 +197,28 @@ class HomeServiceChatbotBookingService:
         uuid_fields = ["offering_type_id", "brand_id", "address_id"]
         changes: dict = {}
 
+        # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 7): if the
+        # Master Service itself changes, any Job Type/Problem/Blueprint
+        # context resolved against the OLD service is now stale and must be
+        # cleared, never carried over to the new one -- along with matching/
+        # price snapshots that were computed against the old service.
+        if "offering_id" in payload and payload["offering_id"]:
+            new_offering_id = uuid.UUID(str(payload["offering_id"]))
+            if new_offering_id != draft.offering_id:
+                draft.offering_id = new_offering_id
+                draft.job_type_id = None
+                draft.master_service_job_type_id = None
+                draft.service_job_workflow_id = None
+                draft.selected_problem_id = None
+                draft.price_snapshot = None
+                draft.selected_provider_snapshot = None
+                draft.selected_tenant_id = None
+                draft.provider_options = None
+                draft.provider_match_status = PROVIDER_MATCH_PENDING
+                draft.price_status = PRICE_STATUS_PENDING
+                changes["offering_id"] = str(new_offering_id)
+                changes["cleared_stale_context"] = True
+
         for field in updatable:
             if field in payload and payload[field] is not None:
                 val = payload[field]
@@ -217,6 +240,53 @@ class HomeServiceChatbotBookingService:
                 val = uuid.UUID(str(payload[field]))
                 setattr(draft, field, val)
                 changes[field] = str(val)
+
+        # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 4): the
+        # PREFERRED path is the customer's Problem/Intent selection --
+        # selected_problem_id -> ServiceIssueMapping -> exact job_type_id.
+        # This is what the real customer flow drives ("AC Not Cooling"),
+        # never a raw job_type_id typed/guessed by the client. A direct
+        # job_type_id is still accepted for non-problem actions (Install/
+        # Uninstall/General Service) that don't go through a Problem at all,
+        # per section 4's "or another proven catalog mapping" allowance --
+        # both paths are validated identically via _resolve_job_type_snapshot.
+        if "selected_problem_id" in payload and payload["selected_problem_id"]:
+            problem_id = uuid.UUID(str(payload["selected_problem_id"]))
+            from app.engines.admin_catalog.models import ServiceIssueMapping
+            mapping = (await self.db.execute(
+                select(ServiceIssueMapping).where(
+                    ServiceIssueMapping.issue_type_id == problem_id,
+                    ServiceIssueMapping.master_service_id == draft.offering_id,
+                    ServiceIssueMapping.status == "active",
+                    ServiceIssueMapping.deleted_at.is_(None),
+                )
+            )).scalars().first()
+            if mapping is None:
+                raise ServiceOSException(
+                    "PROBLEM_NOT_AVAILABLE_FOR_SERVICE",
+                    "The selected problem is not available for this service.",
+                    status_code=422,
+                )
+            draft.selected_problem_id = problem_id
+            changes["selected_problem_id"] = str(problem_id)
+            if mapping.job_type_id is None:
+                # This Problem applies to "all job types" -- it does NOT
+                # resolve an EXACT Job Type (spec section 4: "mapping has an
+                # exact Job Type for new canonical bookings"). Leave
+                # job_type_id unresolved rather than guess; readiness will
+                # report JOB_TYPE_REQUIRED until the customer/admin context
+                # provides an exact one another way.
+                draft.job_type_id = None
+                draft.master_service_job_type_id = None
+                draft.service_job_workflow_id = None
+                changes["job_type_resolution"] = "problem_has_no_exact_job_type"
+            else:
+                await self._resolve_job_type_snapshot(draft, mapping.job_type_id)
+                changes["job_type_id"] = str(draft.job_type_id) if draft.job_type_id else None
+        elif "job_type_id" in payload and payload["job_type_id"]:
+            job_type_id = uuid.UUID(str(payload["job_type_id"]))
+            await self._resolve_job_type_snapshot(draft, job_type_id)
+            changes["job_type_id"] = str(draft.job_type_id) if draft.job_type_id else None
 
         # Resolve address if address_id provided
         if "address_id" in payload and payload["address_id"]:
@@ -882,6 +952,7 @@ class HomeServiceChatbotBookingService:
             }
 
         existing = draft.booking_summary or {}
+        job_type_error = await self._validate_job_type_context(draft)
         summary = {
             **existing,
             "offering_name":    offering.service_name,
@@ -907,7 +978,12 @@ class HomeServiceChatbotBookingService:
                 # which made a customer who correctly booked at the standard
                 # price incorrectly show as "not ready for confirmation".
                 and existing.get("selected_price_tier") in ("low", "mid", "high", "standard")
+                and job_type_error is None
             ),
+            # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 6): the
+            # customer-facing field-level readiness contract.
+            "missing": (["job_type"] if job_type_error else []),
+            "errors":  ([job_type_error] if job_type_error else []),
         }
 
         draft.booking_summary = summary
@@ -954,6 +1030,15 @@ class HomeServiceChatbotBookingService:
                 f"Missing required fields: {', '.join(missing)}",
                 status_code=422,
             )
+
+        # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 6/8): a new
+        # canonical draft must not become ready_for_confirmation without a
+        # resolved, still-valid Job Type and a published workflow snapshot.
+        # This is the SAME check finalize() re-runs independently -- not
+        # relying on this gate alone (defense in depth, spec section 8).
+        job_type_error = await self._validate_job_type_context(draft)
+        if job_type_error:
+            raise ServiceOSException(job_type_error["code"], job_type_error["message"], status_code=422)
 
         if draft.serviceability_status != SVCABILITY_SERVICEABLE:
             raise ServiceOSException(
@@ -1297,9 +1382,44 @@ class HomeServiceChatbotBookingService:
             missing.append("preferred_date")
         return missing
 
+    async def _resolve_selected_tenant_price(self, draft: HomeServiceBookingDraft) -> dict | None:
+        """When a specific tenant is already selected on this draft, prefer
+        THAT tenant's own resolved price (TenantCatalogService.resolve_tenant_price
+        -- type+brand override precedence, tenant-owned, never invents a
+        price) over the admin's generic MasterService estimate. Admin's
+        base_price/min_price/max_price/visit_fee remain the fallback for
+        drafts with no tenant selected yet (pre-assignment estimate) or for
+        a tenant that has not configured its own price -- so no existing
+        booking flow is broken by this change.
+
+        Scoped deliberately narrow: this wires only the booking-draft
+        estimate. Provider assignment and invoice generation are a separate,
+        dedicated follow-up (not touched here -- see MODULE-L5-56 report)."""
+        if not draft.selected_tenant_id:
+            return None
+        from app.engines.admin_catalog.models import TenantService
+        from app.engines.admin_catalog.tenant_service import TenantCatalogService
+
+        ts = (await self.db.execute(
+            select(TenantService).where(
+                TenantService.tenant_id == draft.selected_tenant_id,
+                TenantService.master_service_id == draft.offering_id,
+                TenantService.is_active.is_(True),
+            )
+        )).scalars().first()
+        if ts is None:
+            return None
+        svc = TenantCatalogService(db=self.db)
+        result = await svc.resolve_tenant_price(
+            ts.id, service_type_id=draft.offering_type_id, brand_id=draft.brand_id,
+        )
+        return result if result.get("resolved") else None
+
     async def _compute_price_snapshot(self, draft: HomeServiceBookingDraft, offering) -> dict:
         """
-        Build price estimate from offering defaults + optional city floor check.
+        Build price estimate: prefers the selected tenant's own resolved
+        price when one exists (see _resolve_selected_tenant_price), else
+        falls back to offering (admin) defaults + optional city floor check.
         Backend is source of truth. Frontend/DeepSeek price is NEVER used.
         """
         from app.engines.pricing.models import CityTierConfig
@@ -1320,18 +1440,28 @@ class HomeServiceChatbotBookingService:
         floor_price  = float(floor_row.floor_price) if floor_row else 0.0
         pricing_model = offering.pricing_model or "visit_fee_plus_quote"
 
-        if pricing_model == PRICING_MODEL_VISIT_FEE:
+        tenant_price = await self._resolve_selected_tenant_price(draft)
+
+        if tenant_price is not None:
+            base = max(tenant_price["minimum_price"], floor_price)
+            min_price = tenant_price["minimum_price"]
+            max_price = tenant_price["maximum_price"]
+            note = f"Tenant-set price ({tenant_price['source']})."
+        elif pricing_model == PRICING_MODEL_VISIT_FEE:
             base  = max(float(offering.visit_fee), floor_price)
-            note  = "Visit/inspection fee. Final repair quote shared after technician check."
+            min_price = float(offering.min_price) if offering.min_price else base
+            max_price = float(offering.max_price) if offering.max_price else None
+            note  = "Visit/inspection fee (admin estimate — no tenant assigned yet). Final repair quote shared after technician check."
         elif pricing_model == PRICING_MODEL_FIXED:
             base  = max(float(offering.base_price), floor_price)
-            note  = "Fixed price service."
+            min_price = float(offering.min_price) if offering.min_price else base
+            max_price = float(offering.max_price) if offering.max_price else None
+            note  = "Fixed price service (admin estimate — no tenant assigned yet)."
         else:
             base  = max(float(offering.base_price), floor_price)
-            note  = "Estimated price."
-
-        min_price = float(offering.min_price) if offering.min_price else base
-        max_price = float(offering.max_price) if offering.max_price else None
+            min_price = float(offering.min_price) if offering.min_price else base
+            max_price = float(offering.max_price) if offering.max_price else None
+            note  = "Estimated price (admin estimate — no tenant assigned yet)."
 
         # MODULE-L5-10: per-category customer charge (platform fee). The platform
         # earns from both sides — a commission from the provider AND this charge
@@ -1364,6 +1494,110 @@ class HomeServiceChatbotBookingService:
             "display_price":   f"₹{int(customer_total)}",
             "source":          "backend_catalog",
         }
+
+    async def _validate_job_type_context(self, draft: HomeServiceBookingDraft) -> dict | None:
+        """HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2: independently re-validate
+        the draft's Job Type/Blueprint context (spec sections 6, 8, 12).
+        Returns None if valid, or a structured {"code","message"} error.
+        Shared by mark_ready_for_confirmation (draft-side gate) and
+        finalize() (independent revalidation -- defense in depth, not trust
+        of the earlier draft-side check alone).
+        """
+        if not draft.job_type_id:
+            return {"code": "JOB_TYPE_REQUIRED",
+                    "message": "Select a service problem or job type before confirming."}
+
+        from app.engines.admin_catalog.models import MasterServiceJobType, ServiceJobWorkflow, JobTypeDefinition
+        link = (await self.db.execute(
+            select(MasterServiceJobType).where(
+                MasterServiceJobType.master_service_id == draft.offering_id,
+                MasterServiceJobType.job_type_id == draft.job_type_id,
+            )
+        )).scalars().first()
+        if link is None:
+            return {"code": "INVALID_JOB_TYPE_FOR_SERVICE",
+                    "message": "The selected job type is not available for this service."}
+        if not link.is_active:
+            return {"code": "JOB_TYPE_INACTIVE",
+                    "message": "The selected job type is no longer active."}
+
+        jt = await self.db.get(JobTypeDefinition, draft.job_type_id)
+        if jt is not None and not jt.is_active:
+            return {"code": "JOB_TYPE_INACTIVE",
+                    "message": "The selected job type is no longer active."}
+
+        current_workflow = (await self.db.execute(
+            select(ServiceJobWorkflow).where(
+                ServiceJobWorkflow.master_service_id == draft.offering_id,
+                ServiceJobWorkflow.job_type_id == draft.job_type_id,
+                ServiceJobWorkflow.is_current.is_(True),
+            )
+        )).scalars().first()
+        if current_workflow is None:
+            return {"code": "BLUEPRINT_NOT_PUBLISHED",
+                    "message": "This job type has no published workflow configuration yet."}
+
+        if draft.service_job_workflow_id != current_workflow.id:
+            # Phase 2A.2 section 12: the snapshot captured earlier has been
+            # superseded by an admin publishing a new version since this
+            # draft selected its Job Type. Do NOT silently re-snapshot and
+            # proceed -- the new version may have different requirements the
+            # customer never saw. Re-running _resolve_job_type_snapshot (via
+            # update_draft_fields) refreshes the snapshot explicitly.
+            return {"code": "BLUEPRINT_VERSION_INVALID",
+                    "message": "This service's requirements have been updated. Please reselect to continue."}
+
+        if draft.selected_problem_id:
+            from app.engines.admin_catalog.models import ServiceIssueMapping
+            mapping = (await self.db.execute(
+                select(ServiceIssueMapping).where(
+                    ServiceIssueMapping.issue_type_id == draft.selected_problem_id,
+                    ServiceIssueMapping.master_service_id == draft.offering_id,
+                    ServiceIssueMapping.deleted_at.is_(None),
+                )
+            )).scalars().first()
+            if mapping is not None and mapping.job_type_id is not None and mapping.job_type_id != draft.job_type_id:
+                return {"code": "PROBLEM_JOB_TYPE_MISMATCH",
+                        "message": "The selected problem no longer matches the selected job type."}
+
+        return None
+
+    async def _resolve_job_type_snapshot(
+        self, draft: HomeServiceBookingDraft, job_type_id: uuid.UUID,
+    ) -> None:
+        """HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2: validate job_type_id
+        against the catalog (belongs to draft.offering_id, active link) and
+        snapshot the exact CURRENT ServiceJobWorkflow version -- this is the
+        one-time "Blueprint Version" capture point (spec section 10). A
+        later admin edit creates a NEW workflow row (job_type_blueprint_
+        service.set_workflow is now append-only); this draft keeps pointing
+        at the version captured here until the customer explicitly re-picks
+        the job type or the offering changes.
+        """
+        from app.engines.admin_catalog.models import MasterServiceJobType, ServiceJobWorkflow
+        link = (await self.db.execute(
+            select(MasterServiceJobType).where(
+                MasterServiceJobType.master_service_id == draft.offering_id,
+                MasterServiceJobType.job_type_id == job_type_id,
+                MasterServiceJobType.is_active.is_(True),
+            )
+        )).scalars().first()
+        if link is None:
+            raise ServiceOSException(
+                ERR_INVALID_JOB_TYPE_FOR_SERVICE,
+                "The selected job type is not available for this service.",
+                status_code=422,
+            )
+        workflow = (await self.db.execute(
+            select(ServiceJobWorkflow).where(
+                ServiceJobWorkflow.master_service_id == draft.offering_id,
+                ServiceJobWorkflow.job_type_id == job_type_id,
+                ServiceJobWorkflow.is_current.is_(True),
+            )
+        )).scalars().first()
+        draft.job_type_id = job_type_id
+        draft.master_service_job_type_id = link.id
+        draft.service_job_workflow_id = workflow.id if workflow else None
 
     async def _resolve_address_snapshot(
         self, draft: HomeServiceBookingDraft, address_id: uuid.UUID,
@@ -1401,6 +1635,12 @@ class HomeServiceChatbotBookingService:
         if cat:
             result["category_name"] = cat.name
             result["category_slug"] = cat.slug
+        if draft.job_type_id:
+            from app.engines.admin_catalog.models import JobTypeDefinition
+            jt = await self.db.get(JobTypeDefinition, draft.job_type_id)
+            if jt:
+                result["job_type_key"]   = jt.key
+                result["job_type_label"] = jt.label
         return result
 
     async def _emit_event(

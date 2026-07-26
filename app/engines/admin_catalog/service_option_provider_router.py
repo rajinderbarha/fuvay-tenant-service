@@ -1,6 +1,6 @@
 """Sprint 34E — Provider endpoints for service option selection."""
 import uuid
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.dependencies.auth import UserContext, require_technician
 from app.dependencies.db import get_db
@@ -26,9 +26,10 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 
 @router.get("/{service_id}/available-options", response_model=ApiResponse[list])
 async def get_available_options(service_id: uuid.UUID, r: Request,
+                                 job_type_id: uuid.UUID | None = Query(None),
                                  u: UserContext = Depends(require_technician),
                                  s: ServiceOptionService = Depends(_svc)):
-    return ok(await s.get_available_options_for_service(service_id), _rid(r))
+    return ok(await s.get_available_options_for_service(service_id, job_type_id), _rid(r))
 
 
 @router.get("/{service_id}/supported-options", response_model=ApiResponse[list])
@@ -43,3 +44,24 @@ async def set_supported_options(service_id: uuid.UUID, r: Request,
                                  u: UserContext = Depends(require_staff_or_above_mutation),
                                  s: ServiceOptionService = Depends(_svc)):
     return ok(await s.set_provider_supported_options(service_id, await r.json()), _rid(r))
+
+
+# ── Tenant-owned option pricing (migration 169) ──────────────────────────────
+# Admin never sets a price; the tenant sets its own price per exact Job-Type
+# mapping here. Kept on the same router (provider = tenant-side actor) rather
+# than a new engine.
+
+@router.get("/option-mappings/{mapping_id}/price", response_model=ApiResponse[dict])
+async def resolve_option_price(mapping_id: uuid.UUID, r: Request,
+                                quantity: int = Query(1, ge=1),
+                                u: UserContext = Depends(require_technician),
+                                s: ServiceOptionService = Depends(_svc)):
+    tenant_id = uuid.UUID(u.tenant_id)
+    return ok(await s.resolve_tenant_option_price(tenant_id, mapping_id, quantity), _rid(r))
+
+
+@router.put("/option-mappings/{mapping_id}/price", response_model=ApiResponse[dict])
+async def set_option_price(mapping_id: uuid.UUID, r: Request,
+                            u: UserContext = Depends(require_staff_or_above_mutation),
+                            s: ServiceOptionService = Depends(_svc)):
+    return ok(await s.set_tenant_option_price(mapping_id, await r.json()), _rid(r))

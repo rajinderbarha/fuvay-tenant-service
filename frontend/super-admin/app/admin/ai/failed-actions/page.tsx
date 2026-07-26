@@ -8,7 +8,7 @@ const STATUS_STYLE: Record<string, React.CSSProperties> = {
 };
 
 const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
 };
 
@@ -49,7 +49,7 @@ export default function AIFailedActionsPage() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {logs.map(log => (
-            <div key={log.id} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+            <div key={log.id} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -84,7 +84,7 @@ export default function AIFailedActionsPage() {
               </div>
               {expanded === log.id && log.request_payload && (
                 <pre style={{
-                  marginTop: 12, fontSize: 11, background: "var(--surface-sunken)", borderRadius: 8,
+                  marginTop: 12, fontSize: 11, background: "var(--surface-sunken)", borderRadius:"var(--radius-md)",
                   padding: 12, overflow: "auto", maxHeight: 160, color: "var(--text-secondary)",
                   fontFamily: "'JetBrains Mono', monospace",
                 }}>

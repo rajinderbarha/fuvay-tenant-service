@@ -25,7 +25,7 @@ const th: React.CSSProperties = {
 };
 
 const selStyle: React.CSSProperties = {
-  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit",
 };
 
@@ -164,7 +164,7 @@ export default function NotificationOutboxPage() {
             <div><span style={{ fontWeight: 500 }}>Title:</span> {detail.title}</div>
             <div>
               <span style={{ fontWeight: 500 }}>Body:</span>
-              <pre style={{ marginTop: 4, background: "var(--surface-sunken)", borderRadius: 8, padding: 10,
+              <pre style={{ marginTop: 4, background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 10,
                 fontSize: 11, whiteSpace: "pre-wrap", color: "var(--text-primary)" }}>{detail.body}</pre>
             </div>
             <div>

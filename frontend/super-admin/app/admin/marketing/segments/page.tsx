@@ -3,11 +3,11 @@ import { useState } from "react";
 import { adminMarketingApi } from "@/lib/api";
 
 const card: React.CSSProperties = {
-  background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 24,
+  background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 24,
 };
 const lbl: React.CSSProperties = { fontSize: 11, color: "var(--text-tertiary)", display: "block", marginBottom: 4 };
 const inp: React.CSSProperties = {
-  width: "100%", height: 36, padding: "0 12px", fontSize: 13, borderRadius: 8,
+  width: "100%", height: 36, padding: "0 12px", fontSize: 13, borderRadius:"var(--radius-md)",
   border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)",
   fontFamily: "inherit", boxSizing: "border-box",
 };
@@ -70,7 +70,7 @@ export default function SegmentBuilderPage() {
         )}
 
         <button onClick={preview} disabled={loading} style={{
-          padding: "8px 20px", fontSize: 13, fontWeight: 600, borderRadius: 8,
+          padding: "8px 20px", fontSize: 13, fontWeight: 600, borderRadius:"var(--radius-md)",
           border: "none", background: "var(--brand)", color: "white",
           cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit",
           opacity: loading ? 0.6 : 1,
@@ -80,14 +80,14 @@ export default function SegmentBuilderPage() {
       </div>
 
       {result && !result.error && (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
           <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 12px" }}>Preview Result</h2>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-            <div style={{ background: "var(--info-bg)", borderRadius: 8, padding: 16 }}>
+            <div style={{ background: "var(--info-bg)", borderRadius:"var(--radius-md)", padding: 16 }}>
               <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Estimated Total</div>
               <div style={{ fontSize: 24, fontWeight: 600, color: "var(--accent)" }}>{result.estimated_total}</div>
             </div>
-            <div style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: 16 }}>
+            <div style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 16 }}>
               <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Preview Sample</div>
               <div style={{ fontSize: 24, fontWeight: 600, color: "var(--text-primary)" }}>{result.preview_count}</div>
             </div>
@@ -106,7 +106,7 @@ export default function SegmentBuilderPage() {
       )}
 
       {result?.error && (
-        <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, padding: 16, fontSize: 13, color: "var(--danger-text)" }}>
+        <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-md)", padding: 16, fontSize: 13, color: "var(--danger-text)" }}>
           Error: {result.error}
         </div>
       )}

@@ -37,11 +37,11 @@ const DASHBOARD_LABEL: Record<string, string> = {
   generic_dashboard: "Generic Dashboard",
 };
 const MODULE_TYPE_COLOR: Record<string, string> = {
-  metric_card: "#2563eb", chart: "#7c3aed", table: "#059669",
-  quick_action: "#d97706", navigation: "#475569",
+  metric_card: "var(--brand)", chart: "var(--accent)", table: "var(--success)",
+  quick_action: "var(--warning)", navigation: "#475569",
 };
 const HEALTH_COLOR: Record<string, string> = {
-  healthy: "#059669", degraded: "#d97706", down: "#dc2626", unknown: "#94a3b8",
+  healthy: "var(--success)", degraded: "var(--warning)", down: "var(--danger)", unknown: "#94a3b8",
 };
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -54,10 +54,10 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 const MODEL_COLOR: Record<string, string> = {
-  credit_wallet_commission: "#2563eb",
-  subscription: "#7c3aed",
-  freemium: "#059669",
-  fixed_billing: "#d97706",
+  credit_wallet_commission: "var(--brand)",
+  subscription: "var(--accent)",
+  freemium: "var(--success)",
+  fixed_billing: "var(--warning)",
 };
 const MODEL_LABEL: Record<string, string> = {
   credit_wallet_commission: "Credit Wallet + Commission",
@@ -108,13 +108,13 @@ function MonetizationTab({ catId }: { catId: string }) {
     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
       {saved && (
         <div style={{ padding:"12px 16px", borderRadius:10, background:"rgba(5,150,105,0.08)",
-          border:"1px solid rgba(5,150,105,0.25)", fontSize:13, color:"#059669", fontWeight:600 }}>
+          border:"1px solid rgba(5,150,105,0.25)", fontSize:13, color:"var(--success)", fontWeight:600 }}>
           Monetization config saved.
         </div>
       )}
       {saveAction.error && (
         <div style={{ padding:"12px 16px", borderRadius:10, background:"rgba(220,38,38,0.08)",
-          border:"1px solid rgba(220,38,38,0.25)", fontSize:13, color:"#dc2626" }}>
+          border:"1px solid rgba(220,38,38,0.25)", fontSize:13, color:"var(--danger)" }}>
           {saveAction.error}
         </div>
       )}
@@ -323,7 +323,7 @@ function CustomerFlowTab({ catId }: { catId: string }) {
   const c = cfg.data;
 
   const inp = (style?: React.CSSProperties): React.CSSProperties => ({
-    width: "100%", padding: "8px 10px", borderRadius: 8,
+    width: "100%", padding: "8px 10px", borderRadius:"var(--radius-md)",
     border: "1px solid var(--border)", background: "var(--surface)",
     color: "var(--text-primary)", fontSize: 13, boxSizing: "border-box", ...style,
   });
@@ -332,13 +332,13 @@ function CustomerFlowTab({ catId }: { catId: string }) {
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       {saved && (
         <div style={{ padding:"12px 16px", borderRadius:10, background:"rgba(5,150,105,0.08)",
-          border:"1px solid rgba(5,150,105,0.25)", fontSize:13, color:"#059669", fontWeight:600 }}>
+          border:"1px solid rgba(5,150,105,0.25)", fontSize:13, color:"var(--success)", fontWeight:600 }}>
           Customer flow config saved.
         </div>
       )}
       {saveAction.error && (
         <div style={{ padding:"12px 16px", borderRadius:10, background:"rgba(220,38,38,0.08)",
-          border:"1px solid rgba(220,38,38,0.25)", fontSize:13, color:"#dc2626" }}>
+          border:"1px solid rgba(220,38,38,0.25)", fontSize:13, color:"var(--danger)" }}>
           {saveAction.error}
         </div>
       )}
@@ -351,7 +351,7 @@ function CustomerFlowTab({ catId }: { catId: string }) {
               {c && (
                 <span style={{ fontSize:11, fontWeight:700, padding:"2px 10px", borderRadius:20,
                   background: c.is_active ? "rgba(5,150,105,0.1)" : "rgba(148,163,184,0.15)",
-                  color: c.is_active ? "#059669" : "#64748b" }}>
+                  color: c.is_active ? "var(--success)" : "#64748b" }}>
                   {c.is_active ? "Active" : "Inactive"}
                 </span>
               )}
@@ -439,7 +439,7 @@ function CustomerFlowTab({ catId }: { catId: string }) {
                   <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
                     {(c?.required_steps ?? []).map((s, i) => (
                       <span key={i} style={{ fontSize:11, padding:"2px 8px", borderRadius:20,
-                        background:"rgba(37,99,235,0.08)", color:"#2563eb", fontWeight:600 }}>
+                        background:"rgba(37,99,235,0.08)", color:"var(--brand)", fontWeight:600 }}>
                         {i+1}. {s}
                       </span>
                     ))}
@@ -459,7 +459,7 @@ function CustomerFlowTab({ catId }: { catId: string }) {
                   <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
                     {(c?.optional_steps ?? []).map((s, i) => (
                       <span key={i} style={{ fontSize:11, padding:"2px 8px", borderRadius:20,
-                        background:"rgba(124,58,237,0.08)", color:"#7c3aed", fontWeight:600 }}>
+                        background:"rgba(124,58,237,0.08)", color:"var(--accent)", fontWeight:600 }}>
                         {s}
                       </span>
                     ))}
@@ -478,7 +478,7 @@ function CustomerFlowTab({ catId }: { catId: string }) {
             Customer-facing API endpoint
           </p>
           <code style={{ fontSize:12, color:"var(--text-secondary)", background:"var(--surface-sunken)",
-            padding:"8px 12px", borderRadius:8, display:"block" }}>
+            padding:"8px 12px", borderRadius:"var(--radius-md)", display:"block" }}>
             GET /v1/customer/categories/{"{slug}"}/runtime
           </code>
           <p style={{ fontSize:12, color:"var(--text-tertiary)", margin:"10px 0 0" }}>
@@ -606,7 +606,7 @@ function OnboardingChecklistTab({ catId }: { catId: string }) {
 
       {toast && (
         <div style={{ padding: "10px 16px", borderRadius: 10, background: "rgba(5,150,105,0.08)",
-          border: "1px solid rgba(5,150,105,0.25)", fontSize: 13, color: "#059669" }}>{toast}</div>
+          border: "1px solid rgba(5,150,105,0.25)", fontSize: 13, color: "var(--success)" }}>{toast}</div>
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -631,14 +631,14 @@ function OnboardingChecklistTab({ catId }: { catId: string }) {
             </button>
           </div>
           {formError && (
-            <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(220,38,38,0.08)",
-              border: "1px solid rgba(220,38,38,0.25)", fontSize: 12, color: "#dc2626", marginBottom: 12 }}>
+            <div style={{ padding: "8px 12px", borderRadius:"var(--radius-md)", background: "rgba(220,38,38,0.08)",
+              border: "1px solid rgba(220,38,38,0.25)", fontSize: 12, color: "var(--danger)", marginBottom: 12 }}>
               {formError}
             </div>
           )}
           {saveAction.error && (
-            <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(220,38,38,0.08)",
-              border: "1px solid rgba(220,38,38,0.25)", fontSize: 12, color: "#dc2626", marginBottom: 12 }}>
+            <div style={{ padding: "8px 12px", borderRadius:"var(--radius-md)", background: "rgba(220,38,38,0.08)",
+              border: "1px solid rgba(220,38,38,0.25)", fontSize: 12, color: "var(--danger)", marginBottom: 12 }}>
               {saveAction.error}
             </div>
           )}
@@ -903,7 +903,7 @@ function EnginesTab({ catId }: { catId: string }) {
                 </td>
                 <td style={{ padding:"10px 14px" }}>
                   {eng.is_primary ? (
-                    <span style={{ display:"flex", alignItems:"center", gap:4, fontSize:12, color:"#d97706" }}>
+                    <span style={{ display:"flex", alignItems:"center", gap:4, fontSize:12, color:"var(--warning)" }}>
                       <Star size={12}/> Primary
                     </span>
                   ) : (
@@ -992,7 +992,7 @@ function ModulesTab({ catId }: { catId: string }) {
             {list.map((mod, i) => {
               const typeColor = MODULE_TYPE_COLOR[mod.module_type] ?? "var(--text-tertiary)";
               const areaColor: Record<string, string> = {
-                sidebar: "#6366f1", overview: "#22c55e", analytics: "#f59e0b",
+                sidebar: "#6366f1", overview: "var(--success)", analytics: "var(--warning)",
                 quick_actions: "#ec4899", finance: "#0ea5e9", marketing: "#8b5cf6",
               };
               const areaClr = areaColor[mod.dashboard_area ?? ""] ?? "var(--text-tertiary)";
@@ -1148,7 +1148,7 @@ export default function CategoryDetailPage() {
               { label:"Total Tenants", value: r!.tenant_count },
               { label:"Active Tenants", value: r!.active_tenant_count },
             ].map(s => (
-              <div key={s.label} style={{ background:"var(--surface-sunken)", borderRadius:12,
+              <div key={s.label} style={{ background:"var(--surface-sunken)", borderRadius:"var(--radius-lg)",
                 padding:"14px 20px", border:"1px solid var(--border)", flex:"1 1 140px" }}>
                 <p style={{ fontSize:26, fontWeight:700, color:"var(--text-primary)", margin:0 }}>{s.value}</p>
                 <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:0, marginTop:3 }}>{s.label}</p>
@@ -1211,7 +1211,7 @@ export default function CategoryDetailPage() {
                 <InfoRow label="Primary Engine">
                   {r!.engine_summary.primary ? (
                     <span style={{ display:"flex", alignItems:"center", gap:6 }}>
-                      <Star size={12} style={{ color:"#d97706" }}/>
+                      <Star size={12} style={{ color:"var(--warning)" }}/>
                       <strong>{r!.engine_summary.primary.name}</strong>
                       <span style={{ fontSize:11, fontFamily:"monospace", color:"var(--text-tertiary)" }}>
                         {r!.engine_summary.primary.engine_key}
@@ -1323,7 +1323,7 @@ export default function CategoryDetailPage() {
                       {eng.health_status}
                     </span>
                     {eng.is_primary && (
-                      <Star size={12} style={{ color:"#d97706", flexShrink:0 }}/>
+                      <Star size={12} style={{ color:"var(--warning)", flexShrink:0 }}/>
                     )}
                     <Badge variant={eng.is_enabled ? "success" : "muted"} size="sm">
                       {eng.is_enabled ? "on" : "off"}

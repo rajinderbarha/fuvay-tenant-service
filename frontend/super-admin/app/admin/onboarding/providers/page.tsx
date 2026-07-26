@@ -72,11 +72,11 @@ function ReviewBadge({ status }: { status: string }) {
 
 function ReadinessBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; color: string }> = {
-    approved:         { label: "Approved",       color: "#059669" },
-    ready_for_review: { label: "Ready",          color: "#2563eb" },
-    ready_to_submit:  { label: "Ready to Submit",color: "#7c3aed" },
-    needs_changes:    { label: "Needs Changes",  color: "#d97706" },
-    rejected:         { label: "Rejected",       color: "#dc2626" },
+    approved:         { label: "Approved",       color: "var(--success)" },
+    ready_for_review: { label: "Ready",          color: "var(--brand)" },
+    ready_to_submit:  { label: "Ready to Submit",color: "var(--accent)" },
+    needs_changes:    { label: "Needs Changes",  color: "var(--warning)" },
+    rejected:         { label: "Rejected",       color: "var(--danger)" },
     incomplete:       { label: "Incomplete",     color: "#6b7280" },
   };
   const cfg = map[status] ?? { label: status, color: "#6b7280" };
@@ -90,7 +90,7 @@ function ReadinessBadge({ status }: { status: string }) {
 }
 
 function ProgressBar({ pct }: { pct: number }) {
-  const color = pct >= 80 ? "#059669" : pct >= 40 ? "#d97706" : "#2563eb";
+  const color = pct >= 80 ? "var(--success)" : pct >= 40 ? "var(--warning)" : "var(--brand)";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 90 }}>
       <div style={{ flex: 1, height: 5, background: "var(--surface-sunken)",
@@ -128,11 +128,11 @@ function RejectModal({
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999,
       display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "var(--surface)", borderRadius: 12, width: 440, padding: 24,
+      <div style={{ background: "var(--surface)", borderRadius:"var(--radius-lg)", width: 440, padding: 24,
         boxShadow: "0 20px 60px rgba(0,0,0,0.3)", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
           <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#dc2626", margin: 0 }}>Reject Provider</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--danger)", margin: 0 }}>Reject Provider</h3>
             <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "3px 0 0" }}>
               {tenant.business_name ?? tenant.tenant_name}
             </p>
@@ -146,10 +146,10 @@ function RejectModal({
         <textarea value={reason} onChange={e => setReason(e.target.value)}
           placeholder="Explain why this provider is being rejected…"
           rows={4}
-          style={{ width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 13,
+          style={{ width: "100%", padding: "10px 12px", borderRadius:"var(--radius-md)", fontSize: 13,
             border: "1.5px solid var(--border)", background: "var(--surface-sunken)",
             color: "var(--text-primary)", resize: "vertical", boxSizing: "border-box", outline: "none" }}/>
-        {err && <p style={{ fontSize: 12, color: "#dc2626", margin: "8px 0 0" }}>{err}</p>}
+        {err && <p style={{ fontSize: 12, color: "var(--danger)", margin: "8px 0 0" }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
           <Btn size="sm" variant="secondary" onClick={onClose} disabled={loading}>Cancel</Btn>
           <Btn size="sm" variant="danger" onClick={submit} disabled={loading || !reason.trim()}>
@@ -183,11 +183,11 @@ function RequestChangesModal({
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999,
       display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "var(--surface)", borderRadius: 12, width: 440, padding: 24,
+      <div style={{ background: "var(--surface)", borderRadius:"var(--radius-lg)", width: 440, padding: 24,
         boxShadow: "0 20px 60px rgba(0,0,0,0.3)", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
           <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#d97706", margin: 0 }}>Request Changes</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--warning)", margin: 0 }}>Request Changes</h3>
             <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "3px 0 0" }}>
               {tenant.business_name ?? tenant.tenant_name}
             </p>
@@ -201,10 +201,10 @@ function RequestChangesModal({
         <textarea value={notes} onChange={e => setNotes(e.target.value)}
           placeholder="Describe what changes are needed…"
           rows={4}
-          style={{ width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 13,
+          style={{ width: "100%", padding: "10px 12px", borderRadius:"var(--radius-md)", fontSize: 13,
             border: "1.5px solid var(--border)", background: "var(--surface-sunken)",
             color: "var(--text-primary)", resize: "vertical", boxSizing: "border-box", outline: "none" }}/>
-        {err && <p style={{ fontSize: 12, color: "#dc2626", margin: "8px 0 0" }}>{err}</p>}
+        {err && <p style={{ fontSize: 12, color: "var(--danger)", margin: "8px 0 0" }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
           <Btn size="sm" variant="secondary" onClick={onClose} disabled={loading}>Cancel</Btn>
           <Btn size="sm" variant="warning" onClick={submit} disabled={loading}>
@@ -237,7 +237,7 @@ function ApproveModal({
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999,
       display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "var(--surface)", borderRadius: 12, width: 400, padding: 24,
+      <div style={{ background: "var(--surface)", borderRadius:"var(--radius-lg)", width: 400, padding: 24,
         boxShadow: "0 20px 60px rgba(0,0,0,0.3)", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
           <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Approve Provider</h3>
@@ -248,12 +248,12 @@ function ApproveModal({
           Approve <strong>{tenant.business_name ?? tenant.tenant_name}</strong>? This will activate their account and start their package if selected.
         </p>
         {(tenant.profile_completion_percentage ?? 0) < 100 && (
-          <div style={{ padding: "10px 12px", borderRadius: 8, background: "#fef3c7", border: "1px solid #fde68a",
+          <div style={{ padding: "10px 12px", borderRadius:"var(--radius-md)", background: "#fef3c7", border: "1px solid #fde68a",
             color: "#92400e", fontSize: 12, marginBottom: 12 }}>
             ⚠ Profile is only {tenant.profile_completion_percentage ?? 0}% complete. Approval will be blocked by the server until it reaches 100%.
           </div>
         )}
-        {err && <p style={{ fontSize: 12, color: "#dc2626", margin: "0 0 12px" }}>{err}</p>}
+        {err && <p style={{ fontSize: 12, color: "var(--danger)", margin: "0 0 12px" }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <Btn size="sm" variant="secondary" onClick={onClose} disabled={loading}>Cancel</Btn>
           <Btn size="sm" variant="primary" onClick={submit} disabled={loading}>
@@ -346,16 +346,16 @@ export default function OnboardingProvidersPage() {
               color="var(--brand)" active={!reviewStatus}
               onClick={() => { setReviewStatus(""); resetPage(); }}/>
             <SummaryCard label="Pending Review" count={summary.pending_review}
-              color="#2563eb" active={reviewStatus === "pending_review"}
+              color="var(--brand)" active={reviewStatus === "pending_review"}
               onClick={() => { setReviewStatus("pending_review"); resetPage(); }}/>
             <SummaryCard label="Not Submitted" count={summary.not_submitted}
               color="#6b7280" active={reviewStatus === "not_submitted"}
               onClick={() => { setReviewStatus("not_submitted"); resetPage(); }}/>
             <SummaryCard label="Changes Requested" count={summary.changes_requested}
-              color="#d97706" active={reviewStatus === "changes_requested"}
+              color="var(--warning)" active={reviewStatus === "changes_requested"}
               onClick={() => { setReviewStatus("changes_requested"); resetPage(); }}/>
             <SummaryCard label="Rejected" count={summary.rejected}
-              color="#dc2626" active={reviewStatus === "rejected"}
+              color="var(--danger)" active={reviewStatus === "rejected"}
               onClick={() => { setReviewStatus("rejected"); resetPage(); }}/>
           </div>
         )}
@@ -374,32 +374,32 @@ export default function OnboardingProvidersPage() {
               <input value={search}
                 onChange={e => { setSearch(e.target.value); resetPage(); }}
                 placeholder="Search business name, email…"
-                style={{ width: "100%", paddingLeft: 32, paddingRight: 10, height: 34, borderRadius: 8, fontSize: 13,
+                style={{ width: "100%", paddingLeft: 32, paddingRight: 10, height: 34, borderRadius:"var(--radius-md)", fontSize: 13,
                   border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)",
                   outline: "none", boxSizing: "border-box" }}/>
             </div>
 
             <select value={reviewStatus} onChange={e => { setReviewStatus(e.target.value); resetPage(); }}
-              style={{ height: 34, borderRadius: 8, fontSize: 13, border: "1px solid var(--border)",
+              style={{ height: 34, borderRadius:"var(--radius-md)", fontSize: 13, border: "1px solid var(--border)",
                 background: "var(--surface)", color: "var(--text-primary)", padding: "0 10px", outline: "none" }}>
               {REVIEW_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
 
             <select value={verticalType} onChange={e => { setVerticalType(e.target.value); resetPage(); }}
-              style={{ height: 34, borderRadius: 8, fontSize: 13, border: "1px solid var(--border)",
+              style={{ height: 34, borderRadius:"var(--radius-md)", fontSize: 13, border: "1px solid var(--border)",
                 background: "var(--surface)", color: "var(--text-primary)", padding: "0 10px", outline: "none" }}>
               {VERTICAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
 
             <select value={categoryId} onChange={e => { setCategoryId(e.target.value); resetPage(); }}
-              style={{ height: 34, borderRadius: 8, fontSize: 13, border: "1px solid var(--border)",
+              style={{ height: 34, borderRadius:"var(--radius-md)", fontSize: 13, border: "1px solid var(--border)",
                 background: "var(--surface)", color: "var(--text-primary)", padding: "0 10px", outline: "none" }}>
               {categoryOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
 
             <input value={city} onChange={e => { setCity(e.target.value); resetPage(); }}
               placeholder="City…"
-              style={{ height: 34, borderRadius: 8, fontSize: 13, border: "1px solid var(--border)",
+              style={{ height: 34, borderRadius:"var(--radius-md)", fontSize: 13, border: "1px solid var(--border)",
                 background: "var(--surface)", color: "var(--text-primary)", padding: "0 10px", outline: "none" }}/>
           </div>
         </Card>
@@ -412,8 +412,8 @@ export default function OnboardingProvidersPage() {
             </div>
           ) : providers.error ? (
             <div style={{ textAlign: "center", padding: "48px 0" }}>
-              <AlertTriangle size={28} style={{ color: "#dc2626", display: "block", margin: "0 auto 12px" }}/>
-              <p style={{ fontSize: 14, fontWeight: 600, color: "#dc2626", margin: "0 0 6px" }}>
+              <AlertTriangle size={28} style={{ color: "var(--danger)", display: "block", margin: "0 auto 12px" }}/>
+              <p style={{ fontSize: 14, fontWeight: 600, color: "var(--danger)", margin: "0 0 6px" }}>
                 Failed to load onboarding queue
               </p>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 16px" }}>
@@ -550,9 +550,9 @@ export default function OnboardingProvidersPage() {
                                   onClick={() => { if (profileComplete) setModal({ type: "approve", tenant: p }); }}
                                   disabled={!profileComplete}
                                   style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11,
-                                    color: profileComplete ? "#059669" : "#9ca3af",
-                                    background: profileComplete ? "#05966910" : "#9ca3af15",
-                                    border: `1px solid ${profileComplete ? "#05966930" : "#9ca3af40"}`,
+                                    color: profileComplete ? "var(--success)" : "#9ca3af",
+                                    background: profileComplete ? "var(--success)10" : "#9ca3af15",
+                                    border: `1px solid ${profileComplete ? "var(--success)30" : "#9ca3af40"}`,
                                     borderRadius: 6, padding: "4px 8px",
                                     cursor: profileComplete ? "pointer" : "not-allowed",
                                     fontWeight: 500, opacity: profileComplete ? 1 : 0.7 }}>
@@ -566,7 +566,7 @@ export default function OnboardingProvidersPage() {
                                 title="Request changes"
                                 onClick={() => setModal({ type: "changes", tenant: p })}
                                 style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11,
-                                  color: "#d97706", background: "#d9770610", border: "1px solid #d9770630",
+                                  color: "var(--warning)", background: "var(--warning)10", border: "1px solid var(--warning)30",
                                   borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontWeight: 500 }}>
                                 <MessageSquare size={11}/> Changes
                               </button>
@@ -577,14 +577,14 @@ export default function OnboardingProvidersPage() {
                                 title="Reject provider"
                                 onClick={() => setModal({ type: "reject", tenant: p })}
                                 style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11,
-                                  color: "#dc2626", background: "#dc262610", border: "1px solid #dc262630",
+                                  color: "var(--danger)", background: "var(--danger)10", border: "1px solid var(--danger)30",
                                   borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontWeight: 500 }}>
                                 <XCircle size={11}/> Reject
                               </button>
                             )}
 
                             {p.review_status === "approved" && (
-                              <span style={{ fontSize: 11, color: "#059669", fontWeight: 600 }}>Active</span>
+                              <span style={{ fontSize: 11, color: "var(--success)", fontWeight: 600 }}>Active</span>
                             )}
                           </div>
                         </td>

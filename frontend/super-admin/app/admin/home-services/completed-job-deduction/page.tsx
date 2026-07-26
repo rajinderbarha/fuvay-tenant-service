@@ -10,14 +10,14 @@ function copyText(t: string) { if (typeof navigator !== "undefined") navigator.c
 
 function SectionError({ title, error, requestId, onRetry }: { title: string; error: string; requestId?: string | null; onRetry: () => void }) {
   return (
-    <div style={{ padding: "16px 20px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12 }}>
+    <div style={{ padding: "16px 20px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-lg)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
         <div>
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--danger-text)", margin: "0 0 4px", display: "flex", alignItems: "center", gap: 6 }}><XCircle size={14}/> {title}</p>
           <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0, opacity: 0.85 }}>{error}</p>
           {requestId && <button onClick={() => copyText(requestId)} style={{ fontSize: 11, color: "var(--danger-text)", background: "none", border: "none", cursor: "pointer", padding: "4px 0 0" }}><Copy size={10} style={{ display: "inline", marginRight: 4 }}/>Request ID: {requestId}</button>}
         </div>
-        <button onClick={onRetry} style={{ padding: "6px 12px", fontSize: 12, borderRadius: 8, border: "1px solid var(--danger-border)", background: "transparent", color: "var(--danger-text)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}><RefreshCw size={11}/> Retry</button>
+        <button onClick={onRetry} style={{ padding: "6px 12px", fontSize: 12, borderRadius:"var(--radius-md)", border: "1px solid var(--danger-border)", background: "transparent", color: "var(--danger-text)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}><RefreshCw size={11}/> Retry</button>
       </div>
     </div>
   );
@@ -58,9 +58,9 @@ export default function AdminHomeServicesCompletedJobDeductionPage() {
       {(rulesApi.error || servicesApi.error) ? (
         <SectionError title="We couldn't load deduction data" error={rulesApi.error ?? servicesApi.error ?? ""} requestId={rulesApi.requestId ?? servicesApi.requestId} onRetry={() => { rulesApi.refetch(); servicesApi.refetch(); }}/>
       ) : rulesApi.loading || servicesApi.loading ? (
-        <div style={{ height: 160, background: "var(--surface-sunken)", borderRadius: 12, animation: "pulse 1.5s ease-in-out infinite" }}/>
+        <div style={{ height: 160, background: "var(--surface-sunken)", borderRadius:"var(--radius-lg)", animation: "pulse 1.5s ease-in-out infinite" }}/>
       ) : (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
@@ -87,7 +87,10 @@ export default function AdminHomeServicesCompletedJobDeductionPage() {
       )}
 
       <div style={{ marginTop: 16 }}>
-        <a href="/admin/home-services/pricing-rules" style={{ fontSize: 12, color: "var(--brand)", textDecoration: "none" }}>Edit deduction credits in Pricing Rules →</a>
+        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
+          Deduction credits were configured via the now-retired Pricing Rules admin screen —
+          existing values above are historical. There is no current admin path to edit them.
+        </p>
       </div>
     </AdminLayout>
   );

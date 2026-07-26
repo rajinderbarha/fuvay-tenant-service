@@ -240,7 +240,7 @@ export default function NotificationCenterPage() {
 
             <div className="nc-detail-field">
               <div className="nc-detail-label">Message</div>
-              <div className="nc-detail-value" style={{ padding: "12px 14px", background: "var(--surface-sunken)", borderRadius: 8, whiteSpace: "pre-wrap" }}>
+              <div className="nc-detail-value" style={{ padding: "12px 14px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", whiteSpace: "pre-wrap" }}>
                 {selected.body}
               </div>
             </div>

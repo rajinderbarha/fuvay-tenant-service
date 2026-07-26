@@ -63,6 +63,22 @@ export const statusRegistry = {
   escalated_to_platform: { tone: "danger", label: "Escalated to Platform" },
   expiring_soon: { tone: "warning", label: "Expiring Soon" },
   not_submitted: { tone: "neutral", label: "Not Submitted" },
+
+  // Additive — Bookings & Jobs unified pipeline (provider/tenant portal).
+  // Raw booking/service-job status + assignment_status values, mapped to
+  // the existing tone palette only (no new colors introduced).
+  pending_confirmation: { tone: "warning", label: "Pending Confirmation" },
+  unassigned: { tone: "warning", label: "Unassigned" },
+  new: { tone: "warning", label: "New" },
+  assigned: { tone: "info", label: "Assigned" },
+  accepted: { tone: "info", label: "Accepted" },
+  on_the_way: { tone: "info", label: "On The Way" },
+  reached_site: { tone: "info", label: "Reached Site" },
+  inspection_started: { tone: "info", label: "Inspection" },
+  inspection_done: { tone: "info", label: "Inspection Done" },
+  service_started: { tone: "info", label: "In Progress" },
+  quote_required: { tone: "warning", label: "Quote Required" },
+  work_done: { tone: "success", label: "Work Done" },
 } as const;
 
 export type StatusKey = keyof typeof statusRegistry;

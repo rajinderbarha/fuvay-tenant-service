@@ -59,7 +59,7 @@ export default function TestConsolePage() {
   }
 
   const selectStyle: React.CSSProperties = {
-    width: "100%", border: "1px solid var(--border)", borderRadius: 8,
+    width: "100%", border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
     padding: "8px 12px", fontSize: 13, background: "var(--surface-sunken)",
     color: "var(--text-primary)", fontFamily: "inherit", outline: "none",
   };
@@ -119,7 +119,7 @@ export default function TestConsolePage() {
                 {turns.map((t, i) => (
                   <div key={i} style={{ display: "flex", justifyContent: t.role === "user" ? "flex-end" : "flex-start" }}>
                     <div style={{
-                      maxWidth: "80%", borderRadius: 8, padding: "8px 14px", fontSize: 13,
+                      maxWidth: "80%", borderRadius:"var(--radius-md)", padding: "8px 14px", fontSize: 13,
                       background: t.role === "user" ? "var(--brand)" : "var(--surface-sunken)",
                       color: t.role === "user" ? "#fff" : "var(--text-primary)",
                     }}>
@@ -135,7 +135,7 @@ export default function TestConsolePage() {
                 ))}
                 {sendAction.loading && (
                   <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                    <div style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: "10px 16px", display: "flex", gap: 4 }}>
+                    <div style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: "10px 16px", display: "flex", gap: 4 }}>
                       {[0, 1, 2].map(i => (
                         <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--text-tertiary)",
                           animation: "bounce 0.8s infinite", animationDelay: `${i * 0.15}s` }} />
@@ -152,7 +152,7 @@ export default function TestConsolePage() {
                   placeholder="Type your test message… (Enter to send)"
                   rows={2}
                   style={{
-                    flex: 1, border: "1px solid var(--border)", borderRadius: 8,
+                    flex: 1, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
                     padding: "8px 12px", fontSize: 13, resize: "none",
                     fontFamily: "inherit", outline: "none", background: "var(--surface-sunken)",
                     color: "var(--text-primary)",
@@ -171,7 +171,7 @@ export default function TestConsolePage() {
             </Card>
 
             {sendAction.error && (
-              <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, padding: 12, color: "var(--danger-text)", fontSize: 13 }}>
+              <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-md)", padding: 12, color: "var(--danger-text)", fontSize: 13 }}>
                 {sendAction.error}
               </div>
             )}

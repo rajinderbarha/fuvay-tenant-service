@@ -37,7 +37,7 @@ function TextArea({
         placeholder={placeholder} rows={rows}
         style={{
           width: "100%", padding: "8px 10px", fontSize: 13, fontFamily: "inherit",
-          borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)",
+          borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface)",
           color: "var(--text-primary)", outline: "none", resize: "vertical", boxSizing: "border-box",
         }} />
     </div>
@@ -408,7 +408,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       {/* Void modal */}
       <Modal open={voidModal} onClose={() => setVoidModal(false)} title="Void Booking">
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)",
+          <div style={{ padding: "10px 14px", borderRadius:"var(--radius-md)", background: "var(--danger-bg)",
             border: "1px solid var(--danger-border)" }}>
             <p style={{ fontSize: 13, color: "var(--danger-text)", margin: 0 }}>
               Voiding permanently invalidates this booking. This action is logged.

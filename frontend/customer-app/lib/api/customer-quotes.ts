@@ -44,6 +44,8 @@ export interface Quote {
   total_amount?: string | null;
   notes?: string | null;
   items?: QuoteItem[];
+  version_number?: number;
+  is_current?: boolean;
 }
 
 export async function listJobQuotes(jobId: string): Promise<Quote[]> {

@@ -27,11 +27,13 @@ async def create_subscription(r: Request, u: UserContext=Depends(require_super_a
                                s: SubscriptionService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.create_subscription(uuid.UUID(body["tenant_id"]), body["plan_type"],
-              body.get("billing_cycle","monthly"), body.get("trial_days",14)), _rid(r), ENGINE_ID)
+              body.get("billing_cycle","monthly"), body.get("trial_days",14),
+              body.get("vertical")), _rid(r), ENGINE_ID)
 @router.get("/tenants/{tenant_id}", response_model=ApiResponse[dict])
-async def get_subscription(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(get_current_user),
+async def get_subscription(tenant_id: uuid.UUID, r: Request, vertical: str|None=Query(None),
+                            u: UserContext=Depends(get_current_user),
                             s: SubscriptionService=Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.get_subscription(tenant_id), _rid(r), ENGINE_ID)
+    return ok(await s.get_subscription(tenant_id, vertical), _rid(r), ENGINE_ID)
 @router.put("/tenants/{tenant_id}/plan",
             summary="Proven proration from immutable SubscriptionPeriod rows",
             response_model=ApiResponse[dict])
@@ -39,36 +41,43 @@ async def update_plan(tenant_id: uuid.UUID, r: Request,
                        u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_BILLING_MANAGE)),
                        s: SubscriptionService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
-    return ok(await s.update_plan(tenant_id, body["new_plan"], body.get("billing_cycle","monthly")), _rid(r), ENGINE_ID)
+    return ok(await s.update_plan(tenant_id, body["new_plan"], body.get("billing_cycle","monthly"),
+              body.get("vertical")), _rid(r), ENGINE_ID)
 @router.post("/tenants/{tenant_id}/cancel", response_model=ApiResponse[dict])
 async def cancel(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(require_super_admin),
                   s: SubscriptionService=Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
-    return ok(await s.cancel_subscription(tenant_id, body.get("reason","")), _rid(r), ENGINE_ID)
+    return ok(await s.cancel_subscription(tenant_id, body.get("reason",""),
+              body.get("vertical")), _rid(r), ENGINE_ID)
 @router.post("/tenants/{tenant_id}/pause", response_model=ApiResponse[dict])
-async def pause(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(require_super_admin),
+async def pause(tenant_id: uuid.UUID, r: Request, vertical: str|None=Query(None),
+                 u: UserContext=Depends(require_super_admin),
                  s: SubscriptionService=Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.pause_subscription(tenant_id), _rid(r), ENGINE_ID)
+    return ok(await s.pause_subscription(tenant_id, vertical), _rid(r), ENGINE_ID)
 @router.post("/tenants/{tenant_id}/resume", response_model=ApiResponse[dict])
-async def resume(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(require_super_admin),
+async def resume(tenant_id: uuid.UUID, r: Request, vertical: str|None=Query(None),
+                  u: UserContext=Depends(require_super_admin),
                   s: SubscriptionService=Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.resume_subscription(tenant_id), _rid(r), ENGINE_ID)
+    return ok(await s.resume_subscription(tenant_id, vertical), _rid(r), ENGINE_ID)
 @router.get("/tenants/{tenant_id}/period",
             summary="Usage from canonical CommissionRecord source — not cached value",
             response_model=ApiResponse[dict])
-async def current_period(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(get_current_user),
+async def current_period(tenant_id: uuid.UUID, r: Request, vertical: str|None=Query(None),
+                          u: UserContext=Depends(get_current_user),
                           s: SubscriptionService=Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.get_current_period(tenant_id), _rid(r), ENGINE_ID)
+    return ok(await s.get_current_period(tenant_id, vertical), _rid(r), ENGINE_ID)
 @router.get("/tenants/{tenant_id}/history", response_model=ApiResponse[dict])
 async def billing_history(tenant_id: uuid.UUID, r: Request, limit: int=Query(12,ge=1,le=60),
-                           cursor: str|None=Query(None), u: UserContext=Depends(get_current_user),
+                           cursor: str|None=Query(None), vertical: str|None=Query(None),
+                           u: UserContext=Depends(get_current_user),
                            s: SubscriptionService=Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.list_billing_history(tenant_id, limit, cursor), _rid(r), ENGINE_ID)
+    return ok(await s.list_billing_history(tenant_id, limit, cursor, vertical), _rid(r), ENGINE_ID)
 @router.get("/tenants/{tenant_id}/proration-preview",
             summary="Preview proration before plan change — uses immutable period records",
             response_model=ApiResponse[dict])
 async def proration_preview(tenant_id: uuid.UUID, r: Request,
                              new_plan: str=Query(...), billing_cycle: str=Query("monthly"),
+                             vertical: str|None=Query(None),
                              u: UserContext=Depends(get_current_user),
                              s: SubscriptionService=Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.preview_proration(tenant_id, new_plan, billing_cycle), _rid(r), ENGINE_ID)
+    return ok(await s.preview_proration(tenant_id, new_plan, billing_cycle, vertical), _rid(r), ENGINE_ID)

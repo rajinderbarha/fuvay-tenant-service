@@ -127,6 +127,53 @@ class TenantSuspendedException(ServiceOSException):
         )
 
 
+class VerticalDisabledException(ServiceOSException):
+    def __init__(self, vertical_key: str):
+        super().__init__(
+            error_code="VERTICAL_DISABLED",
+            detail=f"This business vertical ('{vertical_key}') is currently unavailable.",
+            status_code=403,
+            blocking_rule=f"verticals.{vertical_key}.is_enabled must be true",
+            resolution="Contact your platform admin, or try again later.",
+            context={"vertical_key": vertical_key},
+        )
+
+
+class TenantVerticalNotActiveException(ServiceOSException):
+    def __init__(self, vertical_key: str, tenant_id: str, enrollment_status: str | None = None):
+        super().__init__(
+            error_code="TENANT_VERTICAL_NOT_ACTIVE",
+            detail=f"Tenant '{tenant_id}' does not have an active enrollment in '{vertical_key}'.",
+            status_code=403,
+            blocking_rule="tenant_vertical_enrollments.status must be 'active'",
+            resolution="Ask your platform admin to approve/activate this vertical for your account.",
+            context={"vertical_key": vertical_key, "tenant_id": tenant_id, "enrollment_status": enrollment_status},
+        )
+
+
+class VerticalCapabilityUnavailableException(ServiceOSException):
+    def __init__(self, vertical_key: str, capability: str):
+        super().__init__(
+            error_code="VERTICAL_CAPABILITY_UNAVAILABLE",
+            detail=f"Capability '{capability}' is not enabled for vertical '{vertical_key}'.",
+            status_code=403,
+            blocking_rule=f"'{capability}' not in verticals.{vertical_key}.capabilities",
+            resolution="Contact your platform admin to enable this capability for this vertical.",
+            context={"vertical_key": vertical_key, "capability": capability},
+        )
+
+
+class CrossVerticalAccessException(ServiceOSException):
+    def __init__(self, resource: str, resource_id: str, expected_vertical: str):
+        super().__init__(
+            error_code="CROSS_VERTICAL_ACCESS_DENIED",
+            detail=f"{resource} '{resource_id}' does not belong to vertical '{expected_vertical}'.",
+            status_code=403,
+            resolution="Verify the resource ID and the vertical context of your request.",
+            context={"resource": resource, "resource_id": resource_id, "expected_vertical": expected_vertical},
+        )
+
+
 def _get_request_id(request: Request) -> str:
     return getattr(request.state, "request_id", str(uuid.uuid4()))
 

@@ -774,8 +774,14 @@ class HomeServiceJobAssignmentService:
             raise ValueError(ERR_STAFF_JOB_NOT_ASSIGNED)
         assignment = await self._current_assignment(job_id)
         booking = await self._load_booking(job.booking_id)
+        # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.1 (spec section 12): expose
+        # the backend's own work-start decision so the staff/tenant UI shows
+        # the correct reason without recomputing it -- backend stays
+        # authoritative, this is a narration of the same guard.
+        from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+        work_start_status = await HomeServiceJobExecutionService().get_work_start_status(self.db, job)
         return {
-            "job":        job.to_dict(),
+            "job":        {**job.to_dict(), **work_start_status},
             "assignment": assignment.to_dict() if assignment else None,
             "booking":    _safe_booking_view(booking) if booking else None,
         }

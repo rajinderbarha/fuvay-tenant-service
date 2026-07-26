@@ -186,7 +186,7 @@ export default function AdminComplaintDetailPage() {
                 <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No messages.</p>}
               {(messages.data ?? []).map(m => (
                 <div key={D(m.id)} style={{ padding: "10px 12px", border: "1px solid var(--border)",
-                  borderRadius: 8, marginBottom: 8 }}>
+                  borderRadius:"var(--radius-md)", marginBottom: 8 }}>
                   <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
                     {D(m.sender_type)} · {D(m.created_at).slice(0, 16).replace("T", " ")}
                   </div>
@@ -197,7 +197,7 @@ export default function AdminComplaintDetailPage() {
           )}
           <label style={{ fontSize: 12, fontWeight: 600 }}>Add a case message</label>
           <textarea rows={3} value={reply} onChange={e => setReply(e.target.value)}
-            style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid var(--border)",
+            style={{ width: "100%", padding: 10, borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                      background: "var(--surface)", color: "var(--text)" }} />
           <div style={{ marginTop: 8 }}>
             <Btn disabled={!reply.trim() || busy} onClick={() => sendMessage.execute(reply.trim())}>Send</Btn>
@@ -214,7 +214,7 @@ export default function AdminComplaintDetailPage() {
               ? <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No resolutions offered.</p>
               : (resolutions.data ?? []).map(r => (
                 <div key={D(r.id)} style={{ padding: "10px 12px", border: "1px solid var(--border)",
-                  borderRadius: 8, marginBottom: 8 }}>
+                  borderRadius:"var(--radius-md)", marginBottom: 8 }}>
                   <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
                     <Badge variant="info">{D(r.resolution_type).replace(/_/g, " ")}</Badge>
                     <Badge variant={D(r.status) === "customer_accepted" ? "success"
@@ -238,7 +238,7 @@ export default function AdminComplaintDetailPage() {
               ? <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No settlement proposals.</p>
               : (proposals.data ?? []).map(p => (
                 <div key={D(p.id)} style={{ padding: "10px 12px", border: "1px solid var(--border)",
-                  borderRadius: 8, marginBottom: 8 }}>
+                  borderRadius:"var(--radius-md)", marginBottom: 8 }}>
                   <div style={{ display: "flex", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
                     <Badge variant="info">{D(p.proposal_type).replace(/_/g, " ")}</Badge>
                     <Badge variant={D(p.status) === "accepted" ? "success"
@@ -356,7 +356,7 @@ export default function AdminComplaintDetailPage() {
       <Modal open={resOpen} onClose={() => setResOpen(false)} title="Propose a resolution">
         <Select label="Resolution type" value={resType} onChange={setResType} options={RESOLUTION_TYPES} />
         <label style={{ fontSize: 12, fontWeight: 600 }}>Description</label>
-        <textarea rows={3} value={resDesc} onChange={e => setResDesc(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} />
+        <textarea rows={3} value={resDesc} onChange={e => setResDesc(e.target.value)} style={{ width: "100%", padding: 10, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} />
         {propose.error && <p style={{ color: "var(--danger)", fontSize: 12 }}>{propose.error}</p>}
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <Btn disabled={!resDesc.trim() || busy} onClick={() => propose.execute()}>Propose</Btn>
@@ -366,7 +366,7 @@ export default function AdminComplaintDetailPage() {
 
       <Modal open={rejectOpen} onClose={() => setRejectOpen(false)} title="Reject complaint">
         <label style={{ fontSize: 12, fontWeight: 600 }}>Reason</label>
-        <textarea rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} />
+        <textarea rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)} style={{ width: "100%", padding: 10, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} />
         {reject.error && <p style={{ color: "var(--danger)", fontSize: 12 }}>{reject.error}</p>}
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <Btn variant="danger" disabled={!rejectReason.trim() || busy}

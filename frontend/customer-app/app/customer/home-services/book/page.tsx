@@ -55,6 +55,11 @@ function BookHomeServiceInner() {
   const [offeringTypeId, setOfferingTypeId] = useState("");
   const [brandId, setBrandId] = useState("");
   const [issueSummary, setIssueSummary] = useState("");
+  // Phase 2A.2: the chip only ever set the free-text issueSummary, so the
+  // customer's Problem selection never reached the backend as a resolvable
+  // mapping -- job_type_id could never be derived from it. Track the real
+  // issue_type_id so it can be sent as selected_problem_id.
+  const [selectedIssueId, setSelectedIssueId] = useState("");
 
   // Step: location
   const [zipcode, setZipcode] = useState("");
@@ -112,6 +117,11 @@ function BookHomeServiceInner() {
       const payload: Record<string, unknown> = { issue_summary: issueSummary };
       if (brandId) payload.brand_id = brandId;
       if (offeringTypeId) payload.offering_type_id = offeringTypeId;
+      // Phase 2A.2: only send selected_problem_id when the customer picked
+      // a real catalog Problem chip -- free-text-only ("Other problem")
+      // must never guess a Job Type from it. The backend resolves the exact
+      // Job Type from this mapping; it is not computed here.
+      if (selectedIssueId) payload.selected_problem_id = selectedIssueId;
       const d = await updateDraftFields(draftId!, payload);
       setDraft(d);
       goto("location");
@@ -248,7 +258,8 @@ function BookHomeServiceInner() {
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Issue</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {issues.map((i) => (
-                  <button key={i.id} type="button" className={`co-chip ${issueSummary === i.name ? "selected" : ""}`} onClick={() => setIssueSummary(i.name)}>{i.name}</button>
+                  <button key={i.id} type="button" className={`co-chip ${selectedIssueId === i.id ? "selected" : ""}`}
+                    onClick={() => { setIssueSummary(i.name); setSelectedIssueId(i.id); }}>{i.name}</button>
                 ))}
               </div>
             </div>
@@ -404,6 +415,13 @@ function PriceStep({ matchResult, priceTier, onSelect, onNext, loading }: any) {
 function ReviewStep({ draft, matchResult, priceTier, loading, onConfirm }: any) {
   const provider = matchResult?.provider || matchResult?.selected_provider || {};
   const options = extractPriceOptions(matchResult);
+  // Phase 2A.2: buildBookingSummary now reports field-level readiness
+  // (booking_summary.missing/errors) -- an unresolved Job Type must block
+  // confirmation with a clear reason, not a generic/opaque failure at
+  // confirm time.
+  const summary = draft?.booking_summary || {};
+  const jobTypeErrors: { code: string; message: string }[] = summary.errors || [];
+  const blockedByJobType = (summary.missing || []).includes("job_type");
   return (
     <div className="co-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div><strong>Service:</strong> {draft?.offering_name}</div>
@@ -412,7 +430,12 @@ function ReviewStep({ draft, matchResult, priceTier, loading, onConfirm }: any) 
       <div><strong>Provider:</strong> {provider.provider_name || provider.business_name}</div>
       <div><strong>Selected price:</strong> {priceTier ? `${priceTier} — ₹${options[priceTier]}` : "—"}</div>
       <div><strong>Payment:</strong> Customer Pays Provider Directly</div>
-      <button className="co-btn-primary" disabled={loading || !priceTier || !(provider.provider_name || provider.business_name)} onClick={onConfirm}>{loading ? "Confirming..." : "Confirm Booking"}</button>
+      {blockedByJobType && jobTypeErrors.map((e) => (
+        <div key={e.code} style={{ color: "var(--danger-text, #991b1b)", fontSize: 13 }}>{e.message}</div>
+      ))}
+      <button className="co-btn-primary"
+        disabled={loading || !priceTier || !(provider.provider_name || provider.business_name) || blockedByJobType}
+        onClick={onConfirm}>{loading ? "Confirming..." : "Confirm Booking"}</button>
     </div>
   );
 }

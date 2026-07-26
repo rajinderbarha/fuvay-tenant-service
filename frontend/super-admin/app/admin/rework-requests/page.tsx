@@ -16,7 +16,7 @@ const STATUS_STYLE: Record<string, React.CSSProperties> = {
 };
 
 const selStyle: React.CSSProperties = {
-  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit",
 };
 
@@ -52,7 +52,7 @@ export default function AdminReworkRequestsPage() {
       {reworks && reworks.length === 0 && <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No rework requests found.</p>}
 
       {reworks && reworks.map((rw: ReworkRecord) => (
-        <div key={rw.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 20,
+        <div key={rw.id} style={{ border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20,
           background: "var(--surface)", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
@@ -75,13 +75,13 @@ export default function AdminReworkRequestsPage() {
           {rw.status === "requested" && (
             <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
               <button onClick={() => approveAction.execute(rw.id)} disabled={approveAction.loading}
-                style={{ padding: "6px 14px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none",
+                style={{ padding: "6px 14px", fontSize: 13, fontWeight: 600, borderRadius:"var(--radius-md)", border: "none",
                   cursor: "pointer", fontFamily: "inherit", background: "var(--success)", color: "white",
                   opacity: approveAction.loading ? 0.5 : 1 }}>
                 {approveAction.loading ? "…" : "Approve"}
               </button>
               <button onClick={() => setRejectId(rw.id)}
-                style={{ padding: "6px 14px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none",
+                style={{ padding: "6px 14px", fontSize: 13, fontWeight: 600, borderRadius:"var(--radius-md)", border: "none",
                   cursor: "pointer", fontFamily: "inherit", background: "var(--danger)", color: "white" }}>
                 Reject
               </button>
@@ -93,11 +93,11 @@ export default function AdminReworkRequestsPage() {
       {rejectId && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex",
           alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%",
+          <div style={{ background: "var(--surface)", borderRadius:"var(--radius-lg)", padding: 24, width: "100%",
             maxWidth: 400, display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}>
             <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Reject Rework Request</h2>
             <textarea
-              style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px",
+              style={{ width: "100%", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", padding: "8px 12px",
                 fontSize: 13, background: "var(--bg)", color: "var(--text-primary)", fontFamily: "inherit",
                 resize: "vertical", boxSizing: "border-box" }}
               rows={3}
@@ -108,7 +108,7 @@ export default function AdminReworkRequestsPage() {
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => { rejectAction.execute(rejectId, rejectReason); setRejectId(null); setRejectReason(""); }}
                 disabled={rejectAction.loading || !rejectReason}
-                style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none",
+                style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius:"var(--radius-md)", border: "none",
                   cursor: "pointer", fontFamily: "inherit", background: "var(--danger)", color: "white",
                   opacity: rejectAction.loading || !rejectReason ? 0.5 : 1 }}>
                 {rejectAction.loading ? "…" : "Confirm Reject"}

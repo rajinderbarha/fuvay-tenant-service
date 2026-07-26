@@ -98,19 +98,24 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Pricing" }],
   },
   "/admin/service-options": {
-    title: "Service Options",
+    title: "Service Options (Retired)",
     section: "catalog",
-    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Service Options" }],
+    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog-workspace" }, { label: "Service Options (Retired)" }],
   },
   "/admin/issue-types": {
-    title: "Issue Types",
+    title: "Issue Types (Retired)",
     section: "catalog",
-    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Issue Types" }],
+    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog-workspace" }, { label: "Issue Types (Retired)" }],
   },
   "/admin/checklist-templates": {
     title: "Checklist Templates",
     section: "catalog",
     breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Checklists" }],
+  },
+  "/admin/checklists": {
+    title: "Checklist Library",
+    section: "catalog",
+    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Checklist Library" }],
   },
   "/admin/workflow-templates": {
     title: "Workflow Templates",

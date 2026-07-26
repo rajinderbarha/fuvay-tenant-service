@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { StaffLayout } from "../../../../../components/layout/StaffLayout";
 import { Card, Badge, Skeleton, Btn } from "../../../../../components/shared/ui";
 import { useApi, useAction } from "../../../../../hooks/useApi";
-import { homeServiceStaffJobsApi } from "../../../../../lib/api";
+import { homeServiceStaffJobsApi, checklistExecutionApi, type ChecklistInstanceDetail } from "../../../../../lib/api";
 
 // job.status -> the single next CTA a technician can take. Mirrors
 // JOB_TRANSITIONS in app/engines/execution/constants.py — one primary
@@ -28,6 +28,7 @@ export default function StaffHomeServiceJobDetailPage() {
 
   const job = useApi(useCallback(() => homeServiceStaffJobsApi.get(jobId), [jobId]), [jobId]);
   const parts = useApi(useCallback(() => homeServiceStaffJobsApi.listPartsRequests(jobId), [jobId]), [jobId]);
+  const checklists = useApi(useCallback(() => checklistExecutionApi.listForJob(jobId), [jobId]), [jobId]);
 
   const statusAction = useAction(
     useCallback(async (fnName: keyof typeof homeServiceStaffJobsApi) => {
@@ -100,6 +101,10 @@ export default function StaffHomeServiceJobDetailPage() {
                   </p>
                 )}
               </Card>
+
+              {checklists.data && checklists.data.length > 0 && (
+                <ChecklistCard instances={checklists.data} onRefetch={() => { checklists.refetch(); job.refetch(); }} />
+              )}
 
               {canRequestParts && (
                 <Card>
@@ -207,7 +212,7 @@ export default function StaffHomeServiceJobDetailPage() {
 }
 
 const inputStyle: React.CSSProperties = {
-  padding: "8px 10px", borderRadius: 8, fontSize: 13,
+  padding: "8px 10px", borderRadius:"var(--radius-md)", fontSize: 13,
   border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text)",
 };
 
@@ -216,6 +221,115 @@ function Row({ label, value }: { label: string; value?: string | null }) {
     <div>
       <div style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
       <div>{value || "—"}</div>
+    </div>
+  );
+}
+
+// ── Checklist execution (Checklist Catalog Engine) ───────────────────────
+// Shows only the checklist instances the backend already resolved as
+// applicable to this exact job + phase. This is a response/evidence
+// capture surface for technicians -- not the reusable template editor
+// (that lives in the platform-admin Checklist Library).
+function ChecklistCard({ instances, onRefetch }: { instances: ChecklistInstanceDetail[]; onRefetch: () => void }) {
+  return (
+    <>
+      {instances.map(instance => <ChecklistInstanceBlock key={instance.id} instance={instance} onRefetch={onRefetch} />)}
+    </>
+  );
+}
+
+function ChecklistInstanceBlock({ instance, onRefetch }: { instance: ChecklistInstanceDetail; onRefetch: () => void }) {
+  const requiredItems = instance.items.filter(i => i.is_required);
+  const requiredDone = requiredItems.filter(i => i.response && i.response.response_value != null).length;
+  const complete = useAction(useCallback(() => checklistExecutionApi.complete(instance.id), [instance.id]), { onSuccess: onRefetch });
+
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Checklist — {instance.phase}</h3>
+        <Badge size="sm" variant={instance.state === "COMPLETED" || instance.state === "WAIVED" ? "success" : instance.state === "BLOCKED" ? "danger" : "warning"}>
+          {instance.state.replace(/_/g, " ")}
+        </Badge>
+      </div>
+      {requiredItems.length > 0 && (
+        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+          {requiredDone} of {requiredItems.length} required items complete
+        </p>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {instance.items.map(item => (
+          <ChecklistItemRow key={item.id} instanceId={instance.id} item={item} onSaved={onRefetch} />
+        ))}
+      </div>
+      {instance.state !== "COMPLETED" && instance.state !== "WAIVED" && (
+        <div style={{ marginTop: 14 }}>
+          <Btn variant="primary" size="sm" loading={complete.loading} onClick={() => complete.execute()}>
+            Complete Phase
+          </Btn>
+          {complete.error && (
+            <p style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 6 }}>
+              {complete.error}{complete.requestId && ` — Request ID: ${complete.requestId}`}
+            </p>
+          )}
+        </div>
+      )}
+      {instance.completed_at && (
+        <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }}>
+          Completed {new Date(instance.completed_at).toLocaleString()}
+        </p>
+      )}
+    </Card>
+  );
+}
+
+function ChecklistItemRow({ instanceId, item, onSaved }: {
+  instanceId: string; item: ChecklistInstanceDetail["items"][number]; onSaved: () => void;
+}) {
+  const [value, setValue] = useState<string>(
+    item.response?.response_value != null ? String(item.response.response_value) : "",
+  );
+  const save = useAction(
+    useCallback(() => checklistExecutionApi.saveResponse(instanceId, item.id, { response_value: value }), [instanceId, item.id, value]),
+    { onSuccess: onSaved },
+  );
+  const validationErrors = (item.response?.validation_result as { errors?: string[] } | null)?.errors;
+
+  return (
+    <div style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{item.label}</span>
+        {item.is_required && <Badge size="sm" variant="warning">Required</Badge>}
+        {item.evidence_required && <Badge size="sm" variant="muted">Evidence required</Badge>}
+      </div>
+      {item.help_text && <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 6px" }}>{item.help_text}</p>}
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        {item.item_type === "YES_NO" ? (
+          <select value={value} onChange={e => setValue(e.target.value)} style={inputStyle}>
+            <option value="">— Select —</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        ) : item.item_type === "SINGLE_SELECT" && item.select_options ? (
+          <select value={value} onChange={e => setValue(e.target.value)} style={inputStyle}>
+            <option value="">— Select —</option>
+            {item.select_options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        ) : item.item_type === "NUMBER" || item.item_type === "MEASUREMENT" ? (
+          <input type="number" value={value} onChange={e => setValue(e.target.value)}
+            placeholder={item.measurement_unit ?? undefined} style={inputStyle} />
+        ) : item.item_type === "LONG_TEXT" ? (
+          <textarea value={value} onChange={e => setValue(e.target.value)} style={{ ...inputStyle, minHeight: 50, flex: 1 }} />
+        ) : (
+          <input type="text" value={value} onChange={e => setValue(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+        )}
+        <Btn size="xs" variant="secondary" loading={save.loading} disabled={!value} onClick={() => save.execute()}>
+          Save
+        </Btn>
+      </div>
+      {validationErrors && validationErrors.length > 0 && (
+        <p style={{ fontSize: 11, color: "var(--danger-text)", marginTop: 4 }}>{validationErrors.join(", ")}</p>
+      )}
+      {save.error && <p style={{ fontSize: 11, color: "var(--danger-text)", marginTop: 4 }}>{save.error}</p>}
     </div>
   );
 }

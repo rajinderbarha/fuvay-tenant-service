@@ -64,7 +64,7 @@ function StatusOverrideModal({ jobId, currentStatus, onClose, onDone }: {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex",
       alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div style={{ background: "var(--surface)", borderRadius: 8, padding: 20, width: 420, maxWidth: "90vw" }}
+      <div style={{ background: "var(--surface)", borderRadius:"var(--radius-md)", padding: 20, width: 420, maxWidth: "90vw" }}
         onClick={e => e.stopPropagation()}>
         <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px" }}>Override Job Status</p>
         <div style={{ marginBottom: 12 }}>
@@ -123,7 +123,7 @@ function ForceCloseModal({ jobId, currentStatus, onClose, onDone }: {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex",
       alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div style={{ background: "var(--surface)", borderRadius: 8, padding: 20, width: 440, maxWidth: "90vw" }}
+      <div style={{ background: "var(--surface)", borderRadius:"var(--radius-md)", padding: 20, width: 440, maxWidth: "90vw" }}
         onClick={e => e.stopPropagation()}>
         <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 10px" }}>Force-Close Job</p>
         <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 14px" }}>
@@ -145,7 +145,7 @@ function ForceCloseModal({ jobId, currentStatus, onClose, onDone }: {
             border: "1px solid var(--border)", background: "transparent" }}>Cancel</button>
           <button onClick={submit} disabled={!reason.trim() || forceClose.loading}
             style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6, border: "none",
-              background: "var(--danger-text, #dc2626)", color: "#fff",
+              background: "var(--danger-text, var(--danger))", color: "#fff",
               opacity: (!reason.trim() || forceClose.loading) ? 0.5 : 1 }}>
             {forceClose.loading ? "Force-closing…" : "Confirm Force-Close"}
           </button>
@@ -172,7 +172,7 @@ function VoidModal({ jobId, currentStatus, onClose, onDone }: {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex",
       alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div style={{ background: "var(--surface)", borderRadius: 8, padding: 20, width: 440, maxWidth: "90vw" }}
+      <div style={{ background: "var(--surface)", borderRadius:"var(--radius-md)", padding: 20, width: 440, maxWidth: "90vw" }}
         onClick={e => e.stopPropagation()}>
         <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 10px" }}>Void Job</p>
         <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 14px" }}>
@@ -194,7 +194,7 @@ function VoidModal({ jobId, currentStatus, onClose, onDone }: {
             border: "1px solid var(--border)", background: "transparent" }}>Cancel</button>
           <button onClick={submit} disabled={!reason.trim() || voidAction.loading}
             style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6, border: "none",
-              background: "var(--danger-text, #dc2626)", color: "#fff",
+              background: "var(--danger-text, var(--danger))", color: "#fff",
               opacity: (!reason.trim() || voidAction.loading) ? 0.5 : 1 }}>
             {voidAction.loading ? "Voiding…" : "Confirm Void"}
           </button>
@@ -223,7 +223,7 @@ function ReassignModal({ jobId, onClose, onDone }: { jobId: string; onClose: () 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex",
       alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div style={{ background: "var(--surface)", borderRadius: 8, padding: 20, width: 420, maxWidth: "90vw" }}
+      <div style={{ background: "var(--surface)", borderRadius:"var(--radius-md)", padding: 20, width: 420, maxWidth: "90vw" }}
         onClick={e => e.stopPropagation()}>
         <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px" }}>Reassign Technician</p>
 
@@ -335,7 +335,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                 {perm.has("admin:jobs:force_close") && (
                 <button onClick={() => setShowForceClose(true)}
                   style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
-                    border: "1px solid var(--danger-text, #dc2626)", color: "var(--danger-text, #dc2626)",
+                    border: "1px solid var(--danger-text, var(--danger))", color: "var(--danger-text, var(--danger))",
                     background: "transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
                   Force-Close
                 </button>
@@ -345,7 +345,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
             {d.status !== "voided" && perm.has("admin:jobs:void") && (
               <button onClick={() => setShowVoid(true)}
                 style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
-                  border: "1px solid var(--danger-text, #dc2626)", color: "var(--danger-text, #dc2626)",
+                  border: "1px solid var(--danger-text, var(--danger))", color: "var(--danger-text, var(--danger))",
                   background: "transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
                 Void Job
               </button>
@@ -411,9 +411,9 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                   d.sla ? (
                     <span style={{
                       fontWeight: 700,
-                      color: d.sla.sla_status === "BREACHED" ? "var(--danger-text, #dc2626)"
-                        : d.sla.sla_status === "AT_RISK" ? "var(--warning-text, #d97706)"
-                        : d.sla.sla_status === "ON_TRACK" ? "var(--success-text, #059669)"
+                      color: d.sla.sla_status === "BREACHED" ? "var(--danger-text, var(--danger))"
+                        : d.sla.sla_status === "AT_RISK" ? "var(--warning-text, var(--warning))"
+                        : d.sla.sla_status === "ON_TRACK" ? "var(--success-text, var(--success))"
                         : "var(--text-tertiary)",
                     }}>
                       {d.sla.sla_status === "NOT_APPLICABLE" ? "—" : d.sla.sla_status.replace("_", " ")}

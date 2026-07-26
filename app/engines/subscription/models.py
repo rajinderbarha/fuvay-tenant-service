@@ -9,11 +9,15 @@ from app.models.base import ServiceOSBase, utcnow
 
 
 class Subscription(ServiceOSBase):
-    """One active subscription per tenant."""
+    """One active subscription per tenant PER VERTICAL (migration 150). A
+    tenant operating in multiple verticals (e.g. Home Services + Coaching)
+    can hold one independent subscription per vertical; disabling/suspending
+    one vertical's subscription never touches another vertical's row."""
     __tablename__ = "subscriptions"
-    __table_args__ = (UniqueConstraint("tenant_id", name="uq_sub_tenant"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "vertical_id", name="uq_sub_tenant_vertical"),)
 
-    tenant_id:       Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
+    tenant_id:       Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), nullable=False)
+    vertical_id:     Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     plan_type:       Mapped[str]          = mapped_column(String(30), nullable=False)
     billing_cycle:   Mapped[str]          = mapped_column(String(20), nullable=False)
     status:          Mapped[str]          = mapped_column(String(20), nullable=False)
@@ -36,6 +40,7 @@ class SubscriptionPeriod(ServiceOSBase):
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     tenant_id:       Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    vertical_id:     Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     plan_type:       Mapped[str]       = mapped_column(String(30), nullable=False)
     started_at:      Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at:         Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=False)
@@ -55,6 +60,7 @@ class SubscriptionEvent(ServiceOSBase):
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     tenant_id:       Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    vertical_id:     Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     event_type:      Mapped[str]       = mapped_column(String(50), nullable=False)
     from_plan:       Mapped[str|None]  = mapped_column(String(30), nullable=True)
     to_plan:         Mapped[str|None]  = mapped_column(String(30), nullable=True)

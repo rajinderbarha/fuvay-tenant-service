@@ -20,7 +20,7 @@ const DEFAULT: Filters = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function Stars({ n }: { n: number }) {
-  const color = n >= 4 ? "#22c55e" : n === 3 ? "#f59e0b" : "#ef4444";
+  const color = n >= 4 ? "var(--success)" : n === 3 ? "var(--warning)" : "#ef4444";
   return (
     <span style={{ display:"flex", alignItems:"center", gap:2 }}>
       {[1,2,3,4,5].map(i => (
@@ -35,9 +35,9 @@ function Stars({ n }: { n: number }) {
 function SentimentBadge({ s }: { s: string | undefined }) {
   if (!s) return <span style={{ color:"var(--text-tertiary)", fontSize:12 }}>—</span>;
   const cfg: Record<string,{icon: React.ElementType; color: string; bg: string}> = {
-    positive: { icon: ThumbsUp,   color:"#16a34a", bg:"#dcfce7" },
+    positive: { icon: ThumbsUp,   color:"var(--success)", bg:"#dcfce7" },
     neutral:  { icon: Minus,      color:"#78716c", bg:"#f5f5f4" },
-    negative: { icon: ThumbsDown, color:"#dc2626", bg:"#fee2e2" },
+    negative: { icon: ThumbsDown, color:"var(--danger)", bg:"#fee2e2" },
   };
   const { icon: Icon, color, bg } = cfg[s] ?? cfg.neutral;
   return (
@@ -50,12 +50,12 @@ function SentimentBadge({ s }: { s: string | undefined }) {
 
 function StatusBadge({ s }: { s: string }) {
   const map: Record<string,[string,string]> = {
-    approved:  ["#16a34a","#dcfce7"],
+    approved:  ["var(--success)","#dcfce7"],
     pending:   ["#92400e","#fef3c7"],
-    flagged:   ["#dc2626","#fee2e2"],
+    flagged:   ["var(--danger)","#fee2e2"],
     hidden:    ["#78716c","#f5f5f4"],
-    rejected:  ["#dc2626","#fee2e2"],
-    deleted:   ["#dc2626","#fee2e2"],
+    rejected:  ["var(--danger)","#fee2e2"],
+    deleted:   ["var(--danger)","#fee2e2"],
   };
   const [color, bg] = map[s] ?? ["#78716c","#f5f5f4"];
   return (
@@ -73,7 +73,7 @@ function SummaryCard({ label, value, icon: Icon, color, active, onClick }: {
   return (
     <div onClick={onClick} style={{
       background:"var(--surface)", border:`1.5px solid ${active ? color : "var(--border)"}`,
-      borderRadius:12, padding:"14px 18px", cursor:onClick ? "pointer":"default",
+      borderRadius:"var(--radius-lg)", padding:"14px 18px", cursor:onClick ? "pointer":"default",
       display:"flex", alignItems:"center", gap:12, transition:"all 0.12s", flex:1, minWidth:130,
       boxShadow: active ? `0 0 0 3px ${color}22` : "none",
     }}>
@@ -210,20 +210,20 @@ export default function AdminReviewsPage() {
       {/* ── Summary Cards ─────────────────────────────────────────────────── */}
       {summary.loading ? (
         <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:20 }}>
-          {[...Array(6)].map((_,i) => <Skeleton key={i} height={74} style={{ flex:1, minWidth:130, borderRadius:12 }}/>)}
+          {[...Array(6)].map((_,i) => <Skeleton key={i} height={74} style={{ flex:1, minWidth:130, borderRadius:"var(--radius-lg)" }}/>)}
         </div>
       ) : (
         <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:20 }}>
           <SummaryCard label="Total Reviews" value={sum?.total} icon={Star} color="#6366f1"/>
           <SummaryCard label="Avg Rating" value={sum?.avg_rating ? `${sum.avg_rating} ★` : "—"}
-            icon={Star} color="#22c55e"/>
+            icon={Star} color="var(--success)"/>
           <SummaryCard label="Low Rating (1–2★)" value={sum?.low_rating} icon={ThumbsDown} color="#ef4444"
             active={filters.rating === "2"} onClick={() => setF("rating", filters.rating === "2" ? "" : "2")}/>
-          <SummaryCard label="Unreplied" value={sum?.unreplied} icon={MessageSquare} color="#f59e0b"
+          <SummaryCard label="Unreplied" value={sum?.unreplied} icon={MessageSquare} color="var(--warning)"
             active={filters.has_reply === "false"} onClick={() => setF("has_reply", filters.has_reply === "false" ? "" : "false")}/>
-          <SummaryCard label="Flagged" value={sum?.flagged} icon={Flag} color="#dc2626"
+          <SummaryCard label="Flagged" value={sum?.flagged} icon={Flag} color="var(--danger)"
             active={filters.status === "flagged"} onClick={() => setF("status", filters.status === "flagged" ? "" : "flagged")}/>
-          <SummaryCard label="Pending" value={sum?.pending_moderation} icon={AlertTriangle} color="#f59e0b"
+          <SummaryCard label="Pending" value={sum?.pending_moderation} icon={AlertTriangle} color="var(--warning)"
             active={filters.status === "pending"} onClick={() => setF("status", filters.status === "pending" ? "" : "pending")}/>
         </div>
       )}
@@ -236,9 +236,9 @@ export default function AdminReviewsPage() {
           <Chip label="2 Star"   active={filters.rating==="2"} color="#f97316" onClick={() => setF("rating", filters.rating==="2"?"":"2")}/>
           <Chip label="Negative" active={filters.rating==="2"&&!filters.status} color="#ef4444"
             onClick={() => { setF("rating","2"); setF("status",""); }}/>
-          <Chip label="Unreplied" active={filters.has_reply==="false"} color="#f59e0b"
+          <Chip label="Unreplied" active={filters.has_reply==="false"} color="var(--warning)"
             onClick={() => setF("has_reply", filters.has_reply==="false"?"":"false")}/>
-          <Chip label="Flagged"  active={filters.status==="flagged"} color="#dc2626"
+          <Chip label="Flagged"  active={filters.status==="flagged"} color="var(--danger)"
             onClick={() => setF("status", filters.status==="flagged"?"":"flagged")}/>
           <Chip label="Pending"  active={filters.status==="pending"} color="#92400e"
             onClick={() => setF("status", filters.status==="pending"?"":"pending")}/>
@@ -379,7 +379,7 @@ export default function AdminReviewsPage() {
         title={moderateAction === "approve" ? "Approve Review" : moderateAction === "reject" ? "Reject Review" : "Hide Review"}>
         {moderateRow && (
           <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-            <div style={{ padding:"10px 14px", borderRadius:8, background:"var(--surface-sunken)",
+            <div style={{ padding:"10px 14px", borderRadius:"var(--radius-md)", background:"var(--surface-sunken)",
               border:"1px solid var(--border)" }}>
               <p style={{ fontSize:13, fontWeight:600, color:"var(--text-primary)", margin:"0 0 2px" }}>
                 {moderateRow.review_number} — {moderateRow.review_title ?? "Untitled Review"}
@@ -404,7 +404,7 @@ export default function AdminReviewsPage() {
                 <textarea value={moderateReason} onChange={e => setModerateReason(e.target.value)}
                   placeholder={moderateAction === "reject" ? "Policy violation reason…" : "Why is this being hidden?"}
                   rows={3} style={{ width:"100%", padding:"8px 10px", fontSize:13, fontFamily:"inherit",
-                    borderRadius:8, border:"1px solid var(--border)", background:"var(--surface)",
+                    borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--surface)",
                     color:"var(--text-primary)", outline:"none", resize:"vertical", boxSizing:"border-box" }}/>
               </div>
             )}
@@ -482,7 +482,7 @@ function ReviewRow({ rv, index, total, onView, onModerate }: {
       </td>
       <td style={{ padding:"11px 14px" }}>
         {rv.has_reply ? (
-          <span style={{ fontSize:11, fontWeight:600, color:"#16a34a",
+          <span style={{ fontSize:11, fontWeight:600, color:"var(--success)",
             display:"flex", alignItems:"center", gap:4 }}>
             <MessageSquare size={11}/> Replied
           </span>

@@ -38,7 +38,7 @@ const TIMEZONES = [
 
 const selectStyle: React.CSSProperties = {
   width: "100%", padding: "8px 12px", fontSize: 13,
-  border: "1px solid var(--border)", borderRadius: 8,
+  border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-primary)",
   outline: "none", cursor: "pointer",
 };
@@ -190,7 +190,7 @@ export default function AdminProfilePage() {
             {/* Email — read-only */}
             <Field label="Email" hint="Email cannot be changed here. Contact the platform team.">
               <div style={{
-                padding: "8px 12px", fontSize: 13, borderRadius: 8,
+                padding: "8px 12px", fontSize: 13, borderRadius:"var(--radius-md)",
                 background: "var(--surface-sunken, #f5f5f5)", border: "1px solid var(--border)",
                 color: "var(--text-secondary)",
               }}>
@@ -216,7 +216,7 @@ export default function AdminProfilePage() {
                   setTimezone(profile.data?.timezone ?? "UTC");
                 }}
                 style={{
-                  padding: "7px 14px", fontSize: 13, borderRadius: 8, cursor: "pointer",
+                  padding: "7px 14px", fontSize: 13, borderRadius:"var(--radius-md)", cursor: "pointer",
                   border: "1px solid var(--border)", background: "transparent",
                   color: "var(--text-secondary)",
                 }}

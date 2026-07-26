@@ -33,7 +33,7 @@ function SummaryCard({ label, value, sub, color }: { label: string; value: numbe
   return (
     <div style={{
       background: "var(--surface)", border: "1px solid var(--border)",
-      borderRadius: 12, padding: "16px 20px", flex: "1 1 140px",
+      borderRadius:"var(--radius-lg)", padding: "16px 20px", flex: "1 1 140px",
     }}>
       <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: color ?? "var(--text-secondary)", textTransform: "uppercase", letterSpacing: ".06em" }}>{label}</p>
       <p style={{ margin: "6px 0 0", fontSize: 28, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1 }}>{value}</p>
@@ -398,7 +398,7 @@ export default function ServiceGroupsPage() {
       {summary.loading && (
         <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
           {[...Array(6)].map((_, i) => (
-            <div key={i} style={{ flex: "1 1 140px", height: 80, borderRadius: 12, background: "var(--border)" }} className="skeleton" />
+            <div key={i} style={{ flex: "1 1 140px", height: 80, borderRadius:"var(--radius-lg)", background: "var(--border)" }} className="skeleton" />
           ))}
         </div>
       )}
@@ -411,7 +411,7 @@ export default function ServiceGroupsPage() {
               placeholder="Search by name, code, or slug…"
               value={q} onChange={e => setQ(e.target.value)}
               style={{
-                width: "100%", padding: "8px 12px", borderRadius: 8, fontSize: 13,
+                width: "100%", padding: "8px 12px", borderRadius:"var(--radius-md)", fontSize: 13,
                 border: "1px solid var(--border)", background: "var(--surface)",
                 color: "var(--text-primary)", outline: "none", boxSizing: "border-box",
               }}
@@ -488,7 +488,7 @@ export default function ServiceGroupsPage() {
         title={editing ? `Edit: ${editing.name}` : "New Service Group"}>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {activeAction.error && (
-            <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
+            <div style={{ padding: "10px 14px", borderRadius:"var(--radius-md)", background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
               <p style={{ fontSize: 13, color: "var(--danger-text)", margin: 0 }}>{activeAction.error}</p>
             </div>
           )}

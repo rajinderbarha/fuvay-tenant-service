@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, and_, func, update
+from sqlalchemy import select, and_, or_, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
@@ -24,9 +24,30 @@ from app.engines.admin_catalog.models import (
     TenantSupportedServiceOption,
     MasterDataAuditLog,
     MasterChecklistItem,
+    JobTypeDefinition,
 )
 
 _VALID_STATUSES = {"active", "inactive", "archived", "deprecated", "pending_review", "rejected"}
+
+# HOME-SERVICES-CATALOG ownership correction (migration 169): admin templates/
+# mappings must never carry a monetary value -- pricing is tenant-owned only.
+# Any admin-facing create/update payload containing one of these is rejected
+# outright rather than silently ignored, so a stale client can't assume it
+# worked.
+_FORBIDDEN_ADMIN_MONETARY_FIELDS = ("default_price", "min_price", "max_price",
+                                     "price", "unit_price", "fixed_price",
+                                     "minimum_price", "maximum_price")
+
+
+def _reject_admin_monetary_fields(body: dict) -> None:
+    present = [f for f in _FORBIDDEN_ADMIN_MONETARY_FIELDS if f in body]
+    if present:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Admin cannot set monetary fields on a Service Option: {present}. "
+            "Price is set by the tenant per Job-Type mapping (Tenant Setup > "
+            "Options & Add-ons), not by admin.",
+        )
 
 
 def _slug(name: str) -> str:
@@ -232,6 +253,11 @@ class ServiceOptionService:
         return opt.to_dict()
 
     async def create_service_option(self, body: dict) -> dict:
+        """Create a reusable Service Option TEMPLATE. Admin owns name/code/
+        classification/unit/description/icon/status only -- no monetary
+        value, no global customer-selectable behavior (migration 169). Those
+        are configured per exact Job-Type mapping in Catalog Workspace."""
+        _reject_admin_monetary_fields(body)
         name = body.get("name", "").strip()
         if not name:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "name required")
@@ -240,7 +266,6 @@ class ServiceOptionService:
             select(MasterServiceOption).where(MasterServiceOption.slug == slug))
         if existing:
             raise HTTPException(status.HTTP_409_CONFLICT, f"Option slug '{slug}' already exists")
-        from decimal import Decimal
         opt = MasterServiceOption(
             category_id=uuid.UUID(body["category_id"]) if body.get("category_id") else None,
             master_service_id=uuid.UUID(body["master_service_id"]) if body.get("master_service_id") else None,
@@ -250,8 +275,10 @@ class ServiceOptionService:
             description=body.get("description"),
             option_type=body.get("option_type", "add_on"),
             unit=body.get("unit", "per_unit"),
-            default_price=Decimal(str(body.get("default_price", 0))),
-            is_customer_selectable=body.get("is_customer_selectable", True),
+            # is_customer_selectable intentionally not read from body: global
+            # selectability is deprecated, defaults True but is never
+            # authoritative -- ServiceOptionMapping.customer_selectable
+            # (per exact Job Type) governs real eligibility.
             is_active=True,
             display_order=body.get("display_order", 0),
             option_group_id=uuid.UUID(body["option_group_id"]) if body.get("option_group_id") else None,
@@ -267,11 +294,13 @@ class ServiceOptionService:
         return opt.to_dict()
 
     async def update_service_option(self, option_id: uuid.UUID, body: dict) -> dict:
+        _reject_admin_monetary_fields(body)
         opt = await self.db.get(MasterServiceOption, option_id)
         if not opt:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Service option not found")
         old = opt.to_dict()
-        for field in ("name", "description", "option_type", "unit", "is_customer_selectable",
+        # is_customer_selectable deliberately excluded (see create_service_option).
+        for field in ("name", "description", "option_type", "unit",
                       "display_order", "vertical_type", "metadata_json"):
             if field in body:
                 setattr(opt, field, body[field])
@@ -600,11 +629,20 @@ class ServiceOptionService:
     # ─────────────────────────────────────────────────────────────────────────
     # SERVICE ↔ OPTION MAPPINGS
     # ─────────────────────────────────────────────────────────────────────────
-    async def list_service_option_mappings(self, master_service_id: uuid.UUID) -> list[dict]:
+    async def list_service_option_mappings(self, master_service_id: uuid.UUID,
+                                           job_type_id: uuid.UUID | None = None) -> list[dict]:
+        conditions = [ServiceOptionMapping.master_service_id == master_service_id,
+                      ServiceOptionMapping.deleted_at.is_(None)]
+        if job_type_id is not None:
+            # Exact Job-Type scoping only -- unlike issue mappings, a NULL
+            # job_type_id here means "not yet assigned to a Job Type"
+            # (legacy/ambiguous), not "applies to every Job Type". Per the
+            # non-negotiable rule (no Master-Service-only runtime mapping),
+            # we do not fall back to NULL rows for a job-type-scoped query.
+            conditions.append(ServiceOptionMapping.job_type_id == job_type_id)
         q = (select(ServiceOptionMapping, MasterServiceOption)
              .join(MasterServiceOption, ServiceOptionMapping.service_option_id == MasterServiceOption.id)
-             .where(ServiceOptionMapping.master_service_id == master_service_id,
-                    ServiceOptionMapping.deleted_at.is_(None))
+             .where(*conditions)
              .order_by(ServiceOptionMapping.display_order))
         rows = (await self.db.execute(q)).all()
         result = []
@@ -615,40 +653,91 @@ class ServiceOptionService:
         return result
 
     async def add_service_option_mapping(self, master_service_id: uuid.UUID, body: dict) -> dict:
+        """Map a Service Option to an EXACT Job-Type Blueprint. job_type_id is
+        mandatory (migration 169 non-negotiable rule: no Master-Service-only
+        mapping) -- the same option may be required under Installation but
+        not offered at all under Repair, so a single Master-Service-level
+        mapping is never sufficient."""
+        _reject_admin_monetary_fields(body)
+        job_type_id_raw = body.get("job_type_id")
+        if not job_type_id_raw:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "job_type_id is required — a Service Option must be mapped to an "
+                "exact Job-Type Blueprint (e.g. Installation), not to the Master "
+                "Service alone. The same option may not apply to every Job Type.",
+            )
+        job_type_id = uuid.UUID(job_type_id_raw)
+        job_type = await self.db.get(JobTypeDefinition, job_type_id)
+        if not job_type or not job_type.is_active:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Job type not found or inactive")
+
         service_option_id = uuid.UUID(body["service_option_id"])
         existing = await self.db.scalar(
             select(ServiceOptionMapping).where(
                 ServiceOptionMapping.master_service_id == master_service_id,
                 ServiceOptionMapping.service_option_id == service_option_id,
+                ServiceOptionMapping.job_type_id == job_type_id,
                 ServiceOptionMapping.deleted_at.is_(None)))
         if existing:
-            raise HTTPException(status.HTTP_409_CONFLICT, "Option already mapped to this service")
+            raise HTTPException(status.HTTP_409_CONFLICT, "Option already mapped to this Job Type")
         opt = await self.db.get(MasterServiceOption, service_option_id)
         if not opt:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Service option not found")
+
+        usage = body.get("usage", "OPTIONAL")
+        if usage not in ("DISABLED", "OPTIONAL", "REQUIRED"):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid usage: {usage}")
+
         m = ServiceOptionMapping(
             master_service_id=master_service_id,
             service_option_id=service_option_id,
+            job_type_id=job_type_id,
             option_group_id=uuid.UUID(body["option_group_id"]) if body.get("option_group_id") else opt.option_group_id,
             status=body.get("status", "active"),
-            is_required=body.get("is_required", False),
+            usage=usage,
+            is_required=(usage == "REQUIRED"),
             is_default=body.get("is_default", False),
+            customer_selectable=body.get("customer_selectable", True),
+            tenant_selectable=body.get("tenant_selectable", True),
+            technician_selectable=body.get("technician_selectable", False),
+            available_before_booking=body.get("available_before_booking", True),
+            available_after_inspection=body.get("available_after_inspection", False),
+            affects_estimate=body.get("affects_estimate", True),
+            requires_customer_approval=body.get("requires_customer_approval", True),
+            quantity_supported=body.get("quantity_supported", False),
+            minimum_quantity=body.get("minimum_quantity"),
+            maximum_quantity=body.get("maximum_quantity"),
+            measurement_unit=body.get("measurement_unit"),
+            blueprint_version=body.get("blueprint_version"),
             display_order=body.get("display_order", 0),
             created_by_user_id=self.actor_id,
         )
         self.db.add(m)
         await self.db.flush()
-        await self._audit("service_option_mapping", m.id, "service_option.mapped_to_service",
+        await self._audit("service_option_mapping", m.id, "service_option.mapped_to_job_type",
                           new={"master_service_id": str(master_service_id),
-                               "service_option_id": str(service_option_id)})
+                               "service_option_id": str(service_option_id),
+                               "job_type_id": str(job_type_id)})
         await self.db.commit()
         return m.to_dict()
 
     async def update_service_option_mapping(self, mapping_id: uuid.UUID, body: dict) -> dict:
+        _reject_admin_monetary_fields(body)
         m = await self.db.get(ServiceOptionMapping, mapping_id)
         if not m or m.deleted_at:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Mapping not found")
-        for field in ("is_required", "is_default", "display_order", "status"):
+        if "usage" in body:
+            if body["usage"] not in ("DISABLED", "OPTIONAL", "REQUIRED"):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid usage: {body['usage']}")
+            m.usage = body["usage"]
+            m.is_required = (body["usage"] == "REQUIRED")
+        for field in ("is_default", "display_order", "status",
+                      "customer_selectable", "tenant_selectable", "technician_selectable",
+                      "available_before_booking", "available_after_inspection",
+                      "affects_estimate", "requires_customer_approval",
+                      "quantity_supported", "minimum_quantity", "maximum_quantity",
+                      "measurement_unit", "blueprint_version"):
             if field in body:
                 setattr(m, field, body[field])
         await self.db.commit()
@@ -668,11 +757,18 @@ class ServiceOptionService:
     # ─────────────────────────────────────────────────────────────────────────
     # SERVICE ↔ ISSUE MAPPINGS
     # ─────────────────────────────────────────────────────────────────────────
-    async def list_service_issue_mappings(self, master_service_id: uuid.UUID) -> list[dict]:
+    async def list_service_issue_mappings(self, master_service_id: uuid.UUID,
+                                          job_type_id: uuid.UUID | None = None) -> list[dict]:
+        conditions = [ServiceIssueMapping.master_service_id == master_service_id,
+                      ServiceIssueMapping.deleted_at.is_(None)]
+        if job_type_id is not None:
+            # Job-type-scoped tab shows both this job type's own Problems AND
+            # the service-wide (NULL) ones -- never hides an unscoped Problem.
+            conditions.append(or_(ServiceIssueMapping.job_type_id == job_type_id,
+                                  ServiceIssueMapping.job_type_id.is_(None)))
         q = (select(ServiceIssueMapping, MasterIssueType)
              .join(MasterIssueType, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
-             .where(ServiceIssueMapping.master_service_id == master_service_id,
-                    ServiceIssueMapping.deleted_at.is_(None))
+             .where(*conditions)
              .order_by(ServiceIssueMapping.is_common.desc(), ServiceIssueMapping.display_order))
         rows = (await self.db.execute(q)).all()
         result = []
@@ -697,6 +793,7 @@ class ServiceOptionService:
         m = ServiceIssueMapping(
             master_service_id=master_service_id,
             issue_type_id=issue_type_id,
+            job_type_id=uuid.UUID(body["job_type_id"]) if body.get("job_type_id") else None,
             status=body.get("status", "active"),
             is_common=body.get("is_common", False),
             is_default=body.get("is_default", False),
@@ -723,6 +820,8 @@ class ServiceOptionService:
                       "requires_description", "severity_override", "display_order", "status"):
             if field in body:
                 setattr(m, field, body[field])
+        if "job_type_id" in body:
+            m.job_type_id = uuid.UUID(body["job_type_id"]) if body["job_type_id"] else None
         await self.db.commit()
         return m.to_dict()
 
@@ -745,14 +844,23 @@ class ServiceOptionService:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "tenant_id required")
         return self.tenant_id
 
-    async def get_available_options_for_service(self, master_service_id: uuid.UUID) -> list[dict]:
-        """Admin-approved options that can be selected for this service."""
+    async def get_available_options_for_service(self, master_service_id: uuid.UUID,
+                                                job_type_id: uuid.UUID | None = None) -> list[dict]:
+        """Admin-approved options that can be selected for this service, for
+        an exact Job Type. Fails closed (returns nothing) for a mapping whose
+        job_type_id hasn't been assigned yet, rather than guessing it applies
+        everywhere -- see the non-negotiable "no Master-Service-only runtime
+        mapping" rule."""
+        conditions = [ServiceOptionMapping.master_service_id == master_service_id,
+                      ServiceOptionMapping.status == "active",
+                      ServiceOptionMapping.usage != "DISABLED",
+                      ServiceOptionMapping.deleted_at.is_(None),
+                      MasterServiceOption.status == "active"]
+        if job_type_id is not None:
+            conditions.append(ServiceOptionMapping.job_type_id == job_type_id)
         q = (select(ServiceOptionMapping, MasterServiceOption)
              .join(MasterServiceOption, ServiceOptionMapping.service_option_id == MasterServiceOption.id)
-             .where(ServiceOptionMapping.master_service_id == master_service_id,
-                    ServiceOptionMapping.status == "active",
-                    ServiceOptionMapping.deleted_at.is_(None),
-                    MasterServiceOption.status == "active")
+             .where(*conditions)
              .order_by(ServiceOptionMapping.display_order))
         rows = (await self.db.execute(q)).all()
         result = []
@@ -761,6 +869,15 @@ class ServiceOptionService:
             d["is_required"] = mapping.is_required
             d["is_default"] = mapping.is_default
             d["mapping_id"] = str(mapping.id)
+            d["job_type_id"] = str(mapping.job_type_id) if mapping.job_type_id else None
+            d["usage"] = mapping.usage
+            d["customer_selectable"] = mapping.customer_selectable
+            d["tenant_selectable"] = mapping.tenant_selectable
+            d["technician_selectable"] = mapping.technician_selectable
+            d["quantity_supported"] = mapping.quantity_supported
+            d["minimum_quantity"] = mapping.minimum_quantity
+            d["maximum_quantity"] = mapping.maximum_quantity
+            d["measurement_unit"] = mapping.measurement_unit or opt.unit
             result.append(d)
         return result
 
@@ -828,35 +945,197 @@ class ServiceOptionService:
         return {"set": len(option_ids)}
 
     # ─────────────────────────────────────────────────────────────────────────
+    # TENANT-OWNED OPTION PRICING (migration 169)
+    # ─────────────────────────────────────────────────────────────────────────
+    _VALID_PRICING_MODELS = {"FIXED", "PER_UNIT", "RANGE"}
+
+    async def set_tenant_option_price(self, mapping_id: uuid.UUID, body: dict) -> dict:
+        """Tenant sets its own price for a Service Option, scoped to the exact
+        Job-Type mapping. Admin never supplies a fallback -- an enabled,
+        estimate-affecting option with no valid tenant price cannot publish
+        (enforced by the caller/wizard; this method just refuses to persist
+        an invalid combination)."""
+        tenant_id = await self._require_tenant()
+        mapping = await self.db.get(ServiceOptionMapping, mapping_id)
+        if not mapping or mapping.deleted_at or mapping.status != "active":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Option mapping not found")
+        if not mapping.tenant_selectable:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                "This option is not tenant-configurable for this Job Type")
+
+        enabled = body.get("enabled", True)
+        pricing_model = body.get("pricing_model")
+        if enabled and mapping.affects_estimate and mapping.usage != "DISABLED":
+            if pricing_model not in self._VALID_PRICING_MODELS:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    {"field": "pricing_model",
+                                     "error": "pricing_model must be one of FIXED/PER_UNIT/RANGE"})
+            if pricing_model == "FIXED" and body.get("fixed_price") in (None, ""):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    {"field": "fixed_price", "error": "fixed_price is required"})
+            if pricing_model == "PER_UNIT" and body.get("unit_price") in (None, ""):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    {"field": "unit_price", "error": "unit_price is required"})
+            if pricing_model == "RANGE" and (body.get("minimum_price") in (None, "")
+                                              or body.get("maximum_price") in (None, "")):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    {"field": "minimum_price/maximum_price",
+                                     "error": "both minimum_price and maximum_price are required"})
+
+        from decimal import Decimal
+        row = await self.db.scalar(
+            select(TenantSupportedServiceOption).where(
+                TenantSupportedServiceOption.tenant_id == tenant_id,
+                TenantSupportedServiceOption.service_option_mapping_id == mapping_id,
+                TenantSupportedServiceOption.deleted_at.is_(None)))
+        if not row:
+            row = TenantSupportedServiceOption(
+                tenant_id=tenant_id,
+                master_service_id=mapping.master_service_id,
+                service_option_id=mapping.service_option_id,
+                service_option_mapping_id=mapping_id,
+                created_by_user_id=self.actor_id,
+            )
+            self.db.add(row)
+
+        row.status = "active" if enabled else "inactive"
+        row.pricing_model = pricing_model
+        row.fixed_price = Decimal(str(body["fixed_price"])) if body.get("fixed_price") not in (None, "") else None
+        row.unit_price = Decimal(str(body["unit_price"])) if body.get("unit_price") not in (None, "") else None
+        row.minimum_price = Decimal(str(body["minimum_price"])) if body.get("minimum_price") not in (None, "") else None
+        row.maximum_price = Decimal(str(body["maximum_price"])) if body.get("maximum_price") not in (None, "") else None
+        row.currency = body.get("currency", row.currency or "INR")
+        await self.db.flush()
+        await self._audit("tenant_supported_service_options", row.id,
+                          "tenant_option_price.set",
+                          new={"mapping_id": str(mapping_id), "pricing_model": pricing_model})
+        await self.db.commit()
+        return row.to_dict()
+
+    async def resolve_tenant_option_price(self, tenant_id: uuid.UUID, mapping_id: uuid.UUID,
+                                          quantity: int = 1) -> dict:
+        """Backend-only price resolution -- never trusts a client-supplied
+        price or total. Returns the tenant's configured price/unit/total for
+        this exact mapping, or raises if none is configured."""
+        mapping = await self.db.get(ServiceOptionMapping, mapping_id)
+        if not mapping or mapping.deleted_at or mapping.status != "active":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Option mapping not found")
+        if mapping.quantity_supported:
+            lo = mapping.minimum_quantity or 1
+            hi = mapping.maximum_quantity
+            if quantity < lo or (hi is not None and quantity > hi):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    f"Quantity must be between {lo} and {hi or lo}")
+        elif quantity != 1:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "This option does not support a quantity other than 1")
+        if quantity <= 0:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Quantity must be positive")
+
+        row = await self.db.scalar(
+            select(TenantSupportedServiceOption).where(
+                TenantSupportedServiceOption.tenant_id == tenant_id,
+                TenantSupportedServiceOption.service_option_mapping_id == mapping_id,
+                TenantSupportedServiceOption.status == "active",
+                TenantSupportedServiceOption.deleted_at.is_(None)))
+        if not row or not row.pricing_model:
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                "This tenant has not configured a valid price for this option")
+
+        from decimal import Decimal
+        if row.pricing_model == "FIXED":
+            unit_price = row.fixed_price
+        elif row.pricing_model == "PER_UNIT":
+            unit_price = row.unit_price
+        else:  # RANGE — resolves to the minimum as the quoted starting price
+            unit_price = row.minimum_price
+        if unit_price is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Tenant price is misconfigured")
+
+        total = (unit_price * quantity).quantize(Decimal("0.01"))
+        return {
+            "service_option_mapping_id": str(mapping_id),
+            "unit_price": str(unit_price),
+            "quantity": quantity,
+            "total": str(total),
+            "currency": row.currency,
+        }
+
+    # ─────────────────────────────────────────────────────────────────────────
     # CUSTOMER CATALOG
     # ─────────────────────────────────────────────────────────────────────────
     async def get_customer_options(self, master_service_id: uuid.UUID | None,
-                                   category_id: uuid.UUID | None = None) -> list[dict]:
-        """Active options mapped to the service, visible to customers."""
+                                   category_id: uuid.UUID | None = None,
+                                   job_type_id: uuid.UUID | None = None,
+                                   tenant_id: uuid.UUID | None = None) -> list[dict]:
+        """Options eligible for customer selection: active mapping for the
+        EXACT job type, customer_selectable at the mapping level (not the
+        deprecated global template flag), and — when the option affects the
+        estimate and a tenant is known — a valid tenant price actually
+        resolves. Never returns a mapping with no job_type_id assigned yet
+        (fails closed rather than assuming it applies to every job type)."""
+        conditions = [ServiceOptionMapping.status == "active",
+                      ServiceOptionMapping.usage != "DISABLED",
+                      ServiceOptionMapping.customer_selectable == True,
+                      ServiceOptionMapping.deleted_at.is_(None),
+                      MasterServiceOption.status == "active"]
+        if master_service_id:
+            conditions.append(ServiceOptionMapping.master_service_id == master_service_id)
+        if job_type_id:
+            conditions.append(ServiceOptionMapping.job_type_id == job_type_id)
+        else:
+            # No job type context supplied: only ever surface options already
+            # scoped to a specific job type, never the ambiguous NULL rows.
+            conditions.append(ServiceOptionMapping.job_type_id.isnot(None))
+        if category_id:
+            conditions.append(MasterServiceOption.category_id == category_id)
         q = (select(ServiceOptionMapping, MasterServiceOption)
              .join(MasterServiceOption, ServiceOptionMapping.service_option_id == MasterServiceOption.id)
-             .where(ServiceOptionMapping.status == "active",
-                    ServiceOptionMapping.deleted_at.is_(None),
-                    MasterServiceOption.status == "active",
-                    MasterServiceOption.is_customer_selectable == True))
-        if master_service_id:
-            q = q.where(ServiceOptionMapping.master_service_id == master_service_id)
-        if category_id:
-            q = q.where(MasterServiceOption.category_id == category_id)
-        q = q.order_by(ServiceOptionMapping.display_order, MasterServiceOption.display_order)
+             .where(*conditions)
+             .order_by(ServiceOptionMapping.display_order, MasterServiceOption.display_order))
         rows = (await self.db.execute(q)).all()
+
+        tenant_prices: dict[uuid.UUID, TenantSupportedServiceOption] = {}
+        if tenant_id:
+            tsso_rows = (await self.db.scalars(
+                select(TenantSupportedServiceOption).where(
+                    TenantSupportedServiceOption.tenant_id == tenant_id,
+                    TenantSupportedServiceOption.status == "active",
+                    TenantSupportedServiceOption.deleted_at.is_(None)))).all()
+            tenant_prices = {r.service_option_mapping_id: r for r in tsso_rows if r.service_option_mapping_id}
+
         result = []
         for mapping, opt in rows:
+            tenant_row = tenant_prices.get(mapping.id) if tenant_id else None
+            if tenant_id:
+                # Tenant must provide the option; if it affects the estimate,
+                # a resolvable price is mandatory for customer visibility.
+                if not tenant_row:
+                    continue
+                if mapping.affects_estimate and not tenant_row.pricing_model:
+                    continue
             d = {
-                "service_option_id": str(opt.id),
-                "name":              opt.name,
-                "display_name":      opt.name,
-                "code":              opt.code,
-                "option_group_id":   str(opt.option_group_id) if opt.option_group_id else None,
-                "is_required":       mapping.is_required,
-                "is_default":        mapping.is_default,
-                "display_order":     mapping.display_order,
+                "service_option_id":   str(opt.id),
+                "service_option_mapping_id": str(mapping.id),
+                "name":                 opt.name,
+                "display_name":         opt.name,
+                "code":                 opt.code,
+                "option_group_id":      str(opt.option_group_id) if opt.option_group_id else None,
+                "job_type_id":          str(mapping.job_type_id) if mapping.job_type_id else None,
+                "is_required":          mapping.is_required,
+                "is_default":           mapping.is_default,
+                "quantity_supported":   mapping.quantity_supported,
+                "minimum_quantity":     mapping.minimum_quantity,
+                "maximum_quantity":     mapping.maximum_quantity,
+                "measurement_unit":     mapping.measurement_unit or opt.unit,
+                "display_order":        mapping.display_order,
             }
+            if tenant_row:
+                d["unit_price"] = (str(tenant_row.fixed_price) if tenant_row.pricing_model == "FIXED"
+                                   else str(tenant_row.unit_price) if tenant_row.pricing_model == "PER_UNIT"
+                                   else str(tenant_row.minimum_price) if tenant_row.pricing_model == "RANGE"
+                                   else None)
+                d["currency"] = tenant_row.currency
             result.append(d)
         return result
 

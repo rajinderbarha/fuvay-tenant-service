@@ -70,7 +70,7 @@ function TableHead({ cols }: { cols: string[] }) {
 function Chip({ label, color }: { label: string; color?: string }) {
   return (
     <span style={{
-      display: 'inline-block', padding: '2px 8px', borderRadius: 12,
+      display: 'inline-block', padding: '2px 8px', borderRadius:"var(--radius-lg)",
       fontSize: 11, fontWeight: 500,
       background: color ?? 'var(--surface-sunken)',
       border: '1px solid var(--border)', color: 'var(--text-secondary)',
@@ -185,7 +185,7 @@ export default function KBDetailPage() {
     return (
       <AdminLayout>
         <div style={{ padding: 32 }}>
-          <div className="skeleton" style={{ height: 40, width: 300, borderRadius: 8 }} />
+          <div className="skeleton" style={{ height: 40, width: 300, borderRadius:"var(--radius-md)" }} />
         </div>
       </AdminLayout>
     )
@@ -195,7 +195,7 @@ export default function KBDetailPage() {
     <AdminLayout>
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 24px' }}>
         {toast && (
-          <div style={{ padding: '8px 14px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: 8, color: 'var(--success-text)', fontSize: 12, marginBottom: 14 }}>
+          <div style={{ padding: '8px 14px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius:"var(--radius-md)", color: 'var(--success-text)', fontSize: 12, marginBottom: 14 }}>
             ✓ {toast}
           </div>
         )}
@@ -281,7 +281,7 @@ export default function KBDetailPage() {
                   ['Citations Required', getField('citations_required') ? 'Yes' : 'No'],
                   ['Auto Reindex', getField('auto_reindex') ? 'Yes' : 'No'],
                 ].map(([label, val]) => (
-                  <div key={String(label)} style={{ padding: '10px 14px', background: 'var(--surface-sunken)', borderRadius: 8 }}>
+                  <div key={String(label)} style={{ padding: '10px 14px', background: 'var(--surface-sunken)', borderRadius:"var(--radius-md)" }}>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>{String(label)}</div>
                     <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{safeVal(val)}</div>
                   </div>
@@ -317,7 +317,7 @@ export default function KBDetailPage() {
                     <input
                       value={uploadForm.document_name}
                       onChange={e => setUploadForm(p => ({ ...p, document_name: e.target.value }))}
-                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)', boxSizing: 'border-box' }}
+                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)', boxSizing: 'border-box' }}
                     />
                   </div>
                   <div>
@@ -325,7 +325,7 @@ export default function KBDetailPage() {
                     <select
                       value={uploadForm.source_type}
                       onChange={e => setUploadForm(p => ({ ...p, source_type: e.target.value }))}
-                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)' }}
+                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)' }}
                     >
                       <option value="uploaded">Uploaded</option>
                       <option value="url">URL</option>
@@ -338,7 +338,7 @@ export default function KBDetailPage() {
                     <select
                       value={uploadForm.file_type}
                       onChange={e => setUploadForm(p => ({ ...p, file_type: e.target.value }))}
-                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)' }}
+                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)' }}
                     >
                       <option value="">— None —</option>
                       <option value="pdf">PDF</option>
@@ -404,7 +404,7 @@ export default function KBDetailPage() {
                         const slug = t.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
                         setArticleForm(p => ({ ...p, article_title: t, article_slug: slug }))
                       }}
-                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)', boxSizing: 'border-box' }}
+                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)', boxSizing: 'border-box' }}
                     />
                   </div>
                   <div>
@@ -412,7 +412,7 @@ export default function KBDetailPage() {
                     <input
                       value={articleForm.article_slug}
                       onChange={e => setArticleForm(p => ({ ...p, article_slug: e.target.value }))}
-                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)', boxSizing: 'border-box', fontFamily: 'monospace' }}
+                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)', boxSizing: 'border-box', fontFamily: 'monospace' }}
                     />
                   </div>
                   <div>
@@ -421,14 +421,14 @@ export default function KBDetailPage() {
                       value={articleForm.body_markdown}
                       onChange={e => setArticleForm(p => ({ ...p, body_markdown: e.target.value }))}
                       rows={6}
-                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'monospace' }}
+                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'monospace' }}
                     />
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <div>
                       <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Visibility</label>
                       <select value={articleForm.visibility} onChange={e => setArticleForm(p => ({ ...p, visibility: e.target.value }))}
-                        style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)' }}>
+                        style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)' }}>
                         <option value="internal">Internal</option>
                         <option value="admin_only">Admin Only</option>
                         <option value="public">Public</option>
@@ -437,7 +437,7 @@ export default function KBDetailPage() {
                     <div>
                       <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Status</label>
                       <select value={articleForm.status} onChange={e => setArticleForm(p => ({ ...p, status: e.target.value }))}
-                        style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)' }}>
+                        style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)' }}>
                         <option value="draft">Draft</option>
                         <option value="published">Published</option>
                       </select>
@@ -556,12 +556,12 @@ export default function KBDetailPage() {
                   value={queryText}
                   onChange={e => setQueryText(e.target.value)}
                   placeholder="Enter test query…"
-                  style={{ flex: 1, minWidth: 200, padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)' }}
+                  style={{ flex: 1, minWidth: 200, padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)' }}
                 />
                 <select
                   value={queryScope}
                   onChange={e => setQueryScope(e.target.value)}
-                  style={{ padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)' }}
+                  style={{ padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)' }}
                 >
                   <option value="admin_app">Admin App</option>
                   <option value="tenant_app">Tenant App</option>
@@ -571,7 +571,7 @@ export default function KBDetailPage() {
                 <Btn size="sm" variant="primary" loading={querying} onClick={() => doQuery()}>Run Query</Btn>
               </div>
               {queryResult && (
-                <div style={{ marginTop: 14, padding: 14, background: 'var(--surface-sunken)', borderRadius: 8, fontSize: 12 }}>
+                <div style={{ marginTop: 14, padding: 14, background: 'var(--surface-sunken)', borderRadius:"var(--radius-md)", fontSize: 12 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                     <div><span style={{ color: 'var(--text-tertiary)' }}>Retrieved Chunks:</span> {String((queryResult as Record<string, unknown>).retrieved_chunks ? ((queryResult as Record<string, unknown>).retrieved_chunks as unknown[]).length : 0)}</div>
                     <div><span style={{ color: 'var(--text-tertiary)' }}>Latency:</span> {String((queryResult as Record<string, unknown>).latency_ms ?? '—')}ms</div>
@@ -660,7 +660,7 @@ export default function KBDetailPage() {
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 14px' }}>Preview Access</h3>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <select value={previewRole} onChange={e => setPreviewRole(e.target.value)}
-                  style={{ padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)' }}>
+                  style={{ padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)' }}>
                   <option value="customer">Customer</option>
                   <option value="technician">Technician</option>
                   <option value="tenant_owner">Tenant Owner</option>
@@ -669,7 +669,7 @@ export default function KBDetailPage() {
                   <option value="compliance_officer">Compliance Officer</option>
                 </select>
                 <select value={previewApp} onChange={e => setPreviewApp(e.target.value)}
-                  style={{ padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)' }}>
+                  style={{ padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)' }}>
                   <option value="admin_app">Admin App</option>
                   <option value="tenant_app">Tenant App</option>
                   <option value="customer_app">Customer App</option>
@@ -678,7 +678,7 @@ export default function KBDetailPage() {
                 <Btn size="sm" variant="secondary" onClick={() => doPreview()}>Preview</Btn>
               </div>
               {previewResult && (
-                <div style={{ marginTop: 14, padding: 14, background: 'var(--surface-sunken)', borderRadius: 8, fontSize: 13 }}>
+                <div style={{ marginTop: 14, padding: 14, background: 'var(--surface-sunken)', borderRadius:"var(--radius-md)", fontSize: 13 }}>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                     <Badge variant={(previewResult as Record<string, unknown>).can_access ? 'success' : 'danger'} size="sm">
                       {(previewResult as Record<string, unknown>).can_access ? 'YES' : 'NO'}
@@ -734,7 +734,7 @@ export default function KBDetailPage() {
                   ['Reranking', getField('reranking_enabled') ? 'Enabled' : 'Disabled'],
                   ['Citations Required', getField('citations_required') ? 'Yes' : 'No'],
                 ].map(([label, val]) => (
-                  <div key={String(label)} style={{ padding: '10px 14px', background: 'var(--surface-sunken)', borderRadius: 8 }}>
+                  <div key={String(label)} style={{ padding: '10px 14px', background: 'var(--surface-sunken)', borderRadius:"var(--radius-md)" }}>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>{String(label)}</div>
                     <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{safeVal(val)}</div>
                   </div>
@@ -757,13 +757,13 @@ export default function KBDetailPage() {
                       type={type}
                       value={String(ragForm[key] ?? '')}
                       onChange={e => setRagForm(p => ({ ...p, [key]: type === 'number' ? Number(e.target.value) : e.target.value }))}
-                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-primary)', boxSizing: 'border-box' }}
+                      style={{ width: '100%', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius:"var(--radius-md)", fontSize: 13, color: 'var(--text-primary)', boxSizing: 'border-box' }}
                     />
                   </div>
                 ))}
               </div>
             )}
-            <div style={{ marginTop: 16, padding: 14, background: 'var(--surface-sunken)', borderRadius: 8 }}>
+            <div style={{ marginTop: 16, padding: 14, background: 'var(--surface-sunken)', borderRadius:"var(--radius-md)" }}>
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6 }}>Fallback Message</div>
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
                 {String(getField('fallback_message') ?? 'I do not have enough verified information to answer this. Please contact ServiceOS support.')}

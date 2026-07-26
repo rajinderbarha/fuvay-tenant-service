@@ -1,0 +1,275 @@
+"""Generic Catalog Dimension Engine -- service layer (migration 154).
+
+Admin-side CRUD for dimension definitions/values and the per-(master_service,
+job_type) structural blueprint config. Backs the approved Admin Catalog
+page's Dimensions tab. All write ops are super-admin only (enforced at the
+router). NO monetary fields anywhere (structure only).
+"""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.engines.admin_catalog.models import (
+    CatalogDimension, CatalogDimensionValue, ServiceJobDimension,
+    ServiceType, Brand, MasterServiceType, MasterServiceBrand,
+    MasterService, MasterIssueType, TenantService,
+)
+from app.exceptions import ServiceOSException, NotFoundException
+
+DATA_TYPES = {"single_select", "multi_select", "boolean", "number", "text"}
+# Structural flags an admin may set on a service-job dimension. Explicitly
+# enumerated so a stray monetary key can never be written through here.
+SJD_FLAGS = {
+    "enabled", "required", "ask_customer", "show_during_tenant_setup",
+    "use_for_matching", "affects_price", "allow_tenant_override",
+    "allow_all_coverage", "allow_selected_coverage", "allow_exclusion_coverage",
+    "display_order",
+}
+
+
+class CatalogDimensionService:
+    def __init__(self, db: AsyncSession, actor_id: uuid.UUID | None = None):
+        self.db = db
+        self.actor_id = actor_id
+
+    # ── Dimension definitions ─────────────────────────────────────────────────
+    async def list_dimensions(self, include_inactive: bool = False) -> list[dict]:
+        q = select(CatalogDimension).order_by(CatalogDimension.display_order)
+        if not include_inactive:
+            q = q.where(CatalogDimension.is_active == True)  # noqa: E712
+        rows = (await self.db.execute(q)).scalars().all()
+        return [d.to_dict() for d in rows]
+
+    async def create_dimension(self, data: dict) -> dict:
+        key = (data.get("key") or "").strip().lower()
+        name = (data.get("name") or "").strip()
+        dtype = (data.get("data_type") or "single_select").strip()
+        if not key or not name:
+            raise ServiceOSException("DIMENSION_KEY_NAME_REQUIRED", "key and name are required.", status_code=422)
+        if dtype not in DATA_TYPES:
+            raise ServiceOSException("INVALID_DATA_TYPE", f"data_type must be one of {sorted(DATA_TYPES)}.", status_code=422)
+        existing = (await self.db.execute(select(CatalogDimension).where(CatalogDimension.key == key))).scalar_one_or_none()
+        if existing:
+            raise ServiceOSException("DIMENSION_KEY_EXISTS", f"A dimension with key '{key}' already exists.", status_code=409)
+        d = CatalogDimension(key=key, name=name, description=data.get("description"),
+                             data_type=dtype, display_order=int(data.get("display_order", 0)))
+        self.db.add(d)
+        await self.db.commit()
+        await self.db.refresh(d)
+        return d.to_dict()
+
+    async def update_dimension(self, dimension_id: uuid.UUID, data: dict) -> dict:
+        d = await self._load_dimension(dimension_id)
+        for field in ("name", "description", "display_order", "is_active"):
+            if field in data and data[field] is not None:
+                setattr(d, field, data[field])
+        if "data_type" in data and data["data_type"]:
+            if data["data_type"] not in DATA_TYPES:
+                raise ServiceOSException("INVALID_DATA_TYPE", "Invalid data_type.", status_code=422)
+            d.data_type = data["data_type"]
+        await self.db.commit()
+        await self.db.refresh(d)
+        return d.to_dict()
+
+    # ── Dimension values ──────────────────────────────────────────────────────
+    async def list_values(self, dimension_id: uuid.UUID) -> dict:
+        """Reads generic values, OR proxies to the legacy service_types/brands
+        tables for the two seeded legacy dimensions -- so the UI has ONE way
+        to fetch a dimension's values regardless of storage."""
+        d = await self._load_dimension(dimension_id)
+        if d.legacy_source == "service_types":
+            rows = (await self.db.execute(
+                select(ServiceType.id, ServiceType.name).where(ServiceType.is_active == True))).all()  # noqa: E712
+            return {"dimension": d.to_dict(), "legacy": True,
+                    "values": [{"id": str(i), "code": None, "label": n} for i, n in rows]}
+        if d.legacy_source == "brands":
+            rows = (await self.db.execute(
+                select(Brand.id, Brand.name).where(Brand.is_active == True))).all()  # noqa: E712
+            return {"dimension": d.to_dict(), "legacy": True,
+                    "values": [{"id": str(i), "code": None, "label": n} for i, n in rows]}
+        rows = (await self.db.execute(
+            select(CatalogDimensionValue).where(
+                CatalogDimensionValue.dimension_id == dimension_id,
+                CatalogDimensionValue.is_active == True,  # noqa: E712
+            ).order_by(CatalogDimensionValue.display_order))).scalars().all()
+        return {"dimension": d.to_dict(), "legacy": False, "values": [v.to_dict() for v in rows]}
+
+    async def add_value(self, dimension_id: uuid.UUID, data: dict) -> dict:
+        d = await self._load_dimension(dimension_id)
+        if d.legacy_source:
+            raise ServiceOSException("LEGACY_DIMENSION_VALUE_READONLY",
+                f"Values for '{d.key}' are managed in the {d.legacy_source} catalog, not here.", status_code=422)
+        code = (data.get("code") or "").strip()
+        label = (data.get("label") or "").strip()
+        if not code or not label:
+            raise ServiceOSException("VALUE_CODE_LABEL_REQUIRED", "code and label are required.", status_code=422)
+        v = CatalogDimensionValue(dimension_id=dimension_id, code=code, label=label,
+                                  meta=data.get("metadata"), display_order=int(data.get("display_order", 0)))
+        self.db.add(v)
+        await self.db.commit()
+        await self.db.refresh(v)
+        return v.to_dict()
+
+    # ── Service-job dimension blueprint config ────────────────────────────────
+    async def get_service_job_dimensions(self, master_service_id: uuid.UUID,
+                                          job_type_id: uuid.UUID | None) -> dict:
+        """Returns every dimension definition merged with its per-service-job
+        config (or defaults if not yet configured) + a value COUNT per
+        dimension -- the exact shape the Dimensions-tab grid needs."""
+        dims = (await self.db.execute(
+            select(CatalogDimension).where(CatalogDimension.is_active == True)  # noqa: E712
+            .order_by(CatalogDimension.display_order))).scalars().all()
+
+        cfg_rows = (await self.db.execute(
+            select(ServiceJobDimension).where(
+                ServiceJobDimension.master_service_id == master_service_id,
+                ServiceJobDimension.job_type_id == job_type_id
+                if job_type_id else ServiceJobDimension.job_type_id.is_(None)))).scalars().all()
+        by_dim = {str(c.dimension_id): c for c in cfg_rows}
+
+        items = []
+        for d in dims:
+            cfg = by_dim.get(str(d.id))
+            value_count = await self._value_count(d)
+            base = {"dimension": d.to_dict(), "value_count": value_count}
+            base["config"] = cfg.to_dict() if cfg else {
+                "enabled": False, "required": False, "ask_customer": False,
+                "show_during_tenant_setup": True, "use_for_matching": False,
+                "affects_price": False, "allow_tenant_override": True,
+                "allow_all_coverage": True, "allow_selected_coverage": True,
+                "allow_exclusion_coverage": True, "display_order": d.display_order,
+            }
+            items.append(base)
+        return {"dimensions": items}
+
+    async def set_service_job_dimension(self, master_service_id: uuid.UUID,
+                                        job_type_id: uuid.UUID | None,
+                                        dimension_id: uuid.UUID, flags: dict) -> dict:
+        await self._load_dimension(dimension_id)
+        # Reject any key that isn't a known structural flag -- fail closed so
+        # a monetary field can never be persisted through this path.
+        unknown = set(flags) - SJD_FLAGS
+        if unknown:
+            raise ServiceOSException("INVALID_DIMENSION_FLAGS",
+                f"Unknown or disallowed flags: {sorted(unknown)}.", status_code=422)
+
+        existing = (await self.db.execute(
+            select(ServiceJobDimension).where(
+                ServiceJobDimension.master_service_id == master_service_id,
+                ServiceJobDimension.dimension_id == dimension_id,
+                ServiceJobDimension.job_type_id == job_type_id
+                if job_type_id else ServiceJobDimension.job_type_id.is_(None)))).scalar_one_or_none()
+
+        if existing:
+            for k, v in flags.items():
+                setattr(existing, k, v)
+            row = existing
+        else:
+            row = ServiceJobDimension(master_service_id=master_service_id, job_type_id=job_type_id,
+                                      dimension_id=dimension_id, **flags)
+            self.db.add(row)
+        await self.db.commit()
+        await self.db.refresh(row)
+        return row.to_dict()
+
+    # ── Blueprint readiness (the right-panel checklist + percentage) ──────────
+    async def get_blueprint_readiness(self, master_service_id: uuid.UUID,
+                                      job_type_id: uuid.UUID | None) -> dict:
+        """Canonical readiness for a (master_service, job_type) blueprint, as
+        the approved mockup's right panel shows: a checklist of pass/fail
+        checks + a derived percentage + affected-tenant count. The frontend
+        must NOT compute this itself -- it renders exactly what this returns."""
+        from sqlalchemy import func
+        svc = (await self.db.execute(
+            select(MasterService).where(MasterService.id == master_service_id))).scalar_one_or_none()
+        if not svc:
+            raise NotFoundException("MasterService", str(master_service_id))
+
+        checks: list[dict] = []
+
+        # 1. Workflow: pricing_model is set.
+        checks.append({
+            "key": "workflow", "label": "Workflow configured",
+            "passed": bool(svc.pricing_model),
+            "detail": None if svc.pricing_model else "No pricing model selected for this service.",
+        })
+
+        # 2. Dimensions valid: every enabled dimension has at least one value.
+        dim_grid = await self.get_service_job_dimensions(master_service_id, job_type_id)
+        enabled_dims = [d for d in dim_grid["dimensions"] if d["config"]["enabled"]]
+        dims_valid = all(d["value_count"] > 0 for d in enabled_dims)
+        checks.append({
+            "key": "dimensions", "label": "Dimensions valid",
+            "passed": dims_valid,
+            "detail": None if dims_valid else "An enabled dimension has no values configured.",
+        })
+
+        # 3. Problems mapped: at least one active issue type for this service.
+        issue_count = (await self.db.execute(
+            select(func.count(MasterIssueType.id)).where(
+                MasterIssueType.master_service_id == master_service_id,
+                MasterIssueType.is_active == True))).scalar() or 0  # noqa: E712
+        checks.append({
+            "key": "problems", "label": "Problems mapped",
+            "passed": issue_count > 0,
+            "detail": None if issue_count > 0 else "No customer problems mapped to this service yet.",
+            "count": issue_count,
+        })
+
+        # 4. Tenant rules complete: requires_type/brand flags are internally
+        # consistent with the enabled dimensions (a required dimension that
+        # isn't enabled is a contradiction).
+        contradictions = [d["dimension"]["key"] for d in dim_grid["dimensions"]
+                          if d["config"]["required"] and not d["config"]["enabled"]]
+        checks.append({
+            "key": "tenant_rules", "label": "Tenant rules complete",
+            "passed": len(contradictions) == 0,
+            "detail": None if not contradictions
+            else f"Dimension(s) required but not enabled: {', '.join(contradictions)}.",
+        })
+
+        passed = sum(1 for c in checks if c["passed"])
+        percent = round(passed / len(checks) * 100) if checks else 0
+
+        affected = (await self.db.execute(
+            select(func.count(TenantService.id)).where(
+                TenantService.master_service_id == master_service_id,
+                TenantService.deleted_at.is_(None)))).scalar() or 0
+
+        actions = [{"key": c["key"], "label": c["label"], "detail": c["detail"]}
+                   for c in checks if not c["passed"]]
+
+        return {
+            "master_service_id": str(master_service_id),
+            "job_type_id": str(job_type_id) if job_type_id else None,
+            "percent": percent,
+            "ready": len(actions) == 0,
+            "checks": checks,
+            "actions_required": actions,
+            "tenant_setups_affected": affected,
+        }
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    async def _load_dimension(self, dimension_id: uuid.UUID) -> CatalogDimension:
+        d = (await self.db.execute(
+            select(CatalogDimension).where(CatalogDimension.id == dimension_id))).scalar_one_or_none()
+        if not d:
+            raise NotFoundException("CatalogDimension", str(dimension_id))
+        return d
+
+    async def _value_count(self, d: CatalogDimension) -> int:
+        from sqlalchemy import func
+        if d.legacy_source == "service_types":
+            return (await self.db.execute(
+                select(func.count(ServiceType.id)).where(ServiceType.is_active == True))).scalar() or 0  # noqa: E712
+        if d.legacy_source == "brands":
+            return (await self.db.execute(
+                select(func.count(Brand.id)).where(Brand.is_active == True))).scalar() or 0  # noqa: E712
+        return (await self.db.execute(
+            select(func.count(CatalogDimensionValue.id)).where(
+                CatalogDimensionValue.dimension_id == d.id,
+                CatalogDimensionValue.is_active == True))).scalar() or 0  # noqa: E712

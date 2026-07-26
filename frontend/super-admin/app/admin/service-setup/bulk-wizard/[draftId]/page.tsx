@@ -265,7 +265,7 @@ export default function BulkWizardDetailPage() {
                   style={{
                     border: `2px solid ${selectedTemplateIds.includes(t.id) ? "#1e3a5f" : "#e5e7eb"}`,
                     borderRadius: "0.5rem", padding: "0.85rem", cursor: "pointer",
-                    background: selectedTemplateIds.includes(t.id) ? "#eff6ff" : "#fff",
+                    background: selectedTemplateIds.includes(t.id) ? "var(--accent-muted)" : "#fff",
                   }}>
                   <div style={{ fontWeight: 700, fontSize: "0.9rem" }}>{t.name}</div>
                   {t.description && <div style={{ fontSize: "0.78rem", color: "#6b7280", marginTop: "0.25rem" }}>{t.description}</div>}
@@ -318,11 +318,11 @@ export default function BulkWizardDetailPage() {
             <>
               {previewResult.blockers.length > 0 && (
                 <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "0.5rem", padding: "1rem", marginBottom: "1rem" }}>
-                  <div style={{ fontWeight: 700, color: "#dc2626", marginBottom: "0.5rem" }}>
+                  <div style={{ fontWeight: 700, color: "var(--danger)", marginBottom: "0.5rem" }}>
                     {previewResult.blockers.filter(b => b.severity === "P0").length} Blocking Error(s)
                   </div>
                   {previewResult.blockers.map((b, i) => (
-                    <div key={i} style={{ fontSize: "0.8rem", color: "#dc2626", marginBottom: "0.25rem" }}>
+                    <div key={i} style={{ fontSize: "0.8rem", color: "var(--danger)", marginBottom: "0.25rem" }}>
                       [{b.severity}] {b.code}: {b.message}
                     </div>
                   ))}
@@ -356,7 +356,7 @@ export default function BulkWizardDetailPage() {
                           <span style={{
                             fontSize: "0.7rem", padding: "0.15rem 0.4rem", borderRadius: "9999px",
                             background: item.action.startsWith("create") ? "#dcfce7" : item.action === "skip" ? "#f3f4f6" : "#dbeafe",
-                            color: item.action.startsWith("create") ? "#166534" : item.action === "skip" ? "#6b7280" : "#1d4ed8",
+                            color: item.action.startsWith("create") ? "#166534" : item.action === "skip" ? "#6b7280" : "var(--brand-hover)",
                           }}>
                             {item.action}
                           </span>
@@ -372,7 +372,7 @@ export default function BulkWizardDetailPage() {
                 <button onClick={() => setStep(8)} style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", borderRadius: "0.375rem", background: "#fff", cursor: "pointer" }}>← Back</button>
                 {previewResult.can_apply && (
                   <button onClick={() => setStep(10)}
-                    style={{ background: "#16a34a", color: "#fff", border: "none", padding: "0.5rem 1.5rem", borderRadius: "0.375rem", cursor: "pointer", fontWeight: 600 }}>
+                    style={{ background: "var(--success)", color: "#fff", border: "none", padding: "0.5rem 1.5rem", borderRadius: "0.375rem", cursor: "pointer", fontWeight: 600 }}>
                     Proceed to Apply →
                   </button>
                 )}
@@ -404,7 +404,7 @@ export default function BulkWizardDetailPage() {
               <div style={{ display: "flex", gap: "0.75rem" }}>
                 <button onClick={() => setStep(9)} style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", borderRadius: "0.375rem", background: "#fff", cursor: "pointer" }}>← Back</button>
                 <button onClick={runApply} disabled={applying}
-                  style={{ background: "#16a34a", color: "#fff", border: "none", padding: "0.5rem 1.75rem", borderRadius: "0.375rem", cursor: "pointer", fontWeight: 700, fontSize: "1rem", opacity: applying ? 0.6 : 1 }}>
+                  style={{ background: "var(--success)", color: "#fff", border: "none", padding: "0.5rem 1.75rem", borderRadius: "0.375rem", cursor: "pointer", fontWeight: 700, fontSize: "1rem", opacity: applying ? 0.6 : 1 }}>
                   {applying ? "Applying..." : "Apply Bulk Setup"}
                 </button>
               </div>
@@ -412,7 +412,7 @@ export default function BulkWizardDetailPage() {
           ) : (
             <div>
               <div style={{ background: applyResult.status === "completed" ? "#f0fdf4" : "#fef2f2", border: `1px solid ${applyResult.status === "completed" ? "#bbf7d0" : "#fecaca"}`, borderRadius: "0.5rem", padding: "1.5rem", marginBottom: "1.25rem" }}>
-                <div style={{ fontWeight: 700, fontSize: "1.1rem", marginBottom: "0.5rem", color: applyResult.status === "completed" ? "#16a34a" : "#dc2626" }}>
+                <div style={{ fontWeight: 700, fontSize: "1.1rem", marginBottom: "0.5rem", color: applyResult.status === "completed" ? "var(--success)" : "var(--danger)" }}>
                   {applyResult.status === "completed" ? "✓ Setup Applied Successfully" : "⚠ Setup Applied with Errors"}
                 </div>
                 <div style={{ display: "flex", gap: "1rem", fontSize: "0.85rem" }}>

@@ -122,10 +122,10 @@ export default function BookabilityProvidersPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
             {[
               { label: "Total", value: sum.total_providers, color: "var(--text-primary)" },
-              { label: "Bookable", value: sum.bookable, color: "#059669" },
-              { label: "Not Bookable", value: sum.not_bookable, color: "#dc2626" },
-              { label: "Visible", value: sum.visible, color: "#2563eb" },
-              { label: "With Overrides", value: sum.with_overrides, color: "#d97706" },
+              { label: "Bookable", value: sum.bookable, color: "var(--success)" },
+              { label: "Not Bookable", value: sum.not_bookable, color: "var(--danger)" },
+              { label: "Visible", value: sum.visible, color: "var(--brand)" },
+              { label: "With Overrides", value: sum.with_overrides, color: "var(--warning)" },
             ].map(s => (
               <Card key={s.label} padding={16}>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</p>
@@ -143,7 +143,7 @@ export default function BookabilityProvidersPage() {
                 value={search}
                 onChange={e => { setSearch(e.target.value); resetPage(); }}
                 placeholder="Search by name, city…"
-                style={{ width: "100%", paddingLeft: 12, paddingRight: 10, height: 34, borderRadius: 8,
+                style={{ width: "100%", paddingLeft: 12, paddingRight: 10, height: 34, borderRadius:"var(--radius-md)",
                   fontSize: 13, border: "1px solid var(--border)", background: "var(--surface)",
                   color: "var(--text-primary)", outline: "none", boxSizing: "border-box" }}
               />
@@ -162,8 +162,8 @@ export default function BookabilityProvidersPage() {
             </div>
           ) : providers.error ? (
             <div style={{ textAlign: "center", padding: "40px 0" }}>
-              <AlertCircle size={28} style={{ color: "#dc2626", display: "block", margin: "0 auto 10px" }} />
-              <p style={{ fontSize: 13, color: "#dc2626", margin: "0 0 12px" }}>{providers.error}</p>
+              <AlertCircle size={28} style={{ color: "var(--danger)", display: "block", margin: "0 auto 10px" }} />
+              <p style={{ fontSize: 13, color: "var(--danger)", margin: "0 0 12px" }}>{providers.error}</p>
               <Btn size="sm" variant="primary" onClick={() => providers.refetch()}>Retry</Btn>
             </div>
           ) : rows.length === 0 ? (
@@ -208,20 +208,20 @@ export default function BookabilityProvidersPage() {
                         <td style={{ padding: "10px 14px" }}>
                           <StatusBadge ok={p.is_visible} label={p.is_visible ? "Visible" : "Hidden"} />
                           {p.override_is_visible !== null && (
-                            <span style={{ fontSize: 10, color: "#d97706", display: "block", marginTop: 2 }}>overridden</span>
+                            <span style={{ fontSize: 10, color: "var(--warning)", display: "block", marginTop: 2 }}>overridden</span>
                           )}
                         </td>
                         <td style={{ padding: "10px 14px" }}>
                           <StatusBadge ok={p.is_bookable} label={p.is_bookable ? "Bookable" : "Blocked"} />
                           {p.override_is_bookable !== null && (
-                            <span style={{ fontSize: 10, color: "#d97706", display: "block", marginTop: 2 }}>overridden</span>
+                            <span style={{ fontSize: 10, color: "var(--warning)", display: "block", marginTop: 2 }}>overridden</span>
                           )}
                         </td>
                         <td style={{ padding: "10px 14px", maxWidth: 160 }}>
                           {(p.visibility_blockers?.length ?? 0) === 0 ? (
                             <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>—</span>
                           ) : (
-                            <span style={{ fontSize: 11, color: "#dc2626" }}>
+                            <span style={{ fontSize: 11, color: "var(--danger)" }}>
                               {p.visibility_blockers!.length} blocker{p.visibility_blockers!.length > 1 ? "s" : ""}
                             </span>
                           )}
@@ -230,7 +230,7 @@ export default function BookabilityProvidersPage() {
                           {(p.bookability_blockers?.length ?? 0) === 0 ? (
                             <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>—</span>
                           ) : (
-                            <span style={{ fontSize: 11, color: "#dc2626" }}>
+                            <span style={{ fontSize: 11, color: "var(--danger)" }}>
                               {p.bookability_blockers!.length} blocker{p.bookability_blockers!.length > 1 ? "s" : ""}
                             </span>
                           )}

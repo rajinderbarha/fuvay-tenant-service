@@ -91,7 +91,7 @@ export default function ChecklistTemplatesPage() {
       </div>
 
       {error && (
-        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 6, padding: 12, marginBottom: 16, color: "#dc2626" }}>
+        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 6, padding: 12, marginBottom: 16, color: "var(--danger)" }}>
           {error}
           <button onClick={() => setError("")} style={{ float: "right", background: "none", border: "none", cursor: "pointer" }}>×</button>
         </div>
@@ -99,7 +99,7 @@ export default function ChecklistTemplatesPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 20 }}>
         {/* Template list */}
-        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16 }}>
+        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius:"var(--radius-md)", padding: 16 }}>
           <div style={{ fontWeight: 600, marginBottom: 12 }}>Templates ({templates.length})</div>
           {templates.length === 0 ? (
             <div style={{ color: "#9ca3af", fontSize: 13 }}>No templates yet.</div>
@@ -117,7 +117,7 @@ export default function ChecklistTemplatesPage() {
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{t.template_name}</div>
                 <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
                   {t.template_type} · {t.applies_to}
-                  {t.is_required && <span style={{ color: "#dc2626", marginLeft: 4 }}>required</span>}
+                  {t.is_required && <span style={{ color: "var(--danger)", marginLeft: 4 }}>required</span>}
                 </div>
               </div>
             ))
@@ -127,13 +127,13 @@ export default function ChecklistTemplatesPage() {
         {/* Template detail */}
         {selected ? (
           <div>
-            <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius:"var(--radius-md)", padding: 16, marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
                   <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{selected.template_name}</h2>
                   <div style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>
                     Type: <strong>{selected.template_type}</strong> · Applies to: <strong>{selected.applies_to}</strong>
-                    {selected.is_required && <span style={{ color: "#dc2626", marginLeft: 8 }}>Required</span>}
+                    {selected.is_required && <span style={{ color: "var(--danger)", marginLeft: 8 }}>Required</span>}
                   </div>
                 </div>
                 <button
@@ -145,7 +145,7 @@ export default function ChecklistTemplatesPage() {
               </div>
             </div>
 
-            <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16 }}>
+            <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius:"var(--radius-md)", padding: 16 }}>
               <div style={{ fontWeight: 600, marginBottom: 12 }}>
                 Checklist Items ({(selected.items || []).length})
               </div>
@@ -163,7 +163,7 @@ export default function ChecklistTemplatesPage() {
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 500, fontSize: 14 }}>{item.item_label}</div>
                         <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
-                          Input: {item.input_type} {item.is_required && <span style={{ color: "#dc2626" }}>· required</span>}
+                          Input: {item.input_type} {item.is_required && <span style={{ color: "var(--danger)" }}>· required</span>}
                         </div>
                       </div>
                     </div>
@@ -182,7 +182,7 @@ export default function ChecklistTemplatesPage() {
       {/* Create Template Modal */}
       {showCreate && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div style={{ background: "white", borderRadius: 8, padding: 24, width: 420, maxWidth: "90%" }}>
+          <div style={{ background: "white", borderRadius:"var(--radius-md)", padding: 24, width: 420, maxWidth: "90%" }}>
             <h3 style={{ margin: "0 0 16px" }}>New Checklist Template</h3>
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, color: "#6b7280" }}>Template Name *</label>
@@ -235,7 +235,7 @@ export default function ChecklistTemplatesPage() {
       {/* Add Item Modal */}
       {showAddItem && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div style={{ background: "white", borderRadius: 8, padding: 24, width: 400, maxWidth: "90%" }}>
+          <div style={{ background: "white", borderRadius:"var(--radius-md)", padding: 24, width: 400, maxWidth: "90%" }}>
             <h3 style={{ margin: "0 0 16px" }}>Add Checklist Item</h3>
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, color: "#6b7280" }}>Item Label *</label>

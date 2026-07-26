@@ -15,8 +15,8 @@ const SLA_LABEL: Record<string, string> = {
   ON_TRACK: "On Track", AT_RISK: "At Risk", BREACHED: "Breached", NOT_APPLICABLE: "—",
 };
 const SLA_COLOR: Record<string, string> = {
-  ON_TRACK: "var(--success-text, #059669)", AT_RISK: "var(--warning-text, #d97706)",
-  BREACHED: "var(--danger-text, #dc2626)", NOT_APPLICABLE: "var(--text-tertiary)",
+  ON_TRACK: "var(--success-text, var(--success))", AT_RISK: "var(--warning-text, var(--warning))",
+  BREACHED: "var(--danger-text, var(--danger))", NOT_APPLICABLE: "var(--text-tertiary)",
 };
 
 const COLUMNS: GridColumn[] = [
@@ -68,14 +68,14 @@ function SummaryCards() {
     { label: "Unassigned", value: d?.unassigned },
     { label: "In Progress", value: d?.in_progress },
     { label: "Completed", value: d?.completed },
-    { label: "At Risk", value: d?.at_risk, color: "var(--warning-text, #d97706)" },
-    { label: "Breached", value: d?.breached, color: "var(--danger-text, #dc2626)" },
+    { label: "At Risk", value: d?.at_risk, color: "var(--warning-text, var(--warning))" },
+    { label: "Breached", value: d?.breached, color: "var(--danger-text, var(--danger))" },
     { label: "Completion Exceptions", value: d?.completion_exceptions },
   ];
   return (
     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
       {cards.map(c => (
-        <div key={c.label} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid var(--border)",
+        <div key={c.label} style={{ padding: "10px 16px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
           background: "var(--surface)", minWidth: 110 }}>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px" }}>{c.label}</p>
           <p style={{ fontSize: 20, fontWeight: 700, margin: 0, color: c.color ?? "var(--text-primary)" }}>

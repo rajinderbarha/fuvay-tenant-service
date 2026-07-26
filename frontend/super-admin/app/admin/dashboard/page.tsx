@@ -278,7 +278,7 @@ export default function PlatformCommandCenterPage() {
               <Wind size={16} style={{ color: "var(--accent)" }}/>
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Home Services Summary</p>
             </div>
-            <a href="/admin/home-services/service-catalog" style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>
+            <a href="/admin/catalog-workspace" style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>
               Open Home Services →
             </a>
           </div>
@@ -302,12 +302,11 @@ export default function PlatformCommandCenterPage() {
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {[
-                  { label: "Service Catalog", href: "/admin/home-services/service-catalog" },
-                  { label: "Pricing Rules", href: "/admin/home-services/pricing-rules" },
+                  { label: "Service Catalog", href: "/admin/catalog-workspace" },
                   { label: "Customer Price Experience", href: "/admin/home-services/price-experience" },
                   { label: "Provider Matching", href: "/admin/home-services/provider-matching" },
                   { label: "Matching Diagnostics", href: "/admin/home-services/matching-diagnostics" },
-                  { label: "Service Areas / Zones", href: "/admin/home-services/service-areas" },
+                  { label: "Service Area Requests", href: "/admin/service-area-requests" },
                   { label: "Completed Job Deduction", href: "/admin/home-services/completed-job-deduction" },
                 ].map(l => (
                   <a key={l.href} href={l.href} style={{ fontSize: 11, fontWeight: 600, padding: "6px 12px", borderRadius: 999,
@@ -617,7 +616,7 @@ export default function PlatformCommandCenterPage() {
               ).map(link => (
                 <a key={link.label} href={link.href} style={{ textDecoration: "none" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
+                    padding: "8px 12px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                     <span style={{ fontSize: 12, color: "var(--text-primary)" }}>{link.label}</span>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                       {link.count != null && <Badge variant="info" size="sm">{link.count}</Badge>}

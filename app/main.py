@@ -327,6 +327,17 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # Sprint 3 — Admin Catalog + Pricing + Tenant Service Enablement
     from app.engines.admin_catalog.admin_router    import router as admin_catalog_router
     from app.engines.admin_catalog.tenant_router   import router as tenant_catalog_router
+    # Migration 154 — Generic catalog dimension engine (admin Dimensions tab)
+    from app.engines.admin_catalog.dimension_router import router as catalog_dimension_router
+    # Admin Job Type CRUD + Blueprint Impact Report
+    from app.engines.admin_catalog.job_type_router import (
+        router as catalog_job_type_router, impact_router as catalog_impact_router,
+        draft_router as catalog_blueprint_draft_router,
+    )
+    # Migration 155 — Conditional Question Engine (admin Problems & Questions tab)
+    from app.engines.admin_catalog.question_router import router as catalog_question_router
+    # Migration 160 — Job-Type Blueprint (job type as a child record + workflow ownership)
+    from app.engines.admin_catalog.job_type_blueprint_router import router as job_type_blueprint_router
     # Sprint 34C — Customer master catalog read endpoints
     from app.engines.admin_catalog.customer_router import router as customer_master_catalog_router
     # Sprint 34D — Brand management (admin CRUD + requests + templates)
@@ -366,6 +377,8 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     )
     app.include_router(catalog_enterprise_router)
     for _r in [admin_catalog_router, tenant_catalog_router, customer_master_catalog_router,
+               catalog_dimension_router, catalog_job_type_router, catalog_impact_router,
+               catalog_blueprint_draft_router, catalog_question_router, job_type_blueprint_router,
                brand_admin_router, brand_req_router, brand_tmpl_router,
                brand_provider_router, brand_customer_router,
                svc_opt_grp_router, svc_opt_router, svc_iss_router, svc_map_router, svc_chk_router,
@@ -508,7 +521,9 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.final_records.customer_router import router as final_customer_router
     from app.engines.final_records.provider_router import router as final_provider_router
     from app.engines.final_records.admin_router    import router as final_admin_router
-    for _r in [final_confirm_router, final_customer_router, final_provider_router, final_admin_router]:
+    from app.engines.final_records.operations_router import router as final_operations_router
+    for _r in [final_confirm_router, final_customer_router, final_provider_router,
+               final_admin_router, final_operations_router]:
         app.include_router(_r)
 
     # Sprint 20 — Home Service Job Assignment + Staff Lifecycle
@@ -574,6 +589,19 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         qc_provider_router, qc_staff_router, qc_checklist_router,
         qc_customer_router, qc_admin_router, qc_admin_quote_router,
     ]:
+        app.include_router(_r)
+
+    # Checklist Catalog Engine — canonical, job-type-mapped checklists
+    # (consolidates quote_checklist/field_ops/admin_catalog checklist
+    # systems onto one reusable-template + exact-Job-Type-mapping model).
+    from app.engines.checklist_catalog.admin_router import router as cc_admin_router
+    from app.engines.checklist_catalog.execution_router import (
+        staff_router as cc_staff_router,
+        tenant_router as cc_tenant_router,
+        customer_router as cc_customer_router,
+        admin_router as cc_instance_admin_router,
+    )
+    for _r in [cc_admin_router, cc_staff_router, cc_tenant_router, cc_customer_router, cc_instance_admin_router]:
         app.include_router(_r)
 
     # Sprint 23 — Invoice / Payment / Commission / Wallet / Subscription
@@ -685,8 +713,10 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # P0 Multi-Vertical Catalog Architecture (migration 089)
     from app.engines.vertical_catalog.admin_router import router as verticals_router
     from app.engines.vertical_catalog.admin_router import modules_router as catalog_modules_router
+    from app.engines.vertical_catalog.admin_router import enrollments_router as tenant_vertical_enrollments_router
     app.include_router(verticals_router)
     app.include_router(catalog_modules_router)
+    app.include_router(tenant_vertical_enrollments_router)
 
     # FINAL-L5-04B — Tenant Module and Category Entitlement Architecture (migration 132)
     from app.engines.entitlement.admin_router import router as entitlement_admin_router

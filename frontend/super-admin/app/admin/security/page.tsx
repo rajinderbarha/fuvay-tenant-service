@@ -425,7 +425,7 @@ function ApiKeysTab() {
           <p style={{ fontSize: 13, color: "var(--danger-text)", margin: 0, fontWeight: 600 }}>
             This key will not be shown again. Copy it now and store it securely.
           </p>
-          <code style={{ display: "block", padding: "12px 14px", background: "var(--surface-sunken)", borderRadius: 8, fontSize: 12, wordBreak: "break-all" }}>
+          <code style={{ display: "block", padding: "12px 14px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", fontSize: 12, wordBreak: "break-all" }}>
             {revealedKey}
           </code>
           <Btn variant="secondary" size="sm" onClick={() => { if (revealedKey) navigator.clipboard.writeText(revealedKey); }}>

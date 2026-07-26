@@ -71,7 +71,7 @@ export default function BulkRunsPage() {
       ) : runs.length === 0 ? (
         <div style={{
           textAlign: "center", padding: "4rem 2rem",
-          background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12,
+          background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)",
         }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>
             No runs yet.
@@ -85,7 +85,7 @@ export default function BulkRunsPage() {
         </div>
       ) : (
         <>
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>

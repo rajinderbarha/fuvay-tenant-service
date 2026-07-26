@@ -26,7 +26,7 @@ const fmtRating = (n: number | null | undefined) => (n ?? 0).toFixed(1);
 const cardStyle: React.CSSProperties = {
   background: "var(--surface)",
   border: "1px solid var(--border)",
-  borderRadius: 12,
+  borderRadius:"var(--radius-lg)",
   padding: "16px 20px",
 };
 
@@ -321,7 +321,7 @@ export default function PlatformAnalyticsDashboard() {
           <Btn size="sm" variant="secondary" onClick={refetchAlerts}>Refresh</Btn>
         </div>
         {alertsLoading ? (
-          <div className="skeleton" style={{ height: 80, borderRadius: 8 }} />
+          <div className="skeleton" style={{ height: 80, borderRadius:"var(--radius-md)" }} />
         ) : alerts.length === 0 ? (
           <div style={{ textAlign: "center", padding: "32px 0", color: "var(--text-tertiary)", fontSize: 13 }}>
             No active operational alerts. All monitored systems are healthy.
@@ -364,7 +364,7 @@ export default function PlatformAnalyticsDashboard() {
       {/* Category Performance */}
       <div style={cardStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 14px" }}>Category Performance</h2>
-        {catLoading ? <div className="skeleton" style={{ height: 120, borderRadius: 8 }} /> : catItems.length === 0 ? (
+        {catLoading ? <div className="skeleton" style={{ height: 120, borderRadius:"var(--radius-md)" }} /> : catItems.length === 0 ? (
           <div style={{ textAlign: "center", padding: "28px 0", color: "var(--text-tertiary)", fontSize: 13 }}>
             No category data for this period. Adjust your date range or vertical filter.
           </div>
@@ -417,7 +417,7 @@ export default function PlatformAnalyticsDashboard() {
             ))}
           </div>
         </div>
-        {provLoading ? <div className="skeleton" style={{ height: 140, borderRadius: 8 }} /> : provItems.length === 0 ? (
+        {provLoading ? <div className="skeleton" style={{ height: 140, borderRadius:"var(--radius-md)" }} /> : provItems.length === 0 ? (
           <div style={{ textAlign: "center", padding: "28px 0", color: "var(--text-tertiary)", fontSize: 13 }}>No provider data for this period.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -472,7 +472,7 @@ export default function PlatformAnalyticsDashboard() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         <div style={cardStyle}>
           <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 14px" }}>Quality Summary</h2>
-          {qualLoading ? <div className="skeleton" style={{ height: 80, borderRadius: 8 }} /> : (
+          {qualLoading ? <div className="skeleton" style={{ height: 80, borderRadius:"var(--radius-md)" }} /> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
                 ["Avg Rating", fmtRating(qual.avg_rating) + " / 5"],
@@ -490,7 +490,7 @@ export default function PlatformAnalyticsDashboard() {
         </div>
         <div style={cardStyle}>
           <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 14px" }}>Complaints Summary</h2>
-          {compLoading ? <div className="skeleton" style={{ height: 80, borderRadius: 8 }} /> : (
+          {compLoading ? <div className="skeleton" style={{ height: 80, borderRadius:"var(--radius-md)" }} /> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
                 ["Total Complaints", fmt(comp.total_complaints)],
@@ -513,7 +513,7 @@ export default function PlatformAnalyticsDashboard() {
       {/* Geography */}
       <div style={cardStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 14px" }}>Top Cities by Booking Volume</h2>
-        {geoLoading ? <div className="skeleton" style={{ height: 100, borderRadius: 8 }} /> : topCities.length === 0 ? (
+        {geoLoading ? <div className="skeleton" style={{ height: 100, borderRadius:"var(--radius-md)" }} /> : topCities.length === 0 ? (
           <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-tertiary)", fontSize: 13 }}>No geographic data available.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>

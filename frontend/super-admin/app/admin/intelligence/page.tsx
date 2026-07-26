@@ -50,7 +50,7 @@ function KpiCard({
   return (
     <div style={{
       background: "var(--surface)", border: "1px solid var(--border)",
-      borderRadius: 12, padding: "16px 20px",
+      borderRadius:"var(--radius-lg)", padding: "16px 20px",
     }}>
       <div style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
         {label}
@@ -166,7 +166,7 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
       >
         <div style={{
           position: "absolute", top: 3, left: checked ? 20 : 3,
-          width: 16, height: 16, borderRadius: 8,
+          width: 16, height: 16, borderRadius:"var(--radius-md)",
           background: "var(--white, white)", transition: "left 0.2s",
         }} />
       </div>
@@ -195,7 +195,7 @@ function WizardStep1({ form, setForm }: { form: KBWizardForm; setForm: React.Dis
       <div>
         <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Description *</label>
         <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} rows={3}
-          style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, color: "var(--text-primary)", resize: "vertical", boxSizing: "border-box" }}
+          style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", fontSize: 13, color: "var(--text-primary)", resize: "vertical", boxSizing: "border-box" }}
           placeholder="Describe what this knowledge base contains…" />
       </div>
       <Select label="Initial Status" value={form.status} onChange={v => setForm(p => ({ ...p, status: v }))}
@@ -314,23 +314,23 @@ function WizardStep5({ form, setForm }: { form: KBWizardForm; setForm: React.Dis
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Chunk Size</label>
           <input type="number" value={form.chunk_size} onChange={e => setForm(p => ({ ...p, chunk_size: parseInt(e.target.value) || 800 }))}
-            style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, color: "var(--text-primary)", boxSizing: "border-box" }} />
+            style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", fontSize: 13, color: "var(--text-primary)", boxSizing: "border-box" }} />
         </div>
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Chunk Overlap</label>
           <input type="number" value={form.chunk_overlap} onChange={e => setForm(p => ({ ...p, chunk_overlap: parseInt(e.target.value) || 120 }))}
-            style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, color: "var(--text-primary)", boxSizing: "border-box" }} />
+            style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", fontSize: 13, color: "var(--text-primary)", boxSizing: "border-box" }} />
         </div>
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Retrieval Top K</label>
           <input type="number" value={form.retrieval_top_k} onChange={e => setForm(p => ({ ...p, retrieval_top_k: parseInt(e.target.value) || 5 }))}
-            style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, color: "var(--text-primary)", boxSizing: "border-box" }} />
+            style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", fontSize: 13, color: "var(--text-primary)", boxSizing: "border-box" }} />
         </div>
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Similarity Threshold (0–1)</label>
           <input type="number" step="0.01" min="0" max="1" value={form.similarity_threshold}
             onChange={e => setForm(p => ({ ...p, similarity_threshold: parseFloat(e.target.value) || 0.72 }))}
-            style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, color: "var(--text-primary)", boxSizing: "border-box" }} />
+            style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", fontSize: 13, color: "var(--text-primary)", boxSizing: "border-box" }} />
         </div>
       </div>
       <Toggle label="Reranking Enabled" checked={form.reranking_enabled} onChange={v => setForm(p => ({ ...p, reranking_enabled: v }))} />
@@ -338,7 +338,7 @@ function WizardStep5({ form, setForm }: { form: KBWizardForm; setForm: React.Dis
       <div>
         <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Fallback Message</label>
         <textarea value={form.fallback_message} onChange={e => setForm(p => ({ ...p, fallback_message: e.target.value }))} rows={2}
-          style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, color: "var(--text-primary)", resize: "vertical", boxSizing: "border-box" }}
+          style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", fontSize: 13, color: "var(--text-primary)", resize: "vertical", boxSizing: "border-box" }}
           placeholder="I'm sorry, I couldn't find an answer to your question." />
       </div>
     </div>
@@ -379,7 +379,7 @@ function WizardStep6({ form, setForm }: { form: KBWizardForm; setForm: React.Dis
           <Toggle key={key} label={label} checked={!!form.safety_rules_json[key]} onChange={() => toggleRule(key)} />
         ))}
       </div>
-      <div style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: "12px 16px" }}>
+      <div style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: "12px 16px" }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Mandatory Guardrails (always enforced)</div>
         {MANDATORY_BLOCKS.map(rule => (
           <div key={rule} style={{ fontSize: 11, color: "var(--text-secondary)", padding: "3px 0", borderBottom: "1px solid var(--border)" }}>{rule}</div>
@@ -449,13 +449,13 @@ function WizardStep8({ form }: { form: KBWizardForm }) {
         ))}
       </div>
       {errors.length > 0 && (
-        <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, padding: 12 }}>
+        <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-md)", padding: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger-text)", marginBottom: 6 }}>Errors (must fix)</div>
           {errors.map(e => <div key={e} style={{ fontSize: 11, color: "var(--danger-text)" }}>• {e}</div>)}
         </div>
       )}
       {warnings.length > 0 && (
-        <div style={{ background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 8, padding: 12 }}>
+        <div style={{ background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius:"var(--radius-md)", padding: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--warning-text)", marginBottom: 6 }}>Warnings</div>
           {warnings.map(w => <div key={w} style={{ fontSize: 11, color: "var(--warning-text)" }}>• {w}</div>)}
         </div>
@@ -513,7 +513,7 @@ function KBWizardModal({ open, onClose, onCreated }: { open: boolean; onClose: (
       background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center",
     }}>
       <div style={{
-        background: "var(--surface)", borderRadius: 16, width: "min(92vw, 680px)",
+        background: "var(--surface)", borderRadius:"var(--radius-xl, 1rem)", width: "min(92vw, 680px)",
         maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden",
         boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
       }}>
@@ -543,8 +543,8 @@ function KBWizardModal({ open, onClose, onCreated }: { open: boolean; onClose: (
 
         {/* Content */}
         <div style={{ padding: "20px", overflowY: "auto", flex: 1 }}>
-          {toast && <div style={{ padding: "8px 12px", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 8, color: "var(--success-text)", fontSize: 12, marginBottom: 12 }}>✓ {toast}</div>}
-          {createError && <div style={{ padding: "8px 12px", background: "var(--error-bg, #fee)", border: "1px solid var(--error-border, #f88)", borderRadius: 8, color: "var(--error-text, #c00)", fontSize: 12, marginBottom: 12 }}>⚠ {createError}</div>}
+          {toast && <div style={{ padding: "8px 12px", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius:"var(--radius-md)", color: "var(--success-text)", fontSize: 12, marginBottom: 12 }}>✓ {toast}</div>}
+          {createError && <div style={{ padding: "8px 12px", background: "var(--error-bg, #fee)", border: "1px solid var(--error-border, #f88)", borderRadius:"var(--radius-md)", color: "var(--error-text, #c00)", fontSize: 12, marginBottom: 12 }}>⚠ {createError}</div>}
           {stepComponents[step]}
         </div>
 
@@ -601,8 +601,8 @@ function RagTab({ onKBCreated }: { onKBCreated: () => void }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {toast && <div style={{ padding: "8px 14px", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 8, color: "var(--success-text)", fontSize: 12 }}>✓ {toast}</div>}
-      {seedError && <div style={{ padding: "8px 14px", background: "var(--error-bg, #fee)", border: "1px solid var(--error-border, #f88)", borderRadius: 8, color: "var(--error-text, #c00)", fontSize: 12 }}>⚠ Seed failed: {seedError}</div>}
+      {toast && <div style={{ padding: "8px 14px", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius:"var(--radius-md)", color: "var(--success-text)", fontSize: 12 }}>✓ {toast}</div>}
+      {seedError && <div style={{ padding: "8px 14px", background: "var(--error-bg, #fee)", border: "1px solid var(--error-border, #f88)", borderRadius:"var(--radius-md)", color: "var(--error-text, #c00)", fontSize: 12 }}>⚠ Seed failed: {seedError}</div>}
 
       {/* Summary cards */}
       {s && (
@@ -619,7 +619,7 @@ function RagTab({ onKBCreated }: { onKBCreated: () => void }) {
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <input value={filters.q} onChange={e => setFilters(p => ({ ...p, q: e.target.value }))}
           placeholder="Search knowledge bases…"
-          style={{ flex: 1, minWidth: 200, padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, color: "var(--text-primary)" }} />
+          style={{ flex: 1, minWidth: 200, padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", fontSize: 13, color: "var(--text-primary)" }} />
         <Select label="" value={filters.scope_type} onChange={v => setFilters(p => ({ ...p, scope_type: v }))}
           options={[{ value: "", label: "All Scopes" }, { value: "platform", label: "Platform" }, { value: "vertical", label: "Vertical" }, { value: "compliance", label: "Compliance" }, { value: "support", label: "Support" }]} />
         <Select label="" value={filters.status} onChange={v => setFilters(p => ({ ...p, status: v }))}
@@ -629,7 +629,7 @@ function RagTab({ onKBCreated }: { onKBCreated: () => void }) {
       </div>
 
       {/* KBs Table */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
         <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Knowledge Bases</h3>
         </div>
@@ -814,7 +814,7 @@ export default function IntelligencePage() {
         <div style={{ display: "grid", gridTemplateColumns: "65% 1fr", gap: 16 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {/* Engine Health */}
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 16px" }}>Intelligence Engine Health</h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
                 {[
@@ -825,7 +825,7 @@ export default function IntelligencePage() {
                   { label: "Model Registry", status: "operational" },
                   { label: "Indexing Queue", status: safeNum(s?.indexed_documents) >= 0 ? "operational" : "no_data" },
                 ].map(item => (
-                  <div key={item.label} style={{ padding: "10px 14px", background: "var(--surface-sunken)", borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div key={item.label} style={{ padding: "10px 14px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{item.label}</span>
                     <Badge variant={item.status === "operational" ? "success" : "muted"} size="sm">{item.status}</Badge>
                   </div>
@@ -834,7 +834,7 @@ export default function IntelligencePage() {
             </div>
 
             {/* Analytics Snapshot */}
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>Analytics Snapshot</h3>
               {[
                 ["Active Tenants", fmtNum(s?.active_tenants)],
@@ -856,7 +856,7 @@ export default function IntelligencePage() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {/* Quick Stats */}
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 16 }}>
               <h3 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 12px" }}>Quick Actions</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Btn variant="secondary" size="sm" loading={predRunning} onClick={() => runPredictions()}>Run Tenant Risk Predictions</Btn>
@@ -867,7 +867,7 @@ export default function IntelligencePage() {
             </div>
 
             {/* Anomaly Overview */}
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 16 }}>
               <h3 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 12px" }}>Open Anomalies</h3>
               <div style={{ fontSize: 36, fontWeight: 800, color: safeNum(s?.open_anomalies) > 0 ? "var(--warning-text)" : "var(--success-text)", textAlign: "center", padding: "8px 0" }}>
                 {fmtNum(s?.open_anomalies)}
@@ -884,7 +884,7 @@ export default function IntelligencePage() {
       {/* ── EVENT PIPELINE ───────────────────────────────────────────────────── */}
       {activeTab === "events" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
             <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Event Sources</h3>
             </div>
@@ -922,7 +922,7 @@ export default function IntelligencePage() {
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
             <Btn variant="secondary" size="sm" loading={predRunning} onClick={() => runPredictions()}>Run Predictions</Btn>
           </div>
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
             <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Risk Entities</h3>
             </div>
@@ -955,7 +955,7 @@ export default function IntelligencePage() {
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <Btn variant="secondary" size="sm" loading={scanRunning} onClick={() => runScan()}>Run Anomaly Scan</Btn>
           </div>
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
             <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between" }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Detected Anomalies</h3>
               <Badge variant="warning">{fmtNum(anomalyData?.total)} total</Badge>
@@ -987,7 +987,7 @@ export default function IntelligencePage() {
 
       {/* ── MODELS ───────────────────────────────────────────────────────────── */}
       {activeTab === "models" && (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
           <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
             <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Model Registry</h3>
           </div>
@@ -1027,7 +1027,7 @@ export default function IntelligencePage() {
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <Btn variant="primary" size="sm" loading={predRunning} onClick={() => runPredictions()}>Run Now</Btn>
           </div>
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
             <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between" }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Prediction Jobs</h3>
               <Badge variant="muted">{fmtNum(jobData?.total)} total</Badge>
@@ -1066,7 +1066,7 @@ export default function IntelligencePage() {
               <KpiCard label="Not Run" value={fmtNum(dqSummary.not_run)} />
             </div>
           )}
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
             <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Data Quality Checks</h3>
             </div>
@@ -1105,7 +1105,7 @@ export default function IntelligencePage() {
               <KpiCard label="Failed Calls" value={fmtNum((aiUsageSummary as Record<string, unknown>).failed_calls)} />
             </div>
           )}
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
             <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>AI Usage Logs</h3>
             </div>
@@ -1133,7 +1133,7 @@ export default function IntelligencePage() {
 
       {/* ── AUDIT LOGS ───────────────────────────────────────────────────────── */}
       {activeTab === "audit" && (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
           <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
             <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Audit Logs</h3>
           </div>

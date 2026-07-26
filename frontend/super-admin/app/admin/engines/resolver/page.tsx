@@ -11,7 +11,7 @@ import type {
 import { ArrowLeft, Zap, CheckCircle2, XCircle, Search } from "lucide-react";
 
 const filterInput: React.CSSProperties = {
-  height: 38, border: "1px solid var(--border)", borderRadius: 8, fontSize: 13,
+  height: 38, border: "1px solid var(--border)", borderRadius:"var(--radius-md)", fontSize: 13,
   padding: "0 10px", background: "var(--surface)", color: "var(--text-primary)",
   fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box",
 };
@@ -54,7 +54,7 @@ function SearchSelect<T>({
         {open && (
           <div style={{
             position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 20,
-            background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8,
+            background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
             boxShadow: "var(--shadow-md)", maxHeight: 260, overflowY: "auto",
           }}>
             {opts.loading && <div style={{ padding: 12, fontSize: 12, color: "var(--text-tertiary)" }}>Searching…</div>}
@@ -192,7 +192,7 @@ export default function EngineAccessResolverPage() {
 
       {error && (
         <Card>
-          <div style={{ padding: "14px 16px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, fontSize: 13, color: "var(--danger-text)" }}>
+          <div style={{ padding: "14px 16px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-md)", fontSize: 13, color: "var(--danger-text)" }}>
             {error}
           </div>
         </Card>

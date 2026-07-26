@@ -24,7 +24,7 @@ from app.engines.admin_catalog.models import (
     MasterIssueType, MasterServiceOption, MasterWorkflowTemplate, MasterDataAuditLog,
     TenantService, LocationImportBatch, WorkflowServiceMapping,
     BargainRule, ProviderPricingOverride, ServiceIssueMapping,
-    TenantServiceType,
+    TenantServiceType, ServiceBlueprintVersion,
 )
 from app.engines.tenant_engine.models import Tenant
 from app.engines.admin_catalog.bargain_engine import (
@@ -216,6 +216,24 @@ class AdminCatalogService:
         self.actor_id = actor_id
         self.actor_role = actor_role
 
+    @staticmethod
+    def _assert_tier_writes_retired() -> None:
+        """Business-model change: admin no longer creates pricing tiers, sets
+        tier multipliers, or maps cities/zipcodes to a tier. Replaced by the
+        tenant service-area request/approval workflow
+        (app.engines.serviceability). Existing tier/tier-location rows are
+        preserved as read-only historical data — see
+        `/v1/admin/tenants/service-area-migration/*` reconciliation tooling
+        and TIER_RETIREMENT_REPORT.md. Reads (list/get/summary/export)
+        remain available; every write raises this error."""
+        raise ServiceOSException(
+            "PRICING_TIER_WRITES_RETIRED",
+            "Pricing tiers and city/zipcode tier mapping are retired. Tenants now "
+            "request service-area coverage for admin approval; see "
+            "POST /v1/tenant/service-area-requests.",
+            status_code=410,
+        )
+
     # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # PRICING TIERS
     # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -359,6 +377,7 @@ class AdminCatalogService:
         return self._tier_dict(tier)
 
     async def create_tier(self, data: dict) -> dict:
+        self._assert_tier_writes_retired()
         name = (data.get("name") or "").strip()
         code = (data.get("code") or "").strip().lower()
         tier_type = (data.get("tier_type") or "").strip()
@@ -395,6 +414,7 @@ class AdminCatalogService:
         return self._tier_dict(tier)
 
     async def update_tier(self, tier_id: uuid.UUID, data: dict) -> dict:
+        self._assert_tier_writes_retired()
         tier = await self._load_tier(tier_id)
         old = self._tier_dict(tier)
         for field in ("name", "description", "platform_fee_percent",
@@ -414,6 +434,7 @@ class AdminCatalogService:
         return self._tier_dict(tier)
 
     async def delete_tier(self, tier_id: uuid.UUID) -> dict:
+        self._assert_tier_writes_retired()
         tier = await self._load_tier(tier_id)
         old = self._tier_dict(tier)
         tier.is_active = False
@@ -703,6 +724,7 @@ class AdminCatalogService:
 
     async def import_tier_locations_confirm(self, batch_id: uuid.UUID,
                                              conflict_resolution: str = "skip") -> dict:
+        self._assert_tier_writes_retired()
         batch = await self._load_import_batch(batch_id)
         if batch.status != "preview":
             raise ServiceOSException("IMPORT_BATCH_ALREADY_PROCESSED",
@@ -780,6 +802,7 @@ class AdminCatalogService:
         return batch
 
     async def create_tier_location(self, data: dict) -> dict:
+        self._assert_tier_writes_retired()
         tier_id_raw = data.get("tier_id")
         if not tier_id_raw:
             raise ServiceOSException("TIER_NOT_FOUND", "tier_id is required.", status_code=422)
@@ -809,6 +832,7 @@ class AdminCatalogService:
         return self._loc_dict(loc)
 
     async def update_tier_location(self, location_id: uuid.UUID, data: dict) -> dict:
+        self._assert_tier_writes_retired()
         loc = await self._load_tier_location(location_id)
         old = self._loc_dict(loc)
         for field in ("city", "zipcode", "state", "district", "zone_name", "priority", "is_active", "tier_id"):
@@ -819,6 +843,7 @@ class AdminCatalogService:
         return self._loc_dict(loc)
 
     async def delete_tier_location(self, location_id: uuid.UUID) -> dict:
+        self._assert_tier_writes_retired()
         loc = await self._load_tier_location(location_id)
         old = self._loc_dict(loc)
         loc.is_active = False
@@ -828,6 +853,7 @@ class AdminCatalogService:
         return {"deleted": True, "location_id": str(location_id)}
 
     async def bulk_change_tier_locations(self, location_ids: list[str], new_tier_id: str) -> dict:
+        self._assert_tier_writes_retired()
         if not location_ids:
             raise ServiceOSException("BULK_EMPTY", "location_ids is required.", status_code=422)
         tier_uuid = uuid.UUID(str(new_tier_id))
@@ -842,6 +868,7 @@ class AdminCatalogService:
         return {"updated": len(ids), "new_tier_id": str(tier_uuid)}
 
     async def bulk_deactivate_tier_locations(self, location_ids: list[str]) -> dict:
+        self._assert_tier_writes_retired()
         if not location_ids:
             raise ServiceOSException("BULK_EMPTY", "location_ids is required.", status_code=422)
         ids = [uuid.UUID(i) for i in location_ids]
@@ -1046,6 +1073,10 @@ class AdminCatalogService:
         cat = await self._load_category(category_id)
         return self._cat_dict(cat)
 
+    # DEPRECATED entry point (kept for backward compatibility with existing
+    # callers/tests that still pass requires_brand/requires_schedule/etc).
+    # NOT the path the corrected "New Business Vertical" form uses; see
+    # create_category_canonical below.
     async def create_category(self, data: dict) -> dict:
         name = (data.get("name") or "").strip()
         if not name:
@@ -1099,6 +1130,66 @@ class AdminCatalogService:
         await self.db.flush()
         return self._cat_dict(cat)
 
+    # Ownership correction (migration 160) -- the CANONICAL creation path.
+    # This is what the corrected "New Business Vertical" form calls.
+    # requires_location/requires_schedule/requires_brand/
+    # requires_service_option/requires_issue_type/pricing_supported vary by
+    # Master Service and Job Type and must never be set globally for an
+    # entire vertical -- rejected outright, not silently dropped.
+    CATEGORY_FORBIDDEN_CREATE_FIELDS = {
+        "requires_location", "requires_schedule", "requires_brand",
+        "requires_service_option", "requires_issue_type", "pricing_supported",
+    }
+
+    async def create_category_canonical(self, data: dict) -> dict:
+        forbidden = set(data) & self.CATEGORY_FORBIDDEN_CREATE_FIELDS
+        if forbidden:
+            raise ServiceOSException(
+                "FIELD_OWNED_BY_JOB_TYPE_BLUEPRINT",
+                f"{sorted(forbidden)} vary by Master Service and Job Type and cannot be set on a "
+                "Business Vertical. Configure them per service in its Job-Type Blueprint.",
+                status_code=422)
+
+        name = (data.get("name") or "").strip()
+        if not name:
+            raise ServiceOSException("SERVICE_CATEGORY_NAME_REQUIRED", "Category name is required.", status_code=422)
+        slug = _slugify(name)
+        existing = await self.db.execute(select(ServiceCategory).where(ServiceCategory.slug == slug))
+        if existing.scalar_one_or_none():
+            raise ServiceOSException("SERVICE_CATEGORY_SLUG_DUPLICATE", f"Category slug '{slug}' already exists.", status_code=409)
+
+        fm = data.get("finance_model")
+        if fm and fm not in VALID_FINANCE_MODELS:
+            raise ServiceOSException("INVALID_FINANCE_MODEL",
+                f"finance_model '{fm}' is not valid. Choose from: {sorted(VALID_FINANCE_MODELS)}",
+                status_code=422)
+
+        cat = ServiceCategory(
+            name=name, slug=slug,
+            description=data.get("description"),
+            icon_url=data.get("icon_url"),
+            image_url=data.get("image_url"),
+            display_order=int(data.get("display_order", 0) or 0),
+            is_active=bool(data.get("is_active", True)),
+            finance_model=fm,
+            tenant_selectable=bool(data.get("tenant_selectable", True)),
+            is_customer_visible=bool(data.get("is_customer_visible", True)),
+            is_provider_registerable=bool(data.get("registration_available", True)),
+            # Legacy columns get honest, non-restrictive defaults -- they no
+            # longer gate anything for a canonically-created vertical.
+            requires_location=False, requires_schedule=False, requires_brand=False,
+            requires_service_option=False, requires_issue_type=False, pricing_supported=False,
+        )
+        self.db.add(cat)
+        await self.db.flush()
+        return self._cat_dict(cat)
+
+    # DEPRECATED (migration 160): requires_location/requires_schedule/
+    # requires_brand/requires_service_option/requires_issue_type/
+    # pricing_supported still accept writes here ONLY for backward
+    # compatibility with existing callers -- NOT authoritative once a
+    # service has its own Job-Type Blueprint. The corrected "New Business
+    # Vertical" (formerly "New Service Category") create path rejects them.
     async def update_category(self, category_id: uuid.UUID, data: dict) -> dict:
         cat = await self._load_category(category_id)
         updatable = (
@@ -1321,6 +1412,13 @@ class AdminCatalogService:
         svc = await self._load_master_service(service_id)
         return self._svc_dict(svc)
 
+    # DEPRECATED entry point (kept for backward compatibility -- the Home
+    # Services Catalog Console, bulk setup wizard, and existing tests still
+    # call this with a scalar job_type/pricing_model/price/requirement
+    # payload). NOT the path the corrected "New Master Service" form uses;
+    # see create_master_service_canonical below, which is what migration 160
+    # actually adds. Left functionally unchanged -- see section 11's
+    # instruction to preserve compatibility rather than break live callers.
     async def create_master_service(self, data: dict) -> dict:
         name     = (data.get("service_name") or "").strip()
         job_type = (data.get("job_type") or "").strip()
@@ -1393,7 +1491,143 @@ class AdminCatalogService:
         await self.db.flush()
         return self._svc_dict(svc)
 
-    async def update_master_service(self, service_id: uuid.UUID, data: dict) -> dict:
+    # Ownership correction (migration 160) -- the CANONICAL creation path.
+    # This is what the corrected "New Master Service" form calls. Job-type-
+    # agnostic: no job_type, pricing_model, prices, or Brand/Type/workflow
+    # requirement flags. Submitting any of them is rejected outright (fail
+    # closed, not silently dropped) since a real form should never send
+    # them, not just because the current one shouldn't render them.
+    MASTER_SERVICE_FORBIDDEN_CREATE_FIELDS = {
+        "job_type", "pricing_model", "base_price", "min_price", "max_price", "visit_fee",
+        "is_brand_required", "is_type_required", "requires_issue_type",
+        "requires_checklist", "requires_schedule", "requires_address",
+    }
+
+    async def create_master_service_canonical(self, data: dict) -> dict:
+        forbidden = set(data) & self.MASTER_SERVICE_FORBIDDEN_CREATE_FIELDS
+        if forbidden:
+            raise ServiceOSException(
+                "FIELD_OWNED_BY_JOB_TYPE_BLUEPRINT",
+                f"{sorted(forbidden)} belong to the Job-Type Blueprint (workflow/pricing behavior) "
+                "or the tenant (actual prices), not Master Service creation. Add job types and "
+                "configure their blueprint after creating the service.",
+                status_code=422)
+
+        name = (data.get("service_name") or "").strip()
+        cat_id_raw = data.get("category_id")
+
+        if not name:
+            raise ServiceOSException("MASTER_SERVICE_NAME_REQUIRED", "service_name is required.", status_code=422)
+        if not cat_id_raw:
+            raise ServiceOSException("SERVICE_CATEGORY_NOT_FOUND", "category_id is required.", status_code=422)
+        if not data.get("service_group_id"):
+            raise ServiceOSException("SERVICE_GROUP_REQUIRED",
+                "service_group_id is required -- Master Services belong to a Service Group.", status_code=422)
+
+        cat_id = uuid.UUID(str(cat_id_raw))
+        cat = await self._load_category(cat_id)
+        if not cat.is_active:
+            raise ServiceOSException("SERVICE_CATEGORY_INACTIVE", "The selected category is inactive.", status_code=422)
+
+        slug = _slugify(name)
+        existing = await self.db.execute(
+            select(MasterService).where(MasterService.slug == slug, MasterService.deleted_at.is_(None)))
+        if existing.scalar_one_or_none():
+            slug = f"{slug}-{str(uuid.uuid4())[:8]}"
+
+        svc = MasterService(
+            category_id=cat_id, service_name=name, slug=slug,
+            description=data.get("description"),
+            image_url=data.get("image_url"),
+            icon_url=data.get("icon_url"),
+            # job_type/pricing_model intentionally left NULL -- job-type-
+            # agnostic at creation; job types are added afterward as child
+            # records (master_service_job_types) with their own blueprint.
+            base_price=Decimal("0"), visit_fee=Decimal("0"),
+            tenant_override_allowed=bool(data.get("tenant_override_allowed", False)),
+            tenant_custom_name_allowed=bool(data.get("tenant_custom_name_allowed", True)),
+            service_group_id=uuid.UUID(str(data["service_group_id"])),
+            display_order=int(data.get("display_order", 0) or 0),
+            is_active=True,
+        )
+        self.db.add(svc)
+        await self.db.flush()
+        return self._svc_dict(svc)
+
+    # Structural fields that define the shape of the tenant setup wizard --
+    # changing any of these means existing tenant setups may need review
+    # (spec: "service configuration update required"), unlike cosmetic
+    # fields (name/description/icons) which never trigger a new version.
+    BLUEPRINT_STRUCTURAL_FIELDS = ("job_type", "is_type_required", "is_brand_required", "pricing_model", "is_active")
+
+    def _blueprint_snapshot(self, svc: MasterService) -> dict:
+        return {
+            "job_type": svc.job_type, "requires_type": svc.is_type_required,
+            "requires_brand": svc.is_brand_required, "pricing_model": svc.pricing_model,
+            "is_active": svc.is_active,
+        }
+
+    async def _publish_new_blueprint_version_if_structural_change(
+        self, svc: MasterService, before: dict, actor_id: uuid.UUID | None = None,
+    ) -> ServiceBlueprintVersion | None:
+        after = self._blueprint_snapshot(svc)
+        if before == after:
+            return None
+        changed = [k for k in before if before[k] != after[k]]
+        summary = "; ".join(f"{k}: {before[k]!r} -> {after[k]!r}" for k in changed)
+
+        latest_r = await self.db.execute(
+            select(ServiceBlueprintVersion).where(
+                ServiceBlueprintVersion.master_service_id == svc.id,
+                ServiceBlueprintVersion.status == "published",
+            ).order_by(ServiceBlueprintVersion.version_number.desc()).limit(1))
+        latest = latest_r.scalar_one_or_none()
+        next_version = (latest.version_number + 1) if latest else 1
+        if latest:
+            latest.status = "superseded"
+
+        new_version = ServiceBlueprintVersion(
+            master_service_id=svc.id, version_number=next_version, status="published",
+            snapshot=after, change_summary=summary, published_at=utcnow(),
+            published_by_user_id=actor_id,
+        )
+        self.db.add(new_version)
+        await self.db.flush()
+        return new_version
+
+    # DEPRECATED (migration 160): requires_checklist/is_brand_required/
+    # is_type_required/requires_issue_type/requires_schedule/requires_address
+    # still accept writes here ONLY for backward compatibility with existing
+    # callers (e.g. the Home Services Catalog Console) that predate the
+    # Job-Type Blueprint -- they are NOT authoritative at runtime once a
+    # master_service_job_types + service_job_workflow blueprint exists for a
+    # service (see get_flow_config's canonical-first resolution). The
+    # corrected "New Master Service" create path rejects them outright;
+    # removal from this update path is the next step once the Catalog
+    # Console is migrated to the Job-Type Blueprint UI.
+    # MODULE-L5-56: base_price/min_price/max_price/visit_fee are now
+    # tenant-owned only. TenantCatalogService.resolve_tenant_price already
+    # implements exact, precedence-based tenant pricing (type+brand override
+    # -> type -> brand -> tenant default -> none, "never falls back to
+    # admin's price") and home_service_booking's estimator now prefers it
+    # whenever a tenant is already selected on the draft. Admin can no
+    # longer WRITE these four fields going forward; existing values remain
+    # readable as the pre-assignment estimate fallback only (no historical
+    # data deleted, no existing booking broken).
+    _FORBIDDEN_ADMIN_PRICE_FIELDS = ("base_price", "min_price", "max_price", "visit_fee")
+
+    def _reject_admin_price_fields(self, data: dict) -> None:
+        present = [f for f in self._FORBIDDEN_ADMIN_PRICE_FIELDS if data.get(f) is not None]
+        if present:
+            raise ServiceOSException(
+                "ADMIN_PRICING_NOT_ALLOWED",
+                f"Admin cannot set pricing fields on a Master Service: {present}. "
+                "Price is tenant-owned (Tenant Setup > Pricing).",
+                status_code=422,
+            )
+
+    async def update_master_service(self, service_id: uuid.UUID, data: dict, actor_id: uuid.UUID | None = None) -> dict:
+        self._reject_admin_price_fields(data)
         svc = await self._load_master_service(service_id)
         for field in ("service_name", "description", "image_url", "icon_url", "display_order",
                       "is_active", "requires_checklist", "is_brand_required", "is_type_required",
@@ -1403,9 +1637,8 @@ class AdminCatalogService:
                       "estimated_duration_minutes", "service_group_id"):
             if field in data and data[field] is not None:
                 setattr(svc, field, data[field])
-        for field in ("base_price", "min_price", "max_price", "visit_fee", "pre_approval_limit",
-                      "default_estimate", "hourly_rate", "minimum_billable_hours",
-                      "estimated_hours", "maximum_hours"):
+        for field in ("pre_approval_limit", "default_estimate", "hourly_rate",
+                      "minimum_billable_hours", "estimated_hours", "maximum_hours"):
             if field in data and data[field] is not None:
                 setattr(svc, field, Decimal(str(data[field])))
         if "job_type" in data and data["job_type"]:
@@ -1429,6 +1662,12 @@ class AdminCatalogService:
         merged.update(data)
         _validate_pricing_config(svc.pricing_model, merged)
         await self.db.flush()
+        # NOTE: structural edits are no longer auto-published to a new
+        # ServiceBlueprintVersion here -- they accumulate as a real "draft"
+        # (see BlueprintImpactService.get_draft_status, which diffs this live
+        # row against the latest PUBLISHED snapshot) until an admin calls the
+        # explicit POST /v1/admin/catalog/blueprint/publish endpoint
+        # (BlueprintImpactService.publish_draft).
         return self._svc_dict(svc)
 
     async def delete_master_service(self, service_id: uuid.UUID) -> dict:

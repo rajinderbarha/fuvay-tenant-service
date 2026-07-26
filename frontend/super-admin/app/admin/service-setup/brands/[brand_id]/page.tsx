@@ -225,7 +225,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ brand_id
                     { label: "Providers",  value: b.provider_usage_count ?? 0, icon: <Users size={14} />, tab: null },
                   ].map(item => (
                     <div key={item.label} onClick={() => item.tab && setActiveTab(item.tab)}
-                      style={{ flex: 1, background: "var(--surface-raised, #f8fafc)", borderRadius: 8, padding: "12px 16px", textAlign: "center", cursor: item.tab ? "pointer" : "default" }}>
+                      style={{ flex: 1, background: "var(--surface-raised, #f8fafc)", borderRadius:"var(--radius-md)", padding: "12px 16px", textAlign: "center", cursor: item.tab ? "pointer" : "default" }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 4, opacity: 0.6 }}>
                         {item.icon} <span style={{ fontSize: 12 }}>{item.label}</span>
                       </div>
@@ -272,7 +272,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ brand_id
                     onClick={() => toggleCategory(catId, isMapped)}
                     style={{
                       width: 36, height: 20, borderRadius: 10, border: "none", cursor: isPending ? "wait" : "pointer",
-                      background: isMapped ? "var(--primary, #3b82f6)" : "var(--border, #e5e7eb)",
+                      background: isMapped ? "var(--primary, var(--brand))" : "var(--border, #e5e7eb)",
                       position: "relative", transition: "background 0.2s", flexShrink: 0,
                     }}
                     aria-label={isMapped ? "Unmap" : "Map"}
@@ -302,7 +302,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ brand_id
         {/* Service Availability Tab */}
         {activeTab === "service-availability" && (
           <div>
-            <div style={{ marginBottom: 12, padding: "10px 14px", background: "var(--surface-raised, #f8fafc)", borderRadius: 8, fontSize: 12, opacity: 0.7 }}>
+            <div style={{ marginBottom: 12, padding: "10px 14px", background: "var(--surface-raised, #f8fafc)", borderRadius:"var(--radius-md)", fontSize: 12, opacity: 0.7 }}>
               <strong>{mappedSvcCount}</strong> services mapped. Brand is available only in mapped services — providers will only see it when offering those specific services.
             </div>
             {servicesByCategory.map(({ cat, services }) => {
@@ -337,7 +337,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ brand_id
                               onClick={() => toggleService(svcId, isMapped)}
                               style={{
                                 width: 36, height: 20, borderRadius: 10, border: "none", cursor: isPending ? "wait" : "pointer",
-                                background: isMapped ? "var(--primary, #3b82f6)" : "var(--border, #e5e7eb)",
+                                background: isMapped ? "var(--primary, var(--brand))" : "var(--border, #e5e7eb)",
                                 position: "relative", transition: "background 0.2s", flexShrink: 0,
                               }}
                               aria-label={isMapped ? "Unmap" : "Map"}

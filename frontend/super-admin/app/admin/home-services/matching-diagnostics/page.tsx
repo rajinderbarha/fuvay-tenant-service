@@ -104,7 +104,7 @@ export default function MatchingDiagnosticsPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <CheckCircle2 size={18} style={{ color: "var(--success-text, #16a34a)" }}/>
+                    <CheckCircle2 size={18} style={{ color: "var(--success-text, var(--success))" }}/>
                     <p style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{result.selected_provider.provider_name}</p>
                   </div>
                   <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
@@ -121,7 +121,7 @@ export default function MatchingDiagnosticsPage() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
                 {Object.entries(result.selected_provider.internal_score_breakdown).map(([k, v]) => (
-                  <div key={k} style={{ padding: 8, borderRadius: 8, background: "var(--surface-sunken)", textAlign: "center" }}>
+                  <div key={k} style={{ padding: 8, borderRadius:"var(--radius-md)", background: "var(--surface-sunken)", textAlign: "center" }}>
                     <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{v}</p>
                     <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: 0, textTransform: "capitalize" }}>{k.replace(/_/g, " ")}</p>
                   </div>
@@ -184,7 +184,7 @@ function MiniStat({ label, value, danger }: { label: string; value: number; dang
 
 function PriceTierCard({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ flex: 1, padding: 12, borderRadius: 8, background: "var(--surface-sunken)", textAlign: "center" }}>
+    <div style={{ flex: 1, padding: 12, borderRadius:"var(--radius-md)", background: "var(--surface-sunken)", textAlign: "center" }}>
       <p style={{ fontSize: 10, fontWeight: 700, color: "var(--muted-text)", textTransform: "uppercase", margin: "0 0 2px" }}>{label}</p>
       <p style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>{money(value)}</p>
     </div>

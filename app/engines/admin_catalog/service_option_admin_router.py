@@ -199,9 +199,10 @@ async def archive_issue_type(issue_id: uuid.UUID, r: Request,
 
 @map_router.get("/{service_id}/options", response_model=ApiResponse[list])
 async def list_service_option_mappings(service_id: uuid.UUID, r: Request,
+                                        job_type_id: uuid.UUID | None = Query(None),
                                         u: UserContext = Depends(require_super_admin),
                                         s: ServiceOptionService = Depends(_svc)):
-    return ok(await s.list_service_option_mappings(service_id), _rid(r))
+    return ok(await s.list_service_option_mappings(service_id, job_type_id), _rid(r))
 
 
 @map_router.post("/{service_id}/options", response_model=ApiResponse[dict],
@@ -232,9 +233,10 @@ async def remove_service_option_mapping(service_id: uuid.UUID, mapping_id: uuid.
 
 @map_router.get("/{service_id}/issues", response_model=ApiResponse[list])
 async def list_service_issue_mappings(service_id: uuid.UUID, r: Request,
+                                       job_type_id: uuid.UUID | None = Query(None),
                                        u: UserContext = Depends(require_super_admin),
                                        s: ServiceOptionService = Depends(_svc)):
-    return ok(await s.list_service_issue_mappings(service_id), _rid(r))
+    return ok(await s.list_service_issue_mappings(service_id, job_type_id), _rid(r))
 
 
 @map_router.post("/{service_id}/issues", response_model=ApiResponse[dict],

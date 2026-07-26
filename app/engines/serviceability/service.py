@@ -24,10 +24,15 @@ from app.engines.serviceability.constants import (
     # Step 3 — request validation
     ERR_CHECK_CITY_REQUIRED, ERR_CHECK_STATE_REQUIRED,
     ERR_SERVICE_ID_REQUIRED, ERR_LOCATION_REQUIRED,
+    # Coverage-approval workflow
+    ERR_REQUEST_NOT_FOUND, ERR_REQUEST_NOT_EDITABLE, ERR_REQUEST_EMPTY,
+    ERR_REQUEST_ITEM_NOT_FOUND, ERR_DECISION_REASON_REQUIRED, ERR_INVALID_DECISION,
+    ERR_TENANT_SERVICE_NOT_FOUND, ERR_CATEGORY_MISMATCH, ERR_COVERAGE_NOT_FOUND,
+    ERR_ALREADY_REVIEWED, REQUEST_TENANT_EDITABLE_STATUSES, ITEM_DECISION_STATUSES,
 )
 from app.engines.serviceability.models import (
     CustomerAddress, TenantServiceArea, TenantServiceAreaService,
-    ServiceabilityAuditLog,
+    ServiceabilityAuditLog, TenantServiceAreaRequest, TenantServiceAreaRequestItem,
 )
 from app.engines.tenant_engine.models import Tenant, TenantLimits
 from app.engines.service_catalog.models import ServiceCatalogItem
@@ -695,6 +700,432 @@ class ServiceabilityService:
         mapping.is_available = False
         await self.db.commit()
         return {"mapping_id": str(mapping_id), "deleted": True}
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Service-area coverage-approval workflow
+    #
+    # Replaces the old platform pricing-tier / city-zipcode-tier-mapping
+    # system as the mechanism that gates tenant service coverage. Tenant
+    # requests are reviewed at the item level; approved items materialize
+    # into TenantServiceArea/TenantServiceAreaService via the same
+    # create_service_area/add_service_mapping methods above (not duplicated
+    # logic), tagged with approval provenance. No price field is ever read
+    # from or written by this workflow.
+    # ══════════════════════════════════════════════════════════════════════════
+
+    async def _audit_request(self, *, operation: str, tenant_id: uuid.UUID,
+                              request_id: uuid.UUID, before: dict | None,
+                              after: dict | None) -> None:
+        await record_platform_audit(
+            self.db, operation=operation, engine_id="serviceability",
+            tenant_id=tenant_id, entity_type="service_area_request", entity_id=str(request_id),
+            actor_id=self.actor_id, actor_role=self.actor_role,
+            request_id=self.request_id, before=before, after=after,
+        )
+
+    async def _assert_category_exists(self, category_id: uuid.UUID) -> None:
+        from app.engines.admin_catalog.models import ServiceCategory
+        cat = await self.db.get(ServiceCategory, category_id)
+        if not cat:
+            raise ServiceOSException(ERR_TENANT_SERVICE_NOT_FOUND,
+                f"Category '{category_id}' not found.", status_code=404)
+
+    async def _get_tenant_service(self, tenant_service_id: uuid.UUID):
+        from app.engines.admin_catalog.models import TenantService
+        ts = await self.db.get(TenantService, tenant_service_id)
+        if not ts or ts.deleted_at is not None:
+            raise ServiceOSException(ERR_TENANT_SERVICE_NOT_FOUND,
+                f"Tenant service '{tenant_service_id}' not found.", status_code=404)
+        return ts
+
+    async def _get_request(self, request_id: uuid.UUID) -> "TenantServiceAreaRequest":
+        req = await self.db.get(TenantServiceAreaRequest, request_id)
+        if not req:
+            raise ServiceOSException(ERR_REQUEST_NOT_FOUND,
+                f"Service area request '{request_id}' not found.", status_code=404)
+        if self.actor_role not in self.PLATFORM_ROLES:
+            if self.actor_tenant_id is None or self.actor_tenant_id != req.tenant_id:
+                raise NotFoundException("TenantServiceAreaRequest", str(request_id))
+        return req
+
+    async def create_service_area_request(self, tenant_id: uuid.UUID, category_id: uuid.UUID) -> dict:
+        """Start a new DRAFT request. Tenant adds items to it before submitting."""
+        self._assert_owns_tenant(tenant_id)
+        await self._assert_category_exists(category_id)
+        req = TenantServiceAreaRequest(tenant_id=tenant_id, category_id=category_id, status="DRAFT")
+        self.db.add(req)
+        await self.db.flush()
+        await self._audit_request(operation="SERVICE_AREA_REQUEST_CREATED", tenant_id=tenant_id,
+                                   request_id=req.id, before=None, after=req.to_dict())
+        await self.db.commit()
+        await self.db.refresh(req)
+        return req.to_dict()
+
+    async def list_service_area_requests(self, *, tenant_id: uuid.UUID | None = None,
+                                          category_id: uuid.UUID | None = None,
+                                          status: str | None = None,
+                                          limit: int = 50, cursor: str | None = None) -> dict:
+        if tenant_id is not None:
+            self._assert_owns_tenant(tenant_id)
+        elif self.actor_role not in self.PLATFORM_ROLES:
+            raise ServiceOSException(ERR_REQUEST_NOT_FOUND, "tenant_id is required.", status_code=422)
+        conditions = []
+        if tenant_id is not None:
+            conditions.append(TenantServiceAreaRequest.tenant_id == tenant_id)
+        if category_id is not None:
+            conditions.append(TenantServiceAreaRequest.category_id == category_id)
+        if status is not None:
+            conditions.append(TenantServiceAreaRequest.status == status)
+        offset = int(cursor) if cursor else 0
+        total = (await self.db.execute(
+            select(func.count()).select_from(TenantServiceAreaRequest).where(*conditions)
+        )).scalar_one()
+        rows = (await self.db.execute(
+            select(TenantServiceAreaRequest).where(*conditions)
+            .order_by(TenantServiceAreaRequest.created_at.desc())
+            .offset(offset).limit(min(limit, 200))
+        )).scalars().all()
+        next_cursor = str(offset + len(rows)) if offset + len(rows) < total else None
+        return {"requests": [r.to_dict() for r in rows], "total": total, "next_cursor": next_cursor}
+
+    async def get_service_area_request_detail(self, request_id: uuid.UUID) -> dict:
+        req = await self._get_request(request_id)
+        items = (await self.db.execute(
+            select(TenantServiceAreaRequestItem)
+            .where(TenantServiceAreaRequestItem.request_id == request_id)
+            .order_by(TenantServiceAreaRequestItem.created_at.asc())
+        )).scalars().all()
+        return {**req.to_dict(), "items": [i.to_dict() for i in items]}
+
+    def _assert_request_editable(self, req: "TenantServiceAreaRequest") -> None:
+        if req.status not in REQUEST_TENANT_EDITABLE_STATUSES:
+            raise ServiceOSException(ERR_REQUEST_NOT_EDITABLE,
+                f"A request in status '{req.status}' cannot be edited.", status_code=422)
+
+    async def add_service_area_request_item(self, request_id: uuid.UUID, payload: dict) -> dict:
+        req = await self._get_request(request_id)
+        self._assert_request_editable(req)
+        tenant_service_id = uuid.UUID(str(payload["tenant_service_id"]))
+        ts = await self._get_tenant_service(tenant_service_id)
+        if ts.tenant_id != req.tenant_id:
+            raise ServiceOSException(ERR_TENANT_SERVICE_NOT_FOUND,
+                f"Tenant service '{tenant_service_id}' does not belong to this tenant.", status_code=404)
+        if ts.category_id != req.category_id:
+            raise ServiceOSException(ERR_CATEGORY_MISMATCH,
+                "This tenant service belongs to a different vertical/category than this request.",
+                status_code=422)
+        applies_to_all = bool(payload.get("applies_to_all_job_types", False))
+        job_type_id = uuid.UUID(str(payload["job_type_id"])) if payload.get("job_type_id") else None
+        if not applies_to_all and job_type_id is None:
+            raise ServiceOSException(ERR_INVALID_JOB_TYPE,
+                "job_type_id is required unless applies_to_all_job_types is true.", status_code=422)
+        if not payload.get("city") or not payload.get("state"):
+            raise ServiceOSException(ERR_CHECK_CITY_REQUIRED,
+                "city and state are required.", status_code=422)
+        item = TenantServiceAreaRequestItem(
+            request_id=req.id, tenant_service_id=ts.id, master_service_id=ts.master_service_id,
+            job_type_id=job_type_id, applies_to_all_job_types=applies_to_all,
+            country=payload.get("country", "India"), state=payload["state"],
+            district=payload.get("district"), city=payload["city"], zipcode=payload.get("zipcode"),
+            requested_effective_date=payload.get("requested_effective_date"),
+        )
+        self.db.add(item)
+        await self.db.commit()
+        await self.db.refresh(item)
+        return item.to_dict()
+
+    async def remove_service_area_request_item(self, request_id: uuid.UUID, item_id: uuid.UUID) -> dict:
+        req = await self._get_request(request_id)
+        self._assert_request_editable(req)
+        item = await self.db.get(TenantServiceAreaRequestItem, item_id)
+        if not item or item.request_id != req.id:
+            raise ServiceOSException(ERR_REQUEST_ITEM_NOT_FOUND,
+                f"Request item '{item_id}' not found.", status_code=404)
+        await self.db.delete(item)
+        await self.db.commit()
+        return {"item_id": str(item_id), "removed": True}
+
+    async def submit_service_area_request(self, request_id: uuid.UUID) -> dict:
+        req = await self._get_request(request_id)
+        self._assert_request_editable(req)
+        count = (await self.db.execute(
+            select(func.count()).select_from(TenantServiceAreaRequestItem)
+            .where(TenantServiceAreaRequestItem.request_id == req.id)
+        )).scalar_one()
+        if count == 0:
+            raise ServiceOSException(ERR_REQUEST_EMPTY,
+                "Add at least one requested area before submitting.", status_code=422)
+        before = req.to_dict()
+        was_resubmission = req.status == "CHANGES_REQUESTED"
+        req.status = "SUBMITTED"
+        req.submitted_at = utcnow()
+        req.submitted_by = self.actor_id
+        if was_resubmission:
+            req.version += 1
+            # Every PENDING/CHANGES_REQUESTED item goes back to PENDING for
+            # a fresh review pass; items already APPROVED/REJECTED in a
+            # prior partial-review round keep their decision (re-submission
+            # only re-opens what still needs a decision).
+            items = (await self.db.execute(
+                select(TenantServiceAreaRequestItem)
+                .where(TenantServiceAreaRequestItem.request_id == req.id,
+                       TenantServiceAreaRequestItem.decision_status == "CHANGES_REQUESTED")
+            )).scalars().all()
+            for it in items:
+                it.decision_status = "PENDING"
+                it.decision_reason = None
+        await self.db.flush()
+        await self._audit_request(operation="SERVICE_AREA_REQUEST_SUBMITTED", tenant_id=req.tenant_id,
+                                   request_id=req.id, before=before, after=req.to_dict())
+        await self.db.commit()
+        await self.db.refresh(req)
+        return req.to_dict()
+
+    async def withdraw_service_area_request(self, request_id: uuid.UUID) -> dict:
+        req = await self._get_request(request_id)
+        if req.status in ("APPROVED", "REJECTED", "WITHDRAWN"):
+            raise ServiceOSException(ERR_REQUEST_NOT_EDITABLE,
+                f"A request in status '{req.status}' cannot be withdrawn.", status_code=422)
+        before = req.to_dict()
+        req.status = "WITHDRAWN"
+        await self.db.flush()
+        await self._audit_request(operation="SERVICE_AREA_REQUEST_WITHDRAWN", tenant_id=req.tenant_id,
+                                   request_id=req.id, before=before, after=req.to_dict())
+        await self.db.commit()
+        return {"request_id": str(request_id), "status": "WITHDRAWN"}
+
+    # ── Admin review ─────────────────────────────────────────────────────────
+
+    def _assert_admin(self) -> None:
+        if self.actor_role not in self.PLATFORM_ROLES:
+            raise ServiceOSException(ERR_REQUEST_NOT_FOUND, "Not authorized.", status_code=403)
+
+    async def admin_start_review(self, request_id: uuid.UUID) -> dict:
+        self._assert_admin()
+        req = await self._get_request(request_id)
+        if req.status != "SUBMITTED":
+            raise ServiceOSException(ERR_ALREADY_REVIEWED,
+                f"Only a SUBMITTED request can start review (current: '{req.status}').", status_code=422)
+        before = req.to_dict()
+        req.status = "UNDER_REVIEW"
+        await self.db.flush()
+        await self._audit_request(operation="SERVICE_AREA_REVIEW_STARTED", tenant_id=req.tenant_id,
+                                   request_id=req.id, before=before, after=req.to_dict())
+        await self.db.commit()
+        await self.db.refresh(req)
+        return req.to_dict()
+
+    async def _materialize_approved_item(self, req: "TenantServiceAreaRequest",
+                                          item: "TenantServiceAreaRequestItem") -> None:
+        """Create/update the canonical TenantServiceArea + TenantServiceAreaService
+        rows for one approved request item. Never sets a price field."""
+        from app.engines.admin_catalog.models import TenantService
+        ts = await self.db.get(TenantService, item.tenant_service_id)
+        coverage_type = "zipcode" if item.zipcode else "city"
+        area = (await self.db.execute(
+            select(TenantServiceArea).where(
+                TenantServiceArea.tenant_id == req.tenant_id,
+                TenantServiceArea.coverage_type == coverage_type,
+                func.lower(TenantServiceArea.city) == item.city.lower(),
+                TenantServiceArea.zipcode == item.zipcode,
+            )
+        )).scalar_one_or_none()
+        now = utcnow()
+        if area is None:
+            area = TenantServiceArea(
+                tenant_id=req.tenant_id, coverage_type=coverage_type,
+                country=item.country, state=item.state, district=item.district,
+                city=item.city, zipcode=item.zipcode, category_id=req.category_id,
+                status="ACTIVE", is_active=True,
+                approved_request_item_id=item.id, approved_by=self.actor_id, approved_at=now,
+                effective_from=now,
+            )
+            self.db.add(area)
+            await self.db.flush()
+        else:
+            area.status = "ACTIVE"
+            area.is_active = True
+            area.category_id = area.category_id or req.category_id
+            area.approved_request_item_id = item.id
+            area.approved_by = self.actor_id
+            area.approved_at = now
+            if not area.effective_from:
+                area.effective_from = now
+
+        job_types = JOB_TYPES if item.applies_to_all_job_types else [ts.job_type]
+        for jt in job_types:
+            mapping = (await self.db.execute(
+                select(TenantServiceAreaService).where(
+                    TenantServiceAreaService.tenant_service_area_id == area.id,
+                    TenantServiceAreaService.service_id == item.master_service_id,
+                    TenantServiceAreaService.job_type == jt,
+                )
+            )).scalar_one_or_none()
+            if mapping is None:
+                self.db.add(TenantServiceAreaService(
+                    tenant_service_area_id=area.id, tenant_id=req.tenant_id,
+                    service_id=item.master_service_id, job_type=jt,
+                    is_available=True, status="ACTIVE",
+                ))
+            else:
+                mapping.is_available = True
+                mapping.status = "ACTIVE"
+
+    async def admin_decide_request_items(self, request_id: uuid.UUID, decisions: list[dict]) -> dict:
+        """decisions: [{item_id, decision: APPROVED|REJECTED|CHANGES_REQUESTED, reason}]
+        Approved items materialize into canonical coverage immediately. Mixed
+        outcomes across items produce a PARTIALLY_APPROVED request status."""
+        self._assert_admin()
+        req = await self._get_request(request_id)
+        if req.status not in ("SUBMITTED", "UNDER_REVIEW"):
+            raise ServiceOSException(ERR_ALREADY_REVIEWED,
+                f"Request in status '{req.status}' is not open for review.", status_code=422)
+        before = req.to_dict()
+
+        items_by_id = {i.id: i for i in (await self.db.execute(
+            select(TenantServiceAreaRequestItem).where(TenantServiceAreaRequestItem.request_id == req.id)
+        )).scalars().all()}
+
+        now = utcnow()
+        for d in decisions:
+            item_id = uuid.UUID(str(d["item_id"]))
+            item = items_by_id.get(item_id)
+            if item is None:
+                raise ServiceOSException(ERR_REQUEST_ITEM_NOT_FOUND,
+                    f"Request item '{item_id}' not found on this request.", status_code=404)
+            decision = d["decision"]
+            if decision not in ITEM_DECISION_STATUSES or decision == "PENDING":
+                raise ServiceOSException(ERR_INVALID_DECISION,
+                    f"decision must be one of APPROVED, REJECTED, CHANGES_REQUESTED.", status_code=422)
+            reason = d.get("reason")
+            if decision in ("REJECTED", "CHANGES_REQUESTED") and not reason:
+                raise ServiceOSException(ERR_DECISION_REASON_REQUIRED,
+                    "A reason is required to reject an item or request changes.", status_code=422)
+            item_before = item.to_dict()
+            item.decision_status = decision
+            item.decision_reason = reason
+            item.reviewed_at = now
+            item.reviewed_by = self.actor_id
+            if decision == "APPROVED":
+                await self._materialize_approved_item(req, item)
+            await record_platform_audit(
+                self.db, operation=f"SERVICE_AREA_ITEM_{decision}", engine_id="serviceability",
+                tenant_id=req.tenant_id, entity_type="service_area_request_item", entity_id=str(item.id),
+                actor_id=self.actor_id, actor_role=self.actor_role, request_id=self.request_id,
+                before=item_before, after=item.to_dict(),
+            )
+
+        await self.db.flush()
+
+        all_items = list(items_by_id.values())
+        decided = [i for i in all_items if i.decision_status != "PENDING"]
+        if len(decided) < len(all_items):
+            req.status = "UNDER_REVIEW"
+        else:
+            statuses = {i.decision_status for i in all_items}
+            if statuses == {"APPROVED"}:
+                req.status = "APPROVED"
+            elif statuses == {"REJECTED"}:
+                req.status = "REJECTED"
+            elif "CHANGES_REQUESTED" in statuses:
+                req.status = "CHANGES_REQUESTED"
+            else:
+                req.status = "PARTIALLY_APPROVED"
+        req.reviewed_at = now
+        req.reviewed_by = self.actor_id
+        await self.db.flush()
+        await self._audit_request(operation=f"SERVICE_AREA_REQUEST_{req.status}", tenant_id=req.tenant_id,
+                                   request_id=req.id, before=before, after=req.to_dict())
+        await self.db.commit()
+        await self.db.refresh(req)
+        return req.to_dict()
+
+    # ── Active coverage management ──────────────────────────────────────────
+
+    async def list_active_coverage(self, *, tenant_id: uuid.UUID | None = None,
+                                    category_id: uuid.UUID | None = None,
+                                    status: str | None = None,
+                                    limit: int = 50, cursor: str | None = None) -> dict:
+        if tenant_id is not None:
+            self._assert_owns_tenant(tenant_id)
+        elif self.actor_role not in self.PLATFORM_ROLES:
+            raise ServiceOSException(ERR_COVERAGE_NOT_FOUND, "tenant_id is required.", status_code=422)
+        conditions = [TenantServiceArea.approved_request_item_id.isnot(None)]
+        if tenant_id is not None:
+            conditions.append(TenantServiceArea.tenant_id == tenant_id)
+        if category_id is not None:
+            conditions.append(TenantServiceArea.category_id == category_id)
+        if status is not None:
+            conditions.append(TenantServiceArea.status == status)
+        offset = int(cursor) if cursor else 0
+        total = (await self.db.execute(
+            select(func.count()).select_from(TenantServiceArea).where(*conditions)
+        )).scalar_one()
+        rows = (await self.db.execute(
+            select(TenantServiceArea).where(*conditions)
+            .order_by(TenantServiceArea.approved_at.desc())
+            .offset(offset).limit(min(limit, 200))
+        )).scalars().all()
+        next_cursor = str(offset + len(rows)) if offset + len(rows) < total else None
+        return {"coverage": [r.to_dict() for r in rows], "total": total, "next_cursor": next_cursor}
+
+    async def suspend_coverage(self, area_id: uuid.UUID, reason: str) -> dict:
+        self._assert_admin()
+        if not reason:
+            raise ServiceOSException(ERR_DECISION_REASON_REQUIRED,
+                "A reason is required to suspend coverage.", status_code=422)
+        area = await self.db.get(TenantServiceArea, area_id)
+        if not area:
+            raise ServiceOSException(ERR_COVERAGE_NOT_FOUND, f"Coverage '{area_id}' not found.", status_code=404)
+        before = area.to_dict()
+        area.status = "SUSPENDED"
+        area.is_active = False
+        area.suspended_at = utcnow()
+        area.suspended_by = self.actor_id
+        area.suspension_reason = reason
+        await self.db.flush()
+        await self._audit_service_area(operation="SERVICE_AREA_SUSPENDED", tenant_id=area.tenant_id,
+                                        area_id=area.id, before=before, after=area.to_dict())
+        await self.db.commit()
+        return area.to_dict()
+
+    async def reactivate_coverage(self, area_id: uuid.UUID) -> dict:
+        self._assert_admin()
+        area = await self.db.get(TenantServiceArea, area_id)
+        if not area:
+            raise ServiceOSException(ERR_COVERAGE_NOT_FOUND, f"Coverage '{area_id}' not found.", status_code=404)
+        if area.status != "SUSPENDED":
+            raise ServiceOSException(ERR_INVALID_DECISION,
+                f"Only SUSPENDED coverage can be reactivated (current: '{area.status}').", status_code=422)
+        before = area.to_dict()
+        area.status = "ACTIVE"
+        area.is_active = True
+        area.suspended_at = None
+        area.suspended_by = None
+        area.suspension_reason = None
+        await self.db.flush()
+        await self._audit_service_area(operation="SERVICE_AREA_REACTIVATED", tenant_id=area.tenant_id,
+                                        area_id=area.id, before=before, after=area.to_dict())
+        await self.db.commit()
+        return area.to_dict()
+
+    async def revoke_coverage(self, area_id: uuid.UUID, reason: str) -> dict:
+        self._assert_admin()
+        if not reason:
+            raise ServiceOSException(ERR_DECISION_REASON_REQUIRED,
+                "A reason is required to revoke coverage.", status_code=422)
+        area = await self.db.get(TenantServiceArea, area_id)
+        if not area:
+            raise ServiceOSException(ERR_COVERAGE_NOT_FOUND, f"Coverage '{area_id}' not found.", status_code=404)
+        before = area.to_dict()
+        area.status = "REVOKED"
+        area.is_active = False
+        area.suspension_reason = reason
+        await self.db.flush()
+        await self._audit_service_area(operation="SERVICE_AREA_REVOKED", tenant_id=area.tenant_id,
+                                        area_id=area.id, before=before, after=area.to_dict())
+        await self.db.commit()
+        return area.to_dict()
 
     # ══════════════════════════════════════════════════════════════════════════
     # Matching engine (Step 3)

@@ -4,7 +4,7 @@ import { adminComplaintPolicyApi, ComplaintPolicyRecord } from "../../../lib/api
 import { useState, useCallback } from "react";
 
 const inputStyle: React.CSSProperties = {
-  border: "1px solid var(--border)", borderRadius: 8, padding: "6px 12px",
+  border: "1px solid var(--border)", borderRadius:"var(--radius-md)", padding: "6px 12px",
   fontSize: 13, background: "var(--bg)", color: "var(--text-primary)", fontFamily: "inherit",
 };
 
@@ -58,7 +58,7 @@ export default function AdminComplaintPoliciesPage() {
       {policies && policies.length === 0 && <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No policies configured.</p>}
 
       {policies && policies.map((p: ComplaintPolicyRecord) => (
-        <div key={p.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 20,
+        <div key={p.id} style={{ border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20,
           background: "var(--surface)", display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
@@ -82,12 +82,12 @@ export default function AdminComplaintPoliciesPage() {
               { label: "Allow Rework",      val: p.allow_rework_request ? "Yes" : "No" },
               { label: "Allow Refund",      val: p.allow_refund_request ? "Yes" : "No" },
             ].map(({ label, val }) => (
-              <div key={label} style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: 10 }}>
+              <div key={label} style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 10 }}>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>{label}</p>
                 <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>{val}</p>
               </div>
             ))}
-            <div style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: 10, gridColumn: "span 2" }}>
+            <div style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 10, gridColumn: "span 2" }}>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>Require Admin Review</p>
               <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>
                 {p.require_admin_review ? "Yes" : "No"}
@@ -115,12 +115,12 @@ export default function AdminComplaintPoliciesPage() {
                 { label: "Payout", val: (p.settlement_payout_in_credits_only ?? true)
                     ? "Credit points only (never money)" : "\u2014" },
               ].map(({ label, val }) => (
-                <div key={label} style={{ background: "var(--surface)", borderRadius: 8, padding: 10 }}>
+                <div key={label} style={{ background: "var(--surface)", borderRadius:"var(--radius-md)", padding: 10 }}>
                   <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>{label}</p>
                   <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>{val}</p>
                 </div>
               ))}
-              <div style={{ background: "var(--surface)", borderRadius: 8, padding: 10, gridColumn: "span 2" }}>
+              <div style={{ background: "var(--surface)", borderRadius:"var(--radius-md)", padding: 10, gridColumn: "span 2" }}>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>Permitted remedies</p>
                 <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>
                   {(p.ai_settlement_allowed_remedies ?? ["credit_points", "rework"]).join(", ").replace(/_/g, " ")}
@@ -134,7 +134,7 @@ export default function AdminComplaintPoliciesPage() {
       {editing && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex",
           alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%",
+          <div style={{ background: "var(--surface)", borderRadius:"var(--radius-lg)", padding: 24, width: "100%",
             maxWidth: 480, display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
@@ -222,7 +222,7 @@ export default function AdminComplaintPoliciesPage() {
               </div>
             </div>
             <button onClick={() => saveAction.execute()} disabled={saveAction.loading}
-              style={{ padding: "8px 0", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none",
+              style={{ padding: "8px 0", fontSize: 13, fontWeight: 600, borderRadius:"var(--radius-md)", border: "none",
                 cursor: "pointer", fontFamily: "inherit", background: "var(--brand)", color: "white",
                 opacity: saveAction.loading ? 0.5 : 1 }}>
               {saveAction.loading ? "Saving…" : "Save Changes"}

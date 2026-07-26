@@ -140,7 +140,7 @@ function AsyncTenantSelect({ value, valueName, onChange }: AsyncTenantSelectProp
               <div key={t.id} onClick={() => { onChange(t.id, t.name); setOpen(false); setQ(""); }}
                 style={{
                   padding: "7px 12px", fontSize: 13, cursor: "pointer",
-                  background: value === t.id ? "var(--primary-bg, rgba(59,130,246,0.06))" : "transparent",
+                  background: value === t.id ? "var(--primary-bg, rgba(242,153,74,0.06))" : "transparent",
                   color: value === t.id ? "var(--primary)" : "var(--text)",
                 }}>
                 <div style={{ fontWeight: 500 }}>{t.name}</div>
@@ -164,7 +164,7 @@ function SummaryCard({
     <div onClick={onClick} style={{
       background: active ? "var(--primary)" : "var(--card-bg)",
       border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
-      borderRadius: 8, padding: "14px 18px", flex: 1, minWidth: 90,
+      borderRadius:"var(--radius-md)", padding: "14px 18px", flex: 1, minWidth: 90,
       cursor: onClick ? "pointer" : "default",
       transition: "all 0.15s",
     }}>
@@ -181,8 +181,8 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
-      background: "var(--primary-bg, rgba(59,130,246,0.08))",
-      border: "1px solid var(--primary-border, rgba(59,130,246,0.25))",
+      background: "var(--primary-bg, rgba(242,153,74,0.08))",
+      border: "1px solid var(--primary-border, rgba(242,153,74,0.25))",
       color: "var(--primary)", borderRadius: 999, padding: "2px 8px 2px 10px",
       fontSize: 12, fontWeight: 500,
     }}>
@@ -504,7 +504,7 @@ function BookingsContent() {
         {summaryFetch.loading ? (
           [...Array(8)].map((_, i) => (
             <div key={i} style={{
-              flex: 1, minWidth: 90, height: 62, borderRadius: 8,
+              flex: 1, minWidth: 90, height: 62, borderRadius:"var(--radius-md)",
               background: "var(--skeleton-bg, rgba(0,0,0,0.05))", animation: "pulse 1.5s infinite",
             }} />
           ))
@@ -522,7 +522,7 @@ function BookingsContent() {
               onClick={() => applyStatusCard("confirmed")} />
             <SummaryCard label="Scheduled" value={summary.scheduled} color="var(--primary)" />
             <SummaryCard label="Completed" value={summary.completed}
-              color="var(--success-text,#15803d)"
+              color="var(--success-text,var(--success))"
               active={applied.status === "completed"}
               onClick={() => applyStatusCard("completed")} />
             <SummaryCard label="Cancelled" value={summary.cancelled}

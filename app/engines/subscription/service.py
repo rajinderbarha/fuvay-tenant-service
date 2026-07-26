@@ -16,6 +16,8 @@ from app.engines.subscription.constants import (
     DUNNING_RETRY_DAYS, MAX_DUNNING_ATTEMPTS, PRORATION_PRECISION,
 )
 from app.engines.subscription.models import Subscription, SubscriptionPeriod, SubscriptionEvent
+from app.engines.vertical_catalog.models import Vertical
+from app.engines.tenant_engine.models import Tenant
 from app.exceptions import ServiceOSException, NotFoundException
 from app.redis_client import get_redis
 from app.schemas.base import encode_cursor, decode_cursor
@@ -42,6 +44,36 @@ class SubscriptionService:
         self.request_id = request_id
         self.actor_id = actor_id; self.actor_role = actor_role
         self.actor_tenant_id = actor_tenant_id
+
+    async def _resolve_vertical_id(self, tenant_id: uuid.UUID,
+                                    vertical_key: str | None) -> uuid.UUID | None:
+        """Resolve which vertical a subscription call targets. If vertical_key
+        is given explicitly (multi-vertical tenant), use it. Otherwise fall
+        back to the tenant's own `tenants.vertical` (preserves existing
+        single-vertical behavior for every current caller unchanged). Never
+        guesses: an unresolvable vertical_key raises; an unresolvable
+        fallback (ambiguous legacy tenant.vertical string) resolves to NULL,
+        matching how migration 150 backfilled those same rows."""
+        if vertical_key:
+            v = (await self.db.execute(
+                select(Vertical.id).where(Vertical.key == vertical_key)
+            )).scalar_one_or_none()
+            if v is None:
+                raise ServiceOSException(
+                    "INVALID_VERTICAL_CONTEXT", f"Vertical '{vertical_key}' not found.")
+            return v
+        t = (await self.db.execute(
+            select(Tenant.vertical).where(Tenant.id == tenant_id)
+        )).scalar_one_or_none()
+        if not t:
+            return None
+        return (await self.db.execute(
+            select(Vertical.id).where(Vertical.key == t)
+        )).scalar_one_or_none()
+
+    def _vertical_filter(self, vertical_id: uuid.UUID | None):
+        return Subscription.vertical_id.is_(None) if vertical_id is None \
+            else Subscription.vertical_id == vertical_id
 
     def _require_trusted_tenant(self, requested_tenant_id: uuid.UUID) -> uuid.UUID:
         """Slice 2F-37: update_plan accepted a client-supplied tenant_id
@@ -72,7 +104,7 @@ class SubscriptionService:
                             from_plan: str | None = None, to_plan: str | None = None,
                             proration: Decimal | None = None, meta: dict | None = None):
         self.db.add(SubscriptionEvent(
-            subscription_id=sub.id, tenant_id=sub.tenant_id,
+            subscription_id=sub.id, tenant_id=sub.tenant_id, vertical_id=sub.vertical_id,
             event_type=event_type, from_plan=from_plan, to_plan=to_plan,
             proration_amount=proration, actor_id=self.actor_id, meta=meta or {}))
 
@@ -87,6 +119,7 @@ class SubscriptionService:
 
     def _sub_dict(self, s: Subscription) -> dict:
         return {"subscription_id": str(s.id), "tenant_id": str(s.tenant_id),
+                "vertical_id": str(s.vertical_id) if s.vertical_id else None,
                 "plan_type": s.plan_type, "billing_cycle": s.billing_cycle,
                 "status": s.status, "amount": float(s.amount),
                 "current_period_start": s.current_period_start.isoformat() if s.current_period_start else None,
@@ -96,24 +129,27 @@ class SubscriptionService:
                 "next_retry_at": s.next_retry_at.isoformat() if s.next_retry_at else None}
 
     async def create_subscription(self, tenant_id: uuid.UUID, plan_type: str,
-                                   billing_cycle: str, trial_days: int = 14) -> dict:
-        ex = await self.db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+                                   billing_cycle: str, trial_days: int = 14,
+                                   vertical_key: str | None = None) -> dict:
+        vertical_id = await self._resolve_vertical_id(tenant_id, vertical_key)
+        ex = await self.db.execute(select(Subscription).where(
+            Subscription.tenant_id == tenant_id, self._vertical_filter(vertical_id)))
         if ex.scalar_one_or_none():
-            raise ServiceOSException("CONFLICT", "Tenant already has a subscription.")
+            raise ServiceOSException("CONFLICT", "Tenant already has a subscription for this vertical.")
 
         amount = PLAN_PRICES.get((plan_type, billing_cycle), Decimal("999.00"))
         trial_end = utcnow() + timedelta(days=trial_days)
         period_start = trial_end
         period_end = period_start + timedelta(days=30 if billing_cycle == "monthly" else 365)
 
-        sub = Subscription(tenant_id=tenant_id, plan_type=plan_type,
+        sub = Subscription(tenant_id=tenant_id, vertical_id=vertical_id, plan_type=plan_type,
             billing_cycle=billing_cycle, status=SubStatus.TRIALING,
             amount=amount, trial_end=trial_end,
             current_period_start=period_start, current_period_end=period_end)
         self.db.add(sub); await self.db.flush()
 
         self.db.add(SubscriptionPeriod(
-            subscription_id=sub.id, tenant_id=tenant_id, plan_type=plan_type,
+            subscription_id=sub.id, tenant_id=tenant_id, vertical_id=vertical_id, plan_type=plan_type,
             started_at=period_start, ends_at=period_end, amount=amount,
             status="scheduled", jobs_included=PLAN_JOB_LIMITS.get(plan_type, 100)))
 
@@ -123,17 +159,21 @@ class SubscriptionService:
                             {"plan": plan_type, "cycle": billing_cycle})
         return self._sub_dict(sub)
 
-    async def get_subscription(self, tenant_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    async def get_subscription(self, tenant_id: uuid.UUID, vertical_key: str | None = None) -> dict:
+        vertical_id = await self._resolve_vertical_id(tenant_id, vertical_key)
+        r = await self.db.execute(select(Subscription).where(
+            Subscription.tenant_id == tenant_id, self._vertical_filter(vertical_id)))
         sub = r.scalar_one_or_none()
         if not sub: raise NotFoundException("Subscription", str(tenant_id))
         return self._sub_dict(sub)
 
     # PROVEN LEVEL 5: plan change uses immutable period for proration
     async def update_plan(self, tenant_id: uuid.UUID, new_plan: str,
-                           billing_cycle: str) -> dict:
+                           billing_cycle: str, vertical_key: str | None = None) -> dict:
         tenant_id = self._require_trusted_tenant(tenant_id)
-        r = await self.db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+        vertical_id = await self._resolve_vertical_id(tenant_id, vertical_key)
+        r = await self.db.execute(select(Subscription).where(
+            Subscription.tenant_id == tenant_id, self._vertical_filter(vertical_id)))
         sub = r.scalar_one_or_none()
         if not sub: raise NotFoundException("Subscription", str(tenant_id))
         if sub.status not in (SubStatus.ACTIVE, SubStatus.TRIALING):
@@ -163,7 +203,7 @@ class SubscriptionService:
         sub.current_period_start = period_start; sub.current_period_end = period_end
 
         new_period = SubscriptionPeriod(
-            subscription_id=sub.id, tenant_id=tenant_id, plan_type=new_plan,
+            subscription_id=sub.id, tenant_id=tenant_id, vertical_id=sub.vertical_id, plan_type=new_plan,
             started_at=period_start, ends_at=period_end, amount=new_amount,
             status="active", jobs_included=PLAN_JOB_LIMITS.get(new_plan, 100))
         self.db.add(new_period)
@@ -176,8 +216,11 @@ class SubscriptionService:
         return {**self._sub_dict(sub), "proration_credit": float(proration),
                 "change_type": change_type}
 
-    async def cancel_subscription(self, tenant_id: uuid.UUID, reason: str) -> dict:
-        r = await self.db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    async def cancel_subscription(self, tenant_id: uuid.UUID, reason: str,
+                                   vertical_key: str | None = None) -> dict:
+        vertical_id = await self._resolve_vertical_id(tenant_id, vertical_key)
+        r = await self.db.execute(select(Subscription).where(
+            Subscription.tenant_id == tenant_id, self._vertical_filter(vertical_id)))
         sub = r.scalar_one_or_none()
         if not sub: raise NotFoundException("Subscription", str(tenant_id))
         if sub.status == SubStatus.CANCELLED:
@@ -189,8 +232,10 @@ class SubscriptionService:
                             {"reason": reason})
         return self._sub_dict(sub)
 
-    async def pause_subscription(self, tenant_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    async def pause_subscription(self, tenant_id: uuid.UUID, vertical_key: str | None = None) -> dict:
+        vertical_id = await self._resolve_vertical_id(tenant_id, vertical_key)
+        r = await self.db.execute(select(Subscription).where(
+            Subscription.tenant_id == tenant_id, self._vertical_filter(vertical_id)))
         sub = r.scalar_one_or_none()
         if not sub: raise NotFoundException("Subscription", str(tenant_id))
         if sub.status != SubStatus.ACTIVE:
@@ -199,8 +244,10 @@ class SubscriptionService:
         await self._write_event(sub, "subscription_paused")
         return self._sub_dict(sub)
 
-    async def resume_subscription(self, tenant_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    async def resume_subscription(self, tenant_id: uuid.UUID, vertical_key: str | None = None) -> dict:
+        vertical_id = await self._resolve_vertical_id(tenant_id, vertical_key)
+        r = await self.db.execute(select(Subscription).where(
+            Subscription.tenant_id == tenant_id, self._vertical_filter(vertical_id)))
         sub = r.scalar_one_or_none()
         if not sub: raise NotFoundException("Subscription", str(tenant_id))
         if sub.status != SubStatus.PAUSED:
@@ -209,8 +256,10 @@ class SubscriptionService:
         await self._write_event(sub, "subscription_resumed")
         return self._sub_dict(sub)
 
-    async def get_current_period(self, tenant_id: uuid.UUID) -> dict:
-        sub_r = await self.db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    async def get_current_period(self, tenant_id: uuid.UUID, vertical_key: str | None = None) -> dict:
+        vertical_id = await self._resolve_vertical_id(tenant_id, vertical_key)
+        sub_r = await self.db.execute(select(Subscription).where(
+            Subscription.tenant_id == tenant_id, self._vertical_filter(vertical_id)))
         sub = sub_r.scalar_one_or_none()
         if not sub: raise NotFoundException("Subscription", str(tenant_id))
         period_r = await self.db.execute(select(SubscriptionPeriod).where(
@@ -238,8 +287,11 @@ class SubscriptionService:
         }
 
     async def list_billing_history(self, tenant_id: uuid.UUID,
-                                    limit: int, cursor: str | None) -> dict:
-        sub_r = await self.db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+                                    limit: int, cursor: str | None,
+                                    vertical_key: str | None = None) -> dict:
+        vertical_id = await self._resolve_vertical_id(tenant_id, vertical_key)
+        sub_r = await self.db.execute(select(Subscription).where(
+            Subscription.tenant_id == tenant_id, self._vertical_filter(vertical_id)))
         sub = sub_r.scalar_one_or_none()
         if not sub: raise NotFoundException("Subscription", str(tenant_id))
         q = select(SubscriptionPeriod).where(
@@ -261,8 +313,10 @@ class SubscriptionService:
                 "has_next": has_next, "next_cursor": nc}
 
     async def preview_proration(self, tenant_id: uuid.UUID, new_plan: str,
-                                 billing_cycle: str) -> dict:
-        r = await self.db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+                                 billing_cycle: str, vertical_key: str | None = None) -> dict:
+        vertical_id = await self._resolve_vertical_id(tenant_id, vertical_key)
+        r = await self.db.execute(select(Subscription).where(
+            Subscription.tenant_id == tenant_id, self._vertical_filter(vertical_id)))
         sub = r.scalar_one_or_none()
         if not sub: raise NotFoundException("Subscription", str(tenant_id))
         period_r = await self.db.execute(select(SubscriptionPeriod).where(

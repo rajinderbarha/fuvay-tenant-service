@@ -11,7 +11,7 @@ const ROLE_STYLE: Record<string, React.CSSProperties> = {
 };
 
 const btnStyle: React.CSSProperties = {
-  padding: "6px 14px", fontSize: 13, borderRadius: 8, cursor: "pointer",
+  padding: "6px 14px", fontSize: 13, borderRadius:"var(--radius-md)", cursor: "pointer",
   fontFamily: "inherit", border: "1px solid var(--border)",
   background: "var(--surface)", color: "var(--text-primary)",
 };
@@ -81,16 +81,16 @@ export default function AISessionDetailPage() {
       </div>
 
       {Object.keys(session.collected_fields ?? {}).length > 0 && (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
           <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 12px" }}>Collected Fields</h2>
-          <pre style={{ fontSize: 11, background: "var(--surface-sunken)", borderRadius: 8, padding: 12,
+          <pre style={{ fontSize: 11, background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 12,
             overflowX: "auto", color: "var(--text-primary)", margin: 0 }}>
             {JSON.stringify(session.collected_fields, null, 2)}
           </pre>
         </div>
       )}
 
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
         <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 16px" }}>
           Conversation ({session.messages?.length ?? 0} messages)
         </h2>

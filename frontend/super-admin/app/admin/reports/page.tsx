@@ -10,7 +10,7 @@ const STATUS_STYLE: Record<string, React.CSSProperties> = {
 };
 
 const btnBase: React.CSSProperties = {
-  padding: "6px 14px", fontSize: 13, borderRadius: 8, cursor: "pointer",
+  padding: "6px 14px", fontSize: 13, borderRadius:"var(--radius-md)", cursor: "pointer",
   fontFamily: "inherit", border: "1px solid var(--border)",
   background: "var(--surface)", color: "var(--text-primary)",
 };
@@ -74,11 +74,11 @@ export default function AdminReportsPage() {
         </div>
       )}
 
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
         <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 16px" }}>Available Reports</h2>
         {loading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {[1,2,3].map(i => <div key={i} style={{ height: 56, background: "var(--surface-sunken)", borderRadius: 8 }} />)}
+            {[1,2,3].map(i => <div key={i} style={{ height: 56, background: "var(--surface-sunken)", borderRadius:"var(--radius-md)" }} />)}
           </div>
         ) : definitions.length === 0 ? (
           <div style={{ textAlign: "center", padding: "32px 0", color: "var(--text-tertiary)", fontSize: 13 }}>No reports available</div>
@@ -113,7 +113,7 @@ export default function AdminReportsPage() {
       </div>
 
       {runs.length > 0 && (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
           <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 16px" }}>Recent Runs</h2>
           <div style={{ display: "flex", flexDirection: "column" }}>
             {runs.map((run: any, idx: number) => (

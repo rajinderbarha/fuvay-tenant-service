@@ -51,14 +51,14 @@ export default function BulkRunDetailPage() {
           </div>
         ))}
         <div style={{ background: run.status === "completed" ? "#f0fdf4" : "#fef2f2", border: `1px solid ${run.status === "completed" ? "#bbf7d0" : "#fecaca"}`, borderRadius: "0.5rem", padding: "0.85rem", textAlign: "center" }}>
-          <div style={{ fontSize: "0.9rem", fontWeight: 700, color: run.status === "completed" ? "#16a34a" : "#dc2626" }}>{run.status}</div>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, color: run.status === "completed" ? "var(--success)" : "var(--danger)" }}>{run.status}</div>
           <div style={{ fontSize: "0.7rem", color: "#6b7280" }}>status</div>
         </div>
       </div>
 
       {run.error_json && (
         <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "0.5rem", padding: "1rem", marginBottom: "1.25rem" }}>
-          <div style={{ fontWeight: 700, color: "#dc2626", marginBottom: "0.25rem" }}>Error</div>
+          <div style={{ fontWeight: 700, color: "var(--danger)", marginBottom: "0.25rem" }}>Error</div>
           <pre style={{ fontSize: "0.75rem", margin: 0 }}>{JSON.stringify(run.error_json, null, 2)}</pre>
         </div>
       )}

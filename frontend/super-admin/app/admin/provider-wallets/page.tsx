@@ -95,7 +95,7 @@ export default function AdminProviderWalletsPage() {
 
               {creditTarget === w.tenant_id && (
                 <div style={{ marginTop: 12, padding: "12px", background: "var(--surface-sunken)",
-                  borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                  borderRadius:"var(--radius-md)", display: "flex", flexDirection: "column", gap: 8 }}>
                   <input
                     type="number"
                     placeholder="Amount"

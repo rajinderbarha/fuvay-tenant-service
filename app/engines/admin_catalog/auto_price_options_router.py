@@ -57,75 +57,10 @@ async def get_home_services_config(
     return ok(flags, _rid(r), ENGINE_ID)
 
 
-# ── Admin: Customer Price Experience preview ────────────────────────────────
-
-@admin_router.post("/price-experience/preview", response_model=ApiResponse[dict],
-                    summary="Preview automatic Low/Mid/High price options from raw parameters (admin testing tool)")
-async def admin_price_experience_preview(
-    r: Request,
-    u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_EVALUATE_PREVIEW)),
-    db: AsyncSession = Depends(get_db),
-):
-    """Platform fee must be applied to BOTH ends of the selected range, not
-    just the minimum — see CUSTOMER_PRICE_EXPERIENCE_CALCULATION_FIX_REPORT.md.
-    Uses compute_symmetric_customer_price_tiers (same formula as the Admin
-    Home Services Catalog Console and Tenant Setup Wizard), with
-    rounding_increment=5 per this tool's own ticket example."""
-    body = await r.json()
-
-    admin_min = body.get("admin_min_price")
-    admin_max = body.get("admin_max_price")
-    selected_min = body.get("selected_min_price", body.get("customer_min_price"))
-    selected_max = body.get("selected_max_price", body.get("customer_max_price"))
-    fee_pct = body.get("platform_fee_percent", 0) or 0
-
-    if admin_min is not None and admin_max is not None and admin_min > admin_max:
-        raise ServiceOSException("INVALID_ADMIN_RANGE", "Admin Min must be <= Admin Max.", status_code=422)
-    if admin_min is not None and selected_min is not None and selected_min < admin_min:
-        raise ServiceOSException("SELECTED_RANGE_BELOW_ADMIN_MIN",
-            f"Selected Range Min cannot be below Admin Min ({admin_min}).", status_code=422)
-    if admin_max is not None and selected_max is not None and selected_max > admin_max:
-        raise ServiceOSException("SELECTED_RANGE_ABOVE_ADMIN_MAX",
-            f"Selected Range Max cannot exceed Admin Max ({admin_max}).", status_code=422)
-
-    try:
-        tiers = compute_symmetric_customer_price_tiers(
-            provider_min_price=selected_min,
-            provider_max_price=selected_max,
-            platform_fee_percent=fee_pct,
-            platform_fee_fixed_amount=body.get("platform_fee_fixed_amount", 0),
-            rounding_increment=5,
-        )
-    except BargainValidationError as e:
-        raise ServiceOSException(e.code, e.message, status_code=422) from e
-
-    fee_on_min = round(selected_min * fee_pct / 100, 2) if selected_min is not None else None
-    fee_on_max = round(selected_max * fee_pct / 100, 2) if selected_max is not None else None
-
-    result = {
-        "service_name": body.get("service_name"),
-        "admin_min_price": admin_min,
-        "admin_max_price": admin_max,
-        "admin_base_price": body.get("admin_base_price"),
-        "selected_min_price": selected_min,
-        "selected_max_price": selected_max,
-        "platform_fee_percent": tiers["platform_fee_percent"],
-        "platform_fee_on_min": fee_on_min,
-        "platform_fee_on_max": fee_on_max,
-        "customer_low_price": tiers["low_price"],
-        "customer_mid_price": tiers["mid_price"],
-        "customer_high_price": tiers["high_price"],
-        "allowed_offer_min": tiers["low_price"],
-        "allowed_offer_max": tiers["high_price"],
-        "payment_mode": tiers["payment_mode"],
-        # Backward-compatible aliases for any existing consumer of the old shape.
-        "customer_min_price": selected_min,
-        "customer_max_price": selected_max,
-        "low_price": tiers["low_price"],
-        "mid_price": tiers["mid_price"],
-        "high_price": tiers["high_price"],
-    }
-    return ok(result, _rid(r), ENGINE_ID)
+# Customer Price Experience preview endpoint removed (2026-07) -- it was an
+# admin testing tool built entirely around admin_min_price/admin_max_price/
+# admin_base_price, the same deprecated "admin sets price boundaries" model
+# as Pricing Rules. This platform is provider-set-price.
 
 
 # ── Admin: Matching Diagnostics ──────────────────────────────────────────────

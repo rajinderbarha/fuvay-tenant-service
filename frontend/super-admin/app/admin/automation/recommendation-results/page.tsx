@@ -125,9 +125,9 @@ export default function RecommendationResultsPage() {
                     {res.status === "shown" && (
                       <div style={{ display: "flex", gap: "0.4rem" }}>
                         <button onClick={() => handleAccept(res.id)}
-                          style={{ fontSize: "0.7rem", color: "#16a34a", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Accept</button>
+                          style={{ fontSize: "0.7rem", color: "var(--success)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Accept</button>
                         <button onClick={() => handleReject(res.id)}
-                          style={{ fontSize: "0.7rem", color: "#dc2626", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Reject</button>
+                          style={{ fontSize: "0.7rem", color: "var(--danger)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Reject</button>
                       </div>
                     )}
                   </td>

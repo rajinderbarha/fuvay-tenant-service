@@ -244,7 +244,7 @@ export default function BrandsPage() {
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div style={{ flex: 1, minWidth: 220 }}>
             <input placeholder="Search brands by name, code, or slug…" value={q} onChange={e => setQ(e.target.value)}
-              style={{ width: "100%", padding: "8px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", outline: "none", boxSizing: "border-box" }} />
+              style={{ width: "100%", padding: "8px 12px", borderRadius:"var(--radius-md)", fontSize: 13, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", outline: "none", boxSizing: "border-box" }} />
           </div>
           <div style={{ minWidth: 160 }}>
             <Select label="" value={statusFilter} onChange={setStatusFilter}
@@ -279,12 +279,12 @@ export default function BrandsPage() {
         title={editing ? `Edit: ${editing.display_name || editing.name}` : "New Brand"}>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {activeAction.error && (
-            <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
+            <div style={{ padding: "10px 14px", borderRadius:"var(--radius-md)", background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
               <p style={{ fontSize: 13, color: "var(--danger-text)", margin: 0 }}>{activeAction.error}</p>
             </div>
           )}
           {dupWarning && (
-            <div style={{ padding: "12px 14px", borderRadius: 8, background: "var(--warning-bg, #fffbeb)", border: "1px solid var(--warning-border, #f6e05e)" }}>
+            <div style={{ padding: "12px 14px", borderRadius:"var(--radius-md)", background: "var(--warning-bg, #fffbeb)", border: "1px solid var(--warning-border, #f6e05e)" }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: "var(--warning-text, #744210)", margin: "0 0 6px" }}>Possible Duplicate Detected</p>
               <p style={{ fontSize: 12, color: "var(--warning-text, #744210)", margin: "0 0 10px" }}>{dupWarning.message}</p>
               <div style={{ display: "flex", gap: 8 }}>

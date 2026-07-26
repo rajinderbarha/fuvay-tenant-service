@@ -38,6 +38,25 @@ class HomeServiceBookingDraft(ServiceOSBase):
     # ── Catalog ────────────────────────────────────────────────────────────────
     category_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     offering_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.1 (migration 168) -- the exact Job
+    # Type selected for this Master Service (Repair / Installation /
+    # Uninstallation / General Service, etc.). Nullable: legacy drafts and
+    # any draft where the customer has not yet selected a job type have no
+    # value here, and MUST be treated as unresolved (fail-closed) rather than
+    # guessed -- one Master Service legitimately has multiple Job Types, each
+    # with its own ServiceJobWorkflow (e.g. Repair requires quote approval,
+    # Installation does not). Validated against MasterServiceJobType
+    # (belongs to offering_id, is_active) in update_draft_fields.
+    job_type_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (migration 171) -- the exact
+    # catalog link and the exact (immutable, versioned) workflow row
+    # snapshotted at the moment Job Type was resolved. selected_problem_id
+    # is the customer's Problem/Intent selection (ServiceIssueMapping) that
+    # drove the resolution, when the customer went through the problem-first
+    # flow rather than a direct action (Install/Uninstall/General Service).
+    master_service_job_type_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    service_job_workflow_id:    Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    selected_problem_id:        Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     # ── Provider ───────────────────────────────────────────────────────────────
     selected_tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
@@ -105,6 +124,10 @@ class HomeServiceBookingDraft(ServiceOSBase):
             "ai_session_id":             str(self.ai_session_id)   if self.ai_session_id   else None,
             "category_id":               str(self.category_id),
             "offering_id":               str(self.offering_id),
+            "job_type_id":               str(self.job_type_id) if self.job_type_id else None,
+            "master_service_job_type_id":str(self.master_service_job_type_id) if self.master_service_job_type_id else None,
+            "service_job_workflow_id":   str(self.service_job_workflow_id) if self.service_job_workflow_id else None,
+            "selected_problem_id":       str(self.selected_problem_id) if self.selected_problem_id else None,
             "selected_tenant_id":        str(self.selected_tenant_id) if self.selected_tenant_id else None,
             "status":                    self.status,
             "customer_name":             self.customer_name,

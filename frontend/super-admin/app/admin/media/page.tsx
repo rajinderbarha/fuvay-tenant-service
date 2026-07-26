@@ -45,7 +45,7 @@ const getMimeColor = (mime: string | null | undefined): string => {
   if (!mime) return "#6b7280";
   if (mime.startsWith("image/")) return "#8b5cf6";
   if (mime.startsWith("video/")) return "#ef4444";
-  if (mime.includes("pdf")) return "#f59e0b";
+  if (mime.includes("pdf")) return "var(--warning)";
   return "#6b7280";
 };
 type BV = "default" | "success" | "warning" | "danger" | "info" | "muted" | "golden" | "terra";
@@ -118,7 +118,7 @@ function SummaryCards({ s }: { s: MediaSummary }) {
         change={pct(s.documents_count)}
         trend="neutral"
         icon={<FileText />}
-        accent="#f59e0b"
+        accent="var(--warning)"
       />
       <StatCard
         label="Videos"
@@ -134,7 +134,7 @@ function SummaryCards({ s }: { s: MediaSummary }) {
         change={`${storagePct}% of 500 GB`}
         trend={Number(storagePct) > 80 ? "down" : "neutral"}
         icon={<BarChart2 />}
-        accent="#10b981"
+        accent="var(--success)"
       />
       <StatCard
         label="Flagged Files"
@@ -305,7 +305,7 @@ function BulkActionBar({ count, onArchive, onDelete, onChangeVisibility, onClear
   onChangeVisibility: () => void; onClear: () => void;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: "var(--accent-muted)", border: "1px solid var(--border)", borderRadius: 8, marginBottom: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: "var(--accent-muted)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", marginBottom: 12 }}>
       <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>{count} selected</span>
       <div style={{ display: "flex", gap: 6 }}>
         <Btn variant="secondary" size="sm" onClick={onArchive}><Archive size={12} /> Archive</Btn>
@@ -553,7 +553,7 @@ function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete
         {asset.mime_type?.startsWith("image/") && asset.preview_url && (
           <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)", background: "var(--bg)" }}>
             <img src={asset.preview_url} alt={asset.file_name_original}
-              style={{ width: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 8 }} />
+              style={{ width: "100%", maxHeight: 220, objectFit: "contain", borderRadius:"var(--radius-md)" }} />
           </div>
         )}
         {!asset.mime_type?.startsWith("image/") && (
@@ -599,7 +599,7 @@ function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete
               <Row label="Preview Access"  value="Signed URL (15 min TTL)" />
               <Row label="Download Access" value="Signed URL (60 min TTL)" />
               <Row label="Storage Driver"  value={asset.storage_driver} />
-              <div style={{ marginTop: 8, padding: 12, background: "var(--surface-sunken)", borderRadius: 8, fontSize: 12, color: "var(--text-secondary)" }}>
+              <div style={{ marginTop: 8, padding: 12, background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", fontSize: 12, color: "var(--text-secondary)" }}>
                 <strong>Security:</strong> Private files require a signed URL. Links are single-use and expire. All admin access is audit-logged.
               </div>
             </>
@@ -667,7 +667,7 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
           <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>File *</label>
           <div
             onClick={() => inputRef.current?.click()}
-            style={{ border: `2px dashed ${file ? "var(--brand)" : "var(--border)"}`, borderRadius: 8, padding: "20px", textAlign: "center", cursor: "pointer", background: file ? "var(--accent-muted)" : "var(--surface-sunken)" }}
+            style={{ border: `2px dashed ${file ? "var(--brand)" : "var(--border)"}`, borderRadius:"var(--radius-md)", padding: "20px", textAlign: "center", cursor: "pointer", background: file ? "var(--accent-muted)" : "var(--surface-sunken)" }}
           >
             {file ? (
               <div style={{ fontSize: 13 }}>{file.name} · {fmtBytes(file.size)}</div>

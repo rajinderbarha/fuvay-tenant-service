@@ -61,7 +61,7 @@ export default function PayoutDetailPage() {
               {Object.keys(d.bank_account || {}).length === 0 ? (
                 <p style={{ margin: 0, fontSize: 13, color: "var(--text-tertiary)" }}>No bank account on file.</p>
               ) : (
-                <pre style={{ fontSize: 12, background: "var(--surface-sunken)", padding: 12, borderRadius: 8, overflowX: "auto" }}>
+                <pre style={{ fontSize: 12, background: "var(--surface-sunken)", padding: 12, borderRadius:"var(--radius-md)", overflowX: "auto" }}>
                   {JSON.stringify(d.bank_account, null, 2)}
                 </pre>
               )}

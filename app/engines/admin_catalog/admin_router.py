@@ -440,12 +440,26 @@ async def category_options(r: Request,
 
 
 @router.post("/service-categories", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
-             summary="Create service category", tags=["Service Categories"])
+             summary="Create service category (DEPRECATED -- accepts legacy Brand/Type/pricing "
+                      "fields for backward compatibility; use /business-verticals for new callers)",
+             tags=["Service Categories"])
 async def create_category(r: Request,
                            u: UserContext = Depends(require_super_admin),
                            s: AdminCatalogService = Depends(_svc)):
     body = await r.json()
     return ok(await s.create_category(body), _rid(r), ENGINE_ID)
+
+
+@router.post("/business-verticals", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
+             summary="Create a Business Vertical (canonical -- migration 160; rejects "
+                      "Brand/Type/Schedule/Address/pricing fields, which belong to the "
+                      "Job-Type Blueprint)",
+             tags=["Service Categories"])
+async def create_business_vertical(r: Request,
+                                    u: UserContext = Depends(require_super_admin),
+                                    s: AdminCatalogService = Depends(_svc)):
+    body = await r.json()
+    return ok(await s.create_category_canonical(body), _rid(r), ENGINE_ID)
 
 
 @router.get("/service-categories/{category_id}", response_model=ApiResponse[dict],
@@ -635,12 +649,27 @@ async def list_master_services(r: Request,
 
 
 @router.post("/master-services", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
-             summary="Create master service", tags=["Master Services"])
+             summary="Create master service (DEPRECATED -- accepts a legacy scalar job_type/"
+                      "pricing_model/prices/requirement flags for backward compatibility; use "
+                      "/master-services-v2 for new callers)",
+             tags=["Master Services"])
 async def create_master_service(r: Request,
                                  u: UserContext = Depends(require_super_admin),
                                  s: AdminCatalogService = Depends(_svc)):
     body = await r.json()
     return ok(await s.create_master_service(body), _rid(r), ENGINE_ID)
+
+
+@router.post("/master-services-v2", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
+             summary="Create a Master Service (canonical -- migration 160; job-type-agnostic, "
+                      "rejects job_type/pricing_model/prices/Brand/Type/workflow requirement "
+                      "fields, which belong to the Job-Type Blueprint added afterward)",
+             tags=["Master Services"])
+async def create_master_service_v2(r: Request,
+                                    u: UserContext = Depends(require_super_admin),
+                                    s: AdminCatalogService = Depends(_svc)):
+    body = await r.json()
+    return ok(await s.create_master_service_canonical(body), _rid(r), ENGINE_ID)
 
 
 @router.get("/master-services/{service_id}", response_model=ApiResponse[dict],
@@ -657,7 +686,8 @@ async def update_master_service(service_id: uuid.UUID, r: Request,
                                  u: UserContext = Depends(require_super_admin),
                                  s: AdminCatalogService = Depends(_svc)):
     body = await r.json()
-    return ok(await s.update_master_service(service_id, body), _rid(r), ENGINE_ID)
+    actor_id = uuid.UUID(u.user_id) if u.user_id else None
+    return ok(await s.update_master_service(service_id, body, actor_id), _rid(r), ENGINE_ID)
 
 
 @router.delete("/master-services/{service_id}", response_model=ApiResponse[dict],
@@ -817,129 +847,11 @@ async def remove_service_brand_mapping(service_id: uuid.UUID, mapping_id: uuid.U
     return ok(await s.remove_service_brand_mapping(service_id, mapping_id), _rid(r), ENGINE_ID)
 
 
-# ═══════════════════════════════════════════════════════════════
-# PRICING RULES
-# ═══════════════════════════════════════════════════════════════
-
-@router.get("/pricing-rules", response_model=ApiResponse[dict], summary="List pricing rules",
-            tags=["Pricing Rules"])
-async def list_pricing_rules(r: Request,
-                              master_service_id: uuid.UUID | None = Query(None),
-                              is_active: bool | None = Query(None),
-                              q: str | None = Query(None),
-                              brand_id: uuid.UUID | None = Query(None),
-                              service_type_id: uuid.UUID | None = Query(None),
-                              tier_id: uuid.UUID | None = Query(None),
-                              city: str | None = Query(None),
-                              zipcode: str | None = Query(None),
-                              pricing_model: str | None = Query(None),
-                              expiring_within_days: int | None = Query(None),
-                              rule_status: str | None = Query(None),
-                              page: int = Query(1, ge=1),
-                              page_size: int = Query(50, ge=1, le=500),
-                              sort_by: str = Query("priority"),
-                              sort_dir: str = Query("desc"),
-                              u: UserContext = Depends(require_permission(P.CATALOG_PRICING_READ)),
-                              s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.list_pricing_rules(
-        master_service_id, is_active, q, brand_id, service_type_id, tier_id,
-        city, zipcode, pricing_model, expiring_within_days, rule_status,
-        page, page_size, sort_by, sort_dir,
-    ), _rid(r), ENGINE_ID)
-
-
-@router.get("/pricing-rules/summary", response_model=ApiResponse[dict],
-            summary="Pricing rules summary cards", tags=["Pricing Rules"])
-async def pricing_rules_summary(r: Request,
-                                 u: UserContext = Depends(require_permission(P.CATALOG_PRICING_READ)),
-                                 s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.get_pricing_rules_summary(), _rid(r), ENGINE_ID)
-
-
-@router.get("/pricing-rules/export", response_model=ApiResponse[dict],
-            summary="Export pricing rules", tags=["Pricing Rules"])
-async def export_pricing_rules(r: Request,
-                                master_service_id: uuid.UUID | None = Query(None),
-                                is_active: bool | None = Query(None),
-                                u: UserContext = Depends(require_permission(P.CATALOG_PRICING_READ)),
-                                s: AdminCatalogService = Depends(_svc)):
-    rows = await s.export_pricing_rules(master_service_id=master_service_id, is_active=is_active)
-    return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
-
-
-@router.post("/pricing-rules/preview", response_model=ApiResponse[dict],
-             summary="Preview price resolution", tags=["Pricing Rules"])
-async def preview_pricing(r: Request,
-                           u: UserContext = Depends(require_super_admin),
-                           s: AdminCatalogService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.preview_pricing(body), _rid(r), ENGINE_ID)
-
-
-@router.post("/pricing-rules", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
-             summary="Create pricing rule", tags=["Pricing Rules"])
-async def create_pricing_rule(r: Request,
-                               u: UserContext = Depends(require_permission(P.CATALOG_PRICING_WRITE)),
-                               s: AdminCatalogService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.create_pricing_rule(body), _rid(r), ENGINE_ID)
-
-
-@router.get("/pricing-rules/{rule_id}/conflicts", response_model=ApiResponse[dict],
-            summary="List rules conflicting with this rule", tags=["Pricing Rules"])
-async def get_pricing_rule_conflicts(rule_id: uuid.UUID, r: Request,
-                                      u: UserContext = Depends(require_permission(P.CATALOG_PRICING_READ)),
-                                      s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.get_pricing_rule_conflicts(rule_id), _rid(r), ENGINE_ID)
-
-
-@router.get("/pricing-rules/{rule_id}", response_model=ApiResponse[dict],
-            summary="Get pricing rule", tags=["Pricing Rules"])
-async def get_pricing_rule(rule_id: uuid.UUID, r: Request,
-                            u: UserContext = Depends(require_super_admin),
-                            s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.get_pricing_rule(rule_id), _rid(r), ENGINE_ID)
-
-
-@router.put("/pricing-rules/{rule_id}", response_model=ApiResponse[dict],
-            summary="Update pricing rule", tags=["Pricing Rules"])
-async def update_pricing_rule(rule_id: uuid.UUID, r: Request,
-                               u: UserContext = Depends(require_permission(P.CATALOG_PRICING_WRITE)),
-                               s: AdminCatalogService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.update_pricing_rule(rule_id, body), _rid(r), ENGINE_ID)
-
-
-@router.delete("/pricing-rules/{rule_id}", response_model=ApiResponse[dict],
-               summary="Deactivate pricing rule", tags=["Pricing Rules"])
-async def delete_pricing_rule(rule_id: uuid.UUID, r: Request,
-                               u: UserContext = Depends(require_permission(P.CATALOG_PRICING_WRITE)),
-                               s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.delete_pricing_rule(rule_id), _rid(r), ENGINE_ID)
-
-
-@router.delete("/pricing-rules/{rule_id}/hard-delete", response_model=ApiResponse[dict],
-               summary="Permanently delete a pricing rule", tags=["Pricing Rules"])
-async def hard_delete_pricing_rule(rule_id: uuid.UUID, r: Request,
-                                    u: UserContext = Depends(require_permission(P.CATALOG_PRICING_WRITE)),
-                                    s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.hard_delete_pricing_rule(rule_id), _rid(r), ENGINE_ID)
-
-
-@router.post("/pricing-rules/{rule_id}/activate", response_model=ApiResponse[dict],
-             summary="Activate pricing rule", tags=["Pricing Rules"])
-async def activate_pricing_rule(rule_id: uuid.UUID, r: Request,
-                                 u: UserContext = Depends(require_permission(P.PRICING_RULES_ACTIVATE)),
-                                 s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.update_pricing_rule(rule_id, {"is_active": True}), _rid(r), ENGINE_ID)
-
-
-@router.post("/pricing-rules/{rule_id}/deactivate", response_model=ApiResponse[dict],
-             summary="Deactivate pricing rule", tags=["Pricing Rules"])
-async def deactivate_pricing_rule(rule_id: uuid.UUID, r: Request,
-                                   u: UserContext = Depends(require_permission(P.PRICING_RULES_DEACTIVATE)),
-                                   s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.update_pricing_rule(rule_id, {"is_active": False}), _rid(r), ENGINE_ID)
+# Pricing Rules endpoints removed (2026-07) -- this platform is provider-set-
+# price; admin no longer defines min/max/base price boundaries or previews
+# them. The ServicePricingRule model/table and its service methods
+# (admin_catalog/service.py) remain in place (no destructive migration),
+# only the API surface reachable by any client was removed.
 
 
 # ═══════════════════════════════════════════════════════════════

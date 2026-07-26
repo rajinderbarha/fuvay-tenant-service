@@ -15,6 +15,11 @@ JS_WORK_DONE          = "work_done"
 JS_CUSTOMER_NOT_AVAIL = "customer_not_available"
 JS_CANCELLED          = "cancelled"
 JS_FAILED             = "failed"
+# HOME-SERVICES-RUNTIME-SAFETY Phase 2A — deterministic terminal status for a
+# job whose customer rejected the estimate (spec section 9: do not leave the
+# job in an ambiguous inspection state, and do not conflate this with
+# revision-requested, which must remain non-terminal).
+JS_CLOSED_ESTIMATE_DECLINED = "closed_estimate_declined"
 
 # ── Allowed job transitions: from_status → set of valid to_statuses ───────────
 JOB_TRANSITIONS: dict[str, set[str]] = {
@@ -24,14 +29,21 @@ JOB_TRANSITIONS: dict[str, set[str]] = {
     JS_ON_THE_WAY:         {JS_REACHED_SITE, JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED},
     JS_REACHED_SITE:       {JS_INSPECTION_STARTED, JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED},
     JS_INSPECTION_STARTED: {JS_INSPECTION_DONE, JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED},
+    # Phase 2A: JS_SERVICE_STARTED remains a graph-valid target here (an
+    # estimate-not-required job must keep working exactly as before) -- the
+    # NEW guard (assert_job_can_start_work, called from _set_status) blocks
+    # the transition at the service layer when the blueprint requires
+    # approval and it hasn't been granted. The graph alone cannot express
+    # that condition; see home_service_service.py.
     JS_INSPECTION_DONE:    {JS_QUOTE_REQUIRED, JS_SERVICE_STARTED, JS_CANCELLED},
     JS_SERVICE_STARTED:    {JS_WORK_DONE, JS_QUOTE_REQUIRED, JS_CANCELLED, "completed"},
     JS_WORK_DONE:          {"completed"},    # HS8B — completion via POST .../complete only
-    JS_QUOTE_REQUIRED:     {"completed"},    # HS8B — service can complete after parts/quote resolved
+    JS_QUOTE_REQUIRED:     {"completed", JS_SERVICE_STARTED, JS_CLOSED_ESTIMATE_DECLINED},
     "completed":           set(),           # terminal
     JS_CUSTOMER_NOT_AVAIL: {JS_ACCEPTED, JS_SCHEDULED},
     JS_CANCELLED:          set(),
     JS_FAILED:             set(),
+    JS_CLOSED_ESTIMATE_DECLINED: set(),     # terminal
 }
 
 # ── Home Service execution event types ────────────────────────────────────────
@@ -139,6 +151,23 @@ ERR_STAFF_NOT_ASSIGNED        = "EXECUTION_STAFF_NOT_ASSIGNED"
 ERR_PROVIDER_SCOPE_INVALID    = "EXECUTION_PROVIDER_SCOPE_INVALID"
 ERR_CUSTOMER_SCOPE_INVALID    = "EXECUTION_CUSTOMER_SCOPE_INVALID"
 ERR_QUOTE_REQUIRED_HANDOFF    = "EXECUTION_QUOTE_REQUIRED_HANDOFF"
+
+# ── HOME-SERVICES-RUNTIME-SAFETY Phase 2A — work-start approval gate ─────────
+# Exact codes/messages per spec section 6 (not EXECUTION_-prefixed -- these
+# are surfaced directly to staff/technician UI as the reason work cannot start).
+ERR_ESTIMATE_REQUIRED          = "ESTIMATE_REQUIRED"
+ERR_ESTIMATE_APPROVAL_REQUIRED = "ESTIMATE_APPROVAL_REQUIRED"
+ERR_ESTIMATE_REVISION_REQUIRED = "ESTIMATE_REVISION_REQUIRED"
+ERR_ESTIMATE_REJECTED          = "ESTIMATE_REJECTED"
+
+MSG_ESTIMATE_REQUIRED          = "Create and send an estimate before starting work."
+MSG_ESTIMATE_APPROVAL_REQUIRED = "The customer must approve the current estimate before work can start."
+MSG_ESTIMATE_REVISION_REQUIRED = "The customer requested changes. Send a revised estimate for approval."
+MSG_ESTIMATE_REJECTED          = "The estimate was rejected. Work cannot start."
+
+# ── HOME-SERVICES-RUNTIME-SAFETY Phase 2A.1 -- exact Job-Type resolution ─────
+ERR_JOB_TYPE_CONTEXT_UNRESOLVED = "JOB_TYPE_CONTEXT_UNRESOLVED"
+MSG_JOB_TYPE_CONTEXT_UNRESOLVED = "The job type could not be resolved safely. Work cannot start until the job is reconciled."
 
 # ── HS8B — Parts Request ─────────────────────────────────────────────────────
 PARTS_STATUS_REQUESTED                 = "requested"

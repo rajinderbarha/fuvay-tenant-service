@@ -4,7 +4,7 @@ import { adminAiApi, AIMetrics } from "@/lib/api";
 import { AnalyticsKpiCard } from "@/components/analytics";
 
 const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
 };
 
@@ -53,7 +53,7 @@ export default function AIMetricsPage() {
           loading={loading} severity={Number(rl.customers_in_cooldown) > 0 ? "warning" : "normal"} />
       </div>
 
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
         <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 12px" }}>Rate Limiter Status</h2>
         <div style={{ fontSize: 13, color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: 4 }}>
           <div>Active customers sending messages (last 60s): <strong style={{ color: "var(--text-primary)" }}>{rl.active_customers_in_msg_window}</strong></div>

@@ -44,6 +44,7 @@ class Job(ServiceOSBase):
     service_type_id:    Mapped[str]           = mapped_column(String(100), nullable=False)
     service_category:   Mapped[str]           = mapped_column(String(100), nullable=False)
     job_type:           Mapped[str]           = mapped_column(String(20), default="repair", nullable=False)
+    job_type_id:        Mapped[uuid.UUID|None]= mapped_column(UUID(as_uuid=True), nullable=True)
     parent_job_id:      Mapped[uuid.UUID|None]= mapped_column(UUID(as_uuid=True), nullable=True)
     findings:            Mapped[str|None]     = mapped_column(Text, nullable=True)
     recommendation:      Mapped[str|None]     = mapped_column(Text, nullable=True)

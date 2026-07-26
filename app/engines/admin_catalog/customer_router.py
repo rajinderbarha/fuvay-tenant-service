@@ -20,6 +20,47 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db)) -> AdminCatalogService:
     return AdminCatalogService(db=db, request_id=getattr(r.state, "request_id", "—"))
 
 
+async def _resolve_canonical_flow_flags(db: AsyncSession, service_id: uuid.UUID):
+    """Returns (requires_issue, requires_brand, requires_option, requires_schedule,
+    requires_location) from the Job-Type Blueprint if `service_id` has EXACTLY
+    ONE active job type, else None (ambiguous -- caller falls back to legacy)."""
+    from app.engines.admin_catalog.models import (
+        MasterServiceJobType, ServiceJobWorkflow, ServiceJobDimension, CatalogDimension,
+        ServiceIssueMapping,
+    )
+
+    links = (await db.execute(select(MasterServiceJobType).where(
+        MasterServiceJobType.master_service_id == service_id,
+        MasterServiceJobType.is_active == True))).scalars().all()  # noqa: E712
+    if len(links) != 1:
+        return None
+    job_type_id = links[0].job_type_id
+
+    workflow = (await db.execute(select(ServiceJobWorkflow).where(
+        ServiceJobWorkflow.master_service_id == service_id,
+        ServiceJobWorkflow.job_type_id == job_type_id))).scalar_one_or_none()
+
+    dim_rows = (await db.execute(
+        select(ServiceJobDimension, CatalogDimension)
+        .join(CatalogDimension, ServiceJobDimension.dimension_id == CatalogDimension.id)
+        .where(ServiceJobDimension.master_service_id == service_id,
+               ServiceJobDimension.job_type_id == job_type_id))).all()
+    dims = {cd.key: sjd for sjd, cd in dim_rows}
+
+    requires_brand = bool(dims.get("brand") and dims["brand"].enabled and dims["brand"].required)
+    requires_option = bool(dims.get("type") and dims["type"].enabled and dims["type"].required)
+
+    issue_count = (await db.execute(select(ServiceIssueMapping.id).where(
+        ServiceIssueMapping.master_service_id == service_id,
+        ServiceIssueMapping.deleted_at.is_(None)).limit(1))).first()
+    requires_issue = issue_count is not None
+
+    requires_schedule = bool(workflow and workflow.schedule_required)
+    requires_location = bool(workflow and workflow.address_required)
+
+    return (requires_issue, requires_brand, requires_option, requires_schedule, requires_location)
+
+
 def _rid(r): return getattr(r.state, "request_id", "—")
 
 
@@ -98,8 +139,17 @@ async def get_flow_config(r: Request,
                            service_id: uuid.UUID | None = Query(None),
                            s: AdminCatalogService = Depends(_svc)):
     """Returns the flow configuration the customer app should use for this category/service.
-    Derived from requires_* flags on ServiceCategory (and overrides on MasterService).
-    No frontend hardcoding needed — the app reads this at runtime.
+
+    Ownership correction (migration 160): if `service_id` resolves to
+    EXACTLY ONE job type (master_service_job_types), this now resolves
+    requires_brand/requires_option/requires_schedule/requires_location from
+    the canonical Job-Type Blueprint (service_job_workflow +
+    service_job_dimensions) instead of the deprecated ServiceCategory/
+    MasterService requires_* flags -- those stop being authoritative the
+    moment a canonical blueprint exists for the service. A service with
+    zero or multiple job types is ambiguous without a job_type_id param
+    this endpoint doesn't yet accept (a separate, larger customer-app
+    change), so it falls back to the legacy flags rather than guessing.
     """
     db = s.db
     cat_data: dict | None = None
@@ -123,8 +173,11 @@ async def get_flow_config(r: Request,
             "steps": ["select_service", "confirm"],
         }, _rid(r), ENGINE_ID)
 
-    steps = ["select_service"]
-    if svc_data:
+    canonical = await _resolve_canonical_flow_flags(db, service_id) if service_id else None
+
+    if canonical is not None:
+        requires_issue, requires_brand, requires_option, requires_schedule, requires_location = canonical
+    elif svc_data:
         requires_issue = svc_data.get("requires_issue_type") or cat_data.get("requires_issue_type", False)
         requires_brand = svc_data.get("is_brand_required") or cat_data.get("requires_brand", False)
         requires_option = svc_data.get("is_type_required") or cat_data.get("requires_service_option", False)

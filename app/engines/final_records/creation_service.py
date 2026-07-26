@@ -100,6 +100,18 @@ class HomeServiceFinalCreationService:
         if draft.status != _READY:
             raise ValueError(ERR_DRAFT_NOT_READY)
 
+        # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 8): finalize()
+        # must INDEPENDENTLY revalidate Job Type/Blueprint context, not trust
+        # that mark_ready_for_confirmation's earlier check still holds --
+        # time has passed (an admin could have deactivated the job type or
+        # published a new blueprint version in the window between the draft
+        # becoming ready and the customer clicking confirm). No partial
+        # Booking/Job may be created if this fails.
+        from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+        job_type_error = await HomeServiceChatbotBookingService(db=self.db)._validate_job_type_context(draft)
+        if job_type_error:
+            raise ValueError(job_type_error["code"])
+
         # 3. Generate numbers
         booking_number = await generate_booking_number(self.db)
         job_number     = await generate_job_number(self.db)
@@ -126,6 +138,18 @@ class HomeServiceFinalCreationService:
             tenant_id             = draft.selected_tenant_id,
             category_id           = draft.category_id,
             offering_id           = draft.offering_id,
+            # Phase 2A.1: read ONLY from the trusted, already-validated draft
+            # state -- finalize()'s own signature has no job-type-bearing
+            # parameter, so there is no confirmation-payload path that could
+            # ever override this.
+            job_type_id           = draft.job_type_id,
+            # Phase 2A.2: the exact catalog link + the exact IMMUTABLE
+            # workflow-version row snapshotted when the draft resolved its
+            # Job Type -- never re-derived here, never re-resolved to
+            # "whatever is current now".
+            master_service_job_type_id = draft.master_service_job_type_id,
+            service_job_workflow_id    = draft.service_job_workflow_id,
+            selected_problem_id        = draft.selected_problem_id,
             ai_session_id         = draft.ai_session_id,
             customer_name         = draft.customer_name,
             customer_phone        = draft.customer_phone,
@@ -152,6 +176,13 @@ class HomeServiceFinalCreationService:
             tenant_id             = draft.selected_tenant_id,
             category_id           = draft.category_id,
             offering_id           = draft.offering_id,
+            # Phase 2A.1: copied from the booking just created above (itself
+            # copied only from the trusted draft), so booking and job always
+            # agree on the exact Job Type.
+            job_type_id           = booking.job_type_id,
+            master_service_job_type_id = booking.master_service_job_type_id,
+            service_job_workflow_id    = booking.service_job_workflow_id,
+            selected_problem_id        = booking.selected_problem_id,
             scheduled_date        = draft.preferred_date,
             scheduled_time_window = draft.preferred_time_window,
             city                  = draft.city,

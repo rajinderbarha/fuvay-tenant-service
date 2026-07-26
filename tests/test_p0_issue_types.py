@@ -205,7 +205,23 @@ def test_main_registers_customer_issue_router():
 
 
 # ── Frontend page ─────────────────────────────────────────────────────────────
+# MODULE-L5-56: /admin/issue-types is intentionally retired as a standalone
+# page (Job-Type Blueprint consolidation) -- Problems & Questions are now
+# configured only per exact Job Type inside Catalog Workspace's Problems &
+# Questions tab. The page file now renders a retired-notice redirect (see
+# tests/test_module_l5_56_blueprint_consolidation.py::TestStandalonePageRetirement
+# for its replacement contract). These content assertions test the OLD page
+# and are expected to fail post-retirement; skipped rather than silently
+# deleted so the historical intent stays visible in git history.
+import pytest as _pytest_skip_marker  # noqa: E402
 
+pytestmark_frontend_retired = _pytest_skip_marker.mark.skip(
+    reason="MODULE-L5-56: /admin/issue-types retired as a standalone page; superseded by "
+           "Catalog Workspace's Problems & Questions tab."
+)
+
+
+@pytestmark_frontend_retired
 def test_frontend_uses_service_option_api_not_old_master_data():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "serviceOptionApi" in src
@@ -213,70 +229,87 @@ def test_frontend_uses_service_option_api_not_old_master_data():
     # masterDataApi.listIssueTypes pointed to /v1/admin/issue-types (legacy)
     # page may still import masterDataApi but should call serviceOptionApi for list
 
+@pytestmark_frontend_retired
 def test_frontend_has_category_filter():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "categoryFilter" in src or "category" in src.lower()
 
+@pytestmark_frontend_retired
 def test_frontend_has_service_filter():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "serviceFilter" in src or "service_id" in src
 
+@pytestmark_frontend_retired
 def test_frontend_has_severity_filter():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "severityFilter" in src or "severity" in src
 
+@pytestmark_frontend_retired
 def test_frontend_has_status_filter():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "statusFilter" in src or "status" in src
 
+@pytestmark_frontend_retired
 def test_frontend_shows_mapped_services_count():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "mapped_services_count" in src
 
+@pytestmark_frontend_retired
 def test_frontend_shows_requires_photo_column():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "requires_photo" in src
 
+@pytestmark_frontend_retired
 def test_frontend_shows_requires_description_column():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "requires_description" in src
 
+@pytestmark_frontend_retired
 def test_frontend_shows_customer_visible_column():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "customer_visible" in src
 
+@pytestmark_frontend_retired
 def test_frontend_has_mapping_section_in_modal():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "Map to Service" in src or "map" in src.lower()
 
+@pytestmark_frontend_retired
 def test_frontend_has_activate_action():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "activateIssueType" in src or "activateAction" in src
 
+@pytestmark_frontend_retired
 def test_frontend_has_deactivate_action():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "deactivateIssueType" in src or "deactivateAction" in src
 
+@pytestmark_frontend_retired
 def test_frontend_has_archive_action():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "archiveIssueType" in src or "archiveAction" in src
 
+@pytestmark_frontend_retired
 def test_frontend_has_map_to_service_button():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "MappingModal" in src or "mapping" in src.lower()
 
+@pytestmark_frontend_retired
 def test_frontend_no_blocker_empty_state_when_filters_active():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "No issue types match" in src
 
+@pytestmark_frontend_retired
 def test_frontend_create_modal_has_customer_visible():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "customer_visible" in src
 
+@pytestmark_frontend_retired
 def test_frontend_cascading_service_selector():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "ServiceSelector" in src or "mapCatId" in src
 
+@pytestmark_frontend_retired
 def test_frontend_has_pagination():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
     assert "totalPages" in src or "total_pages" in src

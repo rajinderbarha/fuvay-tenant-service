@@ -131,7 +131,7 @@ export default function GenerateSchedulePostWizard() {
       <div style={{ display:"flex", gap:6, marginBottom:24, flexWrap:"wrap" }}>
         {STEPS.map((label, i) => (
           <div key={label} onClick={() => i < step && setStep(i)} style={{
-            fontSize:12, fontWeight:600, padding:"6px 12px", borderRadius:8,
+            fontSize:12, fontWeight:600, padding:"6px 12px", borderRadius:"var(--radius-md)",
             cursor: i < step ? "pointer" : "default",
             background: i === step ? "var(--accent)" : i < step ? "var(--success-bg)" : "var(--surface-sunken)",
             color: i === step ? "var(--text-on-brand)" : i < step ? "var(--success-text)" : "var(--text-tertiary)",
@@ -171,7 +171,7 @@ export default function GenerateSchedulePostWizard() {
               const checked = channels.includes(c);
               return (
                 <label key={c} style={{
-                  display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:8,
+                  display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:"var(--radius-md)",
                   border: checked ? "1px solid var(--accent)" : "1px solid var(--border)",
                   background: connected ? "var(--surface-sunken)" : "var(--surface)",
                   opacity: connected ? 1 : 0.5, cursor: connected ? "pointer" : "not-allowed",
@@ -210,11 +210,11 @@ export default function GenerateSchedulePostWizard() {
                 {captionAction.error || imageAction.error || hashtagAction.error}
               </p>
             )}
-            {caption && <div style={{ padding:12, borderRadius:8, background:"var(--surface-sunken)" }}>
+            {caption && <div style={{ padding:12, borderRadius:"var(--radius-md)", background:"var(--surface-sunken)" }}>
               <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"0 0 4px" }}>Caption</p>
               <p style={{ fontSize:13, color:"var(--text-primary)", margin:0, whiteSpace:"pre-wrap" }}>{caption}</p>
             </div>}
-            {imageUrl && <div style={{ padding:12, borderRadius:8, background:"var(--surface-sunken)" }}>
+            {imageUrl && <div style={{ padding:12, borderRadius:"var(--radius-md)", background:"var(--surface-sunken)" }}>
               <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"0 0 4px" }}>Generated Image</p>
               <p style={{ fontSize:12, color:"var(--text-secondary)", fontFamily:"monospace", wordBreak:"break-all", margin:0 }}>{imageUrl}</p>
             </div>}
@@ -249,7 +249,7 @@ export default function GenerateSchedulePostWizard() {
           <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
             {(["draft","submit","approve_now"] as const).map(choice => (
               <label key={choice} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
-                borderRadius:8, border: approvalChoice === choice ? "1px solid var(--accent)" : "1px solid var(--border)", cursor:"pointer" }}>
+                borderRadius:"var(--radius-md)", border: approvalChoice === choice ? "1px solid var(--accent)" : "1px solid var(--border)", cursor:"pointer" }}>
                 <input type="radio" name="approval" checked={approvalChoice === choice} onChange={() => setApprovalChoice(choice)}/>
                 <span style={{ fontSize:13, color:"var(--text-primary)" }}>
                   {choice === "draft" ? "Save Draft" : choice === "submit" ? "Submit for Approval" : "Approve Now (Super Admin)"}

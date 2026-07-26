@@ -255,7 +255,7 @@ function RequestDetailDrawer({
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {items.map(item => (
                   <div key={item.id} style={{ display: "flex", alignItems: "center",
-                    gap: 10, padding: "8px 12px", borderRadius: 8,
+                    gap: 10, padding: "8px 12px", borderRadius:"var(--radius-md)",
                     background: item.planned_action === "retain"
                       ? "var(--warning-bg)" : "var(--surface-raised)",
                     border: `1px solid ${item.planned_action === "retain"
@@ -519,7 +519,7 @@ export default function CompliancePage() {
 
       {/* Compliance Health Panel */}
       {health.loading ? (
-        <Skeleton height={90} style={{ borderRadius: 12, marginBottom: 20 }}/>
+        <Skeleton height={90} style={{ borderRadius:"var(--radius-lg)", marginBottom: 20 }}/>
       ) : h && (
         <Card padding="md" style={{ marginBottom: 20, display: "flex",
           alignItems: "center", gap: 24, flexWrap: "wrap" }}>
@@ -561,7 +561,7 @@ export default function CompliancePage() {
       {summary.loading ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))",
           gap: 12, marginBottom: 20 }}>
-          {[...Array(10)].map((_,i) => <Skeleton key={i} height={88} style={{ borderRadius: 12 }}/>)}
+          {[...Array(10)].map((_,i) => <Skeleton key={i} height={88} style={{ borderRadius:"var(--radius-lg)" }}/>)}
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))",
@@ -616,7 +616,7 @@ export default function CompliancePage() {
       {activeTab === "action_queue" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {actionQueue.loading ? (
-            <Skeleton height={200} style={{ borderRadius: 12 }}/>
+            <Skeleton height={200} style={{ borderRadius:"var(--radius-lg)" }}/>
           ) : (actionQueue.data?.items.length ?? 0) === 0 ? (
             <Card padding="lg" style={{ textAlign: "center" }}>
               <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>
@@ -705,7 +705,7 @@ export default function CompliancePage() {
             </Card>
           )}
           {legalHolds.loading ? (
-            <Skeleton height={200} style={{ borderRadius: 12 }}/>
+            <Skeleton height={200} style={{ borderRadius:"var(--radius-lg)" }}/>
           ) : (legalHolds.data?.items.length ?? 0) === 0 ? (
             <Card padding="lg" style={{ textAlign: "center" }}>
               <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
@@ -762,12 +762,12 @@ export default function CompliancePage() {
                 transform: "translateY(-50%)", color: "var(--text-tertiary)" }}/>
               <input value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Search request # / email / name…"
-                style={{ width: "100%", padding: "8px 10px 8px 30px", borderRadius: 8,
+                style={{ width: "100%", padding: "8px 10px 8px 30px", borderRadius:"var(--radius-md)",
                   border: "1px solid var(--border)", background: "var(--surface-raised)",
                   color: "var(--text-primary)", fontSize: 12, boxSizing: "border-box" }}/>
             </div>
             <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+              style={{ padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                 background: "var(--surface-raised)", color: "var(--text-primary)", fontSize: 12 }}>
               <option value="">All Types</option>
               {Object.entries(REQUEST_TYPE_LABEL).map(([v, l]) => (
@@ -775,7 +775,7 @@ export default function CompliancePage() {
               ))}
             </select>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+              style={{ padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                 background: "var(--surface-raised)", color: "var(--text-primary)", fontSize: 12 }}>
               <option value="">All Statuses</option>
               {["submitted","under_review","approved","partially_approved","rejected",
@@ -784,7 +784,7 @@ export default function CompliancePage() {
               ))}
             </select>
             <select value={slaFilter} onChange={e => setSlaFilter(e.target.value)}
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+              style={{ padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                 background: "var(--surface-raised)", color: "var(--text-primary)", fontSize: 12 }}>
               <option value="">All SLA</option>
               <option value="breached">Breached</option>
@@ -1222,7 +1222,7 @@ export default function CompliancePage() {
                 textTransform: "uppercase" }}>Subject Type</span>
               <select value={createForm.subject_type}
                 onChange={e => setCreateForm(f => ({ ...f, subject_type: e.target.value }))}
-                style={{ padding: "8px 10px", borderRadius: 8,
+                style={{ padding: "8px 10px", borderRadius:"var(--radius-md)",
                   border: "1px solid var(--border)", background: "var(--surface-raised)",
                   color: "var(--text-primary)", fontSize: 12 }}>
                 {["customer","provider_owner","tenant_staff","platform_admin","guest_user"]
@@ -1234,7 +1234,7 @@ export default function CompliancePage() {
                 textTransform: "uppercase" }}>Request Type</span>
               <select value={createForm.request_type}
                 onChange={e => setCreateForm(f => ({ ...f, request_type: e.target.value }))}
-                style={{ padding: "8px 10px", borderRadius: 8,
+                style={{ padding: "8px 10px", borderRadius:"var(--radius-md)",
                   border: "1px solid var(--border)", background: "var(--surface-raised)",
                   color: "var(--text-primary)", fontSize: 12 }}>
                 {Object.entries(REQUEST_TYPE_LABEL).map(([v, l]) => (
@@ -1254,7 +1254,7 @@ export default function CompliancePage() {
               <input value={(createForm as Record<string, string>)[field]}
                 onChange={e => setCreateForm(f => ({ ...f, [field]: e.target.value }))}
                 placeholder={placeholder}
-                style={{ padding: "8px 10px", borderRadius: 8,
+                style={{ padding: "8px 10px", borderRadius:"var(--radius-md)",
                   border: "1px solid var(--border)", background: "var(--surface-raised)",
                   color: "var(--text-primary)", fontSize: 12 }}/>
             </label>
@@ -1265,12 +1265,12 @@ export default function CompliancePage() {
             <textarea value={createForm.reason} rows={3}
               onChange={e => setCreateForm(f => ({ ...f, reason: e.target.value }))}
               placeholder="Describe the request reason…"
-              style={{ padding: "8px 10px", borderRadius: 8,
+              style={{ padding: "8px 10px", borderRadius:"var(--radius-md)",
                 border: "1px solid var(--border)", background: "var(--surface-raised)",
                 color: "var(--text-primary)", fontSize: 12, resize: "vertical" }}/>
           </label>
           {createAction.error && (
-            <div style={{ padding: "10px 14px", borderRadius: 8,
+            <div style={{ padding: "10px 14px", borderRadius:"var(--radius-md)",
               background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
               <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>
                 {createAction.error}

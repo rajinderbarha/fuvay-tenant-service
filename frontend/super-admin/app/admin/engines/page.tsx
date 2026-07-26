@@ -68,7 +68,7 @@ const TD: React.CSSProperties = {
   borderBottom: "1px solid var(--border)",
 };
 const filterInput: React.CSSProperties = {
-  height: 36, border: "1px solid var(--border)", borderRadius: 8, fontSize: 13,
+  height: 36, border: "1px solid var(--border)", borderRadius:"var(--radius-md)", fontSize: 13,
   padding: "0 10px", background: "var(--surface)", color: "var(--text-primary)",
   fontFamily: "inherit", outline: "none",
 };
@@ -105,7 +105,7 @@ function ImpactModal({
   return (
     <Modal open={open} onClose={onClose} title={`${action === "enable" ? "Enable" : "Disable"} Engine — ${engineKey}`}>
       {!preview.can_proceed && (
-        <div style={{ padding: "12px 14px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, marginBottom: 14 }}>
+        <div style={{ padding: "12px 14px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-md)", marginBottom: 14 }}>
           <p style={{ color: "var(--danger-text)", fontSize: 13, fontWeight: 600, margin: "0 0 6px" }}>Cannot Proceed</p>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--danger-text)" }}>
             {(preview.blockers || []).map((b, i) => <li key={i}>{b}</li>)}
@@ -113,7 +113,7 @@ function ImpactModal({
         </div>
       )}
       {(preview.warnings || []).length > 0 && (
-        <div style={{ padding: "12px 14px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 8, marginBottom: 14 }}>
+        <div style={{ padding: "12px 14px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius:"var(--radius-md)", marginBottom: 14 }}>
           <p style={{ color: "var(--warning-text)", fontSize: 13, fontWeight: 600, margin: "0 0 6px" }}>Warnings</p>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--warning-text)" }}>
             {(preview.warnings || []).map((w, i) => <li key={i}>{w}</li>)}
@@ -132,7 +132,7 @@ function ImpactModal({
         onChange={e => setReason(e.target.value)}
         rows={2}
         placeholder={`Reason for ${action}…`}
-        style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+        style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
       />
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
         <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
@@ -299,7 +299,7 @@ function AllEnginesTab({ summary }: { summary: EngineSummary | null }) {
             <option value="disabled">Disabled</option>
             <option value="locked">Locked</option>
           </select>
-          <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", overflow: "hidden" }}>
             <button onClick={() => setView("table")} style={{
               padding: "0 12px", height: 36, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
               background: view === "table" ? "var(--accent)" : "var(--surface)",
@@ -316,7 +316,7 @@ function AllEnginesTab({ summary }: { summary: EngineSummary | null }) {
 
         {engines.loading && <SkeletonBlock />}
         {engines.error && (
-          <div style={{ padding: "16px", background: "var(--danger-bg)", borderRadius: 8, fontSize: 13, color: "var(--danger-text)" }}>
+          <div style={{ padding: "16px", background: "var(--danger-bg)", borderRadius:"var(--radius-md)", fontSize: 13, color: "var(--danger-text)" }}>
             Failed to load engines.
           </div>
         )}
@@ -465,7 +465,7 @@ function CategorySelector({ value, onChange }: { value: CategoryOption | null; o
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 20,
-          background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8,
+          background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
           boxShadow: "var(--shadow-md)", maxHeight: 280, overflowY: "auto",
         }}>
           {opts.loading && <div style={{ padding: 12, fontSize: 12, color: "var(--text-tertiary)" }}>Searching…</div>}
@@ -503,7 +503,7 @@ function SeedPreviewModal({
     <Modal open={open} onClose={onClose} title="Seed Recommended Engine Matrix">
       {needsTemplatePick && (
         <div>
-          <div style={{ padding: "10px 12px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 8, marginBottom: 14 }}>
+          <div style={{ padding: "10px 12px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius:"var(--radius-md)", marginBottom: 14 }}>
             <p style={{ fontSize: 13, color: "var(--warning-text)", margin: 0 }}>
               No recommended template is mapped to this category's vertical automatically. Pick one of the
               available templates below, or create mappings manually from the matrix table.
@@ -516,7 +516,7 @@ function SeedPreviewModal({
                 <label key={t.key} style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
                   border: `1px solid ${selectedTemplate === t.key ? "var(--accent)" : "var(--border)"}`,
-                  borderRadius: 8, cursor: "pointer",
+                  borderRadius:"var(--radius-md)", cursor: "pointer",
                   background: selectedTemplate === t.key ? "var(--surface-sunken)" : "transparent",
                 }}>
                   <input type="radio" name="seed-template" checked={selectedTemplate === t.key} onChange={() => onSelectTemplate(t.key)} />
@@ -556,7 +556,7 @@ function SeedPreviewModal({
             </div>
           </div>
           {preview.warnings.length > 0 && (
-            <div style={{ padding: "10px 12px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 8, marginBottom: 12 }}>
+            <div style={{ padding: "10px 12px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius:"var(--radius-md)", marginBottom: 12 }}>
               {preview.warnings.map((w, i) => <div key={i} style={{ fontSize: 12, color: "var(--warning-text)" }}>{w}</div>)}
             </div>
           )}
@@ -586,7 +586,7 @@ function ActionPreviewModal({
       {!loading && preview && (
         <div>
           {preview.blocked && (
-            <div style={{ padding: "10px 12px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, marginBottom: 12 }}>
+            <div style={{ padding: "10px 12px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-md)", marginBottom: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                 <AlertTriangle size={14} style={{ color: "var(--danger)" }} />
                 <strong style={{ fontSize: 13, color: "var(--danger-text)" }}>Blocked</strong>
@@ -595,7 +595,7 @@ function ActionPreviewModal({
             </div>
           )}
           {preview.missing_dependencies.length > 0 && (
-            <div style={{ padding: "10px 12px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 8, marginBottom: 12 }}>
+            <div style={{ padding: "10px 12px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius:"var(--radius-md)", marginBottom: 12 }}>
               <div style={{ fontSize: 12, color: "var(--warning-text)" }}>Missing dependencies: {preview.missing_dependencies.join(", ")}</div>
             </div>
           )}
@@ -611,7 +611,7 @@ function ActionPreviewModal({
           <textarea
             value={reason} onChange={e => setReason(e.target.value)} rows={2}
             placeholder={`Reason to ${action} this engine for the category…`}
-            style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit", boxSizing: "border-box" }}
+            style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit", boxSizing: "border-box" }}
           />
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
             <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
@@ -1218,7 +1218,7 @@ function TenantOverridesTab() {
               onChange={e => setRevokeReason(e.target.value)}
               placeholder="Reason for revoking…"
               rows={2}
-              style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit", boxSizing: "border-box" }}
+              style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit", boxSizing: "border-box" }}
             />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
               <Btn variant="secondary" onClick={() => setRevokeModal(null)}>Cancel</Btn>

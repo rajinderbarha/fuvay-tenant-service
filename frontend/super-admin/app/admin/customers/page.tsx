@@ -126,7 +126,7 @@ function SearchDropdown({
               style={{
                 padding: "7px 12px", fontSize: 13, cursor: "pointer",
                 color: !value ? "var(--primary)" : "var(--muted-text)",
-                background: !value ? "var(--primary-bg,rgba(59,130,246,.06))" : "transparent",
+                background: !value ? "var(--primary-bg,rgba(242,153,74,.06))" : "transparent",
               }}
             >
               {allLabel}
@@ -138,7 +138,7 @@ function SearchDropdown({
                   padding: "7px 12px", fontSize: 13, cursor: "pointer",
                   color: value === o.value ? "var(--primary)" : "var(--text)",
                   fontWeight: value === o.value ? 600 : 400,
-                  background: value === o.value ? "var(--primary-bg,rgba(59,130,246,.06))" : "transparent",
+                  background: value === o.value ? "var(--primary-bg,rgba(242,153,74,.06))" : "transparent",
                 }}>
                   {o.label}
                 </div>
@@ -160,7 +160,7 @@ function SummaryCard({
       style={{
         background: active ? "var(--primary)" : "var(--card-bg)",
         border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
-        borderRadius: 8, padding: "14px 18px", flex: 1, minWidth: 110,
+        borderRadius:"var(--radius-md)", padding: "14px 18px", flex: 1, minWidth: 110,
         cursor: onClick ? "pointer" : "default",
         transition: "background .15s, border-color .15s",
       }}
@@ -180,7 +180,7 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   return (
     <div style={{
       display: "inline-flex", alignItems: "center", gap: 4,
-      background: "var(--primary-bg,rgba(59,130,246,.1))", color: "var(--primary)",
+      background: "var(--primary-bg,rgba(242,153,74,.1))", color: "var(--primary)",
       border: "1px solid var(--primary)", borderRadius: 999,
       padding: "3px 10px", fontSize: 12, fontWeight: 500,
     }}>
@@ -438,7 +438,7 @@ function CustomersContent() {
             <SummaryCard label="Total" value={summary.total.toLocaleString()} />
             <SummaryCard label="Today" value={summary.today} />
             <SummaryCard label="Active" value={summary.active} color="var(--primary)" onClick={() => applyHealthBand("active")} active={applied.healthBand === "active"} />
-            <SummaryCard label="New" value={summary.new_customers} color="var(--success-text,#15803d)" onClick={() => applyHealthBand("new")} active={applied.healthBand === "new"} />
+            <SummaryCard label="New" value={summary.new_customers} color="var(--success-text,var(--success))" onClick={() => applyHealthBand("new")} active={applied.healthBand === "new"} />
             <SummaryCard label="Repeat Customers" value={summary.repeat_customers} onClick={() => setApplied(p => ({ ...p, page: 1 }))} />
             <SummaryCard label="At Risk" value={summary.at_risk} color="var(--warning-text,#b45309)" onClick={() => applyHealthBand("at_risk")} active={applied.healthBand === "at_risk"} />
             <SummaryCard label="Dormant" value={summary.dormant} color="var(--muted-text)" onClick={() => applyHealthBand("dormant")} active={applied.healthBand === "dormant"} />

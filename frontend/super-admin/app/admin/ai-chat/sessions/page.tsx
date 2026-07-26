@@ -64,7 +64,7 @@ function SessionDetail({ sessionId, onClose }: { sessionId: string; onClose: () 
                   }}
                 >
                   <div style={{
-                    maxWidth: "85%", borderRadius: 8, padding: "8px 12px", fontSize: 13,
+                    maxWidth: "85%", borderRadius:"var(--radius-md)", padding: "8px 12px", fontSize: 13,
                     background: m.role === "user" ? "var(--brand)" : "var(--surface-sunken)",
                     color: m.role === "user" ? "#fff" : "var(--text-primary)",
                   }}>

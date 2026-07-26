@@ -18,7 +18,7 @@ const th: React.CSSProperties = {
 };
 
 const selStyle: React.CSSProperties = {
-  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit",
 };
 
@@ -181,7 +181,7 @@ export default function AdminChatPage() {
         <Modal open={!!hideTarget} title="Hide Message" onClose={() => setHideTarget(null)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <label style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>Reason for hiding:</label>
-            <textarea style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px",
+            <textarea style={{ width: "100%", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", padding: "8px 12px",
               fontSize: 13, background: "var(--bg)", color: "var(--text-primary)", fontFamily: "inherit",
               boxSizing: "border-box" }} rows={3}
               value={hideReason}

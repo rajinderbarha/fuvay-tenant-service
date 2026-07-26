@@ -99,6 +99,9 @@ ERR_SERVICEABILITY_NOT_CHECKED            = "HOME_BOOKING_SERVICEABILITY_NOT_CHE
 ERR_NO_PROVIDER_IN_ZIPCODE                = "NO_PROVIDER_IN_ZIPCODE"
 ERR_NO_PROVIDER_IN_CITY                   = "NO_PROVIDER_IN_CITY"
 
+# HOME-SERVICES-RUNTIME-SAFETY Phase 2A.1
+ERR_INVALID_JOB_TYPE_FOR_SERVICE          = "INVALID_JOB_TYPE_FOR_SERVICE"
+
 # ── Pricing model labels ──────────────────────────────────────────────────────
 PRICING_MODEL_VISIT_FEE = "visit_fee_plus_quote"
 PRICING_MODEL_FIXED     = "fixed"

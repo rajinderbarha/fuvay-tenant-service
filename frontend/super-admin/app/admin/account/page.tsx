@@ -124,8 +124,8 @@ export default function AccountPage() {
         <SectionHeader title="My Account" subtitle="Profile, security, sessions and API keys" />
 
         {toast && (
-          <div style={{ padding:"10px 16px", background:"var(--success-bg,#d1fae5)", border:"1px solid var(--success,#10b981)",
-            borderRadius:8, color:"var(--success-text,#065f46)", fontSize:13 }}>
+          <div style={{ padding:"10px 16px", background:"var(--success-bg,#d1fae5)", border:"1px solid var(--success,var(--success))",
+            borderRadius:"var(--radius-md)", color:"var(--success-text,#065f46)", fontSize:13 }}>
             {toast}
           </div>
         )}
@@ -217,7 +217,7 @@ export default function AccountPage() {
                       <p style={{ fontSize:13, color:"var(--text-secondary)" }}>
                         Scan this QR code with your authenticator app:
                       </p>
-                      <img src={mfaSetup.qr_code_url} alt="MFA QR" style={{ width:200, height:200, border:"1px solid var(--border)", borderRadius:8 }} />
+                      <img src={mfaSetup.qr_code_url} alt="MFA QR" style={{ width:200, height:200, border:"1px solid var(--border)", borderRadius:"var(--radius-md)" }} />
                       <p style={{ fontSize:12, color:"var(--text-secondary)" }}>
                         Or enter secret manually: <code style={{ background:"var(--surface-alt)", padding:"2px 6px", borderRadius:4 }}>{mfaSetup.secret}</code>
                       </p>
@@ -253,7 +253,7 @@ export default function AccountPage() {
               <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                 {(sessions.data?.sessions ?? []).map((s: UserSession) => (
                   <div key={s.session_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                    padding:"12px 14px", border:"1px solid var(--border)", borderRadius:8, background:"var(--surface)" }}>
+                    padding:"12px 14px", border:"1px solid var(--border)", borderRadius:"var(--radius-md)", background:"var(--surface)" }}>
                     <div>
                       <p style={{ margin:"0 0 2px", fontSize:13, fontWeight:500 }}>
                         {s.ip_address}
@@ -292,7 +292,7 @@ export default function AccountPage() {
                 <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                   {(keys.data?.keys ?? []).map((k: ApiKey) => (
                     <div key={k.key_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                      padding:"12px 14px", border:"1px solid var(--border)", borderRadius:8 }}>
+                      padding:"12px 14px", border:"1px solid var(--border)", borderRadius:"var(--radius-md)" }}>
                       <div>
                         <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:4 }}>
                           <p style={{ margin:0, fontSize:13, fontWeight:600 }}>{k.name}</p>
@@ -326,7 +326,7 @@ export default function AccountPage() {
       <Modal open={newKeyModal} onClose={() => { setNewKeyModal(false); setNewKeyResult(null); }} title="Create API Key" size="md">
         {newKeyResult ? (
           <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-            <div style={{ padding:12, background:"var(--success-bg,#d1fae5)", borderRadius:8, border:"1px solid var(--success,#10b981)" }}>
+            <div style={{ padding:12, background:"var(--success-bg,#d1fae5)", borderRadius:"var(--radius-md)", border:"1px solid var(--success,var(--success))" }}>
               <p style={{ margin:"0 0 8px", fontWeight:600, color:"var(--success-text,#065f46)" }}>API Key Created</p>
               <p style={{ margin:"0 0 4px", fontSize:12, color:"var(--success-text,#065f46)" }}>Copy this key now — it will not be shown again:</p>
               <code style={{ display:"block", wordBreak:"break-all", fontSize:12, padding:"8px 10px",

@@ -5,7 +5,7 @@ import { OperationalAlertList } from "@/components/analytics";
 
 const btnStyle: React.CSSProperties = {
   padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)",
-  borderRadius: 8, background: "var(--surface)", color: "var(--text-secondary)",
+  borderRadius:"var(--radius-md)", background: "var(--surface)", color: "var(--text-secondary)",
   cursor: "pointer", fontFamily: "inherit",
 };
 
@@ -36,7 +36,7 @@ export default function AlertsPage() {
         </button>
       </div>
 
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
         <OperationalAlertList alerts={alerts} loading={loading} />
       </div>
 

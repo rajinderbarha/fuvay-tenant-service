@@ -132,6 +132,22 @@ ERR_QUOTE_REVISION_REASON_REQUIRED     = "QUOTE_REVISION_REASON_REQUIRED"
 ERR_QUOTE_IDEMPOTENCY_CONFLICT         = "QUOTE_IDEMPOTENCY_CONFLICT"
 ERR_QUOTE_JOB_NOT_FOUND                = "QUOTE_JOB_NOT_FOUND"
 ERR_QUOTE_CREATE_FAILED                = "QUOTE_CREATE_FAILED"
+# HOME-SERVICES-RUNTIME-SAFETY Phase 2A — a quote that has been superseded by
+# a newer version (is_current=false) can no longer be approved/rejected/
+# revised; the customer must act on the current effective quote instead.
+ERR_QUOTE_NOT_CURRENT                  = "QUOTE_NOT_CURRENT"
+# HOME-SERVICES-RUNTIME-SAFETY Phase 2A.1 (spec section 10) -- an ordinary
+# create_quote call must not silently supersede a quote the customer already
+# approved, or one currently awaiting the customer's decision. Only "no
+# prior quote", "rejected", or "revision requested" (and terminal
+# expired/cancelled) are legitimate replacement sources.
+ERR_APPROVED_ESTIMATE_IMMUTABLE        = "APPROVED_ESTIMATE_IMMUTABLE"
+ERR_INVALID_ESTIMATE_REVISION_STATE    = "INVALID_ESTIMATE_REVISION_STATE"
+# HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 14) -- a job the
+# customer finally rejected the estimate for is terminal
+# (closed_estimate_declined); no new quote may be created against it unless
+# a separate, explicit reopen workflow exists (none does today).
+ERR_JOB_CLOSED_ESTIMATE_DECLINED       = "JOB_CLOSED_ESTIMATE_DECLINED"
 ERR_CHECKLIST_NOT_FOUND                = "CHECKLIST_NOT_FOUND"
 ERR_CHECKLIST_ACCESS_DENIED            = "CHECKLIST_ACCESS_DENIED"
 ERR_CHECKLIST_REQUIRED_ITEM_MISSING    = "CHECKLIST_REQUIRED_ITEM_MISSING"

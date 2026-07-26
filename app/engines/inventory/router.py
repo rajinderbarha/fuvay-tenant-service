@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
+from app.dependencies.vertical_guard import require_tenant_vertical_active
 from app.engines.inventory.service import InventoryService
 from app.schemas.base import ApiResponse, ok
 logger = structlog.get_logger("inventory.router")
@@ -22,8 +23,18 @@ async def engine_meta() -> dict:
             "endpoint_count": 14,"status":"active",
             "capabilities":["select_for_update","append_only_ledger","ledger_reconciliation",
                             "reservation_ttl","low_stock_alerts","cycle_count"]}
+# Inventory's "inventory" capability is currently declared only by the
+# home_services vertical (confirmed live -- no other vertical's capability
+# list includes it). This guard binds mutations to that vertical being
+# enabled AND this tenant's own home_services enrollment being active, in
+# addition to the existing permission check below. If inventory ever
+# becomes a multi-vertical capability, this needs to resolve the tenant's
+# actual vertical dynamically rather than a fixed "home_services" binding.
+_require_hs_vertical_active = require_tenant_vertical_active("home_services")
+
 @router.post("/tenants/{tenant_id}/items", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def create_item(tenant_id: uuid.UUID, r: Request, u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                       _v=Depends(_require_hs_vertical_active),
                        s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.create_item(tenant_id, await r.json()), _rid(r), ENGINE_ID)
 @router.get("/items/{item_id}", response_model=ApiResponse[dict])
@@ -38,11 +49,13 @@ async def list_items(tenant_id: uuid.UUID, r: Request, limit: int=Query(50,ge=1,
 @router.put("/tenants/{tenant_id}/items/{item_id}", response_model=ApiResponse[dict])
 async def update_item(tenant_id: uuid.UUID, item_id: uuid.UUID, r: Request,
                        u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                       _v=Depends(_require_hs_vertical_active),
                        s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.update_item(item_id, tenant_id, await r.json()), _rid(r), ENGINE_ID)
 @router.delete("/tenants/{tenant_id}/items/{item_id}", response_model=ApiResponse[dict])
 async def delete_item(tenant_id: uuid.UUID, item_id: uuid.UUID, r: Request,
                        u: UserContext=Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                       _v=Depends(_require_hs_vertical_active),
                        s: InventoryService=Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.delete_item(item_id, tenant_id), _rid(r), ENGINE_ID)
 @router.post("/items/{item_id}/locations/{location_id}/receive", response_model=ApiResponse[dict])

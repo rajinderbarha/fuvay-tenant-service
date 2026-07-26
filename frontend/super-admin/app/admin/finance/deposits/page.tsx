@@ -158,7 +158,7 @@ export default function SecurityDepositsPage() {
             <div style={{ position: "relative" }}>
               <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }}/>
               <input placeholder="Search tenant / business…" value={search} onChange={e => setSearch(e.target.value)}
-                style={{ width: "100%", height: 34, paddingLeft: 32, paddingRight: 12, fontSize: 13, borderRadius: 8,
+                style={{ width: "100%", height: 34, paddingLeft: 32, paddingRight: 12, fontSize: 13, borderRadius:"var(--radius-md)",
                   border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)",
                   outline: "none", fontFamily: "inherit", boxSizing: "border-box" }}/>
             </div>

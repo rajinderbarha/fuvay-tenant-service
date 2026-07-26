@@ -47,6 +47,7 @@ class Booking(ServiceOSBase):
     coverage_match_level:   Mapped[str|None]       = mapped_column(String(20), nullable=True)
     service_id:              Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
     job_type:                Mapped[str|None]       = mapped_column(String(30), nullable=True)
+    job_type_id:             Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
     # Extended location (Step 4)
     city:                           Mapped[str|None]       = mapped_column(String(100), nullable=True)
     # Extended serviceability (Step 4) — mapping UUID from TenantServiceAreaService

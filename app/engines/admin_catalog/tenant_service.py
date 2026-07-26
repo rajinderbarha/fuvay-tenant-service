@@ -16,6 +16,7 @@ from app.engines.admin_catalog.models import (
     MasterService, ServiceCategory, ServicePricingRule,
     TenantService, TenantServiceType, TenantServiceBrand,
     MasterServiceType, MasterServiceBrand, ServiceType, Brand,
+    ServiceBlueprintVersion,
 )
 from app.engines.admin_catalog.bargain_engine import (
     compute_symmetric_customer_price_tiers, BargainValidationError,
@@ -668,6 +669,261 @@ class TenantCatalogService:
         await self.db.flush()
         return await self.get_brand_pricing_for_setup(tenant_service_id, service_type_id)
 
+    # ── Coverage modes (migration 152) ──────────────────────────────────────
+    # ALL / SELECTED_ONLY / ALL_EXCEPT for the Type and Brand dimensions.
+    # "selected"/"all_except" both read the SAME TenantServiceType/
+    # TenantServiceBrand rows -- only the coverage_mode flag changes whether
+    # those rows mean "the supported set" or "the excluded set".
+    COVERAGE_MODES = ("all", "selected", "all_except")
+
+    async def set_type_coverage_mode(self, tenant_service_id: uuid.UUID, mode: str) -> dict:
+        if mode not in self.COVERAGE_MODES:
+            raise ServiceOSException("INVALID_COVERAGE_MODE",
+                f"mode must be one of {self.COVERAGE_MODES}.", status_code=422)
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        ts.type_coverage_mode = mode
+        await self.db.flush()
+        return self._ts_dict(ts)
+
+    async def set_brand_coverage_mode(self, tenant_service_id: uuid.UUID, mode: str) -> dict:
+        if mode not in self.COVERAGE_MODES:
+            raise ServiceOSException("INVALID_COVERAGE_MODE",
+                f"mode must be one of {self.COVERAGE_MODES}.", status_code=422)
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        ts.brand_coverage_mode = mode
+        await self.db.flush()
+        return self._ts_dict(ts)
+
+    async def is_type_supported(self, ts: TenantService, service_type_id: uuid.UUID) -> bool:
+        if ts.type_coverage_mode == "all":
+            return True
+        r = await self.db.execute(select(TenantServiceType.id).where(
+            TenantServiceType.tenant_service_id == ts.id,
+            TenantServiceType.service_type_id == service_type_id,
+            TenantServiceType.is_enabled == True))
+        row_exists = r.scalar_one_or_none() is not None
+        return (not row_exists) if ts.type_coverage_mode == "all_except" else row_exists
+
+    async def is_brand_supported(self, ts: TenantService, brand_id: uuid.UUID) -> bool:
+        if ts.brand_coverage_mode == "all":
+            return True
+        r = await self.db.execute(select(TenantServiceBrand.id).where(
+            TenantServiceBrand.tenant_service_id == ts.id,
+            TenantServiceBrand.brand_id == brand_id,
+            TenantServiceBrand.is_enabled == True))
+        row_exists = r.scalar_one_or_none() is not None
+        return (not row_exists) if ts.brand_coverage_mode == "all_except" else row_exists
+
+    async def update_last_active_step(self, tenant_service_id: uuid.UUID, step: str) -> dict:
+        """Minimal draft/resume pointer: remembers which wizard step the
+        tenant was last on, so Save-and-Exit -> resume lands them back
+        where they left off."""
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        ts.last_active_step = step
+        await self.db.flush()
+        return {"tenant_service_id": str(ts.id), "last_active_step": ts.last_active_step}
+
+    async def validate_for_publish(self, tenant_service_id: uuid.UUID) -> dict:
+        """Field-level publish validation (spec section 16 contract). Checks
+        every type/brand combination the tenant has marked as SUPPORTED
+        (via coverage mode) resolves to a real tenant price -- never invents
+        one, never silently allows publishing an unresolvable combination."""
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        errors: list[dict] = []
+
+        if not ts.requires_type and not ts.requires_brand:
+            # Simple job type: only the tenant default price (or, for
+            # inspection-workflow services, the visit fee) is required.
+            if ts.tenant_min_price is None or ts.tenant_max_price is None:
+                if ts.tenant_visit_fee is None:
+                    errors.append({
+                        "step": "pricing", "job_type_id": str(ts.job_type_id) if ts.job_type_id else ts.job_type,
+                        "dimension_path": {}, "code": "MISSING_TENANT_PRICE",
+                        "message": "No default price or visit fee configured for this service.",
+                    })
+        else:
+            types_r = await self.db.execute(select(ServiceType.id, ServiceType.name).join(
+                MasterServiceType, MasterServiceType.service_type_id == ServiceType.id
+            ).where(MasterServiceType.master_service_id == ts.master_service_id,
+                    MasterServiceType.is_active == True)) if ts.requires_type else None
+            candidate_types = types_r.all() if types_r else [(None, None)]
+
+            brands_r = await self.db.execute(select(Brand.id, Brand.name).join(
+                MasterServiceBrand, MasterServiceBrand.brand_id == Brand.id
+            ).where(MasterServiceBrand.master_service_id == ts.master_service_id,
+                    MasterServiceBrand.is_active == True)) if ts.requires_brand else None
+            candidate_brands = brands_r.all() if brands_r else [(None, None)]
+
+            # A required dimension with zero admin-configured values is
+            # itself unpublishable (found live: an empty candidate list made
+            # the loops below never execute, vacuously reporting "valid" for
+            # a service that literally cannot be priced for anything).
+            job_type_label = str(ts.job_type_id) if ts.job_type_id else ts.job_type
+            if ts.requires_type and not candidate_types:
+                errors.append({
+                    "step": "coverage", "job_type_id": job_type_label, "dimension_path": {},
+                    "code": "NO_TYPES_CONFIGURED",
+                    "message": "This service requires a Type, but no types are configured for it yet.",
+                })
+            if ts.requires_brand and not candidate_brands:
+                errors.append({
+                    "step": "coverage", "job_type_id": job_type_label, "dimension_path": {},
+                    "code": "NO_BRANDS_CONFIGURED",
+                    "message": "This service requires a Brand, but no brands are configured for it yet.",
+                })
+
+            for type_id, type_name in candidate_types:
+                if type_id is not None and not await self.is_type_supported(ts, type_id):
+                    continue
+                for brand_id, brand_name in candidate_brands:
+                    if brand_id is not None and not await self.is_brand_supported(ts, brand_id):
+                        continue
+                    result = await self.resolve_tenant_price(tenant_service_id, type_id, brand_id)
+                    if not result["resolved"]:
+                        errors.append({
+                            "step": "pricing", "job_type_id": str(ts.job_type_id) if ts.job_type_id else ts.job_type,
+                            "dimension_path": {k: v for k, v in
+                                (("type", type_name), ("brand", brand_name)) if v is not None},
+                            "code": "MISSING_TENANT_PRICE",
+                            "message": f"No tenant price resolves for "
+                                       f"{' + '.join(v for v in (type_name, brand_name) if v) or 'this service'}.",
+                        })
+
+        return {"valid": len(errors) == 0, "errors": errors}
+
+    async def get_blueprint_update_status(self, tenant_service_id: uuid.UUID) -> dict:
+        """Spec section 19: 'Service configuration update required' detection.
+        Fails closed -- a tenant setup with no recorded blueprint_version_id
+        (pre-versioning legacy row) is reported as update_required=True with
+        a null diff, never silently treated as up to date."""
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+
+        latest_r = await self.db.execute(
+            select(ServiceBlueprintVersion).where(
+                ServiceBlueprintVersion.master_service_id == ts.master_service_id,
+                ServiceBlueprintVersion.status == "published",
+            ).order_by(ServiceBlueprintVersion.version_number.desc()).limit(1))
+        latest = latest_r.scalar_one_or_none()
+
+        if not latest:
+            return {"update_required": False, "current_version": None, "latest_version": None, "changes": []}
+
+        if ts.blueprint_version_id is None:
+            return {
+                "update_required": True, "current_version": None,
+                "latest_version": latest.version_number, "changes": ["No recorded blueprint version for this setup."],
+            }
+
+        if ts.blueprint_version_id == latest.id:
+            return {
+                "update_required": False, "current_version": latest.version_number,
+                "latest_version": latest.version_number, "changes": [],
+            }
+
+        current_r = await self.db.execute(
+            select(ServiceBlueprintVersion).where(ServiceBlueprintVersion.id == ts.blueprint_version_id))
+        current = current_r.scalar_one_or_none()
+
+        # Every superseded version between the tenant's version (exclusive)
+        # and latest (inclusive), oldest first, so change_summary reads as a
+        # chronological changelog rather than just the single latest diff.
+        chain_r = await self.db.execute(
+            select(ServiceBlueprintVersion.change_summary).where(
+                ServiceBlueprintVersion.master_service_id == ts.master_service_id,
+                ServiceBlueprintVersion.version_number > (current.version_number if current else 0),
+            ).order_by(ServiceBlueprintVersion.version_number))
+        changes = [c for c, in chain_r if c]
+
+        return {
+            "update_required": True,
+            "current_version": current.version_number if current else None,
+            "latest_version": latest.version_number,
+            "changes": changes,
+        }
+
+    async def resolve_tenant_price(self, tenant_service_id: uuid.UUID,
+                                    service_type_id: uuid.UUID | None = None,
+                                    brand_id: uuid.UUID | None = None) -> dict:
+        """Deterministic tenant price resolution -- the single source of
+        truth every customer-facing quote must go through. Never invents a
+        price, never falls back to another tenant's or the admin's price,
+        never silently resolves across tenants. Precedence (most specific
+        wins): exact type+brand override -> type-only override -> brand-only
+        override (fixed/non-type-based services) -> tenant default -> none.
+
+        Returns the exact contract shape the future wizard/pricing-preview
+        API needs (resolved / pricing_model / minimum_price / maximum_price
+        / currency / source_rule_id / source / inherited_from_rule_id), or
+        {"resolved": False, "reason": "NO_TENANT_PRICE_FOR_COMBINATION"}.
+        """
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+
+        # Coverage gate: an unsupported type/brand (per coverage_mode) must
+        # never resolve to a price, regardless of any override row that
+        # might technically exist -- "unsupported combinations are never
+        # available to customers."
+        if service_type_id is not None and not await self.is_type_supported(ts, service_type_id):
+            return {"resolved": False, "reason": "COMBINATION_NOT_SUPPORTED"}
+        if brand_id is not None and not await self.is_brand_supported(ts, brand_id):
+            return {"resolved": False, "reason": "COMBINATION_NOT_SUPPORTED"}
+
+        def _found(rule_id, source: str, min_price, max_price) -> dict:
+            return {
+                "resolved": True,
+                "pricing_model": "FIXED" if min_price == max_price else "RANGE",
+                "minimum_price": float(min_price),
+                "maximum_price": float(max_price),
+                "currency": "INR",
+                "source_rule_id": str(rule_id),
+                "source": source,
+                "inherited_from_rule_id": None,
+            }
+
+        # 1. Exact type + brand override.
+        if service_type_id is not None and brand_id is not None:
+            r = await self.db.execute(select(TenantServiceBrand).where(
+                TenantServiceBrand.tenant_service_id == tenant_service_id,
+                TenantServiceBrand.service_type_id == service_type_id,
+                TenantServiceBrand.brand_id == brand_id,
+                TenantServiceBrand.is_enabled == True))
+            tsb = r.scalar_one_or_none()
+            if tsb and tsb.tenant_min_price is not None and tsb.tenant_max_price is not None:
+                return _found(tsb.id, "type_brand_override", tsb.tenant_min_price, tsb.tenant_max_price)
+
+        # 2. Type-only override.
+        if service_type_id is not None:
+            r = await self.db.execute(select(TenantServiceType).where(
+                TenantServiceType.tenant_service_id == tenant_service_id,
+                TenantServiceType.service_type_id == service_type_id,
+                TenantServiceType.is_enabled == True))
+            tst = r.scalar_one_or_none()
+            if tst and tst.tenant_min_price is not None and tst.tenant_max_price is not None:
+                return _found(tst.id, "type_override", tst.tenant_min_price, tst.tenant_max_price)
+
+        # 3. Brand-only override (service_type_id NULL row -- fixed/non-type-based services).
+        if brand_id is not None:
+            r = await self.db.execute(select(TenantServiceBrand).where(
+                TenantServiceBrand.tenant_service_id == tenant_service_id,
+                TenantServiceBrand.service_type_id.is_(None),
+                TenantServiceBrand.brand_id == brand_id,
+                TenantServiceBrand.is_enabled == True))
+            tsb = r.scalar_one_or_none()
+            if tsb and tsb.tenant_min_price is not None and tsb.tenant_max_price is not None:
+                return _found(tsb.id, "brand_override", tsb.tenant_min_price, tsb.tenant_max_price)
+
+        # 4. Tenant default job-type rule.
+        if ts.tenant_min_price is not None and ts.tenant_max_price is not None:
+            return _found(ts.id, "tenant_default", ts.tenant_min_price, ts.tenant_max_price)
+
+        # 5. No price resolves -- never invent, never fall back to admin/another tenant.
+        return {"resolved": False, "reason": "NO_TENANT_PRICE_FOR_COMBINATION"}
+
     def price_options_preview(self, data: dict) -> dict:
         try:
             return compute_symmetric_customer_price_tiers(
@@ -785,6 +1041,9 @@ class TenantCatalogService:
             "setup_status": ts.setup_status,
             "published_at": ts.published_at.isoformat() if ts.published_at else None,
             "created_at": ts.created_at.isoformat() if ts.created_at else None,
+            "type_coverage_mode": ts.type_coverage_mode,
+            "brand_coverage_mode": ts.brand_coverage_mode,
+            "last_active_step": ts.last_active_step,
         }
 
 

@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader,
@@ -96,7 +97,7 @@ function SummaryCard({ label, value, sub, color }: { label: string; value: numbe
   return (
     <div style={{
       background: "var(--surface)", border: "1px solid var(--border)",
-      borderRadius: 12, padding: "16px 20px", flex: "1 1 140px",
+      borderRadius:"var(--radius-lg)", padding: "16px 20px", flex: "1 1 140px",
     }}>
       <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: color ?? "var(--text-secondary)", textTransform: "uppercase", letterSpacing: ".06em" }}>{label}</p>
       <p style={{ margin: "6px 0 0", fontSize: 28, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1 }}>{value}</p>
@@ -394,8 +395,77 @@ function ReqToggle({ label, value, onChange }: { label: string; value: boolean; 
   );
 }
 
+// ── New Master Service -- canonical creation (migration 160) ────────────────
+// Job-type-agnostic: Service Group, Service Name, Description, Display Order
+// only. No Job Type, Pricing Model, prices, or Brand/Type/workflow
+// requirement fields -- those are added afterward as Job-Type Blueprint
+// child records in the Catalog Workspace, which this navigates to on success.
+function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGroups }: {
+  open: boolean; onClose: () => void; onCreated: () => void;
+  catOptions: { value: string; label: string }[];
+  allGroups: { id: string; name: string; category_id: string }[];
+}) {
+  const [name, setName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [description, setDescription] = useState("");
+  const [displayOrder, setDisplayOrder] = useState(0);
+  const createAction = useAction(catalogApi.createMasterServiceV2);
+
+  const groupOptions = useMemo(
+    () => allGroups.filter(g => !categoryId || g.category_id === categoryId).map(g => ({ value: g.id, label: g.name })),
+    [allGroups, categoryId]);
+
+  function reset() {
+    setName(""); setCategoryId(""); setGroupId(""); setDescription(""); setDisplayOrder(0);
+  }
+
+  async function submit() {
+    const result = await createAction.execute({
+      service_name: name.trim(), category_id: categoryId, service_group_id: groupId,
+      description: description.trim() || undefined, display_order: displayOrder,
+    });
+    if (result) { reset(); onCreated(); }
+  }
+
+  const canSave = !!name.trim() && !!categoryId && !!groupId;
+
+  return (
+    <Modal open={open} onClose={onClose} title="New Master Service">
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {createAction.error && (
+          <div style={{ padding: "10px 14px", borderRadius: "var(--radius-md)", background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
+            <p style={{ fontSize: 13, color: "var(--danger-text)", margin: 0 }}>{createAction.error}</p>
+          </div>
+        )}
+        <Input label="Service Name *" placeholder="e.g. Air Conditioner" value={name} onChange={setName}/>
+        <Select label="Business Vertical *" value={categoryId}
+          onChange={v => { setCategoryId(v); setGroupId(""); }}
+          options={catOptions} placeholder="Select…"/>
+        <Select label="Service Group *" value={groupId} onChange={setGroupId}
+          options={groupOptions} placeholder={categoryId ? "Select…" : "Select a vertical first"}/>
+        <Input label="Description" placeholder="Optional description for this service"
+          value={description} onChange={setDescription}/>
+        <Input label="Display Order" type="number" value={String(displayOrder)}
+          onChange={v => setDisplayOrder(parseInt(v, 10) || 0)}/>
+        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
+          Job types (Repair, Installation, …), pricing behavior, and Brand/Type requirements are
+          configured after creation, per job type, in this service's Job-Type Blueprint.
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Btn variant="secondary" size="sm" onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" size="sm" loading={createAction.loading} disabled={!canSave} onClick={submit}>
+            Create Service
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function MasterServicesPage() {
+  const router = useRouter();
   // Filters
   const [q, setQ] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -406,7 +476,7 @@ export default function MasterServicesPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Modal / detail
-  const [modal, setModal] = useState<"none" | "create" | "edit">("none");
+  const [modal, setModal] = useState<"none" | "create-service" | "edit">("none");
   const [editing, setEditing] = useState<MasterServiceEnriched | null>(null);
   const [detailSvc, setDetailSvc] = useState<MasterServiceEnriched | null>(null);
   const [archiveId, setArchiveId] = useState<string | null>(null);
@@ -458,43 +528,19 @@ export default function MasterServicesPage() {
     [allGroups.data]);
 
   // Actions
-  const createAction = useAction(async (data: FormState) => {
-    await catalogApi.createMasterService({
-      service_name: data.name, category_id: data.category_id,
-      service_group_id: data.service_group_id || undefined,
-      job_type: data.job_type, pricing_model: data.pricing_model as "fixed" | "range" | "post_assessment" | "hourly",
-      base_price: data.base_price ? parseFloat(data.base_price) : undefined,
-      min_price: data.min_price ? parseFloat(data.min_price) : undefined,
-      max_price: data.max_price ? parseFloat(data.max_price) : undefined,
-      description: data.description || undefined,
-      unit_label: data.unit_label || undefined,
-      is_active: data.is_active,
-      requires_issue_type: data.requires_issue_type,
-      is_brand_required: data.is_brand_required,
-      is_type_required: data.is_type_required,
-      requires_checklist: data.requires_checklist,
-      requires_schedule: data.requires_schedule,
-      requires_address: data.requires_address,
-    });
-    services.refetch(); summary.refetch(); setModal("none"); notify("Master service created.");
-  });
-
   const editAction = useAction(async ({ id, data }: { id: string; data: FormState }) => {
     await catalogApi.updateMasterService(id, {
       service_name: data.name, job_type: data.job_type, pricing_model: data.pricing_model as "fixed" | "range" | "post_assessment" | "hourly",
       service_group_id: data.service_group_id || undefined,
-      base_price: data.base_price ? parseFloat(data.base_price) : undefined,
-      min_price: data.min_price ? parseFloat(data.min_price) : undefined,
-      max_price: data.max_price ? parseFloat(data.max_price) : undefined,
+      // base_price/min_price/max_price are no longer admin-writable
+      // (MODULE-L5-56) -- pricing is tenant-owned only.
       description: data.description || undefined,
       unit_label: data.unit_label || undefined,
       is_active: data.is_active,
-      requires_issue_type: data.requires_issue_type,
-      is_brand_required: data.is_brand_required,
-      is_type_required: data.is_type_required,
-      requires_checklist: data.requires_checklist,
-      requires_schedule: data.requires_schedule,
-      requires_address: data.requires_address,
+      // Brand/Type/Issue/Checklist/Schedule/Address requirements are no
+      // longer edited from this form -- they are configured per exact Job
+      // Type in the Job-Type Blueprint (Dimensions/Problems & Questions/
+      // Checklist/Workflow tabs). Existing values are left untouched here.
     });
     services.refetch(); summary.refetch(); setModal("none"); notify("Service updated.");
   });
@@ -539,7 +585,7 @@ export default function MasterServicesPage() {
     notify("Exported.");
   });
 
-  function openCreate() { setForm({ ...BLANK }); setEditing(null); setModal("create"); }
+  function openCreate() { setModal("create-service"); }
   function openEdit(svc: MasterServiceEnriched) {
     setForm({
       name: svc.name, category_id: svc.category_id,
@@ -568,7 +614,7 @@ export default function MasterServicesPage() {
   const canSave = !!form.name && !!form.category_id && !!form.job_type && !!form.pricing_model;
   const s = summary.data;
   const rows = services.data?.services ?? [];
-  const activeAction = editing ? editAction : createAction;
+  const activeAction = editAction;
 
   const columns = [
     {
@@ -684,7 +730,7 @@ export default function MasterServicesPage() {
       {summary.loading && (
         <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
           {[...Array(6)].map((_, i) => (
-            <div key={i} style={{ flex: "1 1 140px", height: 80, borderRadius: 12, background: "var(--border)" }} className="skeleton" />
+            <div key={i} style={{ flex: "1 1 140px", height: 80, borderRadius:"var(--radius-lg)", background: "var(--border)" }} className="skeleton" />
           ))}
         </div>
       )}
@@ -714,7 +760,7 @@ export default function MasterServicesPage() {
               placeholder="Search by service name…"
               value={q} onChange={e => setQ(e.target.value)}
               style={{
-                width: "100%", padding: "8px 12px", borderRadius: 8, fontSize: 13,
+                width: "100%", padding: "8px 12px", borderRadius:"var(--radius-md)", fontSize: 13,
                 border: "1px solid var(--border)", background: "var(--surface)",
                 color: "var(--text-primary)", outline: "none", boxSizing: "border-box",
               }}
@@ -796,12 +842,16 @@ export default function MasterServicesPage() {
           onClick={() => setDetailSvc(null)} />
       )}
 
-      {/* Create / Edit Modal */}
-      <Modal open={modal !== "none"} onClose={() => setModal("none")}
-        title={editing ? `Edit: ${editing.name}` : "New Master Service"}>
+      {/* Edit Modal (existing services only -- job_type/pricing_model/prices/
+          Brand/Type/workflow requirements kept here ONLY for backward
+          compatibility with services created before migration 160; new
+          services are created job-type-agnostic via the modal below and
+          configure these per job type in their Job-Type Blueprint) */}
+      <Modal open={modal === "edit"} onClose={() => setModal("none")}
+        title={`Edit: ${editing?.name ?? ""}`}>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: "70vh", overflowY: "auto", paddingRight: 4 }}>
           {activeAction.error && (
-            <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
+            <div style={{ padding: "10px 14px", borderRadius:"var(--radius-md)", background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
               <p style={{ fontSize: 13, color: "var(--danger-text)", margin: 0 }}>{activeAction.error}</p>
             </div>
           )}
@@ -809,15 +859,10 @@ export default function MasterServicesPage() {
           <Input label="Service Name *" placeholder="e.g. AC Gas Refill" value={form.name}
             onChange={v => setF("name", v)} />
 
-          {!editing ? (
-            <Select label="Category *" value={form.category_id} onChange={v => { setF("category_id", v); setF("service_group_id", ""); }}
-              options={catOptions} placeholder="Select category…" />
-          ) : (
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)" }}>Category (locked)</label>
-              <p style={{ fontSize: 13, color: "var(--text-tertiary, var(--text-secondary))", margin: "6px 0 0" }}>{catMap[form.category_id] ?? form.category_id}</p>
-            </div>
-          )}
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)" }}>Category (locked)</label>
+            <p style={{ fontSize: 13, color: "var(--text-tertiary, var(--text-secondary))", margin: "6px 0 0" }}>{catMap[form.category_id] ?? form.category_id}</p>
+          </div>
 
           <Select label="Service Group" value={form.service_group_id}
             onChange={v => setF("service_group_id", v)}
@@ -831,38 +876,28 @@ export default function MasterServicesPage() {
               onChange={v => setF("pricing_model", v)} options={PRICING_MODELS} />
           </div>
 
-          {form.pricing_model === "range" ? (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Input label="Min Price" type="number" placeholder="0" value={form.min_price}
-                onChange={v => setF("min_price", v)} />
-              <Input label="Max Price" type="number" placeholder="0" value={form.max_price}
-                onChange={v => setF("max_price", v)} />
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Input label="Base Price" type="number" placeholder="0" value={form.base_price}
-                onChange={v => setF("base_price", v)} hint={PRICING_MODEL_HELP[form.pricing_model]} />
-              <Input label="Unit Label" placeholder="per visit" value={form.unit_label}
-                onChange={v => setF("unit_label", v)} />
-            </div>
-          )}
+          <div style={{ padding: "10px 12px", borderRadius: "var(--radius-md)", background: "var(--surface-sunken)", border: "1px solid var(--border)" }}>
+            <p style={{ margin: 0, fontSize: 11, color: "var(--text-tertiary)" }}>
+              Pricing (base/min/max/visit fee) is tenant-owned only — each tenant sets its own price for this
+              service in Tenant Setup. Admin no longer enters a price amount here.
+            </p>
+          </div>
+          <Input label="Unit Label" placeholder="per visit" value={form.unit_label}
+            onChange={v => setF("unit_label", v)} />
 
           <Input label="Description" placeholder="Optional description for this service"
             value={form.description} onChange={v => setF("description", v)} />
 
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-            <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+            <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: ".06em" }}>
               Requirements
             </p>
-            <p style={{ margin: "0 0 10px", fontSize: 11, color: "var(--text-secondary)" }}>
-              Auto-filled from job type. Adjust as needed.
+            <p style={{ margin: 0, fontSize: 11, color: "var(--text-tertiary)" }}>
+              Brand, Type, Issue, Checklist, Schedule and Address requirements are configured per exact Job Type in
+              the Job-Type Blueprint (Dimensions, Problems &amp; Questions, Checklist and Workflow tabs) — not here.
+              These per-service flags are retained on existing records for history but are no longer authoritative
+              once a Job-Type Blueprint exists for a job type.
             </p>
-            <ReqToggle label="Brand Required" value={form.is_brand_required} onChange={v => setF("is_brand_required", v)} />
-            <ReqToggle label="Type Required" value={form.is_type_required} onChange={v => setF("is_type_required", v)} />
-            <ReqToggle label="Issue Type Required" value={form.requires_issue_type} onChange={v => setF("requires_issue_type", v)} />
-            <ReqToggle label="Checklist Required" value={form.requires_checklist} onChange={v => setF("requires_checklist", v)} />
-            <ReqToggle label="Schedule Required" value={form.requires_schedule} onChange={v => setF("requires_schedule", v)} />
-            <ReqToggle label="Address Required" value={form.requires_address} onChange={v => setF("requires_address", v)} />
           </div>
 
           {editing && (
@@ -874,14 +909,23 @@ export default function MasterServicesPage() {
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <Btn variant="secondary" size="sm" onClick={() => setModal("none")}>Cancel</Btn>
             <Btn variant="primary" size="sm" loading={activeAction.loading} disabled={!canSave}
-              onClick={() => editing
-                ? editAction.execute({ id: editing.id, data: form })
-                : createAction.execute(form)}>
-              {editing ? "Save Changes" : "Create Service"}
+              onClick={() => { if (editing) editAction.execute({ id: editing.id, data: form }); }}>
+              Save Changes
             </Btn>
           </div>
         </div>
       </Modal>
+
+      {/* New Master Service -- canonical creation (migration 160), a focused
+          form, not the full legacy modal. Navigates to the Catalog Workspace
+          on success so the admin can add and configure job types. */}
+      <MasterServiceCreateModal open={modal === "create-service"} onClose={() => setModal("none")}
+        catOptions={catOptions} allGroups={allGroups.data?.groups ?? []}
+        onCreated={() => {
+          services.refetch(); summary.refetch(); setModal("none");
+          notify("Master service created. Add job types in the Catalog Workspace.");
+          router.push("/admin/catalog-workspace");
+        }}/>
 
       {/* Archive confirm */}
       <Modal open={!!archiveId} onClose={() => setArchiveId(null)} title="Archive Master Service">

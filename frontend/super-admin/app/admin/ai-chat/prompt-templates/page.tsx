@@ -61,7 +61,7 @@ function TemplateModal({
     <Modal open onClose={onClose} title={isEdit ? `Edit: ${tmpl!.template_key}` : "New Prompt Template"}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {saveAction.error && (
-          <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, padding: 12, color: "var(--danger-text)", fontSize: 13 }}>
+          <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-md)", padding: 12, color: "var(--danger-text)", fontSize: 13 }}>
             {saveAction.error}
           </div>
         )}
@@ -87,7 +87,7 @@ function TemplateModal({
             value={cat}
             onChange={e => setCat(e.target.value as TemplateCategory)}
             style={{
-              width: "100%", border: "1px solid var(--border)", borderRadius: 8,
+              width: "100%", border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
               padding: "8px 12px", fontSize: 13, background: "var(--surface-sunken)",
               color: "var(--text-primary)", fontFamily: "inherit", outline: "none",
             }}
@@ -104,7 +104,7 @@ function TemplateModal({
             onChange={e => setContent(e.target.value)}
             rows={10}
             style={{
-              width: "100%", border: "1px solid var(--border)", borderRadius: 8,
+              width: "100%", border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
               padding: "8px 12px", fontSize: 12, fontFamily: "monospace",
               background: "var(--surface-sunken)", color: "var(--text-primary)",
               outline: "none", resize: "vertical", boxSizing: "border-box",

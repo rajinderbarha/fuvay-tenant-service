@@ -127,19 +127,19 @@ export default function RecommendationRuleDetailPage() {
             </span>
             {rule.status !== "active" && rule.status !== "archived" && (
               <button onClick={() => handleLifecycle("activate")}
-                style={{ fontSize: "0.75rem", background: "#16a34a", color: "#fff", border: "none", padding: "0.3rem 0.7rem", borderRadius: "0.25rem", cursor: "pointer" }}>
+                style={{ fontSize: "0.75rem", background: "var(--success)", color: "#fff", border: "none", padding: "0.3rem 0.7rem", borderRadius: "0.25rem", cursor: "pointer" }}>
                 Activate
               </button>
             )}
             {rule.status === "active" && (
               <button onClick={() => handleLifecycle("deactivate")}
-                style={{ fontSize: "0.75rem", background: "#ca8a04", color: "#fff", border: "none", padding: "0.3rem 0.7rem", borderRadius: "0.25rem", cursor: "pointer" }}>
+                style={{ fontSize: "0.75rem", background: "var(--warning)", color: "#fff", border: "none", padding: "0.3rem 0.7rem", borderRadius: "0.25rem", cursor: "pointer" }}>
                 Deactivate
               </button>
             )}
             {rule.status !== "archived" && (
               <button onClick={() => handleLifecycle("archive")}
-                style={{ fontSize: "0.75rem", background: "#dc2626", color: "#fff", border: "none", padding: "0.3rem 0.7rem", borderRadius: "0.25rem", cursor: "pointer" }}>
+                style={{ fontSize: "0.75rem", background: "var(--danger)", color: "#fff", border: "none", padding: "0.3rem 0.7rem", borderRadius: "0.25rem", cursor: "pointer" }}>
                 Archive
               </button>
             )}
@@ -147,8 +147,8 @@ export default function RecommendationRuleDetailPage() {
         </div>
       </div>
 
-      {saveError && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", marginBottom: "1rem", fontSize: "0.85rem" }}>{saveError}</div>}
-      {saveOk && <div style={{ background: "#f0fdf4", color: "#16a34a", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", marginBottom: "1rem", fontSize: "0.85rem" }}>Saved successfully</div>}
+      {saveError && <div style={{ background: "#fef2f2", color: "var(--danger)", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", marginBottom: "1rem", fontSize: "0.85rem" }}>{saveError}</div>}
+      {saveOk && <div style={{ background: "#f0fdf4", color: "var(--success)", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", marginBottom: "1rem", fontSize: "0.85rem" }}>Saved successfully</div>}
 
       {/* Edit form */}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "0.5rem", padding: "1.5rem", marginBottom: "1.5rem" }}>
@@ -220,7 +220,7 @@ export default function RecommendationRuleDetailPage() {
           <textarea value={simContext} onChange={e => setSimContext(e.target.value)} rows={3}
             style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: "0.375rem", padding: "0.45rem 0.75rem", fontFamily: "monospace", fontSize: "0.78rem", boxSizing: "border-box" }} />
         </div>
-        {simError && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "0.4rem 0.75rem", borderRadius: "0.375rem", marginBottom: "0.5rem", fontSize: "0.8rem" }}>{simError}</div>}
+        {simError && <div style={{ background: "#fef2f2", color: "var(--danger)", padding: "0.4rem 0.75rem", borderRadius: "0.375rem", marginBottom: "0.5rem", fontSize: "0.8rem" }}>{simError}</div>}
         <button onClick={handleSimulate} disabled={simRunning}
           style={{ background: "#4f46e5", color: "#fff", border: "none", padding: "0.5rem 1.25rem", borderRadius: "0.375rem", cursor: "pointer", fontWeight: 600, opacity: simRunning ? 0.6 : 1 }}>
           {simRunning ? "Simulating..." : "Run Simulation"}
@@ -230,7 +230,7 @@ export default function RecommendationRuleDetailPage() {
           <div style={{ marginTop: "1.25rem" }}>
             <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.75rem" }}>
               <div style={{ background: simResult.data.matched ? "#dcfce7" : "#fef2f2", border: `1px solid ${simResult.data.matched ? "#bbf7d0" : "#fecaca"}`, borderRadius: "0.375rem", padding: "0.5rem 1rem" }}>
-                <span style={{ fontWeight: 700, color: simResult.data.matched ? "#16a34a" : "#dc2626" }}>
+                <span style={{ fontWeight: 700, color: simResult.data.matched ? "var(--success)" : "var(--danger)" }}>
                   {simResult.data.matched ? "✓ Matched" : "✗ Not Matched"}
                 </span>
               </div>
@@ -265,7 +265,7 @@ export default function RecommendationRuleDetailPage() {
 
             {simResult.data.warnings.length > 0 && (
               <div style={{ marginTop: "0.75rem" }}>
-                <div style={{ fontWeight: 600, fontSize: "0.85rem", marginBottom: "0.25rem", color: "#ca8a04" }}>Warnings</div>
+                <div style={{ fontWeight: 600, fontSize: "0.85rem", marginBottom: "0.25rem", color: "var(--warning)" }}>Warnings</div>
                 <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
                   {simResult.data.warnings.map((w, i) => (
                     <li key={i} style={{ fontSize: "0.78rem", color: "#92400e", marginBottom: "0.2rem" }}>{w}</li>

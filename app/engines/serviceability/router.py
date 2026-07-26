@@ -16,6 +16,8 @@ from app.engines.serviceability.schemas import (
     ServiceAreaValidateRequest,
     ServiceMappingCreate, ServiceMappingUpdate, ServiceabilityCheckRequest,
     MatchingTenantsRequest, AvailableServicesRequest, AdminServiceabilityTestRequest,
+    ServiceAreaRequestCreate, ServiceAreaRequestItemCreate, ServiceAreaRequestDecide,
+    CoverageSuspendRequest, CoverageRevokeRequest,
 )
 from app.exceptions import ServiceOSException
 from app.schemas.base import ApiResponse, ok
@@ -291,6 +293,179 @@ async def admin_delete_service_area(
     u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.deactivate_service_area(area_id, admin_tenant_id=tenant_id), _rid(r), ENGINE_ID)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Tenant Service Area Requests — /v1/tenant/service-area-requests
+#
+# Replaces direct-write coverage as the tenant self-service path: a tenant
+# builds a DRAFT request, adds requested city/zipcode x service items, then
+# submits it for admin review. No price field appears anywhere in this
+# surface.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/v1/tenant/service-area-requests", tags=["Service Area Requests"],
+             summary="Start a new service-area request (DRAFT)",
+             status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
+async def create_service_area_request(
+    body: ServiceAreaRequestCreate, r: Request,
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_CREATE)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    data = await s.create_service_area_request(uuid.UUID(u.tenant_id), uuid.UUID(body.category_id))
+    return ok(data, _rid(r), ENGINE_ID)
+
+
+@router.get("/v1/tenant/service-area-requests", tags=["Service Area Requests"],
+            summary="List my service-area requests", response_model=ApiResponse[dict])
+async def list_my_service_area_requests(
+    r: Request, category_id: uuid.UUID | None = None, status_filter: str | None = None,
+    limit: int = 50, cursor: str | None = None,
+    u: UserContext = Depends(require_permission(P.TENANT_SERVICE_AREA_READ)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    data = await s.list_service_area_requests(
+        tenant_id=uuid.UUID(u.tenant_id), category_id=category_id, status=status_filter,
+        limit=limit, cursor=cursor)
+    return ok(data, _rid(r), ENGINE_ID)
+
+
+@router.get("/v1/tenant/service-area-requests/{request_id}", tags=["Service Area Requests"],
+            summary="Get a service-area request with its items", response_model=ApiResponse[dict])
+async def get_my_service_area_request(
+    request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_permission(P.TENANT_SERVICE_AREA_READ)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.get_service_area_request_detail(request_id), _rid(r), ENGINE_ID)
+
+
+@router.post("/v1/tenant/service-area-requests/{request_id}/items", tags=["Service Area Requests"],
+             summary="Add a requested area to a DRAFT/CHANGES_REQUESTED request",
+             status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
+async def add_service_area_request_item(
+    request_id: uuid.UUID, body: ServiceAreaRequestItemCreate, r: Request,
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_CREATE)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    data = await s.add_service_area_request_item(request_id, body.model_dump())
+    return ok(data, _rid(r), ENGINE_ID)
+
+
+@router.delete("/v1/tenant/service-area-requests/{request_id}/items/{item_id}", tags=["Service Area Requests"],
+               summary="Remove a requested area from a DRAFT/CHANGES_REQUESTED request",
+               response_model=ApiResponse[dict])
+async def remove_service_area_request_item(
+    request_id: uuid.UUID, item_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_DELETE)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.remove_service_area_request_item(request_id, item_id), _rid(r), ENGINE_ID)
+
+
+@router.post("/v1/tenant/service-area-requests/{request_id}/submit", tags=["Service Area Requests"],
+             summary="Submit a request for admin review", response_model=ApiResponse[dict])
+async def submit_service_area_request(
+    request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_UPDATE)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.submit_service_area_request(request_id), _rid(r), ENGINE_ID)
+
+
+@router.post("/v1/tenant/service-area-requests/{request_id}/withdraw", tags=["Service Area Requests"],
+             summary="Withdraw a request", response_model=ApiResponse[dict])
+async def withdraw_service_area_request(
+    request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_UPDATE)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.withdraw_service_area_request(request_id), _rid(r), ENGINE_ID)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Admin Service Area Requests — /v1/admin/service-area-requests
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/v1/admin/service-area-requests", tags=["Service Area Requests"],
+            summary="[Admin] List service-area requests (real pagination/filtering)",
+            response_model=ApiResponse[dict])
+async def admin_list_service_area_requests(
+    r: Request, tenant_id: uuid.UUID | None = None, category_id: uuid.UUID | None = None,
+    status_filter: str | None = None, limit: int = 50, cursor: str | None = None,
+    u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    data = await s.list_service_area_requests(
+        tenant_id=tenant_id, category_id=category_id, status=status_filter,
+        limit=limit, cursor=cursor)
+    return ok(data, _rid(r), ENGINE_ID)
+
+
+@router.get("/v1/admin/service-area-requests/{request_id}", tags=["Service Area Requests"],
+            summary="[Admin] Get a service-area request with its items", response_model=ApiResponse[dict])
+async def admin_get_service_area_request(
+    request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.get_service_area_request_detail(request_id), _rid(r), ENGINE_ID)
+
+
+@router.post("/v1/admin/service-area-requests/{request_id}/start-review", tags=["Service Area Requests"],
+             summary="[Admin] Move a SUBMITTED request into UNDER_REVIEW",
+             response_model=ApiResponse[dict])
+async def admin_start_review(
+    request_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.admin_start_review(request_id), _rid(r), ENGINE_ID)
+
+
+@router.post("/v1/admin/service-area-requests/{request_id}/decide", tags=["Service Area Requests"],
+             summary="[Admin] Approve/reject/request-changes on selected items",
+             response_model=ApiResponse[dict])
+async def admin_decide_service_area_request(
+    request_id: uuid.UUID, body: ServiceAreaRequestDecide, r: Request,
+    u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    decisions = [d.model_dump() for d in body.decisions]
+    return ok(await s.admin_decide_request_items(request_id, decisions), _rid(r), ENGINE_ID)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Active Coverage — /v1/admin/service-coverage
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/v1/admin/service-coverage", tags=["Active Coverage"],
+            summary="[Admin] List approved operational coverage", response_model=ApiResponse[dict])
+async def admin_list_active_coverage(
+    r: Request, tenant_id: uuid.UUID | None = None, category_id: uuid.UUID | None = None,
+    status_filter: str | None = None, limit: int = 50, cursor: str | None = None,
+    u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    data = await s.list_active_coverage(
+        tenant_id=tenant_id, category_id=category_id, status=status_filter,
+        limit=limit, cursor=cursor)
+    return ok(data, _rid(r), ENGINE_ID)
+
+
+@router.post("/v1/admin/service-coverage/{area_id}/suspend", tags=["Active Coverage"],
+             summary="[Admin] Suspend active coverage", response_model=ApiResponse[dict])
+async def admin_suspend_coverage(
+    area_id: uuid.UUID, body: CoverageSuspendRequest, r: Request,
+    u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.suspend_coverage(area_id, body.reason), _rid(r), ENGINE_ID)
+
+
+@router.post("/v1/admin/service-coverage/{area_id}/reactivate", tags=["Active Coverage"],
+             summary="[Admin] Reactivate suspended coverage", response_model=ApiResponse[dict])
+async def admin_reactivate_coverage(
+    area_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.reactivate_coverage(area_id), _rid(r), ENGINE_ID)
+
+
+@router.post("/v1/admin/service-coverage/{area_id}/revoke", tags=["Active Coverage"],
+             summary="[Admin] Revoke coverage", response_model=ApiResponse[dict])
+async def admin_revoke_coverage(
+    area_id: uuid.UUID, body: CoverageRevokeRequest, r: Request,
+    u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
+    s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.revoke_coverage(area_id, body.reason), _rid(r), ENGINE_ID)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -195,7 +195,7 @@ function ComplaintRow({ item, onView, onAISettle, onFinalize }: {
       </td>
       <td style={{ padding: "10px 12px", fontSize: 13 }}>
         <span style={{
-          display: "inline-block", padding: "2px 8px", borderRadius: 8,
+          display: "inline-block", padding: "2px 8px", borderRadius:"var(--radius-md)",
           background: pv.bg, color: pv.color, fontSize: 11, fontWeight: 600,
         }}>
           {item.priority}
@@ -410,7 +410,7 @@ export default function AdminComplaintsPage() {
             onChange={e => { setQ(e.target.value); setPage(1); }}
             placeholder="Search complaint #, title, customer, tenant…"
             style={{
-              flex: "1 1 300px", padding: "8px 12px", borderRadius: 8,
+              flex: "1 1 300px", padding: "8px 12px", borderRadius:"var(--radius-md)",
               border: "1.5px solid var(--border)", fontSize: 13, outline: "none",
               background: "var(--surface)", color: "var(--text-primary)",
             }}
@@ -418,7 +418,7 @@ export default function AdminComplaintsPage() {
           <select
             value={status}
             onChange={e => { setStatus(e.target.value); setPage(1); }}
-            style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid var(--border)", fontSize: 13, background: "var(--surface)", color: "var(--text-primary)" }}
+            style={{ padding: "8px 12px", borderRadius:"var(--radius-md)", border: "1.5px solid var(--border)", fontSize: 13, background: "var(--surface)", color: "var(--text-primary)" }}
           >
             <option value="">All Statuses</option>
             <option value="open">Open</option>
@@ -438,7 +438,7 @@ export default function AdminComplaintsPage() {
           <select
             value={priority}
             onChange={e => { setPriority(e.target.value); setPage(1); }}
-            style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid var(--border)", fontSize: 13, background: "var(--surface)", color: "var(--text-primary)" }}
+            style={{ padding: "8px 12px", borderRadius:"var(--radius-md)", border: "1.5px solid var(--border)", fontSize: 13, background: "var(--surface)", color: "var(--text-primary)" }}
           >
             <option value="">All Priorities</option>
             <option value="urgent">Urgent</option>
@@ -449,7 +449,7 @@ export default function AdminComplaintsPage() {
           <select
             value={slaFilter}
             onChange={e => { setSla(e.target.value); setPage(1); }}
-            style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid var(--border)", fontSize: 13, background: "var(--surface)", color: "var(--text-primary)" }}
+            style={{ padding: "8px 12px", borderRadius:"var(--radius-md)", border: "1.5px solid var(--border)", fontSize: 13, background: "var(--surface)", color: "var(--text-primary)" }}
           >
             <option value="">All SLA</option>
             <option value="on_time">On Time</option>
@@ -461,7 +461,7 @@ export default function AdminComplaintsPage() {
 
         {/* Error */}
         {error && (
-          <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, padding: 16, marginBottom: 16, color: "var(--danger-text)" }}>
+          <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-md)", padding: 16, marginBottom: 16, color: "var(--danger-text)" }}>
             Could not load complaints. {String(error)}
           </div>
         )}

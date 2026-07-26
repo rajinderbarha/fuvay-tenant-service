@@ -38,12 +38,12 @@ const th: React.CSSProperties = {
 };
 
 const btnPageStyle: React.CSSProperties = {
-  padding: "6px 14px", fontSize: 13, borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+  padding: "6px 14px", fontSize: 13, borderRadius:"var(--radius-md)", cursor: "pointer", fontFamily: "inherit",
   border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)",
 };
 
 const selStyle: React.CSSProperties = {
-  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit",
 };
 
@@ -61,7 +61,7 @@ function DraftDetailModal({ draft, onClose }: { draft: HomeServiceBookingDraft; 
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)" }}>
-      <div style={{ background: "var(--surface)", borderRadius: 16, boxShadow: "0 16px 48px rgba(0,0,0,0.22)",
+      <div style={{ background: "var(--surface)", borderRadius:"var(--radius-xl, 1rem)", boxShadow: "0 16px 48px rgba(0,0,0,0.22)",
         width: "100%", maxWidth: 720, maxHeight: "90vh", overflowY: "auto", padding: 24 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <div>
@@ -169,7 +169,7 @@ function DraftDetailModal({ draft, onClose }: { draft: HomeServiceBookingDraft; 
         {draft.booking_summary && (
           <div style={{ marginTop: 16 }}>
             <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 6px" }}>Booking Summary</p>
-            <pre style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: 10, fontSize: 11,
+            <pre style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 10, fontSize: 11,
               overflowX: "auto", color: "var(--text-primary)", margin: 0 }}>
               {JSON.stringify(draft.booking_summary, null, 2)}
             </pre>
@@ -236,7 +236,7 @@ export default function HomeServiceBookingDraftsPage() {
         </select>
         <input type="text" placeholder="Filter by city…" value={filterCity}
           onChange={(e) => { setFilterCity(e.target.value); setPage(1); }}
-          style={{ height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+          style={{ height: 36, padding: "0 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
             background: "var(--bg)", color: "var(--text-primary)", fontFamily: "inherit" }}
         />
       </div>
@@ -247,14 +247,14 @@ export default function HomeServiceBookingDraftsPage() {
       ) : loading ? (
         <div style={{ textAlign: "center", padding: "32px 0", color: "var(--text-tertiary)", fontSize: 13 }}>Loading drafts…</div>
       ) : drafts.length === 0 ? (
-        <div style={{ background: "var(--surface-sunken)", borderRadius: 12, padding: "40px 0", textAlign: "center" }}>
+        <div style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-lg)", padding: "40px 0", textAlign: "center" }}>
           <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No booking drafts found.</p>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
             Drafts appear here when customers start the chatbot booking flow.
           </p>
         </div>
       ) : (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>

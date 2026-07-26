@@ -251,15 +251,35 @@ class TestHomeServiceExecution:
         assert job.status == "inspection_started"
 
     async def test_complete_inspection(self, svc):
+        from unittest.mock import patch
         job = _mock_job(status="inspection_started")
         db = _db_returning(job, None)
-        await svc.complete_inspection(db, JOB_ID, TENANT_ID, STAFF_ID, USER_ID)
+        with patch(
+            "app.engines.checklist_catalog.gate.assert_gate_satisfied",
+            AsyncMock(),
+        ):
+            await svc.complete_inspection(db, JOB_ID, TENANT_ID, STAFF_ID, USER_ID)
         assert job.status == "inspection_done"
 
     async def test_start_service(self, svc):
+        # Phase 2A added a work-start approval gate: _set_status now resolves
+        # whether this job's Job-Type Blueprint requires quote approval
+        # before allowing JS_SERVICE_STARTED. That resolution path (and its
+        # own pass/block behavior) is covered by
+        # tests/test_module_l5_52_work_start_approval_gate.py -- this test
+        # keeps validating the pre-existing transition/staff-ownership
+        # behavior for the "approval not required" case.
+        from unittest.mock import patch
         job = _mock_job(status="inspection_done")
         db = _db_returning(job, None)
-        await svc.start_service(db, JOB_ID, TENANT_ID, STAFF_ID, USER_ID)
+        approval_not_required = MagicMock()
+        approval_not_required.quote_approval_required = False
+        with patch.object(svc, "_resolve_job_type_workflow", AsyncMock(return_value=approval_not_required)):
+            with patch(
+                "app.engines.checklist_catalog.gate.assert_gate_satisfied",
+                AsyncMock(),
+            ):
+                await svc.start_service(db, JOB_ID, TENANT_ID, STAFF_ID, USER_ID)
         assert job.status == "service_started"
 
     async def test_work_done(self, svc):

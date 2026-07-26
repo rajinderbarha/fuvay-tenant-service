@@ -82,20 +82,22 @@ const READINESS_OPTIONS = Object.entries(READINESS_LABELS).map(([value, label]) 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+// Ownership correction (migration 160): requires_location/requires_schedule/
+// requires_brand/requires_service_option/requires_issue_type/pricing_supported
+// removed -- these vary per Master Service and Job Type and must never be
+// set on a Business Vertical (formerly "Service Category"). Editing an
+// existing category's other fields no longer touches these deprecated
+// columns, so their existing values are preserved untouched.
 type FormState = {
   name: string; description: string; icon_url: string; image_url: string; display_order: number;
   vertical_type: string; finance_model: string; customer_flow_type: string; provider_business_model: string;
-  requires_location: boolean; requires_schedule: boolean; requires_brand: boolean;
-  requires_service_option: boolean; requires_issue_type: boolean;
-  tenant_selectable: boolean; pricing_supported: boolean;
+  tenant_selectable: boolean;
 };
 
 const BLANK: FormState = {
   name: "", description: "", icon_url: "", image_url: "", display_order: 0,
   vertical_type: "", finance_model: "", customer_flow_type: "", provider_business_model: "",
-  requires_location: true, requires_schedule: false, requires_brand: false,
-  requires_service_option: false, requires_issue_type: false,
-  tenant_selectable: true, pricing_supported: true,
+  tenant_selectable: true,
 };
 
 type Filters = {
@@ -120,7 +122,7 @@ function SummaryCard({
   return (
     <div onClick={onClick}
       style={{
-        flex: "1 1 140px", padding: "16px 20px", borderRadius: 12,
+        flex: "1 1 140px", padding: "16px 20px", borderRadius:"var(--radius-lg)",
         background: active ? `${accent}12` : "var(--surface)",
         border: `1px solid ${active ? accent : "var(--border)"}`,
         cursor: onClick ? "pointer" : "default",
@@ -157,7 +159,7 @@ function RequirementsChips({ cat }: { cat: ServiceCategory }) {
         <span key={chip.key} style={{
           display: "inline-flex", alignItems: "center", gap: 3,
           fontSize: 10, padding: "2px 6px", borderRadius: 20, fontWeight: 600,
-          background: "rgba(37,99,235,0.08)", color: "#2563eb",
+          background: "rgba(37,99,235,0.08)", color: "var(--brand)",
         }}>
           {chip.icon}{chip.label}
         </span>
@@ -169,10 +171,10 @@ function RequirementsChips({ cat }: { cat: ServiceCategory }) {
 function LinkedCountsBadges({ counts }: { counts: EnterpriseCategory["linked_counts"] }) {
   if (!counts) return <span style={{ color: "var(--text-tertiary)", fontSize: 11 }}>—</span>;
   const items = [
-    { label: "Groups", value: counts.service_groups, color: "#7c3aed" },
-    { label: "Services", value: counts.services, color: "#2563eb" },
-    { label: "Pricing", value: counts.pricing_rules, color: "#059669" },
-    { label: "Brands", value: counts.brands, color: "#d97706" },
+    { label: "Groups", value: counts.service_groups, color: "var(--accent)" },
+    { label: "Services", value: counts.services, color: "var(--brand)" },
+    { label: "Pricing", value: counts.pricing_rules, color: "var(--success)" },
+    { label: "Brands", value: counts.brands, color: "var(--warning)" },
     { label: "Providers", value: counts.providers, color: "#0891b2" },
   ].filter(i => i.value > 0);
 
@@ -268,7 +270,7 @@ function AdvancedFiltersDrawer({
   onClear: () => void;
 }) {
   const sel = (style?: React.CSSProperties): React.CSSProperties => ({
-    height: 34, borderRadius: 8, fontSize: 13, border: "1px solid var(--border)",
+    height: 34, borderRadius:"var(--radius-md)", fontSize: 13, border: "1px solid var(--border)",
     background: "var(--surface)", color: "var(--text-primary)",
     padding: "0 10px", outline: "none", width: "100%", ...style,
   });
@@ -359,7 +361,7 @@ function FilterChips({ filters, onRemove }: { filters: Filters; onRemove: (k: ke
           style={{
             display: "inline-flex", alignItems: "center", gap: 5,
             fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 600,
-            background: "rgba(37,99,235,0.1)", color: "#2563eb",
+            background: "rgba(37,99,235,0.1)", color: "var(--brand)",
             border: "1px solid rgba(37,99,235,0.25)", cursor: "pointer",
           }}>
           {chip.label} <X size={9}/>
@@ -378,6 +380,85 @@ const PROVIDER_BIZ_OPTIONS = [
   { value: "subscription_member", label: "Subscription Member" },
 ];
 
+// ── New Business Vertical -- canonical creation (migration 160) ─────────────
+// A focused, standalone form (not the full legacy modal): Name, Description,
+// Display Order, Status, Tenant Selectable, Customer Visible. No Brand/Type/
+// Schedule/Address/pricing fields -- those vary per Master Service and Job
+// Type and belong on the Job-Type Blueprint. The backend rejects them
+// outright if this form (or anything else) tries to send them.
+function BusinessVerticalCreateModal({ open, onClose, onCreated }: {
+  open: boolean; onClose: () => void; onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [displayOrder, setDisplayOrder] = useState(0);
+  const [tenantSelectable, setTenantSelectable] = useState(true);
+  const [customerVisible, setCustomerVisible] = useState(true);
+  const [registrationAvailable, setRegistrationAvailable] = useState(true);
+  const createAction = useAction(catalogApi.createBusinessVertical);
+
+  function reset() {
+    setName(""); setDescription(""); setDisplayOrder(0);
+    setTenantSelectable(true); setCustomerVisible(true); setRegistrationAvailable(true);
+  }
+
+  async function submit() {
+    const result = await createAction.execute({
+      name: name.trim(), description: description.trim() || undefined,
+      display_order: displayOrder, tenant_selectable: tenantSelectable,
+      is_customer_visible: customerVisible, registration_available: registrationAvailable,
+    });
+    if (result) { reset(); onCreated(); }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="New Business Vertical">
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {createAction.error && (
+          <div style={{ padding: "10px 14px", borderRadius: 9, background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
+            <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>{createAction.error}</p>
+          </div>
+        )}
+        <Input label="Name *" placeholder="Home Services" value={name} onChange={setName}/>
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Description</label>
+          <textarea value={description} onChange={e => setDescription(e.target.value)}
+            placeholder="Short description shown across the platform…" rows={2}
+            style={{ width: "100%", padding: "8px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)",
+              background: "var(--bg)", color: "var(--text-primary)", fontSize: 13, boxSizing: "border-box",
+              outline: "none", resize: "vertical", fontFamily: "inherit" }}/>
+        </div>
+        <Input label="Display Order" type="number" value={String(displayOrder)}
+          onChange={v => setDisplayOrder(parseInt(v, 10) || 0)}/>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer" }}>
+            <input type="checkbox" checked={registrationAvailable} onChange={e => setRegistrationAvailable(e.target.checked)} style={{ width: 15, height: 15 }}/>
+            Registration Available
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer" }}>
+            <input type="checkbox" checked={tenantSelectable} onChange={e => setTenantSelectable(e.target.checked)} style={{ width: 15, height: 15 }}/>
+            Tenant Selectable
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer" }}>
+            <input type="checkbox" checked={customerVisible} onChange={e => setCustomerVisible(e.target.checked)} style={{ width: 15, height: 15 }}/>
+            Customer Visible
+          </label>
+        </div>
+        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
+          Brand, Type, Schedule, Address, and pricing requirements vary by service and job type —
+          configure them per service after creation, in its Job-Type Blueprint.
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 4 }}>
+          <Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" size="sm" disabled={!name.trim()} loading={createAction.loading} onClick={submit}>
+            Create Business Vertical
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function CategoryForm({
   form, setF, error,
 }: {
@@ -386,7 +467,7 @@ function CategoryForm({
   error?: string | null;
 }) {
   const inp: React.CSSProperties = {
-    width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+    width: "100%", padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
     background: "var(--bg)", color: "var(--text-primary)", fontSize: 13, boxSizing: "border-box",
     outline: "none",
   };
@@ -422,7 +503,7 @@ function CategoryForm({
         Behavior &amp; Finance
       </div>
       {hint && (
-        <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(37,99,235,0.06)", border: "1px solid rgba(37,99,235,0.2)", fontSize: 12, color: "#2563eb" }}>
+        <div style={{ padding: "8px 12px", borderRadius:"var(--radius-md)", background: "rgba(37,99,235,0.06)", border: "1px solid rgba(37,99,235,0.2)", fontSize: 12, color: "var(--brand)" }}>
           {hint}
         </div>
       )}
@@ -439,30 +520,18 @@ function CategoryForm({
           options={PROVIDER_BIZ_OPTIONS} placeholder="Select…"/>
       </div>
 
-      {/* Requirements */}
+      {/* Visibility -- Brand/Type/Schedule/Address/pricing requirements
+          removed (migration 160): those vary per Master Service and Job
+          Type and are configured in each service's Job-Type Blueprint. */}
       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", paddingBottom: 8 }}>
-        Requirements &amp; Visibility
+        Visibility
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        {(
-          [
-            ["requires_location", "Requires Location"],
-            ["requires_schedule", "Requires Schedule"],
-            ["requires_brand", "Requires Brand"],
-            ["requires_service_option", "Requires Service Option"],
-            ["requires_issue_type", "Requires Issue Type"],
-            ["tenant_selectable", "Tenant Selectable"],
-            ["pricing_supported", "Pricing Supported"],
-          ] as const
-        ).map(([key, label]) => (
-          <label key={key} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer" }}>
-            <input type="checkbox" checked={form[key] as boolean}
-              onChange={e => setF(key, e.target.checked)}
-              style={{ width: 15, height: 15 }}/>
-            {label}
-          </label>
-        ))}
-      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer" }}>
+        <input type="checkbox" checked={form.tenant_selectable}
+          onChange={e => setF("tenant_selectable", e.target.checked)}
+          style={{ width: 15, height: 15 }}/>
+        Tenant Selectable
+      </label>
 
       {/* Appearance */}
       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", paddingBottom: 8 }}>
@@ -485,7 +554,7 @@ export default function CategoriesPage() {
   const [filters, setFilters] = useState<Filters>(BLANK_FILTERS);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [page, setPage] = useState(1);
-  const [modal, setModal] = useState<"none" | "create" | "edit">("none");
+  const [modal, setModal] = useState<"none" | "create" | "edit" | "create-vertical">("none");
   const [editing, setEditing] = useState<EnterpriseCategory | null>(null);
   const [form, setForm] = useState<FormState>(BLANK);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -538,7 +607,7 @@ export default function CategoriesPage() {
     setSelected(new Set());
   }
 
-  function openCreate() { setForm(BLANK); setEditing(null); setModal("create"); }
+  function openCreate() { setModal("create-vertical"); }
 
   function openEdit(c: EnterpriseCategory) {
     setForm({
@@ -549,13 +618,7 @@ export default function CategoriesPage() {
       finance_model: c.finance_model ?? "",
       customer_flow_type: c.customer_flow_type ?? "",
       provider_business_model: c.provider_business_model ?? "",
-      requires_location: c.requires_location ?? true,
-      requires_schedule: c.requires_schedule ?? false,
-      requires_brand: c.requires_brand ?? false,
-      requires_service_option: c.requires_service_option ?? false,
-      requires_issue_type: c.requires_issue_type ?? false,
       tenant_selectable: c.tenant_selectable ?? true,
-      pricing_supported: c.pricing_supported ?? true,
     });
     setEditing(c); setModal("edit");
   }
@@ -571,20 +634,9 @@ export default function CategoriesPage() {
       finance_model: data.finance_model || undefined,
       customer_flow_type: data.customer_flow_type || undefined,
       provider_business_model: data.provider_business_model || undefined,
-      requires_location: data.requires_location,
-      requires_schedule: data.requires_schedule,
-      requires_brand: data.requires_brand,
-      requires_service_option: data.requires_service_option,
-      requires_issue_type: data.requires_issue_type,
       tenant_selectable: data.tenant_selectable,
-      pricing_supported: data.pricing_supported,
     };
   }
-
-  const createAction = useAction(useCallback(async (data: FormState) => {
-    await catalogApi.createCategory(buildPayload(data) as Parameters<typeof catalogApi.createCategory>[0]);
-    cats.refetch(); summary.refetch(); setModal("none"); notify("Category created.");
-  }, [cats, summary]));
 
   const editAction = useAction(useCallback(async ({ id, data }: { id: string; data: FormState }) => {
     await catalogApi.updateCategory(id, buildPayload(data));
@@ -669,7 +721,7 @@ export default function CategoriesPage() {
               <Download size={13}/> Export
             </Btn>
             <Btn size="sm" variant="primary" onClick={openCreate}>
-              <Plus size={14}/> New Category
+              <Plus size={14}/> New Business Vertical
             </Btn>
           </div>
         }
@@ -691,26 +743,26 @@ export default function CategoriesPage() {
       {/* Summary Cards */}
       {summary.loading ? (
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {[...Array(6)].map((_, i) => <Skeleton key={i} height={88} style={{ flex: "1 1 140px", borderRadius: 12 }}/>)}
+          {[...Array(6)].map((_, i) => <Skeleton key={i} height={88} style={{ flex: "1 1 140px", borderRadius:"var(--radius-lg)" }}/>)}
         </div>
       ) : sum ? (
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <SummaryCard label="Total Categories" value={sum.total} icon={<Layers size={16}/>} color="#6366f1"/>
-          <SummaryCard label="Active" value={sum.active} icon={<CheckCircle size={16}/>} color="#059669"
+          <SummaryCard label="Active" value={sum.active} icon={<CheckCircle size={16}/>} color="var(--success)"
             active={activeCard === "active"}
             onClick={() => handleCardClick("active", "status", "active")}/>
           <SummaryCard label="Inactive" value={sum.inactive} icon={<MinusCircle size={16}/>} color="#94a3b8"
             active={activeCard === "inactive"}
             onClick={() => handleCardClick("inactive", "status", "inactive")}/>
           <SummaryCard label="Customer Visible" value={sum.customer_visible} icon={<Eye size={16}/>} color="#0891b2"/>
-          <SummaryCard label="Tenant Selectable" value={sum.tenant_selectable} icon={<Users size={16}/>} color="#7c3aed"/>
-          <SummaryCard label="Runtime Ready" value={sum.runtime_ready} icon={<Zap size={16}/>} color="#059669"
+          <SummaryCard label="Tenant Selectable" value={sum.tenant_selectable} icon={<Users size={16}/>} color="var(--accent)"/>
+          <SummaryCard label="Runtime Ready" value={sum.runtime_ready} icon={<Zap size={16}/>} color="var(--success)"
             active={activeCard === "ready"}
             onClick={() => handleCardClick("ready", "readiness_status", "ready")}/>
-          <SummaryCard label="Missing Setup" value={sum.missing_required_setup} icon={<AlertCircle size={16}/>} color="#dc2626"
+          <SummaryCard label="Missing Setup" value={sum.missing_required_setup} icon={<AlertCircle size={16}/>} color="var(--danger)"
             active={activeCard === "missing"}
             onClick={() => handleCardClick("missing", "readiness_status", "missing_flow_config")}/>
-          <SummaryCard label="With Services" value={sum.with_services} icon={<TrendingUp size={16}/>} color="#d97706"/>
+          <SummaryCard label="With Services" value={sum.with_services} icon={<TrendingUp size={16}/>} color="var(--warning)"/>
         </div>
       ) : null}
 
@@ -722,21 +774,21 @@ export default function CategoriesPage() {
             color: "var(--text-tertiary)", pointerEvents: "none" }}/>
           <input value={filters.q} onChange={e => setFilter("q", e.target.value)}
             placeholder="Search categories, slug…"
-            style={{ width: "100%", paddingLeft: 32, paddingRight: 10, height: 34, borderRadius: 8, fontSize: 13,
+            style={{ width: "100%", paddingLeft: 32, paddingRight: 10, height: 34, borderRadius:"var(--radius-md)", fontSize: 13,
               border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)",
               outline: "none", boxSizing: "border-box" }}/>
         </div>
 
         {/* Quick filters */}
         <select value={filters.vertical_type} onChange={e => setFilter("vertical_type", e.target.value)}
-          style={{ height: 34, borderRadius: 8, fontSize: 13, border: "1px solid var(--border)",
+          style={{ height: 34, borderRadius:"var(--radius-md)", fontSize: 13, border: "1px solid var(--border)",
             background: "var(--surface)", color: "var(--text-primary)", padding: "0 10px", outline: "none" }}>
           <option value="">All Verticals</option>
           {VERTICAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
 
         <select value={filters.status} onChange={e => setFilter("status", e.target.value)}
-          style={{ height: 34, borderRadius: 8, fontSize: 13, border: "1px solid var(--border)",
+          style={{ height: 34, borderRadius:"var(--radius-md)", fontSize: 13, border: "1px solid var(--border)",
             background: "var(--surface)", color: "var(--text-primary)", padding: "0 10px", outline: "none" }}>
           <option value="">All Statuses</option>
           <option value="active">Active</option>
@@ -773,7 +825,7 @@ export default function CategoriesPage() {
       {selected.size > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
           borderRadius: 10, background: "rgba(37,99,235,0.06)", border: "1px solid rgba(37,99,235,0.2)" }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#2563eb" }}>{selected.size} selected</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--brand)" }}>{selected.size} selected</span>
           <div style={{ height: 16, width: 1, background: "rgba(37,99,235,0.3)" }}/>
           <Btn size="xs" variant="ghost" onClick={() => {
             selected.forEach(id => activateAction.execute(id));
@@ -796,7 +848,7 @@ export default function CategoriesPage() {
       <Card padding={0}>
         {cats.loading ? (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-            {[...Array(5)].map((_, i) => <Skeleton key={i} height={60} style={{ borderRadius: 8 }}/>)}
+            {[...Array(5)].map((_, i) => <Skeleton key={i} height={60} style={{ borderRadius:"var(--radius-md)" }}/>)}
           </div>
         ) : cats.error ? (
           <div style={{ padding: 48, textAlign: "center" }}>
@@ -822,7 +874,7 @@ export default function CategoriesPage() {
                 <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 12px" }}>
                   No service categories yet. Create the first one.
                 </p>
-                <Btn size="sm" variant="primary" onClick={openCreate}><Plus size={13}/> New Category</Btn>
+                <Btn size="sm" variant="primary" onClick={openCreate}><Plus size={13}/> New Business Vertical</Btn>
               </>
             )}
           </div>
@@ -853,7 +905,7 @@ export default function CategoriesPage() {
                     <td style={{ padding: "12px 14px" }}>
                       <button onClick={() => toggleRow(cat.category_id)}
                         style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", display: "flex" }}>
-                        {selected.has(cat.category_id) ? <CheckSquare size={14} style={{ color: "#2563eb" }}/> : <Square size={14}/>}
+                        {selected.has(cat.category_id) ? <CheckSquare size={14} style={{ color: "var(--brand)" }}/> : <Square size={14}/>}
                       </button>
                     </td>
 
@@ -862,9 +914,9 @@ export default function CategoriesPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         {cat.icon_url ? (
                           <img src={cat.icon_url} alt="" width={32} height={32}
-                            style={{ borderRadius: 8, objectFit: "cover", flexShrink: 0 }}/>
+                            style={{ borderRadius:"var(--radius-md)", objectFit: "cover", flexShrink: 0 }}/>
                         ) : (
-                          <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--brand-light)",
+                          <div style={{ width: 32, height: 32, borderRadius:"var(--radius-md)", background: "var(--brand-light)",
                             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                             <Layers size={14} style={{ color: "var(--brand)" }}/>
                           </div>
@@ -920,10 +972,10 @@ export default function CategoriesPage() {
                     <td style={{ padding: "12px 14px" }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                         {cat.is_customer_visible
-                          ? <span style={{ fontSize: 10, fontWeight: 600, color: "#059669" }}>Customer Visible</span>
+                          ? <span style={{ fontSize: 10, fontWeight: 600, color: "var(--success)" }}>Customer Visible</span>
                           : <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Customer Hidden</span>}
                         {cat.tenant_selectable
-                          ? <span style={{ fontSize: 10, fontWeight: 600, color: "#2563eb" }}>Tenant Selectable</span>
+                          ? <span style={{ fontSize: 10, fontWeight: 600, color: "var(--brand)" }}>Tenant Selectable</span>
                           : <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Not Selectable</span>}
                       </div>
                     </td>
@@ -978,23 +1030,26 @@ export default function CategoriesPage() {
 
       </div>{/* end flex column */}
 
-      {/* Create / Edit Modal */}
-      <Modal open={modal !== "none"} onClose={() => setModal("none")}
-        title={modal === "create" ? "New Service Category" : `Edit: ${editing?.name}`}>
-        <CategoryForm form={form} setF={setF} error={createAction.error || editAction.error}/>
+      {/* Edit Modal (existing verticals only -- deprecated Brand/Type/Schedule/
+          Address/pricing fields removed; editing other fields never touches
+          them, so their existing values are preserved untouched) */}
+      <Modal open={modal === "edit"} onClose={() => setModal("none")} title={`Edit: ${editing?.name}`}>
+        <CategoryForm form={form} setF={setF} error={editAction.error}/>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 16 }}>
           <Btn variant="ghost" size="sm" onClick={() => setModal("none")}>Cancel</Btn>
           <Btn variant="primary" size="sm"
             disabled={!form.name.trim()}
-            loading={createAction.loading || editAction.loading}
-            onClick={() => {
-              if (modal === "create") createAction.execute(form);
-              else if (editing) editAction.execute({ id: editing.category_id, data: form });
-            }}>
-            {modal === "create" ? "Create Category" : "Save Changes"}
+            loading={editAction.loading}
+            onClick={() => { if (editing) editAction.execute({ id: editing.category_id, data: form }); }}>
+            Save Changes
           </Btn>
         </div>
       </Modal>
+
+      {/* New Business Vertical -- canonical creation (migration 160), a
+          focused form, not the full legacy modal. */}
+      <BusinessVerticalCreateModal open={modal === "create-vertical"} onClose={() => setModal("none")}
+        onCreated={() => { cats.refetch(); summary.refetch(); setModal("none"); notify("Business Vertical created."); }}/>
 
       {/* Delete Confirm */}
       <Modal open={deleteId !== null} onClose={() => setDeleteId(null)} title="Delete Category">

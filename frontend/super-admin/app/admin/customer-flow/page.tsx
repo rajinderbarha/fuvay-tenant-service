@@ -100,11 +100,11 @@ export default function CustomerFlowOverviewPage() {
       )}
 
       {/* Architecture note */}
-      <div style={{ marginTop: "1.5rem", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "0.5rem", padding: "1rem" }}>
-        <h3 style={{ fontSize: "0.875rem", fontWeight: 700, color: "#1e40af", margin: "0 0 0.5rem" }}>
+      <div style={{ marginTop: "1.5rem", background: "var(--accent-muted)", border: "1px solid var(--brand)", borderRadius: "0.5rem", padding: "1rem" }}>
+        <h3 style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--brand-hover)", margin: "0 0 0.5rem" }}>
           Customer Flow Architecture
         </h3>
-        <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.8rem", color: "#1e40af" }}>
+        <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.8rem", color: "var(--brand-hover)" }}>
           <li>AI can guide conversation — backend validates all entity IDs</li>
           <li>Customer sees only active categories, services, brands, options, and issue types</li>
           <li>Draft confirms only after service selection + contact info validation</li>
