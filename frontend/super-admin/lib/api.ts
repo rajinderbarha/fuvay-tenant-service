@@ -10403,11 +10403,9 @@ export interface MatchingDiagnosticsResult {
 
 export const autoPriceOptionsApi = {
   getConfig: () => apiFetch<HomeServicesPricingConfig>("/v1/admin/home-services/config"),
-  previewPriceExperience: (data: {
-    service_name?: string; admin_min_price?: number; admin_max_price?: number; admin_base_price?: number;
-    selected_min_price: number; selected_max_price: number; platform_fee_percent?: number;
-  }) => apiFetch<PriceExperiencePreviewResult>("/v1/admin/home-services/price-experience/preview",
-    { method: "POST", body: JSON.stringify(data) }),
+  // previewPriceExperience removed (MODULE-L5-57) -- admin does not own
+  // service price amounts; the backing endpoint no longer exists. Preview
+  // now lives tenant-side via tenantAutoPriceOptionsApi.getCustomerPricePreview.
   runMatchingDiagnostics: (data: {
     category_id: string; master_service_id: string; city: string; zipcode?: string;
     offering_type_id?: string; brand_id?: string;

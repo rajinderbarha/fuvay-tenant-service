@@ -4503,6 +4503,10 @@ export const offeringPricingApi = {
 // manual bargain rule. Shows exactly what the customer will see.
 export interface TenantCustomerPricePreview {
   service_name: string | null;
+  tenant_service_id?: string;
+  master_service_id?: string;
+  job_type_id?: string | null;
+  pricing_model?: string;
   available: boolean;
   message?: string;
   currency?: string;
@@ -4514,6 +4518,9 @@ export interface TenantCustomerPricePreview {
   platform_fee_percent?: number;
   platform_fee_amount?: number;
   payment_mode?: string;
+  calculation_source?: string;
+  calculation_source_rule_id?: string | null;
+  effective_date?: string | null;
   completed_job_deduction_credits?: number;
   explanation?: string;
 }
@@ -4524,8 +4531,12 @@ export interface TenantMatchingReadiness {
 }
 
 export const tenantAutoPriceOptionsApi = {
-  getCustomerPricePreview: (masterServiceId: string) =>
-    apiFetch<TenantCustomerPricePreview>(`/v1/tenant/home-services/customer-price-preview?master_service_id=${masterServiceId}`),
+  getCustomerPricePreview: (masterServiceId: string, serviceTypeId?: string, brandId?: string) => {
+    const qs = new URLSearchParams({ master_service_id: masterServiceId });
+    if (serviceTypeId) qs.set("service_type_id", serviceTypeId);
+    if (brandId) qs.set("brand_id", brandId);
+    return apiFetch<TenantCustomerPricePreview>(`/v1/tenant/home-services/customer-price-preview?${qs}`);
+  },
   getMatchingReadiness: (masterServiceId: string) =>
     apiFetch<TenantMatchingReadiness>(`/v1/tenant/home-services/matching-readiness?master_service_id=${masterServiceId}`),
 };

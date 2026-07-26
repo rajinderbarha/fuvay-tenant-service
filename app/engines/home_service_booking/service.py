@@ -1451,7 +1451,8 @@ class HomeServiceChatbotBookingService:
             base  = max(float(offering.visit_fee), floor_price)
             min_price = float(offering.min_price) if offering.min_price else base
             max_price = float(offering.max_price) if offering.max_price else None
-            note  = "Visit/inspection fee (admin estimate — no tenant assigned yet). Final repair quote shared after technician check."
+            note  = ("The technician will contact you and inspect the issue before providing a cost estimate. "
+                     "Work starts only after your approval.")
         elif pricing_model == PRICING_MODEL_FIXED:
             base  = max(float(offering.base_price), floor_price)
             min_price = float(offering.min_price) if offering.min_price else base
@@ -1473,9 +1474,20 @@ class HomeServiceChatbotBookingService:
         platform_fee = round(base * charge_pct / 100.0, 2)
         customer_total = round(base + platform_fee, 2)
 
+        requires_inspection_estimate = pricing_model == PRICING_MODEL_VISIT_FEE
+
         return {
             "pricing_model":   pricing_model,
             "visit_fee":       base if pricing_model == PRICING_MODEL_VISIT_FEE else 0,
+            # Repair/inspection-based pricing must never present Low/Mid/High
+            # as a promised repair amount before inspection -- the customer
+            # sees this disclosure instead; the visit fee is the only amount
+            # shown as a number. Final repair cost is a tenant-prepared
+            # estimate the customer approves later (Work Start Approval Gate,
+            # _assert_quote_approval_satisfied, remains the sole runtime
+            # authority for whether work may start).
+            "requires_inspection_estimate": requires_inspection_estimate,
+            "customer_message": note if requires_inspection_estimate else None,
             "base_price":      base,          # service price (provider basis)
             "min_price":       min_price,
             "max_price":       max_price,

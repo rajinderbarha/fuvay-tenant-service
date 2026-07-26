@@ -24,7 +24,7 @@ import {
   Search, Zap, LogOut, Tag, CalendarDays, UserCheck, Wrench, LayoutGrid, Cpu, Layers, FolderTree,
   Megaphone, Package, ScrollText, ListChecks, BarChart3, MapPin,
   HelpCircle, Sliders, GitBranch, Image, AlertOctagon, Globe,
-  FlaskConical, PercentSquare, FileText as FileTextIcon,
+  PercentSquare, FileText as FileTextIcon,
 } from "lucide-react";
 import { verticalCatalogApi, type EffectiveMenu } from "../../lib/api";
 import { useTheme } from "../../hooks/useTheme";
@@ -173,10 +173,13 @@ const NAV_GROUPS: NavGroup[] = [
 // inside VerticalCatalogSection specifically for vertical_key === "home_services"
 // rather than as their own sidebar group.
 const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
-  { id: "hs-overview", href: "/admin/home-services/overview", label: "Overview", icon: <LayoutGrid size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   { id: "hs-service-catalog", href: "/admin/home-services/service-catalog", label: "Service Catalog", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  { id: "hs-pricing-rules", href: "/admin/home-services/pricing-rules", label: "Pricing Rules", icon: <Sliders size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  { id: "hs-price-experience", href: "/admin/home-services/price-experience", label: "Customer Price Experience", icon: <FlaskConical size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // hs-overview and hs-pricing-rules removed from nav: Overview's route had
+  // no page.tsx (dead link, directory deleted), and Pricing Rules is a
+  // retired-notice page that its own comment already says should not be
+  // linked from navigation -- this entry contradicted that.
+  // Customer Price Experience retired (MODULE-L5-57) -- Super Admin does not
+  // own service price amounts; see the retired-notice page for details.
   { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Wrench size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   { id: "hs-service-areas", href: "/admin/home-services/service-areas", label: "Service Areas / Zones", icon: <MapPin size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },

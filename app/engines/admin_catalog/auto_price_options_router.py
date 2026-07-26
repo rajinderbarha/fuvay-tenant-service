@@ -156,50 +156,81 @@ def _tenant_id(u: UserContext) -> uuid.UUID:
 async def tenant_customer_price_preview(
     r: Request,
     master_service_id: uuid.UUID,
+    service_type_id: uuid.UUID | None = None,
+    brand_id: uuid.UUID | None = None,
     u: UserContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    tid = _tenant_id(u)
+    """MODULE-L5-57: rewired off the legacy BargainRule/ServicePricingRule
+    path (both admin-owned, not tenant-scoped -- the master_service_id-only
+    query previously returned the SAME range to every tenant offering that
+    service, never this tenant's own configured price). Now resolves through
+    TenantCatalogService.resolve_tenant_price -- the exact same tenant-owned,
+    type/brand-precedence resolver real customer bookings use
+    (home_service_booking/service.py::_resolve_selected_tenant_price) -- so
+    tenant preview and customer runtime share one calculation, per the
+    Customer Price Experience consolidation."""
+    from app.engines.admin_catalog.models import TenantService, ServiceCategory
+    from app.engines.admin_catalog.tenant_service import TenantCatalogService
 
-    bargain_rule = await db.scalar(
-        select(BargainRule).where(
-            BargainRule.master_service_id == master_service_id,
-            BargainRule.status == "active", BargainRule.deleted_at.is_(None),
-        ).order_by(BargainRule.created_at.desc()).limit(1)
-    )
+    tid = _tenant_id(u)
     svc = await db.get(MasterService, master_service_id)
-    if not bargain_rule or bargain_rule.customer_min_price is None or bargain_rule.customer_max_price is None:
+    if not svc:
+        raise ServiceOSException("MASTER_SERVICE_NOT_FOUND", "Master service not found.", status_code=404)
+
+    ts = await db.scalar(
+        select(TenantService).where(
+            TenantService.tenant_id == tid,
+            TenantService.master_service_id == master_service_id,
+            TenantService.is_active.is_(True),
+        )
+    )
+    if ts is None:
         return ok({
-            "service_name": svc.service_name if svc else None,
+            "service_name": svc.service_name,
             "available": False,
-            "message": "Customer price options are not available yet for this service — "
-                       "the platform has not configured a customer price range.",
+            "message": "You have not enabled this service yet, so there is no customer price to preview.",
         }, _rid(r), ENGINE_ID)
 
-    pricing_rule = await db.get(ServicePricingRule, bargain_rule.pricing_rule_id) if bargain_rule.pricing_rule_id else None
+    tenant_svc = TenantCatalogService(db=db)
+    resolved = await tenant_svc.resolve_tenant_price(ts.id, service_type_id=service_type_id, brand_id=brand_id)
+    if not resolved.get("resolved"):
+        return ok({
+            "service_name": svc.service_name,
+            "tenant_service_id": str(ts.id),
+            "available": False,
+            "message": "Customer price options are not available yet for this service — "
+                       "you have not configured a price range for this combination.",
+        }, _rid(r), ENGINE_ID)
+
+    cat = await db.get(ServiceCategory, svc.category_id) if svc.category_id else None
+    fee_pct = float(cat.customer_charge_pct) if (cat and cat.customer_charge_pct is not None) else 0.0
+
     try:
         tiers = compute_price_tiers(
-            admin_min_price=pricing_rule.min_price if pricing_rule else None,
-            admin_max_price=pricing_rule.max_price if pricing_rule else None,
-            admin_base_price=pricing_rule.base_price if pricing_rule else None,
-            customer_min_price=bargain_rule.customer_min_price,
-            customer_max_price=bargain_rule.customer_max_price,
-            platform_fee_percent=bargain_rule.platform_fee_percent or (pricing_rule.platform_fee_percent if pricing_rule else 0),
-            platform_fee_fixed_amount=bargain_rule.platform_fee_fixed_amount,
+            admin_min_price=None, admin_max_price=None, admin_base_price=None,
+            customer_min_price=resolved["minimum_price"], customer_max_price=resolved["maximum_price"],
+            platform_fee_percent=fee_pct, platform_fee_fixed_amount=0,
         )
     except BargainValidationError as e:
         raise ServiceOSException(e.code, e.message, status_code=422) from e
 
-    completed_job_deduction_credits = getattr(pricing_rule, "completed_job_deduction_credits", 0) if pricing_rule else 0
-
     result = {
-        "service_name": svc.service_name if svc else None,
+        "service_name": svc.service_name,
+        "tenant_service_id": str(ts.id),
+        "master_service_id": str(master_service_id),
+        "job_type_id": str(ts.job_type_id) if ts.job_type_id else None,
+        "pricing_model": "range",
         "available": True,
         **tiers,
-        "completed_job_deduction_credits": completed_job_deduction_credits,
+        "currency": tiers.get("currency", "INR"),
+        "calculation_source": resolved["source"],
+        "calculation_source_rule_id": resolved.get("source_rule_id"),
+        "unit": None,
+        "effective_date": None,
         "explanation": (
-            "ServiceOS automatically creates customer price options from platform pricing "
-            "and platform fee. You do not need to set up bargaining manually."
+            "These are the price options your customers see, derived from your own configured "
+            "price plus the platform's customer-facing fee. Admin does not set or own this amount."
         ),
     }
     return ok(result, _rid(r), ENGINE_ID)

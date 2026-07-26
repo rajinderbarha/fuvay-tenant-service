@@ -303,7 +303,6 @@ export default function PlatformCommandCenterPage() {
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {[
                   { label: "Service Catalog", href: "/admin/catalog-workspace" },
-                  { label: "Customer Price Experience", href: "/admin/home-services/price-experience" },
                   { label: "Provider Matching", href: "/admin/home-services/provider-matching" },
                   { label: "Matching Diagnostics", href: "/admin/home-services/matching-diagnostics" },
                   { label: "Service Area Requests", href: "/admin/service-area-requests" },

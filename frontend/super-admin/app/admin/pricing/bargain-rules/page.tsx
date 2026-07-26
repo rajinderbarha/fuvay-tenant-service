@@ -242,10 +242,6 @@ export default function BargainRulesPage() {
             access only — new rules should not be created here.
           </p>
         </div>
-        <a href="/admin/home-services/price-experience" style={{
-          fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none", whiteSpace: "nowrap" }}>
-          Go to Customer Price Experience →
-        </a>
       </div>
       <SectionHeader
         title="Bargain Rules [Deprecated]"
