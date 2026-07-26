@@ -183,8 +183,10 @@ const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
   // linked from navigation -- this entry contradicted that.
   // Customer Price Experience retired (MODULE-L5-57) -- Super Admin does not
   // own service price amounts; see the retired-notice page for details.
+  // Matching Diagnostics merged into Provider Matching's own tabs
+  // (MODULE-L5-58: Diagnostics / Live Decisions / Policy Reference / Audit)
+  // -- one canonical page, not two disconnected ones. Old route redirects.
   { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Wrench size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   // hs-service-areas removed: /admin/home-services/service-areas has no
   // page.tsx (dead route, directory doesn't exist) -- confirmed broken link.
   { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/>, requiredPermission: "finance.completed_job_deduction_rules.read" },

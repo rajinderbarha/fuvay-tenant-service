@@ -179,6 +179,7 @@ async def match_and_price(
         city=draft["city"], zipcode=draft.get("zipcode"),
         offering_type_id=uuid.UUID(draft["offering_type_id"]) if draft.get("offering_type_id") else None,
         brand_id=uuid.UUID(draft["brand_id"]) if draft.get("brand_id") else None,
+        job_type_id=uuid.UUID(draft["job_type_id"]) if draft.get("job_type_id") else None,
         draft_id=draft_id, customer_id=customer_id,
         reveal_internal_score=False,
     )

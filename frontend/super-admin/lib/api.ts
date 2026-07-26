@@ -10399,6 +10399,24 @@ export interface MatchingDiagnosticsResult {
   area_coverage_source: string;
   availability_source: string;
   pricing_source: string;
+  trace_id?: string;
+  policy_version?: number;
+}
+
+export interface MatchingPolicyFactor {
+  factor_key: string; label: string; weight: number; source_engine: string;
+}
+export interface MatchingPolicyManifest {
+  policy_key: string; version: number; scope: string; code_controlled: boolean;
+  factors: MatchingPolicyFactor[];
+  eligibility_gates: string[];
+  tie_break_policy: string[];
+  missing_signal_policy: Record<string, string>;
+}
+export interface MatchingAuditRow {
+  id: string; entity_type: string; entity_id: string; action: string;
+  actor_user_id: string | null; actor_role: string | null;
+  new_value: Record<string, unknown> | null; request_id: string | null; created_at: string | null;
 }
 
 export const autoPriceOptionsApi = {
@@ -10408,9 +10426,13 @@ export const autoPriceOptionsApi = {
   // now lives tenant-side via tenantAutoPriceOptionsApi.getCustomerPricePreview.
   runMatchingDiagnostics: (data: {
     category_id: string; master_service_id: string; city: string; zipcode?: string;
-    offering_type_id?: string; brand_id?: string;
+    offering_type_id?: string; brand_id?: string; job_type_id?: string; requested_at?: string;
   }) => apiFetch<MatchingDiagnosticsResult>("/v1/admin/home-services/matching/diagnostics",
     { method: "POST", body: JSON.stringify(data) }),
+  // Read-only, code-controlled policy manifest -- no save/reset path exists.
+  getMatchingPolicy: () => apiFetch<MatchingPolicyManifest>("/v1/admin/home-services/matching/policy"),
+  getMatchingAudit: (limit = 50) => apiFetch<{ items: MatchingAuditRow[] }>(`/v1/admin/home-services/matching/audit?limit=${limit}`),
+  getMatchingLiveDecisions: (limit = 50) => apiFetch<{ items: MatchingAuditRow[] }>(`/v1/admin/home-services/matching/decisions?limit=${limit}`),
 };
 
 // ── Home Services Catalog Setup Console ──────────────────────────────────────

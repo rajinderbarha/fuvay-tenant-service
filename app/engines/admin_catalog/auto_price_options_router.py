@@ -57,6 +57,16 @@ async def get_home_services_config(
     return ok(flags, _rid(r), ENGINE_ID)
 
 
+@admin_router.get("/matching/policy", response_model=ApiResponse[dict],
+                   summary="Read-only, code-controlled provider-matching policy manifest -- no admin edit path exists")
+async def get_matching_policy(
+    r: Request,
+    u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_EVALUATE_PREVIEW)),
+):
+    from app.engines.home_service_booking.matching_engine import get_policy_manifest
+    return ok(get_policy_manifest(), _rid(r), ENGINE_ID)
+
+
 # Customer Price Experience preview endpoint removed (2026-07) -- it was an
 # admin testing tool built entirely around admin_min_price/admin_max_price/
 # admin_base_price, the same deprecated "admin sets price boundaries" model
@@ -79,12 +89,13 @@ async def admin_matching_diagnostics(
     zipcode = body.get("zipcode")
     offering_type_id = uuid.UUID(str(body["offering_type_id"])) if body.get("offering_type_id") else None
     brand_id = uuid.UUID(str(body["brand_id"])) if body.get("brand_id") else None
+    job_type_id = uuid.UUID(str(body["job_type_id"])) if body.get("job_type_id") else None
     requested_at = body.get("requested_at")  # HS6B — optional; enables break/holiday/booking-window checks
 
     match = await select_best_provider(
         db, category_id=category_id, offering_id=master_service_id,
         city=city, zipcode=zipcode, offering_type_id=offering_type_id, brand_id=brand_id,
-        requested_at=requested_at,
+        requested_at=requested_at, job_type_id=job_type_id,
     )
 
     result = {
@@ -140,7 +151,71 @@ async def admin_matching_diagnostics(
             exclude_tenant_id=uuid.UUID(signals.tenant_id),
         )
 
+    # MODULE-L5-58 — canonical audit trail for every diagnostic run (reuses
+    # the existing append-only MasterDataAuditLog rather than a new table).
+    # A diagnostic mutates nothing operational; this audit row is the ONLY
+    # write a diagnostic performs, and it never touches a booking/job/
+    # assignment/score.
+    from app.engines.admin_catalog.models import MasterDataAuditLog
+    from app.engines.home_service_booking.matching_engine import MATCHING_POLICY_VERSION
+    trace_id = uuid.uuid4()
+    db.add(MasterDataAuditLog(
+        entity_type="matching_decision", entity_id=trace_id, action="diagnostic_run",
+        actor_user_id=uuid.UUID(str(u.user_id)) if getattr(u, "user_id", None) else None,
+        actor_role=getattr(u, "role", None),
+        new_value={
+            "trace_id": str(trace_id), "policy_version": MATCHING_POLICY_VERSION,
+            "master_service_id": str(master_service_id), "city": city, "zipcode": zipcode,
+            "job_type_id": str(job_type_id) if job_type_id else None,
+            "candidate_count": result["candidate_provider_count"],
+            "eligible_count": result["eligible_provider_count"],
+            "excluded_count": result["excluded_provider_count"],
+            "selected_provider_id": match["signals"].tenant_id if match.get("signals") else None,
+            "outcome": "selected" if match.get("signals") else "no_eligible_provider",
+        },
+        request_id=_rid(r),
+    ))
+    await db.commit()
+    result["trace_id"] = str(trace_id)
+    result["policy_version"] = MATCHING_POLICY_VERSION
+
     return ok(result, _rid(r), ENGINE_ID)
+
+
+@admin_router.get("/matching/audit", response_model=ApiResponse[dict],
+                   summary="Audit trail of diagnostic runs (actor, input context, outcome) -- canonical audit system")
+async def get_matching_diagnostic_audit(
+    r: Request,
+    limit: int = 50,
+    u: UserContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.engines.admin_catalog.models import MasterDataAuditLog
+    rows = (await db.execute(
+        select(MasterDataAuditLog)
+        .where(MasterDataAuditLog.entity_type == "matching_decision", MasterDataAuditLog.action == "diagnostic_run")
+        .order_by(MasterDataAuditLog.created_at.desc())
+        .limit(min(limit, 200))
+    )).scalars().all()
+    return ok({"items": [row.to_dict() for row in rows]}, _rid(r), ENGINE_ID)
+
+
+@admin_router.get("/matching/decisions", response_model=ApiResponse[dict],
+                   summary="Recent real (production) matching decisions -- Live Decisions view")
+async def get_matching_live_decisions(
+    r: Request,
+    limit: int = 50,
+    u: UserContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.engines.admin_catalog.models import MasterDataAuditLog
+    rows = (await db.execute(
+        select(MasterDataAuditLog)
+        .where(MasterDataAuditLog.entity_type == "matching_decision", MasterDataAuditLog.action == "production_match")
+        .order_by(MasterDataAuditLog.created_at.desc())
+        .limit(min(limit, 200))
+    )).scalars().all()
+    return ok({"items": [row.to_dict() for row in rows]}, _rid(r), ENGINE_ID)
 
 
 # ── Tenant: Customer Price Preview (read-only) ───────────────────────────────

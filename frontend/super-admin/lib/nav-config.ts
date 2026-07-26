@@ -55,8 +55,10 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
       // not own service price amounts. Preview now lives in each tenant's
       // own Service Setup wizard, backed by the same calculation real
       // customer bookings use. Old URL kept as a retired-notice redirect.
+      // Matching Diagnostics merged into Provider Matching (MODULE-L5-58) --
+      // one canonical page with Diagnostics/Live Decisions/Policy Reference/
+      // Audit tabs. Old route redirects.
       { id: "hs-provider-matching",label: "Provider Matching",         href: "/admin/home-services/provider-matching",          icon: "🔗", group: "home-services" },
-      { id: "hs-matching-diagnostics", label: "Matching Diagnostics",  href: "/admin/home-services/matching-diagnostics",       icon: "🩺", group: "home-services" },
       { id: "service-area-requests", label: "Service Area Requests",   href: "/admin/service-area-requests",                    icon: "📍", group: "home-services" },
       { id: "hs-job-deduction",    label: "Completed Job Deduction",   href: "/admin/home-services/completed-job-deduction",    icon: "✅", group: "home-services" },
       { id: "hs-settings",         label: "Home Services Settings",    href: "/admin/home-services/settings",                   icon: "⚙️", group: "home-services" },
@@ -226,7 +228,7 @@ const HOME_SERVICES_SUBPAGE_TO_NAV_ID: Record<string, string> = {
   "service-catalog":         "hs-service-catalog",
   "price-experience":        "hs-service-catalog",
   "provider-matching":       "hs-provider-matching",
-  "matching-diagnostics":    "hs-matching-diagnostics",
+  "matching-diagnostics":    "hs-provider-matching",
   "completed-job-deduction": "hs-job-deduction",
   "settings":                "hs-settings",
 };

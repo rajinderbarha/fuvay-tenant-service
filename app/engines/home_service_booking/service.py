@@ -608,6 +608,7 @@ class HomeServiceChatbotBookingService:
         zipcode: str | None,
         offering_type_id: uuid.UUID | None = None,
         brand_id: uuid.UUID | None = None,
+        job_type_id: uuid.UUID | None = None,
         draft_id: uuid.UUID | None = None,
         customer_id: uuid.UUID | None = None,
         reveal_internal_score: bool = False,
@@ -646,6 +647,7 @@ class HomeServiceChatbotBookingService:
         match = await select_best_provider(
             self.db, category_id=category_id, offering_id=master_service_id,
             city=city, zipcode=zipcode, offering_type_id=offering_type_id, brand_id=brand_id,
+            job_type_id=job_type_id,
         )
 
         if not match or not match.get("signals"):
@@ -657,6 +659,27 @@ class HomeServiceChatbotBookingService:
 
         signals, score = match["signals"], match["score"]
         selected_tenant_id = uuid.UUID(signals.tenant_id)
+
+        # MODULE-L5-58 — canonical audit trail for real matching decisions
+        # (Live Decisions view), reusing the same append-only
+        # MasterDataAuditLog the diagnostic path writes to. Rides along with
+        # this function's own commit -- no extra transaction boundary.
+        from app.engines.admin_catalog.models import MasterDataAuditLog
+        from app.engines.home_service_booking.matching_engine import MATCHING_POLICY_VERSION
+        self.db.add(MasterDataAuditLog(
+            entity_type="matching_decision", entity_id=uuid.uuid4(), action="production_match",
+            actor_user_id=customer_id, actor_role="customer",
+            new_value={
+                "policy_version": MATCHING_POLICY_VERSION,
+                "master_service_id": str(master_service_id), "city": city,
+                "job_type_id": str(job_type_id) if job_type_id else None,
+                "candidate_count": match.get("candidate_count", 0),
+                "excluded_count": match.get("excluded_count", 0),
+                "selected_provider_id": signals.tenant_id,
+                "draft_id": str(draft_id) if draft_id else None,
+                "outcome": "selected",
+            },
+        ))
 
         # Resolve the selected provider's bargain rule (customer range + fee)
         # and its linked pricing rule (admin range) — real, tenant-scoped data.

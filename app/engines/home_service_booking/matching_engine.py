@@ -92,7 +92,9 @@ class CandidateSignals:
     """Raw 0-100 sub-scores for one eligible candidate tenant, plus identity."""
     tenant_id: str
     provider_name: str
-    health_score: float = 0.0            # tenants.health_score, already 0-100
+    health_score: float = 0.0            # canonical trust_quality.HealthScore, or documented fallback
+    health_score_source: str = "missing_default"  # "canonical" | "legacy_column" | "missing_default"
+    health_score_calculated_at: str | None = None
     job_completion_score: float = 0.0    # completed / (completed + cancelled), 0-100
     rating_score: float = 0.0            # rating_average / 5 * 100
     availability_score: float = 0.0      # has active technician + availability rules configured
@@ -139,6 +141,8 @@ def build_score_breakdown(signals: CandidateSignals) -> dict:
     """Internal/admin-only breakdown — never returned by the customer-facing API."""
     return {
         "health_score": signals.health_score,
+        "health_score_source": signals.health_score_source,
+        "health_score_calculated_at": signals.health_score_calculated_at,
         "job_completion_score": signals.job_completion_score,
         "rating_score": signals.rating_score,
         "availability_score": signals.availability_score,
@@ -273,7 +277,61 @@ ELIGIBILITY_GATE_CODES = (
     "TYPE_NOT_COVERED_IN_AREA",
     "BRAND_NOT_COVERED_IN_AREA",
     "no_pricing_rule",
+    "EXACT_JOB_TYPE_NOT_SUPPORTED",
 )
+
+MATCHING_POLICY_KEY = "home_services_provider_matching_v1"
+MATCHING_POLICY_VERSION = 1
+
+
+def get_policy_manifest() -> dict:
+    """Read-only, code-controlled matching policy manifest. There is no
+    database-backed policy table and no admin write path for any of this --
+    the values below ARE the deployed source of truth (the same module
+    constants select_best_provider/_passes_full_eligibility_gate actually
+    use), not a separately-maintained description that could drift."""
+    factors = [
+        {"factor_key": "health_score", "label": "Health / Trust Score", "weight": float(WEIGHT_HEALTH_SCORE),
+         "source_engine": "trust_quality.HealthScore (canonical); falls back per missing_signal_policy"},
+        {"factor_key": "job_completion", "label": "Job Completion", "weight": float(WEIGHT_JOB_COMPLETION),
+         "source_engine": "jobs table (completed / (completed+cancelled))"},
+        {"factor_key": "rating", "label": "Customer Rating", "weight": float(WEIGHT_RATING),
+         "source_engine": "tenants.rating_average"},
+        {"factor_key": "availability", "label": "Availability", "weight": float(WEIGHT_AVAILABILITY),
+         "source_engine": "provider_availability_rules"},
+        {"factor_key": "service_match", "label": "Service Match", "weight": float(WEIGHT_SERVICE_MATCH),
+         "source_engine": "tenant_service_area_services (type/brand specificity)"},
+        {"factor_key": "area_match", "label": "Area Match", "weight": float(WEIGHT_DISTANCE),
+         "source_engine": "tenant_service_areas (exact zipcode vs city-only)"},
+        {"factor_key": "cancellation", "label": "Cancellation", "weight": float(WEIGHT_CANCELLATION),
+         "source_engine": "jobs table (30-day cancellation rate)"},
+        {"factor_key": "capacity", "label": "Capacity", "weight": float(WEIGHT_CAPACITY),
+         "source_engine": "jobs + provider_team_members (open-job load vs active technicians)"},
+    ]
+    return {
+        "policy_key": MATCHING_POLICY_KEY,
+        "version": MATCHING_POLICY_VERSION,
+        "scope": "home_services",
+        "code_controlled": True,
+        "factors": factors,
+        "eligibility_gates": list(ELIGIBILITY_GATE_CODES),
+        "tie_break_policy": [
+            "Highest weighted score wins.",
+            "Exact tie: lower tenant_id (UUID) sorts first -- deterministic, "
+            "code-controlled fallback (rank_candidates sorts by (-score, tenant_id)); "
+            "no random selection.",
+        ],
+        "missing_signal_policy": {
+            "health_score": (
+                f"Reads trust_quality.HealthScore (target_type='tenant'). A score older than "
+                f"{HEALTH_SCORE_STALE_AFTER_DAYS} days is treated as stale and never trusted as-is. "
+                f"Falls back to the legacy tenants.health_score column if present, else a neutral "
+                f"default of {MISSING_HEALTH_SCORE_DEFAULT} (never treated as a perfect 100)."
+            ),
+            "job_completion": "No job history yet -> neutral 50.0 (never a perfect or zero default).",
+            "cancellation": "No recent activity -> 100.0 (no evidence of cancellations, not penalized).",
+        },
+    }
 
 
 async def select_best_provider(
@@ -287,6 +345,7 @@ async def select_best_provider(
     brand_id: uuid.UUID | None = None,
     requested_at: str | None = None,
     limit_candidates: int = 25,
+    job_type_id: uuid.UUID | None = None,
 ) -> dict | None:
     """Full eligibility gate + scoring + single-best selection.
 
@@ -367,7 +426,7 @@ async def select_best_provider(
         eligible, reason_code = await _passes_full_eligibility_gate(
             db, tenant_id=tid, offering_id=offering_id,
             offering_type_id=offering_type_id, brand_id=brand_id,
-            zipcode=strip_zip, requested_at=requested_at,
+            zipcode=strip_zip, requested_at=requested_at, job_type_id=job_type_id,
         )
         if not eligible:
             excluded += 1
@@ -378,10 +437,15 @@ async def select_best_provider(
             continue
 
         is_exact_zip = tid in exact_zip_ids
+        health_score, health_source, health_calc_at = await _canonical_health_score(
+            db, tid, float(row.health_score) if row.health_score is not None else None,
+        )
         signals_list.append(CandidateSignals(
             tenant_id=str(tid),
             provider_name=row.business_name or row.tenant_name or "Service Provider",
-            health_score=float(row.health_score) if row.health_score is not None else 0.0,
+            health_score=health_score,
+            health_score_source=health_source,
+            health_score_calculated_at=health_calc_at,
             job_completion_score=await _job_completion_score(db, tid),
             rating_score=(float(row.rating) / 5.0 * 100.0) if row.rating else 0.0,
             availability_score=await _availability_score(db, tid),
@@ -410,6 +474,7 @@ async def _passes_full_eligibility_gate(
     db: AsyncSession, *, tenant_id: uuid.UUID, offering_id: uuid.UUID,
     offering_type_id: uuid.UUID | None, brand_id: uuid.UUID | None,
     zipcode: str | None = None, requested_at: str | None = None,
+    job_type_id: uuid.UUID | None = None,
 ) -> tuple[bool, str | None]:
     """HS6B — canonical eligibility gate, aligned to the single sources of
     truth this session already built and certified. Returns
@@ -450,6 +515,27 @@ async def _passes_full_eligibility_gate(
     4. Pricing rule existence: unchanged, still real and necessary.
     """
     from sqlalchemy import text
+
+    # 0. MODULE-L5-58 — exact Job-Type Blueprint gate. When the caller has
+    # resolved an exact job_type_id (the canonical Business Vertical ->
+    # Service Group -> Master Service -> Job Type -> Job-Type Blueprint
+    # chain), the tenant must have that exact job type active as a child of
+    # this Master Service (master_service_job_types) -- matching by
+    # master_service_id alone is not sufficient once a service has multiple
+    # job types (e.g. AC Repair vs AC Installation must resolve
+    # independently). Skipped (not guessed) when the caller has no exact
+    # job_type_id yet -- never invents or assumes one.
+    if job_type_id is not None:
+        from app.engines.admin_catalog.models import MasterServiceJobType
+        link = (await db.execute(
+            select(MasterServiceJobType.id).where(
+                MasterServiceJobType.master_service_id == offering_id,
+                MasterServiceJobType.job_type_id == job_type_id,
+                MasterServiceJobType.is_active.is_(True),
+            )
+        )).scalar_one_or_none()
+        if link is None:
+            return False, "EXACT_JOB_TYPE_NOT_SUPPORTED"
 
     # 1. Canonical bookability (HS4B) — single source of truth.
     bookable_row = (await db.execute(text(
@@ -549,6 +635,55 @@ async def _passes_full_eligibility_gate(
         return False, "NO_VALID_PRICE_RULE"
 
     return True, None
+
+
+# MODULE-L5-58: missing-signal policy for Trust & Quality's canonical
+# HealthScore. A score older than this is treated as stale and falls back
+# to the legacy tenants.health_score column (itself defaulted to 100.0 --
+# see MISSING_HEALTH_SCORE_DEFAULT below) rather than silently trusting a
+# number the Trust & Quality engine hasn't recalculated recently. This is a
+# documented, code-controlled policy value, not a per-request override.
+HEALTH_SCORE_STALE_AFTER_DAYS = 30
+MISSING_HEALTH_SCORE_DEFAULT = 50.0  # neutral, never treated as "perfect"
+
+
+async def _canonical_health_score(db: AsyncSession, tenant_id: uuid.UUID, legacy_fallback: float | None) -> tuple[float, str, str | None]:
+    """Reads the canonical Trust & Quality HealthScore for this provider
+    (target_type='tenant', matching the convention TrustQualityService's own
+    badge lookups already use — see _public_badges). This is the SAME table
+    the /admin/trust-quality console reads and writes; matching never
+    computes or stores a second trust number.
+
+    Returns (score, source, calculated_at_iso) where source is:
+      "canonical"       -- a fresh (< HEALTH_SCORE_STALE_AFTER_DAYS) row exists
+      "legacy_column"    -- canonical row missing/stale; fell back to the
+                            legacy tenants.health_score column (documented,
+                            not silently treated as perfect)
+      "missing_default"  -- neither exists; a neutral, non-perfect default
+                            is used and reported honestly.
+    """
+    from datetime import datetime, timezone, timedelta
+    from app.engines.trust_quality.models import HealthScore
+
+    row = (await db.execute(
+        select(HealthScore.score, HealthScore.calculated_at)
+        .where(HealthScore.target_type == "tenant", HealthScore.target_id == tenant_id)
+        .order_by(HealthScore.calculated_at.desc())
+        .limit(1)
+    )).first()
+
+    if row is not None:
+        calculated_at = row.calculated_at
+        is_stale = calculated_at is None or (
+            datetime.now(timezone.utc) - calculated_at.replace(tzinfo=timezone.utc)
+            if calculated_at.tzinfo is None else datetime.now(timezone.utc) - calculated_at
+        ) > timedelta(days=HEALTH_SCORE_STALE_AFTER_DAYS)
+        if not is_stale:
+            return float(row.score), "canonical", calculated_at.isoformat()
+
+    if legacy_fallback is not None:
+        return float(legacy_fallback), "legacy_column", None
+    return MISSING_HEALTH_SCORE_DEFAULT, "missing_default", None
 
 
 async def _job_completion_score(db: AsyncSession, tenant_id: uuid.UUID) -> float:
