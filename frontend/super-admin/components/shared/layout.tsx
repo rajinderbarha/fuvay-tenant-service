@@ -7,6 +7,7 @@
  */
 "use client";
 import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 
 // ── Design-token shorthand ────────────────────────────────────────────────────
 const T = {
@@ -132,10 +133,10 @@ export function PageHeader({
                 <span style={{ fontSize: 12, color: T.textTer }}>›</span>
               )}
               {b.href ? (
-                <a href={b.href} style={{
+                <Link href={b.href} style={{
                   fontSize: 12, color: T.textLink, textDecoration: "none",
                   fontWeight: 500,
-                }}>{b.label}</a>
+                }}>{b.label}</Link>
               ) : (
                 <span style={{ fontSize: 12, color: T.textTer }}>{b.label}</span>
               )}

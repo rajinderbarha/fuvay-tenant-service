@@ -1,6 +1,7 @@
 "use client";
 import { Suspense, useCallback, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, SectionHeader, Input, Skeleton } from "../../../../components/shared/ui";
 import { RequirePermission, ReadOnlyNotice } from "../../../../components/shared/PermissionGate";
@@ -65,7 +66,7 @@ function AdminUsageCreditsPageInner() {
             <p style={{ fontSize: 12, color: "var(--info-text)", margin: 0 }}>
               Filtered by job: <strong>{jobIdFilter}</strong>
             </p>
-            <a href="/admin/finance/usage-credits" style={{ fontSize: 12, color: "var(--info-text)" }}>Clear filter</a>
+            <Link href="/admin/finance/usage-credits" style={{ fontSize: 12, color: "var(--info-text)" }}>Clear filter</Link>
           </div>
         </Card>
       )}

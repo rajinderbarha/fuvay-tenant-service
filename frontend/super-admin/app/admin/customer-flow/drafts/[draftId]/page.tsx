@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { customerFlowApi, CustomerBookingDraft } from "../../../../../lib/api";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -50,9 +51,9 @@ export default function DraftDetailPage() {
 
   return (
     <div style={{ padding: "1.5rem", maxWidth: "800px" }}>
-      <a href="/admin/customer-flow/drafts" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
+      <Link href="/admin/customer-flow/drafts" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
         ← Back to Drafts
-      </a>
+      </Link>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: "0.75rem", marginBottom: "1.5rem" }}>
         <div>

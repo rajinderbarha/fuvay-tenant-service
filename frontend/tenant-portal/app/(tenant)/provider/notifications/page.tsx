@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useState } from "react";
+import Link from "next/link";
 import { providerNotifApi, type InAppNotificationItem } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 
@@ -83,9 +84,9 @@ export default function ProviderNotificationsPage() {
                     <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{n.title}</div>
                     <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>{n.body}</div>
                     {n.action_url && n.action_label && (
-                      <a href={n.action_url} style={{ fontSize: 11, color: "var(--accent)", marginTop: 4, display: "inline-block", textDecoration: "none" }}>
+                      <Link href={n.action_url} style={{ fontSize: 11, color: "var(--accent)", marginTop: 4, display: "inline-block", textDecoration: "none" }}>
                         {n.action_label} →
-                      </a>
+                      </Link>
                     )}
                     <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
                       {n.created_at.replace("T", " ").slice(0, 16)}

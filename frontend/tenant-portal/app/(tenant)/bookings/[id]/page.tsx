@@ -5,6 +5,7 @@
  * PROVEN: confirm/reject/reschedule/convertToJob/addNote all call live API + refetch.
  */
 import React, { useCallback, useState } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { PageHeader, Card, StatusBadge, Button, Modal, Input, Textarea, Select, Skeleton } from "@serviceos/design-system";
 import { Badge } from "../../../../components/shared/ui";
@@ -70,7 +71,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       {/* Breadcrumb */}
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16,
         fontSize:12, color:"var(--text-tertiary)" }}>
-        <a href="/bookings" style={{ color:"var(--text-link)", textDecoration:"none" }}>Bookings</a>
+        <Link href="/bookings" style={{ color:"var(--text-link)", textDecoration:"none" }}>Bookings</Link>
         <span>›</span>
         <span style={{ color:"var(--text-primary)", fontWeight:500 }}>
           {booking.loading ? "Loading..." : b?.booking_number}
@@ -139,9 +140,9 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 textTransform:"uppercase", letterSpacing:"0.06em" }}>Customer</h3>
               <div style={{ display:"flex", gap:12, padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
                 <span style={{ fontSize:12, color:"var(--text-tertiary)", width:70, flexShrink:0 }}>Customer</span>
-                <a href={`/customers/${b.customer_id}`} style={{ fontSize:12, color:"var(--text-link)", fontWeight:500 }}>
+                <Link href={`/customers/${b.customer_id}`} style={{ fontSize:12, color:"var(--text-link)", fontWeight:500 }}>
                   View customer →
-                </a>
+                </Link>
               </div>
               <div style={{ display:"flex", gap:12, padding:"7px 0" }}>
                 <span style={{ fontSize:12, color:"var(--text-tertiary)", width:70, flexShrink:0 }}>Pincode</span>
@@ -187,10 +188,10 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               ))}
               {b.job_id && (
-                <a href={`/jobs/${b.job_id}`} style={{ fontSize:12, color:"var(--text-link)", fontWeight:500,
+                <Link href={`/jobs/${b.job_id}`} style={{ fontSize:12, color:"var(--text-link)", fontWeight:500,
                   display:"inline-block", marginTop:10 }}>
                   View job & payment collection status →
-                </a>
+                </Link>
               )}
             </Card>
           )}

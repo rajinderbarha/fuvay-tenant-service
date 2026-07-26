@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useCallback, useRef, Suspense } from "react";
+import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   StatCard, Badge, Btn, Modal, DataTable,
@@ -484,7 +485,7 @@ function BottomCards({ insights }: { insights: TenantsInsights }) {
             <span style={{ fontWeight: 600, color: "#f59e0b" }}>{v.changes_requested}</span>
           </div>
         </div>
-        <a href="/admin/tenants/onboarding" style={{ display: "inline-block", marginTop: 10, fontSize: 11, color: "var(--brand)" }}>View Onboarding →</a>
+        <Link href="/admin/tenants/onboarding" style={{ display: "inline-block", marginTop: 10, fontSize: 11, color: "var(--brand)" }}>View Onboarding →</Link>
       </Card>
 
       {/* Business Health */}

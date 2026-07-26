@@ -131,6 +131,12 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "finance-commission-records", href: "/admin/commission-records", label: "Commission Records", icon: <PercentSquare size={16}/>, requiredPermission: "finance:hub:read" },
       { id: "finance-payments",           href: "/admin/payments",           label: "Payments",           icon: <Tag size={16}/>,          requiredPermission: "finance:hub:read" },
       { id: "finance-financial-events",   href: "/admin/financial-events",   label: "Financial Events",   icon: <ScrollText size={16}/>,   requiredPermission: "finance:hub:read" },
+      // Replaces the retired /admin/home-services/completed-job-deduction
+      // page (called the deleted GET /v1/admin/pricing-rules). Real
+      // completion-charge capability, ledger and reconciliation for Home
+      // Services now live here, category-scoped and isolated from other
+      // verticals' finance (Coaching/Food/Real Estate untouched).
+      { id: "hs-finance",       href: "/admin/finance/home-services", label: "Home Services Finance", icon: <PercentSquare size={16}/>, requiredPermission: "finance:home_services:read" },
       { id: "compliance",       href: "/admin/compliance",        label: "Compliance",      icon: <ClipboardCheck size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
@@ -190,12 +196,18 @@ const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
   { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   // hs-service-areas removed: /admin/home-services/service-areas has no
   // page.tsx (dead route, directory doesn't exist) -- confirmed broken link.
-  { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/>, requiredPermission: "finance.completed_job_deduction_rules.read" },
-  { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  // Phase 2A Slice 2 nav reconciliation: page existed and was fully built
-  // (adminBookabilityApi-backed) but had zero sidebar entry — confirmed
-  // orphaned in the Phase 1 frontend audit and still true.
-  { id: "bookability", href: "/admin/bookability/providers", label: "Provider Bookability", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // hs-completed-job-deduction removed: this page 404'd (called the deleted
+  // GET /v1/admin/pricing-rules) and depended on the retired Pricing Rules
+  // admin surface. The real, working completion-charge capability moved to
+  // Finance -> Home Services Finance -> Completion Charges (see the
+  // "hs-finance" entry in the Finance group below); old route now redirects.
+  // UX-05 consolidation: "Home Services Settings" and "Provider Bookability"
+  // standalone nav entries removed. Settings' read-only info moved to
+  // Platform > Business Verticals > Home Services > Capabilities & Policies;
+  // Bookability's capability moved into Provider Matching's "Provider
+  // Eligibility" tab. Both old routes are now redirect-only pages so no
+  // second live implementation remains reachable. Kept out of NAV entirely
+  // (not just unlinked) so they can't reappear as duplicate rows.
 ];
 
 // Flattened (id, href) list derived from the actual rendered sidebar (NAV_GROUPS

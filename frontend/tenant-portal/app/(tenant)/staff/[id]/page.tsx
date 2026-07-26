@@ -7,6 +7,7 @@
  * serviceJobsApi (/v1/provider/my-records/jobs, canonical service_jobs).
  */
 import React, { useCallback, useState, useEffect } from "react";
+import Link                              from "next/link";
 import { TenantLayout }                  from "../../../../components/layout/TenantLayout";
 import { staffApi, serviceJobsApi, authApi }    from "../../../../lib/api";
 import { trustBadgesApi }                from "../../../../lib/api";
@@ -98,7 +99,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
       {/* Breadcrumb */}
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20,
         fontSize:12, color:"var(--text-tertiary)" }}>
-        <a href="/staff" style={{ color:"var(--text-link)", textDecoration:"none" }}>Staff</a>
+        <Link href="/staff" style={{ color:"var(--text-link)", textDecoration:"none" }}>Staff</Link>
         <span>›</span>
         <span style={{ color:"var(--text-primary)", fontWeight:500 }}>
           {s?.full_name ?? "Loading…"}
@@ -289,10 +290,10 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
               <h3 style={{ fontSize:14, fontWeight:600, color:"var(--text-primary)", margin:0 }}>
                 Recent Jobs
               </h3>
-              <a href={`/jobs?staff_id=${id}`} style={{ fontSize:12, color:"var(--text-link)",
+              <Link href={`/jobs?staff_id=${id}`} style={{ fontSize:12, color:"var(--text-link)",
                 textDecoration:"none" }}>
                 View all →
-              </a>
+              </Link>
             </div>
             {jobs.loading ? (
               <div style={{ padding:"12px 20px", display:"flex", flexDirection:"column", gap:6 }}>

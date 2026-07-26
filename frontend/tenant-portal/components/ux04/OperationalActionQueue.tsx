@@ -7,6 +7,7 @@
  * per-role implementation.
  */
 import React from "react";
+import Link from "next/link";
 import type { OperationalActionItemView } from "../../lib/ux04/types";
 import { SLAIndicator } from "./SLAIndicator";
 
@@ -32,9 +33,9 @@ export function OperationalActionQueue({ items }: { items: OperationalActionItem
             }}
           >
             <div>
-              <a href={item.entity.href} style={{ fontWeight: 600, fontSize: "0.875rem" }}>
+              <Link href={item.entity.href} style={{ fontWeight: 600, fontSize: "0.875rem" }}>
                 {item.entity.label}
-              </a>
+              </Link>
               <p style={{ margin: "0.25rem 0", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>{item.summary}</p>
               <SLAIndicator sla={item.sla} />
             </div>

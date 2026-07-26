@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { recommendationApi, RecommendationRule, SimulateResult } from "../../../../../lib/api";
 
 const RULE_TYPES = [
@@ -113,9 +114,9 @@ export default function RecommendationRuleDetailPage() {
   return (
     <div style={{ padding: "1.5rem", maxWidth: "900px" }}>
       <div style={{ marginBottom: "1.5rem" }}>
-        <a href="/admin/automation/recommendation-rules" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
+        <Link href="/admin/automation/recommendation-rules" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
           ← Back to Recommendation Rules
-        </a>
+        </Link>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: "0.5rem" }}>
           <div>
             <h1 style={{ fontSize: "1.4rem", fontWeight: 700, margin: 0 }}>{rule.name}</h1>

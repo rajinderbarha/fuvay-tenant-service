@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import Link from "next/link";
 import {
   LayoutDashboard, UserCircle, Wrench, MapPin, Clock, FileText,
   ClipboardList, Bell, ShieldCheck, History, Settings, LogOut, MessageSquare,
@@ -46,7 +47,7 @@ export function StaffLayout({ activeNav, children }: { activeNav: string; childr
           <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 16 }}>
             {ctx.error || `Your account role ("${ctx.user?.role ?? "unknown"}") does not have access to the Technician App.`}
           </p>
-          <a href="/staff/login" style={{ color: "var(--brand)", fontSize: 13, fontWeight: 600 }}>Go to Staff Login</a>
+          <Link href="/staff/login" style={{ color: "var(--brand)", fontSize: 13, fontWeight: 600 }}>Go to Staff Login</Link>
         </div>
       </div>
     );
@@ -69,7 +70,7 @@ export function StaffLayout({ activeNav, children }: { activeNav: string; childr
         </div>
         <nav style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
           {NAV.map(item => (
-            <a key={item.id} href={item.href} style={{
+            <Link key={item.id} href={item.href} style={{
               display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: "var(--radius-full)",
               textDecoration: "none", fontSize: 13,
               color: activeNav === item.id ? "var(--brand-hover)" : "var(--text-secondary)",
@@ -77,7 +78,7 @@ export function StaffLayout({ activeNav, children }: { activeNav: string; childr
               fontWeight: activeNav === item.id ? 600 : 400,
             }}>
               {item.icon}{item.label}
-            </a>
+            </Link>
           ))}
         </nav>
         <button onClick={handleLogout} style={{

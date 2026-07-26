@@ -5,6 +5,7 @@
  * PROVEN: manual assign/reassign call live API + refetch.
  */
 import React, { useCallback, useState } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { PageHeader, Card, StatusBadge, Button, Modal, Select, Textarea, Skeleton } from "@serviceos/design-system";
 import { Badge, EmptyState } from "../../../components/shared/ui";
@@ -106,10 +107,10 @@ export default function DispatchQueuePage() {
                 gap:16, flexWrap:"wrap" }}>
                 <div style={{ flex:1, minWidth:220 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-                    <a href={`/jobs/${d.job_id}`} style={{ fontSize:13, fontWeight:700,
+                    <Link href={`/jobs/${d.job_id}`} style={{ fontSize:13, fontWeight:700,
                       color:"var(--text-link)", textDecoration:"none" }}>
                       Job {d.job_id.slice(0,8)}
-                    </a>
+                    </Link>
                     <StatusBadge status={d.status} />
                     <Badge variant="muted">{d.dispatch_mode.replace(/_/g," ")}</Badge>
                     {d.escalation_count > 0 && <Badge variant="danger">Escalated ×{d.escalation_count}</Badge>}

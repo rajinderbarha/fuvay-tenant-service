@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { setupTemplateApi, ServiceSetupTemplateRun34F } from "../../../../../../lib/api";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -37,10 +38,10 @@ export default function TemplateRunsPage() {
   return (
     <div style={{ padding: "1.5rem", maxWidth: "900px" }}>
       <div style={{ marginBottom: "1.5rem" }}>
-        <a href={`/admin/service-setup/templates/${templateId}`}
+        <Link href={`/admin/service-setup/templates/${templateId}`}
           style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
           ← Back to Template
-        </a>
+        </Link>
         <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: "0.5rem 0 0" }}>Apply Runs</h1>
         <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>History of template applications</p>
       </div>

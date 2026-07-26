@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useCallback, useEffect } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import {
   tenantPricingApi, masterCatalogApi, tenantSetupApi,
@@ -467,10 +468,10 @@ export default function PricingPage() {
         <p style={{ fontSize: 13, color: "var(--warning-text, #92400e)", margin: 0 }}>
           This page has moved. Open the new Home Services setup flow.
         </p>
-        <a href="/tenant/setup/services" style={{
+        <Link href="/tenant/setup/services" style={{
           fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none", whiteSpace: "nowrap" }}>
           Go to Service Setup →
-        </a>
+        </Link>
       </div>
       <style>{`
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
@@ -800,10 +801,10 @@ export default function PricingPage() {
               display: "flex", alignItems: "center", gap: 8 }}>
               <Activity size={15}/> Recent Pricing Activity
             </p>
-            <a href="/activity" style={{ fontSize: 12, color: "var(--brand)", textDecoration: "none",
+            <Link href="/activity" style={{ fontSize: 12, color: "var(--brand)", textDecoration: "none",
               display: "flex", alignItems: "center", gap: 3 }}>
               View All <ChevronRight size={12}/>
-            </a>
+            </Link>
           </div>
           <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 14px" }}>
             Price previews, override requests, and approval events.

@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import {
   Card, Badge, Btn, HealthMeter, JobStatusBadge,
@@ -1004,9 +1005,9 @@ function EffectiveEnginesCard({ tenantId }: { tenantId: string }) {
               {enabled.length} enabled / {data.summary?.total ?? engines.length} total
             </span>
           )}
-          <a href="/admin/engines" style={{ fontSize:12, color:"var(--text-link)", textDecoration:"none" }}>
+          <Link href="/admin/engines" style={{ fontSize:12, color:"var(--text-link)", textDecoration:"none" }}>
             Manage →
-          </a>
+          </Link>
         </div>
       </div>
 
@@ -1314,7 +1315,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
     <AdminLayout activeNav="tenants">
       {/* Breadcrumb */}
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, fontSize:12, color:"var(--text-tertiary)" }}>
-        <a href="/admin/tenants" style={{ color:"var(--text-link)", textDecoration:"none" }}>Tenants</a>
+        <Link href="/admin/tenants" style={{ color:"var(--text-link)", textDecoration:"none" }}>Tenants</Link>
         <span>›</span>
         <span style={{ color:"var(--text-primary)", fontWeight:500 }}>
           {tenant.loading ? "…" : t?.tenant_name ?? id}
@@ -2685,9 +2686,9 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                 {(allJobs.data?.items ?? []).map((j, i, arr) => (
                   <tr key={j.id} style={{ borderBottom: i < arr.length-1 ? "1px solid var(--border)" : "none" }}>
                     <td style={{ padding:"11px 16px", fontWeight:600, fontSize:12, fontFamily:"monospace", color:"var(--text-primary)" }}>
-                      <a href={`/admin/home-services/service-jobs/${j.id}`} style={{ color:"inherit", textDecoration:"none" }}>
+                      <Link href={`/admin/home-services/service-jobs/${j.id}`} style={{ color:"inherit", textDecoration:"none" }}>
                         {j.job_number}
-                      </a>
+                      </Link>
                     </td>
                     <td style={{ padding:"11px 16px", fontSize:12, color:"var(--text-secondary)" }}>
                       {j.city ?? "—"}{j.zipcode ? ` / ${j.zipcode}` : ""}

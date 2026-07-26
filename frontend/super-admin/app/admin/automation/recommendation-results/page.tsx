@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { recommendationApi, RecommendationResult } from "../../../../lib/api";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -60,10 +61,10 @@ export default function RecommendationResultsPage() {
             Track recommendations shown, accepted, and rejected across all contexts ({total} total)
           </p>
         </div>
-        <a href="/admin/automation/recommendation-rules"
+        <Link href="/admin/automation/recommendation-rules"
           style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", borderRadius: "0.375rem", color: "#4b5563", textDecoration: "none", fontSize: "0.875rem" }}>
           ← Back to Rules
-        </a>
+        </Link>
       </div>
 
       {/* Filters */}

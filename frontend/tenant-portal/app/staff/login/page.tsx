@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { authApi } from "../../../lib/api";
 import { authTimeline } from "../../../lib/authTimeline";
 
@@ -94,9 +95,9 @@ export default function StaffLoginPage() {
           }}>
             {loading ? "Signing in…" : "Sign In"}
           </button>
-          <a href="/forgot-password" style={{ fontSize: 12, color: "var(--text-tertiary)", textAlign: "center" }}>
+          <Link href="/forgot-password" style={{ fontSize: 12, color: "var(--text-tertiary)", textAlign: "center" }}>
             Forgot password?
-          </a>
+          </Link>
         </form>
       </div>
     </div>

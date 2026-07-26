@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
+import Link from "next/link";
 import {
   serviceSetupTemplatesApi,
   SetupTemplateItem,
@@ -529,9 +530,9 @@ function GridView({ templates, onPublish, onArchive, onClone, onDelete }: {
           </div>
 
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: "auto", paddingTop: 4 }}>
-            <a href={`/admin/service-setup/templates/${t.id}`} style={{ textDecoration: "none" }}>
+            <Link href={`/admin/service-setup/templates/${t.id}`} style={{ textDecoration: "none" }}>
               <Btn variant="secondary" size="xs" icon={<ExternalLink size={12}/>}>Open</Btn>
-            </a>
+            </Link>
             {t.status === "draft" && (
               <Btn variant="success" size="xs" icon={<Rocket size={12}/>} onClick={() => onPublish(t.id)}>Publish</Btn>
             )}
@@ -593,9 +594,9 @@ function TableView({ templates, onPublish, onArchive, onClone, onDelete }: {
               </td>
               <td style={{ padding: "10px 12px" }}>
                 <div style={{ display: "flex", gap: 4 }}>
-                  <a href={`/admin/service-setup/templates/${t.id}`} style={{ textDecoration: "none" }}>
+                  <Link href={`/admin/service-setup/templates/${t.id}`} style={{ textDecoration: "none" }}>
                     <Btn variant="ghost" size="xs" icon={<ExternalLink size={12}/>}>Open</Btn>
-                  </a>
+                  </Link>
                   {t.status === "draft" && <Btn variant="success" size="xs" icon={<Rocket size={12}/>} onClick={() => onPublish(t.id)}>Publish</Btn>}
                   {t.status === "published" && <Btn variant="secondary" size="xs" icon={<Archive size={12}/>} onClick={() => onArchive(t.id)}>Archive</Btn>}
                   {t.status === "archived" && <Btn variant="success" size="xs" icon={<ArchiveRestore size={12}/>} onClick={() => onPublish(t.id)}>Republish</Btn>}

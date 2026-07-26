@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { bulkSetupApi, BulkSetupRun, BulkSetupRunItem } from "../../../../../lib/api";
 
 const ACTION_COLORS: Record<string, string> = {
@@ -35,9 +36,9 @@ export default function BulkRunDetailPage() {
   return (
     <div style={{ padding: "1.5rem", maxWidth: "900px" }}>
       <div style={{ marginBottom: "1.5rem" }}>
-        <a href="/admin/service-setup/bulk-runs" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
+        <Link href="/admin/service-setup/bulk-runs" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
           ← Back to Runs
-        </a>
+        </Link>
         <h1 style={{ fontSize: "1.4rem", fontWeight: 700, margin: "0.5rem 0 0" }}>Bulk Setup Run</h1>
         <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>{run.id}</div>
       </div>

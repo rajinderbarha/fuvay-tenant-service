@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import {
   platformAnalyticsApi,
   PlatformSummary,
@@ -69,7 +70,7 @@ function KpiCard({
       )}
     </div>
   );
-  if (href) return <a href={href} style={{ textDecoration: "none" }}>{inner}</a>;
+  if (href) return <Link href={href} style={{ textDecoration: "none" }}>{inner}</Link>;
   return inner;
 }
 
@@ -438,7 +439,7 @@ export default function PlatformAnalyticsDashboard() {
                 {provItems.map(p => (
                   <tr key={p.tenant_id}>
                     <td style={tdStyle}>
-                      <a href={`/admin/tenants/${p.tenant_id}`} style={{ color: "var(--accent)", textDecoration: "none" }}>{p.tenant_name}</a>
+                      <Link href={`/admin/tenants/${p.tenant_id}`} style={{ color: "var(--accent)", textDecoration: "none" }}>{p.tenant_name}</Link>
                     </td>
                     <td style={{ ...tdStyle, fontSize: 12, color: "var(--text-secondary)" }}>{p.vertical}</td>
                     <td style={{ ...tdStyle, fontSize: 12, color: "var(--text-secondary)" }}>{p.city ?? "—"}</td>

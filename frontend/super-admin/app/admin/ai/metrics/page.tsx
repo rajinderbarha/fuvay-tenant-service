@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { adminAiApi, AIMetrics } from "@/lib/api";
 import { AnalyticsKpiCard } from "@/components/analytics";
 
@@ -62,8 +63,8 @@ export default function AIMetricsPage() {
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <a href="/admin/ai/sessions"       style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>All Sessions →</a>
-        <a href="/admin/ai/failed-actions" style={{ fontSize: 13, color: "var(--danger-text)", textDecoration: "none" }}>Failed Actions →</a>
+        <Link href="/admin/ai/sessions"       style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>All Sessions →</Link>
+        <Link href="/admin/ai/failed-actions" style={{ fontSize: 13, color: "var(--danger-text)", textDecoration: "none" }}>Failed Actions →</Link>
       </div>
     </div>
   );

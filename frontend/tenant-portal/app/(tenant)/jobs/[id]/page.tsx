@@ -12,6 +12,7 @@
  * docs/final-l5-01d/FINAL_L5_01D_TENANT_JOBS_API_MIGRATION_REPORT.md.
  */
 import React, { useCallback, useState } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { PageHeader, Card, StatusBadge, Button, Modal, Input, Skeleton } from "@serviceos/design-system";
 import { Badge } from "../../../../components/shared/ui";
@@ -68,7 +69,7 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
     <TenantLayout activeNav="jobs">
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8,
         fontSize:12, color:"var(--text-tertiary)" }}>
-        <a href="/jobs" style={{ color:"var(--text-link)", textDecoration:"none" }}>Jobs</a>
+        <Link href="/jobs" style={{ color:"var(--text-link)", textDecoration:"none" }}>Jobs</Link>
         <span>›</span>
         <span style={{ color:"var(--text-primary)", fontWeight:500 }}>
           {job.loading ? "Loading..." : j?.job_number}
@@ -160,10 +161,10 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
                 <Field label="Collected Amount" value={j.completion_data.collected_amount != null ? `₹${j.completion_data.collected_amount}` : "—"}/>
                 <Field label="Payment Mode" value="Customer Pays Provider Directly"/>
               </div>
-              <a href={`/finance/usage-credit-ledger?job_id=${j.id}`}
+              <Link href={`/finance/usage-credit-ledger?job_id=${j.id}`}
                 style={{ display:"inline-block", marginTop:12, fontSize:12, fontWeight:600, color:"var(--text-link)" }}>
                 View Usage Credit Deduction (Completed Job Deduction) for this job →
-              </a>
+              </Link>
             </Card>
           )}
 

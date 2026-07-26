@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Card, SectionHeader, Btn, Input, Badge, Spinner } from "../../../components/shared/ui";
 import { ProfilePhotoUploader } from "../../../components/shared/ProfilePhotoUploader";
@@ -153,9 +154,9 @@ export default function AdminProfilePage() {
               <InfoRow icon={<Shield size={13} />}      label="MFA"        value={<Badge variant={user?.is_mfa_enabled ? "success" : "warning"}>{user?.is_mfa_enabled ? "On" : "Off"}</Badge>} />
             </div>
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
-              <a href="/admin/account" style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}>
+              <Link href="/admin/account" style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}>
                 Security Settings →
-              </a>
+              </Link>
             </div>
           </Card>
         </div>

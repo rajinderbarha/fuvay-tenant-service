@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import Link from "next/link";
 import { AdminLayout, useAdminMenuRefresh } from "../../../components/layout/AdminLayout";
 import {
   SectionHeader, Card, Badge, Btn, Modal,
@@ -162,6 +163,9 @@ function VerticalCard({ v, onToggle, onConfigure }: {
         <Btn variant="ghost" size="sm" icon={<Settings size={13}/>} onClick={() => onConfigure(v)}>
           Modules
         </Btn>
+        <Link href={`/admin/verticals/${v.key}?tab=capabilities`} style={{ textDecoration: "none" }}>
+          <Btn variant="ghost" size="sm">Capabilities & Policies</Btn>
+        </Link>
         <div style={{ flex: 1 }}/>
         {v.is_enabled ? (
           <Btn variant="danger" size="sm" icon={<XCircle size={13}/>} onClick={() => onToggle(v.key, false)}>

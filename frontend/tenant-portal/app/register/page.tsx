@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import {
   Check, AlertTriangle, Sparkles, ArrowRight, ArrowLeft,
   PartyPopper, Info, ShieldCheck, FlaskConical, CreditCard,
@@ -290,7 +291,7 @@ export default function RegisterPage() {
             Continue to Plans <ArrowRight size={16}/>
           </Btn>
           <p style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "var(--text-secondary)" }}>
-            Already registered? <a href="/login" style={{ color: "var(--brand)", fontWeight: 600 }}>Sign in</a>
+            Already registered? <Link href="/login" style={{ color: "var(--brand)", fontWeight: 600 }}>Sign in</Link>
           </p>
         </form>
       )}

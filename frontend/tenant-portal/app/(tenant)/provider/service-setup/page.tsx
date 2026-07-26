@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { Card, Badge, Btn, Modal, Input, Skeleton, StatCard, EmptyState } from "../../../../components/shared/ui";
 import {
@@ -139,10 +140,10 @@ export default function ServiceSetupPage() {
         <p style={{ fontSize: 13, color: "var(--warning-text, #92400e)", margin: 0 }}>
           This page has moved. Open the new Home Services setup flow.
         </p>
-        <a href="/tenant/setup/services" style={{
+        <Link href="/tenant/setup/services" style={{
           fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none", whiteSpace: "nowrap" }}>
           Go to Service Setup →
-        </a>
+        </Link>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>

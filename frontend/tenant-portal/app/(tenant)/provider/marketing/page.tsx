@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useState } from "react";
+import Link from "next/link";
 import {
   providerMarketingApi,
   type MarketingStatusData,
@@ -240,9 +241,9 @@ export default function ProviderMarketingPage() {
                     <div>
                       {b.message}
                       {b.route && (
-                        <a href={b.route} style={{ marginLeft: 8, color: "var(--brand)", textDecoration: "underline" }}>
+                        <Link href={b.route} style={{ marginLeft: 8, color: "var(--brand)", textDecoration: "underline" }}>
                           Fix →
-                        </a>
+                        </Link>
                       )}
                     </div>
                   </div>

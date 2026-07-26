@@ -1,5 +1,6 @@
 'use client';
 import { useCallback } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { tenantSetupApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
@@ -54,7 +55,7 @@ export default function SecurityDepositPage() {
               <li>&#8226; Security deposit is separate from your usage credit balance.</li>
               <li>&#8226; Deposit status is managed by your administrator.</li>
               <li>&#8226; Contact support for questions about your security deposit.</li>
-              <li>&#8226; For credit balance, see <a href="/finance/package" style={{ color: "var(--brand)" }}>Package &amp; Credits</a>.</li>
+              <li>&#8226; For credit balance, see <Link href="/finance/package" style={{ color: "var(--brand)" }}>Package &amp; Credits</Link>.</li>
             </ul>
           </Card>
         </div>

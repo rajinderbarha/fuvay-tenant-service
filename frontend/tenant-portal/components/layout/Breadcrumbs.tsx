@@ -4,6 +4,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { resolveTenantPageMeta } from "../../lib/page-registry";
 
 export interface BreadcrumbItem {
@@ -45,12 +46,12 @@ export function Breadcrumbs({ crumbs, pathname }: BreadcrumbsProps) {
           <span key={i} style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
             {i > 0 && <span style={{ color: "#d1d5db" }}>/</span>}
             {crumb.href && !isLast ? (
-              <a
+              <Link
                 href={crumb.href}
                 style={{ color: "#6b7280", textDecoration: "none" }}
               >
                 {crumb.label}
-              </a>
+              </Link>
             ) : (
               <span style={{ color: isLast ? "#374151" : "#9ca3af", fontWeight: isLast ? 500 : 400 }}>
                 {crumb.label}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import {
   bulkSetupApi, BulkSetupDraft, BulkNewService,
   BulkPreviewItem, BulkBlocker, BulkPreviewSummary,
@@ -149,9 +150,9 @@ export default function BulkWizardDetailPage() {
     <div style={{ padding: "1.5rem", maxWidth: "960px" }}>
       {/* Header */}
       <div style={{ marginBottom: "1.5rem" }}>
-        <a href="/admin/service-setup/bulk-wizard" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
+        <Link href="/admin/service-setup/bulk-wizard" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
           ← Back to Wizards
-        </a>
+        </Link>
         <h1 style={{ fontSize: "1.4rem", fontWeight: 700, margin: "0.5rem 0 0" }}>
           Bulk Setup — {draft.target_vertical_type ?? "New Setup"}
         </h1>
@@ -425,13 +426,13 @@ export default function BulkWizardDetailPage() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: "0.75rem" }}>
-                <a href="/admin/service-setup/bulk-wizard" style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", borderRadius: "0.375rem", color: "#374151", textDecoration: "none" }}>
+                <Link href="/admin/service-setup/bulk-wizard" style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", borderRadius: "0.375rem", color: "#374151", textDecoration: "none" }}>
                   ← All Wizards
-                </a>
-                <a href={`/admin/service-setup/bulk-runs/${applyResult.run_id}`}
+                </Link>
+                <Link href={`/admin/service-setup/bulk-runs/${applyResult.run_id}`}
                   style={{ padding: "0.5rem 1rem", background: "#1e3a5f", color: "#fff", borderRadius: "0.375rem", textDecoration: "none", fontWeight: 600 }}>
                   View Run Detail
-                </a>
+                </Link>
               </div>
             </div>
           )}

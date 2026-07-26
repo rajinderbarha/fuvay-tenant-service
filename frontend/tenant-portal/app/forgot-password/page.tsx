@@ -5,6 +5,7 @@
  *   2. Enter OTP + new password -> confirm (authApi.confirmPasswordReset)
  */
 import React, { useState } from "react";
+import Link from "next/link";
 import { authApi } from "../../lib/api";
 
 type Step = "email" | "reset" | "done";
@@ -197,17 +198,17 @@ export default function ForgotPasswordPage() {
               <p style={{ fontSize:13, color:"var(--text-secondary)", margin:"0 0 24px", lineHeight:1.5 }}>
                 Your password has been changed. You can now log in with your new password.
               </p>
-              <a href="/login" style={{ display:"block", textAlign:"center", height:44, lineHeight:"44px",
+              <Link href="/login" style={{ display:"block", textAlign:"center", height:44, lineHeight:"44px",
                 borderRadius:11, background:"var(--brand)", color:"white", fontWeight:600, fontSize:14,
                 textDecoration:"none" }}>
                 Go to login →
-              </a>
+              </Link>
             </>
           )}
 
           {step !== "done" && (
             <p style={{ fontSize:13, color:"var(--text-secondary)", margin:"20px 0 0", textAlign:"center" }}>
-              Remembered your password? <a href="/login" style={{ color:"var(--brand)", fontWeight:600 }}>Sign in</a>
+              Remembered your password? <Link href="/login" style={{ color:"var(--brand)", fontWeight:600 }}>Sign in</Link>
             </p>
           )}
         </div>

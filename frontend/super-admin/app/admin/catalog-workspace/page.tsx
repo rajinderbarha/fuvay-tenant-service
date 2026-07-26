@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useState } from "react";
+import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   homeServicesCatalogConsoleApi, catalogWorkspaceApi, checklistCatalogApi,
@@ -1067,7 +1068,7 @@ function AddProblemPicker({ masterServiceId, jobTypeId, existingIssueIds, onAdde
       ) : results.length === 0 ? (
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
           No matching problems{existingIssueIds.length > 0 ? " (already-mapped problems are hidden)" : ""}.
-          Create new problems in <a href="/admin/service-options" style={{ color: "var(--brand)" }}>Service Options &amp; Issue Types</a>.
+          Create new problems in <Link href="/admin/service-options" style={{ color: "var(--brand)" }}>Service Options &amp; Issue Types</Link>.
         </p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 180, overflowY: "auto" }}>
@@ -1284,7 +1285,7 @@ function ChecklistTab({ masterServiceJobTypeId, canWrite, notify, onChanged }: {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 12 }}>
         <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>
           Maps a published checklist version to this exact Job Type. Template authoring and versioning happen in the{" "}
-          <a href="/admin/checklists" style={{ color: "var(--brand)" }}>Checklist Library</a>, not here.
+          <Link href="/admin/checklists" style={{ color: "var(--brand)" }}>Checklist Library</Link>, not here.
         </p>
         {canWrite && (
           <button onClick={() => setShowAdd(v => !v)} style={{ fontSize: 12, fontWeight: 600, padding: "6px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>

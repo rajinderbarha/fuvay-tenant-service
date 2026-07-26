@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback } from "react";
+import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Card, SectionHeader, Badge, Btn, Skeleton } from "../../../components/shared/ui";
 import {
@@ -37,7 +38,7 @@ function SummaryCard({
       </div>
     </Card>
   );
-  return href ? <a href={href} style={{ textDecoration: "none", display: "block" }}>{content}</a> : content;
+  return href ? <Link href={href} style={{ textDecoration: "none", display: "block" }}>{content}</Link> : content;
 }
 
 // ── Module nav card ────────────────────────────────────────────────────────────
@@ -182,8 +183,8 @@ export default function ServiceSetupHubPage() {
                 </div>
               </a>
             ))}
-            <a href="/admin/service-setup/templates" style={{ fontSize: 12, color: "var(--text-link)",
-              fontWeight: 600, display: "inline-block", marginTop: 10 }}>View all templates →</a>
+            <Link href="/admin/service-setup/templates" style={{ fontSize: 12, color: "var(--text-link)",
+              fontWeight: 600, display: "inline-block", marginTop: 10 }}>View all templates →</Link>
           </Card>
 
           <Card padding={18}>
@@ -210,8 +211,8 @@ export default function ServiceSetupHubPage() {
                 </div>
               </a>
             ))}
-            <a href="/admin/service-setup/bulk-runs" style={{ fontSize: 12, color: "var(--text-link)",
-              fontWeight: 600, display: "inline-block", marginTop: 10 }}>View all runs →</a>
+            <Link href="/admin/service-setup/bulk-runs" style={{ fontSize: 12, color: "var(--text-link)",
+              fontWeight: 600, display: "inline-block", marginTop: 10 }}>View all runs →</Link>
           </Card>
 
           {(templates.error || wizardSummary.error || runs.error) && (

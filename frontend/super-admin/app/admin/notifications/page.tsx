@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useCallback } from "react";
+import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   Card, Badge, Btn, Modal, SectionHeader, Skeleton, EmptyState, Select, Input,
@@ -248,9 +249,9 @@ export default function NotificationCenterPage() {
             {selected.action_url && (
               <div className="nc-detail-field">
                 <div className="nc-detail-label">Action</div>
-                <a href={selected.action_url} style={{ color: "var(--brand)", fontSize: 13 }}>
+                <Link href={selected.action_url} style={{ color: "var(--brand)", fontSize: 13 }}>
                   {selected.action_label ?? selected.action_url}
-                </a>
+                </Link>
               </div>
             )}
 

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import {
   staffQuoteApi, QuoteRecord, QuoteItemRecord,
 } from "../../../../../lib/api";
@@ -149,9 +150,9 @@ export default function ServiceJobQuotesPage() {
     <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Quote Builder</h1>
-        <a href={`/service-jobs/${jobId}`} style={{ color: "#6366f1", textDecoration: "none", fontSize: 14 }}>
+        <Link href={`/service-jobs/${jobId}`} style={{ color: "#6366f1", textDecoration: "none", fontSize: 14 }}>
           ← Back to Job
-        </a>
+        </Link>
       </div>
 
       {error && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { customerFlowApi, CustomerFlowConfig } from "../../../lib/api";
 
 const FLOW_TYPE_COLORS: Record<string, string> = {
@@ -37,10 +38,10 @@ export default function CustomerFlowOverviewPage() {
             Per-category booking flow types. Backend validates all catalog choices — AI cannot invent IDs. ({total} configured)
           </p>
         </div>
-        <a href="/admin/customer-flow/drafts"
+        <Link href="/admin/customer-flow/drafts"
           style={{ padding: "0.5rem 1rem", background: "#1e3a5f", color: "#fff", borderRadius: "0.375rem", textDecoration: "none", fontSize: "0.875rem", fontWeight: 600 }}>
           View Booking Drafts
-        </a>
+        </Link>
       </div>
 
       {/* Flow type legend */}

@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useCallback, useEffect } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { ProfilePhotoUploader } from "../../../components/shared/ProfilePhotoUploader";
 import {
@@ -986,10 +987,10 @@ export default function ProviderProfilePage() {
                       <p style={{ fontSize:12, color:"var(--text-tertiary)", margin:"0 0 12px" }}>
                         {totalAreas} / 5 areas used — bookability requires at least one active area.
                       </p>
-                      <a href="/provider/service-areas" style={{ fontSize:12, fontWeight:700, color:"var(--brand)",
+                      <Link href="/provider/service-areas" style={{ fontSize:12, fontWeight:700, color:"var(--brand)",
                         textDecoration:"none", display:"inline-flex", alignItems:"center", gap:5 }}>
                         <MapPin size={12}/> Add Service Area
-                      </a>
+                      </Link>
                     </div>
 
                     <div style={{ paddingTop:16, borderTop:"1px solid var(--border)", marginTop:16 }}>
@@ -1013,10 +1014,10 @@ export default function ProviderProfilePage() {
                       <p style={{ fontSize:12, color:"var(--text-tertiary)", margin:"0 0 12px" }}>
                         {(availabilityApi.data?.rules ?? []).filter(r=>r.is_active).length} rule(s) configured — required for bookability.
                       </p>
-                      <a href="/tenant/setup/availability" style={{ fontSize:12, fontWeight:700, color:"var(--brand)",
+                      <Link href="/tenant/setup/availability" style={{ fontSize:12, fontWeight:700, color:"var(--brand)",
                         textDecoration:"none", display:"inline-flex", alignItems:"center", gap:5 }}>
                         <Clock size={12}/> Manage Business Hours
-                      </a>
+                      </Link>
                     </div>
                   </>
                 )}
@@ -1061,10 +1062,10 @@ export default function ProviderProfilePage() {
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
                     <p style={{ fontSize:12, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em",
                       color:"var(--text-tertiary)", margin:0 }}>Staff &amp; Technicians</p>
-                    <a href="/provider/staff" style={{ fontSize:12, fontWeight:700, color:"var(--brand)", textDecoration:"none",
+                    <Link href="/provider/staff" style={{ fontSize:12, fontWeight:700, color:"var(--brand)", textDecoration:"none",
                       display:"flex", alignItems:"center", gap:4 }}>
                       <UserPlus size={12}/> Add Staff
-                    </a>
+                    </Link>
                   </div>
                   {teamApi.error ? (
                     <SectionError title="Could not load team" error={teamApi.error} requestId={teamApi.requestId} onRetry={teamApi.refetch}/>
@@ -1102,9 +1103,9 @@ export default function ProviderProfilePage() {
               <div className="card" id="activity">
                 <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4 }}>
                   <p className="section-title" style={{ marginBottom:0 }}><Activity size={15}/> Activity</p>
-                  <a href="/activity" style={{ fontSize:12,color:"var(--brand)",textDecoration:"none",display:"flex",alignItems:"center",gap:4 }}>
+                  <Link href="/activity" style={{ fontSize:12,color:"var(--brand)",textDecoration:"none",display:"flex",alignItems:"center",gap:4 }}>
                     View All <ChevronRight size={12}/>
-                  </a>
+                  </Link>
                 </div>
                 <p className="section-sub">Profile updates and verification events.</p>
                 {activityApi.error ? (

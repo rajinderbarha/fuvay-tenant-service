@@ -5,6 +5,7 @@
  * Stores token + full tenant context in localStorage on success.
  */
 import React, { useState } from "react";
+import Link from "next/link";
 import { authApi, categoryDashboardApi } from "../../lib/api";
 
 export default function LoginPage() {
@@ -113,7 +114,7 @@ export default function LoginPage() {
             <div>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5 }}>
                 <label style={{ fontSize:12, fontWeight:500, color:"var(--text-secondary)" }}>Password</label>
-                <a href="/forgot-password" style={{ fontSize:12, color:"var(--brand)", fontWeight:500 }}>Forgot password?</a>
+                <Link href="/forgot-password" style={{ fontSize:12, color:"var(--brand)", fontWeight:500 }}>Forgot password?</Link>
               </div>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
                 style={{ width:"100%", height:42, padding:"0 14px", fontSize:14,
@@ -134,7 +135,7 @@ export default function LoginPage() {
           </form>
           <p style={{ fontSize:13, color:"var(--text-secondary)", margin:"20px 0 0",
             textAlign:"center" }}>
-            New business? <a href="/register" style={{ color:"var(--brand)", fontWeight:600 }}>Create an account</a>
+            New business? <Link href="/register" style={{ color:"var(--brand)", fontWeight:600 }}>Create an account</Link>
           </p>
           <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"10px 0 0",
             textAlign:"center" }}>

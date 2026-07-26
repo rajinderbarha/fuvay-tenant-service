@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { recommendationApi, RecommendationRule } from "../../../../lib/api";
 
 const RULE_TYPES = [
@@ -106,10 +107,10 @@ export default function RecommendationRulesPage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.75rem" }}>
-          <a href="/admin/automation/recommendation-results"
+          <Link href="/admin/automation/recommendation-results"
             style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", borderRadius: "0.375rem", color: "#4b5563", textDecoration: "none", fontSize: "0.875rem" }}>
             View Results
-          </a>
+          </Link>
           <button onClick={() => setShowCreate(true)}
             style={{ background: "#1e3a5f", color: "#fff", border: "none", padding: "0.5rem 1.2rem", borderRadius: "0.375rem", cursor: "pointer", fontWeight: 600 }}>
             + New Rule
@@ -176,8 +177,8 @@ export default function RecommendationRulesPage() {
                   </td>
                   <td style={{ padding: "0.6rem 0.75rem" }}>
                     <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                      <a href={`/admin/automation/recommendation-rules/${rule.id}`}
-                        style={{ fontSize: "0.72rem", color: "#1e3a5f", textDecoration: "none" }}>Edit</a>
+                      <Link href={`/admin/automation/recommendation-rules/${rule.id}`}
+                        style={{ fontSize: "0.72rem", color: "#1e3a5f", textDecoration: "none" }}>Edit</Link>
                       {rule.status !== "active" && rule.status !== "archived" && (
                         <button onClick={() => handleActivate(rule.id)}
                           style={{ fontSize: "0.72rem", color: "var(--success)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Activate</button>

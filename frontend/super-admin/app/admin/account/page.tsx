@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Card, SectionHeader, Btn, Input, Badge, Spinner, Modal, AddBtn } from "../../../components/shared/ui";
 import { ProfilePhotoUploader } from "../../../components/shared/ProfilePhotoUploader";
@@ -161,9 +162,9 @@ export default function AccountPage() {
                     onUploaded={(_a: MediaAsset) => { notify("Photo updated."); me.refetch(); }}
                     onRemoved={() => { notify("Photo removed."); me.refetch(); }}
                   />
-                  <a href="/admin/profile" style={{ fontSize:11, color:"var(--accent)", textDecoration:"none" }}>
+                  <Link href="/admin/profile" style={{ fontSize:11, color:"var(--accent)", textDecoration:"none" }}>
                     Full profile →
-                  </a>
+                  </Link>
                 </div>
                 {/* Fields column */}
                 <div style={{ display:"flex", flexDirection:"column", gap:16, flex:1, maxWidth:400 }}>

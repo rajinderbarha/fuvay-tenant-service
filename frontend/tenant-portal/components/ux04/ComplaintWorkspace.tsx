@@ -7,6 +7,7 @@
  * either.
  */
 import React from "react";
+import Link from "next/link";
 import type { ComplaintDetailView, DisputeView } from "../../lib/ux04/types";
 
 export function ComplaintWorkspace({ complaint }: { complaint: ComplaintDetailView }) {
@@ -18,9 +19,9 @@ export function ComplaintWorkspace({ complaint }: { complaint: ComplaintDetailVi
       </div>
       <p style={{ fontSize: "0.8125rem" }}>{complaint.complaint.category} — customer {complaint.complaint.customerId}</p>
       <p style={{ fontSize: "0.8125rem" }}>&quot;{complaint.customerStatement}&quot;</p>
-      <a href={complaint.relatedEntity.href} style={{ fontSize: "0.75rem" }}>
+      <Link href={complaint.relatedEntity.href} style={{ fontSize: "0.75rem" }}>
         Related: {complaint.relatedEntity.label}
-      </a>
+      </Link>
       <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
         Assigned staff: {complaint.assignedStaffId ?? "Unassigned"} · provider can respond:{" "}
         {complaint.complaint.providerCanRespond ? "yes" : "no"}
@@ -49,9 +50,9 @@ export function DisputePresentation({ dispute }: { dispute: DisputeView }) {
       </div>
       <p style={{ fontSize: "0.8125rem" }}>{dispute.reason}</p>
       <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>{dispute.amountContextLabel}</p>
-      <a href={dispute.relatedEntity.href} style={{ fontSize: "0.75rem" }}>
+      <Link href={dispute.relatedEntity.href} style={{ fontSize: "0.75rem" }}>
         Related: {dispute.relatedEntity.label}
-      </a>
+      </Link>
       {dispute.tenantResponse ? (
         <p style={{ fontSize: "0.8125rem" }}>Tenant response: {dispute.tenantResponse}</p>
       ) : (

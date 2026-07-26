@@ -4,6 +4,7 @@
  * PROVEN: customersApi.get() + customersApi.getHealth() + customersApi.jobs() connected.
  */
 import React, { useCallback } from "react";
+import Link from "next/link";
 import { TenantLayout }       from "../../../../components/layout/TenantLayout";
 import { Card, Skeleton, HealthMeter, JobStatusBadge, Badge } from "../../../../components/shared/ui";
 import { customersApi }       from "../../../../lib/api";
@@ -36,7 +37,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       {/* Breadcrumb */}
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20,
         fontSize:12, color:"var(--text-tertiary)" }}>
-        <a href="/customers" style={{ color:"var(--text-link)", textDecoration:"none" }}>Customers</a>
+        <Link href="/customers" style={{ color:"var(--text-link)", textDecoration:"none" }}>Customers</Link>
         <span>›</span>
         <span style={{ color:"var(--text-primary)", fontWeight:500 }}>
           {c?.name ?? "Loading…"}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   serviceSetupTemplatesApi,
   type SetupTemplateDetail,
@@ -71,9 +72,9 @@ export default function TemplateDetailPage() {
   return (
     <div style={{ padding: "1.5rem", maxWidth: 900 }}>
       <div style={{ marginBottom: "1.5rem" }}>
-        <a href="/admin/service-setup/templates" style={{ color: "var(--text-tertiary)", fontSize: 13, textDecoration: "none" }}>
+        <Link href="/admin/service-setup/templates" style={{ color: "var(--text-tertiary)", fontSize: 13, textDecoration: "none" }}>
           ← Back to Templates
-        </a>
+        </Link>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 8, flexWrap: "wrap", gap: 12 }}>
           <div>
             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>{template.name}</h1>

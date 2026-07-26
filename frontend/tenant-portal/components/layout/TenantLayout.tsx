@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, createContext, useContext, useCallback } from "react";
+import Link from "next/link";
 
 const TenantShellCtx = createContext(false);
 import {
@@ -205,20 +206,16 @@ export function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {steps.map((step, idx) => {
                 const done = step.done;
-                return (
-                  <a
-                    key={step.key}
-                    href={done ? undefined : step.href}
-                    onClick={done ? undefined : onClose}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
-                      background: done ? "var(--success-bg)" : "var(--surface-sunken)",
-                      border: `1px solid ${done ? "var(--success-border)" : "var(--border)"}`,
-                      borderRadius: "var(--radius-lg)", textDecoration: "none",
-                      cursor: done ? "default" : "pointer",
-                      transition: "all 0.12s",
-                    }}
-                  >
+                const stepStyle: React.CSSProperties = {
+                  display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+                  background: done ? "var(--success-bg)" : "var(--surface-sunken)",
+                  border: `1px solid ${done ? "var(--success-border)" : "var(--border)"}`,
+                  borderRadius: "var(--radius-lg)", textDecoration: "none",
+                  cursor: done ? "default" : "pointer",
+                  transition: "all 0.12s",
+                };
+                const stepContent = (
+                  <>
                     {/* Step number / check */}
                     <div style={{
                       width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
@@ -238,7 +235,12 @@ export function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: (
                     {done
                       ? <CheckCircle2 size={15} style={{ color: "var(--success-text)", flexShrink: 0 }}/>
                       : <ArrowRight size={14} style={{ color: "var(--brand)", flexShrink: 0 }}/>}
-                  </a>
+                  </>
+                );
+                return done ? (
+                  <div key={step.key} style={stepStyle}>{stepContent}</div>
+                ) : (
+                  <Link key={step.key} href={step.href} onClick={onClose} style={stepStyle}>{stepContent}</Link>
                 );
               })}
             </div>
@@ -255,13 +257,13 @@ export function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: (
               </div>
             ) : (
               <div style={{ display: "flex", gap: 10 }}>
-                <a href="/profile" onClick={onClose} style={{
+                <Link href="/profile" onClick={onClose} style={{
                   flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                   padding: "10px", borderRadius: "var(--radius-lg)", textDecoration: "none",
                   background: "var(--brand)", color: "white", fontSize: 13, fontWeight: 600,
                 }}>
                   <AlertCircle size={14}/> Go to Business Profile
-                </a>
+                </Link>
                 <button onClick={onClose} style={{
                   padding: "10px 16px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)",
                   background: "var(--surface-sunken)", color: "var(--text-secondary)", fontSize: 13,
@@ -670,12 +672,12 @@ function TenantShellInner({ children, activeNav }: {
                   })}
                 </div>
 
-                <a href="/provider/notifications" onClick={() => setBellOpen(false)}
+                <Link href="/provider/notifications" onClick={() => setBellOpen(false)}
                   style={{ display: "block", textAlign: "center", padding: "12px 16px",
                     borderTop: "1px solid var(--border)", fontSize: 13, fontWeight: 600,
                     color: "var(--accent)", textDecoration: "none" }}>
                   View all notifications
-                </a>
+                </Link>
               </div>
             )}
           </div>
@@ -724,36 +726,36 @@ function TenantShellInner({ children, activeNav }: {
                   ) : (
                     <>
                       <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 6px" }}>No active package yet</p>
-                      <a href="/packages" onClick={() => setProfileOpen(false)} style={{ fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none" }}>
+                      <Link href="/packages" onClick={() => setProfileOpen(false)} style={{ fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none" }}>
                         Choose a plan →
-                      </a>
+                      </Link>
                     </>
                   )}
                 </div>
 
                 {/* Menu items */}
                 <div style={{ padding: "4px 8px" }}>
-                  <a href="/profile" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
+                  <Link href="/profile" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
                     <User size={15}/> Business Profile
-                  </a>
-                  <a href="/packages" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
+                  </Link>
+                  <Link href="/packages" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
                     <CreditCard size={15}/> Billing
-                  </a>
-                  <a href="/analytics" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
+                  </Link>
+                  <Link href="/analytics" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
                     <BarChart2 size={15}/> Analytics
-                  </a>
-                  <a href="/reports" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
+                  </Link>
+                  <Link href="/reports" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
                     <FileText size={15}/> Reports
-                  </a>
+                  </Link>
                   <button onClick={toggle} style={{ ...profileMenuItemStyle, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", justifyContent: "space-between" }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       {theme === "dark" ? <Moon size={15}/> : <Sun size={15}/>} Theme
                     </span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "capitalize" }}>{theme}</span>
                   </button>
-                  <a href="/settings" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
+                  <Link href="/settings" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
                     <Settings size={15}/> Settings
-                  </a>
+                  </Link>
                 </div>
 
                 <div style={{ borderTop: "1px solid var(--border)", padding: "4px 8px" }}>
@@ -833,7 +835,7 @@ function SidebarItem({ item, active, collapsed, isLast }: { item: NavItem; activ
 
   if (collapsed) {
     return (
-      <a
+      <Link
         href={item.href} id={`nav-${item.id}`} title={item.label}
         aria-current={active ? "page" : undefined}
         className="sidebar-rail-item"
@@ -865,12 +867,12 @@ function SidebarItem({ item, active, collapsed, isLast }: { item: NavItem; activ
           fontSize: 9.5, fontWeight: active ? 700 : 500, lineHeight: 1.2, textAlign: "center",
           maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         }}>{item.label}</span>
-      </a>
+      </Link>
     );
   }
 
   return (
-    <a href={item.href} id={`nav-${item.id}`} aria-current={active ? "page" : undefined}
+    <Link href={item.href} id={`nav-${item.id}`} aria-current={active ? "page" : undefined}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         display: "flex", alignItems: "center", gap: 10,
@@ -887,6 +889,6 @@ function SidebarItem({ item, active, collapsed, isLast }: { item: NavItem; activ
       {item.badge != null && item.badge > 0 && (
         <span style={{ background: "var(--terra)", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 700, padding: "1px 7px", flexShrink: 0 }}>{item.badge}</span>
       )}
-    </a>
+    </Link>
   );
 }

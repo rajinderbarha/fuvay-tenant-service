@@ -9,6 +9,7 @@
  * names, per the no-mock-data rule.
  */
 import React, { useState, useMemo, useCallback } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { PageHeader, Card, StatusBadge, DataTable, Button, type DataTableColumn } from "@serviceos/design-system";
 import { Badge, Select, Input } from "../../../components/shared/ui";
@@ -38,7 +39,7 @@ export default function JobsPage() {
 
   const columns: DataTableColumn<ServiceJobRecord>[] = [
     { key: "job_number", header: "Job", render: (j) => (
-      <a href={`/jobs/${j.id}`} style={{ fontWeight: 600, color: "var(--text-link)" }}>{j.job_number}</a>
+      <Link href={`/jobs/${j.id}`} style={{ fontWeight: 600, color: "var(--text-link)" }}>{j.job_number}</Link>
     ) },
     { key: "location", header: "Zipcode", accessor: (j) => j.zipcode ?? j.city ?? "—" },
     { key: "status", header: "Status", render: (j) => <StatusBadge status={j.status} /> },

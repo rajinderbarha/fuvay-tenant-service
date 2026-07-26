@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { providerAnalyticsApi } from "../../../lib/api";
 import { KpiCard, DateFilter, AlertList } from "../../../components/analytics";
 
@@ -69,11 +70,11 @@ export default function ProviderAnalyticsDashboard() {
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <a href="/analytics/financial"  style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Financial →</a>
-        <a href="/analytics/staff"      style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Staff Performance →</a>
-        <a href="/analytics/quality"    style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Reviews & Quality →</a>
-        <a href="/analytics/complaints" style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Complaints →</a>
-        <a href="/reports"              style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Reports →</a>
+        <Link href="/analytics/financial"  style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Financial →</Link>
+        <Link href="/analytics/staff"      style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Staff Performance →</Link>
+        <Link href="/analytics/quality"    style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Reviews & Quality →</Link>
+        <Link href="/analytics/complaints" style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Complaints →</Link>
+        <Link href="/reports"              style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Reports →</Link>
       </div>
     </div>
   );

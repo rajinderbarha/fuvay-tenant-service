@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useState } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { Card, Badge, Btn, Skeleton, EmptyState } from "../../../../components/shared/ui";
 import { useApi } from "../../../../hooks/useApi";
@@ -68,10 +69,10 @@ export default function CustomerPricePreviewPage() {
         <p style={{ fontSize: 13, color: "var(--info-text, #1d4ed8)", margin: 0 }}>
           This preview has moved into the Home Services setup flow.
         </p>
-        <a href="/tenant/setup/services" style={{
+        <Link href="/tenant/setup/services" style={{
           fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none", whiteSpace: "nowrap" }}>
           Go to Service Setup →
-        </a>
+        </Link>
       </div>
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Customer Price Preview</h1>

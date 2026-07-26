@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useState, useEffect } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import {
   providerServiceAreasApi, tenantSetupApi, providerStatusApi,
@@ -1062,10 +1063,10 @@ export default function ProviderServiceAreasPage() {
                   })}
                 </div>
               )}
-              <a href="/activity" style={{ fontSize: 11, color: "var(--brand)", textDecoration: "none",
+              <Link href="/activity" style={{ fontSize: 11, color: "var(--brand)", textDecoration: "none",
                 display: "flex", alignItems: "center", gap: 3, marginTop: 10 }}>
                 View all activity <ChevronRight size={11}/>
-              </a>
+              </Link>
             </Card>
           </div>
         </div>

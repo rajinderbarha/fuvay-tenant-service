@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Wrench, Users2, MapPin, CreditCard, Package, Shield, RefreshCw,
   ClipboardCheck, ChevronRight, Building2,
@@ -213,7 +214,7 @@ export default function DashboardPage() {
               <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
                 <Wrench size={16} color="var(--brand)" /> Enabled Services
               </h3>
-              <a href="/tenant/setup/services" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none" }}>Manage Services</a>
+              <Link href="/tenant/setup/services" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none" }}>Manage Services</Link>
             </div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -268,21 +269,21 @@ export default function DashboardPage() {
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
                   {wallet ? `${safeNum(wallet.lifetime_consumed)} consumed lifetime` : ""}
                 </p>
-                <a href="/finance/usage-credit-ledger" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>View Ledger <ChevronRight size={12} /></a>
+                <Link href="/finance/usage-credit-ledger" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>View Ledger <ChevronRight size={12} /></Link>
               </div>
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px" }}>Package</p>
                 <div style={{ fontSize: 15, fontWeight: 700, color: pkg?.has_package ? "var(--success-text)" : "var(--warning-text)", margin: "0 0 4px" }}>
                   {pkgApi.loading ? <Skeleton width={100} height={18} /> : safeStr(pkg?.package_name, "No active package")}
                 </div>
-                <a href="/finance/package" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>Manage Package <ChevronRight size={12} /></a>
+                <Link href="/finance/package" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>Manage Package <ChevronRight size={12} /></Link>
               </div>
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px" }}>Security Deposit</p>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
                   {depositApi.loading ? <Skeleton width={60} height={18} /> : `₹${safeNum(deposit?.paid_amount ?? deposit?.required_amount)}`}
                 </div>
-                <a href="/finance/security-deposit" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>View Details <ChevronRight size={12} /></a>
+                <Link href="/finance/security-deposit" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>View Details <ChevronRight size={12} /></Link>
               </div>
             </div>
           </Card>
@@ -302,7 +303,7 @@ export default function DashboardPage() {
               ) : (
                 <p style={{ fontSize: 13, color: "var(--text-primary)", margin: 0 }}>{activeStaff.length} active of {staffList.length} total</p>
               )}
-              <a href="/provider/staff" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2, marginTop: 6 }}>View All Staff <ChevronRight size={12} /></a>
+              <Link href="/provider/staff" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2, marginTop: 6 }}>View All Staff <ChevronRight size={12} /></Link>
             </div>
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><MapPin size={12} /> Service Areas</p>
@@ -311,7 +312,7 @@ export default function DashboardPage() {
               ) : (
                 <p style={{ fontSize: 13, color: "var(--text-primary)", margin: 0 }}>{activeAreas.length} active of {areasList.length} total</p>
               )}
-              <a href="/provider/service-areas" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2, marginTop: 6 }}>View All Areas <ChevronRight size={12} /></a>
+              <Link href="/provider/service-areas" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2, marginTop: 6 }}>View All Areas <ChevronRight size={12} /></Link>
             </div>
           </Card>
 
@@ -337,7 +338,7 @@ export default function DashboardPage() {
                 ))}
               </div>
             )}
-            <a href="/activity" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2, marginTop: 14 }}>View All Activity <ChevronRight size={12} /></a>
+            <Link href="/activity" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2, marginTop: 14 }}>View All Activity <ChevronRight size={12} /></Link>
           </Card>
         </div>
       </div>

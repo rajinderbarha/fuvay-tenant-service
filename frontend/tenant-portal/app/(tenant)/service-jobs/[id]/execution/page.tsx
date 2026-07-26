@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { homeServiceExecutionApi, ExecutionEventRecord, ExecutionNoteRecord, PartsRequestRecord, serviceJobAssignmentApi } from "../../../../../lib/api";
 import { PageShell, PageHeader, Card, Button, Modal, Alert, StatusBadge } from "@serviceos/design-system";
 
@@ -168,7 +169,7 @@ export default function JobExecutionPage() {
       <PageHeader
         title="Job Execution"
         description={`Status: ${status || "—"}`}
-        actions={<a href={`/service-jobs/${jobId}`} style={{ color: "var(--brand)", textDecoration: "none", fontSize: 14 }}>← Back to Job</a>}
+        actions={<Link href={`/service-jobs/${jobId}`} style={{ color: "var(--brand)", textDecoration: "none", fontSize: 14 }}>← Back to Job</Link>}
       />
 
       {error && <div style={{ marginBottom: 16 }}><Alert tone="danger">{error}</Alert></div>}

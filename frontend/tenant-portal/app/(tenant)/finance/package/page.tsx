@@ -1,5 +1,6 @@
 'use client';
 import { useCallback } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { tenantSetupApi, usageCreditsApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
@@ -85,8 +86,8 @@ export default function PackagePage() {
       <Card>
         <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", margin: 0 }}>
           Package and credit settings are managed by your administrator. Contact support to change your package or add credits.
-          To view your credit transaction history, visit <a href="/finance/usage-credit-ledger" style={{ color: "var(--brand)" }}>Usage Credit Ledger</a>.
-          For security deposit information, visit <a href="/finance/security-deposit" style={{ color: "var(--brand)" }}>Security Deposit</a>.
+          To view your credit transaction history, visit <Link href="/finance/usage-credit-ledger" style={{ color: "var(--brand)" }}>Usage Credit Ledger</Link>.
+          For security deposit information, visit <Link href="/finance/security-deposit" style={{ color: "var(--brand)" }}>Security Deposit</Link>.
         </p>
       </Card>
     </TenantLayout>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { customerFlowApi, CustomerBookingDraft } from "../../../../lib/api";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -46,10 +47,10 @@ export default function CustomerDraftsPage() {
             All customer booking drafts across all flow types ({total} total)
           </p>
         </div>
-        <a href="/admin/customer-flow"
+        <Link href="/admin/customer-flow"
           style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", borderRadius: "0.375rem", color: "#4b5563", textDecoration: "none", fontSize: "0.875rem" }}>
           ← Flow Configs
-        </a>
+        </Link>
       </div>
 
       {/* Filters */}
@@ -109,8 +110,8 @@ export default function CustomerDraftsPage() {
                     {d.created_at ? new Date(d.created_at).toLocaleDateString() : "—"}
                   </td>
                   <td style={{ padding: "0.6rem 0.75rem" }}>
-                    <a href={`/admin/customer-flow/drafts/${d.id}`}
-                      style={{ fontSize: "0.72rem", color: "#1e3a5f", textDecoration: "none" }}>View</a>
+                    <Link href={`/admin/customer-flow/drafts/${d.id}`}
+                      style={{ fontSize: "0.72rem", color: "#1e3a5f", textDecoration: "none" }}>View</Link>
                   </td>
                 </tr>
               ))}

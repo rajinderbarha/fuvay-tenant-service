@@ -8,6 +8,7 @@
  * combined, never labeled "commission collected".
  */
 import React, { useCallback, useState } from "react";
+import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { StatCard, Btn, EmptyState, Badge } from "../../../components/shared/ui";
 import { PageShell, PageHeader, Card, StatusBadge, Skeleton } from "@serviceos/design-system";
@@ -155,15 +156,15 @@ export default function PlatformCommandCenterPage() {
                 <Btn variant="secondary" size="sm" icon={<Download size={14}/>} loading={exportAction.loading} onClick={handleExport}>Export Snapshot</Btn>
               )}
               <Btn variant="secondary" size="sm" icon={<FileText size={14}/>}>Create Report</Btn>
-              <a href="/admin/dashboard#actions" style={{ textDecoration: "none" }}>
+              <Link href="/admin/dashboard#actions" style={{ textDecoration: "none" }}>
                 <Btn variant="ghost" size="sm" icon={<Bell size={14}/>}>Open Alerts</Btn>
-              </a>
-              <a href="/admin/operations" style={{ textDecoration: "none" }}>
+              </Link>
+              <Link href="/admin/operations" style={{ textDecoration: "none" }}>
                 <Btn variant="ghost" size="sm" icon={<ListChecks size={14}/>}>Open Operations Board</Btn>
-              </a>
-              <a href="/admin/audit-logs" style={{ textDecoration: "none" }}>
+              </Link>
+              <Link href="/admin/audit-logs" style={{ textDecoration: "none" }}>
                 <Btn variant="ghost" size="sm" icon={<ScrollText size={14}/>}>Open Audit Logs</Btn>
-              </a>
+              </Link>
             </>
           }
         />
@@ -278,9 +279,9 @@ export default function PlatformCommandCenterPage() {
               <Wind size={16} style={{ color: "var(--accent)" }}/>
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Home Services Summary</p>
             </div>
-            <a href="/admin/catalog-workspace" style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>
+            <Link href="/admin/catalog-workspace" style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>
               Open Home Services →
-            </a>
+            </Link>
           </div>
           {homeServices.error ? (
             <SectionError title="We couldn't load Home Services data" error={homeServices.error} requestId={homeServices.requestId} onRetry={homeServices.refetch}/>
@@ -639,7 +640,7 @@ function Row({ label, value, strong, danger, href }: { label: string; value: str
       <span style={{ color: danger ? "var(--danger-text)" : "var(--text-primary)", fontWeight: strong ? 700 : 500 }}>{value}</span>
     </div>
   );
-  return href ? <a href={href} style={{ textDecoration: "none" }}>{content}</a> : content;
+  return href ? <Link href={href} style={{ textDecoration: "none" }}>{content}</Link> : content;
 }
 
 function MiniStat({ label, value }: { label: string; value: number | null | undefined }) {

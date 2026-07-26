@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { useAction } from "../../../hooks/useApi";
 import { aiChatApi, type AIChatMessage } from "../../../lib/api";
@@ -146,12 +147,12 @@ export default function AiChatPage() {
                       </p>
                     )
                   ))}
-                  <a href="/bookings"
+                  <Link href="/bookings"
                     style={{ display:"inline-block", marginTop:10, padding:"7px 16px", borderRadius:8,
                       background:"var(--accent)", color:"white", fontWeight:600, fontSize:12,
                       textDecoration:"none" }}>
                     Book Now →
-                  </a>
+                  </Link>
                 </div>
               )}
             </div>

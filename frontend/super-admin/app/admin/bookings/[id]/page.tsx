@@ -8,6 +8,7 @@
  * FIXED: timeline/notes use admin-specific endpoints
  */
 import React, { useCallback, useState } from "react";
+import Link from "next/link";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Modal, Skeleton } from "../../../../components/shared/ui";
 import { adminBookingsApi } from "../../../../lib/api";
@@ -112,10 +113,10 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       {/* Breadcrumb */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
         fontSize: 12, color: "var(--text-tertiary)" }}>
-        <a href="/admin/bookings"
+        <Link href="/admin/bookings"
           style={{ color: "var(--text-link)", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
           <ArrowLeft size={13} /> Bookings
-        </a>
+        </Link>
         <span>›</span>
         <span style={{ color: "var(--text-primary)", fontWeight: 600, fontFamily: "monospace" }}>
           {booking.loading ? "Loading…" : (b?.booking_number as string) ?? id}
@@ -149,7 +150,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       {!booking.loading && !booking.error && !b && (
         <div style={{ textAlign: "center", padding: 60 }}>
           <p style={{ color: "var(--text-tertiary)", fontSize: 15 }}>Booking not found</p>
-          <a href="/admin/bookings" style={{ fontSize: 13, color: "var(--text-link)" }}>← Back to Bookings</a>
+          <Link href="/admin/bookings" style={{ fontSize: 13, color: "var(--text-link)" }}>← Back to Bookings</Link>
         </div>
       )}
 
@@ -207,10 +208,10 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               </p>
               <InfoRow label="Name"      value={b.provider_name as string || b.tenant_name as string || "—"} />
               <InfoRow label="Tenant ID" value={
-                <a href={`/admin/tenants/${b.tenant_id}`}
+                <Link href={`/admin/tenants/${b.tenant_id}`}
                   style={{ color: "var(--text-link)", fontSize: 11, fontFamily: "monospace" }}>
                   View tenant →
-                </a>
+                </Link>
               } />
             </Card>
 
@@ -276,9 +277,9 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               <InfoRow label="Job Status"  value={b.job_status as string || "—"} />
               <InfoRow label="Job ID"      value={
                 b.job_id ? (
-                  <a href={`/admin/home-services/service-jobs/${b.job_id}`} style={{ fontSize: 11, color: "var(--text-link)", fontFamily: "monospace" }}>
+                  <Link href={`/admin/home-services/service-jobs/${b.job_id}`} style={{ fontSize: 11, color: "var(--text-link)", fontFamily: "monospace" }}>
                     {(b.job_id as string).slice(0, 8)}… →
-                  </a>
+                  </Link>
                 ) : "—"
               } />
             </div>
