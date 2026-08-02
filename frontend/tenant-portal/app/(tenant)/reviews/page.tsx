@@ -52,7 +52,7 @@ export default function ReviewsPage() {
           <div style={{ display:"grid", gridTemplateColumns:"auto 1fr auto", gap:20, alignItems:"center" }}>
             <div style={{ textAlign:"center" }}>
               <p style={{ fontSize:48, fontWeight:800, color:"var(--text-primary)", margin:0, lineHeight:1 }}>
-                {agg.avg_composite.toFixed(1)}
+                {(agg.avg_composite ?? 0).toFixed(1)}
               </p>
               <StarRating score={agg.avg_composite} size={18}/>
               <p style={{ fontSize:12, color:"var(--text-tertiary)", margin:"6px 0 0" }}>
@@ -72,19 +72,19 @@ export default function ReviewsPage() {
                     </div>
                     <div style={{ height:5, background:"var(--border)", borderRadius:999, overflow:"hidden" }}>
                       <div style={{ height:"100%", width:`${(score/5)*100}%`,
-                        background:"#F59E0B", borderRadius:999 }}/>
+                        background:"var(--warning)", borderRadius:999 }}/>
                     </div>
                   </div>
                 );
               })}
             </div>
-            <div style={{ textAlign:"center", padding:"12px 16px", borderRadius:12,
+            <div style={{ textAlign:"center", padding:"12px 16px", borderRadius:"var(--radius-lg)",
               background:"var(--success-bg)", border:"1px solid var(--success-border)" }}>
               <p style={{ fontSize:11, color:"var(--success-text)", margin:"0 0 4px", fontWeight:600 }}>
                 REPLY RATE
               </p>
               <p style={{ fontSize:24, fontWeight:700, color:"var(--success-text)", margin:0 }}>
-                {agg.reply_rate.toFixed(0)}%
+                {(agg.reply_rate ?? 0).toFixed(0)}%
               </p>
             </div>
           </div>

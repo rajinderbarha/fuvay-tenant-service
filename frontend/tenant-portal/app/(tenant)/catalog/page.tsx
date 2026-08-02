@@ -83,7 +83,7 @@ function AdminCatalogSection() {
       )}
       {available.loading ? (
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-          {[...Array(4)].map((_,i) => <Skeleton key={i} height={80} style={{ borderRadius:12 }}/>)}
+          {[...Array(4)].map((_,i) => <Skeleton key={i} height={80} style={{ borderRadius:"var(--radius-lg)" }}/>)}
         </div>
       ) : services.length === 0 ? (
         <Card padding={48} style={{ textAlign:"center" }}>
@@ -174,7 +174,7 @@ function CustomCatalogSection() {
 
       {catalog.loading ? (
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-          {[...Array(4)].map((_,i) => <Skeleton key={i} height={80} style={{ borderRadius:12 }}/>)}
+          {[...Array(4)].map((_,i) => <Skeleton key={i} height={80} style={{ borderRadius:"var(--radius-lg)" }}/>)}
         </div>
       ) : items.length === 0 ? (
         <Card padding={48} style={{ textAlign:"center" }}>
@@ -277,7 +277,7 @@ function CustomCatalogSection() {
             <div style={{ display:"flex", gap:8 }}>
               {(["service","repair","consultation"] as const).map(t => (
                 <button key={t} onClick={() => set("service_type", t)}
-                  style={{ flex:1, padding:"8px 0", borderRadius:8, border:"1px solid",
+                  style={{ flex:1, padding:"8px 0", borderRadius:"var(--radius-md)", border:"1px solid",
                     borderColor: form.service_type===t ? "var(--accent)" : "var(--border)",
                     background: form.service_type===t ? "var(--accent-subtle)" : "var(--surface)",
                     color: form.service_type===t ? "var(--accent)" : "var(--text-secondary)",
@@ -300,7 +300,7 @@ function CustomCatalogSection() {
             <div style={{ display:"flex", gap:8 }}>
               {(["fixed","post_assessment","hourly"] as const).map(m => (
                 <button key={m} onClick={() => set("pricing_model", m)}
-                  style={{ flex:1, padding:"8px 0", borderRadius:8, border:"1px solid",
+                  style={{ flex:1, padding:"8px 0", borderRadius:"var(--radius-md)", border:"1px solid",
                     borderColor: form.pricing_model===m ? "var(--accent)" : "var(--border)",
                     background: form.pricing_model===m ? "var(--accent-subtle)" : "var(--surface)",
                     color: form.pricing_model===m ? "var(--accent)" : "var(--text-secondary)",
@@ -330,7 +330,7 @@ function CustomCatalogSection() {
               value={checklistInput}
               onChange={e => setChecklistInput(e.target.value)}
               rows={4}
-              style={{ width:"100%", borderRadius:8, border:"1px solid var(--border)",
+              style={{ width:"100%", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
                 background:"var(--surface-sunken)", color:"var(--text-primary)",
                 padding:"10px 12px", fontSize:12, fontFamily:"inherit",
                 resize:"vertical", outline:"none", boxSizing:"border-box" }}

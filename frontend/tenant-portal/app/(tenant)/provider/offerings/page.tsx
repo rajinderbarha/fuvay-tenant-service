@@ -206,16 +206,16 @@ function EnableDrawer({ open, onClose, offering, existing, categoryType, onSaved
         {saveAction.error && (
           <div style={{ padding:"10px 14px", borderRadius:9, background:"rgba(220,38,38,0.08)",
             border:"1px solid rgba(220,38,38,0.25)" }}>
-            <p style={{ fontSize:12, color:"#dc2626", margin:0 }}>{saveAction.error}</p>
+            <p style={{ fontSize:12, color:"var(--danger)", margin:0 }}>{saveAction.error}</p>
             {saveAction.requestId && (
-              <p style={{ fontSize: 10, color: "#dc2626", opacity: 0.7, margin: "2px 0 0", fontFamily: "monospace" }}>
+              <p style={{ fontSize: 10, color: "var(--danger)", opacity: 0.7, margin: "2px 0 0", fontFamily: "monospace" }}>
                 Request ID: {saveAction.requestId}
               </p>
             )}
           </div>
         )}
         {toast && <div style={{ padding:"10px 14px", borderRadius:9, background:"rgba(5,150,105,0.08)",
-          border:"1px solid rgba(5,150,105,0.25)", fontSize:12, color:"#059669" }}>{toast}</div>}
+          border:"1px solid rgba(5,150,105,0.25)", fontSize:12, color:"var(--success)" }}>{toast}</div>}
 
         <Input label="Provider Display Name" placeholder="e.g. AC Repair & Installation"
           value={form.provider_display_name ?? ""}
@@ -228,7 +228,7 @@ function EnableDrawer({ open, onClose, offering, existing, categoryType, onSaved
           </label>
           <textarea rows={3} value={form.provider_description ?? ""}
             onChange={e => setForm(f => ({ ...f, provider_description: e.target.value }))}
-            style={{ width:"100%", fontSize:13, padding:"8px 10px", borderRadius:8,
+            style={{ width:"100%", fontSize:13, padding:"8px 10px", borderRadius:"var(--radius-md)",
               border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text-primary)",
               resize:"vertical", boxSizing:"border-box" }}
             placeholder="Brief description for customers…"/>
@@ -258,7 +258,7 @@ function EnableDrawer({ open, onClose, offering, existing, categoryType, onSaved
                         color: selected ? "var(--brand)" : "var(--text-primary)",
                         fontWeight: selected ? 600 : 400,
                       }}>
-                      {t.name}{t.is_required && <span style={{ fontSize:10, color:"#dc2626" }}>*</span>}
+                      {t.name}{t.is_required && <span style={{ fontSize:10, color:"var(--danger)" }}>*</span>}
                     </button>
                   );
                 })}
@@ -305,14 +305,14 @@ function EnableDrawer({ open, onClose, offering, existing, categoryType, onSaved
                     >
                       <Tag size={11} />
                       {brand.name}
-                      {brand.is_required && <span style={{ fontSize:10, color:"#dc2626" }}>*</span>}
+                      {brand.is_required && <span style={{ fontSize:10, color:"var(--danger)" }}>*</span>}
                     </button>
                   );
                 })}
               </div>
             )}
             {showBrandRequest && (
-              <div style={{ marginTop:10, padding:10, border:"1px solid var(--border)", borderRadius:8, background:"var(--surface)" }}>
+              <div style={{ marginTop:10, padding:10, border:"1px solid var(--border)", borderRadius:"var(--radius-md)", background:"var(--surface)" }}>
                 <div style={{ fontSize:12, fontWeight:600, marginBottom:6 }}>Request a Missing Brand</div>
                 <input value={brandRequestName} onChange={e => setBrandRequestName(e.target.value)}
                   placeholder="Brand name (e.g. Carrier)"
@@ -361,7 +361,7 @@ function EnableDrawer({ open, onClose, offering, existing, categoryType, onSaved
             <MapPin size={11} style={{ display: "inline", marginRight: 4 }}/> Service Areas ({activeAreas.length} active)
           </label>
           {activeAreas.length === 0 ? (
-            <p style={{ fontSize: 12, color: "#d97706", margin: 0 }}>
+            <p style={{ fontSize: 12, color: "var(--warning)", margin: 0 }}>
               No active service areas. This offering will not be bookable until you add one.
             </p>
           ) : (
@@ -379,7 +379,7 @@ function EnableDrawer({ open, onClose, offering, existing, categoryType, onSaved
             <Users2 size={11} style={{ display: "inline", marginRight: 4 }}/> Assigned Technicians ({activeTechnicians.length} active)
           </label>
           {activeTechnicians.length === 0 ? (
-            <p style={{ fontSize: 12, color: "#d97706", margin: 0 }}>
+            <p style={{ fontSize: 12, color: "var(--warning)", margin: 0 }}>
               No active technicians. This offering will not be bookable until you assign one.
             </p>
           ) : (
@@ -445,7 +445,7 @@ function BlockerList({ blockers }: { blockers: EnabledOffering["readiness_blocke
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
       {blockers.map((b, i) => (
-        <div key={i} style={{ fontSize:11, color:"#dc2626", display:"flex", alignItems:"center", gap:4 }}>
+        <div key={i} style={{ fontSize:11, color:"var(--danger)", display:"flex", alignItems:"center", gap:4 }}>
           <XCircle size={10}/> {b.message}
         </div>
       ))}
@@ -580,10 +580,10 @@ export default function OfferingsPage() {
       {/* Toast */}
       {toast    && <div style={{ padding:"10px 16px", borderRadius:10, marginBottom:12,
         background:"rgba(5,150,105,0.08)", border:"1px solid rgba(5,150,105,0.25)",
-        fontSize:13, color:"#059669" }}>✓ {toast}</div>}
+        fontSize:13, color:"var(--success)" }}>✓ {toast}</div>}
       {toastErr && <div style={{ padding:"10px 16px", borderRadius:10, marginBottom:12,
         background:"rgba(220,38,38,0.08)", border:"1px solid rgba(220,38,38,0.25)",
-        fontSize:13, color:"#dc2626" }}>✕ {toastErr}</div>}
+        fontSize:13, color:"var(--danger)" }}>✕ {toastErr}</div>}
 
       {/* Offering Readiness Hero */}
       <Card padding={20} style={{ marginBottom: 16 }}>
@@ -602,8 +602,8 @@ export default function OfferingsPage() {
           </div>
         </div>
         {availableListRaw.length === 0 && !available.loading && !available.error && (
-          <div style={{ marginTop: 14, padding: "10px 14px", borderRadius: 8, background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.2)" }}>
-            <p style={{ fontSize: 12, color: "#d97706", margin: 0 }}>
+          <div style={{ marginTop: 14, padding: "10px 14px", borderRadius:"var(--radius-md)", background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.2)" }}>
+            <p style={{ fontSize: 12, color: "var(--warning)", margin: 0 }}>
               Catalog unavailable or no eligible services found for your vertical. See Catalog Diagnostics before treating this as final.
             </p>
           </div>
@@ -639,7 +639,7 @@ export default function OfferingsPage() {
               marginBottom:-1, display:"flex", alignItems:"center", gap:6, whiteSpace: "nowrap" }}>
             {t.label}
             {t.error ? (
-              <span style={{ fontSize:10, padding:"1px 6px", borderRadius:99, background: "rgba(220,38,38,0.15)", color: "#dc2626" }}>Unavailable</span>
+              <span style={{ fontSize:10, padding:"1px 6px", borderRadius:99, background: "rgba(220,38,38,0.15)", color: "var(--danger)" }}>Unavailable</span>
             ) : t.count !== undefined && (
               <span style={{ fontSize:10, padding:"1px 5px", borderRadius:99,
                 background: tab===t.id ? "var(--brand)" : "var(--surface-sunken)",
@@ -658,7 +658,7 @@ export default function OfferingsPage() {
             <div style={{ position: "relative", flex: 1, maxWidth: 320 }}>
               <Search size={14} style={{ position: "absolute", left: 10, top: 10, color: "var(--text-tertiary)" }}/>
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search service or group…"
-                style={{ width: "100%", padding: "8px 10px 8px 30px", borderRadius: 8, border: "1px solid var(--border)",
+                style={{ width: "100%", padding: "8px 10px 8px 30px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                   background: "var(--surface)", color: "var(--text-primary)", fontSize: 13, boxSizing: "border-box" }}/>
             </div>
           </div>
@@ -707,11 +707,11 @@ export default function OfferingsPage() {
                       Base price: {fmt(o.admin_price)}</p>}
                     {o.admin_visit_fee && parseFloat(o.admin_visit_fee) > 0 && <p style={{ fontSize:11, color:"var(--text-secondary)", margin:0 }}>
                       Visit fee: {fmt(o.admin_visit_fee)}</p>}
-                    {o.requires_service_type && <p style={{ fontSize:11, color:"#d97706", margin:0 }}>
+                    {o.requires_service_type && <p style={{ fontSize:11, color:"var(--warning)", margin:0 }}>
                       ⚠ Requires service type selection</p>}
-                    {o.requires_brand && <p style={{ fontSize:11, color:"#d97706", margin:0 }}>
+                    {o.requires_brand && <p style={{ fontSize:11, color:"var(--warning)", margin:0 }}>
                       ⚠ Requires brand selection</p>}
-                    {o.requires_staff && <p style={{ fontSize:11, color:"#d97706", margin:0 }}>
+                    {o.requires_staff && <p style={{ fontSize:11, color:"var(--warning)", margin:0 }}>
                       ⚠ Requires assigned technician</p>}
                   </div>
                   <Btn size="sm" variant={o.is_already_enabled ? "secondary" : "primary"}
@@ -850,8 +850,8 @@ export default function OfferingsPage() {
             requestId={enabled.requestId} section="GET /v1/provider/offerings/enabled" onRetry={() => enabled.refetch()}/>
         ) : withBlockers.length === 0 ? (
           <Card><div style={{ textAlign:"center", padding:"40px 0" }}>
-            <CheckCircle2 size={32} style={{ color:"#059669", display:"block", margin:"0 auto 12px" }}/>
-            <p style={{ fontSize:14, fontWeight: 600, color:"#059669", margin:"0 0 4px" }}>
+            <CheckCircle2 size={32} style={{ color:"var(--success)", display:"block", margin:"0 auto 12px" }}/>
+            <p style={{ fontSize:14, fontWeight: 600, color:"var(--success)", margin:"0 0 4px" }}>
               No readiness issues found.
             </p>
             <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>
@@ -882,14 +882,14 @@ export default function OfferingsPage() {
                 </div>
                 <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                   {(o.readiness_blockers ?? []).map((b, i) => (
-                    <div key={i} style={{ padding:"8px 12px", borderRadius:8,
+                    <div key={i} style={{ padding:"8px 12px", borderRadius:"var(--radius-md)",
                       background:"rgba(220,38,38,0.06)", border:"1px solid rgba(220,38,38,0.2)" }}>
-                      <p style={{ fontSize:12, color:"#dc2626", margin:0, fontWeight:500 }}>Reason: {b.message}</p>
-                      <p style={{ fontSize:10, fontFamily:"monospace", color:"#dc2626", opacity:0.7, margin:"2px 0 0" }}>
+                      <p style={{ fontSize:12, color:"var(--danger)", margin:0, fontWeight:500 }}>Reason: {b.message}</p>
+                      <p style={{ fontSize:10, fontFamily:"monospace", color:"var(--danger)", opacity:0.7, margin:"2px 0 0" }}>
                         Rule: {b.code}
                       </p>
                       {b.route && (
-                        <Link href={b.route} style={{ fontSize:11, color:"#2563eb", display:"block", marginTop:4 }}>
+                        <Link href={b.route} style={{ fontSize:11, color:"var(--brand)", display:"block", marginTop:4 }}>
                           → CTA: Go fix it
                         </Link>
                       )}
@@ -983,7 +983,7 @@ function CatalogDiagnosticsPanel({ tenantVertical, categoryType, availableCount,
       <div style={{ display: "flex", flexDirection: "column" }}>
         {checks.map(c => (
           <div key={c.label} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 20px", borderBottom: "1px solid var(--border)" }}>
-            {c.pass ? <CheckCircle2 size={16} style={{ color: "#059669", flexShrink: 0, marginTop: 1 }}/> : <XCircle size={16} style={{ color: "#dc2626", flexShrink: 0, marginTop: 1 }}/>}
+            {c.pass ? <CheckCircle2 size={16} style={{ color: "var(--success)", flexShrink: 0, marginTop: 1 }}/> : <XCircle size={16} style={{ color: "var(--danger)", flexShrink: 0, marginTop: 1 }}/>}
             <div>
               <p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{c.label}</p>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "2px 0 0" }}>{c.detail}</p>

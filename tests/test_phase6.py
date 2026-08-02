@@ -213,7 +213,9 @@ def test_rag_meta(client):
     d = r.json()
     assert d["engine_id"] == "rag"
     assert d["endpoint_count"] == 18
-    assert len(d["pipeline"]) == 5
+    # MODULE-L5-51: pipeline grew from 5 to 6 real stages (hybrid search +
+    # GraphRAG expansion replaced the single mock vector_search stage).
+    assert len(d["pipeline"]) == 6
 
 def test_create_kb_requires_auth(client):
     assert client.post("/v1/rag/knowledge-bases", json={}).status_code == 401

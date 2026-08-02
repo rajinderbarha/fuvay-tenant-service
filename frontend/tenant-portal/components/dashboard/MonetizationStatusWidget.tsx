@@ -13,10 +13,10 @@ const MODEL_LABEL: Record<string, string> = {
 };
 
 const SUB_STATUS_COLOR: Record<string, string> = {
-  active: "#059669",
+  active: "var(--success)",
   trialing: "#2563eb",
-  past_due: "#d97706",
-  cancelled: "#dc2626",
+  past_due: "var(--warning)",
+  cancelled: "var(--danger)",
   none: "#64748b",
 };
 
@@ -52,9 +52,9 @@ export function MonetizationStatusWidget() {
         {/* Header */}
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
           {isBookable ? (
-            <ShieldCheck size={18} style={{ color:"#059669", flexShrink:0 }}/>
+            <ShieldCheck size={18} style={{ color:"var(--success)", flexShrink:0 }}/>
           ) : (
-            <AlertTriangle size={18} style={{ color:"#d97706", flexShrink:0 }}/>
+            <AlertTriangle size={18} style={{ color:"var(--warning)", flexShrink:0 }}/>
           )}
           <span style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)" }}>
             Monetization Status
@@ -64,7 +64,7 @@ export function MonetizationStatusWidget() {
           </Badge>
           {isOverridden && (
             <span style={{ display:"flex", alignItems:"center", gap:4, fontSize:11,
-              color:"#d97706", fontWeight:600 }}>
+              color:"var(--warning)", fontWeight:600 }}>
               <Lock size={11}/> Admin Override
             </span>
           )}
@@ -103,14 +103,14 @@ export function MonetizationStatusWidget() {
                 label="Credit Balance"
                 value={`₹${s.credit_balance.toFixed(2)}`}
                 icon={<CreditCard size={14}/>}
-                accent={s.credit_balance >= s.credit_minimum_required ? "#059669" : "#dc2626"}
+                accent={s.credit_balance >= s.credit_minimum_required ? "var(--success)" : "var(--danger)"}
                 sub={`Minimum required: ₹${s.credit_minimum_required.toFixed(2)}`}
               />
               <StatusCard
                 label="Security Deposit"
                 value={s.deposit_paid ? "Paid" : "Unpaid"}
                 icon={<ShieldCheck size={14}/>}
-                accent={s.deposit_paid ? "#059669" : "#dc2626"}
+                accent={s.deposit_paid ? "var(--success)" : "var(--danger)"}
               />
             </>
           )}
@@ -120,7 +120,7 @@ export function MonetizationStatusWidget() {
             label="Monetization Ready"
             value={isReady ? "Yes" : "No"}
             icon={<ShieldCheck size={14}/>}
-            accent={isReady ? "#059669" : "#d97706"}
+            accent={isReady ? "var(--success)" : "var(--warning)"}
           />
         </div>
 

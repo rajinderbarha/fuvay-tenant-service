@@ -1,7 +1,6 @@
 "use client";
 import React, { useCallback, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { Filter, AlertTriangle } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader } from "../../../components/shared/ui";
@@ -562,10 +561,10 @@ function PricingRulesPageInner() {
             job types and workflow in the Catalog Workspace instead.
           </p>
         </div>
-        <Link href="/admin/catalog-workspace" style={{
+        <a href="/admin/catalog-workspace" style={{
           fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none", whiteSpace: "nowrap" }}>
           Go to Catalog Workspace →
-        </Link>
+        </a>
       </div>
       <SectionHeader title="Pricing Rules [Deprecated]" subtitle="Configure service pricing by category, service, option/type, brand, tier, city, zone, and zipcode."/>
       <div style={{ padding:"0 28px 32px" }}>

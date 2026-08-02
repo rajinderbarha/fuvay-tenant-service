@@ -21,7 +21,7 @@ const TH: React.CSSProperties = {
 };
 const TD: React.CSSProperties = { padding: "10px 10px", fontSize: 13, borderBottom: "1px solid var(--border)" };
 const selectStyle: React.CSSProperties = {
-  height: 36, borderRadius: 8, border: "1px solid var(--border)", padding: "0 10px",
+  height: 36, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", padding: "0 10px",
   fontSize: 13, background: "var(--surface)", color: "var(--text-primary)",
 };
 
@@ -89,7 +89,7 @@ function SeedDefaultsModal({ open, onClose, onSeeded }: { open: boolean; onClose
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
             {preview.data.templates.map(t => (
-              <div key={t.name} style={{ padding: "10px 12px", background: "var(--surface-sunken)", borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div key={t.name} style={{ padding: "10px 12px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
                   <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{t.description}</div>
@@ -197,7 +197,7 @@ function CreateEditModal({
           <div style={{ marginTop: 12 }}>
             <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Description</label>
             <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2}
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+              style={{ width: "100%", padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
           </div>
         </div>
 
@@ -235,7 +235,7 @@ function CreateEditModal({
         </div>
 
         {editing && editing.status === "active" && (
-          <div style={{ padding: "10px 14px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 8 }}>
+          <div style={{ padding: "10px 14px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius:"var(--radius-md)" }}>
             <p style={{ fontSize: 12, color: "var(--warning-text)", margin: 0 }}>
               This template is active. Saving changes will create a new draft version — the active version keeps running unmodified for existing jobs.
             </p>
@@ -312,7 +312,7 @@ function WorkflowBuilderModal({ templateId, onClose, onChanged }: { templateId: 
           </div>
 
           {validation && (
-            <div style={{ padding: "10px 14px", borderRadius: 8, background: validation.valid ? "var(--success-bg)" : "var(--danger-bg)", border: `1px solid ${validation.valid ? "var(--success-border)" : "var(--danger-border)"}` }}>
+            <div style={{ padding: "10px 14px", borderRadius:"var(--radius-md)", background: validation.valid ? "var(--success-bg)" : "var(--danger-bg)", border: `1px solid ${validation.valid ? "var(--success-border)" : "var(--danger-border)"}` }}>
               <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: validation.valid ? "var(--success-text)" : "var(--danger-text)" }}>
                 {validation.valid ? "Workflow is valid and can be activated." : "This workflow cannot be activated because required steps or transitions are missing."}
               </p>
@@ -329,7 +329,7 @@ function WorkflowBuilderModal({ templateId, onClose, onChanged }: { templateId: 
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {steps.map((s, i) => (
-                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: 8 }}>
+                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
                   <span style={{ width: 20, height: 20, borderRadius: "50%", background: "var(--accent-muted)", color: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>
@@ -355,7 +355,7 @@ function WorkflowBuilderModal({ templateId, onClose, onChanged }: { templateId: 
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {transitions.map(tr => (
-                <div key={tr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: 8 }}>
+                <div key={tr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
                   <span style={{ fontSize: 12, flex: 1 }}>
                     <code>{tr.from_step_code}</code> → <code>{tr.to_step_code}</code>
                     <Badge variant="muted" size="sm">{tr.allowed_actor}</Badge>
@@ -481,7 +481,7 @@ function MappingModal({ templateId, onClose }: { templateId: string | null; onCl
         {!mappings.loading && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {(mappings.data?.mappings ?? []).map((m: WorkflowServiceMapping) => (
-              <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "var(--surface-sunken)", borderRadius: 8 }}>
+              <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
                 <span style={{ fontSize: 12 }}>Category <code>{m.category_id.slice(0, 8)}…</code> · priority {m.priority}</span>
                 <Btn size="xs" variant="ghost" onClick={() => remove.execute(m.id)}><X size={11} /></Btn>
               </div>
@@ -676,7 +676,7 @@ export default function WorkflowTemplatesPage() {
           </div>
 
           {list.loading ? (
-            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>{[...Array(5)].map((_, i) => <Skeleton key={i} height={52} style={{ borderRadius: 8 }} />)}</div>
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>{[...Array(5)].map((_, i) => <Skeleton key={i} height={52} style={{ borderRadius:"var(--radius-md)" }} />)}</div>
           ) : rows.length === 0 ? (
             <div style={{ padding: 48, textAlign: "center" }}>
               <Sparkles size={32} style={{ color: "var(--text-tertiary)", margin: "0 auto 12px", display: "block" }} />

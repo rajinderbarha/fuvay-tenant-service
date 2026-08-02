@@ -89,7 +89,7 @@ const inputStyle: React.CSSProperties = {
   background: "var(--surface-sunken)",
   color: "var(--text-primary)",
   border: "1px solid var(--border)",
-  borderRadius: 8,
+  borderRadius:"var(--radius-md)",
   padding: "8px 12px",
   fontSize: 14,
   boxSizing: "border-box",
@@ -148,7 +148,7 @@ function SummaryCard({
       style={{
         background: active ? "var(--accent-muted)" : "var(--surface)",
         border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
-        borderRadius: 12,
+        borderRadius:"var(--radius-lg)",
         padding: "16px 20px",
         cursor: onClick ? "pointer" : "default",
         transition: "all 0.15s",
@@ -388,7 +388,7 @@ export default function ServiceSetupTemplatesPage() {
       </div>
 
       {seedResult && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--success-bg)", color: "var(--success-text)", border: "1px solid var(--success-border)", borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--success-bg)", color: "var(--success-text)", border: "1px solid var(--success-border)", borderRadius:"var(--radius-md)", padding: "10px 16px", marginBottom: 16, fontSize: 14 }}>
           <CheckCircle2 size={16}/>
           <span style={{ flex: 1 }}>{seedResult}</span>
           <button onClick={() => setSeedResult(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", display: "flex" }}><X size={14}/></button>
@@ -456,7 +456,7 @@ export default function ServiceSetupTemplatesPage() {
             : `This will create ${seedPreview.length} new template(s):`}
         </p>
         {seedPreview.length > 0 && (
-          <div style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: 12, marginBottom: 16, maxHeight: 200, overflowY: "auto" }}>
+          <div style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 12, marginBottom: 16, maxHeight: 200, overflowY: "auto" }}>
             {seedPreview.map(t => (
               <div key={t.code} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 13 }}>
                 <span style={{ color: "var(--text-tertiary)", display: "flex" }}><VerticalIcon vkey={t.vertical_key} size={14}/></span>
@@ -491,7 +491,7 @@ function GridView({ templates, onPublish, onArchive, onClone, onDelete }: {
       {templates.map(t => (
         <div key={t.id} style={{
           background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 12,
+          borderRadius:"var(--radius-lg)", padding: 20, display: "flex", flexDirection: "column", gap: 12,
           transition: "border-color 0.15s, box-shadow 0.15s",
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -747,7 +747,7 @@ function WizardContent({
               ))}
             </select>
           </div>
-          <div style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: 16, marginTop: 8 }}>
+          <div style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 16, marginTop: 8 }}>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 8 }}>Available modules for this vertical:</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {(VERTICAL_MODULES[wizard.vertical_key] ?? []).map(m => (
@@ -768,7 +768,7 @@ function WizardContent({
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
             {availableModules.map(m => (
-              <label key={m} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--surface-sunken)", borderRadius: 8, cursor: "pointer", border: wizard.modules.includes(m) ? "1px solid var(--accent)" : "1px solid var(--border)" }}>
+              <label key={m} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", cursor: "pointer", border: wizard.modules.includes(m) ? "1px solid var(--accent)" : "1px solid var(--border)" }}>
                 <input
                   type="checkbox"
                   checked={wizard.modules.includes(m)}
@@ -856,13 +856,13 @@ function WizardContent({
         <div>
           <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 20 }}>Preview & Validate</h3>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
-            <div style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: 16 }}>
+            <div style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 16 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Template</div>
               <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)" }}>{wizard.name || "—"}</div>
               <div style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-tertiary)" }}>{wizard.code}</div>
               <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>{VERTICAL_ICONS[wizard.vertical_key]} {VERTICAL_LABELS[wizard.vertical_key]}</div>
             </div>
-            <div style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: 16 }}>
+            <div style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 16 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Summary</div>
               <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Modules: {wizard.modules.length}</div>
               <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
@@ -885,7 +885,7 @@ function WizardContent({
             return (
               <div>
                 {errors.length > 0 && (
-                  <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                  <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-md)", padding: 12, marginBottom: 12 }}>
                     {errors.map((e, i) => (
                       <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--danger-text)" }}>
                         <AlertTriangle size={14}/> {e}
@@ -894,7 +894,7 @@ function WizardContent({
                   </div>
                 )}
                 {warnings.length > 0 && (
-                  <div style={{ background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                  <div style={{ background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius:"var(--radius-md)", padding: 12, marginBottom: 12 }}>
                     {warnings.map((w, i) => (
                       <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--warning-text)" }}>
                         <Info size={14}/> {w}
@@ -903,7 +903,7 @@ function WizardContent({
                   </div>
                 )}
                 {errors.length === 0 && warnings.length === 0 && (
-                  <div style={{ background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                  <div style={{ background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius:"var(--radius-md)", padding: 12, marginBottom: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--success-text)" }}>
                       <CheckCircle2 size={14}/> Template looks valid and ready to save.
                     </div>
@@ -964,7 +964,7 @@ function ModuleItemBuilder({
   }
 
   return (
-    <div style={{ marginBottom: 16, border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+    <div style={{ marginBottom: 16, border: "1px solid var(--border)", borderRadius:"var(--radius-md)", overflow: "hidden" }}>
       <div
         onClick={() => setOpen(o => !o)}
         style={{

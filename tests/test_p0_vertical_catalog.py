@@ -216,6 +216,8 @@ async def test_service_enable_vertical():
     db.execute = AsyncMock(return_value=find_result)
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.flush = AsyncMock()
+    db.add = MagicMock()
     result = await svc.enable_vertical(db, "home_services")
     assert v.is_enabled is True
 
@@ -231,6 +233,8 @@ async def test_service_disable_vertical():
     db.execute = AsyncMock(return_value=find_result)
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.flush = AsyncMock()
+    db.add = MagicMock()
     await svc.disable_vertical(db, "home_services")
     assert v.is_enabled is False
 
@@ -258,6 +262,8 @@ async def test_service_update_vertical():
     db.execute = AsyncMock(return_value=find_result)
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.flush = AsyncMock()
+    db.add = MagicMock()
     await svc.update_vertical(db, "home_services", {"label": "Updated Label"})
     assert v.label == "Updated Label"
 
@@ -273,6 +279,8 @@ async def test_service_update_vertical_ignores_unknown_fields():
     db.execute = AsyncMock(return_value=find_result)
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.flush = AsyncMock()
+    db.add = MagicMock()
     # Should not raise even with unknown field
     await svc.update_vertical(db, "home_services", {"some_unknown_field": "x"})
 

@@ -15,7 +15,7 @@ function StatusBadge({ ok }: { ok: boolean }) {
 }
 
 const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
 };
 const row: React.CSSProperties = {
@@ -52,11 +52,11 @@ export default function VisibilityStatusPage() {
       {loading ? (
         <div style={{ textAlign: "center", padding: "48px 0", color: "var(--text-tertiary)", fontSize: 13 }}>Loading…</div>
       ) : !status ? (
-        <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12, padding: 24, fontSize: 13, color: "var(--danger-text)" }}>
+        <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-lg)", padding: 24, fontSize: 13, color: "var(--danger-text)" }}>
           Unable to load status. Please try again.
         </div>
       ) : (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
           <div style={row}>
             <div>
               <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>Bookable</div>
@@ -110,7 +110,7 @@ export default function VisibilityStatusPage() {
         </div>
       )}
 
-      <div style={{ background: "var(--info-bg)", border: "1px solid var(--info-border)", borderRadius: 12, padding: 16, fontSize: 13, color: "var(--info-text)" }}>
+      <div style={{ background: "var(--info-bg)", border: "1px solid var(--info-border)", borderRadius:"var(--radius-lg)", padding: 16, fontSize: 13, color: "var(--info-text)" }}>
         <strong>Note:</strong> Visibility and bookable status are determined by the platform's
         eligibility engine based on your onboarding completion, subscription, offerings, and operating areas.
         Contact support if you believe your status is incorrect.

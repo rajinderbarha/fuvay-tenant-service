@@ -68,7 +68,7 @@ export default function ForgotPasswordPage() {
         </div>
 
         <div style={{ background:"var(--surface)", border:"1px solid var(--border)",
-          borderRadius:16, padding:32, boxShadow:"var(--shadow-lg)" }}>
+          borderRadius:"var(--radius-xl, 1rem)", padding:32, boxShadow:"var(--shadow-lg)" }}>
 
           {error && (
             <div style={{ padding:"12px 14px", borderRadius:10, background:"var(--danger-bg)",

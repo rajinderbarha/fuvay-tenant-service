@@ -53,9 +53,9 @@ export default function StaffHomeServiceJobsPage() {
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             style={{
-              padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              padding: "6px 14px", borderRadius:"var(--radius-md)", fontSize: 12, fontWeight: 600, cursor: "pointer",
               border: "1px solid var(--border)",
-              background: tab === t.id ? "var(--accent, #2563eb)" : "var(--card-bg)",
+              background: tab === t.id ? "var(--accent, var(--brand))" : "var(--card-bg)",
               color: tab === t.id ? "#fff" : "var(--text)",
             }}>
             {t.label}
@@ -88,7 +88,7 @@ export default function StaffHomeServiceJobsPage() {
                   <td style={{ padding: "10px 16px" }}><Badge variant="info" size="sm">{j.status}</Badge></td>
                   <td style={{ padding: "10px 16px", color: "var(--text-tertiary)" }}>{j.scheduled_date ?? "—"}</td>
                   <td style={{ padding: "10px 16px" }}>
-                    <Link href={`/staff/home-services/jobs/${j.id}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--accent, #2563eb)" }}>View</Link>
+                    <Link href={`/staff/home-services/jobs/${j.id}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--accent, var(--brand))" }}>View</Link>
                   </td>
                 </tr>
               ))}

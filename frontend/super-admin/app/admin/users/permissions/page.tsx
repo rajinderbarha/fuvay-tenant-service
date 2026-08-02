@@ -81,7 +81,7 @@ export default function PermissionsPage() {
 
       {perms.loading ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 12, marginBottom: 20 }}>
-          {[...Array(6)].map((_, i) => <Skeleton key={i} height={88} style={{ borderRadius: 12 }}/>)}
+          {[...Array(6)].map((_, i) => <Skeleton key={i} height={88} style={{ borderRadius:"var(--radius-lg)" }}/>)}
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 12, marginBottom: 20 }}>
@@ -109,7 +109,7 @@ export default function PermissionsPage() {
           description={`${perms.error}${perms.requestId ? ` — Request ID: ${perms.requestId}` : ""}`}
           action={<Btn size="sm" onClick={() => perms.refetch()}>Retry</Btn>}/>
       ) : perms.loading ? (
-        <Skeleton height={400} style={{ borderRadius: 12 }}/>
+        <Skeleton height={400} style={{ borderRadius:"var(--radius-lg)" }}/>
       ) : (perms.data?.items.length ?? 0) === 0 ? (
         <EmptyState icon={<Key/>} title="No permissions match these filters."/>
       ) : (

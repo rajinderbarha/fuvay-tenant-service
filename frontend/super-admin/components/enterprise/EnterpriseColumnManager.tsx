@@ -89,7 +89,7 @@ export default function EnterpriseColumnManager({ columns, onChange, onReset }: 
                 onClick={() => { onReset(); setOpen(false); }}
                 style={{
                   marginTop: 4, paddingTop: 8, borderTop: "1px solid var(--border)",
-                  fontSize: 11, color: "var(--danger-text, #dc2626)", background: "none",
+                  fontSize: 11, color: "var(--danger-text, var(--danger))", background: "none",
                   border: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit",
                 }}
               >

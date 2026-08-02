@@ -51,8 +51,8 @@ export default function ProviderSubscriptionStatusPage() {
         <Card padding={20}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
             {sub.is_active
-              ? <CheckCircle2 size={24} style={{ color: "#059669" }} />
-              : <AlertCircle size={24} style={{ color: "#dc2626" }} />}
+              ? <CheckCircle2 size={24} style={{ color: "var(--success)" }} />
+              : <AlertCircle size={24} style={{ color: "var(--danger)" }} />}
             <div>
               <p style={{ fontWeight: 600, fontSize: 16, color: "var(--text-primary)", margin: 0 }}>
                 {sub.is_active ? "Active Subscription" : "Subscription Inactive"}
@@ -84,7 +84,7 @@ export default function ProviderSubscriptionStatusPage() {
 
           {sub.expiring_soon && (
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "var(--warning-bg)",
-              borderRadius: 8, padding: "10px 12px", fontSize: 13, color: "var(--warning-text)", marginTop: 16 }}>
+              borderRadius:"var(--radius-md)", padding: "10px 12px", fontSize: 13, color: "var(--warning-text)", marginTop: 16 }}>
               <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>Your subscription expires soon. Please renew to continue receiving bookings.</span>
             </div>
@@ -92,7 +92,7 @@ export default function ProviderSubscriptionStatusPage() {
 
           {!sub.is_active && sub.status !== "no_subscription" && (
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "var(--danger-bg)",
-              borderRadius: 8, padding: "10px 12px", fontSize: 13, color: "var(--danger-text)", marginTop: 16 }}>
+              borderRadius:"var(--radius-md)", padding: "10px 12px", fontSize: 13, color: "var(--danger-text)", marginTop: 16 }}>
               <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>Subscription is not active. Contact admin to reactivate.</span>
             </div>
@@ -100,7 +100,7 @@ export default function ProviderSubscriptionStatusPage() {
 
           {sub.status === "no_subscription" && (
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "var(--surface-sunken)",
-              borderRadius: 8, padding: "10px 12px", fontSize: 13, color: "var(--text-secondary)", marginTop: 16 }}>
+              borderRadius:"var(--radius-md)", padding: "10px 12px", fontSize: 13, color: "var(--text-secondary)", marginTop: 16 }}>
               <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>No subscription found. Contact admin to set up your plan.</span>
             </div>

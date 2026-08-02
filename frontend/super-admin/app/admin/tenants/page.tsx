@@ -107,13 +107,13 @@ function KpiCards({ s, loading, onFilter }: {
 
   const cards: { label: string; value: number; accent: string; icon: React.ReactNode; filter: Partial<Filters>; alert?: boolean }[] = [
     { label: "Total Providers",       value: v.total,                     accent: "var(--brand)", icon: <Building2 />, filter: {} },
-    { label: "Active",                value: v.active,                    accent: "#16a34a",     icon: <CheckCircle />, filter: { status: "active" } },
-    { label: "Pending Review",        value: v.pending_review,            accent: "#d97706",     icon: <Clock />, filter: { verification_status: "pending" } },
+    { label: "Active",                value: v.active,                    accent: "var(--success)",     icon: <CheckCircle />, filter: { status: "active" } },
+    { label: "Pending Review",        value: v.pending_review,            accent: "var(--warning)",     icon: <Clock />, filter: { verification_status: "pending" } },
     { label: "Pending Setup",         value: v.pending_setup,             accent: "#6366f1",     icon: <Settings />, filter: { verification_status: "not_started" } },
     { label: "Changes Requested",     value: v.changes_requested,         accent: "#0891b2",     icon: <Edit />, filter: { verification_status: "changes_requested" } },
-    { label: "Suspended",             value: v.suspended,                 accent: "#dc2626",     icon: <Lock />, filter: { status: "suspended" }, alert: v.suspended > 0 },
+    { label: "Suspended",             value: v.suspended,                 accent: "var(--danger)",     icon: <Lock />, filter: { status: "suspended" }, alert: v.suspended > 0 },
     { label: "Rejected",              value: v.rejected,                  accent: "#9ca3af",     icon: <XCircle />, filter: { status: "rejected" } },
-    { label: "Pkg Pending Approval",  value: v.package_pending_approval,  accent: "#f59e0b",     icon: <Package />, filter: {} },
+    { label: "Pkg Pending Approval",  value: v.package_pending_approval,  accent: "var(--warning)",     icon: <Package />, filter: {} },
   ];
 
   return (
@@ -177,7 +177,7 @@ function Toolbar({ filters, onChange, onExport, onRefresh, onAdd }: {
         </div>
       </div>
       {adv && (
-        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", padding: "12px 16px", background: "var(--surface-sunken)", borderRadius: 8, border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", padding: "12px 16px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", border: "1px solid var(--border)" }}>
           <select value={filters.city_tier} onChange={set("city_tier")} style={inp}>
             <option value="">All Tiers</option>
             <option value="metro">Metro</option>
@@ -226,7 +226,7 @@ function ActiveChips({ filters, onChange }: { filters: Filters; onChange: (f: Fi
   return (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
       {chips.map(c => (
-        <span key={c.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, background: "var(--accent-muted, #eff6ff)", color: "var(--accent, #2563eb)", border: "1px solid var(--border)", borderRadius: 999, padding: "2px 10px" }}>
+        <span key={c.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, background: "var(--accent-muted, var(--accent-muted))", color: "var(--accent, var(--brand))", border: "1px solid var(--border)", borderRadius: 999, padding: "2px 10px" }}>
           {c.label}
           <button onClick={() => onChange({ ...filters, [c.key]: "" })} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, lineHeight: 1 }}><X size={10} /></button>
         </span>
@@ -240,8 +240,8 @@ function ActiveChips({ filters, onChange }: { filters: Filters; onChange: (f: Fi
 
 function BulkBar({ count, onSuspend, onClear }: { count: number; onSuspend: () => void; onClear: () => void }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: "var(--accent-muted, #eff6ff)", border: "1px solid var(--border)", borderRadius: 8, marginBottom: 12 }}>
-      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent, #2563eb)" }}>{count} selected</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: "var(--accent-muted, var(--accent-muted))", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", marginBottom: 12 }}>
+      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent, var(--brand))" }}>{count} selected</span>
       <Btn variant="danger" size="sm" onClick={onSuspend}><Lock size={12} /> Suspend All</Btn>
       <button onClick={onClear} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}><X size={14} /></button>
     </div>
@@ -283,13 +283,13 @@ function RowActions({ row, onAction }: {
       {open && (
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setOpen(false)} />
-          <div style={{ position: "absolute", right: 0, top: "100%", zIndex: 50, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.12)", minWidth: 200, padding: "4px 0", marginTop: 4 }}>
+          <div style={{ position: "absolute", right: 0, top: "100%", zIndex: 50, background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", boxShadow: "0 8px 24px rgba(0,0,0,.12)", minWidth: 200, padding: "4px 0", marginTop: 4 }}>
             {items.map((item, i) => item.divider
               ? <div key={i} style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
               : (
                 <button key={item.action} onClick={() => { setOpen(false); onAction(item.action, row); }}
-                  style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, color: item.danger ? "#dc2626" : "var(--text)", textAlign: "left" }}>
-                  <span style={{ color: item.danger ? "#dc2626" : "var(--text-secondary)" }}>{item.icon}</span>
+                  style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, color: item.danger ? "var(--danger)" : "var(--text)", textAlign: "left" }}>
+                  <span style={{ color: item.danger ? "var(--danger)" : "var(--text-secondary)" }}>{item.icon}</span>
                   {item.label}
                 </button>
               )
@@ -317,9 +317,9 @@ function TenantCell({ row }: { row: TenantListItem }) {
   const initials = (row.business_name || row.tenant_name || "?").slice(0, 2).toUpperCase();
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <div style={{ width: 36, height: 36, borderRadius: 8, background: "var(--brand)20", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, color: "var(--brand)", flexShrink: 0 }}>
+      <div style={{ width: 36, height: 36, borderRadius:"var(--radius-md)", background: "var(--brand)20", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, color: "var(--brand)", flexShrink: 0 }}>
         {row.logo_url
-          ? <img src={row.logo_url} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          ? <img src={row.logo_url} alt="" style={{ width: 36, height: 36, borderRadius:"var(--radius-md)", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           : initials
         }
       </div>
@@ -344,7 +344,7 @@ function CreditsCell({ balance }: { balance: number }) {
   const low = balance < 500;
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: low ? "#dc2626" : "var(--text)" }}>
+      <div style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: low ? "var(--danger)" : "var(--text)" }}>
         ₹{balance.toLocaleString("en-IN")}
       </div>
       {low && <Badge variant="danger" size="sm">Low Credits</Badge>}
@@ -358,9 +358,9 @@ function VerificationDonut({ data }: { data: TenantsInsights["verification_overv
   const items = [
     { label: "Not Started",       count: data.not_started,       color: "#9ca3af" },
     { label: "In Progress",       count: data.in_progress,       color: "#6366f1" },
-    { label: "Completed",         count: data.completed,         color: "#16a34a" },
-    { label: "Changes Requested", count: data.changes_requested, color: "#f59e0b" },
-    { label: "Rejected",          count: data.rejected,          color: "#dc2626" },
+    { label: "Completed",         count: data.completed,         color: "var(--success)" },
+    { label: "Changes Requested", count: data.changes_requested, color: "var(--warning)" },
+    { label: "Rejected",          count: data.rejected,          color: "var(--danger)" },
   ];
   const total = data.total || 1;
   return (
@@ -385,7 +385,7 @@ function VerificationDonut({ data }: { data: TenantsInsights["verification_overv
 
 function PlanDistribution({ data }: { data: TenantsInsights["plan_distribution"] }) {
   const total = data.reduce((s, x) => s + x.count, 0) || 1;
-  const colors: Record<string, string> = { enterprise: "#6366f1", professional: "#8b5cf6", growth: "#0891b2", starter: "#16a34a", free: "#9ca3af" };
+  const colors: Record<string, string> = { enterprise: "#6366f1", professional: "#8b5cf6", growth: "#0891b2", starter: "var(--success)", free: "#9ca3af" };
   return (
     <Card style={{ padding: "14px 16px", marginBottom: 12 }}>
       <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Plan Distribution</div>
@@ -466,7 +466,7 @@ function BottomCards({ insights }: { insights: TenantsInsights }) {
       {/* Onboarding Health */}
       <Card style={cardStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: "#6366f120", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ width: 32, height: 32, borderRadius:"var(--radius-md)", background: "#6366f120", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <TrendingUp size={15} style={{ color: "#6366f1" }} />
           </div>
           <div style={{ fontWeight: 700, fontSize: 13 }}>Onboarding Health</div>
@@ -482,7 +482,7 @@ function BottomCards({ insights }: { insights: TenantsInsights }) {
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
             <span style={{ color: "var(--text-secondary)" }}>Changes Requested</span>
-            <span style={{ fontWeight: 600, color: "#f59e0b" }}>{v.changes_requested}</span>
+            <span style={{ fontWeight: 600, color: "var(--warning)" }}>{v.changes_requested}</span>
           </div>
         </div>
         <Link href="/admin/tenants/onboarding" style={{ display: "inline-block", marginTop: 10, fontSize: 11, color: "var(--brand)" }}>View Onboarding →</Link>
@@ -491,27 +491,27 @@ function BottomCards({ insights }: { insights: TenantsInsights }) {
       {/* Business Health */}
       <Card style={cardStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: "#16a34a20", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <BarChart2 size={15} style={{ color: "#16a34a" }} />
+          <div style={{ width: 32, height: 32, borderRadius:"var(--radius-md)", background: "var(--success)20", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <BarChart2 size={15} style={{ color: "var(--success)" }} />
           </div>
           <div style={{ fontWeight: 700, fontSize: 13 }}>Business Health</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
             <span style={{ color: "var(--text-secondary)" }}>Avg Health Score</span>
-            <span style={{ fontWeight: 700, color: "#16a34a" }}>{h.average_health_score}</span>
+            <span style={{ fontWeight: 700, color: "var(--success)" }}>{h.average_health_score}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
             <span style={{ color: "var(--text-secondary)" }}>High Risk</span>
-            <span style={{ fontWeight: 600, color: "#dc2626" }}>{h.high_risk}</span>
+            <span style={{ fontWeight: 600, color: "var(--danger)" }}>{h.high_risk}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
             <span style={{ color: "var(--text-secondary)" }}>Medium Risk</span>
-            <span style={{ fontWeight: 600, color: "#f59e0b" }}>{h.medium_risk}</span>
+            <span style={{ fontWeight: 600, color: "var(--warning)" }}>{h.medium_risk}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
             <span style={{ color: "var(--text-secondary)" }}>Low Risk</span>
-            <span style={{ fontWeight: 600, color: "#16a34a" }}>{h.low_risk}</span>
+            <span style={{ fontWeight: 600, color: "var(--success)" }}>{h.low_risk}</span>
           </div>
         </div>
       </Card>
@@ -519,8 +519,8 @@ function BottomCards({ insights }: { insights: TenantsInsights }) {
       {/* Financial Usage Summary — Usage Credits only, NOT real money */}
       <Card style={cardStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: "#f59e0b20", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <CreditCard size={15} style={{ color: "#f59e0b" }} />
+          <div style={{ width: 32, height: 32, borderRadius:"var(--radius-md)", background: "var(--warning)20", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <CreditCard size={15} style={{ color: "var(--warning)" }} />
           </div>
           <div style={{ fontWeight: 700, fontSize: 13 }}>Usage Credit Summary</div>
         </div>
@@ -535,7 +535,7 @@ function BottomCards({ insights }: { insights: TenantsInsights }) {
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
             <span style={{ color: "var(--text-secondary)" }}>Low Credit Providers</span>
-            <span style={{ fontWeight: 600, color: f.low_credit_tenants > 0 ? "#dc2626" : "var(--text)" }}>{f.low_credit_tenants}</span>
+            <span style={{ fontWeight: 600, color: f.low_credit_tenants > 0 ? "var(--danger)" : "var(--text)" }}>{f.low_credit_tenants}</span>
           </div>
         </div>
         <div style={{ marginTop: 8, fontSize: 10, color: "var(--text-tertiary)", background: "var(--surface-sunken)", padding: "4px 8px", borderRadius: 4 }}>
@@ -824,7 +824,7 @@ function TenantsPageInner() {
       render: (_v, row) => {
         const score = row.health_score as number ?? 0;
         const band = row.health_band as string ?? "silver";
-        const color = score >= 80 ? "#16a34a" : score >= 60 ? "#f59e0b" : "#dc2626";
+        const color = score >= 80 ? "var(--success)" : score >= 60 ? "var(--warning)" : "var(--danger)";
         return (
           <div>
             <span style={{ fontSize: 13, fontWeight: 700, color }}>{score}</span>
@@ -934,7 +934,7 @@ function TenantsPageInner() {
               {loading && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="skeleton" style={{ height: 56, borderRadius: 8 }} />
+                    <div key={i} className="skeleton" style={{ height: 56, borderRadius:"var(--radius-md)" }} />
                   ))}
                 </div>
               )}

@@ -87,7 +87,7 @@ export default function LoginPage() {
         </div>
 
         <div style={{ background:"var(--surface)", border:"1px solid var(--border)",
-          borderRadius:16, padding:32, boxShadow:"var(--shadow-lg)" }}>
+          borderRadius:"var(--radius-xl, 1rem)", padding:32, boxShadow:"var(--shadow-lg)" }}>
           <h2 style={{ fontSize:18, fontWeight:600, color:"var(--text-primary)", margin:"0 0 24px" }}>
             Sign in to manage your business
           </h2>

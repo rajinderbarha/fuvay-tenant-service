@@ -26,11 +26,11 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "danger" | "muted" 
 };
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
-  completed:      <CheckCircle2 size={14} style={{ color: "#059669" }}/>,
-  pending:        <Clock size={14} style={{ color: "#d97706" }}/>,
-  blocked:        <XCircle size={14} style={{ color: "#dc2626" }}/>,
+  completed:      <CheckCircle2 size={14} style={{ color: "var(--success)" }}/>,
+  pending:        <Clock size={14} style={{ color: "var(--warning)" }}/>,
+  blocked:        <XCircle size={14} style={{ color: "var(--danger)" }}/>,
   skipped:        <Info size={14} style={{ color: "#94a3b8" }}/>,
-  overridden:     <CheckCheck size={14} style={{ color: "#2563eb" }}/>,
+  overridden:     <CheckCheck size={14} style={{ color: "var(--brand)" }}/>,
   not_applicable: <Info size={14} style={{ color: "#94a3b8" }}/>,
 };
 
@@ -41,7 +41,7 @@ function ProgressBar({ pct }: { pct: number }) {
       <div style={{
         height: "100%", borderRadius: 99, transition: "width 0.4s",
         width: `${Math.max(0, Math.min(100, pct))}%`,
-        background: pct >= 100 ? "#059669" : pct >= 60 ? "#d97706" : "#2563eb",
+        background: pct >= 100 ? "var(--success)" : pct >= 60 ? "var(--warning)" : "var(--brand)",
       }}/>
     </div>
   );
@@ -72,9 +72,9 @@ function StatusSummary({ s }: { s: ProviderOnboardingStatus }) {
           gap: 10, marginTop: 16 }}>
           {[
             { label: "Total", value: s.total_items, color: "var(--text-primary)" },
-            { label: "Completed", value: s.completed_items, color: "#059669" },
-            { label: "Pending", value: s.pending_items, color: "#d97706" },
-            { label: "Blocked", value: s.blocked_items, color: "#dc2626" },
+            { label: "Completed", value: s.completed_items, color: "var(--success)" },
+            { label: "Pending", value: s.pending_items, color: "var(--warning)" },
+            { label: "Blocked", value: s.blocked_items, color: "var(--danger)" },
           ].map(stat => (
             <div key={stat.label} style={{ background: "var(--surface-sunken)", borderRadius: 10,
               padding: "10px 14px", border: "1px solid var(--border)" }}>
@@ -115,7 +115,7 @@ function BlockersList({ blockers }: { blockers: ProviderOnboardingStatus["blocke
   if (!blockers.length) return null;
   return (
     <Card>
-      <p style={{ fontSize: 13, fontWeight: 600, color: "#dc2626", margin: "0 0 12px",
+      <p style={{ fontSize: 13, fontWeight: 600, color: "var(--danger)", margin: "0 0 12px",
         display: "flex", alignItems: "center", gap: 6 }}>
         <AlertCircle size={14}/> {blockers.length} Blocker{blockers.length !== 1 ? "s" : ""}
       </p>
@@ -125,7 +125,7 @@ function BlockersList({ blockers }: { blockers: ProviderOnboardingStatus["blocke
             background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)",
             display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <div>
-              <p style={{ fontSize: 12, fontWeight: 600, color: "#dc2626", margin: 0 }}>{b.message}</p>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--danger)", margin: 0 }}>{b.message}</p>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "2px 0 0",
                 fontFamily: "monospace" }}>{b.code}</p>
             </div>
@@ -152,7 +152,7 @@ function PackageStatusCard({ pkg }: { pkg: PackageAssignmentSummary }) {
   const bg = isRejected ? "rgba(220,38,38,0.06)"
     : isPending ? "rgba(245,158,11,0.06)"
     : "rgba(5,150,105,0.06)";
-  const iconColor = isRejected ? "#dc2626" : isPending ? "#d97706" : "#059669";
+  const iconColor = isRejected ? "var(--danger)" : isPending ? "var(--warning)" : "var(--success)";
   const Icon = isRejected ? XCircle : isPending ? Clock : CheckCircle2;
 
   return (
@@ -226,7 +226,7 @@ function ChecklistTable({ items }: { items: ProviderOnboardingItem[] }) {
                     </p>
                   )}
                   {item.blocked_reason && (
-                    <p style={{ fontSize: 11, color: "#dc2626", margin: "4px 0 0" }}>
+                    <p style={{ fontSize: 11, color: "var(--danger)", margin: "4px 0 0" }}>
                       {item.blocked_reason}
                     </p>
                   )}
@@ -330,7 +330,7 @@ export default function OnboardingStatusPage() {
             background: refreshAction.error ? "rgba(220,38,38,0.08)" : "rgba(5,150,105,0.08)",
             border: `1px solid ${refreshAction.error ? "rgba(220,38,38,0.25)" : "rgba(5,150,105,0.25)"}`,
             fontSize: 13, fontWeight: 600,
-            color: refreshAction.error ? "#dc2626" : "#059669" }}>
+            color: refreshAction.error ? "var(--danger)" : "var(--success)" }}>
             {refreshAction.error ?? toastMsg}
           </div>
         )}
@@ -352,8 +352,8 @@ export default function OnboardingStatusPage() {
         {!loading && status.error && (
           <Card>
             <div style={{ textAlign: "center", padding: "32px 0" }}>
-              <AlertCircle size={32} style={{ color: "#dc2626", margin: "0 auto 12px", display: "block" }}/>
-              <p style={{ fontSize: 14, color: "#dc2626", margin: "0 0 12px" }}>{status.error}</p>
+              <AlertCircle size={32} style={{ color: "var(--danger)", margin: "0 auto 12px", display: "block" }}/>
+              <p style={{ fontSize: 14, color: "var(--danger)", margin: "0 0 12px" }}>{status.error}</p>
               <Btn size="sm" variant="primary" onClick={status.refetch}>Retry</Btn>
             </div>
           </Card>
@@ -364,9 +364,9 @@ export default function OnboardingStatusPage() {
           <div style={{ padding: "20px 24px", borderRadius: 14,
             background: "rgba(5,150,105,0.08)", border: "1px solid rgba(5,150,105,0.3)",
             display: "flex", alignItems: "center", gap: 14 }}>
-            <CheckCircle2 size={28} style={{ color: "#059669", flexShrink: 0 }}/>
+            <CheckCircle2 size={28} style={{ color: "var(--success)", flexShrink: 0 }}/>
             <div>
-              <p style={{ fontSize: 15, fontWeight: 700, color: "#059669", margin: 0 }}>
+              <p style={{ fontSize: 15, fontWeight: 700, color: "var(--success)", margin: 0 }}>
                 Your onboarding is complete!
               </p>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0" }}>

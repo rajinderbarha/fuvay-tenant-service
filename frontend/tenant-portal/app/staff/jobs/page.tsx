@@ -22,7 +22,10 @@ const TABS = [
   { id: "assigned", label: "Assigned", match: (s: string) => s === "assigned" },
   { id: "active", label: "Active", match: (s: string) => ACTIVE_STATUSES.has(s) },
   { id: "completed", label: "Completed", match: (s: string) => s === "completed" },
-  { id: "cancelled", label: "Cancelled", match: (s: string) => s === "cancelled" || s === "failed" },
+  // Phase 2A.1: closed_estimate_declined (customer declined the estimate) is
+  // terminal like cancelled/failed -- without this it fell into no tab at
+  // all and vanished from the staff job list entirely.
+  { id: "cancelled", label: "Cancelled", match: (s: string) => s === "cancelled" || s === "failed" || s === "closed_estimate_declined" },
 ] as const;
 
 export default function StaffJobsPage() {
@@ -49,9 +52,9 @@ export default function StaffJobsPage() {
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             style={{
-              padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              padding: "6px 14px", borderRadius:"var(--radius-md)", fontSize: 12, fontWeight: 600, cursor: "pointer",
               border: "1px solid var(--border)",
-              background: tab === t.id ? "var(--accent, #2563eb)" : "var(--card-bg)",
+              background: tab === t.id ? "var(--accent, var(--brand))" : "var(--card-bg)",
               color: tab === t.id ? "#fff" : "var(--text)",
             }}>
             {t.label}
@@ -84,7 +87,7 @@ export default function StaffJobsPage() {
                   <td style={{ padding: "10px 16px" }}><Badge variant="info" size="sm">{j.status}</Badge></td>
                   <td style={{ padding: "10px 16px", color: "var(--text-tertiary)" }}>{j.scheduled_date ? `${j.scheduled_date}${j.scheduled_time_window ? ` · ${j.scheduled_time_window}` : ""}` : "—"}</td>
                   <td style={{ padding: "10px 16px" }}>
-                    <Link href={`/staff/jobs/${j.id}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--accent, #2563eb)" }}>View</Link>
+                    <Link href={`/staff/jobs/${j.id}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--accent, var(--brand))" }}>View</Link>
                   </td>
                 </tr>
               ))}

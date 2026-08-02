@@ -3,7 +3,7 @@ import React from "react";
 import Link from "next/link";
 import {
   LayoutDashboard, UserCircle, Wrench, MapPin, Clock, FileText,
-  ClipboardList, Bell, ShieldCheck, History, Settings, LogOut, MessageSquare,
+  ClipboardList, Bell, ShieldCheck, History, Settings, LogOut,
 } from "lucide-react";
 import { useStaffContext, StaffContextProvider } from "../../hooks/useStaffContext";
 import { Skeleton, Badge } from "../shared/ui";
@@ -18,7 +18,8 @@ const NAV: NavItem[] = [
   { id: "service-areas",  href: "/staff/service-areas",      label: "Service Areas",     icon: <MapPin size={16}/> },
   { id: "availability",   href: "/staff/availability",       label: "Availability",      icon: <Clock size={16}/> },
   { id: "jobs",           href: "/staff/jobs",                label: "Assigned Work",     icon: <ClipboardList size={16}/> },
-  { id: "chat",           href: "/staff/chat",                label: "Messages",          icon: <MessageSquare size={16}/> },
+  // Chat (customer<->staff messaging) removed for now -- only AI chat stays
+  // available. The /staff/chat page/API remain live, just unlinked.
   { id: "documents",      href: "/staff/documents",          label: "Documents",         icon: <FileText size={16}/> },
   { id: "notifications",  href: "/staff/notifications",      label: "Notifications",     icon: <Bell size={16}/> },
   { id: "activity",       href: "/staff/activity",           label: "Activity",          icon: <History size={16}/> },

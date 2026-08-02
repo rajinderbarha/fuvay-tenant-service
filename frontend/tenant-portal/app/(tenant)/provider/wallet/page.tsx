@@ -120,8 +120,8 @@ export default function ProviderWalletPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {t.txn_type?.includes("debit") || t.txn_type?.includes("commission")
-                    ? <TrendingDown size={14} style={{ color: "#dc2626" }} />
-                    : <TrendingUp size={14} style={{ color: "#059669" }} />}
+                    ? <TrendingDown size={14} style={{ color: "var(--danger)" }} />
+                    : <TrendingUp size={14} style={{ color: "var(--success)" }} />}
                   <div>
                     <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>
                       {t.txn_type?.replace(/_/g, " ")}

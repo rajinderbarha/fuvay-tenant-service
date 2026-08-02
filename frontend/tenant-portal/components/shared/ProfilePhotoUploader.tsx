@@ -21,7 +21,7 @@ export function resolveMediaUrl(url: string | null | undefined): string | null {
 }
 
 const PALETTE = [
-  { bg: "#dbeafe", text: "#1e40af" },
+  { bg: "#CCFBF1", text: "#0F766E" },
   { bg: "#dcfce7", text: "#166534" },
   { bg: "#fef9c3", text: "#854d0e" },
   { bg: "#fce7f3", text: "#9d174d" },

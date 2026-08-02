@@ -43,6 +43,11 @@ class TestQuoteNotifyLive:
             if not job:
                 return None
             email = await c.fetchval("SELECT email FROM users WHERE id=$1", job["customer_id"])
+            # Phase 2A (migration 167): at most one is_current quote per job.
+            # Clear any leftover quote from a prior run of this same seed
+            # helper before inserting a new "current" one.
+            await c.execute("DELETE FROM service_job_quote_events WHERE job_id=$1", job["id"])
+            await c.execute("DELETE FROM service_job_quotes WHERE job_id=$1", job["id"])
             qid = uuid.uuid4()
             await c.execute(
                 """INSERT INTO service_job_quotes

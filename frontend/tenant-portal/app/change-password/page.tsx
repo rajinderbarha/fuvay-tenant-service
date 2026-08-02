@@ -67,7 +67,7 @@ export default function ChangePasswordPage() {
         </div>
 
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: 16, padding: 32, boxShadow: "var(--shadow-lg)" }}>
+          borderRadius:"var(--radius-xl, 1rem)", padding: 32, boxShadow: "var(--shadow-lg)" }}>
 
           {error && (
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "12px 14px",

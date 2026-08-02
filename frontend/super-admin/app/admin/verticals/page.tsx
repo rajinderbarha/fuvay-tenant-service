@@ -79,7 +79,7 @@ function VerticalDetailModal({ vertical, onClose, onToggled }: {
               {(mods as VerticalDetail["modules"]).map(m => (
                 <div key={m.key} style={{
                   display: "flex", alignItems: "center", gap: 10,
-                  padding: "8px 12px", borderRadius: 8,
+                  padding: "8px 12px", borderRadius:"var(--radius-md)",
                   background: "var(--surface-sunken)",
                   border: "1px solid var(--border)",
                   marginBottom: 4,
@@ -123,7 +123,7 @@ function VerticalCard({ v, onToggle, onConfigure }: {
   return (
     <div style={{
       background: "var(--surface)", border: "1px solid var(--border)",
-      borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 12,
+      borderRadius:"var(--radius-lg)", padding: 18, display: "flex", flexDirection: "column", gap: 12,
       borderTop: `3px solid ${v.color ?? "var(--brand)"}`,
       opacity: v.is_enabled ? 1 : 0.65,
       transition: "opacity 0.15s",
@@ -230,8 +230,8 @@ export default function VerticalsPage() {
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
         {[
           { label: "Total Verticals",  value: items.length,    icon: <Globe size={15}/>,        color: "var(--brand)" },
-          { label: "Enabled",          value: enabledCount,    icon: <Zap size={15}/>,           color: "#16a34a" },
-          { label: "Beta / Upcoming",  value: betaCount,       icon: <FlaskConical size={15}/>,  color: "#7c3aed" },
+          { label: "Enabled",          value: enabledCount,    icon: <Zap size={15}/>,           color: "var(--success)" },
+          { label: "Beta / Upcoming",  value: betaCount,       icon: <FlaskConical size={15}/>,  color: "var(--accent)" },
         ].map(c => (
           <div key={c.label} style={{
             background: "var(--surface)", border: "1px solid var(--border)",
@@ -252,8 +252,8 @@ export default function VerticalsPage() {
       {error && (
         <div style={{
           background: "var(--danger-bg, #fee2e2)", border: "1px solid var(--danger-border, #fca5a5)",
-          borderRadius: 8, padding: "12px 16px", marginBottom: 16,
-          color: "var(--danger, #dc2626)", fontSize: 13,
+          borderRadius:"var(--radius-md)", padding: "12px 16px", marginBottom: 16,
+          color: "var(--danger, var(--danger))", fontSize: 13,
           display: "flex", alignItems: "center", gap: 8,
         }}>
           <XCircle size={15} style={{ flexShrink: 0 }}/>
@@ -266,7 +266,7 @@ export default function VerticalsPage() {
       {loading ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
           {Array.from({ length: 7 }).map((_, i) => (
-            <div key={i} className="skeleton" style={{ height: 160, borderRadius: 12 }}/>
+            <div key={i} className="skeleton" style={{ height: 160, borderRadius:"var(--radius-lg)" }}/>
           ))}
         </div>
       ) : (

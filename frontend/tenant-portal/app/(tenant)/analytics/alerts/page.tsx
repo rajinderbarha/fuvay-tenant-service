@@ -4,7 +4,7 @@ import { providerAnalyticsApi } from "../../../../lib/api";
 import { AlertList } from "../../../../components/analytics";
 
 const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
 };
 
@@ -35,7 +35,7 @@ export default function ProviderAlertsPage() {
         </button>
       </div>
 
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
         <AlertList alerts={alerts} loading={loading} />
       </div>
     </div>

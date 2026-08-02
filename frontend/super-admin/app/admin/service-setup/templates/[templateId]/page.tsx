@@ -110,7 +110,7 @@ export default function TemplateDetailPage() {
 
       {validateResult && (
         <div style={{
-          marginBottom: 24, borderRadius: 8, padding: 14,
+          marginBottom: 24, borderRadius:"var(--radius-md)", padding: 14,
           background: validateResult.valid ? "var(--success-bg)" : "var(--danger-bg)",
           border: `1px solid ${validateResult.valid ? "var(--success-border)" : "var(--danger-border)"}`,
         }}>
@@ -166,7 +166,7 @@ export default function TemplateDetailPage() {
           </p>
         ) : (
           Object.entries(itemsByModule).map(([moduleKey, moduleItems]) => (
-            <div key={moduleKey} style={{ marginBottom: 16, border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+            <div key={moduleKey} style={{ marginBottom: 16, border: "1px solid var(--border)", borderRadius:"var(--radius-md)", overflow: "hidden" }}>
               <div style={{ padding: "8px 14px", background: "var(--surface-sunken)", fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
                 {moduleKey.replace(/_/g, " ")} <span style={{ fontWeight: 400, color: "var(--text-tertiary)" }}>({moduleItems.length})</span>
               </div>
@@ -186,7 +186,7 @@ export default function TemplateDetailPage() {
       </div>
 
       {/* Apply hint */}
-      <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, padding: 16 }}>
+      <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", padding: 16 }}>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 10px" }}>
           To launch a category or service using this template, select it in Step 2 of the Bulk Setup Wizard.
         </p>

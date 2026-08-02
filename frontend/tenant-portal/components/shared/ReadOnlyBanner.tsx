@@ -31,7 +31,7 @@ export default function ReadOnlyBanner({ role }: Props) {
       display: "flex", alignItems: "center", gap: 10,
       padding: "10px 16px",
       background: "var(--warning-bg, #fffbeb)",
-      border: "1px solid var(--warning-border, #f59e0b)",
+      border: "1px solid var(--warning-border, var(--warning))",
       borderRadius: 10,
       marginBottom: 16,
       fontSize: 13,

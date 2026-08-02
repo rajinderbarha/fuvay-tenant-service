@@ -72,9 +72,7 @@ async def test_option(client):
         "code": f"TST_{uid}",
         "option_type": "add_on",
         "unit": "flat",
-        "default_price": "99.00",
         "status": "active",
-        "is_customer_selectable": True,
         "display_order": 0,
     })
     assert r.status_code == 201, r.text
@@ -281,7 +279,7 @@ class TestExistingCRUD:
         uid = uuid.uuid4().hex[:8].upper()
         r = await client.post("/v1/admin/service-options", json={
             "name": f"ArchiveMe {uid}", "code": f"ARC_{uid}",
-            "option_type": "tool", "unit": "flat", "default_price": "0", "status": "active",
+            "option_type": "tool", "unit": "flat", "status": "active",
         })
         assert r.status_code == 201
         opt_id = r.json()["data"]["id"]

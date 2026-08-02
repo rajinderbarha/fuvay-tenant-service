@@ -36,11 +36,11 @@ export default function MarketingOverviewPage() {
       </div>
 
       {loading ? (
-        <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 12, padding: 16, fontSize: 13, color: "var(--text-tertiary)" }}>
+        <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 16, fontSize: 13, color: "var(--text-tertiary)" }}>
           Loading status…
         </div>
       ) : status ? (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20,
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20,
           display: "flex", flexWrap: "wrap", gap: 24 }}>
           <div>
             <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 2 }}>Bookable</div>
@@ -66,7 +66,7 @@ export default function MarketingOverviewPage() {
           </div>
         </div>
       ) : (
-        <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12, padding: 16, fontSize: 13, color: "var(--danger-text)" }}>
+        <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius:"var(--radius-lg)", padding: 16, fontSize: 13, color: "var(--danger-text)" }}>
           Unable to load visibility status. Please try again.
         </div>
       )}
@@ -75,7 +75,7 @@ export default function MarketingOverviewPage() {
         {cards.map(c => (
           <Link key={c.href} href={c.href} style={{
             display: "block", background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 12, padding: 20, textDecoration: "none",
+            borderRadius:"var(--radius-lg)", padding: 20, textDecoration: "none",
           }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", marginBottom: 4 }}>{c.label}</div>
             <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 12 }}>{c.desc}</div>

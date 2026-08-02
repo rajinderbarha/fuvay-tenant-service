@@ -67,7 +67,7 @@ export function MarketingLaunchWidget() {
             </p>
           )}
           {campaign.status === "approved" && (
-            <p style={{ fontSize: 12, color: "#059669", margin: 0, display: "flex", alignItems: "center", gap: 4 }}>
+            <p style={{ fontSize: 12, color: "var(--success)", margin: 0, display: "flex", alignItems: "center", gap: 4 }}>
               <CheckCircle2 size={12} /> Campaign approved. Admin will publish soon.
             </p>
           )}
@@ -75,7 +75,7 @@ export function MarketingLaunchWidget() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {blockers.length > 0 ? (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 12, color: "#d97706" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 12, color: "var(--warning)" }}>
               <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
               <span>{blockers.length} blocker{blockers.length > 1 ? "s" : ""} to resolve before launch.</span>
             </div>

@@ -14,7 +14,7 @@ const EVENT_COLOR: Record<string, string> = {
 };
 
 const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8,
+  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
   background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
 };
 const th: React.CSSProperties = {
@@ -59,11 +59,11 @@ export default function CampaignImpactPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 16 }}>
           <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Campaign Events</div>
           <div style={{ fontSize: 24, fontWeight: 600, color: "var(--text-primary)" }}>{events.length}</div>
         </div>
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 16 }}>
           <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Attributed Leads</div>
           <div style={{ fontSize: 24, fontWeight: 600, color: "var(--success-text)" }}>{leads.length}</div>
         </div>
@@ -92,7 +92,7 @@ export default function CampaignImpactPage() {
             No campaign events found for your profile
           </div>
         ) : (
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
@@ -131,7 +131,7 @@ export default function CampaignImpactPage() {
             No attributed leads yet — they appear when a campaign converts to a booking or lead
           </div>
         ) : (
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>

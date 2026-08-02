@@ -490,8 +490,8 @@ function ServiceSetupWizard({ offering, existing, onClose, onSaved }: {
             <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
               Group: {offering.service_group_name ?? "General"} · Category: Home Services
             </p>
-            <div style={{ padding: 12, background: "var(--info-bg, #eff6ff)", borderRadius: 8 }}>
-              <p style={{ fontSize: 12, color: "var(--info-text, #1d4ed8)", margin: 0 }}>
+            <div style={{ padding: 12, background: "var(--info-bg, #eff6ff)", borderRadius:"var(--radius-md)" }}>
+              <p style={{ fontSize: 12, color: "var(--info-text, var(--brand-hover))", margin: 0 }}>
                 This service is managed by the platform catalog. You can enable it and configure your coverage below.
               </p>
             </div>
@@ -530,7 +530,7 @@ function ServiceSetupWizard({ offering, existing, onClose, onSaved }: {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {(issues.data ?? []).map((it: CustomerIssueType) => (
-                  <div key={it.issue_type_id} style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+                  <div key={it.issue_type_id} style={{ padding: 10, border: "1px solid var(--border)", borderRadius:"var(--radius-md)" }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{it.name}</p>
                     <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-tertiary)" }}>
                       Customer reports this issue with {offering.name.toLowerCase()}.
@@ -564,7 +564,7 @@ function ServiceSetupWizard({ offering, existing, onClose, onSaved }: {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {(areas.data?.areas ?? []).filter(a => a.is_active).map(a => (
-                  <div key={a.id} style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8, display: "flex", justifyContent: "space-between" }}>
+                  <div key={a.id} style={{ padding: 10, border: "1px solid var(--border)", borderRadius:"var(--radius-md)", display: "flex", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13 }}>
                       {[a.city, a.zipcode, a.state].filter(Boolean).join(", ") || a.zone_name || "Coverage area"}
                     </span>
@@ -588,7 +588,7 @@ function ServiceSetupWizard({ offering, existing, onClose, onSaved }: {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {(team.data?.members ?? []).filter(m => m.status === "active").map(m => (
-                  <div key={m.member_id} style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+                  <div key={m.member_id} style={{ padding: 10, border: "1px solid var(--border)", borderRadius:"var(--radius-md)" }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{m.full_name}</p>
                     <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-tertiary)" }}>
                       {(m.skills ?? []).join(", ") || "No skills listed"} · <Badge variant="success">Active</Badge>
@@ -635,7 +635,7 @@ function ServiceSetupWizard({ offering, existing, onClose, onSaved }: {
                 description="Customers cannot book this service until working hours are added."
                 action={<Btn size="sm" onClick={() => window.open("/provider/availability", "_blank")}>Add Availability</Btn>}/>
             ) : (
-              <div style={{ padding: 12, background: "var(--success-bg)", borderRadius: 8 }}>
+              <div style={{ padding: 12, background: "var(--success-bg)", borderRadius:"var(--radius-md)" }}>
                 <p style={{ margin: 0, fontSize: 12, color: "var(--success-text)" }}>
                   Availability configured — {availability.data?.rules.length} rule(s) active.
                 </p>
@@ -654,7 +654,7 @@ function ServiceSetupWizard({ offering, existing, onClose, onSaved }: {
             <ChecklistRow label="Service area linked" ok={areasOk}/>
             <ChecklistRow label="Technician assigned" ok={technicianOk}/>
             <ChecklistRow label="Availability ready" ok={availabilityOk}/>
-            <div style={{ marginTop: 10, padding: 12, borderRadius: 8,
+            <div style={{ marginTop: 10, padding: 12, borderRadius:"var(--radius-md)",
               background: readyToEnable ? "var(--success-bg)" : "var(--warning-bg)" }}>
               <p style={{ margin: 0, fontSize: 13, fontWeight: 700,
                 color: readyToEnable ? "var(--success-text)" : "var(--warning-text)" }}>

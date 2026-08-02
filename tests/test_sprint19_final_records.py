@@ -13,6 +13,21 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
 
+# Phase 2A.2: finalize() now independently revalidates Job Type/Blueprint
+# context via HomeServiceChatbotBookingService._validate_job_type_context.
+# This entire test module predates that concept -- its mocked drafts don't
+# set up the catalog queries that check would need, and its own purpose is
+# proving Booking/Job record CREATION shape, not job-type validation
+# (covered by tests/test_module_l5_54_customer_job_type_contract.py).
+# Short-circuit it to "valid" for every test in this module.
+@pytest.fixture(autouse=True)
+def _bypass_job_type_context_validation():
+    with patch(
+        "app.engines.home_service_booking.service.HomeServiceChatbotBookingService._validate_job_type_context",
+        AsyncMock(return_value=None),
+    ):
+        yield
+
 from app.engines.final_records.constants import (
     DRAFT_TYPE_HOME_SERVICE, DRAFT_TYPE_COACHING, DRAFT_TYPE_REAL_ESTATE,
     VALID_DRAFT_TYPES,

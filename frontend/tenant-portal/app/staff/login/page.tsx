@@ -68,7 +68,7 @@ export default function StaffLoginPage() {
         <form onSubmit={handleLogin} style={{ background: "var(--surface)", border: "1px solid var(--border)",
           borderRadius: 14, padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
           {error && (
-            <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--danger-bg, #fef2f2)",
+            <div style={{ padding: "10px 12px", borderRadius:"var(--radius-md)", background: "var(--danger-bg, #fef2f2)",
               border: "1px solid var(--danger-border, #fecaca)", fontSize: 12, color: "var(--danger-text, #b91c1c)" }}>
               {error}
               {requestId && <div style={{ marginTop: 4, opacity: 0.8 }}>Request ID: {requestId}</div>}
@@ -78,18 +78,18 @@ export default function StaffLoginPage() {
             <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)}
               placeholder="technician@example.com" required
-              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid var(--border)",
+              style={{ width: "100%", padding: "9px 12px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                 background: "var(--card-bg)", color: "var(--text)", fontSize: 13 }}/>
           </div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>Password</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)}
               placeholder="••••••••" required
-              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid var(--border)",
+              style={{ width: "100%", padding: "9px 12px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                 background: "var(--card-bg)", color: "var(--text)", fontSize: 13 }}/>
           </div>
           <button type="submit" disabled={loading} style={{
-            padding: "10px 16px", borderRadius: 8, border: "none", background: "var(--brand)",
+            padding: "10px 16px", borderRadius:"var(--radius-md)", border: "none", background: "var(--brand)",
             color: "white", fontWeight: 600, fontSize: 13, cursor: loading ? "not-allowed" : "pointer",
             opacity: loading ? 0.7 : 1,
           }}>

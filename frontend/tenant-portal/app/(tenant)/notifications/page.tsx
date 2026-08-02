@@ -49,7 +49,7 @@ export default function NotificationsPage() {
       {tab === "history" && (
         history.loading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {[...Array(5)].map((_, i) => <Skeleton key={i} height={60} style={{ borderRadius: 12 }} />)}
+            {[...Array(5)].map((_, i) => <Skeleton key={i} height={60} style={{ borderRadius:"var(--radius-lg)" }} />)}
           </div>
         ) : (history.data?.notifications ?? []).length === 0 ? (
           <Card padding={48} style={{ textAlign: "center" }}>
@@ -89,7 +89,7 @@ export default function NotificationsPage() {
       {tab === "channels" && (
         channels.loading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {[...Array(4)].map((_, i) => <Skeleton key={i} height={70} style={{ borderRadius: 12 }} />)}
+            {[...Array(4)].map((_, i) => <Skeleton key={i} height={70} style={{ borderRadius:"var(--radius-lg)" }} />)}
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

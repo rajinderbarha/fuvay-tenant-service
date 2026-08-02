@@ -240,7 +240,7 @@ export default function ProviderCompliancePage() {
       )}
 
       <div style={{ display: "flex", gap: 4, padding: 4, background: "var(--bg-muted)",
-        borderRadius: 12, border: "1px solid var(--border)", margin: "16px 0", flexWrap: "wrap" }}>
+        borderRadius:"var(--radius-lg)", border: "1px solid var(--border)", margin: "16px 0", flexWrap: "wrap" }}>
         {TABS.map(tab => (
           <button
             key={tab.id}
@@ -512,7 +512,7 @@ export default function ProviderCompliancePage() {
               options={TENANT_ALLOWED_TYPES.map(t => ({ value: t, label: REQUEST_TYPE_LABELS[t] ?? t }))} />
 
             {ERASURE_TYPES.has(formType) && (
-              <div style={{ background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 8, padding: 12, fontSize: 13 }}>
+              <div style={{ background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius:"var(--radius-md)", padding: 12, fontSize: 13 }}>
                 <strong>Important:</strong> Erasure requests are reviewed by our compliance team.
                 Financial records (7 years), active bookings, and open disputes cannot be erased.
                 You will be notified of the outcome within 72 hours.

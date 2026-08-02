@@ -62,6 +62,14 @@ class TestCustomerQuoteFlow:
             if not job:
                 return None
             email = await c.fetchval("SELECT email FROM users WHERE id=$1", job["customer_id"])
+            # Phase 2A (migration 167) added a partial unique index -- at
+            # most one is_current quote per job. This seed helper reuses
+            # "the first job with a customer" across every test run without
+            # cleanup, so a leftover quote from a prior run now correctly
+            # violates that constraint instead of silently creating a second
+            # "current" quote. Clear prior quotes for this job before seeding.
+            await c.execute("DELETE FROM service_job_quote_events WHERE job_id=$1", job["id"])
+            await c.execute("DELETE FROM service_job_quotes WHERE job_id=$1", job["id"])
             qid = uuid.uuid4()
             await c.execute(
                 """INSERT INTO service_job_quotes

@@ -305,7 +305,7 @@ function GlobalSettingsTab() {
         {previewResult && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
             {previewResult.blocked && (
-              <div style={{ padding: "10px 14px", background: "var(--danger-bg)", borderRadius: 8, color: "var(--danger-text)" }}>
+              <div style={{ padding: "10px 14px", background: "var(--danger-bg)", borderRadius:"var(--radius-md)", color: "var(--danger-text)" }}>
                 {previewResult.blocker_message}
               </div>
             )}

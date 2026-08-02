@@ -180,7 +180,7 @@ export default function ProviderChatPage() {
                 {/* Pending attachment preview */}
                 {pendingFile && (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
-                    background: "var(--info-bg)", border: "1px solid var(--info-border)", borderRadius: 8, fontSize: 12 }}>
+                    background: "var(--info-bg)", border: "1px solid var(--info-border)", borderRadius:"var(--radius-md)", fontSize: 12 }}>
                     <Paperclip size={13} style={{ color: "var(--info-text)", flexShrink: 0 }}/>
                     <span style={{ flex: 1, color: "var(--info-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {pendingFile.name}
@@ -201,7 +201,7 @@ export default function ProviderChatPage() {
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
                     title="Attach file"
-                    style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid var(--border)",
+                    style={{ width: 36, height: 36, borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                       background: pendingFile ? "var(--info-bg)" : "var(--surface)",
                       cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
                       color: pendingFile ? "var(--info-text)" : "var(--text-secondary)", flexShrink: 0 }}>
@@ -217,7 +217,7 @@ export default function ProviderChatPage() {
                     }}/>
 
                   <input
-                    style={{ flex: 1, height: 36, padding: "0 12px", fontSize: 13, borderRadius: 8,
+                    style={{ flex: 1, height: 36, padding: "0 12px", fontSize: 13, borderRadius:"var(--radius-md)",
                       border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontFamily: "inherit" }}
                     placeholder={pendingFile ? "Add a caption (optional)…" : "Type a message…"}
                     value={newMsg}
@@ -232,7 +232,7 @@ export default function ProviderChatPage() {
                   <button
                     onClick={handleSend}
                     disabled={(!newMsg.trim() && !pendingFile) || sendAction.loading || uploading}
-                    style={{ padding: "0 16px", fontSize: 13, fontWeight: 600, borderRadius: 8,
+                    style={{ padding: "0 16px", fontSize: 13, fontWeight: 600, borderRadius:"var(--radius-md)",
                       border: "none", background: "var(--brand)", color: "white",
                       cursor: (!newMsg.trim() && !pendingFile) || sendAction.loading || uploading ? "not-allowed" : "pointer",
                       opacity: (!newMsg.trim() && !pendingFile) || sendAction.loading || uploading ? 0.5 : 1,

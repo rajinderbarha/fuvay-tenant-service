@@ -200,6 +200,15 @@ CONFIRMED_PLATFORM_ADMIN_PERMISSION_ROUTES = {
     ("app.engines.serviceability.router", "admin_update_service_area"),
     ("app.engines.serviceability.router", "admin_delete_service_area"),
     ("app.engines.serviceability.router", "admin_serviceability_test"),
+    # Service-area coverage-approval workflow: same require_permission(P.PLATFORM_ADMIN)
+    # pattern as the 4 routes above -- genuinely platform-wide admin review/
+    # coverage-management actions with no single tenant scope (an admin
+    # reviews requests across ALL tenants), not a missed tenant-scoping gap.
+    ("app.engines.serviceability.router", "admin_start_review"),
+    ("app.engines.serviceability.router", "admin_decide_service_area_request"),
+    ("app.engines.serviceability.router", "admin_suspend_coverage"),
+    ("app.engines.serviceability.router", "admin_reactivate_coverage"),
+    ("app.engines.serviceability.router", "admin_revoke_coverage"),
 }
 
 # (method, path) -> adjudicated disposition, populated by Slice 2F-3A's

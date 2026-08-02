@@ -9,6 +9,8 @@ import {
 } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 
+type PriceDraft = { pricing_model: "FIXED" | "PER_UNIT"; value: string };
+
 export default function ProviderServiceOptionsPage() {
   const enabledOfferings = useApi(useCallback(() => providerOfferingsApi.listEnabled(), []));
   const services: EnabledOffering[] = enabledOfferings.data?.offerings ?? [];
@@ -16,6 +18,8 @@ export default function ProviderServiceOptionsPage() {
   const [serviceId, setServiceId] = useState("");
   const [available, setAvailable] = useState<ProviderAvailableServiceOption[]>([]);
   const [selected,  setSelected]  = useState<Set<string>>(new Set());
+  const [prices,    setPrices]    = useState<Record<string, PriceDraft>>({}); // keyed by mapping_id
+  const [priceErrors, setPriceErrors] = useState<Record<string, string>>({});
   const [loading,   setLoading]   = useState(false);
   const [saving,    setSaving]    = useState(false);
   const [msg,       setMsg]       = useState("");
@@ -55,11 +59,36 @@ export default function ProviderServiceOptionsPage() {
 
   async function save() {
     if (!serviceId) return;
-    setSaving(true); setMsg("");
+    setSaving(true); setMsg(""); setPriceErrors({});
     try {
       await providerServiceOptionApi.setSupportedForService(serviceId, Array.from(selected));
-      setMsg("Saved successfully");
-      setTimeout(() => setMsg(""), 2500);
+      // Publish price for every enabled option — an enabled option with no
+      // valid price must not be allowed to publish (no admin fallback).
+      const errors: Record<string, string> = {};
+      for (const opt of available) {
+        if (!selected.has(opt.id)) continue;
+        const draft = prices[opt.mapping_id];
+        if (!draft || !draft.value.trim()) {
+          errors[opt.mapping_id] = "Enter a price before publishing this option.";
+          continue;
+        }
+        try {
+          await providerServiceOptionApi.setOptionPrice(opt.mapping_id, {
+            enabled: true,
+            pricing_model: draft.pricing_model,
+            ...(draft.pricing_model === "FIXED" ? { fixed_price: draft.value } : { unit_price: draft.value }),
+          });
+        } catch (err: unknown) {
+          errors[opt.mapping_id] = (err as Error).message ?? "Couldn't save this price.";
+        }
+      }
+      if (Object.keys(errors).length > 0) {
+        setPriceErrors(errors);
+        setMsg("Some options couldn't be published — see field errors below.");
+      } else {
+        setMsg("Saved successfully");
+        setTimeout(() => setMsg(""), 2500);
+      }
     } catch (err: unknown) {
       setMsg((err as Error).message ?? "Save failed");
     }
@@ -88,12 +117,12 @@ export default function ProviderServiceOptionsPage() {
             Select Service
           </label>
           {enabledOfferings.loading ? (
-            <div style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid var(--border)",
+            <div style={{ padding: "10px 14px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
               background: "var(--surface-sunken)", fontSize: 13, color: "var(--text-tertiary)" }}>
               Loading your services…
             </div>
           ) : services.length === 0 ? (
-            <div style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid var(--border)",
+            <div style={{ padding: "10px 14px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
               background: "var(--surface-sunken)", fontSize: 13, color: "var(--text-tertiary)" }}>
               No enabled services yet. Enable services in Provider → Offerings first.
             </div>
@@ -101,7 +130,7 @@ export default function ProviderServiceOptionsPage() {
             <select
               value={serviceId}
               onChange={e => setServiceId(e.target.value)}
-              style={{ width: "100%", padding: "10px 14px", borderRadius: 8,
+              style={{ width: "100%", padding: "10px 14px", borderRadius:"var(--radius-md)",
                 border: "1px solid var(--border)", background: "var(--bg)",
                 color: "var(--text-primary)", fontSize: 14, outline: "none", cursor: "pointer" }}>
               <option value="">— Choose a service —</option>
@@ -144,30 +173,43 @@ export default function ProviderServiceOptionsPage() {
 
             {!loading && available.length > 0 && (
               <>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
                   {[...available].sort((a, b) => a.display_order - b.display_order).map(opt => {
-                    const active = selected.has(opt.id);
+                    const active = selected.has(opt.id) || opt.is_required;
+                    const draft = prices[opt.mapping_id] ?? { pricing_model: "FIXED" as const, value: "" };
+                    const unitLabel = opt.measurement_unit === "per_unit" || opt.quantity_supported ? "Per Unit" : "Flat";
                     return (
-                      <button
-                        key={opt.id}
-                        onClick={() => !opt.is_required && toggle(opt.id)}
-                        disabled={opt.is_required}
-                        style={{
-                          padding: "8px 18px",
-                          borderRadius: 20,
-                          border: `2px solid ${active ? "var(--brand)" : "var(--border)"}`,
-                          background: active ? "var(--brand)" : "var(--bg)",
-                          color: active ? "#fff" : "var(--text-primary)",
-                          fontSize: 14, cursor: opt.is_required ? "default" : "pointer",
-                          fontWeight: opt.is_required ? 700 : 400,
-                          opacity: opt.is_required ? 0.85 : 1,
-                          transition: "all 0.15s",
-                        }}>
-                        {opt.name}
-                        {opt.is_required && (
-                          <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.75 }}>required</span>
+                      <div key={opt.id} style={{ padding: "12px 14px", borderRadius: 12,
+                        border: `1px solid ${active ? "var(--brand)" : "var(--border)"}`,
+                        background: active ? "var(--surface-sunken)" : "var(--bg)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: opt.is_required ? "default" : "pointer" }}>
+                            <input type="checkbox" checked={active} disabled={opt.is_required}
+                              onChange={() => toggle(opt.id)}/>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{opt.name}</span>
+                            {opt.is_required && <span style={{ fontSize: 11, opacity: 0.75, color: "var(--text-tertiary)" }}>required</span>}
+                          </label>
+                          <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Unit: {unitLabel}</span>
+                        </div>
+                        {active && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                            <select value={draft.pricing_model}
+                              onChange={e => setPrices(p => ({ ...p, [opt.mapping_id]: { ...draft, pricing_model: e.target.value as PriceDraft["pricing_model"] } }))}
+                              style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
+                              <option value="FIXED">Fixed</option>
+                              <option value="PER_UNIT">Per {unitLabel === "Per Unit" ? "Unit" : "Visit"}</option>
+                            </select>
+                            <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Your price: ₹</span>
+                            <input type="number" min="0" value={draft.value}
+                              onChange={e => setPrices(p => ({ ...p, [opt.mapping_id]: { ...draft, value: e.target.value } }))}
+                              placeholder="0" style={{ width: 100, padding: "6px 8px", borderRadius: 8,
+                                border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}/>
+                            {priceErrors[opt.mapping_id] && (
+                              <span style={{ fontSize: 12, color: "var(--danger-text)" }}>{priceErrors[opt.mapping_id]}</span>
+                            )}
+                          </div>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -177,7 +219,7 @@ export default function ProviderServiceOptionsPage() {
                     onClick={save}
                     disabled={saving}
                     style={{ padding: "10px 24px", background: "var(--brand)", color: "#fff",
-                      borderRadius: 8, fontSize: 14, cursor: "pointer", border: "none",
+                      borderRadius:"var(--radius-md)", fontSize: 14, cursor: "pointer", border: "none",
                       fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
                     {saving ? "Saving…" : "Save Selections"}
                   </button>

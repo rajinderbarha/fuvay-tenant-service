@@ -161,7 +161,7 @@ export default function ServiceAreasPage() {
             <div style={{ display:"flex", gap:8 }}>
               {ZONE_TYPE_OPTIONS.map(opt => (
                 <button key={opt.value} onClick={() => setForm(f => ({ ...f, zone_type: opt.value }))}
-                  style={{ flex:1, padding:"8px 4px", borderRadius:8, border:"1px solid",
+                  style={{ flex:1, padding:"8px 4px", borderRadius:"var(--radius-md)", border:"1px solid",
                     borderColor: form.zone_type===opt.value ? "var(--accent)" : "var(--border)",
                     background: form.zone_type===opt.value ? "var(--accent-subtle)" : "var(--surface)",
                     color: form.zone_type===opt.value ? "var(--accent)" : "var(--text-secondary)",
@@ -181,7 +181,7 @@ export default function ServiceAreasPage() {
                 onChange={e => setIdentsText(e.target.value)}
                 placeholder={form.zone_type === "pincode" ? "141001, 141002, 141003" : "Ludhiana, Amritsar"}
                 rows={3}
-                style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid var(--border)",
+                style={{ width:"100%", padding:"8px 10px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
                   background:"var(--bg)", color:"var(--text-primary)", fontSize:13, fontFamily:"inherit",
                   resize:"vertical", outline:"none", boxSizing:"border-box" }}
               />

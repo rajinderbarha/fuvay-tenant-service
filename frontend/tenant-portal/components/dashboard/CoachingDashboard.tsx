@@ -40,13 +40,13 @@ export function CoachingDashboard() {
           <StatCard icon={<CalendarCheck/>} label="Demo Class Bookings"
             value={Number(d.demo_class_bookings ?? 0)} accent="#4f46e5"/>
           <StatCard icon={<Users2/>} label="New Student Leads"
-            value={Number(d.new_student_leads ?? 0)} accent="#059669"/>
+            value={Number(d.new_student_leads ?? 0)} accent="var(--success)"/>
           <StatCard icon={<Bell/>} label="Pending Follow-ups"
-            value={Number(d.pending_followups ?? 0)} accent="#d97706"/>
+            value={Number(d.pending_followups ?? 0)} accent="var(--warning)"/>
           <StatCard icon={<Wallet/>} label="Payments This Month"
-            value={fmt(d.payments_this_month as number)} accent="#059669"/>
+            value={fmt(d.payments_this_month as number)} accent="var(--success)"/>
           <StatCard icon={<Star/>} label="Avg Rating"
-            value={d.average_rating != null ? Number(d.average_rating).toFixed(1) : "—"} accent="#d97706"/>
+            value={d.average_rating != null ? Number(d.average_rating).toFixed(1) : "—"} accent="var(--warning)"/>
         </>)}
       </div>
 

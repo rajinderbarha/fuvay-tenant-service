@@ -334,7 +334,7 @@ export default function SettingsPage() {
               <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                 {(deliveries.data?.deliveries ?? []).map((d: WebhookDelivery) => (
                   <div key={d.delivery_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                    padding:"10px 14px", border:"1px solid var(--border)", borderRadius:8 }}>
+                    padding:"10px 14px", border:"1px solid var(--border)", borderRadius:"var(--radius-md)" }}>
                     <div>
                       <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:4 }}>
                         <DsStatusBadge status={d.status === "success" ? "completed" : "failed"}/>
@@ -377,7 +377,7 @@ export default function SettingsPage() {
                     const granted = status?.has_consent ?? false;
                     return (
                       <div key={c.key} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                        padding:"12px 14px", border:"1px solid var(--border)", borderRadius:8 }}>
+                        padding:"12px 14px", border:"1px solid var(--border)", borderRadius:"var(--radius-md)" }}>
                         <div>
                           <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:2 }}>
                             <span style={{ fontWeight:600, fontSize:13 }}>{c.label}</span>
@@ -478,7 +478,7 @@ export default function SettingsPage() {
                 <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                   {(secKeys.data?.api_keys ?? []).map((k: SecurityApiKey) => (
                     <div key={k.key_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                      padding:"12px 14px", border:"1px solid var(--border)", borderRadius:8 }}>
+                      padding:"12px 14px", border:"1px solid var(--border)", borderRadius:"var(--radius-md)" }}>
                       <div>
                         <div style={{ display:"flex", gap:8, marginBottom:4 }}>
                           <span style={{ fontWeight:600, fontSize:13 }}>{k.name}</span>
@@ -533,7 +533,7 @@ export default function SettingsPage() {
               </p>
               <div style={{ display:"flex", gap:8, alignItems:"flex-end", maxWidth:480, flexWrap:"wrap" }}>
                 <select value={reportType} onChange={e => setReportType(e.target.value)}
-                  style={{ padding:"8px 10px", border:"1px solid var(--border)", borderRadius:8,
+                  style={{ padding:"8px 10px", border:"1px solid var(--border)", borderRadius:"var(--radius-md)",
                     background:"var(--surface)", color:"var(--text-primary)", fontSize:13, flex:1, minWidth:240 }}>
                   {ACTIVITY_TYPES.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
                 </select>
@@ -605,7 +605,7 @@ export default function SettingsPage() {
               <Button size="sm" onClick={createSecKey.execute} loading={createSecKey.loading}>Create</Button>
             </>}>
         {secKeyResult ? (
-          <div style={{ padding:12, background:"var(--success-bg,#d1fae5)", borderRadius:8, border:"1px solid var(--success,#10b981)" }}>
+          <div style={{ padding:12, background:"var(--success-bg,#d1fae5)", borderRadius:"var(--radius-md)", border:"1px solid var(--success,var(--success))" }}>
             <p style={{ margin:"0 0 8px", fontWeight:600 }}>{secKeyResult.warning}</p>
             <code style={{ display:"block", wordBreak:"break-all", fontSize:12, padding:"8px 10px",
               background:"white", border:"1px solid var(--border)", borderRadius:6 }}>

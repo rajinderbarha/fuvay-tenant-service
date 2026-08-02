@@ -106,7 +106,7 @@ function ErrBanner({ title, error, requestId, onRetry }: {
 }) {
   return (
     <div style={{
-      padding: "16px 20px", borderRadius: 12,
+      padding: "16px 20px", borderRadius:"var(--radius-lg)",
       background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
       display: "flex", flexDirection: "column", gap: 8,
     }}>
@@ -153,7 +153,7 @@ function PricePreviewBand({ preview }: { preview: HsPricePreview | null }) {
           : tier === "Mid" ? preview.mid_price : preview.high_price;
         return (
           <div key={tier} style={{
-            padding: "10px 12px", background: "var(--surface)", borderRadius: 8,
+            padding: "10px 12px", background: "var(--surface)", borderRadius:"var(--radius-md)",
             border: "1px solid var(--border)", textAlign: "center",
           }}>
             <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1 }}>{tier}</p>
@@ -543,7 +543,7 @@ function ServiceSetupWizard({
               return (
                 <div key={s} style={{
                   display: "flex", alignItems: "center", gap: 8,
-                  padding: "8px 10px", borderRadius: 8,
+                  padding: "8px 10px", borderRadius:"var(--radius-md)",
                   background: active ? "var(--brand)" : "transparent",
                   cursor: done || active ? "default" : "pointer",
                 }}>
@@ -598,8 +598,8 @@ function ServiceSetupWizard({
                 background: "var(--info-bg, #eff6ff)", border: "1px solid var(--info-border, #bfdbfe)",
                 display: "flex", gap: 10,
               }}>
-                <Info size={15} style={{ color: "var(--info-text, #1d4ed8)", flexShrink: 0, marginTop: 1 }} />
-                <p style={{ fontSize: 12, color: "var(--info-text, #1d4ed8)", margin: 0 }}>
+                <Info size={15} style={{ color: "var(--info-text, var(--brand-hover))", flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 12, color: "var(--info-text, var(--brand-hover))", margin: 0 }}>
                   You set a price range per type. If brand pricing is enabled, you can optionally set brand-specific overrides.
                   The most specific price wins: <strong>brand → type → base</strong>.
                 </p>
@@ -750,7 +750,7 @@ function ServiceSetupWizard({
               <div style={{ display: "flex", gap: 10 }}>
                 {(["same", "override"] as const).map(m => (
                   <button key={m} onClick={() => setBrandMode(m)} style={{
-                    padding: "10px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                    padding: "10px 20px", borderRadius:"var(--radius-md)", fontSize: 13, fontWeight: 600, cursor: "pointer",
                     border: `2px solid ${brandMode === m ? "var(--brand)" : "var(--border)"}`,
                     background: brandMode === m ? "var(--brand)" : "var(--surface)",
                     color: brandMode === m ? "#fff" : "var(--text-primary)",
@@ -784,7 +784,7 @@ function ServiceSetupWizard({
                     if (rowsForType.length === 0) return null;
                     return (
                       <div key={tp.typeId} style={{
-                        padding: "14px 16px", borderRadius: 12, border: "1px solid var(--border)",
+                        padding: "14px 16px", borderRadius:"var(--radius-lg)", border: "1px solid var(--border)",
                         background: "var(--surface-sunken)",
                       }}>
                         <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700 }}>{safeText(tp.typeName)}</p>
@@ -1062,7 +1062,7 @@ function TypePricingCard({ tp, onUpdate, onPreview, previewLoading }: {
 
   return (
     <div style={{
-      padding: "18px 20px", borderRadius: 12, border: "1px solid var(--border)",
+      padding: "18px 20px", borderRadius:"var(--radius-lg)", border: "1px solid var(--border)",
       background: "var(--surface)", display: "flex", flexDirection: "column", gap: 14,
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1099,7 +1099,7 @@ function TypePricingCard({ tp, onUpdate, onPreview, previewLoading }: {
             style={{
               width: "100%", padding: "9px 12px", fontSize: 14, boxSizing: "border-box",
               border: `1px solid ${minErr ? "var(--danger-border)" : "var(--border)"}`,
-              borderRadius: 8, background: "var(--surface)", color: "var(--text-primary)",
+              borderRadius:"var(--radius-md)", background: "var(--surface)", color: "var(--text-primary)",
               fontFamily: "inherit", outline: "none",
             }}
           />
@@ -1115,7 +1115,7 @@ function TypePricingCard({ tp, onUpdate, onPreview, previewLoading }: {
             style={{
               width: "100%", padding: "9px 12px", fontSize: 14, boxSizing: "border-box",
               border: `1px solid ${maxErr ? "var(--danger-border)" : "var(--border)"}`,
-              borderRadius: 8, background: "var(--surface)", color: "var(--text-primary)",
+              borderRadius:"var(--radius-md)", background: "var(--surface)", color: "var(--text-primary)",
               fontFamily: "inherit", outline: "none",
             }}
           />
@@ -1156,7 +1156,7 @@ function BrandOverrideRow({ bp, onChange, onPreview }: {
         <input type="checkbox" checked={bp.enabled} onChange={e => onChange("enabled", e.target.checked)}
           style={{ width: 16, height: 16, cursor: "pointer" }} />
         <div style={{
-          width: 32, height: 32, borderRadius: 8, background: "var(--brand)",
+          width: 32, height: 32, borderRadius:"var(--radius-md)", background: "var(--brand)",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 12, fontWeight: 700, color: "#fff",
         }}>
@@ -1175,7 +1175,7 @@ function BrandOverrideRow({ bp, onChange, onPreview }: {
               <input type="number" value={bp.tenantMin} onChange={e => onChange("tenantMin", e.target.value)}
                 style={{
                   width: "100%", padding: "8px 10px", fontSize: 13, boxSizing: "border-box",
-                  border: "1px solid var(--border)", borderRadius: 8,
+                  border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
                   background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit", outline: "none",
                 }} />
             </div>
@@ -1184,7 +1184,7 @@ function BrandOverrideRow({ bp, onChange, onPreview }: {
               <input type="number" value={bp.tenantMax} onChange={e => onChange("tenantMax", e.target.value)}
                 style={{
                   width: "100%", padding: "8px 10px", fontSize: 13, boxSizing: "border-box",
-                  border: "1px solid var(--border)", borderRadius: 8,
+                  border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
                   background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit", outline: "none",
                 }} />
             </div>
@@ -1422,8 +1422,8 @@ export default function HomeServicesServiceSetupPage() {
         background: "var(--info-bg, #eff6ff)", border: "1px solid var(--info-border, #bfdbfe)",
         display: "flex", gap: 10,
       }}>
-        <Info size={15} style={{ color: "var(--info-text, #1d4ed8)", flexShrink: 0, marginTop: 1 }} />
-        <p style={{ fontSize: 12, color: "var(--info-text, #1d4ed8)", margin: 0 }}>
+        <Info size={15} style={{ color: "var(--info-text, var(--brand-hover))", flexShrink: 0, marginTop: 1 }} />
+        <p style={{ fontSize: 12, color: "var(--info-text, var(--brand-hover))", margin: 0 }}>
           You can only select services from the admin-approved catalog.
           Customer Low / Mid / High price options are generated automatically from your price range + platform fee.
         </p>
@@ -1494,7 +1494,7 @@ export default function HomeServicesServiceSetupPage() {
 
 function MiniStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div style={{ padding: "16px 18px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)" }}>
+    <div style={{ padding: "16px 18px", borderRadius:"var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <span style={{ color: "var(--text-tertiary)" }}>{icon}</span>
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>

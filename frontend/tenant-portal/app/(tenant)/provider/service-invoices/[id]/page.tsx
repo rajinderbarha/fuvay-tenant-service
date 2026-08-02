@@ -80,8 +80,8 @@ export default function ServiceInvoiceDetailPage() {
 
         {toast && (
           <div style={{
-            background: "var(--color-success-subtle, #ecfdf5)", color: "var(--color-success, #059669)",
-            border: "1px solid var(--color-success, #059669)", borderRadius: 8,
+            background: "var(--color-success-subtle, #ecfdf5)", color: "var(--color-success, var(--success))",
+            border: "1px solid var(--color-success, var(--success))", borderRadius:"var(--radius-md)",
             padding: "10px 14px", marginBottom: 16,
           }}>
             {toast}
@@ -90,7 +90,7 @@ export default function ServiceInvoiceDetailPage() {
         )}
 
         {detail.loading && <Spinner />}
-        {detail.error && <p style={{ color: "var(--danger, #dc2626)" }}>Could not load invoice.</p>}
+        {detail.error && <p style={{ color: "var(--danger, var(--danger))" }}>Could not load invoice.</p>}
 
         {inv && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

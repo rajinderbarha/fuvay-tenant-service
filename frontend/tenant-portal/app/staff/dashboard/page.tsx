@@ -91,7 +91,7 @@ function StaffDashboardContent() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {jobs.data!.jobs.map(j => (
-                <div key={j.id} style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>
+                <div key={j.id} style={{ padding: "10px 12px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)" }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{j.job_number || `Job ${j.id.slice(0, 8)}`}</div>
                   <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{[j.city, j.status].filter(Boolean).join(" · ")}</div>
                 </div>

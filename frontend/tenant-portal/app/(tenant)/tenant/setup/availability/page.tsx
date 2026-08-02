@@ -125,7 +125,7 @@ function SectionError({ title, error, requestId, onRetry }: {
   title: string; error: string; requestId?: string | null; onRetry: () => void;
 }) {
   return (
-    <div style={{ padding:"16px 20px", background:"var(--danger-bg)", border:"1px solid var(--danger-border)", borderRadius:12 }}>
+    <div style={{ padding:"16px 20px", background:"var(--danger-bg)", border:"1px solid var(--danger-border)", borderRadius:"var(--radius-lg)" }}>
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12 }}>
         <div>
           <p style={{ fontSize:13, fontWeight:600, color:"var(--danger-text)", margin:"0 0 4px", display:"flex", alignItems:"center", gap:6 }}>
@@ -142,7 +142,7 @@ function SectionError({ title, error, requestId, onRetry }: {
           )}
         </div>
         <button onClick={onRetry}
-          style={{ padding:"6px 12px", fontSize:12, borderRadius:8,
+          style={{ padding:"6px 12px", fontSize:12, borderRadius:"var(--radius-md)",
             border:"1px solid var(--danger-border)", background:"transparent",
             color:"var(--danger-text)", cursor:"pointer", fontFamily:"inherit",
             display:"flex", alignItems:"center", gap:5, flexShrink:0 }}>
@@ -235,7 +235,7 @@ const DAY_BG = [
   "rgba(37,99,235,0.08)","rgba(37,99,235,0.08)","rgba(37,99,235,0.08)","rgba(124,58,237,0.08)",
 ];
 const DAY_FG = [
-  "#7c3aed","#2563eb","#2563eb","#2563eb","#2563eb","#2563eb","#7c3aed",
+  "var(--accent)","var(--brand)","var(--brand)","var(--brand)","var(--brand)","var(--brand)","var(--accent)",
 ];
 
 function WeeklyScheduleView({ rules, onEdit, onAdd, onDelete }: {
@@ -245,7 +245,7 @@ function WeeklyScheduleView({ rules, onEdit, onAdd, onDelete }: {
   onDelete: (r: ProviderAvailabilityRule) => void;
 }) {
   return (
-    <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
+    <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow:"hidden" }}>
       {/* Card header */}
       <div style={{ padding:"18px 24px", borderBottom:"1px solid var(--border)" }}>
         <h2 style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:"0 0 3px" }}>
@@ -364,7 +364,7 @@ function SlotPreviewPanel({ rules }: { rules: ProviderAvailabilityRule[] }) {
   }
 
   return (
-    <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:16, overflow:"hidden" }}>
+    <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-xl, 1rem)", overflow:"hidden" }}>
       <div style={{ padding:"18px 24px 0", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         <div>
           <h2 style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)", margin:"0 0 2px",
@@ -429,7 +429,7 @@ function SlotPreviewPanel({ rules }: { rules: ProviderAvailabilityRule[] }) {
         </div>
       ) : (
         <div>
-          <div style={{ marginBottom:10, padding:"8px 12px", borderRadius:8,
+          <div style={{ marginBottom:10, padding:"8px 12px", borderRadius:"var(--radius-md)",
             background:"var(--success-bg)", border:"1px solid var(--success-border)",
             fontSize:12, color:"var(--success-text)", display:"flex", gap:6 }}>
             <CheckCircle2 size={13} style={{ flexShrink:0, marginTop:1 }}/>
@@ -439,7 +439,7 @@ function SlotPreviewPanel({ rules }: { rules: ProviderAvailabilityRule[] }) {
             {allSlots.map(slot => (
               <div key={slot} style={{ padding:"8px 0", textAlign:"center",
                 background:"var(--surface-sunken)", border:"1px solid var(--border)",
-                borderRadius:8, fontSize:12, fontFamily:"monospace", fontWeight:600,
+                borderRadius:"var(--radius-md)", fontSize:12, fontFamily:"monospace", fontWeight:600,
                 color:"var(--text-primary)" }}>
                 {fmt12(slot)}
               </div>
@@ -582,7 +582,7 @@ function AvailabilityWizard({ initialDayIdx, existingRule, onClose, onSaved, sta
 
   const inputStyle: React.CSSProperties = {
     width:"100%", padding:"9px 12px", fontSize:13, boxSizing:"border-box",
-    border:"1px solid var(--border)", borderRadius:8,
+    border:"1px solid var(--border)", borderRadius:"var(--radius-md)",
     background:"var(--surface)", color:"var(--text-primary)", outline:"none", fontFamily:"inherit",
   };
 
@@ -618,7 +618,7 @@ function AvailabilityWizard({ initialDayIdx, existingRule, onClose, onSaved, sta
             </p>
           </div>
           <button onClick={onClose}
-            style={{ width:30, height:30, borderRadius:8, border:"1px solid var(--border)",
+            style={{ width:30, height:30, borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
               background:"var(--surface-sunken)", cursor:"pointer",
               display:"flex", alignItems:"center", justifyContent:"center", color:"var(--text-secondary)" }}>
             <X size={14}/>
@@ -724,14 +724,14 @@ function AvailabilityWizard({ initialDayIdx, existingRule, onClose, onSaved, sta
               <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                 {DAY_PRESETS.map(p => (
                   <button key={p.label} onClick={() => f("days", p.days)}
-                    style={{ padding:"6px 14px", fontSize:12, fontWeight:600, borderRadius:8,
+                    style={{ padding:"6px 14px", fontSize:12, fontWeight:600, borderRadius:"var(--radius-md)",
                       border:"1px solid var(--border)", background:"var(--surface-sunken)",
                       color:"var(--text-secondary)", cursor:"pointer", fontFamily:"inherit" }}>
                     {p.label}
                   </button>
                 ))}
                 <button onClick={() => f("days", [])}
-                  style={{ padding:"6px 14px", fontSize:12, fontWeight:600, borderRadius:8,
+                  style={{ padding:"6px 14px", fontSize:12, fontWeight:600, borderRadius:"var(--radius-md)",
                     border:"1px solid var(--border)", background:"var(--surface-sunken)",
                     color:"var(--text-secondary)", cursor:"pointer", fontFamily:"inherit" }}>
                   Clear
@@ -1017,7 +1017,7 @@ function HolidaysPanel({ holidays, onAdd, onDelete }: {
   onDelete: (id: string) => void;
 }) {
   return (
-    <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, padding:"20px 24px" }}>
+    <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", padding:"20px 24px" }}>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
         <div>
           <p style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)", margin:"0 0 2px",
@@ -1029,7 +1029,7 @@ function HolidaysPanel({ holidays, onAdd, onDelete }: {
           </p>
         </div>
         <button onClick={onAdd}
-          style={{ padding:"6px 14px", fontSize:12, fontWeight:600, borderRadius:8,
+          style={{ padding:"6px 14px", fontSize:12, fontWeight:600, borderRadius:"var(--radius-md)",
             border:"1px solid var(--border)", background:"var(--surface-sunken)",
             color:"var(--text-secondary)", cursor:"pointer", fontFamily:"inherit",
             display:"flex", alignItems:"center", gap:5 }}>
@@ -1037,7 +1037,7 @@ function HolidaysPanel({ holidays, onAdd, onDelete }: {
         </button>
       </div>
 
-      <div style={{ marginTop:12, padding:"8px 12px", borderRadius:8,
+      <div style={{ marginTop:12, padding:"8px 12px", borderRadius:"var(--radius-md)",
         background:"var(--warning-bg)", border:"1px solid var(--warning-border)",
         fontSize:11, color:"var(--warning-text)", marginBottom:12 }}>
         Holiday persistence is local only — backend endpoint for holiday exceptions is not yet implemented.
@@ -1099,7 +1099,7 @@ function AddHolidayModal({ onClose, onSave }: {
 
   const inputStyle: React.CSSProperties = {
     width:"100%", padding:"9px 12px", fontSize:13, boxSizing:"border-box",
-    border:"1px solid var(--border)", borderRadius:8,
+    border:"1px solid var(--border)", borderRadius:"var(--radius-md)",
     background:"var(--surface)", color:"var(--text-primary)", outline:"none", fontFamily:"inherit",
   };
 
@@ -1111,7 +1111,7 @@ function AddHolidayModal({ onClose, onSave }: {
       </>}>
       {err && (
         <div style={{ padding:"8px 12px", background:"var(--danger-bg)", border:"1px solid var(--danger-border)",
-          borderRadius:8, fontSize:12, color:"var(--danger-text)", marginBottom:12 }}>
+          borderRadius:"var(--radius-md)", fontSize:12, color:"var(--danger-text)", marginBottom:12 }}>
           {err}
         </div>
       )}
@@ -1337,13 +1337,13 @@ export default function BusinessHoursPage() {
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
           <button onClick={() => { setEditRule(null); setWizardDayIdx(null); setWizardOpen(true); }}
-            style={{ padding:"9px 18px", fontSize:13, fontWeight:600, borderRadius:8,
+            style={{ padding:"9px 18px", fontSize:13, fontWeight:600, borderRadius:"var(--radius-md)",
               border:"none", background:"var(--brand)", color:"white",
               cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:6 }}>
             <Plus size={14}/> Add Working Hours
           </button>
           <button onClick={() => setHolidayOpen(true)}
-            style={{ padding:"9px 16px", fontSize:13, fontWeight:500, borderRadius:8,
+            style={{ padding:"9px 16px", fontSize:13, fontWeight:500, borderRadius:"var(--radius-md)",
               border:"1px solid var(--border)", background:"var(--surface)",
               color:"var(--text-primary)", cursor:"pointer", fontFamily:"inherit",
               display:"flex", alignItems:"center", gap:6 }}>
@@ -1361,7 +1361,7 @@ export default function BusinessHoursPage() {
         )}
 
         {/* 4. QUICK PRESETS */}
-        <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
+        <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow:"hidden" }}>
           <div style={{ padding:"16px 20px 12px", borderBottom:"1px solid var(--border)",
             display:"flex", alignItems:"center", gap:8 }}>
             <Clock size={14} style={{ color:"var(--text-secondary)" }}/>
@@ -1393,7 +1393,7 @@ export default function BusinessHoursPage() {
                     opacity: anyBusy && !isThisApplying && !isThisRemoving ? 0.6 : 1,
                     transition:"background 0.15s",
                   }}>
-                  <div style={{ width:36, height:36, borderRadius:8, flexShrink:0,
+                  <div style={{ width:36, height:36, borderRadius:"var(--radius-md)", flexShrink:0,
                     background: active ? "rgba(22,163,74,0.12)" : ICON_BG[idx],
                     border:"1px solid var(--border)",
                     display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>
@@ -1420,7 +1420,7 @@ export default function BusinessHoursPage() {
 
         {/* 5. WEEKLY SCHEDULE */}
         {rulesApi.loading ? (
-          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, padding:"20px" }}>
+          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", padding:"20px" }}>
             {[...Array(7)].map((_,i) => (
               <div key={i} style={{ marginBottom:8 }}><DsSkeleton height={52} radius="8px"/></div>
             ))}
@@ -1436,7 +1436,7 @@ export default function BusinessHoursPage() {
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
 
           {/* 7. ALL WORKING HOUR RULES */}
-          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
+          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow:"hidden" }}>
             <div style={{ padding:"16px 20px", borderBottom:"1px solid var(--border)",
               display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
               <div>
@@ -1477,7 +1477,7 @@ export default function BusinessHoursPage() {
                   Add working hours to create rules for your services.
                 </p>
                 <button onClick={() => { setEditRule(null); setWizardDayIdx(null); setWizardOpen(true); }}
-                  style={{ padding:"7px 16px", fontSize:12, fontWeight:600, borderRadius:8,
+                  style={{ padding:"7px 16px", fontSize:12, fontWeight:600, borderRadius:"var(--radius-md)",
                     border:"none", background:"var(--brand)", color:"white", cursor:"pointer", fontFamily:"inherit" }}>
                   Add Working Hours
                 </button>
@@ -1551,7 +1551,7 @@ export default function BusinessHoursPage() {
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
 
           {/* 9. AVAILABILITY CHECKS */}
-          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, padding:"20px 24px" }}>
+          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", padding:"20px 24px" }}>
             <p style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)", margin:"0 0 4px",
               display:"flex", alignItems:"center", gap:8 }}>
               <Shield size={15}/> Availability Checks
@@ -1607,7 +1607,7 @@ export default function BusinessHoursPage() {
           </div>
 
           {/* 10. RECENT ACTIVITY */}
-          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, padding:"20px 24px" }}>
+          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", padding:"20px 24px" }}>
             <p style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)", margin:"0 0 4px",
               display:"flex", alignItems:"center", gap:8 }}>
               <Activity size={15}/> Recent Activity
@@ -1735,7 +1735,7 @@ export default function BusinessHoursPage() {
               <button onClick={() => removePreset(removePresetConfirm)}
                 disabled={removingPresetKey !== null}
                 style={{ padding:"9px 16px", fontSize:13, fontWeight:600, borderRadius:9,
-                  border:"none", background:"#dc2626", color:"white", fontFamily:"inherit",
+                  border:"none", background:"var(--danger)", color:"white", fontFamily:"inherit",
                   cursor: removingPresetKey ? "not-allowed" : "pointer",
                   opacity: removingPresetKey ? 0.7 : 1,
                   display:"flex", alignItems:"center", gap:5 }}>

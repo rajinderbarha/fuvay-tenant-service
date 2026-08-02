@@ -73,7 +73,7 @@ export default function StaffDetailPage() {
       render: (_: unknown, row: JobRow) => (
         <span style={{ fontSize: 13 }}>
           {row.customer_rating != null
-            ? <><span style={{ color: "#f59e0b" }}>★</span> {row.customer_rating}</>
+            ? <><span style={{ color: "var(--warning)" }}>★</span> {row.customer_rating}</>
             : <span style={{ color: "var(--muted-text)" }}>—</span>}
         </span>
       ),
@@ -132,7 +132,7 @@ export default function StaffDetailPage() {
               { label: "Reviews", value: staff.total_reviews },
             ].map(({ label, value }) => (
               <div key={label} style={{
-                background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 8,
+                background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
                 padding: "12px 16px", flex: 1, minWidth: 90,
               }}>
                 <div style={{ fontSize: 11, color: "var(--muted-text)", marginBottom: 4 }}>{label}</div>

@@ -8,11 +8,11 @@ import {
 } from "@serviceos/design-system";
 import {
   profileApi, businessProfileApi, tenantSetupApi, providerStatusApi, myStatusApi, authApi,
-  mediaAssetApi,
+  mediaAssetApi, providerOfferingsApi,
   type UserProfile, type BusinessProfile, type MediaAsset,
 } from "../../../lib/api";
 import { ServiceOSError, trustBadgesApi } from "../../../lib/api";
-import { TrustBadgeChip, TrustBadges } from "../../../components/TrustBadges";
+import { TrustBadgeChip } from "../../../components/TrustBadges";
 import type { EarnedBadge } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { useSetupStatus } from "../../../hooks/useSetupStatus";
@@ -101,7 +101,7 @@ function StatusBadge({ raw }: { raw: unknown }) {
 function SectionError({ title, error, requestId, onRetry }: { title:string; error:string; requestId?:string|null; onRetry:()=>void }) {
   return (
     <div style={{ padding:"16px 20px",background:"var(--danger-bg)",border:"1px solid var(--danger-border)",
-      borderRadius:12,marginBottom:0 }}>
+      borderRadius:"var(--radius-lg)",marginBottom:0 }}>
       <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12 }}>
         <div>
           <p style={{ fontSize:13,fontWeight:600,color:"var(--danger-text)",margin:"0 0 4px",display:"flex",alignItems:"center",gap:6 }}>
@@ -115,7 +115,7 @@ function SectionError({ title, error, requestId, onRetry }: { title:string; erro
             </button>
           )}
         </div>
-        <button onClick={onRetry} style={{ padding:"6px 12px",fontSize:12,borderRadius:8,
+        <button onClick={onRetry} style={{ padding:"6px 12px",fontSize:12,borderRadius:"var(--radius-md)",
           border:"1px solid var(--danger-border)",background:"transparent",
           color:"var(--danger-text)",cursor:"pointer",fontFamily:"inherit",
           display:"flex",alignItems:"center",gap:5,flexShrink:0 }}>
@@ -128,7 +128,7 @@ function SectionError({ title, error, requestId, onRetry }: { title:string; erro
 
 function SkeletonCard({ rows=3 }: { rows?: number }) {
   return (
-    <div style={{ background:"var(--surface)",border:"1px solid var(--border)",borderRadius:12,padding:24 }}>
+    <div style={{ background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--radius-lg)",padding:24 }}>
       <div style={{ height:18,width:"40%",background:"var(--surface-sunken)",borderRadius:6,marginBottom:18 }}/>
       {[...Array(rows)].map((_,i) => (
         <div key={i} style={{ marginBottom:12 }}><DsSkeleton height={40} radius="8px"/></div>
@@ -177,7 +177,7 @@ function Select({ value, onChange, options }: {
 }) {
   return (
     <select value={value} onChange={e=>onChange(e.target.value)}
-      style={{ width:"100%",padding:"9px 12px",fontSize:13,borderRadius:8,
+      style={{ width:"100%",padding:"9px 12px",fontSize:13,borderRadius:"var(--radius-md)",
         border:"1px solid var(--border)",background:"var(--surface)",
         color:"var(--text-primary)",outline:"none",boxSizing:"border-box" }}>
       {options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
@@ -217,16 +217,16 @@ function computeCompletion(me: UserProfile|null, biz: BusinessProfile|null) {
 // ── Completion ring (SVG) ───────────────────────────────────────────────────
 function CompletionRing({ pct }: { pct: number }) {
   const r = 34, c = 2 * Math.PI * r;
-  const color = pct === 100 ? "#22c55e" : pct >= 70 ? "#3b82f6" : pct >= 40 ? "#f59e0b" : "#ef4444";
+  const color = pct === 100 ? "var(--success)" : pct >= 70 ? "var(--brand)" : pct >= 40 ? "var(--warning)" : "#ef4444";
   return (
     <div style={{ position:"relative", width:88, height:88, flexShrink:0 }}>
       <svg width="88" height="88" viewBox="0 0 88 88" style={{ transform:"rotate(-90deg)" }}>
-        <circle cx="44" cy="44" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="7"/>
+        <circle cx="44" cy="44" r={r} fill="none" stroke="var(--border)" strokeWidth="7"/>
         <circle cx="44" cy="44" r={r} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
           strokeDasharray={c} strokeDashoffset={c - (pct/100)*c} style={{ transition:"stroke-dashoffset 0.6s ease" }}/>
       </svg>
       <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
-        <span style={{ fontSize:20, fontWeight:800, color:"white", lineHeight:1 }}>{pct}%</span>
+        <span style={{ fontSize:20, fontWeight:800, color:"var(--text-primary)", lineHeight:1 }}>{pct}%</span>
       </div>
     </div>
   );
@@ -250,6 +250,7 @@ export default function ProviderProfilePage() {
   const teamApi = useApi(useCallback(()=>myStatusApi.getTeamMembers(),[]), []);
   const areasApi = useApi(useCallback(()=>myStatusApi.getServiceAreas(),[]), []);
   const availabilityApi = useApi(useCallback(()=>myStatusApi.getAvailability(),[]), []);
+  const offeringsApi = useApi(useCallback(()=>providerOfferingsApi.listEnabled(),[]), []);
   const selfApi = useApi(useCallback(()=>authApi.me(),[]), []);
   const badgesApi = useApi(useCallback(()=>trustBadgesApi.myBadges(),[]), []);
 
@@ -526,7 +527,7 @@ export default function ProviderProfilePage() {
       </div>
 
       {submitBlockedItems && submitBlockedItems.length > 0 && (
-        <div style={{ marginBottom:16,padding:"14px 18px",borderRadius:12,background:"var(--warning-bg)",
+        <div style={{ marginBottom:16,padding:"14px 18px",borderRadius:"var(--radius-lg)",background:"var(--warning-bg)",
           border:"1px solid var(--warning-border)" }}>
           <p style={{ fontSize:13,fontWeight:700,color:"var(--warning-text)",margin:"0 0 6px" }}>
             You must complete {submitBlockedItems.length} required item{submitBlockedItems.length===1?"":"s"} before submitting.
@@ -564,74 +565,10 @@ export default function ProviderProfilePage() {
             onLogoUploaded={(a)=>{ setLogoPreview(a.preview_url??a.public_url??null); setLogoMediaId(a.id); notify("Business logo updated."); bizApi.refetch(); }}
             onShopUploaded={(a)=>{ setShopPreview(a.preview_url??a.public_url??null); setShopMediaId(a.id); notify("Cover photo updated."); bizApi.refetch(); }}
           />
-          {false && (
-          <div style={{ borderRadius:16, overflow:"hidden", border:"1px solid var(--border)",
-            boxShadow:"0 4px 16px rgba(0,0,0,0.08)" }}>
-            {/* Cover banner */}
-            <div style={{ height:160, position:"relative",
-              background: shopPreview
-                ? `linear-gradient(180deg, rgba(15,23,42,0.15), rgba(15,23,42,0.65)), url(${shopPreview}) center/cover no-repeat`
-                : "linear-gradient(135deg, #1a2744 0%, #243356 40%, #0d1829 100%)" }}>
-            </div>
-            {/* Profile info — dark panel */}
-            <div style={{ background:"#0f1929", padding:"0 28px 24px", color:"white", position:"relative" }}>
-              <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between",
-                flexWrap:"wrap", gap:16, marginTop:-50 }}>
-
-                {/* Left: Logo + name block */}
-                <div style={{ display:"flex", alignItems:"flex-end", gap:20 }}>
-                  {/* Logo card */}
-                  <div style={{ width:100, height:100, borderRadius:16, background:"#1e2d47",
-                    border:"3px solid #0f1929", boxShadow:"0 4px 16px rgba(0,0,0,0.4)",
-                    display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", flexShrink:0 }}>
-                    {logoPreview
-                      ? <img src={logoPreview} alt="logo" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                      : <Building2 size={36} style={{ color:"rgba(255,255,255,0.4)" }}/>}
-                  </div>
-                  {/* Name + meta */}
-                  <div style={{ paddingBottom:6 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
-                      <h2 style={{ fontSize:22, fontWeight:700, margin:0, color:"white" }}>
-                        {safeText(biz?.business_name,"Your Business")}
-                      </h2>
-                      {isApproved && <CheckCircle2 size={18} style={{ color:"#60a5fa" }}/>}
-                    </div>
-                    <div style={{ fontSize:13, color:"rgba(255,255,255,0.65)", marginBottom:10 }}>
-                      Home Services{" "}
-                      <span style={{ margin:"0 6px", opacity:0.5 }}>•</span>
-                      {safeText(biz?.plan_type,"Starter").replace(/_/g," ")} Plan
-                    </div>
-                    {/* Status + meta row */}
-                    <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
-                      <StatusBadge raw={verStatus}/>
-                      <span style={{ fontSize:12, color:"rgba(255,255,255,0.5)", display:"flex", alignItems:"center", gap:5 }}>
-                        <Clock size={11}/> Last Updated: {safeDate((biz as unknown as Record<string,unknown>)?.updated_at ?? biz?.created_at)}
-                      </span>
-                      {biz?.slug && (
-                        <span style={{ fontSize:12, color:"rgba(255,255,255,0.5)", display:"flex", alignItems:"center", gap:5 }}>
-                          <Tag size={11}/> Slug: {biz.slug}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right: Completion ring */}
-                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6, paddingBottom:4 }}>
-                  <CompletionRing pct={pct}/>
-                  <div style={{ textAlign:"center" }}>
-                    <p style={{ fontSize:12, fontWeight:700, color:"white", margin:"0 0 1px" }}>Profile Completion</p>
-                    <p style={{ fontSize:11, color:"rgba(255,255,255,0.55)", margin:0 }}>{done} of {total} completed</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          )}
 
           {/* 4. COMPLETE YOUR PROFILE */}
           {missing.length > 0 && (
-            <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12 }}>
+            <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)" }}>
               <div style={{ padding:"16px 24px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                 <div>
                   <p style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)", margin:"0 0 2px" }}>
@@ -653,7 +590,7 @@ export default function ProviderProfilePage() {
                     borderRight: idx < Math.min(missing.slice(0,4).length,4)-1 ? "1px solid var(--border)" : "none",
                     display:"flex", alignItems:"center", gap:12 }}>
                     <div style={{ width:36, height:36, borderRadius:10, background:"rgba(245,158,11,0.12)",
-                      display:"flex", alignItems:"center", justifyContent:"center", color:"#f59e0b", flexShrink:0 }}>
+                      display:"flex", alignItems:"center", justifyContent:"center", color:"var(--warning)", flexShrink:0 }}>
                       {m.icon}
                     </div>
                     <div style={{ flex:1, minWidth:0 }}>
@@ -673,7 +610,7 @@ export default function ProviderProfilePage() {
           )}
           {missing.length === 0 && !statusApi.loading && (
             <div style={{ padding:"14px 20px", display:"flex", alignItems:"center", gap:12,
-              background:"var(--success-bg)", border:"1px solid var(--success-border)", borderRadius:12 }}>
+              background:"var(--success-bg)", border:"1px solid var(--success-border)", borderRadius:"var(--radius-lg)" }}>
               <CheckCircle2 size={18} style={{ color:"var(--success-text)", flexShrink:0 }}/>
               <div>
                 <p style={{ fontSize:13, fontWeight:600, color:"var(--success-text)", margin:0 }}>Your profile is complete</p>
@@ -688,7 +625,7 @@ export default function ProviderProfilePage() {
               shared useSetupStatus hook) and can also reopen the full
               SetupWizardDrawer. Stays visible even after setup is complete
               so users always have somewhere to reach these pages. */}
-          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, padding:"16px 24px" }}>
+          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", padding:"16px 24px" }}>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:8 }}>
               <div>
                 <p className="section-title" style={{ margin:"0 0 2px" }}><Package size={15}/> Business Setup</p>
@@ -739,7 +676,7 @@ export default function ProviderProfilePage() {
                     <p style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:0 }}>Business Information</p>
                     {canUpdate && (
                       <button onClick={()=>setEditOpen(true)}
-                        style={{ padding:"6px 14px", fontSize:13, fontWeight:500, borderRadius:8,
+                        style={{ padding:"6px 14px", fontSize:13, fontWeight:500, borderRadius:"var(--radius-md)",
                           border:"1px solid var(--border)", background:"var(--surface-sunken)",
                           color:"var(--text-primary)", cursor:"pointer", fontFamily:"inherit",
                           display:"flex", alignItems:"center", gap:6 }}>
@@ -796,8 +733,8 @@ export default function ProviderProfilePage() {
                           {node}
                         </div>
                       ))}
-                      <div style={{ marginTop:14, padding:"12px 16px", borderRadius:9, background:"#eff6ff",
-                        border:"1px solid #bfdbfe", fontSize:12, color:"#1d4ed8", display:"flex", gap:8 }}>
+                      <div style={{ marginTop:14, padding:"12px 16px", borderRadius:9, background:"var(--info-bg)",
+                        border:"1px solid var(--info-border)", fontSize:12, color:"var(--info-text)", display:"flex", gap:8 }}>
                         <Info size={13} style={{ flexShrink:0, marginTop:1 }}/>
                         Update your business information and keep your profile up to date to attract more customers.
                       </div>
@@ -816,18 +753,10 @@ export default function ProviderProfilePage() {
                       <SummaryRow icon={<Users2 size={14}/>} label="Team Members" value={String(activeTeam.length || safeNum((stat as unknown as Record<string,unknown>)?.team_count))}/>
                       <SummaryRow icon={<Zap size={14}/>} label="Total Services" value={(stat as unknown as Record<string,unknown>)?.total_services != null ? String(safeNum((stat as unknown as Record<string,unknown>)?.total_services)) : "—"}/>
                       <SummaryRow icon={<Activity size={14}/>} label="Total Bookings" value={(stat as unknown as Record<string,unknown>)?.total_bookings != null ? String(safeNum((stat as unknown as Record<string,unknown>)?.total_bookings)) : "—"}/>
-                      <SummaryRow icon={<Star size={14} style={{ color:"#f59e0b" }}/>} label="Average Rating"
+                      <SummaryRow icon={<Star size={14} style={{ color:"var(--warning)" }}/>} label="Average Rating"
                         value={(stat as unknown as Record<string,unknown>)?.average_rating ? String((stat as unknown as Record<string,unknown>)?.average_rating) : "—"}
                         star={(stat as unknown as Record<string,unknown>)?.average_rating != null}/>
                     </div>
-                  </div>
-
-                  {/* Trust Badges — earned automatically, shown to customers on your public profile */}
-                  <div className="card">
-                    <p className="section-title"><Shield size={15}/> Trust Badges</p>
-                    <p className="section-sub">Earned automatically — shown to customers on your profile.</p>
-                    <TrustBadges badges={badgesApi.data ?? []}
-                      empty="No badges earned yet. Keep your ratings high and jobs completed to earn them."/>
                   </div>
 
                   {/* Next Steps */}
@@ -928,8 +857,8 @@ export default function ProviderProfilePage() {
 
             {tab === "address" && (
               <div className="card" id="address">
-                <p className="section-title"><MapPin size={15}/> Business Address &amp; Service Areas</p>
-                <p className="section-sub">Your registered address and configured service areas.</p>
+                <p className="section-title"><MapPin size={15}/> Business Address, Services &amp; Availability</p>
+                <p className="section-sub">Your registered address, service areas, business hours, and services offered — all in one place.</p>
                 {bizApi.error ? (
                   <SectionError title="Could not load address" error={bizApi.error} requestId={bizApi.requestId} onRetry={bizApi.refetch}/>
                 ) : bizApi.loading ? <SkeletonCard rows={3}/> : (
@@ -1018,6 +947,40 @@ export default function ProviderProfilePage() {
                         textDecoration:"none", display:"inline-flex", alignItems:"center", gap:5 }}>
                         <Clock size={12}/> Manage Business Hours
                       </Link>
+                    </div>
+
+                    <div style={{ paddingTop:16, borderTop:"1px solid var(--border)", marginTop:16 }}>
+                      <p style={{ fontSize:12, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em",
+                        color:"var(--text-tertiary)", margin:"0 0 12px" }}>Services You Provide</p>
+                      {offeringsApi.error ? (
+                        <SectionError title="Could not load services" error={offeringsApi.error} requestId={offeringsApi.requestId} onRetry={offeringsApi.refetch}/>
+                      ) : offeringsApi.loading ? <SkeletonCard rows={2}/> : (offeringsApi.data?.offerings?.length ?? 0) === 0 ? (
+                        <p style={{ fontSize:13, color:"var(--text-secondary)" }}>No services enabled yet.</p>
+                      ) : (
+                        <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:14 }}>
+                          {(offeringsApi.data?.offerings ?? []).map((o) => (
+                            <a key={o.provider_enabled_offering_id} href="/provider/offerings" style={{ display:"flex", justifyContent:"space-between",
+                              alignItems:"center", padding:"10px 14px", background:"var(--surface-sunken)", borderRadius:9,
+                              border:"1px solid var(--border)", textDecoration:"none" }}>
+                              <div>
+                                <span style={{ fontSize:13, fontWeight:600, color:"var(--text-primary)" }}>{o.provider_display_name || o.offering_name}</span>
+                                {o.offering_type && <span style={{ fontSize:11, color:"var(--text-tertiary)", marginLeft:8 }}>{o.offering_type}</span>}
+                              </div>
+                              <span style={{ fontSize:10, fontWeight:700, textTransform:"uppercase",
+                                color: o.status === "active" ? "var(--success)" : o.status === "draft" ? "var(--text-tertiary)" : "var(--warning)" }}>
+                                {o.status}
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      <p style={{ fontSize:12, color:"var(--text-tertiary)", margin:"0 0 12px" }}>
+                        {offeringsApi.data?.offerings?.filter(o=>o.status==="active").length ?? 0} active service(s) — bookability requires at least one.
+                      </p>
+                      <a href="/provider/offerings" style={{ fontSize:12, fontWeight:700, color:"var(--brand)",
+                        textDecoration:"none", display:"inline-flex", alignItems:"center", gap:5 }}>
+                        <Tag size={12}/> Add or Edit Services
+                      </a>
                     </div>
                   </>
                 )}
@@ -1205,10 +1168,10 @@ export default function ProviderProfilePage() {
 
       {/* Preview Public Profile Modal — customer-safe fields only */}
       <Modal open={previewOpen} onClose={()=>setPreviewOpen(false)} title="Public Profile Preview">
-        <div style={{ borderRadius:12, overflow:"hidden", border:"1px solid var(--border)" }}>
+        <div style={{ borderRadius:"var(--radius-lg)", overflow:"hidden", border:"1px solid var(--border)" }}>
           <div style={{ height:100, background: shopPreview
-            ? `linear-gradient(180deg, rgba(15,23,42,0.1), rgba(15,23,42,0.5)), url(${shopPreview}) center/cover no-repeat`
-            : "linear-gradient(135deg, #1e293b, #334155)" }}/>
+            ? `linear-gradient(180deg, rgba(34,29,20,0.1), rgba(34,29,20,0.5)), url(${shopPreview}) center/cover no-repeat`
+            : "var(--primary-gradient)" }}/>
           <div style={{ padding:20, background:"var(--surface)" }}>
             <div style={{ display:"flex", alignItems:"center", gap:12, marginTop:-44, marginBottom:10 }}>
               <div style={{ width:64,height:64,borderRadius:14,background:"var(--surface)",border:"3px solid var(--surface)",
@@ -1218,7 +1181,7 @@ export default function ProviderProfilePage() {
             </div>
             <h3 style={{ fontSize:16, fontWeight:800, margin:"0 0 2px" }}>{safeText(bizName,"Your Business")}</h3>
             <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
-              <Star size={12} style={{ color:"#f59e0b" }}/>
+              <Star size={12} style={{ color:"var(--warning)" }}/>
               <span style={{ fontSize:12, color:"var(--text-secondary)" }}>New — no ratings yet</span>
               {isApproved && <span style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:999,
                 background:"var(--success-bg)", color:"var(--success-text)" }}>Verified</span>}
@@ -1276,7 +1239,7 @@ function SummaryRow({ icon, label, value, hint, badge, star }: {
         {badge ?? (
           <span style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)",
             display:"flex", alignItems:"center", gap:4 }} title={hint}>
-            {star && <Star size={12} style={{ color:"#f59e0b", fill:"#f59e0b" }}/>}
+            {star && <Star size={12} style={{ color:"var(--warning)", fill:"var(--warning)" }}/>}
             {value}
           </span>
         )}
@@ -1352,14 +1315,14 @@ function HeroCard({ shopPreview, logoPreview, biz, verStatus, isApproved, pct, d
   }
 
   return (
-    <div style={{ borderRadius:16, overflow:"hidden", border:"1px solid var(--border)", boxShadow:"0 4px 16px rgba(0,0,0,0.08)" }}>
+    <div style={{ borderRadius:"var(--radius-xl, 1rem)", overflow:"hidden", border:"1px solid var(--border)", boxShadow:"0 4px 16px rgba(0,0,0,0.08)" }}>
       {/* Cover banner — click to change */}
       <div
         onClick={()=>{ if (!shopUploading) shopRef.current?.click(); }}
         style={{ height:160, position:"relative", cursor:"pointer",
           background: shopPreview
-            ? `linear-gradient(180deg, rgba(15,23,42,0.15), rgba(15,23,42,0.65)), url(${shopPreview}) center/cover no-repeat`
-            : "linear-gradient(135deg, #1a2744 0%, #243356 40%, #0d1829 100%)" }}>
+            ? `linear-gradient(180deg, rgba(34,29,20,0.15), rgba(34,29,20,0.65)), url(${shopPreview}) center/cover no-repeat`
+            : "linear-gradient(135deg, var(--surface-sunken) 0%, var(--border) 100%)" }}>
         {/* Hover overlay */}
         <div className="cover-overlay" style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",
           alignItems:"center",justifyContent:"center",gap:6,
@@ -1374,8 +1337,8 @@ function HeroCard({ shopPreview, logoPreview, biz, verStatus, isApproved, pct, d
           onChange={e=>{ const f=e.target.files?.[0]; if(f) uploadShop(f); e.target.value=""; }}/>
       </div>
 
-      {/* Dark panel */}
-      <div style={{ background:"#0f1929", padding:"0 28px 24px", color:"white", position:"relative" }}>
+      {/* Identity panel */}
+      <div style={{ background:"var(--surface-elevated)", padding:"0 28px 24px", color:"var(--text-primary)", position:"relative" }}>
         <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", flexWrap:"wrap", gap:16, marginTop:-50 }}>
 
           {/* Left: Logo + name */}
@@ -1384,13 +1347,13 @@ function HeroCard({ shopPreview, logoPreview, biz, verStatus, isApproved, pct, d
             <div
               onClick={()=>{ if (!logoUploading) logoRef.current?.click(); }}
               className="logo-upload-card"
-              style={{ width:100, height:100, borderRadius:16, background:"#1e2d47",
-                border:"3px solid #0f1929", boxShadow:"0 4px 16px rgba(0,0,0,0.4)",
+              style={{ width:100, height:100, borderRadius:"var(--radius-xl, 1rem)", background:"var(--surface-sunken)",
+                border:"3px solid var(--surface-elevated)", boxShadow:"var(--shadow-lg)",
                 display:"flex", alignItems:"center", justifyContent:"center",
                 overflow:"hidden", flexShrink:0, cursor:"pointer", position:"relative" }}>
               {logoPreview
                 ? <img src={logoPreview} alt="logo" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                : <Building2 size={36} style={{ color:"rgba(255,255,255,0.4)" }}/>}
+                : <Building2 size={36} style={{ color:"var(--text-tertiary)" }}/>}
               {/* Logo hover overlay */}
               <div className="logo-overlay" style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",
                 alignItems:"center",justifyContent:"center",gap:4,
@@ -1404,25 +1367,25 @@ function HeroCard({ shopPreview, logoPreview, biz, verStatus, isApproved, pct, d
             </div>
             {/* Name + meta */}
             <div style={{ paddingBottom:6 }}>
-              {logoErr && <p style={{ fontSize:11,color:"#fca5a5",margin:"0 0 4px" }}>{logoErr}</p>}
+              {logoErr && <p style={{ fontSize:11,color:"var(--danger)",margin:"0 0 4px" }}>{logoErr}</p>}
               <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
-                <h2 style={{ fontSize:22, fontWeight:700, margin:0, color:"white" }}>
+                <h2 style={{ fontSize:22, fontWeight:700, margin:0, color:"var(--text-primary)" }}>
                   {safeText(biz?.business_name,"Your Business")}
                 </h2>
-                {isApproved && <CheckCircle2 size={18} style={{ color:"#60a5fa" }}/>}
+                {isApproved && <CheckCircle2 size={18} style={{ color:"var(--success)" }}/>}
                 {primaryBadge && <TrustBadgeChip badge={primaryBadge} size={14}/>}
               </div>
-              <div style={{ fontSize:13, color:"rgba(255,255,255,0.65)", marginBottom:10 }}>
+              <div style={{ fontSize:13, color:"var(--text-secondary)", marginBottom:10 }}>
                 Home Services{" "}<span style={{ margin:"0 6px", opacity:0.5 }}>•</span>
                 {safeText(biz?.plan_type,"Starter").replace(/_/g," ")} Plan
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
                 <StatusBadge raw={verStatus}/>
-                <span style={{ fontSize:12, color:"rgba(255,255,255,0.5)", display:"flex", alignItems:"center", gap:5 }}>
+                <span style={{ fontSize:12, color:"var(--text-tertiary)", display:"flex", alignItems:"center", gap:5 }}>
                   <Clock size={11}/> Last Updated: {safeDate((biz as unknown as Record<string,unknown>)?.updated_at ?? biz?.created_at)}
                 </span>
                 {biz?.slug && (
-                  <span style={{ fontSize:12, color:"rgba(255,255,255,0.5)", display:"flex", alignItems:"center", gap:5 }}>
+                  <span style={{ fontSize:12, color:"var(--text-tertiary)", display:"flex", alignItems:"center", gap:5 }}>
                     <Tag size={11}/> Slug: {biz.slug}
                   </span>
                 )}
@@ -1434,8 +1397,8 @@ function HeroCard({ shopPreview, logoPreview, biz, verStatus, isApproved, pct, d
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6, paddingBottom:4 }}>
             <CompletionRing pct={pct}/>
             <div style={{ textAlign:"center" }}>
-              <p style={{ fontSize:12, fontWeight:700, color:"white", margin:"0 0 1px" }}>Profile Completion</p>
-              <p style={{ fontSize:11, color:"rgba(255,255,255,0.55)", margin:0 }}>{done} of {total} completed</p>
+              <p style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", margin:"0 0 1px" }}>Profile Completion</p>
+              <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:0 }}>{done} of {total} completed</p>
             </div>
           </div>
         </div>
@@ -1455,7 +1418,7 @@ function MediaCard({ title, desc, preview, spec, uploadSlot }: {
 }) {
   return (
     <div style={{ background:"var(--surface-sunken)",border:"1px solid var(--border)",
-      borderRadius:12,padding:20,display:"flex",flexDirection:"column",gap:14 }}>
+      borderRadius:"var(--radius-lg)",padding:20,display:"flex",flexDirection:"column",gap:14 }}>
       <div>
         <p style={{ fontSize:13,fontWeight:600,color:"var(--text-primary)",margin:"0 0 3px" }}>{title}</p>
         <p style={{ fontSize:11,color:"var(--text-secondary)",margin:0,lineHeight:1.5 }}>{desc}</p>

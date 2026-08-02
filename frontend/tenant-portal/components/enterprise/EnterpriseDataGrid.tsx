@@ -58,7 +58,7 @@ interface Props {
 
 const STATUS_STYLE: Record<string, React.CSSProperties> = {
   open:        { background: "#fef9c3", color: "#854d0e" },
-  pending:     { background: "#dbeafe", color: "#1e40af" },
+  pending:         { background: "#EDE9E3", color: "#6B5B4D" },
   active:      { background: "#dcfce7", color: "#166534" },
   approved:    { background: "#dcfce7", color: "#166534" },
   completed:   { background: "#bbf7d0", color: "#14532d" },
@@ -70,7 +70,7 @@ const STATUS_STYLE: Record<string, React.CSSProperties> = {
   cancelled:   { background: "#f3f4f6", color: "#6b7280" },
   processing:  { background: "#f3e8ff", color: "#6b21a8" },
   escalated:   { background: "#ffedd5", color: "#9a3412" },
-  refunded:    { background: "#e0f2fe", color: "#0369a1" },
+  refunded:        { background: "#CCFBF1", color: "#0F766E" },
   disputed:    { background: "#fef3c7", color: "#92400e" },
 };
 

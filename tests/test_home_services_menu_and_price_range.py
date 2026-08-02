@@ -20,7 +20,6 @@ TENANT_FRONTEND = ROOT / "frontend/tenant-portal"
 LAYOUT = (FRONTEND / "components/layout/AdminLayout.tsx").read_text(encoding="utf-8-sig")
 OLD_PRICING_RULES_PAGE = (FRONTEND / "app/admin/pricing-rules/page.tsx").read_text(encoding="utf-8-sig")
 HS_PRICING_RULES_PAGE = (FRONTEND / "app/admin/home-services/pricing-rules/page.tsx").read_text(encoding="utf-8-sig")
-HS_SERVICE_AREAS_PAGE = (FRONTEND / "app/admin/home-services/service-areas/page.tsx").read_text(encoding="utf-8-sig")
 HS_DEDUCTION_PAGE = (FRONTEND / "app/admin/home-services/completed-job-deduction/page.tsx").read_text(encoding="utf-8-sig")
 HS_SETTINGS_PAGE = (FRONTEND / "app/admin/home-services/settings/page.tsx").read_text(encoding="utf-8-sig")
 TENANT_WIZARD_PAGE = (TENANT_FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx").read_text(encoding="utf-8-sig")
@@ -31,9 +30,13 @@ BARGAIN_ENGINE = (ROOT / "app/engines/admin_catalog/bargain_engine.py").read_tex
 # ── PART A: Menu organization ─────────────────────────────────────────────────
 
 def test_home_services_nav_group_has_all_required_items():
+    # "Service Areas / Zones" retired alongside Pricing Tiers / City-Zip
+    # Mapping -- replaced by Service Area Requests (see
+    # test_admin_a2_dashboard_system_overview.py for its quick-link check).
+    # "Pricing Rules" also retired (admin no longer sets price boundaries).
     hs_block = LAYOUT.split('label: "Home Services"')[1].split("},\n  {")[0]
-    for item in ["Overview", "Service Catalog", "Pricing Rules", "Customer Price Experience",
-                 "Provider Matching", "Matching Diagnostics", "Service Areas / Zones",
+    for item in ["Overview", "Service Catalog", "Customer Price Experience",
+                 "Provider Matching", "Matching Diagnostics",
                  "Completed Job Deduction", "Home Services Settings"]:
         assert item in hs_block, f"missing Home Services nav item: {item}"
 
@@ -48,31 +51,50 @@ def test_pricing_rules_removed_from_common_pricing_group():
     assert 'id: "provider-overrides"' in common_block
 
 
-def test_home_services_pricing_rules_route_registered():
-    assert 'id: "hs-pricing-rules"' in LAYOUT
-    assert '"/admin/home-services/pricing-rules"' in LAYOUT
+def test_home_services_pricing_rules_route_retired_from_nav():
+    # Retired: admin no longer sets price boundaries. Page kept as a
+    # retired-feature notice (see test_hs_pricing_rules_page_is_retired_notice)
+    # but no longer linked from the sidebar.
+    assert 'id: "hs-pricing-rules"' not in LAYOUT
+    assert '"/admin/home-services/pricing-rules"' not in LAYOUT
 
 
 def test_no_home_services_item_duplicated_in_another_group():
     hs_block = LAYOUT.split('label: "Home Services"')[1].split("},\n  {")[0]
     non_hs = LAYOUT.replace(hs_block, "")
-    for href in ["/admin/home-services/pricing-rules", "/admin/home-services/service-catalog",
+    for href in ["/admin/home-services/service-catalog",
                  "/admin/home-services/price-experience", "/admin/home-services/provider-matching",
-                 "/admin/home-services/matching-diagnostics", "/admin/home-services/service-areas",
+                 "/admin/home-services/matching-diagnostics",
                  "/admin/home-services/completed-job-deduction", "/admin/home-services/settings"]:
         assert href not in non_hs, f"{href} duplicated outside Home Services group"
 
 
 def test_new_pages_exist():
-    assert (FRONTEND / "app/admin/home-services/pricing-rules/page.tsx").exists()
-    assert (FRONTEND / "app/admin/home-services/service-areas/page.tsx").exists()
     assert (FRONTEND / "app/admin/home-services/completed-job-deduction/page.tsx").exists()
+    # Retired-notice stub, not deleted (matches Pricing Tiers/City-Zip Mapping
+    # precedent) so a bookmarked/typed URL gets a clear notice, not a 404.
+    assert (FRONTEND / "app/admin/home-services/pricing-rules/page.tsx").exists()
     assert (FRONTEND / "app/admin/home-services/settings/page.tsx").exists()
 
 
+def test_service_areas_page_retired_and_replaced():
+    """The Tier/City-Zip "Service Areas / Zones" page was deleted (it only
+    read a table the backend rejects all writes to). Its real replacement,
+    Service Area Requests (tenant-submitted city/zipcode coverage requests,
+    admin approves/rejects, no pricing shown), lives at the top level, not
+    under /admin/home-services/ -- it is a cross-vertical serviceability
+    workflow, not Home-Services-specific."""
+    assert not (FRONTEND / "app/admin/home-services/service-areas/page.tsx").exists()
+    assert (FRONTEND / "app/admin/service-area-requests/page.tsx").exists()
+    assert '"/admin/home-services/service-areas"' not in LAYOUT
+
+
 def test_old_route_shows_deprecation_and_links_forward():
+    # The vertical-scoped Home Services Pricing Rules screen this used to
+    # link to is now itself retired (admin no longer sets price boundaries)
+    # -- the deprecated global screen now points at the Catalog Workspace.
     assert "[Deprecated]" in OLD_PRICING_RULES_PAGE
-    assert "/admin/home-services/pricing-rules" in OLD_PRICING_RULES_PAGE
+    assert "/admin/catalog-workspace" in OLD_PRICING_RULES_PAGE
     assert "deprecated" in OLD_PRICING_RULES_PAGE.lower()
 
 
@@ -83,49 +105,23 @@ def test_old_route_still_functions_backward_compatible():
     assert "listPricingRules" in OLD_PRICING_RULES_PAGE or "DataTable" in OLD_PRICING_RULES_PAGE
 
 
-# ── Home Services Pricing Rules page ──────────────────────────────────────────
+# ── Home Services Pricing Rules page -- retired (admin no longer sets
+#    price boundaries; providers set their own price). Converted to a
+#    retired-notice stub matching Pricing Tiers / City-Zip Mapping. ─────────
 
-def test_hs_pricing_rules_title_and_subtitle():
-    assert "Home Services Pricing Rules" in HS_PRICING_RULES_PAGE
-    assert "Set platform-controlled price boundaries by service, type, brand, and tier. Providers can only set prices inside these ranges." in HS_PRICING_RULES_PAGE
-
-
-def test_hs_pricing_rules_table_columns():
-    for col in ["Service", "Type", "Brand", "Zone/Tier", "Admin Min", "Admin Max",
-                "Platform Fee", "Completed Job Deduction", "Status", "Actions"]:
-        assert col in HS_PRICING_RULES_PAGE
-
-
-def test_hs_pricing_rules_form_fields():
-    for field in ["Service", "Type (optional)", "Brand (optional)", "Admin Minimum Price",
-                  "Admin Maximum Price", "Platform Fee %", "Completed Job Deduction Credits",
-                  "Internal Notes"]:
-        assert field in HS_PRICING_RULES_PAGE
+def test_hs_pricing_rules_page_is_retired_notice():
+    assert "is retired" in HS_PRICING_RULES_PAGE
+    assert "/admin/catalog-workspace" in HS_PRICING_RULES_PAGE
+    # The old admin-sets-price-boundary form must be gone, not just hidden --
+    # "Admin Minimum/Maximum Price" may still appear in the explanatory
+    # comment describing what was retired, but the actual form wiring
+    # (input fields, save calls) must not.
+    for removed in ["createPricingRule", "updatePricingRule", "<input", "saveAction"]:
+        assert removed not in HS_PRICING_RULES_PAGE
 
 
-def test_hs_pricing_rules_validation_messages():
-    assert "Admin Minimum Price must be greater than 0." in HS_PRICING_RULES_PAGE
-    assert "Admin Maximum Price must be greater than or equal to Admin Minimum Price." in HS_PRICING_RULES_PAGE
-    assert "Platform Fee must be greater than or equal to 0." in HS_PRICING_RULES_PAGE
-    assert "Completed Job Deduction must be greater than or equal to 0." in HS_PRICING_RULES_PAGE
-
-
-def test_hs_pricing_rules_scoped_to_home_services():
-    assert "homeServicesCatalogConsoleApi.listServices" in HS_PRICING_RULES_PAGE
-    assert "homeServiceIds.has(r.master_service_id)" in HS_PRICING_RULES_PAGE
-
-
-def test_hs_pricing_rules_error_shows_request_id():
-    assert "Request ID:" in HS_PRICING_RULES_PAGE
-    assert "saveAction.requestId" in HS_PRICING_RULES_PAGE
-
-
-# ── Other 3 new pages ──────────────────────────────────────────────────────────
-
-def test_service_areas_page_content():
-    assert "Service Areas / Zones" in HS_SERVICE_AREAS_PAGE
-    assert "catalogApi.listTiers" in HS_SERVICE_AREAS_PAGE
-
+# ── Other 2 new pages (Service Areas / Zones retired; see
+#    test_service_area_requests_page_is_the_real_replacement below) ─────────
 
 def test_completed_job_deduction_page_content():
     assert "Completed Job Deduction" in HS_DEDUCTION_PAGE
@@ -210,11 +206,11 @@ FORBIDDEN = [
 
 
 def test_no_forbidden_labels_new_pages():
-    for page in [HS_PRICING_RULES_PAGE, HS_SERVICE_AREAS_PAGE, HS_DEDUCTION_PAGE, HS_SETTINGS_PAGE]:
+    for page in [HS_PRICING_RULES_PAGE, HS_DEDUCTION_PAGE, HS_SETTINGS_PAGE]:
         for term in FORBIDDEN:
             assert term not in page, f"forbidden label found: {term}"
 
 
 def test_manual_bargain_setup_wording_absent():
-    for page in [HS_PRICING_RULES_PAGE, HS_SERVICE_AREAS_PAGE, HS_DEDUCTION_PAGE, HS_SETTINGS_PAGE]:
+    for page in [HS_PRICING_RULES_PAGE, HS_DEDUCTION_PAGE, HS_SETTINGS_PAGE]:
         assert "Manual Bargain Setup" not in page

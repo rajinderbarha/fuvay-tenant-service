@@ -1,6 +1,5 @@
 "use client";
 import React, { useState, useEffect, useCallback, createContext, useContext } from "react";
-import Link from "next/link";
 
 // Prevents double-rendering when a page already wraps itself with AdminLayout
 // AND the route-level layout also renders AdminLayout.
@@ -21,10 +20,10 @@ export function useAdminMenuRefresh(): () => void {
 import {
   LayoutDashboard, Building2, Inbox, Settings2, Banknote,
   Shield, ClipboardCheck, Brain, Users, Star, Bell,
-  Settings, Sun, Moon, ChevronLeft, ChevronRight,
+  Settings, Sun, Moon, ChevronRight,
   Search, Zap, LogOut, Tag, CalendarDays, UserCheck, Wrench, LayoutGrid, Cpu, Layers, FolderTree,
-  Megaphone, Package, ScrollText, ListChecks, BarChart3, MapPin,
-  HelpCircle, Sliders, GitBranch, Image, AlertOctagon, Globe,
+  Megaphone, Package, ScrollText, ListChecks, BarChart3,
+  HelpCircle, GitBranch, Image, AlertOctagon, Globe,
   PercentSquare, FileText as FileTextIcon,
 } from "lucide-react";
 import { verticalCatalogApi, type EffectiveMenu } from "../../lib/api";
@@ -65,19 +64,28 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "tenants",              href: "/admin/tenants",              label: "All Providers",    icon: <Building2 size={16}/>,  requiredPermission: "tenant:read" },
       { id: "onboarding",           href: "/admin/tenants/onboarding",   label: "New Requests",     icon: <Inbox size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       { id: "onboarding-providers", href: "/admin/onboarding/providers", label: "Verify & Approve", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "packages",             href: "/admin/packages",             label: "Packages",         icon: <Package size={16}/>,    requiredPermission: SUPER_ADMIN_ONLY },
+      // The one genuinely cross-vertical monetization tool: package_type
+      // includes onboarding/deposit/credit-topup (Home Services model) AND
+      // subscription_plan/lead_credit_package (coaching, real estate, and
+      // every other lead- or subscription-billed vertical) -- see
+      // PACKAGE_TYPE_TABS in app/admin/packages/page.tsx. Renamed so it
+      // reads as "the place to configure monetization for any category",
+      // not a Home-Services-only word.
+      { id: "packages",             href: "/admin/packages",             label: "Packages & Subscriptions", icon: <Package size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "trust-quality",        href: "/admin/trust-quality",        label: "Trust & Quality",  icon: <Star size={16}/>,       requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
-    // Day-to-day operational monitoring
+    // Bookings/Jobs/Reviews/Category Rates moved into FIELD_OPS_SHARED_ITEMS
+    // (rendered inside the relevant vertical's Catalog section, see below) so
+    // they group with -- and enable/disable alongside -- Home Services as a
+    // whole, instead of sitting in this generic top-level group with no
+    // visual tie to the vertical they actually belong to. Customers/Staff/
+    // Complaints stay here: genuinely cross-vertical, no job/booking tie.
     label: "Operations",
     items: [
-      { id: "bookings",   href: "/admin/bookings",   label: "Bookings",  icon: <CalendarDays size={16}/>, requiredPermission: SUPER_ADMIN_ONLY               },
-      { id: "operations", href: "/admin/home-services/service-jobs", label: "Jobs", icon: <Wrench size={16}/>, badge: null, requiredPermission: "admin:jobs:read" },
       { id: "customers",  href: "/admin/customers",  label: "Customers", icon: <UserCheck size={16}/>,    requiredPermission: SUPER_ADMIN_ONLY                },
       { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <Users size={16}/>,        requiredPermission: "staff:read"                    },
-      { id: "reviews",    href: "/admin/reviews",    label: "Reviews",    icon: <Star size={16}/>,        requiredPermission: SUPER_ADMIN_ONLY                },
       { id: "complaints", href: "/admin/complaints", label: "Complaints", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY               },
       { id: "complaint-policies", href: "/admin/complaint-policies", label: "Complaint Policies", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
@@ -93,50 +101,24 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // Multi-vertical pricing infrastructure only — genuinely vertical-agnostic
-    // (tiers/city-zip mapping/provider overrides apply across all verticals).
-    // Pricing Rules itself lives in HOME_SERVICES_EXTRA_ITEMS (rendered under
-    // Catalog → Home Services) since, in practice, every active pricing rule
-    // today is Home Services scoped — see HOME_SERVICES_MENU_ORGANIZATION_REPORT.md.
-    label: "Pricing & Rules",
-    items: [
-      { id: "pricing-tiers",       href: "/admin/pricing-tiers",              label: "Pricing Tiers",    icon: <LayoutGrid size={16}/>,     requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "location-mapping",    href: "/admin/location-mapping",           label: "City/Zip Mapping", icon: <MapPin size={16}/>,         requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "provider-overrides",  href: "/admin/pricing/provider-overrides", label: "Provider Pricing Overrides", icon: <PercentSquare size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "category-commission", href: "/admin/pricing/commission",          label: "Category Rates", icon: <PercentSquare size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-    ],
-  },
-  {
-    // Finance Hub: overview → deposits → top-ups → warranty claims → payouts
+    // Security Deposits/Credit Top-ups/Usage Credits/Warranty Claims/Service
+    // Invoices/Commission Records/Provider Wallets/Payments moved into
+    // FIELD_OPS_SHARED_ITEMS below -- same reasoning as the Operations group
+    // above. Payments (/admin/payments -> /v1/admin/payments) reads off
+    // ServiceInvoice/booking_id, the exact same field-ops job/booking
+    // pipeline as Service Invoices, so it isn't platform-wide either --
+    // confirmed via the invoice_payment engine's models (booking_id FK on
+    // every row). "Payouts" removed entirely (not gated) -- confirmed the
+    // platform never pays staff/technicians/providers out; the only money-
+    // back-to-provider flow is a security deposit refund request, now part
+    // of the grouped set. The /admin/finance/payouts page/API stay live,
+    // just unlinked. Finance Hub/Financial Events/Compliance stay here:
+    // genuinely polymorphic/platform-wide (checked each page's source and
+    // type shape, no job/vertical tie).
     label: "Finance",
     items: [
       { id: "finance",          href: "/admin/finance",          label: "Finance Hub",    icon: <Banknote size={16}/>,      requiredPermission: "finance:hub:read" },
-      { id: "finance-usage-credits", href: "/admin/finance/usage-credits", label: "Usage Credits", icon: <Banknote size={16}/>, requiredPermission: "finance.usage_credits.read" },
-      { id: "finance-deposits", href: "/admin/finance/deposits",  label: "Security Deposits", icon: <Shield size={16}/>,     requiredPermission: "finance:deposits:read" },
-      { id: "finance-topups",   href: "/admin/finance/topups",    label: "Credit Top-ups",  icon: <Tag size={16}/>,          requiredPermission: "finance:topups:read" },
-      { id: "finance-claims",   href: "/admin/finance/claims",    label: "Warranty Claims", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "finance-payouts",  href: "/admin/finance/payouts",   label: "Payouts",         icon: <ScrollText size={16}/>,   requiredPermission: SUPER_ADMIN_ONLY },
-      // Phase 2A Slice 2 nav reconciliation: these 5 pages existed and were
-      // fully built but had zero sidebar entry (confirmed orphaned in the
-      // Phase 1 frontend audit, still true in current source). Phase 1A's
-      // final-page-disposition-matrix.csv calls for these to eventually
-      // become DETAIL_TABs of one consolidated Finance Hub workspace —
-      // that tab-consolidation is explicitly out of scope for this slice
-      // ("no broad page consolidation"), so they are restored here as
-      // plain sidebar entries under Finance (their approved parent group)
-      // rather than left unreachable. True tab consolidation remains
-      // deferred — see deferred-items.md.
-      { id: "finance-service-invoices",   href: "/admin/service-invoices",   label: "Service Invoices",   icon: <FileTextIcon size={16}/>, requiredPermission: "finance:hub:read" },
-      { id: "finance-provider-wallets",   href: "/admin/provider-wallets",   label: "Provider Wallets",   icon: <Banknote size={16}/>,     requiredPermission: "finance:hub:read" },
-      { id: "finance-commission-records", href: "/admin/commission-records", label: "Commission Records", icon: <PercentSquare size={16}/>, requiredPermission: "finance:hub:read" },
-      { id: "finance-payments",           href: "/admin/payments",           label: "Payments",           icon: <Tag size={16}/>,          requiredPermission: "finance:hub:read" },
       { id: "finance-financial-events",   href: "/admin/financial-events",   label: "Financial Events",   icon: <ScrollText size={16}/>,   requiredPermission: "finance:hub:read" },
-      // Replaces the retired /admin/home-services/completed-job-deduction
-      // page (called the deleted GET /v1/admin/pricing-rules). Real
-      // completion-charge capability, ledger and reconciliation for Home
-      // Services now live here, category-scoped and isolated from other
-      // verticals' finance (Coaching/Food/Real Estate untouched).
-      { id: "hs-finance",       href: "/admin/finance/home-services", label: "Home Services Finance", icon: <PercentSquare size={16}/>, requiredPermission: "finance:home_services:read" },
       { id: "compliance",       href: "/admin/compliance",        label: "Compliance",      icon: <ClipboardCheck size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
@@ -167,52 +149,97 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-// Home Services bespoke admin pages that have no corresponding entry in the
-// real vertical-module system (no `modules[].admin_path` from GET
-// /v1/admin/catalog/navigation/effective-menu) — Overview/Pricing/Matching/
-// Diagnostics/Areas/Deduction/Settings/Bookability, plus (for historical id
-// stability) the "Service Catalog" landing page. Home Services no longer has
-// its own top-level NAV_GROUPS section (it renders through the same
-// per-vertical "Catalog" mechanism as Coaching/Real Estate — see
-// VerticalCatalogSection), so these are kept in a standalone array instead:
-// still real routes, still permission-registered and highlight-resolvable via
-// FLAT_NAV_HREFS/NAV_ITEM_PERMISSIONS below, but rendered as an addendum
-// inside VerticalCatalogSection specifically for vertical_key === "home_services"
-// rather than as their own sidebar group.
+// Home Services' bespoke admin pages -- NOW real registered catalog modules
+// (CatalogModuleDefinition + VerticalCatalogModule rows, keys hs_overview /
+// hs_service_catalog / hs_provider_matching / hs_matching_diagnostics /
+// hs_completed_job_deduction / hs_settings / hs_bookability) that arrive
+// through GET /v1/admin/catalog/navigation/effective-menu's `modules[]` like
+// every other vertical's pages -- VerticalCatalogSection no longer special-
+// cases `vertical_key === "home_services"` to render these (that hardcoded
+// escape hatch is gone). This array is kept ONLY as the route-permission /
+// active-nav-id metadata source below (FLAT_NAV_HREFS/NAV_ITEM_PERMISSIONS),
+// since permission requirements aren't part of the backend module payload yet
+// -- a genuine remaining gap, not a rendering shortcut.
 const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
-  // hs-service-catalog removed: it was a redirect-only page to
-  // /admin/catalog-workspace, duplicating the real backend-driven Catalog
-  // module entry that already appears for the home_services vertical
-  // (`modules` above) -- two "Catalog" rows under Home Services.
-  // hs-overview and hs-pricing-rules removed from nav: Overview's route had
-  // no page.tsx (dead link, directory deleted), and Pricing Rules is a
-  // retired-notice page that its own comment already says should not be
-  // linked from navigation -- this entry contradicted that.
-  // Customer Price Experience retired (MODULE-L5-57) -- Super Admin does not
-  // own service price amounts; see the retired-notice page for details.
-  // Matching Diagnostics merged into Provider Matching's own tabs
-  // (MODULE-L5-58: Diagnostics / Live Decisions / Policy Reference / Audit)
-  // -- one canonical page, not two disconnected ones. Old route redirects.
+  { id: "hs-overview", href: "/admin/home-services/overview", label: "Overview", icon: <LayoutGrid size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // Bookings/Jobs/Reviews/Pricing Tiers/City-Zip Mapping/Provider Pricing
+  // Overrides/Category Rates/Usage Credits/Warranty Claims/Service Invoices/
+  // Commission Records/Security Deposits/Credit Top-ups/Provider Wallets
+  // are NOT duplicated here -- they live in NAV_GROUPS (Operations/Finance)
+  // and are gated there by isNavItemVisible()'s real operation_visibility
+  // flags (jobs_field_ops / security_deposit / usage_credits), which
+  // correctly cover every field-ops-style vertical, not just literal
+  // "home_services". See the Operations/Finance group comments above.
+  { id: "hs-service-catalog", href: "/admin/catalog-workspace", label: "Service Catalog", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // "Pricing Rules" and "Customer Price Experience" removed per product
+  // decision (same one that already removed Pricing Tiers/City-Zip Mapping/
+  // Provider Pricing Overrides): this platform is provider-set-price, not
+  // admin-defined price boundaries. Both pages let/assumed an admin sets a
+  // min/max/base price that "providers can only set prices inside" -- the
+  // exact model this platform doesn't use. Service Catalog above already
+  // explicitly defers pricing to the provider ("set by the tenant in
+  // Service Setup... not here"). The two pages/APIs remain live, just
+  // unlinked, matching the rest of this cleanup.
   { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  // hs-service-areas removed: /admin/home-services/service-areas has no
-  // page.tsx (dead route, directory doesn't exist) -- confirmed broken link.
-  // hs-completed-job-deduction removed: this page 404'd (called the deleted
-  // GET /v1/admin/pricing-rules) and depended on the retired Pricing Rules
-  // admin surface. The real, working completion-charge capability moved to
-  // Finance -> Home Services Finance -> Completion Charges (see the
-  // "hs-finance" entry in the Finance group below); old route now redirects.
-  // UX-05 consolidation: "Home Services Settings" and "Provider Bookability"
-  // standalone nav entries removed. Settings' read-only info moved to
-  // Platform > Business Verticals > Home Services > Capabilities & Policies;
-  // Bookability's capability moved into Provider Matching's "Provider
-  // Eligibility" tab. Both old routes are now redirect-only pages so no
-  // second live implementation remains reachable. Kept out of NAV entirely
-  // (not just unlinked) so they can't reappear as duplicate rows.
+  { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Wrench size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // "Service Areas / Zones" removed alongside Pricing Tiers/City-Zip
+  // Mapping/Provider Pricing Overrides -- its own page description says it
+  // scopes Home Services pricing rules by admin-defined city tier, the same
+  // deprecated concept. Providers already declare their own mandatory city/
+  // zipcode Service Area (see hooks/useSetupStatus.ts), which this page
+  // itself calls out as the separate, real per-tenant mechanism.
+  { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/>, requiredPermission: "finance.completed_job_deduction_rules.read" },
+  { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // Phase 2A Slice 2 nav reconciliation: page existed and was fully built
+  // (adminBookabilityApi-backed) but had zero sidebar entry — confirmed
+  // orphaned in the Phase 1 frontend audit and still true.
+  { id: "bookability", href: "/admin/bookability/providers", label: "Provider Bookability", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+];
+
+// Verticals whose operational model is "field-ops style" (booking -> assigned
+// job -> completed job, priced-per-job commission, deposit+credit wallet) --
+// the same set the backend's jobs_field_ops/security_deposit/usage_credits
+// flags cover. Only "home_services" is actually registered in this
+// deployment today (confirmed via DB query), but this stays a set rather
+// than a single string so a future repair_services/cleaning_services/
+// automotive vertical groups correctly without another code change.
+const FIELD_OPS_VERTICALS = new Set(["home_services", "repair_services", "cleaning_services", "automotive"]);
+
+// Bookings/Jobs/Reviews/Category Rates/Warranty Claims/Service Invoices/
+// Security Deposits/Credit Top-ups/Usage Credits/Commission Records/Provider
+// Wallets — moved out of the generic top-level Operations/Finance NAV_GROUPS
+// (see those groups' comments) so they render inside the relevant field-ops
+// vertical's Catalog section instead, and therefore visually group with --
+// and hide/show alongside -- that vertical as a whole via
+// FIELD_OPS_VERTICALS membership in VerticalCatalogSection below.
+const FIELD_OPS_SHARED_ITEMS: NavItem[] = [
+  // HOME-SERVICES-OPERATIONS unified workspace (canonical service_bookings +
+  // service_jobs pipeline only). "Bookings"/"Jobs" below are the two
+  // pre-existing pages this replaces for daily ops use -- kept live,
+  // unredirected, until parity is proven per the phase's own rule (don't
+  // delete/redirect before that). "Bookings" also still separately serves
+  // the legacy, non-canonical bookings/field_ops.jobs pipeline, which this
+  // unified page deliberately excludes (confirmed disconnected via audit).
+  { id: "home-services-operations", href: "/admin/home-services/operations", label: "Bookings & Jobs", icon: <Wrench size={16}/>, requiredPermission: "admin:jobs:read" },
+  { id: "bookings", href: "/admin/bookings", label: "Bookings (legacy)", icon: <CalendarDays size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "operations", href: "/admin/home-services/service-jobs", label: "Jobs (legacy)", icon: <Wrench size={16}/>, requiredPermission: "admin:jobs:read" },
+  { id: "reviews", href: "/admin/reviews", label: "Reviews", icon: <Star size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "category-commission", href: "/admin/pricing/commission", label: "Category Rates", icon: <PercentSquare size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "finance-claims", href: "/admin/finance/claims", label: "Warranty Claims", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "finance-service-invoices", href: "/admin/service-invoices", label: "Service Invoices", icon: <FileTextIcon size={16}/>, requiredPermission: "finance:hub:read" },
+  { id: "finance-deposits", href: "/admin/finance/deposits", label: "Security Deposits", icon: <Shield size={16}/>, requiredPermission: "finance:deposits:read" },
+  { id: "finance-topups", href: "/admin/finance/topups", label: "Credit Top-ups", icon: <Tag size={16}/>, requiredPermission: "finance:topups:read" },
+  { id: "finance-usage-credits", href: "/admin/finance/usage-credits", label: "Usage Credits", icon: <Banknote size={16}/>, requiredPermission: "finance.usage_credits.read" },
+  { id: "finance-commission-records", href: "/admin/commission-records", label: "Commission Records", icon: <PercentSquare size={16}/>, requiredPermission: "finance:hub:read" },
+  { id: "finance-provider-wallets", href: "/admin/provider-wallets", label: "Provider Wallets", icon: <Banknote size={16}/>, requiredPermission: "finance:hub:read" },
+  { id: "finance-payments", href: "/admin/payments", label: "Payments", icon: <Tag size={16}/>, requiredPermission: "finance:hub:read" },
 ];
 
 // Flattened (id, href) list derived from the actual rendered sidebar (NAV_GROUPS
-// plus HOME_SERVICES_EXTRA_ITEMS, which render via VerticalCatalogSection instead
-// of their own NAV_GROUPS entry), used by app/admin/layout.tsx to compute the
+// plus HOME_SERVICES_EXTRA_ITEMS/FIELD_OPS_SHARED_ITEMS's route-permission
+// metadata, for pages that render via VerticalCatalogSection's backend-driven
+// modules instead of their own NAV_GROUPS entry), used by app/admin/layout.tsx
+// to compute the
 // active nav id via longest-href-prefix matching. This is the single source of
 // truth for "what's really in the sidebar" — see
 // ADMIN_TENANT_E2E_02_ADMIN_SIDEBAR_ACTIVE_STATE_REPORT.md for why a second,
@@ -220,7 +247,8 @@ const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
 // failed to highlight nested sub-routes correctly.
 export const FLAT_NAV_HREFS: { id: string; href: string }[] =
   NAV_GROUPS.flatMap(g => g.items.map(item => ({ id: item.id, href: item.href })))
-    .concat(HOME_SERVICES_EXTRA_ITEMS.map(item => ({ id: item.id, href: item.href })));
+    .concat(HOME_SERVICES_EXTRA_ITEMS.map(item => ({ id: item.id, href: item.href })))
+    .concat(FIELD_OPS_SHARED_ITEMS.map(item => ({ id: item.id, href: item.href })));
 
 /**
  * Resolve a pathname to the nav item id whose href is the longest matching
@@ -249,7 +277,8 @@ export function resolveActiveNavId(pathname: string): string {
 // a second, hand-maintained route table.
 const NAV_ITEM_PERMISSIONS: Record<string, string> = Object.fromEntries(
   NAV_GROUPS.flatMap(g => g.items.map(item => [item.id, item.requiredPermission]))
-    .concat(HOME_SERVICES_EXTRA_ITEMS.map(item => [item.id, item.requiredPermission])),
+    .concat(HOME_SERVICES_EXTRA_ITEMS.map(item => [item.id, item.requiredPermission]))
+    .concat(FIELD_OPS_SHARED_ITEMS.map(item => [item.id, item.requiredPermission])),
 );
 
 // Self-service routes every authenticated admin role may reach regardless
@@ -276,18 +305,16 @@ export function getRequiredPermissionForRoute(pathname: string): string {
 // sidebar doesn't show irrelevant modules for Coaching/Real Estate/Restaurant/Product tenants.
 // Source of truth is the backend effective-menu resolver (operation_visibility / enabled_vertical_keys);
 // while the menu is still loading (effectiveMenu === null) items are shown to avoid flicker/false-hides.
+// NOTE: the field-ops items (Bookings/Jobs/Reviews/Category Rates/Warranty
+// Claims/Service Invoices/Security Deposits/Credit Top-ups/Usage Credits/
+// Commission Records/Provider Wallets) are no longer gated here — they moved
+// to FIELD_OPS_SHARED_ITEMS and are gated structurally by FIELD_OPS_VERTICALS
+// membership inside VerticalCatalogSection instead, so this function is only
+// ever called for plain NAV_GROUPS items now (currently none need per-item
+// gating; kept for future vertical-gated additions to NAV_GROUPS).
 function isNavItemVisible(itemId: string, effectiveMenu: EffectiveMenu | null): boolean {
   if (!effectiveMenu) return true;
-  switch (itemId) {
-    case "operations": // "Jobs" — field-ops style verticals only
-      return effectiveMenu.operation_visibility.jobs_field_ops;
-    case "finance-deposits": // Security Deposits — Home Services usage-credit model only
-      return effectiveMenu.operation_visibility.security_deposit;
-    case "finance-topups": // Credit Top-ups — Home Services usage-credit model only
-      return effectiveMenu.operation_visibility.usage_credits;
-    default:
-      return true;
-  }
+  return true;
 }
 
 // FINAL-L5-05M: permission gating, orthogonal to the module/category gating
@@ -316,7 +343,11 @@ export function AdminLayout({ children, activeNav }: { children: React.ReactNode
 function AdminShellInner({ children, activeNav }: { children: React.ReactNode; activeNav?: string }) {
   const { theme, toggle } = useTheme();
   const tour = useTour();
-  const [collapsed, setCollapsed] = useState(false);
+  // Admin sidebar always stays expanded -- no collapse toggle (per explicit
+  // request). `collapsed` is kept as a constant (rather than removing every
+  // branch that reads it below) so the expanded-state rendering paths are
+  // unchanged.
+  const collapsed = false;
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [effectiveMenu, setEffectiveMenu] = useState<EffectiveMenu | null>(null);
   const { permissions: effectivePermissions, role: effectiveRole } = usePermissions();
@@ -493,24 +524,6 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
           })}
         </nav>
 
-        {/* Footer */}
-        <div style={{
-          padding: "10px 8px",
-          borderTop: "1px solid var(--sidebar-border)",
-          display: "flex", flexDirection: "column", gap: 2,
-        }}>
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            style={footerBtnStyle(collapsed)}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            title={collapsed ? "Expand sidebar" : undefined}
-          >
-            {collapsed
-              ? <ChevronRight size={15} style={{ flexShrink: 0 }}/>
-              : <ChevronLeft size={15} style={{ flexShrink: 0 }}/>}
-            {!collapsed && <span style={{ fontSize: 12 }}>Collapse</span>}
-          </button>
-        </div>
       </aside>
 
       {/* ── Main ────────────────────────────────────────────────────────── */}
@@ -533,17 +546,6 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
   );
 }
 
-function footerBtnStyle(collapsed: boolean): React.CSSProperties {
-  return {
-    width: "100%", display: "flex", alignItems: "center",
-    gap: 8, padding: "8px 10px", borderRadius: "var(--radius-md)",
-    border: "none", background: "transparent", cursor: "pointer",
-    color: "var(--sidebar-text)", fontFamily: "inherit",
-    justifyContent: collapsed ? "center" : undefined,
-    transition: "background 0.12s",
-  };
-}
-
 // ── Per-Vertical catalog sub-section ─────────────────────────────────────────
 
 function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
@@ -556,12 +558,17 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const flyoutRef = React.useRef<HTMLDivElement>(null);
   const modules = vertical.modules.filter(m => m.is_enabled);
-  // Home Services has no separate top-level nav group (see
-  // HOME_SERVICES_EXTRA_ITEMS above) — its bespoke, non-generic-module admin
-  // pages render as an addendum here, after the real backend modules, so it
-  // reaches full parity with the old static group while using the exact same
-  // expandable-section mechanism as every other vertical.
-  const extraItems = vertical.vertical_key === "home_services" ? HOME_SERVICES_EXTRA_ITEMS : [];
+  // Home Services' bespoke pages (Overview/Service Catalog/Provider Matching/
+  // Matching Diagnostics/Completed Job Deduction/Settings/Bookability) are now
+  // real registered catalog modules (CatalogModuleDefinition +
+  // VerticalCatalogModule rows) rather than a hardcoded `vertical_key ===
+  // "home_services"` escape hatch -- they arrive through `modules` above like
+  // every other vertical's pages. Only the cross-vertical FIELD_OPS shared
+  // items (Bookings/Jobs/Reviews/Finance items shared by every field-ops-
+  // style vertical, not just Home Services) remain a separate addendum here.
+  const extraItems = [
+    ...(FIELD_OPS_VERTICALS.has(vertical.vertical_key) ? FIELD_OPS_SHARED_ITEMS : []),
+  ];
 
   // Close the flyout when the sidebar expands, so it never lingers behind
   // the now-wider expanded rail.
@@ -647,7 +654,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
                 const path = m.admin_path || `/admin/catalog/${vertical.vertical_key}`;
                 const isActive = activeNav === navId;
                 return (
-                  <Link
+                  <a
                     key={m.key} href={path} role="menuitem"
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => setFlyoutOpen(false)}
@@ -661,13 +668,13 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
                   >
                     <Settings2 size={14} style={{ opacity: 0.7, flexShrink: 0 }}/>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.label}</span>
-                  </Link>
+                  </a>
                 );
               })}
               {extraItems.map(item => {
                 const isActive = activeNav === item.id;
                 return (
-                  <Link
+                  <a
                     key={item.id} href={item.href} role="menuitem"
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => setFlyoutOpen(false)}
@@ -681,7 +688,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
                   >
                     {item.icon}
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
-                  </Link>
+                  </a>
                 );
               })}
             </div>
@@ -760,7 +767,7 @@ function SidebarItem({
 
   if (collapsed) {
     return (
-      <Link
+      <a
         href={item.href}
         id={`nav-${item.id}`}
         title={item.label}
@@ -795,12 +802,12 @@ function SidebarItem({
           fontSize: 9.5, fontWeight: active ? 700 : 500, lineHeight: 1.2, textAlign: "center",
           maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         }}>{item.label}</span>
-      </Link>
+      </a>
     );
   }
 
   return (
-    <Link
+    <a
       href={item.href}
       id={`nav-${item.id}`}
       aria-current={active ? "page" : undefined}
@@ -830,7 +837,7 @@ function SidebarItem({
           padding: "1px 7px", flexShrink: 0,
         }}>{item.badge}</span>
       )}
-    </Link>
+    </a>
   );
 }
 
@@ -1006,24 +1013,24 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
               })}
             </div>
 
-            <Link href="/admin/notifications" onClick={() => setBellOpen(false)}
+            <a href="/admin/notifications" onClick={() => setBellOpen(false)}
               style={{ display: "block", textAlign: "center", padding: "12px 16px",
                 borderTop: "1px solid var(--border)", fontSize: 13, fontWeight: 600,
                 color: "var(--accent)", textDecoration: "none" }}>
               View all notifications
-            </Link>
+            </a>
           </div>
         )}
       </div>
 
       {/* User → My Profile */}
-      <Link href="/admin/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+      <a href="/admin/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
         <div style={{ textAlign: "right" }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{myName || "Super Admin"}</p>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Platform</p>
         </div>
         <DefaultAvatar name={myName || "Super Admin"} src={myAvatar} size={34}/>
-      </Link>
+      </a>
 
       {/* Logout */}
       <button onClick={onLogout} title="Log out" style={iconBtnStyle}>

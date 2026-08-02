@@ -249,7 +249,7 @@ export default function InsightsPage() {
                 </div>
                 <p style={{ fontSize:12, color:"var(--text-secondary)", margin:0 }}>{c.interpretation}</p>
                 {c.observation_mode && (
-                  <div style={{ marginTop:12, padding:"8px 12px", borderRadius:8, background:"var(--info-bg)", border:"1px solid var(--info-border)" }}>
+                  <div style={{ marginTop:12, padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--info-bg)", border:"1px solid var(--info-border)" }}>
                     <p style={{ fontSize:11, color:"var(--info-text)", margin:0, display:"flex", alignItems:"center", gap:6 }}>
                       <BarChart3 size={12}/> Platform-wide benchmark — personalises as your job history grows.
                     </p>
@@ -287,7 +287,7 @@ export default function InsightsPage() {
                 <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                   {factors.data.recommended_actions.map((a, i) => (
                     <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px",
-                      background:"var(--surface-sunken)", borderRadius:8 }}>
+                      background:"var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
                       <Badge variant={a.priority === "urgent" || a.priority === "high" ? "danger" : "muted"} size="sm">
                         {a.priority}
                       </Badge>

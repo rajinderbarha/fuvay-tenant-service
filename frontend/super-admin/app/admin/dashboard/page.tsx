@@ -8,7 +8,6 @@
  * combined, never labeled "commission collected".
  */
 import React, { useCallback, useState } from "react";
-import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { StatCard, Btn, EmptyState, Badge } from "../../../components/shared/ui";
 import { PageShell, PageHeader, Card, StatusBadge, Skeleton } from "@serviceos/design-system";
@@ -156,15 +155,15 @@ export default function PlatformCommandCenterPage() {
                 <Btn variant="secondary" size="sm" icon={<Download size={14}/>} loading={exportAction.loading} onClick={handleExport}>Export Snapshot</Btn>
               )}
               <Btn variant="secondary" size="sm" icon={<FileText size={14}/>}>Create Report</Btn>
-              <Link href="/admin/dashboard#actions" style={{ textDecoration: "none" }}>
+              <a href="/admin/dashboard#actions" style={{ textDecoration: "none" }}>
                 <Btn variant="ghost" size="sm" icon={<Bell size={14}/>}>Open Alerts</Btn>
-              </Link>
-              <Link href="/admin/operations" style={{ textDecoration: "none" }}>
+              </a>
+              <a href="/admin/operations" style={{ textDecoration: "none" }}>
                 <Btn variant="ghost" size="sm" icon={<ListChecks size={14}/>}>Open Operations Board</Btn>
-              </Link>
-              <Link href="/admin/audit-logs" style={{ textDecoration: "none" }}>
+              </a>
+              <a href="/admin/audit-logs" style={{ textDecoration: "none" }}>
                 <Btn variant="ghost" size="sm" icon={<ScrollText size={14}/>}>Open Audit Logs</Btn>
-              </Link>
+              </a>
             </>
           }
         />
@@ -279,9 +278,9 @@ export default function PlatformCommandCenterPage() {
               <Wind size={16} style={{ color: "var(--accent)" }}/>
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Home Services Summary</p>
             </div>
-            <Link href="/admin/catalog-workspace" style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>
+            <a href="/admin/catalog-workspace" style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>
               Open Home Services →
-            </Link>
+            </a>
           </div>
           {homeServices.error ? (
             <SectionError title="We couldn't load Home Services data" error={homeServices.error} requestId={homeServices.requestId} onRetry={homeServices.refetch}/>
@@ -304,6 +303,7 @@ export default function PlatformCommandCenterPage() {
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {[
                   { label: "Service Catalog", href: "/admin/catalog-workspace" },
+                  { label: "Customer Price Experience", href: "/admin/home-services/price-experience" },
                   { label: "Provider Matching", href: "/admin/home-services/provider-matching" },
                   { label: "Matching Diagnostics", href: "/admin/home-services/matching-diagnostics" },
                   { label: "Service Area Requests", href: "/admin/service-area-requests" },
@@ -640,7 +640,7 @@ function Row({ label, value, strong, danger, href }: { label: string; value: str
       <span style={{ color: danger ? "var(--danger-text)" : "var(--text-primary)", fontWeight: strong ? 700 : 500 }}>{value}</span>
     </div>
   );
-  return href ? <Link href={href} style={{ textDecoration: "none" }}>{content}</Link> : content;
+  return href ? <a href={href} style={{ textDecoration: "none" }}>{content}</a> : content;
 }
 
 function MiniStat({ label, value }: { label: string; value: number | null | undefined }) {

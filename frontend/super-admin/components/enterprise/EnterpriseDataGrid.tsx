@@ -65,7 +65,7 @@ interface Props {
 
 const STATUS_STYLE: Record<string, React.CSSProperties> = {
   open:            { background: "#fef9c3", color: "#854d0e" },
-  pending:         { background: "#dbeafe", color: "#1e40af" },
+  pending:         { background: "#EDE9E3", color: "#6B5B4D" },
   active:          { background: "#dcfce7", color: "#166534" },
   approved:        { background: "#dcfce7", color: "#166534" },
   verified:        { background: "#dcfce7", color: "#166534" },
@@ -80,7 +80,7 @@ const STATUS_STYLE: Record<string, React.CSSProperties> = {
   suspended:       { background: "#ffedd5", color: "#9a3412" },
   processing:      { background: "#f3e8ff", color: "#6b21a8" },
   escalated:       { background: "#ffedd5", color: "#9a3412" },
-  refunded:        { background: "#e0f2fe", color: "#0369a1" },
+  refunded:        { background: "#CCFBF1", color: "#0F766E" },
   disputed:        { background: "#fef3c7", color: "#92400e" },
   not_started:     { background: "#f3f4f6", color: "#6b7280" },
   under_review:    { background: "#fef3c7", color: "#92400e" },
@@ -162,7 +162,7 @@ function RowActionsMenu({ actions, row }: { actions: RowAction[]; row: Record<st
                     padding: "9px 16px", fontSize: 13, lineHeight: 1.3,
                     background: "none", border: "none", cursor: "pointer",
                     fontFamily: "inherit",
-                    color: a.danger ? "var(--danger-text, #dc2626)" : "var(--text-primary)",
+                    color: a.danger ? "var(--danger-text, var(--danger))" : "var(--text-primary)",
                   }}
                   onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-sunken)")}
                   onMouseLeave={e => (e.currentTarget.style.background = "none")}
@@ -567,7 +567,7 @@ function EnterpriseDataGridInner({
             justifyContent: "center", padding: "56px 24px", gap: 10,
           }}>
             <div style={{ fontSize: 28 }}>⚠</div>
-            <p style={{ fontSize: 14, fontWeight: 600, color: "var(--danger-text, #dc2626)", margin: 0 }}>
+            <p style={{ fontSize: 14, fontWeight: 600, color: "var(--danger-text, var(--danger))", margin: 0 }}>
               Could not load data
             </p>
             <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>{error}</p>

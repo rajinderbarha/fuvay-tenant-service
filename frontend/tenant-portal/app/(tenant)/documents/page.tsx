@@ -90,7 +90,7 @@ export default function DocumentsPage() {
         flexWrap:"wrap" }}>
         {STATUS_TABS.map(t => (
           <button key={t.key} onClick={() => setStatusTab(t.key)}
-            style={{ padding:"6px 14px", borderRadius:8, border:"none", cursor:"pointer",
+            style={{ padding:"6px 14px", borderRadius:"var(--radius-md)", border:"none", cursor:"pointer",
               fontFamily:"inherit", fontSize:12, fontWeight: statusTab===t.key ? 700 : 500,
               background: statusTab===t.key ? "var(--surface-base)" : "transparent",
               color: statusTab===t.key ? "var(--brand)" : "var(--text-secondary)",
@@ -111,7 +111,7 @@ export default function DocumentsPage() {
       {docs.loading ? (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
           {[...Array(4)].map((_,i) =>
-            <Skeleton key={i} height={80} style={{ borderRadius:12 }} />)}
+            <Skeleton key={i} height={80} style={{ borderRadius:"var(--radius-lg)" }} />)}
         </div>
       ) : allDocs.length === 0 ? (
         <Card padding={48} style={{ textAlign:"center" }}>

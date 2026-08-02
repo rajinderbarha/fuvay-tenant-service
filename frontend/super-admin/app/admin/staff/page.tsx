@@ -54,7 +54,7 @@ function SearchDropdown({ label, options, value, onChange }: {
         style={{
           display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 10px",
           border: `1px solid ${value ? "var(--primary)" : "var(--border)"}`,
-          borderRadius: 8, cursor: "pointer", fontSize: 13, color: value ? "var(--primary)" : "var(--muted-text)",
+          borderRadius:"var(--radius-md)", cursor: "pointer", fontSize: 13, color: value ? "var(--primary)" : "var(--muted-text)",
           background: "var(--card-bg)", userSelect: "none",
         }}
       >
@@ -68,7 +68,7 @@ function SearchDropdown({ label, options, value, onChange }: {
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 100,
-          background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 8,
+          background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
           boxShadow: "0 8px 24px rgba(0,0,0,.12)", minWidth: 200, maxHeight: 260, overflow: "auto",
         }}>
           <div style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)" }}>
@@ -235,7 +235,7 @@ function StaffContent() {
       render: (_: unknown, row: AdminStaffMember) => (
         <span style={{ fontSize: 13 }}>
           {row.average_rating != null
-            ? <><span style={{ color: "#f59e0b" }}>★</span> {row.average_rating.toFixed(1)}</>
+            ? <><span style={{ color: "var(--warning)" }}>★</span> {row.average_rating.toFixed(1)}</>
             : <span style={{ color: "var(--muted-text)" }}>—</span>}
         </span>
       ),
@@ -295,7 +295,7 @@ function StaffContent() {
               onKeyDown={e => { if (e.key === "Enter") { setQ(inputQ); setPage(1); } }}
               style={{
                 width: "100%", height: 36, padding: "0 12px", border: "1px solid var(--border)",
-                borderRadius: 8, fontSize: 13, background: "var(--card-bg)", color: "var(--text)",
+                borderRadius:"var(--radius-md)", fontSize: 13, background: "var(--card-bg)", color: "var(--text)",
                 outline: "none", boxSizing: "border-box",
               }}
             />

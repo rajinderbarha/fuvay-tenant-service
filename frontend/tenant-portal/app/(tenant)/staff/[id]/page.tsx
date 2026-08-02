@@ -222,7 +222,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                       { label:"Avg Rating",   v: p.avg_customer_rating.toFixed(1)                  },
                       { label:"Rank",         v: p.rank != null ? `#${p.rank}` : "—"               },
                     ].map(m => (
-                      <div key={m.label} style={{ padding:"8px 10px", borderRadius:8,
+                      <div key={m.label} style={{ padding:"8px 10px", borderRadius:"var(--radius-md)",
                         background:"var(--surface-sunken)", textAlign:"center" }}>
                         <p style={{ fontSize:10, color:"var(--text-tertiary)", margin:"0 0 2px",
                           textTransform:"uppercase", letterSpacing:"0.05em" }}>{m.label}</p>
@@ -251,7 +251,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                   const dh = wh[day] ?? { start:"09:00", end:"18:00", is_working: day !== "sunday" };
                   return (
                     <div key={day} style={{ display:"flex", alignItems:"center", gap:10,
-                      padding:"8px 12px", borderRadius:8,
+                      padding:"8px 12px", borderRadius:"var(--radius-md)",
                       background: dh.is_working ? "var(--surface-sunken)" : "transparent",
                       border:`1px solid ${dh.is_working?"var(--border)":"transparent"}` }}>
                       <span style={{ width:36, fontSize:12, fontWeight:600,
@@ -483,7 +483,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
               <textarea value={secReason} onChange={e=>setSecReason(e.target.value)} rows={2}
                 placeholder="Describe why you are taking this action…"
                 style={{ width:"100%", padding:"8px 10px", fontSize:13,
-                  border:"1px solid var(--border)", borderRadius:8,
+                  border:"1px solid var(--border)", borderRadius:"var(--radius-md)",
                   background:"var(--surface)", color:"var(--text-primary)",
                   fontFamily:"inherit", resize:"vertical", boxSizing:"border-box" as const }}/>
             </div>
@@ -507,7 +507,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
             }
             return (
               <div key={day} style={{ display:"flex", alignItems:"center", gap:12,
-                padding:"10px 12px", borderRadius:8, background:"var(--surface-sunken)",
+                padding:"10px 12px", borderRadius:"var(--radius-md)", background:"var(--surface-sunken)",
                 border:"1px solid var(--border)" }}>
                 <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer",
                   width:80, flexShrink:0 }}>

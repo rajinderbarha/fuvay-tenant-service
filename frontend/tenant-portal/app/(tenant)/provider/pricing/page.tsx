@@ -81,7 +81,7 @@ function KpiCard({ label, value, sub, icon, variant }: {
   icon: React.ReactNode; variant?: "success"|"warning"|"danger"|"neutral";
 }) {
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "18px 20px" }}>
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: "18px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
           color: "var(--text-tertiary)" }}>{label}</span>
@@ -225,7 +225,7 @@ function PricePreviewPanel({ enabledServices }: { enabledServices: Record<string
                   ? "Pay provider directly" : safeText(result.payment_collection_mode)],
                 ["Pricing Source",         safeText(result.matched_rule_name ?? result.source)],
               ].map(([k, v]) => (
-                <div key={k} style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8,
+                <div key={k} style={{ padding: "10px 12px", background: "var(--surface)", borderRadius:"var(--radius-md)",
                   border: "1px solid var(--border)" }}>
                   <p style={{ fontSize: 10, fontWeight: 600, color: "var(--text-tertiary)", margin: "0 0 4px",
                     textTransform: "uppercase", letterSpacing: "0.06em" }}>{k}</p>
@@ -234,7 +234,7 @@ function PricePreviewPanel({ enabledServices }: { enabledServices: Record<string
               ))}
             </div>
             <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--success-bg)",
-              border: "1px solid var(--success-border)", borderRadius: 8,
+              border: "1px solid var(--success-border)", borderRadius:"var(--radius-md)",
               fontSize: 12, color: "var(--success-text)", display: "flex", gap: 6 }}>
               <CheckCircle2 size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
               Price resolved successfully. Customer pays provider directly — no platform payment collected.
@@ -525,7 +525,7 @@ export default function PricingPage() {
       <div className="pg-grid">
 
         {/* 3. PRICING READINESS HERO */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12,
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)",
           padding: "22px 24px",
           borderLeft: `4px solid ${pricesApi.error ? "var(--danger-text)" : "var(--success-text)"}` }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
@@ -611,7 +611,7 @@ export default function PricingPage() {
         </div>
 
         {/* 5. PRICING RULES EXPLANATION */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: "20px 24px" }}>
           <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 10px",
             display: "flex", alignItems: "center", gap: 8 }}>
             <Info size={15}/> How Tenant Pricing Works
@@ -635,7 +635,7 @@ export default function PricingPage() {
         </div>
 
         {/* 6. PLATFORM PRICING TABLE */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
           <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 2px",
@@ -730,7 +730,7 @@ export default function PricingPage() {
         <PricePreviewPanel enabledServices={enabledServices}/>
 
         {/* 8. OVERRIDE REQUEST HISTORY */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: "20px 24px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
             <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0,
               display: "flex", alignItems: "center", gap: 8 }}>
@@ -795,7 +795,7 @@ export default function PricingPage() {
         </div>
 
         {/* 9. ACTIVITY TIMELINE */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: "20px 24px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
             <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: 0,
               display: "flex", alignItems: "center", gap: 8 }}>

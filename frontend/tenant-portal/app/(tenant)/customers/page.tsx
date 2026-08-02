@@ -71,7 +71,7 @@ export default function CustomersPage() {
         borderRadius:10, border:"1px solid var(--border)", width:"fit-content" }}>
         {HEALTH_TABS.map(t => (
           <button key={t.key} onClick={() => handleTabChange(t.key)}
-            style={{ padding:"6px 14px", borderRadius:8, border:"none", cursor:"pointer",
+            style={{ padding:"6px 14px", borderRadius:"var(--radius-md)", border:"none", cursor:"pointer",
               fontFamily:"inherit", fontSize:12, fontWeight: bandTab===t.key ? 700 : 500,
               background: bandTab===t.key ? "var(--surface-base)" : "transparent",
               color: bandTab===t.key ? (t.color || "var(--brand)") : "var(--text-secondary)",

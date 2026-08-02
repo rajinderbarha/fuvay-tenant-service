@@ -24,7 +24,7 @@ const PKG_STATUS_LABEL: Record<string, string> = {
 };
 
 function ProfileBar({ pct }: { pct: number }) {
-  const color = pct >= 80 ? "#16a34a" : pct >= 60 ? "#d97706" : "#dc2626";
+  const color = pct >= 80 ? "var(--success)" : pct >= 60 ? "var(--warning)" : "var(--danger)";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <div style={{ flex: 1, height: 6, background: "var(--border)", borderRadius: 4, overflow: "hidden" }}>
@@ -115,9 +115,9 @@ export default function NewBusinessRequestsPage() {
         {/* Summary Cards */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
           <SummaryCard label="Total New Requests"    value={summary?.total}                color="var(--primary)"  loading={summaryFetch.loading} />
-          <SummaryCard label="With Package"          value={summary?.with_package}         color="#16a34a"         loading={summaryFetch.loading} />
-          <SummaryCard label="Without Package"       value={summary?.without_package}      color="#dc2626"         loading={summaryFetch.loading} />
-          <SummaryCard label="Package Selected"      value={summary?.package_selected}     color="#d97706"         loading={summaryFetch.loading} />
+          <SummaryCard label="With Package"          value={summary?.with_package}         color="var(--success)"         loading={summaryFetch.loading} />
+          <SummaryCard label="Without Package"       value={summary?.without_package}      color="var(--danger)"         loading={summaryFetch.loading} />
+          <SummaryCard label="Package Selected"      value={summary?.package_selected}     color="var(--warning)"         loading={summaryFetch.loading} />
           <SummaryCard label="Profile ≥ 80%"         value={summary?.profile_near_complete} color="#0891b2"        loading={summaryFetch.loading} />
         </div>
 
@@ -130,19 +130,19 @@ export default function NewBusinessRequestsPage() {
                 value={q} onChange={e => { setQ(e.target.value); setPage(1); }}
                 placeholder="Search by name, email, phone…"
                 style={{
-                  width: "100%", padding: "8px 10px 8px 32px", borderRadius: 8,
+                  width: "100%", padding: "8px 10px 8px 32px", borderRadius:"var(--radius-md)",
                   border: "1px solid var(--border)", background: "var(--bg)",
                   color: "var(--text-primary)", fontSize: 13, outline: "none", boxSizing: "border-box",
                 }}
               />
             </div>
             <select value={vertical} onChange={e => { setVertical(e.target.value); setPage(1); }}
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
+              style={{ padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
               <option value="">All Verticals</option>
               {Object.entries(VERTICAL_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
             <select value={hasPkg} onChange={e => { setHasPkg(e.target.value as "" | "true" | "false"); setPage(1); }}
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
+              style={{ padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
               <option value="">Package: All</option>
               <option value="true">Has Package</option>
               <option value="false">No Package</option>
@@ -150,7 +150,7 @@ export default function NewBusinessRequestsPage() {
             <input
               value={city} onChange={e => { setCity(e.target.value); setPage(1); }}
               placeholder="Filter by city…"
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13, width: 160 }}
+              style={{ padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13, width: 160 }}
             />
             <Btn variant="ghost" size="sm" onClick={() => listFetch.refetch()}>
               <RefreshCw size={13} />

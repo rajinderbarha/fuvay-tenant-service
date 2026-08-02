@@ -14,7 +14,10 @@ ME = (ROOT / "app/engines/home_service_booking/matching_engine.py").read_text(en
 
 def test_update_draft_parses_preferred_date():
     idx = SVC.index("async def update_draft_fields(")
-    body = SVC[idx:idx + 2000]
+    # Phase 2A.2 inserted offering-change-clears-stale-context handling
+    # before the preferred_date parsing block, pushing it further into the
+    # method body -- widened window, same source-level pin.
+    body = SVC[idx:idx + 3200]
     assert 'field == "preferred_date"' in body
     assert "date.fromisoformat" in body
 

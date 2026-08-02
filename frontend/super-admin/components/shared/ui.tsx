@@ -167,7 +167,7 @@ export function Card({ children, style = {}, padding = 20, hover = false, onClic
   const [hov, setHov] = useState(false);
   return (
     <div onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} style={{
-      background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14,
+      background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl, 1rem)",
       padding, boxShadow: hov && hover ? "var(--shadow-md)" : "var(--shadow-sm)",
       transform: hov && hover ? "translateY(-1px)" : "none",
       borderColor: hov && hover ? "var(--border-strong)" : "var(--border)",
@@ -381,7 +381,7 @@ export function Modal({ open, onClose, title, children, size = "md" }: {
         tabIndex={-1}
         style={{
           width: "100%", maxWidth: W[size], maxHeight: "90vh", overflow: "auto",
-          background: "var(--surface-elevated)", borderRadius: 18,
+          background: "var(--surface-elevated)", borderRadius: "var(--radius-xl, 1rem)",
           boxShadow: "var(--shadow-lg)", border: "1px solid var(--border)",
           animation: "slideUp 0.2s cubic-bezier(0.34,1.56,0.64,1)",
         }}>
@@ -561,7 +561,7 @@ export function DataTable<T extends Record<string, unknown>>({ columns, rows, lo
   rows: T[]; loading?: boolean; emptyText?: string; onRowClick?: (row: T) => void;
 }) {
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", boxShadow: "var(--shadow-sm)" }}>
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl, 1rem)", overflow: "hidden", boxShadow: "var(--shadow-sm)" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
@@ -630,7 +630,7 @@ const HEALTH_COLORS: { [k: string]: { bg: string; text: string; border: string; 
   gold:     { bg: "#FEF9EE", text: "#92400E", border: "#FCD34D", icon: "#F4A830", label: "Gold"     },
   silver:   { bg: "#F8FAFC", text: "#475569", border: "#CBD5E1", icon: "#94A3B8", label: "Silver"   },
   bronze:   { bg: "#FDF0E8", text: "#7C2D12", border: "#FDBA74", icon: "#CD7F32", label: "Bronze"   },
-  at_risk:  { bg: "#FFFBEB", text: "#92400E", border: "#FDE68A", icon: "#F59E0B", label: "At Risk"  },
+  at_risk:  { bg: "#FFFBEB", text: "#92400E", border: "#FDE68A", icon: "var(--warning)", label: "At Risk"  },
   critical: { bg: "#FEF2F2", text: "#991B1B", border: "#FECACA", icon: "#EF4444", label: "Critical" },
 };
 function getHealthBand(score: number): string {

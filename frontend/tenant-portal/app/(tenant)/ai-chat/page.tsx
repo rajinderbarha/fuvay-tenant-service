@@ -1,6 +1,5 @@
 "use client";
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import Link from "next/link";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { useAction } from "../../../hooks/useApi";
 import { aiChatApi, type AIChatMessage } from "../../../lib/api";
@@ -134,7 +133,7 @@ export default function AiChatPage() {
               {/* BOOK CTA card */}
               {msg.booking && (
                 <div style={{ marginTop:8, maxWidth:"82%", background:"var(--surface)",
-                  border:"1px solid var(--accent)", borderRadius:12,
+                  border:"1px solid var(--accent)", borderRadius:"var(--radius-lg)",
                   padding:"14px 16px" }}>
                   <p style={{ margin:"0 0 8px", fontWeight:700, fontSize:13, color:"var(--accent)" }}>
                     📅 Booking Request Detected
@@ -147,12 +146,12 @@ export default function AiChatPage() {
                       </p>
                     )
                   ))}
-                  <Link href="/bookings"
-                    style={{ display:"inline-block", marginTop:10, padding:"7px 16px", borderRadius:8,
+                  <a href="/jobs"
+                    style={{ display:"inline-block", marginTop:10, padding:"7px 16px", borderRadius:"var(--radius-md)",
                       background:"var(--accent)", color:"white", fontWeight:600, fontSize:12,
                       textDecoration:"none" }}>
                     Book Now →
-                  </Link>
+                  </a>
                 </div>
               )}
             </div>
@@ -191,13 +190,13 @@ export default function AiChatPage() {
               onKeyDown={handleKey}
               placeholder="Ask anything… (Shift+Enter for newline)"
               rows={2}
-              style={{ flex:1, padding:"10px 14px", borderRadius:12,
+              style={{ flex:1, padding:"10px 14px", borderRadius:"var(--radius-lg)",
                 border:"1px solid var(--border)", background:"var(--surface)",
                 color:"var(--text-primary)", fontSize:14, fontFamily:"inherit",
                 resize:"none", outline:"none", lineHeight:1.5 }}
             />
             <button onClick={handleSend} disabled={loading || !input.trim()}
-              style={{ height:44, width:44, borderRadius:12, border:"none",
+              style={{ height:44, width:44, borderRadius:"var(--radius-lg)", border:"none",
                 background: (loading || !input.trim()) ? "var(--border)" : "var(--accent)",
                 color:"white", fontSize:20, cursor:(loading || !input.trim()) ? "not-allowed" : "pointer",
                 flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>

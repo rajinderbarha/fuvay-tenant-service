@@ -63,7 +63,15 @@ def make_job(**overrides):
 # ── 1. job_type / constants ───────────────────────────────────────────────────
 
 def test_job_types_enum():
-    assert JOB_TYPES == [JobType.REPAIR, JobType.SERVICE, JobType.CONSULTATION]
+    # Migration 151: extended from 3 to 9 values to match admin_catalog's
+    # VALID_JOB_TYPES, which already allowed all 9 -- the original 3 remain
+    # first and unchanged in behavior (see test_module_job_types_reconciliation.py).
+    assert JOB_TYPES[:3] == [JobType.REPAIR, JobType.SERVICE, JobType.CONSULTATION]
+    assert set(JOB_TYPES) == {
+        "repair", "service", "consultation",
+        "installation", "uninstallation", "inspection",
+        "maintenance", "cleaning", "custom",
+    }
 
 def test_transitions_by_job_type_has_all_three():
     for jt in JOB_TYPES:

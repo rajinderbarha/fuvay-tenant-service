@@ -4,9 +4,17 @@ import EnterpriseDataGrid, { GridColumn, GridData } from "../../../components/en
 import { FilterDef } from "../../../components/enterprise/EnterpriseFilterBar";
 import { apiFetch } from "../../../lib/api";
 
+// Phase 2A.1: closed_estimate_declined is a new terminal status (customer
+// declined the estimate) -- shown with a clear label rather than the raw
+// snake_case value, without redesigning this grid.
+const STATUS_LABELS: Record<string, string> = {
+  closed_estimate_declined: "Estimate Declined",
+};
+
 const COLUMNS: GridColumn[] = [
   { key: "job_number",        label: "Job #",        width: 140 },
-  { key: "status",            label: "Status",       width: 120 },
+  { key: "status",            label: "Status",       width: 120,
+    render: v => STATUS_LABELS[String(v)] ?? String(v ?? "—") },
   { key: "assignment_status", label: "Assignment",   width: 140 },
   { key: "category_id",       label: "Category",     visible: false },
   { key: "scheduled_date",    label: "Scheduled",    width: 130,
@@ -24,6 +32,7 @@ const FILTERS: FilterDef[] = [
       { value: "in_progress", label: "In Progress" },
       { value: "completed",   label: "Completed" },
       { value: "cancelled",   label: "Cancelled" },
+      { value: "closed_estimate_declined", label: "Estimate Declined" },
     ],
   },
   {

@@ -66,7 +66,7 @@ export default function CustomerPricePreviewPage() {
       <div style={{ marginBottom: 16, padding: "10px 16px", borderRadius: 10,
         background: "var(--info-bg, #eff6ff)", border: "1px solid var(--border)",
         display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-        <p style={{ fontSize: 13, color: "var(--info-text, #1d4ed8)", margin: 0 }}>
+        <p style={{ fontSize: 13, color: "var(--info-text, var(--brand-hover))", margin: 0 }}>
           This preview has moved into the Home Services setup flow.
         </p>
         <Link href="/tenant/setup/services" style={{
@@ -82,7 +82,7 @@ export default function CustomerPricePreviewPage() {
       </div>
 
       <Card style={{ marginBottom: 20, background: "var(--info-bg, #eff6ff)" }}>
-        <p style={{ fontSize: 12, color: "var(--info-text, #1d4ed8)", margin: 0 }}>
+        <p style={{ fontSize: 12, color: "var(--info-text, var(--brand-hover))", margin: 0 }}>
           ServiceOS automatically creates customer price options from platform pricing and platform
           fee. You do not need to set up bargaining manually.
         </p>
@@ -101,7 +101,7 @@ export default function CustomerPricePreviewPage() {
               {enabled.data!.offerings.map(o => (
                 <button key={o.provider_enabled_offering_id} onClick={() => setSelectedServiceId(o.offering_id)}
                   style={{
-                    padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    padding: "6px 14px", borderRadius:"var(--radius-md)", fontSize: 12, fontWeight: 600, cursor: "pointer",
                     border: "1px solid var(--border)",
                     background: offeringId === o.offering_id ? "var(--brand)" : "var(--surface)",
                     color: offeringId === o.offering_id ? "white" : "var(--text-primary)",
@@ -149,7 +149,7 @@ export default function CustomerPricePreviewPage() {
             ) : (
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {readiness.data?.matching_ready ? (
-                  <CheckCircle2 size={18} style={{ color: "var(--success-text, #16a34a)" }}/>
+                  <CheckCircle2 size={18} style={{ color: "var(--success-text, var(--success))" }}/>
                 ) : (
                   <XCircle size={18} style={{ color: "var(--danger-text)" }}/>
                 )}

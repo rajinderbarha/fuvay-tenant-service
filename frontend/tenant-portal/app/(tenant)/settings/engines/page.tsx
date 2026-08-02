@@ -15,16 +15,16 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 const SOURCE_COLOR: Record<string, string> = {
-  global:              "#64748b",
-  category:            "#7c3aed",
-  package_entitlement: "#0369a1",
-  tenant_override:     "#b45309",
+  global:              "var(--text-tertiary)",
+  category:            "var(--accent)",
+  package_entitlement: "var(--info-text)",
+  tenant_override:     "var(--warning)",
 };
 
 function HealthDot({ status }: { status: string }) {
   const color =
-    status === "healthy"  ? "#22c55e" :
-    status === "degraded" ? "#eab308" :
+    status === "healthy"  ? "var(--success)" :
+    status === "degraded" ? "var(--warning)" :
     status === "down"     ? "#ef4444" : "#9ca3af";
   return (
     <span style={{ display:"inline-block", width:8, height:8, borderRadius:"50%",
@@ -78,9 +78,9 @@ export default function EnginesPage() {
             {/* Summary cards */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:12, marginBottom:24 }}>
               {[
-                { label:"Total Engines",    value:data.summary.total,   color:"#1e40af" },
-                { label:"Enabled for You",  value:data.summary.enabled, color:"#15803d" },
-                { label:"Not Enabled",      value:data.summary.disabled,color:"#9ca3af" },
+                { label:"Total Engines",    value:data.summary.total,   color:"var(--brand)" },
+                { label:"Enabled for You",  value:data.summary.enabled, color:"var(--success)" },
+                { label:"Not Enabled",      value:data.summary.disabled,color:"var(--text-tertiary)" },
               ].map(s => (
                 <Card key={s.label} padding="md">
                   <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"0 0 4px", textTransform:"uppercase", letterSpacing:"0.05em" }}>
@@ -95,14 +95,14 @@ export default function EnginesPage() {
             {(data.category || data.package) && (
               <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:20 }}>
                 {data.category && (
-                  <div style={{ padding:"4px 12px", borderRadius:20, border:"1px solid #ddd6fe",
-                    background:"#faf5ff", fontSize:12, color:"#6d28d9" }}>
+                  <div style={{ padding:"4px 12px", borderRadius:20, border:"1px solid var(--border)",
+                    background:"var(--surface-sunken)", fontSize:12, color:"var(--text-secondary)" }}>
                     Category: <strong>{data.category.name}</strong>
                   </div>
                 )}
                 {data.package && (
-                  <div style={{ padding:"4px 12px", borderRadius:20, border:"1px solid #bae6fd",
-                    background:"#f0f9ff", fontSize:12, color:"#0369a1" }}>
+                  <div style={{ padding:"4px 12px", borderRadius:20, border:"1px solid var(--info-border)",
+                    background:"var(--info-bg)", fontSize:12, color:"var(--info-text)" }}>
                     Package: <strong>{data.package.name}</strong>
                   </div>
                 )}
@@ -130,11 +130,11 @@ export default function EnginesPage() {
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap:10 }}>
                 {enabled.map((e: TenantEffectiveEngine) => (
                   <div key={e.engine_key}
-                    style={{ border:"1px solid #d1fae5", borderRadius:8, padding:"12px 14px",
+                    style={{ border:"1px solid #d1fae5", borderRadius:"var(--radius-md)", padding:"12px 14px",
                       background:"#f0fdf4" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                      <CheckCircle2 size={14} style={{ color:"#16a34a", flexShrink:0 }} />
-                      <span style={{ fontSize:13, fontWeight:600, color:"#15803d" }}>{e.name}</span>
+                      <CheckCircle2 size={14} style={{ color:"var(--success)", flexShrink:0 }} />
+                      <span style={{ fontSize:13, fontWeight:600, color:"var(--success)" }}>{e.name}</span>
                     </div>
                     <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
                       <span style={{ fontSize:10, fontFamily:"monospace", color:"#64748b",
@@ -193,7 +193,7 @@ export default function EnginesPage() {
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))", gap:8 }}>
                     {disabled.map((e: TenantEffectiveEngine) => (
                       <div key={e.engine_key}
-                        style={{ border:"1px solid #f1f5f9", borderRadius:8, padding:"10px 12px",
+                        style={{ border:"1px solid #f1f5f9", borderRadius:"var(--radius-md)", padding:"10px 12px",
                           background:"#f8fafc", opacity:0.75 }}>
                         <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
                           <XCircle size={13} style={{ color:"#9ca3af", flexShrink:0 }} />

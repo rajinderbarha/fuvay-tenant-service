@@ -43,7 +43,7 @@ export default function ProviderQualityPage() {
         <KpiCard label="1-Star Reviews" value={s.one_star_count}  loading={loading} severity={Number(s.one_star_count) > 5 ? "warning" : "normal"} />
       </div>
 
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
         <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 16px" }}>Ratings by Staff</h2>
         <SimpleTable
           rows={bd}

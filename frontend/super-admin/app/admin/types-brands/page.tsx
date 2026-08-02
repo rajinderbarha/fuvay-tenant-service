@@ -12,6 +12,37 @@ import type {
 import { useApi, useAction } from "../../../hooks/useApi";
 import { Plus, RefreshCw, Download, Search, ChevronDown, X, Info, Map } from "lucide-react";
 
+// ── Multi-select checkbox list (categories / service groups) ─────────────────
+// Shared by the Type and Brand mapping modals below -- lets an admin pick
+// several categories (used purely to filter the group list) and several
+// service groups at once, creating one mapping row per selected group in a
+// single submit instead of repeating the form N times.
+function MultiCheckList({ label, options, selected, onToggle, emptyText = "None available" }: {
+  label: string; options: { value: string; label: string }[];
+  selected: string[]; onToggle: (v: string) => void; emptyText?: string;
+}) {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+      <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>{label}</label>
+      <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:160, overflowY:"auto",
+        border:"1px solid var(--border)", borderRadius:"var(--radius-md)", padding:8 }}>
+        {options.length === 0
+          ? <span style={{ fontSize:12, color:"var(--text-tertiary)" }}>{emptyText}</span>
+          : options.map(o => (
+            <label key={o.value} style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, cursor:"pointer" }}>
+              <input type="checkbox" checked={selected.includes(o.value)} onChange={() => onToggle(o.value)} />
+              {o.label}
+            </label>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function toggleInList(list: string[], value: string): string[] {
+  return list.includes(value) ? list.filter(v => v !== value) : [...list, value];
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 const TYPE_FAMILIES = [
   { value:"",              label:"All Families" },
@@ -77,7 +108,7 @@ export default function TypesBrandsPage() {
 function SummaryCard({ label, value, accent }: { label:string; value:number|string; accent?:boolean }) {
   return (
     <div style={{
-      background:"var(--card-bg)", border:"1px solid var(--border)", borderRadius:12,
+      background:"var(--card-bg)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)",
       padding:"16px 20px", flex:"1 1 130px", minWidth:110,
       borderTop: accent ? "3px solid var(--accent)" : "1px solid var(--border)",
     }}>
@@ -173,7 +204,7 @@ function ServiceTypesTab() {
       {/* Summary Cards */}
       <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
         {summaryRes.loading
-          ? [1,2,3,4,5,6].map(i => <Skeleton key={i} height={72} style={{ flex:"1 1 130px", minWidth:110, borderRadius:12 }}/>)
+          ? [1,2,3,4,5,6].map(i => <Skeleton key={i} height={72} style={{ flex:"1 1 130px", minWidth:110, borderRadius:"var(--radius-lg)" }}/>)
           : <>
             <SummaryCard label="Total"             value={sum?.total ?? 0} accent />
             <SummaryCard label="Active"            value={sum?.active ?? 0} />
@@ -192,17 +223,17 @@ function ServiceTypesTab() {
             <Search size={14} style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", color:"var(--text-tertiary)" }}/>
             <input value={q} onChange={e=>{setQ(e.target.value);setPage(1);}}
               placeholder="Search name, code, slug…"
-              style={{ width:"100%", paddingLeft:32, paddingRight:10, height:36, borderRadius:8,
+              style={{ width:"100%", paddingLeft:32, paddingRight:10, height:36, borderRadius:"var(--radius-md)",
                 border:"1px solid var(--border)", background:"var(--input-bg)",
                 color:"var(--text-primary)", fontSize:13, outline:"none", boxSizing:"border-box" }}/>
           </div>
           <select value={status} onChange={e=>{setStatus(e.target.value);setPage(1);}}
-            style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
             {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <select value={mapped} onChange={e=>{setMapped(e.target.value);setPage(1);}}
-            style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
             <option value="">All (Mapped/Unmapped)</option>
             <option value="yes">Mapped Only</option>
@@ -330,11 +361,11 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
       {type === "textarea"
         ? <textarea value={form[key] as string}
             onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} rows={2}
-            style={{ borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+            style={{ borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"8px 10px", resize:"vertical" }}/>
         : <input type={type} value={form[key] as string|number}
             onChange={e => setForm(f => ({ ...f, [key]: type==="number"?+e.target.value:e.target.value }))}
-            style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}/>
       }
     </div>
@@ -346,7 +377,7 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
   return (
     <Modal open title={title} onClose={onClose}>
       <div style={{ display:"flex", flexDirection:"column", gap:14, minWidth:360 }}>
-        {err && <div style={{ padding:"8px 12px", borderRadius:8, background:"var(--danger-bg)",
+        {err && <div style={{ padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)",
           fontSize:12, color:"var(--danger-text)" }}>{err}</div>}
         {F("Name *", "name")}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
@@ -358,7 +389,7 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Type Family</label>
             <select value={form.type_family} onChange={e=>setForm(f=>({...f,type_family:e.target.value}))}
-              style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+              style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
                 color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
               {TYPE_FAMILIES.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -366,7 +397,7 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Status</label>
             <select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}
-              style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+              style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
                 color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
@@ -439,51 +470,72 @@ function TypeDetailDrawer({ item, onClose }: { item:ServiceTypeMaster; onClose()
 // ── Add Type Mapping Modal ────────────────────────────────────────────────────
 function AddTypeMappingModal({ typeId, typeName, onClose, onSaved }:
   { typeId:string; typeName:string; onClose():void; onSaved():void }) {
-  const [categoryId, setCategoryId] = useState("");
-  const [serviceId,  setServiceId]  = useState("");
-  const [custVis,    setCustVis]    = useState(true);
+  // A Type (e.g. "Split AC", "Window AC") belongs to a Service Group (e.g.
+  // "AC Services"), not directly to the whole top-level Category (e.g. "Home
+  // Services") -- ServiceTypeMapping.service_group_id is the real association
+  // (backend already supports it; this form previously never exposed it and
+  // forced category_id as the required field instead). Category is kept only
+  // as a filter to narrow the Service Group list, matching how Service Group
+  // itself is always scoped to exactly one category. Both are multi-select:
+  // one submit creates one mapping row per selected service group.
+  const [categoryIds,     setCategoryIds]     = useState<string[]>([]);
+  const [serviceGroupIds, setServiceGroupIds] = useState<string[]>([]);
+  const [serviceId,       setServiceId]       = useState("");
+  const [custVis,         setCustVis]         = useState(true);
 
   const categories = useApi(useCallback(() => catalogApi.listCategories(true), []));
+  const serviceGroups = useApi(useCallback(() => catalogApi.listServiceGroups(), []));
+  const allGroups = serviceGroups.data?.groups ?? [];
+  const visibleGroups = categoryIds.length === 0
+    ? allGroups : allGroups.filter(g => categoryIds.includes(g.category_id));
+  // "Service" filter only makes sense once exactly one group is selected.
+  const singleGroupId = serviceGroupIds.length === 1 ? serviceGroupIds[0] : undefined;
   const services   = useApi(useCallback(
-    () => categoryId ? catalogApi.listMasterServices(categoryId) : Promise.resolve({ services:[] }),
-    [categoryId],
+    () => singleGroupId ? catalogApi.listMasterServices(undefined, undefined, undefined, singleGroupId) : Promise.resolve({ services:[] }),
+    [singleGroupId],
   ));
 
-  const action = useAction(useCallback((d:object) => typesApi.createMapping(d), []));
+  const action = useAction(useCallback(async (groupIds: string[]) => {
+    const results = await Promise.all(groupIds.map(gid => {
+      const group = allGroups.find(g => g.id === gid);
+      return typesApi.createMapping({
+        type_id: typeId, service_group_id: gid,
+        category_id: group?.category_id,
+        service_id: groupIds.length === 1 ? (serviceId || undefined) : undefined,
+        customer_visible: custVis,
+      });
+    }));
+    return results;
+  }, [typeId, serviceId, custVis, allGroups]));
 
   async function handleSave() {
-    if (!categoryId) return;
-    const res = await action.execute({
-      type_id: typeId, category_id: categoryId,
-      service_id: serviceId || undefined,
-      customer_visible: custVis,
-    });
+    if (serviceGroupIds.length === 0) return;
+    const res = await action.execute(serviceGroupIds);
     if (res) onSaved();
   }
 
   return (
     <Modal open title={`Map Type: ${typeName}`} onClose={onClose}>
       <div style={{ display:"flex", flexDirection:"column", gap:14, minWidth:320 }}>
-        {action.error && <div style={{ padding:"8px 12px", borderRadius:8, background:"var(--danger-bg)",
+        {action.error && <div style={{ padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)",
           fontSize:12, color:"var(--danger-text)" }}>{action.error}</div>}
+        <MultiCheckList label="Category (filter)" emptyText="No categories"
+          options={(categories.data?.categories ?? []).map((c:any) => ({ value:c.category_id, label:c.name }))}
+          selected={categoryIds}
+          onToggle={v => { setCategoryIds(p => toggleInList(p, v)); setServiceGroupIds([]); setServiceId(""); }}/>
+        <MultiCheckList label="Service Group *" emptyText="No service groups match the selected categories"
+          options={visibleGroups.map(g => ({ value:g.id, label: categoryIds.length === 0 ? `${g.name} (${g.category_name})` : g.name }))}
+          selected={serviceGroupIds}
+          onToggle={v => { setServiceGroupIds(p => toggleInList(p, v)); setServiceId(""); }}/>
         <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Category *</label>
-          <select value={categoryId} onChange={e=>{setCategoryId(e.target.value);setServiceId("");}}
-            style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
-              color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
-            <option value="">Select category…</option>
-            {(categories.data?.categories ?? []).map((c:any) =>
-              <option key={c.category_id} value={c.category_id}>{c.name}</option>
-            )}
-          </select>
-        </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Service (optional)</label>
-          <select value={serviceId} onChange={e=>setServiceId(e.target.value)} disabled={!categoryId}
-            style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>
+            Service (optional{serviceGroupIds.length > 1 ? " — only when a single group is selected" : ""})
+          </label>
+          <select value={serviceId} onChange={e=>setServiceId(e.target.value)} disabled={!singleGroupId}
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"0 10px",
-              opacity: categoryId ? 1 : 0.5 }}>
-            <option value="">All services in category</option>
+              opacity: singleGroupId ? 1 : 0.5 }}>
+            <option value="">All services in group</option>
             {(services.data?.services ?? []).map((s:any) =>
               <option key={s.service_id} value={s.service_id}>{s.name}</option>
             )}
@@ -496,7 +548,9 @@ function AddTypeMappingModal({ typeId, typeName, onClose, onSaved }:
         <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
           <Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn>
           <Btn variant="primary" size="sm" loading={action.loading} onClick={handleSave}
-            disabled={!categoryId}>Add Mapping</Btn>
+            disabled={serviceGroupIds.length === 0}>
+            Add Mapping{serviceGroupIds.length > 1 ? ` (${serviceGroupIds.length} groups)` : ""}
+          </Btn>
         </div>
       </div>
     </Modal>
@@ -758,7 +812,7 @@ function BrandMasterTab() {
       {/* Summary Cards */}
       <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
         {summaryRes.loading
-          ? [1,2,3,4,5,6].map(i => <Skeleton key={i} height={72} style={{ flex:"1 1 130px", minWidth:110, borderRadius:12 }}/>)
+          ? [1,2,3,4,5,6].map(i => <Skeleton key={i} height={72} style={{ flex:"1 1 130px", minWidth:110, borderRadius:"var(--radius-lg)" }}/>)
           : <>
             <SummaryCard label="Total"    value={sum?.total ?? 0} accent />
             <SummaryCard label="Active"   value={sum?.active ?? 0} />
@@ -777,12 +831,12 @@ function BrandMasterTab() {
             <Search size={14} style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", color:"var(--text-tertiary)" }}/>
             <input value={q} onChange={e=>{setQ(e.target.value);setPage(1);}}
               placeholder="Search brand name, code…"
-              style={{ width:"100%", paddingLeft:32, paddingRight:10, height:36, borderRadius:8,
+              style={{ width:"100%", paddingLeft:32, paddingRight:10, height:36, borderRadius:"var(--radius-md)",
                 border:"1px solid var(--border)", background:"var(--input-bg)",
                 color:"var(--text-primary)", fontSize:13, outline:"none", boxSizing:"border-box" }}/>
           </div>
           <select value={status} onChange={e=>{setStatus(e.target.value);setPage(1);}}
-            style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
             {STATUS_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
@@ -894,7 +948,7 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
   return (
     <Modal open title={title} onClose={onClose}>
       <div style={{ display:"flex", flexDirection:"column", gap:14, minWidth:360 }}>
-        {err && <div style={{ padding:"8px 12px", borderRadius:8, background:"var(--danger-bg)",
+        {err && <div style={{ padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)",
           fontSize:12, color:"var(--danger-text)" }}>{err}</div>}
         {([
           ["Name *", "name"], ["Code", "code"], ["Slug", "slug"],
@@ -903,21 +957,21 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
           <div key={key} style={{ display:"flex", flexDirection:"column", gap:4 }}>
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>{label}</label>
             <input value={form[key] as string} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}
-              style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+              style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
                 color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}/>
           </div>
         ))}
         <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
           <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Description</label>
           <textarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={2}
-            style={{ borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+            style={{ borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"8px 10px", resize:"vertical" }}/>
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Status</label>
             <select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value as Brand34D["status"]}))}
-              style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+              style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
                 color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
@@ -927,7 +981,7 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Display Order</label>
             <input type="number" value={form.display_order}
               onChange={e=>setForm(f=>({...f,display_order:+e.target.value}))}
-              style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+              style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
                 color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}/>
           </div>
         </div>
@@ -989,51 +1043,67 @@ function BrandDetailDrawer({ item, onClose }: { item:Brand34D; onClose():void })
 
 function AddBrandMappingModal({ brandId, brandName, onClose, onSaved }:
   { brandId:string; brandName:string; onClose():void; onSaved():void }) {
-  const [categoryId, setCategoryId] = useState("");
-  const [serviceId,  setServiceId]  = useState("");
-  const [custVis,    setCustVis]    = useState(true);
+  // Same fix as AddTypeMappingModal -- a Brand belongs to a Service Group
+  // (e.g. "AC Services"), not directly to the whole Category. BrandMapping.
+  // service_group_id already exists on the backend. Category is a multi-
+  // select filter narrowing the group list; Service Group is multi-select
+  // and is the real saved association (one row per selected group).
+  const [categoryIds,     setCategoryIds]     = useState<string[]>([]);
+  const [serviceGroupIds, setServiceGroupIds] = useState<string[]>([]);
+  const [serviceId,       setServiceId]       = useState("");
+  const [custVis,         setCustVis]         = useState(true);
 
   const categories = useApi(useCallback(() => catalogApi.listCategories(true), []));
+  const serviceGroups = useApi(useCallback(() => catalogApi.listServiceGroups(), []));
+  const allGroups = serviceGroups.data?.groups ?? [];
+  const visibleGroups = categoryIds.length === 0
+    ? allGroups : allGroups.filter(g => categoryIds.includes(g.category_id));
+  const singleGroupId = serviceGroupIds.length === 1 ? serviceGroupIds[0] : undefined;
   const services   = useApi(useCallback(
-    () => categoryId ? catalogApi.listMasterServices(categoryId) : Promise.resolve({ services:[] }),
-    [categoryId],
+    () => singleGroupId ? catalogApi.listMasterServices(undefined, undefined, undefined, singleGroupId) : Promise.resolve({ services:[] }),
+    [singleGroupId],
   ));
 
-  const action = useAction(useCallback((d:object) => typesApi.createBrandMapping(d), []));
+  const action = useAction(useCallback(async (groupIds: string[]) => {
+    return Promise.all(groupIds.map(gid => {
+      const group = allGroups.find(g => g.id === gid);
+      return typesApi.createBrandMapping({
+        brand_id: brandId, service_group_id: gid,
+        category_id: group?.category_id,
+        service_id: groupIds.length === 1 ? (serviceId || undefined) : undefined,
+        customer_visible: custVis,
+      });
+    }));
+  }, [brandId, serviceId, custVis, allGroups]));
 
   async function handleSave() {
-    if (!categoryId) return;
-    const res = await action.execute({
-      brand_id: brandId, category_id: categoryId,
-      service_id: serviceId || undefined,
-      customer_visible: custVis,
-    });
+    if (serviceGroupIds.length === 0) return;
+    const res = await action.execute(serviceGroupIds);
     if (res) onSaved();
   }
 
   return (
     <Modal open title={`Map Brand: ${brandName}`} onClose={onClose}>
       <div style={{ display:"flex", flexDirection:"column", gap:14, minWidth:320 }}>
-        {action.error && <div style={{ padding:"8px 12px", borderRadius:8, background:"var(--danger-bg)",
+        {action.error && <div style={{ padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)",
           fontSize:12, color:"var(--danger-text)" }}>{action.error}</div>}
+        <MultiCheckList label="Category (filter)" emptyText="No categories"
+          options={(categories.data?.categories ?? []).map((c:any) => ({ value:c.category_id, label:c.name }))}
+          selected={categoryIds}
+          onToggle={v => { setCategoryIds(p => toggleInList(p, v)); setServiceGroupIds([]); setServiceId(""); }}/>
+        <MultiCheckList label="Service Group *" emptyText="No service groups match the selected categories"
+          options={visibleGroups.map(g => ({ value:g.id, label: categoryIds.length === 0 ? `${g.name} (${g.category_name})` : g.name }))}
+          selected={serviceGroupIds}
+          onToggle={v => { setServiceGroupIds(p => toggleInList(p, v)); setServiceId(""); }}/>
         <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Category *</label>
-          <select value={categoryId} onChange={e=>{setCategoryId(e.target.value);setServiceId("");}}
-            style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
-              color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
-            <option value="">Select category…</option>
-            {(categories.data?.categories ?? []).map((c:any) =>
-              <option key={c.category_id} value={c.category_id}>{c.name}</option>
-            )}
-          </select>
-        </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Service (optional)</label>
-          <select value={serviceId} onChange={e=>setServiceId(e.target.value)} disabled={!categoryId}
-            style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
+          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>
+            Service (optional{serviceGroupIds.length > 1 ? " — only when a single group is selected" : ""})
+          </label>
+          <select value={serviceId} onChange={e=>setServiceId(e.target.value)} disabled={!singleGroupId}
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"0 10px",
-              opacity: categoryId ? 1 : 0.5 }}>
-            <option value="">All services in category</option>
+              opacity: singleGroupId ? 1 : 0.5 }}>
+            <option value="">All services in group</option>
             {(services.data?.services ?? []).map((s:any) =>
               <option key={s.service_id} value={s.service_id}>{s.name}</option>
             )}
@@ -1046,7 +1116,9 @@ function AddBrandMappingModal({ brandId, brandName, onClose, onSaved }:
         <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
           <Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn>
           <Btn variant="primary" size="sm" loading={action.loading} onClick={handleSave}
-            disabled={!categoryId}>Add Mapping</Btn>
+            disabled={serviceGroupIds.length === 0}>
+            Add Mapping{serviceGroupIds.length > 1 ? ` (${serviceGroupIds.length} groups)` : ""}
+          </Btn>
         </div>
       </div>
     </Modal>
@@ -1131,55 +1203,78 @@ function TypeMappingsTab() {
 }
 
 function CreateTypeMappingFullModal({ onClose, onSaved }:{ onClose():void; onSaved():void }) {
-  const [typeId,     setTypeId]     = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [serviceId,  setServiceId]  = useState("");
-  const [custVis,    setCustVis]    = useState(true);
+  // See AddTypeMappingModal above -- a Type belongs to a Service Group, not
+  // directly to a Category. Category is a multi-select filter to narrow the
+  // Service Group list; Service Group is the multi-select saved association
+  // (one mapping row per selected group).
+  const [typeId,          setTypeId]          = useState("");
+  const [categoryIds,     setCategoryIds]     = useState<string[]>([]);
+  const [serviceGroupIds, setServiceGroupIds] = useState<string[]>([]);
+  const [serviceId,       setServiceId]       = useState("");
+  const [custVis,         setCustVis]         = useState(true);
 
   const typesRes   = useApi(useCallback(() => typesApi.list({ status:"active", page_size:200 }), []));
   const categories = useApi(useCallback(() => catalogApi.listCategories(true), []));
+  const serviceGroups = useApi(useCallback(() => catalogApi.listServiceGroups(), []));
+  const allGroups = serviceGroups.data?.groups ?? [];
+  const visibleGroups = categoryIds.length === 0
+    ? allGroups : allGroups.filter(g => categoryIds.includes(g.category_id));
+  const singleGroupId = serviceGroupIds.length === 1 ? serviceGroupIds[0] : undefined;
   const services   = useApi(useCallback(
-    () => categoryId ? catalogApi.listMasterServices(categoryId) : Promise.resolve({ services:[] }),
-    [categoryId],
+    () => singleGroupId ? catalogApi.listMasterServices(undefined, undefined, undefined, singleGroupId) : Promise.resolve({ services:[] }),
+    [singleGroupId],
   ));
 
-  const action = useAction(useCallback((d:object) => typesApi.createMapping(d), []));
+  const action = useAction(useCallback(async (groupIds: string[]) => {
+    return Promise.all(groupIds.map(gid => {
+      const group = allGroups.find(g => g.id === gid);
+      return typesApi.createMapping({
+        type_id: typeId, service_group_id: gid,
+        category_id: group?.category_id,
+        service_id: groupIds.length === 1 ? (serviceId || undefined) : undefined,
+        customer_visible: custVis,
+      });
+    }));
+  }, [typeId, serviceId, custVis, allGroups]));
 
   async function handleSave() {
-    if (!typeId || !categoryId) return;
-    const res = await action.execute({
-      type_id: typeId, category_id: categoryId,
-      service_id: serviceId || undefined, customer_visible: custVis,
-    });
+    if (!typeId || serviceGroupIds.length === 0) return;
+    const res = await action.execute(serviceGroupIds);
     if (res) onSaved();
   }
 
   return (
     <Modal open title="Add Type Mapping" onClose={onClose}>
       <div style={{ display:"flex", flexDirection:"column", gap:14, minWidth:340 }}>
-        {action.error && <div style={{ padding:"8px 12px", borderRadius:8, background:"var(--danger-bg)",
+        {action.error && <div style={{ padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)",
           fontSize:12, color:"var(--danger-text)" }}>{action.error}</div>}
-        {[
-          ["Type *",    typeId,     setTypeId,     (typesRes.data?.types ?? []).map((t:ServiceTypeMaster) => ({ value:t.type_id, label:t.name }))],
-          ["Category *",categoryId, (v:string) => { setCategoryId(v); setServiceId(""); },
-                                    (categories.data?.categories ?? []).map((c:any) => ({ value:c.category_id, label:c.name }))],
-        ].map(([label, val, setter, opts]:[any,any,any,any]) => (
-          <div key={label} style={{ display:"flex", flexDirection:"column", gap:4 }}>
-            <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>{label}</label>
-            <select value={val} onChange={e=>setter(e.target.value)}
-              style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
-                color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
-              <option value="">Select…</option>
-              {opts.map((o:any) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-        ))}
         <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Service (optional)</label>
-          <select value={serviceId} onChange={e=>setServiceId(e.target.value)} disabled={!categoryId}
-            style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
-              color:"var(--text-primary)", fontSize:13, padding:"0 10px", opacity:categoryId?1:0.5 }}>
-            <option value="">All services in category</option>
+          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Type *</label>
+          <select value={typeId} onChange={e=>setTypeId(e.target.value)}
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
+              color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
+            <option value="">Select…</option>
+            {(typesRes.data?.types ?? []).map((t:ServiceTypeMaster) =>
+              <option key={t.type_id} value={t.type_id}>{t.name}</option>
+            )}
+          </select>
+        </div>
+        <MultiCheckList label="Category (filter)" emptyText="No categories"
+          options={(categories.data?.categories ?? []).map((c:any) => ({ value:c.category_id, label:c.name }))}
+          selected={categoryIds}
+          onToggle={v => { setCategoryIds(p => toggleInList(p, v)); setServiceGroupIds([]); setServiceId(""); }}/>
+        <MultiCheckList label="Service Group *" emptyText="No service groups match the selected categories"
+          options={visibleGroups.map(g => ({ value:g.id, label: categoryIds.length === 0 ? `${g.name} (${g.category_name})` : g.name }))}
+          selected={serviceGroupIds}
+          onToggle={v => { setServiceGroupIds(p => toggleInList(p, v)); setServiceId(""); }}/>
+        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>
+            Service (optional{serviceGroupIds.length > 1 ? " — only when a single group is selected" : ""})
+          </label>
+          <select value={serviceId} onChange={e=>setServiceId(e.target.value)} disabled={!singleGroupId}
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
+              color:"var(--text-primary)", fontSize:13, padding:"0 10px", opacity:singleGroupId?1:0.5 }}>
+            <option value="">All services in group</option>
             {(services.data?.services ?? []).map((s:any) =>
               <option key={s.service_id} value={s.service_id}>{s.name}</option>
             )}
@@ -1192,7 +1287,9 @@ function CreateTypeMappingFullModal({ onClose, onSaved }:{ onClose():void; onSav
         <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
           <Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn>
           <Btn variant="primary" size="sm" loading={action.loading} onClick={handleSave}
-            disabled={!typeId || !categoryId}>Add Mapping</Btn>
+            disabled={!typeId || serviceGroupIds.length === 0}>
+            Add Mapping{serviceGroupIds.length > 1 ? ` (${serviceGroupIds.length} groups)` : ""}
+          </Btn>
         </div>
       </div>
     </Modal>
@@ -1277,55 +1374,77 @@ function BrandMappingsTab() {
 }
 
 function CreateBrandMappingFullModal({ onClose, onSaved }:{ onClose():void; onSaved():void }) {
-  const [brandId,    setBrandId]    = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [serviceId,  setServiceId]  = useState("");
-  const [custVis,    setCustVis]    = useState(true);
+  // Same fix as CreateTypeMappingFullModal -- Brand belongs to Service
+  // Group, not directly to Category. Both Category (filter) and Service
+  // Group (real association) are multi-select.
+  const [brandId,         setBrandId]         = useState("");
+  const [categoryIds,     setCategoryIds]     = useState<string[]>([]);
+  const [serviceGroupIds, setServiceGroupIds] = useState<string[]>([]);
+  const [serviceId,       setServiceId]       = useState("");
+  const [custVis,         setCustVis]         = useState(true);
 
   const brandsRes  = useApi(useCallback(() => catalogApi.listBrands({ status:"active", page_size:200 }), []));
   const categories = useApi(useCallback(() => catalogApi.listCategories(true), []));
+  const serviceGroups = useApi(useCallback(() => catalogApi.listServiceGroups(), []));
+  const allGroups = serviceGroups.data?.groups ?? [];
+  const visibleGroups = categoryIds.length === 0
+    ? allGroups : allGroups.filter(g => categoryIds.includes(g.category_id));
+  const singleGroupId = serviceGroupIds.length === 1 ? serviceGroupIds[0] : undefined;
   const services   = useApi(useCallback(
-    () => categoryId ? catalogApi.listMasterServices(categoryId) : Promise.resolve({ services:[] }),
-    [categoryId],
+    () => singleGroupId ? catalogApi.listMasterServices(undefined, undefined, undefined, singleGroupId) : Promise.resolve({ services:[] }),
+    [singleGroupId],
   ));
 
-  const action = useAction(useCallback((d:object) => typesApi.createBrandMapping(d), []));
+  const action = useAction(useCallback(async (groupIds: string[]) => {
+    return Promise.all(groupIds.map(gid => {
+      const group = allGroups.find(g => g.id === gid);
+      return typesApi.createBrandMapping({
+        brand_id: brandId, service_group_id: gid,
+        category_id: group?.category_id,
+        service_id: groupIds.length === 1 ? (serviceId || undefined) : undefined,
+        customer_visible: custVis,
+      });
+    }));
+  }, [brandId, serviceId, custVis, allGroups]));
 
   async function handleSave() {
-    if (!brandId || !categoryId) return;
-    const res = await action.execute({
-      brand_id: brandId, category_id: categoryId,
-      service_id: serviceId || undefined, customer_visible: custVis,
-    });
+    if (!brandId || serviceGroupIds.length === 0) return;
+    const res = await action.execute(serviceGroupIds);
     if (res) onSaved();
   }
 
   return (
     <Modal open title="Add Brand Mapping" onClose={onClose}>
       <div style={{ display:"flex", flexDirection:"column", gap:14, minWidth:340 }}>
-        {action.error && <div style={{ padding:"8px 12px", borderRadius:8, background:"var(--danger-bg)",
+        {action.error && <div style={{ padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)",
           fontSize:12, color:"var(--danger-text)" }}>{action.error}</div>}
-        {[
-          ["Brand *",    brandId,    setBrandId,    (brandsRes.data?.brands ?? []).map((b:Brand34D) => ({ value:b.brand_id, label:b.name }))],
-          ["Category *", categoryId, (v:string) => { setCategoryId(v); setServiceId(""); },
-                                    (categories.data?.categories ?? []).map((c:any) => ({ value:c.category_id, label:c.name }))],
-        ].map(([label, val, setter, opts]:[any,any,any,any]) => (
-          <div key={label} style={{ display:"flex", flexDirection:"column", gap:4 }}>
-            <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>{label}</label>
-            <select value={val} onChange={e=>setter(e.target.value)}
-              style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
-                color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
-              <option value="">Select…</option>
-              {opts.map((o:any) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-        ))}
         <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Service (optional)</label>
-          <select value={serviceId} onChange={e=>setServiceId(e.target.value)} disabled={!categoryId}
-            style={{ height:36, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)",
-              color:"var(--text-primary)", fontSize:13, padding:"0 10px", opacity:categoryId?1:0.5 }}>
-            <option value="">All services in category</option>
+          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Brand *</label>
+          <select value={brandId} onChange={e=>setBrandId(e.target.value)}
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
+              color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
+            <option value="">Select…</option>
+            {(brandsRes.data?.brands ?? []).map((b:Brand34D) =>
+              <option key={b.brand_id} value={b.brand_id}>{b.name}</option>
+            )}
+          </select>
+        </div>
+        <MultiCheckList label="Category (filter)" emptyText="No categories"
+          options={(categories.data?.categories ?? []).map((c:any) => ({ value:c.category_id, label:c.name }))}
+          selected={categoryIds}
+          onToggle={v => { setCategoryIds(p => toggleInList(p, v)); setServiceGroupIds([]); setServiceId(""); }}/>
+        <MultiCheckList label="Service Group *" emptyText="No service groups match the selected categories"
+          options={visibleGroups.map(g => ({ value:g.id, label: categoryIds.length === 0 ? `${g.name} (${g.category_name})` : g.name }))}
+          selected={serviceGroupIds}
+          onToggle={v => { setServiceGroupIds(p => toggleInList(p, v)); setServiceId(""); }}/>
+        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>
+            Service (optional{serviceGroupIds.length > 1 ? " — only when a single group is selected" : ""})
+          </label>
+          <select value={serviceId} onChange={e=>setServiceId(e.target.value)} disabled={!singleGroupId}
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
+              color:"var(--text-primary)", fontSize:13, padding:"0 10px", opacity:singleGroupId?1:0.5 }}>
+            <option value="">All services in group</option>
             {(services.data?.services ?? []).map((s:any) =>
               <option key={s.service_id} value={s.service_id}>{s.name}</option>
             )}
@@ -1338,7 +1457,9 @@ function CreateBrandMappingFullModal({ onClose, onSaved }:{ onClose():void; onSa
         <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
           <Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn>
           <Btn variant="primary" size="sm" loading={action.loading} onClick={handleSave}
-            disabled={!brandId || !categoryId}>Add Mapping</Btn>
+            disabled={!brandId || serviceGroupIds.length === 0}>
+            Add Mapping{serviceGroupIds.length > 1 ? ` (${serviceGroupIds.length} groups)` : ""}
+          </Btn>
         </div>
       </div>
     </Modal>

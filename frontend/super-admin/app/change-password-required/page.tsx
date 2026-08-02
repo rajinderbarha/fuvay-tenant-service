@@ -76,7 +76,7 @@ export default function ChangePasswordRequiredPage() {
           <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>Super Admin Portal</p>
         </div>
 
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16,
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-xl, 1rem)",
           padding: 32, boxShadow: "var(--shadow-lg)" }}>
 
           {/* Title */}

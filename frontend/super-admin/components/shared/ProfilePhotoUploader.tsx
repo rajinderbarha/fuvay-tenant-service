@@ -25,7 +25,7 @@ export function resolveMediaUrl(url: string | null | undefined): string | null {
 }
 
 const PALETTE = [
-  { bg: "#dbeafe", text: "#1e40af" },
+  { bg: "#CCFBF1", text: "#0F766E" },
   { bg: "#dcfce7", text: "#166534" },
   { bg: "#fef9c3", text: "#854d0e" },
   { bg: "#fce7f3", text: "#9d174d" },
@@ -243,7 +243,7 @@ export function ProfilePhotoUploader({
                 display: "flex", alignItems: "center", gap: 4, padding: "5px 10px",
                 fontSize: 12, fontWeight: 500, borderRadius: 7,
                 border: "1px solid var(--danger-border, #fecaca)",
-                background: "var(--danger-bg, #fef2f2)", color: "var(--danger, #dc2626)",
+                background: "var(--danger-bg, #fef2f2)", color: "var(--danger, var(--danger))",
                 cursor: loading ? "not-allowed" : "pointer",
                 transition: "background 0.12s",
               }}
@@ -261,8 +261,8 @@ export function ProfilePhotoUploader({
           background: "var(--danger-bg, #fef2f2)", border: "1px solid var(--danger-border, #fecaca)",
           borderRadius: 7, padding: "6px 10px", maxWidth: 240,
         }}>
-          <X size={12} style={{ flexShrink: 0, marginTop: 1, color: "var(--danger, #dc2626)" }}/>
-          <span style={{ fontSize: 12, color: "var(--danger, #dc2626)", lineHeight: 1.4 }}>{error}</span>
+          <X size={12} style={{ flexShrink: 0, marginTop: 1, color: "var(--danger, var(--danger))" }}/>
+          <span style={{ fontSize: 12, color: "var(--danger, var(--danger))", lineHeight: 1.4 }}>{error}</span>
         </div>
       )}
 

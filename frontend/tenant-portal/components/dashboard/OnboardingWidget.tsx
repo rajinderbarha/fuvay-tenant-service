@@ -30,8 +30,8 @@ export function OnboardingWidget() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
           gap: 12, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <AlertCircle size={16} style={{ color: "#dc2626" }}/>
-            <span style={{ fontSize: 13, color: "#dc2626" }}>Onboarding status unavailable</span>
+            <AlertCircle size={16} style={{ color: "var(--danger)" }}/>
+            <span style={{ fontSize: 13, color: "var(--danger)" }}>Onboarding status unavailable</span>
           </div>
           <Btn size="xs" variant="ghost" onClick={status.refetch}>Retry</Btn>
         </div>
@@ -47,9 +47,9 @@ export function OnboardingWidget() {
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
           justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <CheckCircle2 size={22} style={{ color: "#059669", flexShrink: 0 }}/>
+            <CheckCircle2 size={22} style={{ color: "var(--success)", flexShrink: 0 }}/>
             <div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: "#059669", margin: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: "var(--success)", margin: 0 }}>
                 Onboarding complete
               </p>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "1px 0 0" }}>
@@ -90,13 +90,13 @@ export function OnboardingWidget() {
           overflow: "hidden", border: "1px solid var(--border)" }}>
           <div style={{ height: "100%", borderRadius: 99,
             width: `${Math.max(0, Math.min(100, pct))}%`,
-            background: pct >= 60 ? "#d97706" : "#2563eb",
+            background: pct >= 60 ? "var(--warning)" : "#2563eb",
             transition: "width 0.4s" }}/>
         </div>
 
         {/* Main blocker */}
         {mainBlocker && (
-          <p style={{ fontSize: 11, color: "#dc2626", margin: 0 }}>
+          <p style={{ fontSize: 11, color: "var(--danger)", margin: 0 }}>
             <AlertCircle size={11} style={{ display: "inline", marginRight: 4 }}/>
             {mainBlocker.message}
           </p>

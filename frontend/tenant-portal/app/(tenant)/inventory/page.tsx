@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useCallback, useMemo } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
-import { Modal } from "../../../components/shared/ui";
+import { Modal, SectionHeader, StatCard, DataTable, Btn, EditBtn, DeleteBtn } from "../../../components/shared/ui";
 import { useApi, useAction } from "../../../hooks/useApi";
 import {
   inventoryApi,
@@ -10,11 +10,10 @@ import {
   type InventoryItem,
   type InventoryDraftItem,
 } from "../../../lib/api";
+import { Boxes, Tags, IndianRupee, FileStack, Upload, Plus } from "lucide-react";
 
 // Stock-level tracking (balances/receipts/low-stock alerts) is not
-// maintained by this tenant -- removed per explicit request. Items view
-// now supports table (default, best for hundreds of rows) and card views.
-type ItemsView = "table" | "card";
+// maintained by this tenant -- removed per explicit request.
 const EXTRACTION_ENGINE_KEY = "inventory_document_extraction";
 
 // Real units used for home-service accessories/spare parts (compressors,
@@ -67,8 +66,6 @@ function CategoryField({ value, onChange, options }: {
 }
 
 export default function InventoryPage() {
-  const [view, setView] = useState<ItemsView>("table");
-
   // ── Items tab ────────────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
   const emptyNewItem = { name:"", sku:"", unit:"pcs", unit_cost:"", category:"", min_quantity:"0", gst:"", warranty:"" };
@@ -244,55 +241,53 @@ export default function InventoryPage() {
     }
   }
 
+  // ── KPIs ──────────────────────────────────────────────────────────────────
+  const items = itemList.data?.items ?? [];
+  const totalItems = items.length;
+  const distinctCategories = useMemo(
+    () => new Set(items.map(i => i.category).filter(Boolean)).size,
+    [items],
+  );
+  const inventoryValue = useMemo(
+    () => items.reduce((sum, i) => sum + (i.unit_cost ?? 0) * (i.min_quantity ?? 0), 0),
+    [items],
+  );
+  const pendingDraftCount = drafts.data?.items?.length ?? 0;
+
   return (
     <TenantLayout activeNav="inventory">
-      <div style={{ maxWidth:1100 }}>
-        <h1 style={{ fontSize:22, fontWeight:700, margin:"0 0 20px", color:"var(--text-primary)" }}>
-          Inventory
-        </h1>
+      <div style={{ maxWidth:1200 }}>
+        <SectionHeader
+          title="Inventory"
+          subtitle="Manage your stocked items, pricing, and AI-extracted price lists."
+          icon={<Boxes/>}
+          actions={
+            <>
+              {extractionEnabled && (
+                <label style={{ display:"inline-flex" }}>
+                  <Btn variant="secondary" icon={<Upload size={14}/>} disabled={uploading}>
+                    {uploading ? "Uploading…" : "Upload Inventory PDF"}
+                  </Btn>
+                  <input type="file" accept="application/pdf" disabled={uploading} style={{ display:"none" }}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadPdf(f); e.target.value = ""; }}/>
+                </label>
+              )}
+              <Btn onClick={() => setShowCreate(p => !p)} icon={<Plus size={14}/>}>
+                New Item
+              </Btn>
+            </>
+          }
+        />
 
-        {/* View toggle (table default -- best for hundreds of rows; card
-            for a more visual browse). Stock-level tracking removed --
-            not maintained by this tenant. */}
-        <div style={{ display:"flex", gap:4, marginBottom:24 }}>
-          {(["table","card"] as ItemsView[]).map(t => (
-            <button key={t} onClick={() => setView(t)}
-              style={{ padding:"8px 18px", borderRadius:"var(--radius-md)",
-                border: view === t ? "2px solid var(--accent)" : "1px solid var(--border)",
-                background: view === t ? "var(--accent-bg)" : "var(--surface)",
-                color: view === t ? "var(--accent)" : "var(--text-secondary)",
-                fontWeight: view === t ? 600 : 400, fontSize:13, cursor:"pointer",
-                fontFamily:"inherit" }}>
-              {{ table:"Table View", card:"Card View" }[t]}
-            </button>
-          ))}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px,1fr))", gap:14, marginBottom:24 }}>
+          <StatCard label="Total Items" value={totalItems} icon={<Boxes/>}/>
+          <StatCard label="Categories Stocked" value={distinctCategories} icon={<Tags/>}/>
+          <StatCard label="Inventory Value" value={`₹${inventoryValue.toLocaleString("en-IN")}`} icon={<IndianRupee/>}/>
+          <StatCard label="Drafts Awaiting Review" value={pendingDraftCount} icon={<FileStack/>}
+            alert={pendingDraftCount > 0}/>
         </div>
 
         <div>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-              <span style={{ fontSize:13, color:"var(--text-secondary)" }}>
-                {itemList.data ? `${itemList.data.items.length} items` : ""}
-              </span>
-              <div style={{ display:"flex", gap:8 }}>
-                {extractionEnabled && (
-                  <label style={{ padding:"8px 16px", borderRadius:"var(--radius-md)",
-                    border:"1px solid var(--border)", background:"var(--surface)",
-                    color:"var(--text-primary)", fontWeight:600, fontSize:13,
-                    cursor: uploading ? "wait" : "pointer", fontFamily:"inherit", opacity: uploading ? 0.6 : 1 }}>
-                    {uploading ? "Uploading…" : "Upload Inventory PDF"}
-                    <input type="file" accept="application/pdf" disabled={uploading} style={{ display:"none" }}
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadPdf(f); e.target.value = ""; }}/>
-                  </label>
-                )}
-                <button onClick={() => setShowCreate(p => !p)}
-                  style={{ padding:"8px 16px", borderRadius:"var(--radius-md)", border:"none",
-                    background:"var(--accent)", color:"white", fontWeight:600, fontSize:13,
-                    cursor:"pointer", fontFamily:"inherit" }}>
-                  + New Item
-                </button>
-              </div>
-            </div>
-
             {!extractionEnabled && !effectiveEngines.loading && (
               <p style={{ fontSize:12, color:"var(--text-tertiary)", marginBottom:16 }}>
                 AI PDF extraction is not enabled for your account. Ask your platform admin to enable the
@@ -565,90 +560,32 @@ export default function InventoryPage() {
               </Modal>
             )}
 
-            {itemList.loading && <p style={{ color:"var(--text-tertiary)", fontSize:13 }}>Loading…</p>}
-            {itemList.error  && <p style={{ color:"var(--danger)", fontSize:13 }}>{itemList.error}</p>}
+            {itemList.error && <p style={{ color:"var(--danger)", fontSize:13, marginBottom:12 }}>{itemList.error}</p>}
 
-            {view === "table" ? (
-              <div style={{ overflowX:"auto", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)" }}>
-                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-                  <thead>
-                    <tr style={{ background:"var(--surface-sunken)", textAlign:"left" }}>
-                      {["Name","SKU","Category","Unit","Unit Cost (₹)","Min Qty","GST %","Warranty",""].map(h => (
-                        <th key={h} style={{ padding:"10px 12px", fontSize:11, fontWeight:700,
-                          color:"var(--text-secondary)", textTransform:"uppercase", letterSpacing:"0.03em",
-                          borderBottom:"1px solid var(--border)", whiteSpace:"nowrap" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {itemList.data?.items.map((item: InventoryItem) => (
-                      <tr key={item.item_id} style={{ borderBottom:"1px solid var(--border)" }}>
-                        <td style={{ padding:"9px 12px", fontWeight:600, color:"var(--text-primary)" }}>{item.name}</td>
-                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.sku}</td>
-                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.category ?? "—"}</td>
-                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.unit}</td>
-                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>
-                          {item.unit_cost != null ? `₹${item.unit_cost}` : "—"}
-                        </td>
-                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.min_quantity}</td>
-                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>
-                          {item.gst != null ? `${item.gst}%` : "—"}
-                        </td>
-                        <td style={{ padding:"9px 12px", color:"var(--text-secondary)" }}>{item.warranty ?? "—"}</td>
-                        <td style={{ padding:"9px 12px", whiteSpace:"nowrap" }}>
-                          <button onClick={() => openEditItem(item)} disabled={!!itemBusy[item.item_id]}
-                            style={{ height:26, padding:"0 9px", borderRadius:6, border:"1px solid var(--border)",
-                              background:"var(--surface)", color:"var(--text-primary)", fontSize:11, fontWeight:600,
-                              cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Edit</button>
-                          <button onClick={() => handleDeleteItem(item.item_id)} disabled={!!itemBusy[item.item_id]}
-                            style={{ height:26, padding:"0 9px", borderRadius:6, border:"1px solid var(--border)",
-                              background:"transparent", color:"var(--danger, #dc2626)", fontSize:11, fontWeight:600,
-                              cursor:"pointer", fontFamily:"inherit" }}>Delete</button>
-                        </td>
-                      </tr>
-                    ))}
-                    {(itemList.data?.items.length ?? 0) === 0 && !itemList.loading && (
-                      <tr><td colSpan={9} style={{ padding:"20px 12px", textAlign:"center", color:"var(--text-tertiary)" }}>
-                        No items yet.
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px,1fr))", gap:10 }}>
-                {itemList.data?.items.map((item: InventoryItem) => (
-                  <div key={item.item_id}
-                    style={{ background:"var(--surface)", border:"1px solid var(--border)",
-                      borderRadius:"var(--radius-lg)", padding:"14px 16px" }}>
-                    <div style={{ display:"flex", justifyContent:"space-between" }}>
-                      <p style={{ margin:"0 0 3px", fontWeight:600, fontSize:14, color:"var(--text-primary)" }}>
-                        {item.name}
-                      </p>
-                      <span style={{ fontSize:11, color:"var(--text-tertiary)" }}>{item.sku}</span>
+            <DataTable<InventoryItem & Record<string, unknown>>
+              loading={itemList.loading}
+              emptyText="No items yet."
+              columns={[
+                { key:"name", label:"Name", render:(_v, row) => (
+                    <span style={{ fontWeight:600, color:"var(--text-primary)" }}>{row.name}</span>
+                  )},
+                { key:"sku", label:"SKU" },
+                { key:"category", label:"Category", render:(_v, row) => row.category ?? "—" },
+                { key:"unit", label:"Unit" },
+                { key:"unit_cost", label:"Unit Cost (₹)", render:(_v, row) =>
+                    row.unit_cost != null ? `₹${row.unit_cost}` : "—" },
+                { key:"min_quantity", label:"Min Qty" },
+                { key:"gst", label:"GST %", render:(_v, row) => row.gst != null ? `${row.gst}%` : "—" },
+                { key:"warranty", label:"Warranty", render:(_v, row) => row.warranty ?? "—" },
+                { key:"actions", label:"", render:(_v, row) => (
+                    <div style={{ display:"flex", gap:6, justifyContent:"flex-end" }}>
+                      <EditBtn onClick={() => openEditItem(row)} tooltip="Edit item" size="sm"/>
+                      <DeleteBtn onClick={() => handleDeleteItem(row.item_id)} tooltip="Delete item" size="sm"/>
                     </div>
-                    <p style={{ margin:"0 0 6px", fontSize:12, color:"var(--text-secondary)" }}>
-                      {item.category ?? "—"} · {item.unit}{item.unit_cost != null ? ` · ₹${item.unit_cost}` : ""}
-                    </p>
-                    <p style={{ margin:"0 0 10px", fontSize:11, color:"var(--text-tertiary)" }}>
-                      Min qty: {item.min_quantity}
-                      {item.gst != null ? ` · GST ${item.gst}%` : ""}
-                      {item.warranty ? ` · Warranty ${item.warranty}` : ""}
-                    </p>
-                    <div style={{ display:"flex", gap:6 }}>
-                      <button onClick={() => openEditItem(item)} disabled={!!itemBusy[item.item_id]}
-                        style={{ height:26, padding:"0 9px", borderRadius:6, border:"1px solid var(--border)",
-                          background:"var(--surface)", color:"var(--text-primary)", fontSize:11, fontWeight:600,
-                          cursor:"pointer", fontFamily:"inherit" }}>Edit</button>
-                      <button onClick={() => handleDeleteItem(item.item_id)} disabled={!!itemBusy[item.item_id]}
-                        style={{ height:26, padding:"0 9px", borderRadius:6, border:"1px solid var(--border)",
-                          background:"transparent", color:"var(--danger, #dc2626)", fontSize:11, fontWeight:600,
-                          cursor:"pointer", fontFamily:"inherit" }}>Delete</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  )},
+              ]}
+              rows={items as (InventoryItem & Record<string, unknown>)[]}
+            />
           </div>
       </div>
     </TenantLayout>

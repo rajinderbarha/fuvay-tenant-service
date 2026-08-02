@@ -102,7 +102,7 @@ export default function RolesPage() {
 
       {roles.loading ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 12, marginBottom: 20 }}>
-          {[...Array(6)].map((_, i) => <Skeleton key={i} height={88} style={{ borderRadius: 12 }}/>)}
+          {[...Array(6)].map((_, i) => <Skeleton key={i} height={88} style={{ borderRadius:"var(--radius-lg)" }}/>)}
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 12, marginBottom: 20 }}>
@@ -121,7 +121,7 @@ export default function RolesPage() {
           description={`${roles.error}${roles.requestId ? ` — Request ID: ${roles.requestId}` : ""}`}
           action={<Btn size="sm" onClick={() => roles.refetch()}>Retry</Btn>}/>
       ) : roles.loading ? (
-        <Skeleton height={300} style={{ borderRadius: 12 }}/>
+        <Skeleton height={300} style={{ borderRadius:"var(--radius-lg)" }}/>
       ) : (roles.data?.items.length ?? 0) === 0 ? (
         <EmptyState icon={<Shield/>} title="No roles found."/>
       ) : (

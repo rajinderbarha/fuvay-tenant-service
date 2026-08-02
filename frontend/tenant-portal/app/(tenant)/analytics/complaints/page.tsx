@@ -43,7 +43,7 @@ export default function ProviderComplaintsPage() {
         <KpiCard label="Avg Resolution Days" value={s.avg_resolution_days} loading={loading} />
       </div>
 
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
         <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 16px" }}>Recent Complaints</h2>
         <SimpleTable
           rows={bd}

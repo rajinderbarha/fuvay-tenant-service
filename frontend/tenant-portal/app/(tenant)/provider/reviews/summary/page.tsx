@@ -79,7 +79,7 @@ export default function ProviderReviewSummaryPage() {
                 ["Quality",       summary.quality_average_rating],
                 ["Value",         summary.value_average_rating],
               ].map(([label, val]) => (
-                <div key={label as string} style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: 12, textAlign: "center" }}>
+                <div key={label as string} style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: 12, textAlign: "center" }}>
                   <p style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
                     {val ?? "—"}
                   </p>

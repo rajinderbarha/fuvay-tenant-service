@@ -122,8 +122,8 @@ export default function AccountPage() {
         <SectionHeader title="My Account" subtitle="Profile, security and team management" />
 
         {toast && (
-          <div style={{ padding:"10px 16px", background:"var(--success-bg,#d1fae5)", border:"1px solid var(--success,#10b981)",
-            borderRadius:8, color:"var(--success-text,#065f46)", fontSize:13 }}>
+          <div style={{ padding:"10px 16px", background:"var(--success-bg,#d1fae5)", border:"1px solid var(--success,var(--success))",
+            borderRadius:"var(--radius-md)", color:"var(--success-text,#065f46)", fontSize:13 }}>
             {toast}
           </div>
         )}
@@ -187,7 +187,7 @@ export default function AccountPage() {
                   {mfaSetup && (
                     <>
                       <p style={{ fontSize:13 }}>Scan this QR code with your authenticator app:</p>
-                      <img src={mfaSetup.qr_code_url} alt="MFA QR" style={{ width:180, height:180, border:"1px solid var(--border)", borderRadius:8 }} />
+                      <img src={mfaSetup.qr_code_url} alt="MFA QR" style={{ width:180, height:180, border:"1px solid var(--border)", borderRadius:"var(--radius-md)" }} />
                       <p style={{ fontSize:12, color:"var(--text-secondary)" }}>
                         Or enter: <code style={{ background:"var(--surface-alt)", padding:"2px 6px", borderRadius:4 }}>{mfaSetup.secret}</code>
                       </p>
@@ -218,7 +218,7 @@ export default function AccountPage() {
               <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                 {(sessions.data?.sessions ?? []).map((s: UserSession) => (
                   <div key={s.session_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                    padding:"12px 14px", border:"1px solid var(--border)", borderRadius:8 }}>
+                    padding:"12px 14px", border:"1px solid var(--border)", borderRadius:"var(--radius-md)" }}>
                     <div>
                       <p style={{ margin:"0 0 2px", fontSize:13, fontWeight:500 }}>
                         {s.ip_address}
@@ -254,7 +254,7 @@ export default function AccountPage() {
               <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                 {(keys.data?.keys ?? []).map((k: ApiKey) => (
                   <div key={k.key_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                    padding:"12px 14px", border:"1px solid var(--border)", borderRadius:8 }}>
+                    padding:"12px 14px", border:"1px solid var(--border)", borderRadius:"var(--radius-md)" }}>
                     <div>
                       <div style={{ display:"flex", gap:8, marginBottom:4 }}>
                         <span style={{ fontWeight:600, fontSize:13 }}>{k.name}</span>
@@ -294,7 +294,7 @@ export default function AccountPage() {
       <Modal open={keyModal} onClose={() => { setKeyModal(false); setKeyResult(null); }} title="Create API Key" size="md">
         {keyResult ? (
           <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-            <div style={{ padding:12, background:"var(--success-bg,#d1fae5)", borderRadius:8, border:"1px solid var(--success,#10b981)" }}>
+            <div style={{ padding:12, background:"var(--success-bg,#d1fae5)", borderRadius:"var(--radius-md)", border:"1px solid var(--success,var(--success))" }}>
               <p style={{ margin:"0 0 8px", fontWeight:600 }}>Key Created — copy it now!</p>
               <code style={{ display:"block", wordBreak:"break-all", fontSize:12, padding:"8px 10px",
                 background:"white", border:"1px solid var(--border)", borderRadius:6 }}>
@@ -324,7 +324,7 @@ export default function AccountPage() {
           <div>
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)", display:"block", marginBottom:6 }}>Role</label>
             <select value={inv.role} onChange={e => setInv(p => ({ ...p, role: e.target.value }))}
-              style={{ width:"100%", padding:"8px 10px", border:"1px solid var(--border)", borderRadius:8,
+              style={{ width:"100%", padding:"8px 10px", border:"1px solid var(--border)", borderRadius:"var(--radius-md)",
                 background:"var(--surface)", color:"var(--text-primary)", fontSize:13 }}>
               <option value="staff">Staff</option>
               <option value="manager">Manager</option>

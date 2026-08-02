@@ -37,7 +37,7 @@ export function BookabilityStatusWidget() {
           <div style={{ width: 32, height: 32, borderRadius: 8,
             background: allGood ? "rgba(5,150,105,0.1)" : "rgba(220,38,38,0.08)",
             display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Zap size={16} style={{ color: allGood ? "#059669" : "#dc2626" }} />
+            <Zap size={16} style={{ color: allGood ? "var(--success)" : "var(--danger)" }} />
           </div>
           <div>
             <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Platform Status</p>
@@ -63,9 +63,9 @@ export function BookabilityStatusWidget() {
           background: s.is_visible ? "rgba(5,150,105,0.06)" : "rgba(220,38,38,0.06)",
           borderRadius: 6, border: `1px solid ${s.is_visible ? "rgba(5,150,105,0.2)" : "rgba(220,38,38,0.2)"}` }}>
           {s.is_visible
-            ? <CheckCircle2 size={13} style={{ color: "#059669", flexShrink: 0 }} />
-            : <XCircle size={13} style={{ color: "#dc2626", flexShrink: 0 }} />}
-          <span style={{ fontSize: 12, fontWeight: 500, color: s.is_visible ? "#059669" : "#dc2626" }}>
+            ? <CheckCircle2 size={13} style={{ color: "var(--success)", flexShrink: 0 }} />
+            : <XCircle size={13} style={{ color: "var(--danger)", flexShrink: 0 }} />}
+          <span style={{ fontSize: 12, fontWeight: 500, color: s.is_visible ? "var(--success)" : "var(--danger)" }}>
             {s.is_visible ? "Visible" : "Hidden"}
           </span>
         </div>
@@ -73,9 +73,9 @@ export function BookabilityStatusWidget() {
           background: s.is_bookable ? "rgba(5,150,105,0.06)" : "rgba(220,38,38,0.06)",
           borderRadius: 6, border: `1px solid ${s.is_bookable ? "rgba(5,150,105,0.2)" : "rgba(220,38,38,0.2)"}` }}>
           {s.is_bookable
-            ? <CheckCircle2 size={13} style={{ color: "#059669", flexShrink: 0 }} />
-            : <XCircle size={13} style={{ color: "#dc2626", flexShrink: 0 }} />}
-          <span style={{ fontSize: 12, fontWeight: 500, color: s.is_bookable ? "#059669" : "#dc2626" }}>
+            ? <CheckCircle2 size={13} style={{ color: "var(--success)", flexShrink: 0 }} />
+            : <XCircle size={13} style={{ color: "var(--danger)", flexShrink: 0 }} />}
+          <span style={{ fontSize: 12, fontWeight: 500, color: s.is_bookable ? "var(--success)" : "var(--danger)" }}>
             {s.is_bookable ? "Bookable" : "Not Bookable"}
           </span>
         </div>
@@ -84,9 +84,9 @@ export function BookabilityStatusWidget() {
       {totalBlockers > 0 && (
         <div style={{ marginTop: 10, padding: "8px 10px",
           background: "rgba(220,38,38,0.05)", borderRadius: 6, border: "1px solid rgba(220,38,38,0.15)" }}>
-          <p style={{ fontSize: 12, color: "#dc2626", margin: 0 }}>
+          <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>
             {totalBlockers} blocker{totalBlockers > 1 ? "s" : ""} preventing full activation.{" "}
-            <Link href="/provider/status" style={{ color: "#dc2626", fontWeight: 600 }}>View and resolve →</Link>
+            <Link href="/provider/status" style={{ color: "var(--danger)", fontWeight: 600 }}>View and resolve →</Link>
           </p>
         </div>
       )}

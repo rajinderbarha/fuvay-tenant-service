@@ -29,7 +29,7 @@ function svcLabel(s: TenantEnabledService, nameMap?: Record<string, string>): st
   return `Service #${s.master_service_id.slice(0, 8)}`;
 }
 
-const SERVICE_COLORS = ["#3b82f6","#22c55e","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316","#10b981"];
+const SERVICE_COLORS = ["var(--brand)","var(--success)","var(--warning)","#ef4444","#8b5cf6","#06b6d4","#f97316","var(--success)"];
 function svcColor(id: string) { let h=0; for (const c of id) h=(h*31+c.charCodeAt(0))>>>0; return SERVICE_COLORS[h % SERVICE_COLORS.length]; }
 
 const TABS = ["Types & Brands", "Service Options", "Service Areas", "Readiness"] as const;
@@ -104,12 +104,12 @@ export default function ServiceCoveragePage() {
         .svc-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;transition:box-shadow .15s,border-color .15s;cursor:default}
         .svc-card:hover{border-color:rgba(255,255,255,0.15);box-shadow:0 4px 20px rgba(0,0,0,0.2)}
         .sc-tab{padding:8px 14px;border:none;background:transparent;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text-secondary);border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s}
-        .sc-tab.active{color:var(--brand,#3b82f6);border-bottom-color:var(--brand,#3b82f6)}
+        .sc-tab.active{color:var(--brand,var(--brand));border-bottom-color:var(--brand,var(--brand))}
         .sc-check-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)}
         .sc-brand-lbl{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:6px;cursor:pointer;font-size:12px;border:1px solid var(--border);color:var(--text-secondary);background:var(--surface-sunken,rgba(0,0,0,0.1));transition:all .12s}
-        .sc-brand-lbl.on{background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.35);color:var(--brand,#3b82f6)}
+        .sc-brand-lbl.on{background:rgba(242,153,74,0.1);border-color:rgba(242,153,74,0.35);color:var(--brand,var(--brand))}
         .sc-opt-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-sunken,rgba(0,0,0,0.08));transition:all .12s}
-        .sc-opt-row.on{background:rgba(59,130,246,0.07);border-color:rgba(59,130,246,0.28)}
+        .sc-opt-row.on{background:rgba(242,153,74,0.07);border-color:rgba(242,153,74,0.28)}
         .sc-area-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:8px;background:rgba(34,197,94,0.07);border:1px solid rgba(34,197,94,0.18)}
         .sc-empty{text-align:center;padding:28px 16px;color:var(--text-tertiary)}
       `}</style>
@@ -167,14 +167,14 @@ export default function ServiceCoveragePage() {
         {/* KPI stat cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
           {[
-            { icon:<Package size={22}/>, label:"Available Services", val:totalSvcs, sub:"Admin approved", color:"var(--brand,#3b82f6)", bg:"rgba(59,130,246,0.1)", border:"rgba(59,130,246,0.2)", arrow:true },
-            { icon:<CheckCircle2 size={22}/>, label:"Published",     val:published,  sub:"Live and available", color:"#22c55e", bg:"rgba(34,197,94,0.1)", border:"rgba(34,197,94,0.2)", arrow:false },
-            { icon:<Tag size={22}/>, label:"Draft / Setup Pending",  val:draft,      sub:"In progress",   color:"#f59e0b", bg:"rgba(245,158,11,0.1)", border:"rgba(245,158,11,0.2)", arrow:true },
+            { icon:<Package size={22}/>, label:"Available Services", val:totalSvcs, sub:"Admin approved", color:"var(--brand,var(--brand))", bg:"rgba(242,153,74,0.1)", border:"rgba(242,153,74,0.2)", arrow:true },
+            { icon:<CheckCircle2 size={22}/>, label:"Published",     val:published,  sub:"Live and available", color:"var(--success)", bg:"rgba(34,197,94,0.1)", border:"rgba(34,197,94,0.2)", arrow:false },
+            { icon:<Tag size={22}/>, label:"Draft / Setup Pending",  val:draft,      sub:"In progress",   color:"var(--warning)", bg:"rgba(245,158,11,0.1)", border:"rgba(245,158,11,0.2)", arrow:true },
             { icon:<AlertTriangle size={22}/>, label:"Needs Attention", val:needsAttn, sub:"Missing required steps", color:"#ef4444", bg:"rgba(239,68,68,0.1)", border:"rgba(239,68,68,0.2)", arrow:true },
           ].map(k => (
             <Card key={k.label} padding="md">
               <div style={{ display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}>
-                <div style={{ width: 48, height: 48, borderRadius: 12, background: k.bg, border: `1px solid ${k.border}`,
+                <div style={{ width: 48, height: 48, borderRadius:"var(--radius-lg)", background: k.bg, border: `1px solid ${k.border}`,
                   display: "flex", alignItems: "center", justifyContent: "center", color: k.color, flexShrink: 0 }}>
                   {k.icon}
                 </div>
@@ -234,7 +234,7 @@ export default function ServiceCoveragePage() {
                 <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Your Active Services</span>
                   <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
-                    background: "var(--brand,rgba(59,130,246,0.15))", color: "var(--brand,#3b82f6)" }}>
+                    background: "var(--brand,rgba(242,153,74,0.15))", color: "var(--brand,var(--brand))" }}>
                     {services.length}
                   </span>
                 </div>
@@ -288,7 +288,7 @@ export default function ServiceCoveragePage() {
             {/* Setup Rules */}
             <Card padding="md">
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-                <Shield size={16} color="var(--brand,#3b82f6)" />
+                <Shield size={16} color="var(--brand,var(--brand))" />
                 <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Coverage Rules</span>
               </div>
               {[
@@ -298,7 +298,7 @@ export default function ServiceCoveragePage() {
                 "Service areas define geographic coverage for matching.",
               ].map((r, i) => (
                 <div key={i} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: i < 3 ? "1px solid var(--border)" : "none" }}>
-                  <CheckCircle2 size={14} color="#22c55e" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <CheckCircle2 size={14} color="var(--success)" style={{ flexShrink: 0, marginTop: 1 }} />
                   <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{r}</span>
                 </div>
               ))}
@@ -312,7 +312,7 @@ export default function ServiceCoveragePage() {
               <Card padding="md">
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <AlertTriangle size={16} color="#f59e0b" />
+                    <AlertTriangle size={16} color="var(--warning)" />
                     <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Needs Attention</span>
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
@@ -321,7 +321,7 @@ export default function ServiceCoveragePage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {services.filter(s => s.setup_status !== "published").slice(0, 3).map(s => (
                     <div key={s.tenant_service_id} style={{ display: "flex", alignItems: "center", gap: 10,
-                      padding: "8px 10px", borderRadius: 8, background: "var(--surface-sunken,rgba(0,0,0,0.1))", border: "1px solid var(--border)" }}>
+                      padding: "8px 10px", borderRadius:"var(--radius-md)", background: "var(--surface-sunken,rgba(0,0,0,0.1))", border: "1px solid var(--border)" }}>
                       <div style={{ width: 6, height: 6, borderRadius: 999, background: "#ef4444", flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -342,7 +342,7 @@ export default function ServiceCoveragePage() {
             {/* Bookability status */}
             <Card padding="md">
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <Zap size={16} color={bookable ? "#22c55e" : "#f59e0b"} />
+                <Zap size={16} color={bookable ? "var(--success)" : "var(--warning)"} />
                 <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Bookability</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -353,7 +353,7 @@ export default function ServiceCoveragePage() {
                 ].map((c, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     {c.done
-                      ? <CheckCircle2 size={13} color="#22c55e" style={{ flexShrink: 0 }} />
+                      ? <CheckCircle2 size={13} color="var(--success)" style={{ flexShrink: 0 }} />
                       : <XCircle size={13} color="#ef4444" style={{ flexShrink: 0 }} />}
                     <span style={{ fontSize: 12, color: c.done ? "var(--text-secondary)" : "var(--text-primary)" }}>{c.label}</span>
                   </div>
@@ -413,13 +413,13 @@ function SvcCard({ service, label, onConfigure }: { service: TenantEnabledServic
   // rough completion %
   const checks = [service.is_enabled, !!service.tenant_display_name, pub];
   const pct = Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  const barColor = pct === 100 ? "#22c55e" : pct >= 50 ? "#3b82f6" : "#f59e0b";
+  const barColor = pct === 100 ? "var(--success)" : pct >= 50 ? "var(--brand)" : "var(--warning)";
 
   return (
     <div className="svc-card">
       {/* icon + menu */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: `${color}20`, border: `1px solid ${color}40`,
+        <div style={{ width: 44, height: 44, borderRadius:"var(--radius-lg)", background: `${color}20`, border: `1px solid ${color}40`,
           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color }}>
           <Wrench size={20} />
         </div>
@@ -578,10 +578,10 @@ function TypesBrandsTab({ service, types, brands, availBrands, loading, onSaved 
             const on = selTypeIds.has(tp.service_type_id);
             return (
               <div key={tp.service_type_id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 14,
-                background: on ? "rgba(59,130,246,0.04)" : "var(--surface-sunken,rgba(0,0,0,0.08))" }}>
+                background: on ? "rgba(242,153,74,0.04)" : "var(--surface-sunken,rgba(0,0,0,0.08))" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <input type="checkbox" checked={on} onChange={() => toggleType(tp.service_type_id)}
-                    style={{ width: 15, height: 15, accentColor: "var(--brand,#3b82f6)", cursor: "pointer", flexShrink: 0 }} />
+                    style={{ width: 15, height: 15, accentColor: "var(--brand,var(--brand))", cursor: "pointer", flexShrink: 0 }} />
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>{tp.name}</span>
                   {tp.is_required && <DsStatusBadge status="danger" size="sm"/>}
                   {tp.is_default  && <DsStatusBadge status="info" size="sm"/>}
@@ -610,7 +610,7 @@ function TypesBrandsTab({ service, types, brands, availBrands, loading, onSaved 
               return (
                 <label key={br.brand_id} className={`sc-brand-lbl${on ? " on" : ""}`}>
                   <input type="checkbox" checked={on} onChange={() => toggleGlobalBrand(br.brand_id)}
-                    style={{ width: 13, height: 13, accentColor: "var(--brand,#3b82f6)" }} />
+                    style={{ width: 13, height: 13, accentColor: "var(--brand,var(--brand))" }} />
                   {br.display_name || br.name}
                   {br.is_required && <span style={{ color: "#ef4444", fontSize: 9, marginLeft: 1 }}>*</span>}
                 </label>
@@ -642,9 +642,9 @@ function ServiceOptionsTab({ options, loading }: { options: CoverageServiceOptio
         const on = sel.has(o.id);
         return (
           <div key={o.id} className={`sc-opt-row${on ? " on" : ""}`} onClick={() => toggle(o.id)}>
-            <input type="checkbox" checked={on} readOnly style={{ width: 14, height: 14, accentColor: "var(--brand,#3b82f6)", flexShrink: 0 }} />
+            <input type="checkbox" checked={on} readOnly style={{ width: 14, height: 14, accentColor: "var(--brand,var(--brand))", flexShrink: 0 }} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: on ? "var(--brand,#3b82f6)" : "var(--text-primary)" }}>{o.name}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: on ? "var(--brand,var(--brand))" : "var(--text-primary)" }}>{o.name}</div>
               <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{o.code} · {o.option_type}</div>
             </div>
             <DsStatusBadge status={o.is_customer_selectable ? "info" : "neutral"} size="sm"/>
@@ -670,7 +670,7 @@ function ServiceAreasTab({ areas }: { areas: ProviderServiceArea[] }) {
       <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>Active coverage areas for this service.</p>
       {active.map(a => (
         <div key={a.id} className="sc-area-row">
-          <CheckCircle2 size={14} color="#22c55e" style={{ flexShrink: 0 }} />
+          <CheckCircle2 size={14} color="var(--success)" style={{ flexShrink: 0 }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
               {safeText(a.zone_name ?? a.city ?? a.district ?? a.state)}
@@ -711,7 +711,7 @@ function ReadinessTab({ service, types, brands, options, areas }:
       </div>
       {checks.map((c, i) => (
         <div key={i} className="sc-check-row">
-          {c.done ? <CheckCircle2 size={14} color="#22c55e" style={{ flexShrink: 0 }} />
+          {c.done ? <CheckCircle2 size={14} color="var(--success)" style={{ flexShrink: 0 }} />
                   : <XCircle size={14} color="#ef4444" style={{ flexShrink: 0 }} />}
           <span style={{ flex: 1, fontSize: 12, color: c.done ? "var(--text-secondary)" : "var(--text-primary)" }}>{c.label}</span>
           {!c.done && c.href !== "#" && <Link href={c.href} style={{ fontSize: 11, color: "var(--brand)", fontWeight: 600, textDecoration: "none" }}>Fix</Link>}

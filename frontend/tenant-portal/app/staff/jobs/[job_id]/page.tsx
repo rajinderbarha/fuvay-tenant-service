@@ -102,6 +102,12 @@ export default function StaffJobDetailPage() {
                 <Row label="Booking" value={booking ? `#${booking.booking_number}` : undefined}/>
                 <Row label="Customer" value={booking?.customer_name}/>
                 <Row label="Issue" value={booking?.issue_summary}/>
+                {/* Phase 2A.2: backend-authoritative job type + work-start
+                    reason (get_work_start_status) -- never computed here. */}
+                <Row label="Job Type" value={j.job_type_label as string | undefined}/>
+                {j.start_work_block_code && (
+                  <Row label="Start Work Blocked" value={String(j.start_work_block_code)}/>
+                )}
                 <Row label="City / Zip" value={[j.city, j.zipcode].filter(Boolean).join(" / ") || undefined}/>
                 <Row label="Scheduled" value={j.scheduled_date ? `${j.scheduled_date}${j.scheduled_time_window ? ` · ${j.scheduled_time_window}` : ""}` : undefined}/>
                 {assignment?.rejection_reason && <Row label="Rejection Reason" value={assignment.rejection_reason}/>}
@@ -125,9 +131,9 @@ export default function StaffJobDetailPage() {
                   {actions.map(a => (
                     <button key={a.key} disabled={act.loading} onClick={() => runAction(a.key)}
                       style={{
-                        padding: "9px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                        padding: "9px 12px", borderRadius:"var(--radius-md)", fontSize: 13, fontWeight: 600,
                         border: "1px solid var(--border)",
-                        background: a.key === "reject" ? "var(--danger-bg, #fef2f2)" : a.key === "complete" ? "var(--success-bg, #ecfdf5)" : "var(--accent, #2563eb)",
+                        background: a.key === "reject" ? "var(--danger-bg, #fef2f2)" : a.key === "complete" ? "var(--success-bg, #ecfdf5)" : "var(--accent, var(--brand))",
                         color: a.key === "reject" ? "var(--danger-text, #991b1b)" : a.key === "complete" ? "var(--success-text, #065f46)" : "#fff",
                         cursor: act.loading ? "wait" : "pointer", textAlign: "left",
                       }}>
@@ -141,9 +147,9 @@ export default function StaffJobDetailPage() {
                 <div style={{ marginTop: 12 }}>
                   <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
                     placeholder="Reason for rejection (required)"
-                    style={{ width: "100%", padding: 8, fontSize: 13, borderRadius: 8, border: "1px solid var(--border)" }}/>
+                    style={{ width: "100%", padding: 8, fontSize: 13, borderRadius:"var(--radius-md)", border: "1px solid var(--border)" }}/>
                   <button onClick={submitReject} disabled={!rejectReason.trim() || act.loading}
-                    style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "none", background: "var(--danger-text, #991b1b)", color: "#fff", cursor: "pointer" }}>
+                    style={{ marginTop: 8, padding: "8px 12px", borderRadius:"var(--radius-md)", fontSize: 13, fontWeight: 600, border: "none", background: "var(--danger-text, #991b1b)", color: "#fff", cursor: "pointer" }}>
                     Submit Rejection
                   </button>
                 </div>
@@ -153,12 +159,12 @@ export default function StaffJobDetailPage() {
                 <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
                   <textarea value={workSummary} onChange={e => setWorkSummary(e.target.value)} rows={3}
                     placeholder="Work summary (required)"
-                    style={{ width: "100%", padding: 8, fontSize: 13, borderRadius: 8, border: "1px solid var(--border)" }}/>
+                    style={{ width: "100%", padding: 8, fontSize: 13, borderRadius:"var(--radius-md)", border: "1px solid var(--border)" }}/>
                   <input value={collected} onChange={e => setCollected(e.target.value)} inputMode="decimal"
                     placeholder="Amount collected (₹, required)"
-                    style={{ width: "100%", padding: 8, fontSize: 13, borderRadius: 8, border: "1px solid var(--border)" }}/>
+                    style={{ width: "100%", padding: 8, fontSize: 13, borderRadius:"var(--radius-md)", border: "1px solid var(--border)" }}/>
                   <button onClick={submitComplete} disabled={!workSummary.trim() || !collected || act.loading}
-                    style={{ padding: "8px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "none", background: "var(--success-text, #065f46)", color: "#fff", cursor: "pointer" }}>
+                    style={{ padding: "8px 12px", borderRadius:"var(--radius-md)", fontSize: 13, fontWeight: 600, border: "none", background: "var(--success-text, #065f46)", color: "#fff", cursor: "pointer" }}>
                     Submit &amp; Complete
                   </button>
                 </div>

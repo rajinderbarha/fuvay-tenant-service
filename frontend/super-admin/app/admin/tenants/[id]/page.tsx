@@ -217,8 +217,8 @@ function OnboardingAdminTab({ tenantId }: { tenantId: string }) {
   if (onboarding.error) return (
     <Card>
       <div style={{ textAlign:"center", padding:"32px 0" }}>
-        <AlertCircle size={28} style={{ color:"#dc2626", display:"block", margin:"0 auto 10px" }}/>
-        <p style={{ fontSize:13, color:"#dc2626", margin:"0 0 12px" }}>{onboarding.error}</p>
+        <AlertCircle size={28} style={{ color:"var(--danger)", display:"block", margin:"0 auto 10px" }}/>
+        <p style={{ fontSize:13, color:"var(--danger)", margin:"0 0 12px" }}>{onboarding.error}</p>
         <Btn size="sm" variant="primary" onClick={onboarding.refetch}>Retry</Btn>
       </div>
     </Card>
@@ -227,9 +227,9 @@ function OnboardingAdminTab({ tenantId }: { tenantId: string }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       {toast    && <div style={{ padding:"10px 16px", borderRadius:10, background:"rgba(5,150,105,0.08)",
-        border:"1px solid rgba(5,150,105,0.25)", fontSize:13, color:"#059669" }}>{toast}</div>}
+        border:"1px solid rgba(5,150,105,0.25)", fontSize:13, color:"var(--success)" }}>{toast}</div>}
       {toastErr && <div style={{ padding:"10px 16px", borderRadius:10, background:"rgba(220,38,38,0.08)",
-        border:"1px solid rgba(220,38,38,0.25)", fontSize:13, color:"#dc2626" }}>{toastErr}</div>}
+        border:"1px solid rgba(220,38,38,0.25)", fontSize:13, color:"var(--danger)" }}>{toastErr}</div>}
 
       {/* Summary card */}
       {d && (
@@ -281,7 +281,7 @@ function OnboardingAdminTab({ tenantId }: { tenantId: string }) {
             overflow:"hidden", border:"1px solid var(--border)", marginBottom:16 }}>
             <div style={{ height:"100%", borderRadius:99,
               width:`${Math.max(0, Math.min(100, d.profile_completion_percentage))}%`,
-              background: d.profile_completion_percentage >= 100 ? "#059669" : d.profile_completion_percentage >= 60 ? "#d97706" : "#2563eb",
+              background: d.profile_completion_percentage >= 100 ? "var(--success)" : d.profile_completion_percentage >= 60 ? "var(--warning)" : "var(--brand)",
               transition:"width 0.4s" }}/>
           </div>
           {d.profile_completion_percentage < 100 && (
@@ -347,13 +347,13 @@ function OnboardingAdminTab({ tenantId }: { tenantId: string }) {
             </label>
             <textarea rows={3} value={rejectReason}
               onChange={e => setRejectReason(e.target.value)}
-              style={{ width:"100%", fontSize:13, padding:"8px 10px", borderRadius:8,
+              style={{ width:"100%", fontSize:13, padding:"8px 10px", borderRadius:"var(--radius-md)",
                 border:"1px solid var(--border)", background:"var(--surface)",
                 color:"var(--text-primary)", resize:"vertical", boxSizing:"border-box" }}
               placeholder="Reason for rejection…"/>
           </div>
           {rejectAction.error && (
-            <p style={{ fontSize:12, color:"#dc2626", margin:0 }}>{rejectAction.error}</p>
+            <p style={{ fontSize:12, color:"var(--danger)", margin:0 }}>{rejectAction.error}</p>
           )}
           <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
             <Btn size="sm" variant="secondary" onClick={() => setRejectOpen(false)}>Cancel</Btn>
@@ -428,8 +428,8 @@ function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
 
   if (offerings.error) return (
     <Card><div style={{ textAlign:"center", padding:"32px 0" }}>
-      <AlertCircle size={28} style={{ color:"#dc2626", display:"block", margin:"0 auto 10px" }}/>
-      <p style={{ fontSize:13, color:"#dc2626", margin:"0 0 12px" }}>{offerings.error}</p>
+      <AlertCircle size={28} style={{ color:"var(--danger)", display:"block", margin:"0 auto 10px" }}/>
+      <p style={{ fontSize:13, color:"var(--danger)", margin:"0 0 12px" }}>{offerings.error}</p>
       <Btn size="sm" variant="primary" onClick={offerings.refetch}>Retry</Btn>
     </div></Card>
   );
@@ -437,9 +437,9 @@ function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
       {toast    && <div style={{ padding:"10px 16px", borderRadius:10, background:"rgba(5,150,105,0.08)",
-        border:"1px solid rgba(5,150,105,0.25)", fontSize:13, color:"#059669" }}>✓ {toast}</div>}
+        border:"1px solid rgba(5,150,105,0.25)", fontSize:13, color:"var(--success)" }}>✓ {toast}</div>}
       {toastErr && <div style={{ padding:"10px 16px", borderRadius:10, background:"rgba(220,38,38,0.08)",
-        border:"1px solid rgba(220,38,38,0.25)", fontSize:13, color:"#dc2626" }}>✕ {toastErr}</div>}
+        border:"1px solid rgba(220,38,38,0.25)", fontSize:13, color:"var(--danger)" }}>✕ {toastErr}</div>}
 
       {/* FINAL-L5-05P: refresh-readiness/suspend/reactivate all require
           super_admin on the backend (not yet granular) -- gated by role,
@@ -506,7 +506,7 @@ function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
                       {o.readiness_blockers && o.readiness_blockers.length > 0 ? (
                         <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
                           {o.readiness_blockers.slice(0,2).map((b, bi) => (
-                            <span key={bi} style={{ fontSize:10, color:"#dc2626" }}>{b.message}</span>
+                            <span key={bi} style={{ fontSize:10, color:"var(--danger)" }}>{b.message}</span>
                           ))}
                           {o.readiness_blockers.length > 2 && (
                             <span style={{ fontSize:10, color:"var(--text-tertiary)" }}>
@@ -550,13 +550,13 @@ function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
               <label style={{ fontSize:11, fontWeight:600, color:"var(--text-tertiary)", display:"block",
                 marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>Reason *</label>
               <textarea rows={3} value={suspendReason} onChange={e => setSuspendReason(e.target.value)}
-                style={{ width:"100%", fontSize:13, padding:"8px 10px", borderRadius:8,
+                style={{ width:"100%", fontSize:13, padding:"8px 10px", borderRadius:"var(--radius-md)",
                   border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text-primary)",
                   resize:"vertical" }}
                 placeholder="Policy violation, quality issue…"/>
             </div>
             {suspendAction.error && (
-              <p style={{ fontSize:12, color:"#dc2626", margin:0 }}>{suspendAction.error}</p>
+              <p style={{ fontSize:12, color:"var(--danger)", margin:0 }}>{suspendAction.error}</p>
             )}
             <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
               <Btn size="sm" variant="secondary" onClick={() => setSuspendId(null)}>Cancel</Btn>
@@ -580,8 +580,8 @@ function ProviderAreasTab({ tenantId, refreshToken }: { tenantId: string; refres
   if (areas.loading) return <Skeleton height={200}/>;
   if (areas.error) return (
     <Card><div style={{ textAlign:"center", padding:"32px 0" }}>
-      <AlertCircle size={28} style={{ color:"#dc2626", display:"block", margin:"0 auto 10px" }}/>
-      <p style={{ fontSize:13, color:"#dc2626", margin:"0 0 12px" }}>{areas.error}</p>
+      <AlertCircle size={28} style={{ color:"var(--danger)", display:"block", margin:"0 auto 10px" }}/>
+      <p style={{ fontSize:13, color:"var(--danger)", margin:"0 0 12px" }}>{areas.error}</p>
       <Btn size="sm" variant="primary" onClick={areas.refetch}>Retry</Btn>
     </div></Card>
   );
@@ -650,8 +650,8 @@ function ProviderTeamTab({ tenantId }: { tenantId: string }) {
   if (team.loading) return <Skeleton height={200}/>;
   if (team.error) return (
     <Card><div style={{ textAlign:"center", padding:"32px 0" }}>
-      <AlertCircle size={28} style={{ color:"#dc2626", display:"block", margin:"0 auto 10px" }}/>
-      <p style={{ fontSize:13, color:"#dc2626", margin:"0 0 12px" }}>{team.error}</p>
+      <AlertCircle size={28} style={{ color:"var(--danger)", display:"block", margin:"0 auto 10px" }}/>
+      <p style={{ fontSize:13, color:"var(--danger)", margin:"0 0 12px" }}>{team.error}</p>
       <Btn size="sm" variant="primary" onClick={team.refetch}>Retry</Btn>
     </div></Card>
   );
@@ -718,8 +718,8 @@ function ProviderAvailabilityTab({ tenantId }: { tenantId: string }) {
   if (avail.loading) return <Skeleton height={200}/>;
   if (avail.error) return (
     <Card><div style={{ textAlign:"center", padding:"32px 0" }}>
-      <AlertCircle size={28} style={{ color:"#dc2626", display:"block", margin:"0 auto 10px" }}/>
-      <p style={{ fontSize:13, color:"#dc2626", margin:"0 0 12px" }}>{avail.error}</p>
+      <AlertCircle size={28} style={{ color:"var(--danger)", display:"block", margin:"0 auto 10px" }}/>
+      <p style={{ fontSize:13, color:"var(--danger)", margin:"0 0 12px" }}>{avail.error}</p>
       <Btn size="sm" variant="primary" onClick={avail.refetch}>Retry</Btn>
     </div></Card>
   );
@@ -820,7 +820,7 @@ function BookabilityTab({ tenantId }: { tenantId: string }) {
   if (status.loading) return <Skeleton height={300} />;
   if (status.error) return (
     <Card padding={24}>
-      <p style={{ color: "#dc2626", fontSize: 13 }}>{status.error}</p>
+      <p style={{ color: "var(--danger)", fontSize: 13 }}>{status.error}</p>
       <Btn size="sm" variant="primary" onClick={() => status.refetch()}>Retry</Btn>
     </Card>
   );
@@ -837,7 +837,7 @@ function BookabilityTab({ tenantId }: { tenantId: string }) {
                 {s?.is_visible ? "Visible to Customers" : "Hidden from Customers"}
               </Badge>
               {s?.override_is_visible !== null && s?.override_is_visible !== undefined && (
-                <p style={{ fontSize: 10, color: "#d97706", margin: "4px 0 0" }}>Admin override active: {s.override_visible_reason}</p>
+                <p style={{ fontSize: 10, color: "var(--warning)", margin: "4px 0 0" }}>Admin override active: {s.override_visible_reason}</p>
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -857,7 +857,7 @@ function BookabilityTab({ tenantId }: { tenantId: string }) {
             <div>
               <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 6px" }}>Blockers:</p>
               {s!.visibility_blockers.map((b, i) => (
-                <p key={i} style={{ fontSize: 11, color: "#dc2626", margin: "2px 0" }}>• {b.message}</p>
+                <p key={i} style={{ fontSize: 11, color: "var(--danger)", margin: "2px 0" }}>• {b.message}</p>
               ))}
             </div>
           )}
@@ -871,7 +871,7 @@ function BookabilityTab({ tenantId }: { tenantId: string }) {
                 {s?.is_bookable ? "Bookable" : "Not Bookable"}
               </Badge>
               {s?.override_is_bookable !== null && s?.override_is_bookable !== undefined && (
-                <p style={{ fontSize: 10, color: "#d97706", margin: "4px 0 0" }}>Admin override active: {s.override_bookable_reason}</p>
+                <p style={{ fontSize: 10, color: "var(--warning)", margin: "4px 0 0" }}>Admin override active: {s.override_bookable_reason}</p>
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -887,7 +887,7 @@ function BookabilityTab({ tenantId }: { tenantId: string }) {
             <div>
               <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 6px" }}>Blockers:</p>
               {s!.bookability_blockers.map((b, i) => (
-                <p key={i} style={{ fontSize: 11, color: "#dc2626", margin: "2px 0" }}>• {b.message}</p>
+                <p key={i} style={{ fontSize: 11, color: "var(--danger)", margin: "2px 0" }}>• {b.message}</p>
               ))}
             </div>
           )}
@@ -1334,7 +1334,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
       {tenant.loading ? (
         <Skeleton height={220} style={{ borderRadius:20, marginBottom:24 }}/>
       ) : tenant.error ? (
-        <div style={{ marginBottom:24, padding:"16px 20px", borderRadius:16,
+        <div style={{ marginBottom:24, padding:"16px 20px", borderRadius:"var(--radius-xl, 1rem)",
           background:"var(--danger-bg)", border:"1px solid var(--danger-border)",
           display:"flex", alignItems:"center", gap:12 }}>
           <AlertCircle size={18} style={{ color:"var(--danger-text)", flexShrink:0 }}/>
@@ -1402,25 +1402,25 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                   <button onClick={copyTenantId} style={{ display:"inline-flex", alignItems:"center", gap:5,
                     fontSize:11, fontFamily:"monospace", color:"var(--text-tertiary)",
                     background:"var(--surface-sunken)", border:"1px solid var(--border)",
-                    borderRadius:8, padding:"3px 9px", cursor:"pointer" }}>
+                    borderRadius:"var(--radius-md)", padding:"3px 9px", cursor:"pointer" }}>
                     {copiedId ? "✓ Copied" : `ID: ${id.slice(0,8)}…`}
                   </button>
                   {billing.data?.billing_mode && (
                     <span style={{ fontSize:11, color:"var(--text-tertiary)", padding:"3px 9px",
-                      background:"var(--surface-sunken)", borderRadius:8, border:"1px solid var(--border)" }}>
+                      background:"var(--surface-sunken)", borderRadius:"var(--radius-md)", border:"1px solid var(--border)" }}>
                       {labelOf(billing.data.billing_mode)}
                     </span>
                   )}
                   {billing.data?.commission_rate != null && (
                     <span style={{ fontSize:11, color:"var(--text-tertiary)", padding:"3px 9px",
-                      background:"var(--surface-sunken)", borderRadius:8, border:"1px solid var(--border)" }}>
+                      background:"var(--surface-sunken)", borderRadius:"var(--radius-md)", border:"1px solid var(--border)" }}>
                       Commission: {(billing.data.commission_rate * 100).toFixed(1)}%
                     </span>
                   )}
                   {t?.health_score != null && (
                     <span style={{ fontSize:11, fontWeight:700,
                       color: t.health_score >= 70 ? "var(--success-text)" : t.health_score >= 40 ? "var(--warning-text)" : "var(--danger-text)",
-                      padding:"3px 9px", borderRadius:8, border:"1px solid var(--border)",
+                      padding:"3px 9px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
                       background:"var(--surface-sunken)" }}>
                       Health: {Math.round(t.health_score)}
                     </span>
@@ -1458,7 +1458,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                     <Btn variant="secondary" size="sm" onClick={() => setMoreOpen(o => !o)}>More ⋯</Btn>
                     {moreOpen && (
                       <div style={{ position:"absolute", top:"100%", right:0, marginTop:6, zIndex:30,
-                        background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12,
+                        background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)",
                         boxShadow:"0 12px 40px rgba(0,0,0,0.18)", minWidth:210, overflow:"hidden" }}>
                         {isMobile && <>
                           <button onClick={() => { setMoreOpen(false); setCreditOpen(true); }} style={menuItemStyle}>Add Usage Credits</button>
@@ -1501,7 +1501,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                 </div>
 
                 {/* Usage Credits mini card */}
-                <div style={{ padding:"10px 16px", borderRadius:12, border:"1px solid var(--border)",
+                <div style={{ padding:"10px 16px", borderRadius:"var(--radius-lg)", border:"1px solid var(--border)",
                   background:"var(--surface-sunken)", textAlign:"center", minWidth:140 }}>
                   <p style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em",
                     color:"var(--text-tertiary)", margin:"0 0 3px" }}>Usage Credits</p>
@@ -1637,9 +1637,9 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                 {(earnedBadges.data ?? []).map(b => (
                   <span key={b.assignment_id} title={b.description ?? b.name}
                     style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"6px 12px 6px 10px",
-                      borderRadius:999, background:`${b.color || "#f59e0b"}18`,
-                      border:`1px solid ${b.color || "#f59e0b"}55`, fontSize:13, fontWeight:600 }}>
-                    <span style={{ width:10, height:10, borderRadius:"50%", background:b.color || "#f59e0b" }} />
+                      borderRadius:999, background:`${b.color || "var(--warning)"}18`,
+                      border:`1px solid ${b.color || "var(--warning)"}55`, fontSize:13, fontWeight:600 }}>
+                    <span style={{ width:10, height:10, borderRadius:"50%", background:b.color || "var(--warning)" }} />
                     {b.name}
                     {!b.customer_visible && <Badge variant="muted" size="sm">internal</Badge>}
                   </span>
@@ -1674,7 +1674,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                   {checks.map(c => {
                     const content = (
                       <div style={{ display:"flex", alignItems:"center", gap:7, fontSize:12,
-                        padding:"5px 8px", borderRadius:8,
+                        padding:"5px 8px", borderRadius:"var(--radius-md)",
                         background: c.ok ? "var(--success-bg)" : "var(--danger-bg)",
                         border:`1px solid ${c.ok ? "var(--success-border)" : "var(--danger-border)"}` }}>
                         {c.ok
@@ -2125,7 +2125,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                   <select value={testJobType} onChange={e => setTestJobType(e.target.value)}
                     style={{ width:"100%", height:38, padding:"0 10px", fontSize:13,
                       background:"var(--surface)", border:"1px solid var(--border)",
-                      borderRadius:8, color:"var(--text-primary)", outline:"none" }}>
+                      borderRadius:"var(--radius-md)", color:"var(--text-primary)", outline:"none" }}>
                     {["repair","service","consultation"].map(j => <option key={j} value={j}>{j}</option>)}
                   </select>
                 </div>
@@ -2350,7 +2350,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
       {/* ════════════════════ SECURITY DEPOSIT ════════════════════ */}
       {tab === "deposit" && (
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <div style={{ padding:"10px 14px", background:"var(--warning-bg)", border:"1px solid var(--warning-border)", borderRadius:8 }}>
+          <div style={{ padding:"10px 14px", background:"var(--warning-bg)", border:"1px solid var(--warning-border)", borderRadius:"var(--radius-md)" }}>
             <p style={{ fontSize:12, color:"var(--warning-text)", margin:0 }}>
               Security deposit is a one-time guarantee held separately from usage credits. It is used to cover risk (disputes, damages)
               and is only deducted with an admin reason and audit trail — it is never used for routine job-credit deductions.
@@ -2455,7 +2455,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
       {/* ════════════════════ CUSTOMER SERVICE CREDIT SETTLEMENTS ════════════════════ */}
       {tab === "settlements" && (
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <div style={{ padding:"10px 14px", background:"var(--info-bg)", border:"1px solid var(--info-border)", borderRadius:8 }}>
+          <div style={{ padding:"10px 14px", background:"var(--info-bg)", border:"1px solid var(--info-border)", borderRadius:"var(--radius-md)" }}>
             <p style={{ fontSize:12, color:"var(--info-text)", margin:0 }}>
               Customer service credit is platform credit issued to a customer, not a cash refund. Deduction is sourced from this
               provider&apos;s usage credits first, then security deposit only if policy allows and an admin approves.
@@ -2525,7 +2525,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
       {/* ════════════════════ USAGE CREDIT LEDGER ════════════════════ */}
       {tab === "wallet" && (
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <div style={{ padding:"10px 14px", background:"var(--info-bg)", border:"1px solid var(--info-border)", borderRadius:8 }}>
+          <div style={{ padding:"10px 14px", background:"var(--info-bg)", border:"1px solid var(--info-border)", borderRadius:"var(--radius-md)" }}>
             <p style={{ fontSize:12, color:"var(--info-text)", margin:0 }}>
               Usage credits are internal ServiceOS credits used for platform charges. They are not cash, not withdrawable, and not a payout balance.
               Customers pay this provider directly — ServiceOS does not collect service payment for Home Services.
@@ -2616,7 +2616,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             </div>
             {media.loading ? (
               <div style={{ padding:16, display:"flex", flexWrap:"wrap", gap:12 }}>
-                {[...Array(6)].map((_,i) => <Skeleton key={i} height={90} style={{ width:140, borderRadius:8 }}/>)}
+                {[...Array(6)].map((_,i) => <Skeleton key={i} height={90} style={{ width:140, borderRadius:"var(--radius-md)" }}/>)}
               </div>
             ) : ((media.data as unknown as { files?: MediaFile[] })?.files ?? []).length === 0 ? (
               <div style={{ padding:"40px 20px", textAlign:"center" }}>
@@ -2625,7 +2625,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             ) : (
               <div style={{ padding:16, display:"flex", flexWrap:"wrap", gap:12 }}>
                 {((media.data as unknown as { files: MediaFile[] }).files ?? []).map((f: MediaFile) => (
-                  <div key={f.file_id} style={{ width:140, border:"1px solid var(--border)", borderRadius:8,
+                  <div key={f.file_id} style={{ width:140, border:"1px solid var(--border)", borderRadius:"var(--radius-md)",
                     overflow:"hidden", background:"var(--surface-sunken)" }}>
                     {f.content_type?.startsWith("image/") && f.url ? (
                       <img src={f.url} alt={f.filename} style={{ width:"100%", height:80, objectFit:"cover", display:"block" }}/>
@@ -2818,7 +2818,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                     <p style={{ fontSize:13, color:"var(--text-secondary)", margin:0 }}>{String(rv.review_text)}</p>
                   )}
                   {rv.tenant_reply && (
-                    <div style={{ marginTop:8, padding:"8px 12px", background:"var(--surface-sunken)", borderRadius:8,
+                    <div style={{ marginTop:8, padding:"8px 12px", background:"var(--surface-sunken)", borderRadius:"var(--radius-md)",
                       borderLeft:"3px solid var(--brand)" }}>
                       <p style={{ fontSize:12, color:"var(--text-secondary)", margin:0 }}>
                         <strong>Reply:</strong> {String(rv.tenant_reply)}
@@ -2900,7 +2900,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             <label style={{ fontSize:11, fontWeight:700, color:"var(--text-secondary)", textTransform:"uppercase",
               display:"block", marginBottom:4 }}>Category</label>
             <select value={adjCategory} onChange={e => setAdjCategory(e.target.value as typeof adjCategory)}
-              style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid var(--border)",
+              style={{ width:"100%", padding:"8px 10px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
                 background:"var(--bg)", color:"var(--text-primary)", fontSize:13, fontFamily:"inherit" }}>
               <option value="correction">Correction</option>
               <option value="goodwill">Goodwill</option>
@@ -3000,7 +3000,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             </label>
             <textarea value={planReason} onChange={e => setPlanReason(e.target.value)} rows={2}
               placeholder="Why is this plan change being made?"
-              style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid var(--border)",
+              style={{ width:"100%", padding:"8px 10px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
                 background:"var(--surface)", color:"var(--text-primary)", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }} />
           </div>
           {upgradePlanAction.error && (
@@ -3027,7 +3027,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             </label>
             <textarea value={reinstateMsg} onChange={e => setReinstateMsg(e.target.value)} rows={2}
               placeholder="Why is this tenant being reinstated?"
-              style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid var(--border)",
+              style={{ width:"100%", padding:"8px 10px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
                 background:"var(--surface)", color:"var(--text-primary)", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }} />
           </div>
           {reinstateAction.error && (

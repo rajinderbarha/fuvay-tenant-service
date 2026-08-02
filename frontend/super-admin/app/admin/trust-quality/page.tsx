@@ -42,7 +42,7 @@ const BADGE_ICON_NAMES = Object.keys(BADGE_ICONS);
 
 // Distinct, accessible badge colors. First entry is the default.
 const BADGE_COLORS = [
-  "#f59e0b", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444",
+  "var(--warning)", "var(--brand)", "var(--success)", "#8b5cf6", "#ef4444",
   "#14b8a6", "#ec4899", "#6366f1", "#f97316", "#64748b",
 ];
 
@@ -52,7 +52,7 @@ function BadgeIcon({ icon, color, size = 16 }: { icon?: string | null; color?: s
   const c = color || BADGE_COLORS[0];
   return (
     <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
-      width: size + 12, height: size + 12, borderRadius: 8, flexShrink: 0,
+      width: size + 12, height: size + 12, borderRadius:"var(--radius-md)", flexShrink: 0,
       background: `${c}22`, border: `1px solid ${c}55` }}>
       <Cmp size={size} color={c} />
     </span>
@@ -371,8 +371,8 @@ export default function TrustQualityPage() {
                   {earned.map(b => (
                     <span key={b.assignment_id} title={b.description ?? b.name}
                       style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px 7px 8px",
-                        borderRadius: 999, background: `${b.color || "#f59e0b"}18`,
-                        border: `1px solid ${b.color || "#f59e0b"}55`, fontSize: 13, fontWeight: 600 }}>
+                        borderRadius: 999, background: `${b.color || "var(--warning)"}18`,
+                        border: `1px solid ${b.color || "var(--warning)"}55`, fontSize: 13, fontWeight: 600 }}>
                       <BadgeIcon icon={b.icon} color={b.color} size={15} />
                       {b.name}
                       {!b.customer_visible && <Badge variant="muted" size="sm">internal</Badge>}
@@ -412,7 +412,7 @@ export default function TrustQualityPage() {
             <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
               placeholder="Why is this rule being changed?"
               style={{ width: "100%", padding: 10, fontSize: 13, fontFamily: "inherit",
-                borderRadius: 8, border: "1px solid var(--border)",
+                borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                 background: "var(--surface)", color: "var(--text-primary)", resize: "vertical", boxSizing: "border-box" }}
             />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
@@ -483,7 +483,7 @@ function BadgeDefinitionModal({ open, onClose, onSaved, editing }: {
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {/* Live preview of the icon + color the badge will carry. */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 10,
-          borderRadius: 8, background: "var(--surface-sunken)" }}>
+          borderRadius:"var(--radius-md)", background: "var(--surface-sunken)" }}>
           <BadgeIcon icon={f.icon} color={f.color} size={22} />
           <span style={{ fontWeight: 600 }}>{f.name || "Badge preview"}</span>
         </div>
@@ -502,7 +502,7 @@ function BadgeDefinitionModal({ open, onClose, onSaved, editing }: {
               return (
                 <button key={name} type="button" onClick={() => setF({ ...f, icon: name })}
                   aria-label={name} style={{
-                    width: 34, height: 34, borderRadius: 8, cursor: "pointer",
+                    width: 34, height: 34, borderRadius:"var(--radius-md)", cursor: "pointer",
                     display: "inline-flex", alignItems: "center", justifyContent: "center",
                     background: sel ? `${f.color}22` : "var(--surface)",
                     border: `1px solid ${sel ? f.color : "var(--border)"}` }}>
@@ -607,7 +607,7 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {badges.length === 0 && (
           <div style={{ fontSize: 13, color: "var(--warning-text)", background: "var(--warning-bg)",
-            padding: 10, borderRadius: 8 }}>
+            padding: 10, borderRadius:"var(--radius-md)" }}>
             Create a badge first (Badges tab) — a rule awards an existing badge.
           </div>
         )}

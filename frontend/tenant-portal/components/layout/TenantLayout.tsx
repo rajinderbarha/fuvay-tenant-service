@@ -5,7 +5,7 @@ import Link from "next/link";
 const TenantShellCtx = createContext(false);
 import {
   LayoutDashboard, Wrench, Users2,
-  MessageCircle, FileText,
+  FileText,
   Settings, Sun, Moon, ChevronLeft, ChevronRight,
   Bell, Search, HelpCircle, CalendarCheck, Package, LogOut,
   BarChart2, Megaphone,
@@ -20,7 +20,7 @@ import { Toaster, type ToastItem } from "../shared/ui";
 import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "./Breadcrumbs";
-import { authApi, providerStatusApi, entitlementApi, providerNotifApi, type InAppNotificationItem } from "../../lib/api";
+import { authApi, providerStatusApi, entitlementApi, providerNotifApi, categoryDashboardApi, type InAppNotificationItem } from "../../lib/api";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
 
 // FINAL-L5-04B: live tenant module/category entitlement state, fetched once
@@ -85,8 +85,9 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       // Ordered to match the customer-relationship flow: who you serve,
       // talk to them, resolve issues, then grow.
+      // Chat (customer<->provider messaging) removed for now -- only AI
+      // chat stays available. The /chat page/API remain live, just unlinked.
       { id: "customers", href: "/customers", label: "Customers", icon: <Users2 size={16}/> },
-      { id: "chat",      href: "/chat",      label: "Chat",      icon: <MessageCircle size={16}/> },
       { id: "provider-complaints", href: "/provider/complaints", label: "Complaints", icon: <AlertCircle size={16}/> },
       { id: "marketing", href: "/marketing", label: "Marketing", icon: <Megaphone size={16}/> },
     ],
@@ -299,7 +300,7 @@ function TenantShellInner({ children, activeNav }: {
   const tour   = useTour();
   const tenant = useTenant();
   const setupStatus = useSetupStatus();
-  const [collapsed,    setCollapsed]    = useState(false);
+  const [collapsed,    setCollapsed]    = useState(true);
   const [toasts,       setToasts]       = useState<ToastItem[]>([]);
   const [myName,       setMyName]       = useState<string>("");
   const [myAvatar,     setMyAvatar]     = useState<string | null>(null);
@@ -307,6 +308,20 @@ function TenantShellInner({ children, activeNav }: {
   const [setupPct,     setSetupPct]     = useState<number | null>(null);
   const [entitledModuleKeys, setEntitledModuleKeys] = useState<string[]>([]);
   const [entitlementsLoaded, setEntitlementsLoaded] = useState(false);
+  // Multi-vertical Phase 3: real vertical capabilities from the backend
+  // registry (GET /v1/tenant/navigation), replacing hardcoded per-vertical
+  // string lookup tables. Fails open (null) until loaded so nav doesn't
+  // flash-hide items on a slow/failed request.
+  const [verticalCapabilities, setVerticalCapabilities] = useState<string[] | null>(null);
+  const [verticalKey, setVerticalKey] = useState<string | null>(null);
+  useEffect(() => {
+    categoryDashboardApi.getNavigation()
+      .then(nav => {
+        setVerticalCapabilities(nav.vertical_context?.capabilities ?? null);
+        setVerticalKey(nav.vertical_context?.vertical_key ?? null);
+      })
+      .catch(() => { setVerticalCapabilities(null); setVerticalKey(null); });
+  }, []);
 
   // Notification bell dropdown: real data via providerNotifApi (backs the
   // /provider/notifications inbox -- same InAppNotificationItem model).
@@ -405,15 +420,45 @@ function TenantShellInner({ children, activeNav }: {
 
   const hasAnyModule = entitlementsLoaded ? entitledModuleKeys.length > 0 : true;
   const ALWAYS_VISIBLE_GROUPS = new Set(["Overview", "More"]);
-  // Nav items that only apply to specific business verticals (e.g.
-  // "Appointments" is the coaching/education vertical's CoachingAppointment
-  // model, not a home-services concept) -- hidden for tenants outside those
-  // verticals so the sidebar only shows menu items relevant to their business.
-  const VERTICAL_ONLY_ITEMS: Record<string, string[]> = { appointments: ["coaching"] };
+  // Multi-vertical Phase 3: nav items requiring a specific real capability,
+  // resolved from the backend's vertical registry (GET /v1/tenant/navigation
+  // -> vertical_context.capabilities) instead of a hardcoded per-vertical-key
+  // string list. "jobs" (Bookings & Jobs) is the booking->service_jobs
+  // pipeline (Home Services only); "appointments" is the coaching
+  // CoachingAppointment model. Fails open (shows the item) until the
+  // capability list has loaded, matching the entitlement-gating fail-open
+  // pattern already used above for module visibility.
+  const ITEM_REQUIRES_CAPABILITY: Record<string, string> = {
+    appointments: "appointments",
+    jobs: "jobs",
+  };
+  // Items hidden for a specific vertical rather than gated by a capability --
+  // Marketing/Compliance/Privacy & Data removed from the Home Services
+  // sidebar per product decision (platform admin manages those policies
+  // centrally for that vertical). Driven by the real backend-resolved
+  // vertical_key, not a client guess.
+  const VERTICAL_HIDDEN_ITEMS: Record<string, string[]> = {
+    marketing: ["home_services"], "provider-compliance": ["home_services"], privacy: ["home_services"],
+  };
   const itemVisible = (itemId: string) => {
-    const allowed = VERTICAL_ONLY_ITEMS[itemId];
-    if (!allowed) return true;
-    return !!tenant.vertical && allowed.includes(tenant.vertical);
+    const hidden = VERTICAL_HIDDEN_ITEMS[itemId];
+    if (hidden && verticalKey && hidden.includes(verticalKey)) return false;
+    const requiredCapability = ITEM_REQUIRES_CAPABILITY[itemId];
+    if (!requiredCapability) return true;
+    if (verticalCapabilities === null) return true; // fail open until loaded
+    return verticalCapabilities.includes(requiredCapability);
+  };
+  // "provider-staff" label was hardcoded "Staff & Technicians" regardless of
+  // vertical, while the page it links to already computes a category-aware
+  // title ("Technicians" / "Trainers & Counsellors" / "Agents" — see
+  // pageTitle() in the team-members page). The sidebar label was never kept
+  // in sync with that, so a coaching tenant saw "Technicians" in the page
+  // but "Staff & Technicians" in the menu that led there.
+  const itemLabel = (item: NavItem): string => {
+    if (item.id !== "provider-staff") return item.label;
+    if (tenant.vertical === "coaching") return "Staff & Trainers";
+    if (tenant.vertical === "real_estate") return "Staff & Agents";
+    return "Staff & Technicians";
   };
   // Once every real setup step is done (10/10, from the shared hook), the
   // The "Setup" nav group was removed entirely -- Business Profile (in
@@ -421,7 +466,7 @@ function TenantShellInner({ children, activeNav }: {
   // setup page (Service Areas, Service Setup, Service Coverage, Business
   // Hours) or reopen the wizard drawer, via its "Business Setup" section.
   const visibleNavGroups = (hasAnyModule ? NAV_GROUPS : NAV_GROUPS.filter(g => ALWAYS_VISIBLE_GROUPS.has(g.label)))
-    .map(g => ({ ...g, items: g.items.filter(it => itemVisible(it.id)) }))
+    .map(g => ({ ...g, items: g.items.filter(it => itemVisible(it.id)).map(it => ({ ...it, label: itemLabel(it) })) }))
     .filter(g => g.items.length > 0);
 
   return (

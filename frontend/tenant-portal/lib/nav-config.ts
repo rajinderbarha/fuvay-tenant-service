@@ -49,9 +49,7 @@ export const TENANT_NAV_GROUPS: NavGroup[] = [
     id: "finance",
     label: "Finance",
     items: [
-      { id: "finance-package",       label: "Package & Credits",     href: "/finance/package",              icon: "Package", group: "finance" },
-      { id: "finance-credit-ledger", label: "Usage Credit Ledger",   href: "/finance/usage-credit-ledger",  icon: "Receipt", group: "finance" },
-      { id: "finance-deposit",       label: "Security Deposit",      href: "/finance/security-deposit",     icon: "Shield",  group: "finance" },
+      { id: "finance-package",       label: "Billing",               href: "/packages",                     icon: "Package", group: "finance" },
     ],
   },
   {
@@ -70,8 +68,7 @@ export const TENANT_NAV_GROUPS: NavGroup[] = [
     id: "operations",
     label: "Operations",
     items: [
-      { id: "jobs",         label: "Jobs",         href: "/jobs",         icon: "Wrench",       group: "operations" },
-      { id: "bookings",     label: "Bookings",     href: "/bookings",     icon: "CalendarDays", group: "operations" },
+      { id: "jobs",         label: "Bookings & Jobs", href: "/jobs",       icon: "Wrench",       group: "operations" },
       { id: "appointments", label: "Appointments", href: "/appointments", icon: "Calendar",     group: "operations" },
       { id: "dispatch",     label: "Dispatch",     href: "/dispatch",     icon: "Truck",        group: "operations" },
       { id: "operational-exceptions", label: "Operational Exceptions", href: "/operations/exceptions", icon: "AlertTriangle", group: "operations" },
@@ -84,7 +81,6 @@ export const TENANT_NAV_GROUPS: NavGroup[] = [
       { id: "customers",  label: "Customers",  href: "/customers",  icon: "User",      group: "engagement" },
       { id: "reviews",    label: "Reviews",    href: "/reviews",    icon: "Star",      group: "engagement" },
       { id: "marketing",  label: "Marketing",  href: "/marketing",  icon: "Megaphone", group: "engagement" },
-      { id: "chat",       label: "Chat",       href: "/chat",       icon: "MessageCircle", group: "engagement" },
     ],
   },
   {
@@ -108,7 +104,7 @@ export const TENANT_PATH_TO_NAV_ID: Record<string, string> = {
   privacy:             "profile",
   jobs:                "jobs",
   "service-jobs":      "jobs",
-  bookings:            "bookings",
+  bookings:            "jobs",
   appointments:        "appointments",
   dispatch:            "dispatch",
   "operations/exceptions": "operational-exceptions",

@@ -93,20 +93,35 @@ def test_home_services_summary_shown_separately_not_merged():
 
 def test_home_services_quick_links_route_under_home_services_prefix():
     hs_section = PAGE.split('>Home Services Summary<')[1][:4000]
-    for href in ["/admin/home-services/service-catalog", "/admin/home-services/pricing-rules",
-                 "/admin/home-services/price-experience", "/admin/home-services/provider-matching",
-                 "/admin/home-services/matching-diagnostics", "/admin/home-services/service-areas",
+    # Service Catalog moved to the Catalog Workspace (admin catalog ownership
+    # correction); Service Areas / Zones (retired Pricing Tiers UI) replaced
+    # by Service Area Requests -- both real routes, neither under the
+    # /admin/home-services/ prefix, so checked separately below. Pricing
+    # Rules quick link removed entirely -- that screen is retired (admin no
+    # longer sets price boundaries).
+    for href in ["/admin/home-services/price-experience", "/admin/home-services/provider-matching",
+                 "/admin/home-services/matching-diagnostics",
                  "/admin/home-services/completed-job-deduction"]:
         assert href in hs_section, f"missing quick link: {href}"
+    assert "/admin/catalog-workspace" in hs_section
+    assert "/admin/service-area-requests" in hs_section
+    assert "/admin/home-services/pricing-rules" not in hs_section
 
 
 def test_home_services_hardgate_no_loose_common_route():
     hs_section = PAGE.split('>Home Services Summary<')[1][:4000]
-    # every href inside the Home Services section must be prefixed /admin/home-services/
+    # Every href must be prefixed /admin/home-services/ EXCEPT the two real,
+    # deliberate exceptions: the Catalog Workspace (moved out of the
+    # home-services-specific catalog console) and Service Area Requests
+    # (the retired Pricing Tiers / Service Areas page's real replacement,
+    # a cross-vertical serviceability workflow, not home-services-scoped).
+    ALLOWED_EXCEPTIONS = {"/admin/catalog-workspace", "/admin/service-area-requests"}
     import re
     hrefs = re.findall(r'href:\s*"(/admin/[^"]+)"', hs_section)
     assert hrefs, "expected at least one href in Home Services section"
     for href in hrefs:
+        if href in ALLOWED_EXCEPTIONS:
+            continue
         assert href.startswith("/admin/home-services/"), f"loose common route inside Home Services section: {href}"
 
 

@@ -28,19 +28,14 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     breadcrumbs: [{ label: "Settings" }],
   },
   "/jobs": {
-    title: "Jobs",
+    title: "Bookings & Jobs",
     section: "operations",
-    breadcrumbs: [{ label: "Jobs" }],
+    breadcrumbs: [{ label: "Bookings & Jobs" }],
   },
   "/service-jobs": {
     title: "Service Jobs",
     section: "operations",
-    breadcrumbs: [{ label: "Jobs", href: "/jobs" }, { label: "Service Jobs" }],
-  },
-  "/bookings": {
-    title: "Bookings",
-    section: "operations",
-    breadcrumbs: [{ label: "Bookings" }],
+    breadcrumbs: [{ label: "Bookings & Jobs", href: "/jobs" }, { label: "Service Jobs" }],
   },
   "/appointments": {
     title: "Appointments",

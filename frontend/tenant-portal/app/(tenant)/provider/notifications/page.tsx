@@ -9,7 +9,7 @@ const SEV_ICON: Record<string, string> = {
 };
 
 const btnBase: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, borderRadius: 8, cursor: "pointer",
+  padding: "6px 12px", fontSize: 13, borderRadius:"var(--radius-md)", cursor: "pointer",
   fontFamily: "inherit", border: "1px solid var(--border)",
 };
 
@@ -63,7 +63,7 @@ export default function ProviderNotificationsPage() {
 
       {notifs.loading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {[1,2,3].map(i => <div key={i} style={{ height: 80, borderRadius: 8, background: "var(--surface-sunken)" }}/>)}
+          {[1,2,3].map(i => <div key={i} style={{ height: 80, borderRadius:"var(--radius-md)", background: "var(--surface-sunken)" }}/>)}
         </div>
       ) : items.length === 0 ? (
         <div style={{ textAlign: "center", padding: "64px 0", color: "var(--text-tertiary)" }}>

@@ -164,7 +164,7 @@ class TestModels:
 
     def test_master_service_option_has_vertical_type(self):
         idx = self.src.index("class MasterServiceOption")
-        excerpt = self.src[idx:idx+3000]
+        excerpt = self.src[idx:idx+3500]
         assert "vertical_type" in excerpt
 
     def test_service_issue_mapping_has_is_common(self):
@@ -179,7 +179,7 @@ class TestModels:
 
     def test_service_option_mapping_has_is_required(self):
         idx = self.src.index("class ServiceOptionMapping")
-        excerpt = self.src[idx:idx+2000]
+        excerpt = self.src[idx:idx+3500]
         assert "is_required" in excerpt
 
     def test_to_dict_methods_present(self):

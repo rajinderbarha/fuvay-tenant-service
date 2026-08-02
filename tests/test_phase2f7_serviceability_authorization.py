@@ -326,10 +326,15 @@ class TestModuleVerificationExitsClean:
         return mod
 
     def test_serviceability_router_zero_unverified(self):
+        # PROTECTED_BY_LATER_SLICE: the service-area coverage-approval slice
+        # added 10 new routes (tenant request CRUD/submit/withdraw, admin
+        # review/decide, active-coverage list/suspend/reactivate/revoke) to
+        # replace the retired pricing-tier/tier-location system. 19 -> 29 is
+        # the real, current route count, not a relaxed check.
         mod = self._load_inventory_module()
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] == "app.engines.serviceability.router"]
-        assert len(routes) == 19
+        assert len(routes) == 29
         exempt = mod.CONFIRMED_FALSE_POSITIVE_ROUTES | mod.CONFIRMED_PLATFORM_ADMIN_PERMISSION_ROUTES
         unverified = [
             r for r in routes

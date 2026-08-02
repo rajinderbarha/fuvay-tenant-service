@@ -53,7 +53,7 @@ export default function ChatPage() {
             {messages.loading ? [...Array(5)].map((_,i)=><Skeleton key={i} height={40}/>)
             : (messages.data?.messages ?? []).map(msg=>(
               <div key={msg.message_id} style={{display:"flex",flexDirection:"column",alignItems:msg.sender_id===msg.room_id?"flex-start":"flex-end"}}>
-                <div style={{maxWidth:"70%",padding:"8px 12px",borderRadius:12,
+                <div style={{maxWidth:"70%",padding:"8px 12px",borderRadius:"var(--radius-lg)",
                   background:msg.sender_id===msg.room_id?"var(--surface-sunken)":"var(--brand)",
                   color:msg.sender_id===msg.room_id?"var(--text-primary)":"white"}}>
                   <p style={{fontSize:13,margin:0}}>{msg.content}</p>

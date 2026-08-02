@@ -418,7 +418,7 @@ export default function UserSecurityPage() {
                 rows={2}
                 placeholder="Describe why you are taking this action…"
                 style={{ width: "100%", padding: "8px 12px", fontSize: 13,
-                  border: "1px solid var(--border)", borderRadius: 8,
+                  border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
                   background: "var(--surface)", color: "var(--text-primary)",
                   fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" as const }}
               />

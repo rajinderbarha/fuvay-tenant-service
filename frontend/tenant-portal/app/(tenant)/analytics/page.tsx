@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { providerAnalyticsApi } from "../../../lib/api";
 import { KpiCard, DateFilter, AlertList } from "../../../components/analytics";
 
@@ -8,7 +8,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const ago30  = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
 
 const card: React.CSSProperties = {
-  background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20,
+  background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20,
 };
 
 export default function ProviderAnalyticsDashboard() {
@@ -42,6 +42,7 @@ export default function ProviderAnalyticsDashboard() {
   const s = summary ?? {};
 
   return (
+    <TenantLayout activeNav="analytics">
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
@@ -70,12 +71,13 @@ export default function ProviderAnalyticsDashboard() {
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <Link href="/analytics/financial"  style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Financial →</Link>
-        <Link href="/analytics/staff"      style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Staff Performance →</Link>
-        <Link href="/analytics/quality"    style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Reviews & Quality →</Link>
-        <Link href="/analytics/complaints" style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Complaints →</Link>
-        <Link href="/reports"              style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Reports →</Link>
+        <a href="/analytics/financial"  style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Financial →</a>
+        <a href="/analytics/staff"      style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Staff Performance →</a>
+        <a href="/analytics/quality"    style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Reviews & Quality →</a>
+        <a href="/analytics/complaints" style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Complaints →</a>
+        <a href="/reports"              style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Reports →</a>
       </div>
     </div>
+    </TenantLayout>
   );
 }

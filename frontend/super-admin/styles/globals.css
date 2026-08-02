@@ -76,11 +76,11 @@
   --danger-border:    #FECACA;
   --danger-text:      #991B1B;
 
-  /* ── Semantic — Info ── */
-  --info:             #2563EB;
-  --info-bg:          #EFF6FF;
-  --info-border:      #BFDBFE;
-  --info-text:        #1D4ED8;
+  /* ── Semantic — Info (neutral warm-gray, not blue/orange) ── */
+  --info:             #6B6153;
+  --info-bg:          #F3F1EA;
+  --info-border:      #D4CFC4;
+  --info-text:        #45402F;
 
   /* ── Golden accent (tier badges, highlights) ── */
   --golden:           #D97706;
@@ -169,11 +169,11 @@
   --danger-border:    rgba(248, 113, 113, 0.25);
   --danger-text:      #FCA5A5;
 
-  /* ── Semantic — Info ── */
-  --info:             #60A5FA;
-  --info-bg:          rgba(96, 165, 250, 0.12);
-  --info-border:      rgba(96, 165, 250, 0.25);
-  --info-text:        #93C5FD;
+  /* ── Semantic — Info (neutral warm-gray, not blue/orange) ── */
+  --info:             #C9C3B7;
+  --info-bg:          rgba(201, 195, 183, 0.12);
+  --info-border:      rgba(201, 195, 183, 0.25);
+  --info-text:        #E4E0D8;
 
   /* ── Golden ── */
   --golden:           #FBBF24;

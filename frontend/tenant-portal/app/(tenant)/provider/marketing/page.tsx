@@ -70,7 +70,7 @@ function AssetCard({
         <p style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", margin: "0 0 8px" }}>{asset.title}</p>
       )}
       {asset.body && (
-        <div style={{ background: "var(--surface-sunken)", borderRadius: 8, padding: "10px 12px", fontSize: 13,
+        <div style={{ background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", padding: "10px 12px", fontSize: 13,
           whiteSpace: "pre-wrap", color: "var(--text-secondary)", marginBottom: 8 }}>
           {asset.body}
         </div>
@@ -78,7 +78,7 @@ function AssetCard({
 
       {asset.status === "rejected" && asset.rejection_reason && (
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "var(--danger-bg)",
-          borderRadius: 8, padding: "10px 12px", fontSize: 13, color: "var(--danger-text)", marginBottom: 8 }}>
+          borderRadius:"var(--radius-md)", padding: "10px 12px", fontSize: 13, color: "var(--danger-text)", marginBottom: 8 }}>
           <XCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
           <div><strong>Rejected:</strong> {asset.rejection_reason}</div>
         </div>
@@ -86,7 +86,7 @@ function AssetCard({
 
       {asset.status === "pending_provider_review" && asset.admin_notes && (
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "var(--warning-bg)",
-          borderRadius: 8, padding: "10px 12px", fontSize: 13, color: "var(--warning-text)", marginBottom: 8 }}>
+          borderRadius:"var(--radius-md)", padding: "10px 12px", fontSize: 13, color: "var(--warning-text)", marginBottom: 8 }}>
           <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
           <div><strong>Changes requested:</strong> {asset.admin_notes}</div>
         </div>
@@ -108,7 +108,7 @@ function AssetCard({
             onChange={e => setNotes(e.target.value)}
             placeholder="Add notes for the admin..."
             style={{ width: "100%", padding: "8px 10px", fontSize: 13, border: "1px solid var(--border)",
-              borderRadius: 8, background: "var(--surface)", color: "var(--text-primary)",
+              borderRadius:"var(--radius-md)", background: "var(--surface)", color: "var(--text-primary)",
               resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
           />
           <div style={{ display: "flex", gap: 8 }}>
@@ -207,8 +207,8 @@ export default function ProviderMarketingPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {mktgStatus?.marketing_ready
-                ? <CheckCircle2 size={20} style={{ color: "#059669", flexShrink: 0 }} />
-                : <XCircle size={20} style={{ color: "#dc2626", flexShrink: 0 }} />}
+                ? <CheckCircle2 size={20} style={{ color: "var(--success)", flexShrink: 0 }} />
+                : <XCircle size={20} style={{ color: "var(--danger)", flexShrink: 0 }} />}
               <div style={{ flex: 1 }}>
                 <p style={{ fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>
                   {mktgStatus?.marketing_ready ? "Ready for marketing launch" : "Not ready yet"}
@@ -235,7 +235,7 @@ export default function ProviderMarketingPage() {
                 </p>
                 {blockers.map((b) => (
                   <div key={b.code} style={{ display: "flex", alignItems: "flex-start", gap: 8,
-                    background: "var(--warning-bg)", borderRadius: 8, padding: "10px 12px",
+                    background: "var(--warning-bg)", borderRadius:"var(--radius-md)", padding: "10px 12px",
                     fontSize: 13, color: "var(--warning-text)" }}>
                     <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
                     <div>
@@ -284,13 +284,13 @@ export default function ProviderMarketingPage() {
                   </div>
                 </div>
                 {campaign.requested_changes && (
-                  <div style={{ background: "var(--warning-bg)", borderRadius: 8, padding: "10px 12px",
+                  <div style={{ background: "var(--warning-bg)", borderRadius:"var(--radius-md)", padding: "10px 12px",
                     fontSize: 13, color: "var(--warning-text)", marginTop: 8 }}>
                     <strong>Changes requested:</strong> {campaign.requested_changes}
                   </div>
                 )}
                 {campaign.rejection_reason && (
-                  <div style={{ background: "var(--danger-bg)", borderRadius: 8, padding: "10px 12px",
+                  <div style={{ background: "var(--danger-bg)", borderRadius:"var(--radius-md)", padding: "10px 12px",
                     fontSize: 13, color: "var(--danger-text)", marginTop: 8 }}>
                     <strong>Rejected:</strong> {campaign.rejection_reason}
                   </div>

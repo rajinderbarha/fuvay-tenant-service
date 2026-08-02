@@ -37,9 +37,9 @@ export default function StaffNotificationsPage() {
         {(["all", "unread"] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)}
             style={{
-              padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              padding: "6px 14px", borderRadius:"var(--radius-md)", fontSize: 12, fontWeight: 600, cursor: "pointer",
               border: "1px solid var(--border)",
-              background: filter === f ? "var(--accent, #2563eb)" : "var(--card-bg)",
+              background: filter === f ? "var(--accent, var(--brand))" : "var(--card-bg)",
               color: filter === f ? "#fff" : "var(--text)",
             }}>
             {f === "all" ? "All" : "Unread"}

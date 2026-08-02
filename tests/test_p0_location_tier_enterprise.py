@@ -84,7 +84,12 @@ class TestServiceMethods:
         # Check that bulk_change_tier_locations calls _load_tier
         idx = src.find("async def bulk_change_tier_locations")
         assert idx != -1
-        snippet = src[idx:idx + 300]
+        # PROTECTED_BY_LATER_SLICE: widened from 300 -> 450 chars. The
+        # method now opens with self._assert_tier_writes_retired() (a
+        # real, intentional 410 guard added by the service-area
+        # coverage-approval slice -- see PRICING_TIER_WRITES_RETIRED),
+        # which pushes _load_tier further from the def line.
+        snippet = src[idx:idx + 450]
         assert "_load_tier" in snippet
 
     def test_resolve_conflict_has_keep_this(self):
@@ -241,111 +246,37 @@ class TestApiTs:
 
 
 # ═══════════════════════════════════════════════════════════════
-# Group 4: Frontend page — new features present
+# Group 4: Frontend page — retired (service-area coverage-approval slice)
+#
+# PROTECTED_BY_LATER_SLICE: the business model changed -- admin no longer
+# maps cities/zipcodes to a pricing tier (tenants now request their own
+# service-area coverage for admin approval; see
+# app/engines/serviceability). This page's entire enterprise-grid UI
+# (bulk selection, filters drawer, conflict resolution, etc.) was
+# intentionally replaced with a retired-feature notice, unlinked from
+# navigation, per the same slice that added the 410
+# PRICING_TIER_WRITES_RETIRED guard to every tier/tier-location write
+# method. The old per-feature assertions below are gone because the
+# features themselves are gone, not because the test was weakened.
 # ═══════════════════════════════════════════════════════════════
 
 class TestFrontendPage:
     def test_page_file_exists(self):
         assert os.path.exists(PAGE_FILE)
 
-    def test_page_has_advanced_filters_drawer(self):
+    def test_page_shows_retired_notice(self):
         src = _read(PAGE_FILE)
-        assert "FiltersDrawer" in src or "Advanced Filters" in src
+        assert "retired" in src.lower()
 
-    def test_page_has_bulk_selection(self):
+    def test_page_no_longer_performs_tier_location_writes(self):
         src = _read(PAGE_FILE)
-        assert "selected" in src and "toggleAll" in src
+        assert "createTierLocation" not in src
+        assert "bulkChangeTierLocations" not in src
+        assert "bulkDeactivateTierLocations" not in src
 
-    def test_page_has_detail_drawer(self):
+    def test_page_links_to_service_area_requests_replacement(self):
         src = _read(PAGE_FILE)
-        assert "DetailDrawer" in src
-
-    def test_page_has_conflict_resolution_drawer(self):
-        src = _read(PAGE_FILE)
-        assert "ConflictDrawer" in src or "resolve-conflict" in src.lower() or "resolveConflict" in src
-
-    def test_page_has_bulk_change_tier(self):
-        src = _read(PAGE_FILE)
-        assert "bulkChangeTierLocations" in src or "bulk/change-tier" in src or "bulkTierModal" in src
-
-    def test_page_has_bulk_deactivate(self):
-        src = _read(PAGE_FILE)
-        assert "bulkDeactivateTierLocations" in src or "bulk/deactivate" in src
-
-    def test_page_has_mapping_type_column(self):
-        src = _read(PAGE_FILE)
-        assert "MappingTypeBadge" in src or "mapping_type" in src
-
-    def test_page_has_enhanced_resolve_test(self):
-        src = _read(PAGE_FILE)
-        # Should have district + zone inputs for resolve test
-        assert "resolveDistrict" in src or "resolveZone" in src
-
-    def test_page_has_import_history(self):
-        src = _read(PAGE_FILE)
-        assert "listImportBatches" in src or "showImports" in src or "Import History" in src
-
-    def test_page_has_clickable_summary_cards(self):
-        src = _read(PAGE_FILE)
-        assert "onClick" in src and ("handleCardClick" in src or "setConflictOnly" in src)
-
-    def test_page_has_checkbox_select_all(self):
-        src = _read(PAGE_FILE)
-        assert "CheckSquare" in src or "allSelected" in src
-
-    def test_page_has_conflict_badge_component(self):
-        src = _read(PAGE_FILE)
-        assert "ConflictBadge" in src
-
-    def test_page_has_state_resolve_input(self):
-        src = _read(PAGE_FILE)
-        assert "resolveState" in src
-
-    def test_page_has_zone_resolve_input(self):
-        src = _read(PAGE_FILE)
-        assert "resolveZone" in src
-
-    def test_page_has_updated_at_column(self):
-        src = _read(PAGE_FILE)
-        assert "updated_at" in src
-
-    def test_page_imports_filters_icon(self):
-        src = _read(PAGE_FILE)
-        assert "SlidersHorizontal" in src or "Filter" in src
-
-    def test_page_imports_history_icon(self):
-        src = _read(PAGE_FILE)
-        assert "History" in src
-
-    def test_page_has_advanced_filter_state(self):
-        src = _read(PAGE_FILE)
-        assert "advFilters" in src or "AdvancedFilters" in src
-
-    def test_page_passes_all_filters_to_api(self):
-        src = _read(PAGE_FILE)
-        assert "listTierLocationsGrid" in src
-        idx = src.find("listTierLocationsGrid")
-        snippet = src[idx:idx + 400]
-        # Should pass state, district, city, zipcode
-        assert "state" in snippet and "district" in snippet
-
-    def test_page_has_zone_field_in_create_form(self):
-        src = _read(PAGE_FILE)
-        # Create/edit modal should include zone_name field
-        assert "zone_name" in src
-
-    def test_page_has_priority_field_in_create_form(self):
-        src = _read(PAGE_FILE)
-        assert "priority" in src
-
-    def test_page_resolves_with_five_params(self):
-        src = _read(PAGE_FILE)
-        # handleResolve calls resolveAction.execute with up to 5 params
-        idx = src.find("resolveAction.execute")
-        assert idx != -1
-        snippet = src[idx:idx + 200]
-        # Should pass city, zip, state, district, zone
-        assert "resolveCity" in snippet or "resolveZip" in snippet
+        assert "/admin/service-area-requests" in src
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -371,18 +302,8 @@ class TestRouteOrdering:
 
 # ═══════════════════════════════════════════════════════════════
 # Group 6: SummaryCardsRow onClick support
+#
+# PROTECTED_BY_LATER_SLICE: removed along with the rest of the page's
+# enterprise-grid UI -- see the Group 4 notice above. The retired page
+# has no summary cards at all.
 # ═══════════════════════════════════════════════════════════════
-
-class TestSummaryCardsClick:
-    def test_summary_cards_have_onclick(self):
-        src = _read(PAGE_FILE)
-        # Summary cards should have onClick handlers — find the JSX usage, not the import
-        idx = src.find("<SummaryCardsRow")
-        assert idx != -1
-        snippet = src[idx:idx + 800]
-        assert "onClick" in snippet
-
-    def test_conflict_card_sets_conflict_only(self):
-        src = _read(PAGE_FILE)
-        # The "Duplicate Conflicts" card click should filter to conflict only
-        assert "setConflictOnly" in src or "handleCardClick" in src

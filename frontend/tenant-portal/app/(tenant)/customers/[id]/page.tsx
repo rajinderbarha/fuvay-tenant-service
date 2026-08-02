@@ -165,7 +165,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
                   {/* Risk flags */}
                   {h.risk_flags.length > 0 && (
-                    <div style={{ marginTop:8, padding:"10px 12px", borderRadius:8,
+                    <div style={{ marginTop:8, padding:"10px 12px", borderRadius:"var(--radius-md)",
                       background:"var(--danger-bg)", border:"1px solid var(--danger-border)" }}>
                       <p style={{ fontSize:11, fontWeight:700, color:"var(--danger-text)",
                         textTransform:"uppercase", letterSpacing:"0.05em", margin:"0 0 6px",

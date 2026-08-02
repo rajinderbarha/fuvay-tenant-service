@@ -3,9 +3,9 @@ import React, { useCallback, useState, useEffect } from "react";
 import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import {
-  providerServiceAreasApi, tenantSetupApi, providerStatusApi,
+  providerServiceAreasApi, tenantSetupApi, providerStatusApi, providerOfferingsApi,
   type ProviderServiceArea, type ProviderServiceAreaPayload, type AreaType,
-  type ServiceAreaValidationResult,
+  type ServiceAreaValidationResult, type AreaServiceMapping, type AreaServiceMappingPayload,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import {
@@ -31,6 +31,12 @@ const AREA_TYPE_LABELS: Record<AreaType, string> = {
 const ZONE_TIER_LABELS: Record<string, string> = {
   tier_1: "Tier 1", tier_2: "Tier 2", tier_3: "Tier 3",
 };
+
+const JOB_TYPE_OPTIONS = [
+  { value: "repair", label: "Repair" },
+  { value: "service", label: "Service" },
+  { value: "consultation", label: "Consultation" },
+];
 
 const BLANK: ProviderServiceAreaPayload = {
   coverage_type: "zipcode", country: "India", state: "", district: "",
@@ -127,7 +133,7 @@ function KpiCard({ label, value, sub, variant, icon }: {
 function CoverageRing({ pct }: { pct: number }) {
   const r = 34, c = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(100, pct));
-  const color = clamped >= 100 ? "#ef4444" : clamped >= 70 ? "#f59e0b" : "#3b82f6";
+  const color = clamped >= 100 ? "#ef4444" : clamped >= 70 ? "var(--warning)" : "var(--brand)";
   return (
     <div style={{ position: "relative", width: 88, height: 88, flexShrink: 0 }}>
       <svg width={88} height={88} style={{ transform: "rotate(-90deg)" }}>
@@ -192,7 +198,7 @@ function ValidationPreviewPanel({ result, loading, onValidate, canValidate }: {
               </div>
             ))}
           </div>
-          <div style={{ padding: "8px 12px", borderRadius: 8,
+          <div style={{ padding: "8px 12px", borderRadius:"var(--radius-md)",
             background: result.serviceable ? "var(--success-bg)" : "var(--danger-bg)",
             border: `1px solid ${result.serviceable ? "var(--success-border)" : "var(--danger-border)"}`,
             display: "flex", alignItems: "center", gap: 6 }}>
@@ -211,13 +217,67 @@ function ValidationPreviewPanel({ result, loading, onValidate, canValidate }: {
 }
 
 // ── Detail Drawer ─────────────────────────────────────────────────────────────
+const BLANK_MAPPING: AreaServiceMappingPayload = {
+  service_id: "", job_type: "repair", is_available: true,
+  base_price: null, min_price: null, max_price: null, sla_minutes: null,
+};
+
 function AreaDetailDrawer({ area, onClose, onEdit, onDelete, onToggle, totalActive, maxAreas }: {
   area: ProviderServiceArea; onClose: () => void;
   onEdit: () => void; onDelete: () => void; onToggle: () => void;
   totalActive: number; maxAreas: number;
 }) {
   const isLastActive = area.is_active && totalActive === 1;
+
+  // Services & Pricing for this area — this is the real price the booking
+  // engine uses to charge customers matched to this provider in this area
+  // (TenantServiceAreaService.base_price), set by the provider themselves.
+  const mappingsApi = useApi(useCallback(() => providerServiceAreasApi.listServiceMappings(area.id), [area.id]));
+  const offeringsApi = useApi(useCallback(() => providerOfferingsApi.listEnabled(), []));
+  const offeringOptions = (offeringsApi.data?.offerings ?? []).map(o => ({
+    value: o.offering_id, label: o.provider_display_name || o.offering_name,
+  }));
+  const mappings = mappingsApi.data?.mappings ?? [];
+
+  const [mappingModal, setMappingModal] = useState(false);
+  const [editingMapping, setEditingMapping] = useState<AreaServiceMapping | null>(null);
+  const [mappingForm, setMappingForm] = useState<AreaServiceMappingPayload>(BLANK_MAPPING);
+  const [mappingDelete, setMappingDelete] = useState<AreaServiceMapping | null>(null);
+
+  function openAddMapping() {
+    setEditingMapping(null);
+    setMappingForm(BLANK_MAPPING);
+    setMappingModal(true);
+  }
+  function openEditMapping(m: AreaServiceMapping) {
+    setEditingMapping(m);
+    setMappingForm({
+      service_id: m.service_id, job_type: m.job_type, is_available: m.is_available,
+      base_price: m.base_price, min_price: m.min_price, max_price: m.max_price, sla_minutes: m.sla_minutes,
+    });
+    setMappingModal(true);
+  }
+
+  const saveMappingAction = useAction(useCallback(async () => {
+    if (editingMapping) {
+      await providerServiceAreasApi.updateServiceMapping(area.id, editingMapping.id, mappingForm);
+    } else {
+      await providerServiceAreasApi.addServiceMapping(area.id, mappingForm);
+    }
+    mappingsApi.refetch();
+    setMappingModal(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [area.id, editingMapping, mappingForm]));
+
+  const deleteMappingAction = useAction(useCallback(async (m: AreaServiceMapping) => {
+    await providerServiceAreasApi.deleteServiceMapping(area.id, m.id);
+    mappingsApi.refetch();
+    setMappingDelete(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [area.id]));
+
   return (
+    <>
     <Drawer open onClose={onClose} title={areaLabel(area)}>
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
         <div style={{ flex: 1, overflowY: "auto" }}>
@@ -229,7 +289,7 @@ function AreaDetailDrawer({ area, onClose, onEdit, onDelete, onToggle, totalActi
             <DsStatusBadge status={area.is_active ? "active" : "inactive"}/>
             {area.is_primary && (
               <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
-                background: "rgba(217,119,6,0.12)", color: "#d97706", border: "1px solid rgba(217,119,6,0.3)" }}>
+                background: "rgba(217,119,6,0.12)", color: "var(--warning)", border: "1px solid rgba(217,119,6,0.3)" }}>
                 ★ Primary
               </span>
             )}
@@ -254,6 +314,52 @@ function AreaDetailDrawer({ area, onClose, onEdit, onDelete, onToggle, totalActi
                 <InfoPair label="Lat/Lng" value={area.latitude != null ? `${area.latitude}, ${area.longitude}` : "Not configured"}/>
               </>
             )}
+          </Section>
+
+          <Section title="Services & Pricing">
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px" }}>
+              Set your own price per service for this area. This is the price customers are charged when matched to you here.
+            </p>
+            {mappingsApi.loading ? (
+              <Skeleton height={60}/>
+            ) : mappings.length === 0 ? (
+              <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>No services priced for this area yet.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {mappings.map(m => {
+                  const offering = offeringsApi.data?.offerings.find(o => o.offering_id === m.service_id);
+                  return (
+                    <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
+                      <div>
+                        <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 2px" }}>
+                          {offering?.provider_display_name || offering?.offering_name || m.service_id}
+                        </p>
+                        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
+                          {JOB_TYPE_OPTIONS.find(j => j.value === m.job_type)?.label ?? m.job_type}
+                          {m.base_price != null ? ` · Base ₹${m.base_price}` : ""}
+                          {m.min_price != null && m.max_price != null ? ` · ₹${m.min_price}-₹${m.max_price}` : ""}
+                          {!m.is_available ? " · Unavailable" : ""}
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => openEditMapping(m)} title="Edit"
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: "var(--text-secondary)" }}>
+                          <Edit2 size={13}/>
+                        </button>
+                        <button onClick={() => setMappingDelete(m)} title="Delete"
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: "var(--danger)" }}>
+                          <Trash2 size={13}/>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <Button variant="secondary" size="sm" leftIcon={<Plus size={12}/>} onClick={openAddMapping} style={{ marginTop: 8 }}>
+              Add Service Price
+            </Button>
           </Section>
 
           <Section title="Bookability Impact">
@@ -301,6 +407,99 @@ function AreaDetailDrawer({ area, onClose, onEdit, onDelete, onToggle, totalActi
         </div>
       </div>
     </Drawer>
+
+    {mappingModal && (
+      <Modal open onClose={() => setMappingModal(false)} title={editingMapping ? "Edit Service Price" : "Add Service Price"}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Service</label>
+            <select
+              value={mappingForm.service_id}
+              disabled={!!editingMapping}
+              onChange={e => setMappingForm(f => ({ ...f, service_id: e.target.value }))}
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+                background: "var(--surface)", color: "var(--text-primary)", fontSize: 13 }}
+            >
+              <option value="">Select a service…</option>
+              {offeringOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Job Type</label>
+            <select
+              value={mappingForm.job_type}
+              onChange={e => setMappingForm(f => ({ ...f, job_type: e.target.value }))}
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+                background: "var(--surface)", color: "var(--text-primary)", fontSize: 13 }}
+            >
+              {JOB_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <Input
+            label="Base Price"
+            type="number"
+            value={mappingForm.base_price ?? ""}
+            onChange={e => setMappingForm(f => ({ ...f, base_price: e.target.value === "" ? null : Number(e.target.value) }))}
+          />
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <Input
+                label="Min Price"
+                type="number"
+                value={mappingForm.min_price ?? ""}
+                onChange={e => setMappingForm(f => ({ ...f, min_price: e.target.value === "" ? null : Number(e.target.value) }))}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <Input
+                label="Max Price"
+                type="number"
+                value={mappingForm.max_price ?? ""}
+                onChange={e => setMappingForm(f => ({ ...f, max_price: e.target.value === "" ? null : Number(e.target.value) }))}
+              />
+            </div>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)" }}>
+            <input
+              type="checkbox"
+              checked={mappingForm.is_available ?? true}
+              onChange={e => setMappingForm(f => ({ ...f, is_available: e.target.checked }))}
+            />
+            Available for booking
+          </label>
+          {saveMappingAction.error && <Alert tone="danger">{saveMappingAction.error}</Alert>}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+            <Button variant="secondary" size="sm" onClick={() => setMappingModal(false)}>Cancel</Button>
+            <Button
+              variant="primary" size="sm"
+              disabled={!mappingForm.service_id || saveMappingAction.loading}
+              onClick={() => saveMappingAction.execute()}
+            >
+              {saveMappingAction.loading ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    )}
+
+    {mappingDelete && (
+      <Modal open onClose={() => setMappingDelete(null)} title="Remove Service Price">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
+            Remove this priced service from this area? Customers will no longer be matched for it here.
+          </p>
+          {deleteMappingAction.error && <Alert tone="danger">{deleteMappingAction.error}</Alert>}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Button variant="secondary" size="sm" onClick={() => setMappingDelete(null)}>Cancel</Button>
+            <Button variant="destructive" size="sm" disabled={deleteMappingAction.loading}
+              onClick={() => deleteMappingAction.execute(mappingDelete)}>
+              {deleteMappingAction.loading ? "Removing…" : "Remove"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -942,7 +1141,7 @@ export default function ProviderServiceAreasPage() {
                           </td>
                           <td style={{ padding: "12px 14px" }}>
                             {a.is_primary
-                              ? <Star size={14} style={{ color: "#d97706" }} fill="#d97706"/>
+                              ? <Star size={14} style={{ color: "var(--warning)" }} fill="var(--warning)"/>
                               : <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>No</span>}
                           </td>
                           <td style={{ padding: "12px 14px" }}>
@@ -965,7 +1164,7 @@ export default function ProviderServiceAreasPage() {
                               )}
                               {canSetPrimary && !a.is_primary && (
                                 <Button variant="icon" size="sm" aria-label="Set as Primary"
-                                  style={{ color: "#d97706" }}
+                                  style={{ color: "var(--warning)" }}
                                   onClick={e => { e.stopPropagation(); setPrimaryTarget(a); }}>
                                   <Star size={11}/>
                                 </Button>

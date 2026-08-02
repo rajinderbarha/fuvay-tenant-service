@@ -221,7 +221,7 @@ export default function ProviderComplaintDetailPage() {
               )}
               {(messages.data ?? []).map(m => (
                 <div key={s(m.id)} style={{
-                  padding: "10px 12px", borderRadius: 8,
+                  padding: "10px 12px", borderRadius:"var(--radius-md)",
                   background: s(m.sender_type) === "provider" ? "var(--surface-sunken)" : "var(--surface)",
                   border: "1px solid var(--border)",
                 }}>
@@ -257,7 +257,7 @@ export default function ProviderComplaintDetailPage() {
               : (resolutions.data ?? []).map(r => (
                 <div key={s(r.id)} style={{
                   padding: "10px 12px", border: "1px solid var(--border)",
-                  borderRadius: 8, marginBottom: 8,
+                  borderRadius:"var(--radius-md)", marginBottom: 8,
                 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
                     <Badge variant="info">{s(r.resolution_type).replace(/_/g, " ")}</Badge>
@@ -289,7 +289,7 @@ export default function ProviderComplaintDetailPage() {
                 return (
                   <div key={s(p.id)} style={{
                     padding: "10px 12px", border: "1px solid var(--border)",
-                    borderRadius: 8, marginBottom: 8,
+                    borderRadius:"var(--radius-md)", marginBottom: 8,
                   }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
                       <Badge variant="info">{s(p.proposal_type).replace(/_/g, " ")}</Badge>

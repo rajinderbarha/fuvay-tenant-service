@@ -114,7 +114,7 @@ export default function ServiceSetupHubPage() {
       {/* KPI summary row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 20 }}>
         {loading ? (
-          [...Array(6)].map((_, i) => <Skeleton key={i} height={72} style={{ borderRadius: 12 }}/>)
+          [...Array(6)].map((_, i) => <Skeleton key={i} height={72} style={{ borderRadius:"var(--radius-lg)" }}/>)
         ) : (
           <>
             <SummaryCard label="Total Templates" value={tItems.length} icon={<FileStack size={18}/>}

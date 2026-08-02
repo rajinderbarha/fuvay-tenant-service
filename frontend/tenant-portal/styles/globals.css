@@ -68,11 +68,11 @@
   --danger-border:    rgba(232, 97, 90, 0.30);
   --danger-text:      #B93A34;
 
-  /* ── Semantic — Info ── */
-  --info:             #5A8DFF;
-  --info-bg:          #EEF3FF;
-  --info-border:      rgba(90, 141, 255, 0.30);
-  --info-text:        #3B63C7;
+  /* ── Semantic — Info (neutral warm-gray, not blue/orange) ── */
+  --info:             #6B6153;
+  --info-bg:          #F3F1EA;
+  --info-border:      rgba(107, 97, 83, 0.25);
+  --info-text:        #45402F;
 
   /* ── Golden ── */
   --golden:           #FFB45C;
@@ -155,11 +155,11 @@
   --danger-border:    rgba(248, 113, 113, 0.25);
   --danger-text:      #FCA5A5;
 
-  /* ── Semantic — Info ── */
-  --info:             #60A5FA;
-  --info-bg:          rgba(96, 165, 250, 0.12);
-  --info-border:      rgba(96, 165, 250, 0.25);
-  --info-text:        #93C5FD;
+  /* ── Semantic — Info (neutral warm-gray, not blue/orange) ── */
+  --info:             #C9C3B7;
+  --info-bg:          rgba(201, 195, 183, 0.12);
+  --info-border:      rgba(201, 195, 183, 0.25);
+  --info-text:        #E4E0D8;
 
   /* ── Golden ── */
   --golden:           #FBBF24;

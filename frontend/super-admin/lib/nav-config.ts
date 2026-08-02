@@ -51,14 +51,9 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "hs-bookings",         label: "Bookings",                  href: "/admin/home-services/booking-drafts",             icon: "🏠", group: "home-services" },
       { id: "hs-service-catalog",  label: "Service Catalog",           href: "/admin/catalog-workspace",            icon: "🗂️", group: "home-services" },
-      // Customer Price Experience retired (MODULE-L5-57) -- Super Admin does
-      // not own service price amounts. Preview now lives in each tenant's
-      // own Service Setup wizard, backed by the same calculation real
-      // customer bookings use. Old URL kept as a retired-notice redirect.
-      // Matching Diagnostics merged into Provider Matching (MODULE-L5-58) --
-      // one canonical page with Diagnostics/Live Decisions/Policy Reference/
-      // Audit tabs. Old route redirects.
+      { id: "hs-price-experience", label: "Customer Price Experience", href: "/admin/home-services/price-experience",           icon: "🧾", group: "home-services" },
       { id: "hs-provider-matching",label: "Provider Matching",         href: "/admin/home-services/provider-matching",          icon: "🔗", group: "home-services" },
+      { id: "hs-matching-diagnostics", label: "Matching Diagnostics",  href: "/admin/home-services/matching-diagnostics",       icon: "🩺", group: "home-services" },
       { id: "service-area-requests", label: "Service Area Requests",   href: "/admin/service-area-requests",                    icon: "📍", group: "home-services" },
       { id: "hs-job-deduction",    label: "Completed Job Deduction",   href: "/admin/home-services/completed-job-deduction",    icon: "✅", group: "home-services" },
       { id: "hs-settings",         label: "Home Services Settings",    href: "/admin/home-services/settings",                   icon: "⚙️", group: "home-services" },
@@ -77,6 +72,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
       // retired-notice redirects (not deleted) for bookmarked/typed links.
       { id: "checklist-templates",label: "Checklist Library", href: "/admin/checklists",           icon: "📋", group: "catalog" },
       { id: "workflow-templates",  label: "Workflows",        href: "/admin/workflow-templates",   icon: "🔀", group: "catalog" },
+      { id: "service-setup",      label: "Service Setup",     href: "/admin/service-setup/brands", icon: "🛠️", group: "catalog" },
       { id: "customer-flow",      label: "Customer Flow",     href: "/admin/customer-flow",        icon: "🌊", group: "catalog" },
     ],
   },
@@ -181,6 +177,7 @@ export const ADMIN_PATH_TO_NAV_ID: Record<string, string> = {
   "checklist-templates":  "checklist-templates",
   "checklists":           "checklist-templates",
   "workflow-templates":   "workflow-templates",
+  "service-setup":        "service-setup",
   "customer-flow":        "customer-flow",
   finance:                "finance",
   "service-invoices":     "service-invoices",
@@ -226,9 +223,9 @@ const HOME_SERVICES_SUBPAGE_TO_NAV_ID: Record<string, string> = {
   "booking-drafts":          "hs-bookings",
   "service-jobs":            "hs-bookings",
   "service-catalog":         "hs-service-catalog",
-  "price-experience":        "hs-service-catalog",
+  "price-experience":        "hs-price-experience",
   "provider-matching":       "hs-provider-matching",
-  "matching-diagnostics":    "hs-provider-matching",
+  "matching-diagnostics":    "hs-matching-diagnostics",
   "completed-job-deduction": "hs-job-deduction",
   "settings":                "hs-settings",
 };

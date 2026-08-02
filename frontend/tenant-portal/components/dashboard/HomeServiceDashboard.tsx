@@ -55,15 +55,15 @@ export function HomeServiceDashboard() {
           <StatCard icon={<CalendarDays/>} label="Pending Bookings"
             value={(bookings.data?.bookings ?? []).length} accent="#7c3aed"/>
           <StatCard icon={<Users2/>} label="Active Staff"
-            value={staffActive} accent="#059669"/>
+            value={staffActive} accent="var(--success)"/>
           <StatCard icon={<Wallet/>} label="Wallet"
-            value={fmt(w?.available)} accent={lowBalance ? "#dc2626" : "#059669"}
+            value={fmt(w?.available)} accent={lowBalance ? "var(--danger)" : "var(--success)"}
             alert={lowBalance}/>
           <StatCard icon={<Star/>} label="Avg Rating"
-            value={r?.avg_composite ? r.avg_composite.toFixed(1) : "—"} accent="#d97706"/>
+            value={r?.avg_composite ? r.avg_composite.toFixed(1) : "—"} accent="var(--warning)"/>
           <StatCard icon={<BarChart3/>} label="Unassigned Jobs"
             value={(jobs.data?.items ?? []).filter((j) => j.assignment_status === "unassigned").length}
-            accent="#dc2626"/>
+            accent="var(--danger)"/>
         </>)}
       </div>
 

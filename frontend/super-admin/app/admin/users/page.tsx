@@ -83,7 +83,7 @@ function ReasonModal({
           </label>
           <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
             placeholder="Explain why this action is being taken…"
-            style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+            style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)",
                      background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit", boxSizing: "border-box" }} />
         </div>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -170,7 +170,7 @@ function UserDetailDrawer({
     <Modal open={!!userId} onClose={onClose} title="User Detail" size="xl">
       {detail.loading && <Skeleton height={120} />}
       {detail.error && (
-        <div style={{ padding: 16, background: "var(--danger-bg)", borderRadius: 8, color: "var(--danger-text)", fontSize: 13 }}>
+        <div style={{ padding: 16, background: "var(--danger-bg)", borderRadius:"var(--radius-md)", color: "var(--danger-text)", fontSize: 13 }}>
           Could not load user detail. <button onClick={() => detail.refetch()} style={{ textDecoration: "underline", background: "none", border: "none", color: "inherit", cursor: "pointer" }}>Retry</button>
         </div>
       )}
@@ -234,7 +234,7 @@ function UserDetailDrawer({
                   ["Invited By", u.invited_by_user_id ?? "—"],
                   ["Last Password Reset", u.last_password_reset_at ? new Date(u.last_password_reset_at).toLocaleString() : "—"],
                 ].map(([label, val]) => (
-                  <div key={label} style={{ padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: 8 }}>
+                  <div key={label} style={{ padding: "9px 12px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
                     <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "0 0 3px", textTransform: "uppercase", fontWeight: 700 }}>{label}</p>
                     <p style={{ fontSize: 13, margin: 0, wordBreak: "break-all" }}>{val}</p>
                   </div>
@@ -244,11 +244,11 @@ function UserDetailDrawer({
 
             {tab === "roles" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ padding: "10px 14px", background: "var(--surface-sunken)", borderRadius: 8 }}>
+                <div style={{ padding: "10px 14px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
                   <p style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", fontWeight: 700, margin: "0 0 4px" }}>Primary Role</p>
                   <p style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>{roleLabel(u.platform_role)}</p>
                 </div>
-                <div style={{ padding: "10px 14px", background: "var(--surface-sunken)", borderRadius: 8 }}>
+                <div style={{ padding: "10px 14px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
                   <p style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", fontWeight: 700, margin: "0 0 4px" }}>Access Scope</p>
                   <p style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>{scopeLabel(u.access_scope)}</p>
                 </div>
@@ -261,7 +261,7 @@ function UserDetailDrawer({
             {tab === "security" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {tempPw && (
-                  <div style={{ padding: "12px 14px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 8 }}>
+                  <div style={{ padding: "12px 14px", background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius:"var(--radius-md)" }}>
                     <p style={{ margin: "0 0 6px", fontWeight: 600, fontSize: 13, color: "var(--warning-text)" }}>Temporary Password (copy now — shown once)</p>
                     <code style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 15 }}>{tempPw}</code>
                   </div>
@@ -274,7 +274,7 @@ function UserDetailDrawer({
                     ["Failed Login Count", String(u.failed_login_attempts)],
                     ["Lock Reason", u.lock_reason ?? "—"], ["Locked Until", u.locked_until ? new Date(u.locked_until).toLocaleString() : "—"],
                   ].map(([label, val]) => (
-                    <div key={label} style={{ padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: 8 }}>
+                    <div key={label} style={{ padding: "9px 12px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
                       <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "0 0 3px", textTransform: "uppercase", fontWeight: 700 }}>{label}</p>
                       <p style={{ fontSize: 13, margin: 0 }}>{val}</p>
                     </div>
@@ -348,7 +348,7 @@ function UserDetailDrawer({
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {risk.data.signals.map((s, i) => (
-                        <div key={i} style={{ display: "flex", gap: 10, padding: "10px 12px", background: "var(--surface-sunken)", borderRadius: 8 }}>
+                        <div key={i} style={{ display: "flex", gap: 10, padding: "10px 12px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)" }}>
                           <ShieldAlert size={16} style={{ color: s.risk_level === "high" ? "var(--danger)" : s.risk_level === "medium" ? "var(--warning)" : "var(--text-tertiary)", flexShrink: 0 }} />
                           <div>
                             <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{s.risk_type.replace(/_/g, " ")}</p>
@@ -401,7 +401,7 @@ function UserDetailDrawer({
       <Modal open={roleModal} onClose={() => setRoleModal(false)} title="Change Role" size="sm">
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <select value={newRole} onChange={e => setNewRole(e.target.value)}
-            style={{ height: 38, borderRadius: 8, border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
+            style={{ height: 38, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
             {PLATFORM_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
           <ReasonInline onConfirm={changeRole.execute} loading={changeRole.loading} onCancel={() => setRoleModal(false)} confirmLabel="Change Role" />
@@ -410,7 +410,7 @@ function UserDetailDrawer({
       <Modal open={scopeModal} onClose={() => setScopeModal(false)} title="Change Access Scope" size="sm">
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <select value={newScope} onChange={e => setNewScope(e.target.value)}
-            style={{ height: 38, borderRadius: 8, border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
+            style={{ height: 38, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
             {ACCESS_SCOPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
           <ReasonInline onConfirm={changeScope.execute} loading={changeScope.loading} onCancel={() => setScopeModal(false)} confirmLabel="Change Scope" />
@@ -425,7 +425,7 @@ function ReasonInline({ onConfirm, onCancel, loading, confirmLabel }: { onConfir
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} placeholder="Reason…"
-        style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", boxSizing: "border-box" }} />
+        style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius:"var(--radius-md)", border: "1px solid var(--border)", boxSizing: "border-box" }} />
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Btn variant="secondary" onClick={onCancel}>Cancel</Btn>
         <Btn onClick={() => onConfirm(reason)} disabled={reason.trim().length < 3} loading={loading}>{confirmLabel}</Btn>
@@ -561,21 +561,21 @@ export default function PlatformUsersPage() {
             <div style={{ flex: 1, minWidth: 220 }}>
               <SearchBar value={q} onChange={setQ} placeholder="Search by name, email, or phone…" />
             </div>
-            <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} style={{ height: 38, borderRadius: 8, border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
+            <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} style={{ height: 38, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
               <option value="">All Roles</option>
               {PLATFORM_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ height: 38, borderRadius: 8, border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ height: 38, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
               <option value="">All Statuses</option>
               {["active", "invited", "locked", "suspended", "password_reset_required", "deactivated"].map(v => <option key={v} value={v}>{v.replace(/_/g, " ")}</option>)}
             </select>
-            <select value={mfaFilter} onChange={e => setMfaFilter(e.target.value)} style={{ height: 38, borderRadius: 8, border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
+            <select value={mfaFilter} onChange={e => setMfaFilter(e.target.value)} style={{ height: 38, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
               <option value="">All MFA</option>
               <option value="on">MFA On</option>
               <option value="off">MFA Off</option>
               <option value="required">MFA Required</option>
             </select>
-            <select value={scopeFilter} onChange={e => setScopeFilter(e.target.value)} style={{ height: 38, borderRadius: 8, border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
+            <select value={scopeFilter} onChange={e => setScopeFilter(e.target.value)} style={{ height: 38, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
               <option value="">All Access Scopes</option>
               {ACCESS_SCOPES.map(s2 => <option key={s2.value} value={s2.value}>{s2.label}</option>)}
             </select>

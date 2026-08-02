@@ -220,7 +220,7 @@ function FileCard({ file, onDelete, deleting, iconFor }: {
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{ border:`1px solid ${hov ? "var(--border-strong)" : "var(--border)"}`,
-        borderRadius:12, overflow:"hidden", display:"flex", flexDirection:"column",
+        borderRadius:"var(--radius-lg)", overflow:"hidden", display:"flex", flexDirection:"column",
         transition:"all 0.15s", boxShadow: hov ? "var(--shadow-md)" : "var(--shadow-sm)",
         transform: hov ? "translateY(-1px)" : "none" }}>
       {/* Preview */}

@@ -1,7 +1,7 @@
 "use client";
 import React, { useCallback, useState } from "react";
-import { Card, Btn, Badge, Modal, Input, Skeleton } from "../../../../components/shared/ui";
-import { serviceJobAssignmentApi } from "../../../../lib/api";
+import { Card, Btn, Badge, Modal, Input, Skeleton, StarRating } from "../../../../components/shared/ui";
+import { serviceJobAssignmentApi, reviewsApi } from "../../../../lib/api";
 import type { EligibleStaffRecord } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { CheckCircle, XCircle, Clock, RefreshCw, Users, Calendar } from "lucide-react";
@@ -49,6 +49,13 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
   const job        = ctx.data?.job;
   const assignment = ctx.data?.current_assignment;
   const eligible   = staff.data?.eligible_staff ?? [];
+  const isJobDone  = job?.status === "completed";
+
+  const jobReviews = useApi(useCallback(
+    () => reviewsApi.list({ limit: "50" }),
+    []
+  ));
+  const jobReview = (jobReviews.data?.reviews ?? []).find(r => r.job_id === id) ?? null;
 
   if (ctx.loading) {
     return <Skeleton height={200} />;
@@ -157,7 +164,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                 {assignment.accepted_at && (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <dt style={{ color: "#888", display: "flex", alignItems: "center", gap: 4 }}>
-                      <CheckCircle size={12} style={{ color: "#16a34a" }} /> Accepted
+                      <CheckCircle size={12} style={{ color: "var(--success)" }} /> Accepted
                     </dt>
                     <dd style={{ fontSize: 11 }}>{new Date(assignment.accepted_at).toLocaleString()}</dd>
                   </div>
@@ -165,7 +172,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                 {assignment.rejected_at && (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <dt style={{ color: "#888", display: "flex", alignItems: "center", gap: 4 }}>
-                      <XCircle size={12} style={{ color: "#dc2626" }} /> Rejected
+                      <XCircle size={12} style={{ color: "var(--danger)" }} /> Rejected
                     </dt>
                     <dd style={{ fontSize: 11 }}>{new Date(assignment.rejected_at).toLocaleString()}</dd>
                   </div>
@@ -191,6 +198,38 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
           </Card>
         </div>
 
+        {/* Customer Review — only meaningful once the job is completed */}
+        {isJobDone && (
+          <Card>
+            <h2 style={{ fontWeight: 600, color: "#333", marginBottom: 12 }}>Customer Review</h2>
+            {jobReviews.loading ? (
+              <Skeleton height={60} />
+            ) : jobReview ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <StarRating score={jobReview.composite_score} size={16}/>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+                    {jobReview.composite_score.toFixed(1)}
+                  </span>
+                </div>
+                {jobReview.comment && (
+                  <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>
+                    &ldquo;{jobReview.comment}&rdquo;
+                  </p>
+                )}
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
+                  Reviewed on {new Date(jobReview.created_at).toLocaleDateString()}
+                  {jobReview.has_reply ? " · You replied" : ""}
+                </p>
+              </div>
+            ) : (
+              <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
+                No review yet for this job.
+              </p>
+            )}
+          </Card>
+        )}
+
         {/* Assignment Timeline */}
         <Card>
           <h2 style={{ fontWeight: 600, color: "#333", marginBottom: 16 }}>Assignment Timeline</h2>
@@ -212,7 +251,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                     </time>
                   </div>
                   {ev.actor_role && <p style={{ fontSize: 12, color: "#6b7280", margin: "2px 0 0" }}>by {ev.actor_role}</p>}
-                  {ev.reason && <p style={{ fontSize: 12, color: "#dc2626", margin: "2px 0 0" }}>Reason: {ev.reason}</p>}
+                  {ev.reason && <p style={{ fontSize: 12, color: "var(--danger)", margin: "2px 0 0" }}>Reason: {ev.reason}</p>}
                 </li>
               ))}
             </ol>
@@ -233,7 +272,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                 Select Technician
               </label>
               <select
-                style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "8px 12px", fontSize: 13 }}
+                style={{ width: "100%", border: "1px solid #d1d5db", borderRadius:"var(--radius-md)", padding: "8px 12px", fontSize: 13 }}
                 value={staffId}
                 onChange={(e) => setStaffId(e.target.value)}
               >
@@ -252,7 +291,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                  value={schedWindow} onChange={(v) => setSchedWindow(v)} />
           <Input label="Notes (optional)" placeholder="Any notes for the technician"
                  value={notes} onChange={(v) => setNotes(v)} />
-          {doAssign.error && <p style={{ color: "#dc2626", fontSize: 13 }}>{doAssign.error}</p>}
+          {doAssign.error && <p style={{ color: "var(--danger)", fontSize: 13 }}>{doAssign.error}</p>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Btn variant="ghost" onClick={() => setShowAssign(false)}>Cancel</Btn>
             <Btn variant="primary" loading={doAssign.loading} disabled={!staffId}
@@ -274,7 +313,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
           <Input label="Date" type="date" value={schedDate} onChange={(v) => setSchedDate(v)} />
           <Input label="Time Window" placeholder="e.g. 10:00-12:00"
                  value={schedWindow} onChange={(v) => setSchedWindow(v)} />
-          {doSchedule.error && <p style={{ color: "#dc2626", fontSize: 13 }}>{doSchedule.error}</p>}
+          {doSchedule.error && <p style={{ color: "var(--danger)", fontSize: 13 }}>{doSchedule.error}</p>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Btn variant="ghost" onClick={() => setShowSchedule(false)}>Cancel</Btn>
             <Btn variant="primary" loading={doSchedule.loading}
@@ -294,7 +333,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
           </p>
           <Input label="Reason (required)" placeholder="Why are you cancelling this assignment?"
                  value={cancelReason} onChange={(v) => setCancelReason(v)} />
-          {doCancel.error && <p style={{ color: "#dc2626", fontSize: 13 }}>{doCancel.error}</p>}
+          {doCancel.error && <p style={{ color: "var(--danger)", fontSize: 13 }}>{doCancel.error}</p>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Btn variant="ghost" onClick={() => setShowCancel(false)}>Back</Btn>
             <Btn variant="danger" loading={doCancel.loading}

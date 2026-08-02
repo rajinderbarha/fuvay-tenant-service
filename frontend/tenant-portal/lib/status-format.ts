@@ -119,9 +119,9 @@ export interface RequiredAction {
 
 const BLOCKER_TYPE_META: Record<string, { title: string; cta: string; route: string; ruleKey: string; severity: Severity }> = {
   business_profile_incomplete: { title: "Business Profile Incomplete", cta: "Complete Business Profile", route: "/profile", ruleKey: "business_profile_complete", severity: "warning" },
-  package_inactive:            { title: "Package Not Active", cta: "View Package", route: "/finance/package", ruleKey: "package_active", severity: "critical" },
-  usage_credits_missing:       { title: "No Usage Credits Available", cta: "View Usage Credit Ledger", route: "/finance/usage-credit-ledger", ruleKey: "usage_credits_available", severity: "critical" },
-  security_deposit_pending:    { title: "Security Deposit Pending", cta: "View Security Deposit", route: "/finance/security-deposit", ruleKey: "security_deposit_received_or_waived", severity: "critical" },
+  package_inactive:            { title: "Package Not Active", cta: "View Package", route: "/packages", ruleKey: "package_active", severity: "critical" },
+  usage_credits_missing:       { title: "No Usage Credits Available", cta: "View Usage Credit Ledger", route: "/packages", ruleKey: "usage_credits_available", severity: "critical" },
+  security_deposit_pending:    { title: "Security Deposit Pending", cta: "View Security Deposit", route: "/packages", ruleKey: "security_deposit_received_or_waived", severity: "critical" },
   service_area_missing:        { title: "No Service Area Configured", cta: "Add Service Area", route: "/provider/service-areas", ruleKey: "service_area_active", severity: "critical" },
   service_missing:             { title: "No Service Offering Enabled", cta: "Enable an Offering", route: "/provider/offerings", ruleKey: "offering_active", severity: "critical" },
   coverage_missing:            { title: "Service Coverage Not Configured", cta: "Configure Coverage", route: "/provider/service-coverage", ruleKey: "coverage_configured", severity: "warning" },

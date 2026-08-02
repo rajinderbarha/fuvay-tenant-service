@@ -274,7 +274,7 @@ export default function RegisterPage() {
                 value={form.vertical}
                 onChange={e => setForm(p => ({ ...p, vertical: e.target.value }))}
                 style={{
-                  width: "100%", height: 40, padding: "0 12px", fontSize: 13, borderRadius: 8,
+                  width: "100%", height: 40, padding: "0 12px", fontSize: 13, borderRadius:"var(--radius-md)",
                   border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)",
                   outline: "none", fontFamily: "inherit",
                 }}
@@ -464,7 +464,7 @@ export default function RegisterPage() {
 
           {error && <ErrorBanner text={error}/>}
 
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderRadius: 12, background: "var(--info-bg)", border: "1px solid var(--info-border)", marginBottom: 20, fontSize: 13, color: "var(--info-text)", lineHeight: 1.6 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderRadius:"var(--radius-lg)", background: "var(--info-bg)", border: "1px solid var(--info-border)", marginBottom: 20, fontSize: 13, color: "var(--info-text)", lineHeight: 1.6 }}>
             <Info size={15} style={{ flexShrink: 0, marginTop: 1 }}/>
             <span>Plan: <strong>{selectedPlan?.name}</strong> · {form.business_name} · {form.city}, {form.country}</span>
           </div>
@@ -480,7 +480,7 @@ export default function RegisterPage() {
             <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 8 }}>Enter OTP</label>
             <input type="text" inputMode="numeric" maxLength={6} placeholder="——————" value={otp}
               onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
-              style={{ width: "100%", height: 58, textAlign: "center", fontSize: 28, fontWeight: 700, letterSpacing: "0.5em", fontFamily: "inherit", color: "var(--text-primary)", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 12, outline: "none", boxSizing: "border-box" }}
+              style={{ width: "100%", height: 58, textAlign: "center", fontSize: 28, fontWeight: 700, letterSpacing: "0.5em", fontFamily: "inherit", color: "var(--text-primary)", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", outline: "none", boxSizing: "border-box" }}
               onFocus={e => { e.currentTarget.style.borderColor = "var(--border-focus)"; }}
               onBlur={e  => { e.currentTarget.style.borderColor = "var(--border)"; }}/>
           </div>
@@ -502,7 +502,7 @@ export default function RegisterPage() {
             One payment activates your account. Your trial starts immediately after.
           </p>
           {error && <ErrorBanner text={error}/>}
-          <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, marginBottom: 22 }}>
+          <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 18, marginBottom: 22 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
               <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Plan</span>
               <span style={{ fontSize: 13, fontWeight: 600 }}>{selectedPlan?.name}</span>
@@ -549,7 +549,7 @@ export default function RegisterPage() {
           <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 24px" }}>
             Your <strong>{result.trial_days}-day free trial</strong> has started.
           </p>
-          <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 12, padding: 16, fontSize: 13, color: "var(--text-secondary)", marginBottom: 22, textAlign: "left", lineHeight: 1.9 }}>
+          <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 16, fontSize: 13, color: "var(--text-secondary)", marginBottom: 22, textAlign: "left", lineHeight: 1.9 }}>
             <p style={{ margin: 0 }}><strong style={{ color: "var(--text-primary)" }}>Login Email:</strong> {result.owner_email}</p>
             <p style={{ margin: 0 }}><strong style={{ color: "var(--text-primary)" }}>Temp Password:</strong> <span style={{ fontFamily: "monospace" }}>{result.temp_password}</span></p>
             <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-tertiary)" }}>

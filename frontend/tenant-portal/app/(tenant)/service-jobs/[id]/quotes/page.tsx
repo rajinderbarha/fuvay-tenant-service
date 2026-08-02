@@ -11,10 +11,10 @@ const QUOTE_TYPES = ["repair_quote", "parts_quote", "additional_work_quote", "in
 
 const STATUS_COLORS: Record<string, string> = {
   draft:                 "#6b7280",
-  sent_to_customer:      "#2563eb",
-  customer_approved:     "#16a34a",
-  customer_rejected:     "#dc2626",
-  revision_requested:    "#d97706",
+  sent_to_customer:      "var(--brand)",
+  customer_approved:     "var(--success)",
+  customer_rejected:     "var(--danger)",
+  revision_requested:    "var(--warning)",
   cancelled:             "#6b7280",
 };
 
@@ -156,7 +156,7 @@ export default function ServiceJobQuotesPage() {
       </div>
 
       {error && (
-        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 6, padding: 12, marginBottom: 16, color: "#dc2626" }}>
+        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 6, padding: 12, marginBottom: 16, color: "var(--danger)" }}>
           {error}
           <button onClick={() => setError("")} style={{ float: "right", background: "none", border: "none", cursor: "pointer" }}>×</button>
         </div>
@@ -165,7 +165,7 @@ export default function ServiceJobQuotesPage() {
       <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 20 }}>
         {/* Left: Quote list + create */}
         <div>
-          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius:"var(--radius-md)", padding: 16, marginBottom: 16 }}>
             <div style={{ fontWeight: 600, marginBottom: 12 }}>Create New Quote</div>
             <select
               value={quoteType}
@@ -190,7 +190,7 @@ export default function ServiceJobQuotesPage() {
             </button>
           </div>
 
-          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16 }}>
+          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius:"var(--radius-md)", padding: 16 }}>
             <div style={{ fontWeight: 600, marginBottom: 12 }}>Quotes ({quotes.length})</div>
             {quotes.length === 0 ? (
               <div style={{ color: "#9ca3af", fontSize: 13 }}>No quotes yet.</div>
@@ -220,7 +220,7 @@ export default function ServiceJobQuotesPage() {
         {selected ? (
           <div>
             {/* Header */}
-            <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius:"var(--radius-md)", padding: 16, marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{selected.quote_number}</div>
@@ -232,7 +232,7 @@ export default function ServiceJobQuotesPage() {
                   {isEditable && (
                     <button
                       onClick={() => setShowSend(true)}
-                      style={{ background: "#16a34a", color: "white", border: "none", borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}
+                      style={{ background: "var(--success)", color: "white", border: "none", borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}
                     >
                       Send to Customer
                     </button>
@@ -240,7 +240,7 @@ export default function ServiceJobQuotesPage() {
                   {["draft", "revision_requested"].includes(selected.status) && (
                     <button
                       onClick={cancelQuote}
-                      style={{ background: "white", color: "#dc2626", border: "1px solid #dc2626", borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}
+                      style={{ background: "white", color: "var(--danger)", border: "1px solid var(--danger)", borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}
                     >
                       Cancel
                     </button>
@@ -265,7 +265,7 @@ export default function ServiceJobQuotesPage() {
             </div>
 
             {/* Items */}
-            <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16 }}>
+            <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius:"var(--radius-md)", padding: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                 <div style={{ fontWeight: 600 }}>Line Items</div>
                 {isEditable && (
@@ -309,7 +309,7 @@ export default function ServiceJobQuotesPage() {
                           <td style={{ padding: "8px 10px", textAlign: "center" }}>
                             <button
                               onClick={() => removeItem(item.id)}
-                              style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 16 }}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontSize: 16 }}
                             >
                               ×
                             </button>
@@ -332,7 +332,7 @@ export default function ServiceJobQuotesPage() {
       {/* Add Item Modal */}
       {showAddItem && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div style={{ background: "white", borderRadius: 8, padding: 24, width: 460, maxWidth: "90%" }}>
+          <div style={{ background: "white", borderRadius:"var(--radius-md)", padding: 24, width: 460, maxWidth: "90%" }}>
             <h3 style={{ margin: "0 0 16px" }}>Add Line Item</h3>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
@@ -406,7 +406,7 @@ export default function ServiceJobQuotesPage() {
       {/* Send to Customer Modal */}
       {showSend && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div style={{ background: "white", borderRadius: 8, padding: 24, width: 420, maxWidth: "90%" }}>
+          <div style={{ background: "white", borderRadius:"var(--radius-md)", padding: 24, width: 420, maxWidth: "90%" }}>
             <h3 style={{ margin: "0 0 12px" }}>Send Quote to Customer</h3>
             <p style={{ color: "#6b7280", fontSize: 14, marginBottom: 12 }}>
               Total: <strong>₹{parseFloat(selected?.total_amount || "0").toFixed(2)}</strong> ({selected?.quote_number})
@@ -423,7 +423,7 @@ export default function ServiceJobQuotesPage() {
               <button
                 onClick={sendToCustomer}
                 disabled={sending}
-                style={{ background: "#16a34a", color: "white", border: "none", borderRadius: 6, padding: "8px 16px", cursor: "pointer", fontWeight: 600 }}
+                style={{ background: "var(--success)", color: "white", border: "none", borderRadius: 6, padding: "8px 16px", cursor: "pointer", fontWeight: 600 }}
               >
                 {sending ? "Sending..." : "Send to Customer"}
               </button>

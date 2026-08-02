@@ -393,12 +393,12 @@ export default function OnboardingPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
             {[
               { label: "Create a Job",         href: "/jobs",      icon: "🔧" },
-              { label: "View Bookings",         href: "/bookings",  icon: "📅" },
+              { label: "View Bookings & Jobs",  href: "/jobs",       icon: "📅" },
               { label: "Manage Staff",          href: "/staff",     icon: "👥" },
               { label: "Configure Pricing",     href: "/finance",   icon: "💰" },
             ].map(link => (
               <a key={link.href} href={link.href} style={{ display: "flex", alignItems: "center", gap: 10,
-                padding: "12px 16px", borderRadius: 12, background: "var(--surface-sunken)",
+                padding: "12px 16px", borderRadius:"var(--radius-lg)", background: "var(--surface-sunken)",
                 border: "1px solid var(--border)", textDecoration: "none",
                 color: "var(--text-primary)", fontSize: 13, fontWeight: 500,
                 transition: "border-color 0.15s" }}>

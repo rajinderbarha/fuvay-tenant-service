@@ -150,6 +150,7 @@ def _make_draft(
     d.ai_session_id         = None
     d.category_id           = _id()
     d.offering_id           = _id()
+    d.job_type_id           = None
     d.selected_tenant_id    = None
     d.status                = status
     d.customer_name         = "Test Customer"
@@ -841,6 +842,11 @@ class TestBookingSummary:
         draft.selected_provider_snapshot = {"business_name": "Rahul AC"}
         draft.selected_tenant_id = _id()
         draft.booking_summary = {"selected_price_tier": "mid"}
+        # Phase 2A.2: ready_for_confirmation now also requires a resolved,
+        # still-valid Job Type context -- short-circuit that check here
+        # since this test is about the pre-existing price/provider summary
+        # logic, not job-type resolution (covered by its own tests).
+        draft.job_type_id = _id()
         offering = _make_offering()
         offering.id = draft.offering_id
         cat = _make_category()
@@ -866,7 +872,8 @@ class TestBookingSummary:
         db.refresh.side_effect = fake_refresh
 
         svc    = HomeServiceChatbotBookingService(db=db)
-        result = await svc.build_booking_summary(draft_id=draft.id, customer_id=customer_id)
+        with patch.object(svc, "_validate_job_type_context", AsyncMock(return_value=None)):
+            result = await svc.build_booking_summary(draft_id=draft.id, customer_id=customer_id)
         assert "booking_summary" in result
         assert result["booking_summary"]["ready_for_confirmation"] is True
 

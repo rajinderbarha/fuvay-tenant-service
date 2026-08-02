@@ -57,7 +57,7 @@ export default function TemplateRunsPage() {
               <div key={run.id}
                 onClick={() => handleSelectRun(run.id)}
                 style={{
-                  background: selected?.id === run.id ? "#eff6ff" : "#fff",
+                  background: selected?.id === run.id ? "var(--accent-muted)" : "#fff",
                   border: `1px solid ${selected?.id === run.id ? "#93c5fd" : "#e5e7eb"}`,
                   borderRadius: "0.5rem", padding: "1rem", cursor: "pointer", marginBottom: "0.75rem",
                 }}>
