@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader, DataTable } from "../../../components/shared/ui";
+import { Card, Badge, Btn, SectionHeader, DataTable, SummaryCard,} from "../../../components/shared/ui";
 import { adminStaffApi, AdminStaffMember, AdminStaffSummary, AdminStaffFilterOptions } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
 import { Users, ChevronDown, X, Filter, Download } from "lucide-react";
@@ -11,25 +11,6 @@ const AVAIL_BADGE: Record<string, "success" | "warning" | "danger" | "muted"> = 
   available: "success", busy: "warning", inactive: "muted",
 };
 
-function SummaryCard({ label, value, onClick, active }: {
-  label: string; value: string | number; onClick?: () => void; active?: boolean;
-}) {
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        background: active ? "var(--primary)" : "var(--card-bg)",
-        border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
-        borderRadius: 10, padding: "14px 18px", flex: 1, minWidth: 110,
-        cursor: onClick ? "pointer" : "default",
-        transition: "background 0.15s, border-color 0.15s",
-      }}
-    >
-      <div style={{ fontSize: 11, color: active ? "rgba(255,255,255,.8)" : "var(--muted-text)", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color: active ? "#fff" : "var(--text)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
-    </div>
-  );
-}
 
 function SearchDropdown({ label, options, value, onChange }: {
   label: string;

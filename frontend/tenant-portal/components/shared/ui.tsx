@@ -408,7 +408,10 @@ export function StatCard({ label, value, change, trend, icon, onClick, alert, ac
       id={`kpi-${label.toLowerCase().replace(/\s+/g, "-")}`} style={{
         background: alert ? "var(--danger-bg)" : "var(--surface)",
         border: `1px solid ${alert ? "var(--danger-border)" : hov && onClick ? "var(--border-strong)" : "var(--border)"}`,
-        borderRadius: 22, padding: "18px 20px",
+        // Was hardcoded 22px while the super-admin StatCard used the radius
+        // token -- the two portals' KPI rows visibly disagreed on corner
+        // rounding. Both now use the same token.
+        borderRadius: "var(--radius-xl, 1rem)", padding: "18px 20px",
         boxShadow: hov && onClick ? "var(--shadow-md)" : "var(--shadow-sm)",
         display: "flex", flexDirection: "column", gap: 12,
         cursor: onClick ? "pointer" : undefined,
@@ -419,7 +422,7 @@ export function StatCard({ label, value, change, trend, icon, onClick, alert, ac
         <p style={{ fontSize: 11, fontWeight: 600, color: alert ? "var(--danger-text)" : "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</p>
         {icon && (
           <div style={{
-            width: 36, height: 36, borderRadius: 10, background: iconBg,
+            width: 36, height: 36, borderRadius: "var(--radius-lg)", background: iconBg,
             display: "flex", alignItems: "center", justifyContent: "center",
             color: iconColor, flexShrink: 0,
             border: `1px solid ${alert ? "var(--danger-border)" : accent ? `${accent}25` : "var(--border)"}`,
@@ -435,6 +438,90 @@ export function StatCard({ label, value, change, trend, icon, onClick, alert, ac
           <p style={{ fontSize: 12, color: tC, margin: 0 }}>{change}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Summary / KPI Card ────────────────────────────────────────────────────────
+// Canonical compact KPI tile, IDENTICAL in the super-admin and tenant portals.
+//
+// Added because ~20 pages across the two portals each declared their own local
+// `SummaryCard`, and they had genuinely drifted apart: some rendered the value
+// above the label and some below, value sizes ranged 22-28px, labels were
+// uppercase in some and sentence-case in others, and "accent" meant a top
+// border in one file and a coloured label in another. A row of KPIs therefore
+// looked different on almost every page. Prop names here are a superset of
+// what those local copies accepted, so migrating a page is usually just
+// deleting its local definition and importing this one.
+//
+// Layout intentionally matches StatCard above (uppercase label, then a large
+// value) so a SummaryCard row and a StatCard row line up visually.
+export function SummaryCard({
+  label, value, sub, tone, accent, icon, active, onClick,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: string;
+  tone?: "success" | "warning" | "danger" | "info";
+  /** `true` uses the brand accent; a string is treated as an explicit colour
+   *  (several call sites passed a raw CSS colour rather than a flag). */
+  accent?: boolean | string;
+  icon?: React.ReactNode;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const [hov, setHov] = useState(false);
+  const toneColor =
+    tone === "success" ? "var(--success-text)" :
+    tone === "warning" ? "var(--warning-text)" :
+    tone === "danger"  ? "var(--danger-text)"  :
+    tone === "info"    ? "var(--info-text, var(--accent))" : undefined;
+  const accentColor = accent === true ? "var(--accent)" : typeof accent === "string" ? accent : undefined;
+  const valueColor = toneColor ?? accentColor ?? "var(--text-primary)";
+  const clickable = !!onClick;
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        background: "var(--surface)",
+        border: `1px solid ${active ? "var(--accent)" : hov && clickable ? "var(--border-strong)" : "var(--border)"}`,
+        borderTop: accentColor ? `3px solid ${accentColor}` : undefined,
+        borderRadius: "var(--radius-xl, 1rem)",
+        boxShadow: hov && clickable ? "var(--shadow-md)" : "var(--shadow-sm)",
+        padding: "16px 20px",
+        display: "flex", flexDirection: "column", gap: 8,
+        minWidth: 0,
+        cursor: clickable ? "pointer" : undefined,
+        transform: hov && clickable ? "translateY(-1px)" : "none",
+        transition: "all 0.15s ease",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+        <p style={{
+          fontSize: 11, fontWeight: 600, margin: 0,
+          color: "var(--text-tertiary)",
+          textTransform: "uppercase", letterSpacing: "0.06em",
+        }}>{label}</p>
+        {icon && (
+          <div style={{
+            width: 32, height: 32, borderRadius: "var(--radius-lg)",
+            background: "var(--accent-muted)", color: accentColor ?? "var(--accent)",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            {React.isValidElement(icon)
+              ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 15 })
+              : icon}
+          </div>
+        )}
+      </div>
+      <p style={{
+        fontSize: 28, fontWeight: 700, margin: 0, lineHeight: 1,
+        letterSpacing: "-0.02em", color: valueColor,
+      }}>{value}</p>
+      {sub && <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>{sub}</p>}
     </div>
   );
 }

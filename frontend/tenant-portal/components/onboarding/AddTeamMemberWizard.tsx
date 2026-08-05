@@ -1,27 +1,37 @@
 "use client";
 /**
- * Add/Edit Team Member — dedicated multistep wizard (full-screen overlay,
- * not a long single modal): Identity -> Role & Access -> Services & Skills
- * -> Availability -> Review. Readiness is always recomputed server-side
- * after save — this component never claims a member is "ready" itself.
+ * Add/Edit Team Member — ONE complete form, ONE save.
+ *
+ * Replaces the previous 5-step wizard (Identity -> Role & Access -> Services
+ * -> Availability -> Review), which had three real problems beyond just being
+ * tedious to get through:
+ *
+ *  1. It created the member on step 1 and PATCHed it on every later step, so
+ *     abandoning the wizard left a half-created, unassignable technician.
+ *  2. It stored the new id from `res.member.member_id`, but the backend
+ *     returned a raw row whose key is `id` -- so memberId was ALWAYS
+ *     undefined and every later step early-returned on `if (!memberId)`.
+ *     Role, services, availability and login were silently never saved.
+ *     (The backend now also returns `member_id`; see provider_portal/router.py.)
+ *  3. Capacity and profile photo were collected but dropped by the create
+ *     endpoint's INSERT.
+ *
+ * Everything is now gathered first and written in a single create/update
+ * call, so a member is either fully saved or not created at all. Optional
+ * extras that genuinely need their own endpoints (weekly availability, login
+ * credentials) run only AFTER the member exists, and their failure is
+ * surfaced without falsely reporting the whole save as failed. Readiness is
+ * always recomputed server-side; this component never claims a member is
+ * "ready" itself.
  */
 import React, { useEffect, useState } from "react";
-import { X, ArrowRight, ArrowLeft, CheckCircle2, Loader2, Copy } from "lucide-react";
-import { Btn, Badge } from "../shared/ui";
+import { X, CheckCircle2, Loader2, Copy } from "lucide-react";
+import { Btn } from "../shared/ui";
 import { MediaUploader } from "../media/MediaUploader";
 import {
   providerTeamMembersApi, providerAvailabilityApi, homeServicesSetupApi, getTenantId,
   ServiceOSError, type ProviderTeamMember, type MediaAsset, type TenantEnabledService,
 } from "../../lib/api";
-
-type Step = "identity" | "access" | "services" | "availability" | "review";
-const STEPS: { key: Step; label: string }[] = [
-  { key: "identity", label: "Identity" },
-  { key: "access", label: "Role & Access" },
-  { key: "services", label: "Services & Skills" },
-  { key: "availability", label: "Availability" },
-  { key: "review", label: "Review & Add" },
-];
 
 const MEMBER_TYPES = [
   { value: "technician", label: "Technician", hint: "Performs assigned jobs" },
@@ -29,283 +39,349 @@ const MEMBER_TYPES = [
   { value: "manager", label: "Manager", hint: "Oversees operations" },
 ];
 
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   existing: ProviderTeamMember | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [step, setStep] = useState<Step>("identity");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const tenantId = getTenantId() ?? "";
+  const isEdit = !!existing?.member_id;
 
-  const [memberId, setMemberId] = useState<string | null>(existing?.member_id ?? null);
+  // ── Identity ──
   const [fullName, setFullName] = useState(existing?.full_name ?? "");
   const [phone, setPhone] = useState(existing?.phone ?? "");
   const [email, setEmail] = useState(existing?.email ?? "");
+  const [designation, setDesignation] = useState(existing?.designation ?? "");
   const [photoAsset, setPhotoAsset] = useState<MediaAsset | null>(null);
 
+  // ── Role & capacity ──
   const [memberType, setMemberType] = useState<string>(existing?.member_type ?? "technician");
+  const [canReceive, setCanReceive] = useState<boolean>(existing?.can_receive_assignment ?? true);
+  const [maxConcurrent, setMaxConcurrent] = useState<string>(
+    existing?.max_concurrent_jobs != null ? String(existing.max_concurrent_jobs) : "4",
+  );
+  const [skillsText, setSkillsText] = useState((existing?.skills ?? []).join(", "));
+
+  // ── Reporting ──
+  const [reportsToName, setReportsToName] = useState("");
+  const [reportsToDesignation, setReportsToDesignation] = useState("");
+
+  // ── Services ──
+  const [availableServices, setAvailableServices] = useState<TenantEnabledService[]>([]);
+  const [selectedOfferingIds, setSelectedOfferingIds] = useState<string[]>(existing?.supported_offering_ids ?? []);
+
+  // ── Optional weekly availability (separate endpoint, create only) ──
+  const [addAvailability, setAddAvailability] = useState(false);
+  const [dayOfWeek, setDayOfWeek] = useState(1);
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("18:00");
+
+  // ── Optional login (separate endpoint, runs after member exists) ──
   const [wantsLogin, setWantsLogin] = useState(false);
-  // Real bug fixed here: this state used to be typed `{ activation_token,
-  // message }`, but `createLogin` returns `{ member_id, credentials }`. The
-  // panel below therefore rendered an undefined message and an activation
-  // token that never existed, while silently DROPPING the username and
-  // password -- the one thing the tenant needs to hand the new member.
   const [activation, setActivation] = useState<
     { member_id: string; credentials?: { username: string; password: string } | null } | null
   >(null);
 
-  const [availableServices, setAvailableServices] = useState<TenantEnabledService[]>([]);
-  const [selectedOfferingIds, setSelectedOfferingIds] = useState<string[]>(existing?.supported_offering_ids ?? []);
-
-  const [dayOfWeek, setDayOfWeek] = useState(1);
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("18:00");
-  const [maxJobsPerDay, setMaxJobsPerDay] = useState(5);
-  const [availabilitySaved, setAvailabilitySaved] = useState(false);
-
   const isTechnician = memberType === "technician";
-  const stepIndex = STEPS.findIndex(s => s.key === step);
 
+  // Services load as soon as the form opens for a technician -- the old
+  // wizard only fetched them once you reached step 3.
   useEffect(() => {
-    if (step === "services" && isTechnician) {
-      homeServicesSetupApi.listEnabled().then(r => setAvailableServices(r.services.filter(s => s.is_enabled))).catch(() => {});
+    if (!isTechnician) return;
+    homeServicesSetupApi.listEnabled()
+      .then(r => setAvailableServices(r.services.filter(s => s.is_enabled)))
+      .catch(() => {});
+  }, [isTechnician]);
+
+  function validate(): string | null {
+    if (!fullName.trim()) return "Full name is required.";
+    if (!email.trim() && !phone.trim()) return "Enter an email address or a mobile number.";
+    if (maxConcurrent !== "") {
+      const cap = Number(maxConcurrent);
+      if (!Number.isFinite(cap) || !Number.isInteger(cap) || cap < 1) {
+        return "Maximum simultaneous jobs must be a whole number of at least 1.";
+      }
     }
-  }, [step, isTechnician]);
-
-  function next() {
-    const order: Step[] = isTechnician
-      ? ["identity", "access", "services", "availability", "review"]
-      : ["identity", "access", "review"];
-    const i = order.indexOf(step);
-    if (i < order.length - 1) setStep(order[i + 1]);
-  }
-  function back() {
-    const order: Step[] = isTechnician
-      ? ["identity", "access", "services", "availability", "review"]
-      : ["identity", "access", "review"];
-    const i = order.indexOf(step);
-    if (i > 0) setStep(order[i - 1]);
+    return null;
   }
 
-  async function saveIdentity() {
-    if (!fullName.trim()) return setError("Full name is required.");
-    setError(""); setSaving(true);
+  async function handleSave() {
+    const invalid = validate();
+    if (invalid) { setError(invalid); return; }
+    setError(""); setWarning(""); setSaving(true);
+
+    const payload = {
+      member_type: memberType as ProviderTeamMember["member_type"],
+      full_name: fullName.trim(),
+      phone: phone.trim() || null,
+      email: email.trim() || null,
+      designation: designation.trim() || null,
+      can_receive_assignment: canReceive,
+      max_concurrent_jobs: maxConcurrent === "" ? null : Number(maxConcurrent),
+      skills: skillsText.split(",").map(s => s.trim()).filter(Boolean),
+      supported_offering_ids: isTechnician ? selectedOfferingIds : [],
+      profile_photo_url: photoAsset?.preview_url ?? (isEdit ? undefined : null),
+      reports_to_display_name: reportsToName.trim() || null,
+      reports_to_designation: reportsToDesignation.trim() || null,
+    };
+
     try {
-      if (memberId) {
-        await providerTeamMembersApi.update(memberId, {
-          full_name: fullName.trim(), phone: phone || null, email: email || null,
-          profile_photo_url: photoAsset?.preview_url ?? undefined,
-        });
+      let memberId: string;
+      if (isEdit) {
+        await providerTeamMembersApi.update(existing!.member_id, payload);
+        memberId = existing!.member_id;
       } else {
-        const res = await providerTeamMembersApi.create({
-          member_type: memberType as ProviderTeamMember["member_type"],
-          full_name: fullName.trim(), phone: phone || null, email: email || null,
-          profile_photo_url: photoAsset?.preview_url ?? null,
-        });
-        setMemberId(res.member.member_id);
+        const res = await providerTeamMembersApi.create(payload);
+        memberId = res.member.member_id;
       }
-      next();
-    } catch (e) {
-      setError(e instanceof ServiceOSError ? e.message : "Could not save identity details.");
-    } finally { setSaving(false); }
-  }
 
-  async function saveAccess() {
-    if (!memberId) return;
-    setError(""); setSaving(true);
-    try {
-      await providerTeamMembersApi.update(memberId, { member_type: memberType as ProviderTeamMember["member_type"] });
-      if (wantsLogin && (email || phone)) {
-        const res = await providerTeamMembersApi.createLogin(memberId);
-        setActivation(res);
+      // Extras run only after the member is safely saved. If one fails the
+      // member still exists -- surfaced as a warning, never as "save failed".
+      const problems: string[] = [];
+
+      if (!isEdit && addAvailability && isTechnician) {
+        try {
+          await providerAvailabilityApi.create({
+            scope_type: "staff_member", scope_id: memberId,
+            day_of_week: dayOfWeek, start_time: startTime, end_time: endTime,
+            max_bookings_per_slot: undefined, is_active: true,
+          });
+        } catch {
+          problems.push("weekly availability could not be saved");
+        }
       }
-      next();
-    } catch (e) {
-      setError(e instanceof ServiceOSError ? e.message : "Could not save role & access.");
-    } finally { setSaving(false); }
-  }
 
-  async function saveServices() {
-    if (!memberId) return;
-    if (isTechnician && selectedOfferingIds.length === 0) {
-      setError("Select at least one service this technician can perform.");
-      return;
+      if (wantsLogin) {
+        try {
+          setActivation(await providerTeamMembersApi.createLogin(memberId));
+        } catch {
+          problems.push("login access could not be created");
+        }
+      }
+
+      if (problems.length > 0) {
+        setWarning(`Team member saved, but ${problems.join(" and ")}. You can retry from their profile.`);
+        setSaving(false);
+        return;
+      }
+
+      // Credentials are shown once and cannot be retrieved again, so never
+      // auto-close over them -- the tenant must copy them first.
+      if (wantsLogin) { setSaving(false); return; }
+
+      onSaved();
+    } catch (e) {
+      setError(e instanceof ServiceOSError ? e.message : "Could not save this team member.");
+      setSaving(false);
     }
-    setError(""); setSaving(true);
-    try {
-      await providerTeamMembersApi.update(memberId, { supported_offering_ids: selectedOfferingIds });
-      next();
-    } catch (e) {
-      setError(e instanceof ServiceOSError ? e.message : "Could not save service assignments.");
-    } finally { setSaving(false); }
-  }
-
-  async function saveAvailability() {
-    if (!memberId) return;
-    setError(""); setSaving(true);
-    try {
-      await providerAvailabilityApi.create({
-        scope_type: "staff_member", scope_id: memberId,
-        day_of_week: dayOfWeek, start_time: startTime, end_time: endTime,
-        max_bookings_per_slot: undefined, is_active: true,
-      });
-      setAvailabilitySaved(true);
-      next();
-    } catch (e) {
-      setError(e instanceof ServiceOSError ? e.message : "Could not save availability.");
-    } finally { setSaving(false); }
   }
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "var(--bg-gradient)", display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid var(--border)", background: "var(--surface)" }}>
         <div>
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 2px" }}>Step {stepIndex + 1} of {isTechnician ? 5 : 3}</p>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{existing ? "Edit team member" : "Add team member"} — {STEPS.find(s => s.key === step)?.label}</h2>
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 2px" }}>
+            {MEMBER_TYPES.find(t => t.value === memberType)?.label ?? "Team member"} details
+          </p>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+            {isEdit ? "Edit team member" : "Add team member"}
+          </h2>
         </div>
         <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}><X size={22}/></button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "28px 24px" }}>
-        <div style={{ maxWidth: 560, margin: "0 auto" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+        <div style={{ maxWidth: 720, margin: "0 auto" }}>
           {error && (
             <div role="alert" style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 13, marginBottom: 16 }}>{error}</div>
           )}
-
-          {step === "identity" && (
-            <div>
-              <Field label="Profile photo">
-                <MediaUploader mediaContext="staff_profile_photo" ownerType="tenant" ownerId={tenantId}
-                  multiple={false} canDelete={false} label="Upload photo" onUploaded={setPhotoAsset}/>
-              </Field>
-              <Field label="Full name" required><Input value={fullName} onChange={setFullName} placeholder="Enter full name"/></Field>
-              <Field label="Mobile number"><Input value={phone} onChange={setPhone} placeholder="+91XXXXXXXXXX"/></Field>
-              <Field label="Email address" hint="Required for login access"><Input value={email} onChange={setEmail} placeholder="name@business.com"/></Field>
-            </div>
+          {warning && (
+            <div role="alert" style={{ padding: "10px 14px", borderRadius: 8, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", color: "var(--warning-text)", fontSize: 13, marginBottom: 16 }}>{warning}</div>
           )}
 
-          {step === "access" && (
-            <div>
-              <Field label="Role" required>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {MEMBER_TYPES.map(t => (
-                    <label key={t.value} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 8, border: `1px solid ${memberType === t.value ? "var(--brand)" : "var(--border)"}`, cursor: "pointer" }}>
-                      <input type="radio" checked={memberType === t.value} onChange={() => setMemberType(t.value)}/>
-                      <div>
-                        <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{t.label}</p>
-                        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{t.hint}</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </Field>
-              <Field label="Account access">
-                <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text-primary)", cursor: "pointer" }}>
-                  <input type="checkbox" checked={wantsLogin} onChange={e => setWantsLogin(e.target.checked)}/>
-                  Create login access now (requires email or mobile)
+          {/* ── Identity ── */}
+          <SectionTitle>Identity</SectionTitle>
+          <Field label="Profile photo">
+            <MediaUploader mediaContext="staff_profile_photo" ownerType="tenant" ownerId={tenantId}
+              multiple={false} canDelete={false} label="Upload photo" onUploaded={setPhotoAsset}/>
+          </Field>
+          <Row>
+            <Field label="Full name" required><Input value={fullName} onChange={setFullName} placeholder="Enter full name"/></Field>
+            <Field label="Designation" hint="Shown to customers, e.g. Senior Technician">
+              <Input value={designation} onChange={setDesignation} placeholder="Senior Technician"/>
+            </Field>
+          </Row>
+          <Row>
+            <Field label="Mobile number" hint="Email or mobile is required">
+              <Input value={phone} onChange={setPhone} placeholder="+91XXXXXXXXXX"/>
+            </Field>
+            <Field label="Email address" hint="Needed for login access">
+              <Input value={email} onChange={setEmail} placeholder="name@business.com"/>
+            </Field>
+          </Row>
+
+          {/* ── Role & capacity ── */}
+          <SectionTitle>Role &amp; assignment</SectionTitle>
+          <Field label="Role" required>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8 }}>
+              {MEMBER_TYPES.map(t => (
+                <label key={t.value} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 8, border: `1px solid ${memberType === t.value ? "var(--brand)" : "var(--border)"}`, cursor: "pointer" }}>
+                  <input type="radio" checked={memberType === t.value} onChange={() => setMemberType(t.value)}/>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{t.label}</p>
+                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{t.hint}</p>
+                  </div>
                 </label>
-              </Field>
-              {activation && (
-                <div style={{ padding: 14, borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", marginTop: 12 }}>
-                  <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 8px" }}>
-                    {activation.credentials
-                      ? "Login created. Share these credentials with your team member — the password is shown only once."
-                      : "Login created for this team member."}
+              ))}
+            </div>
+          </Field>
+          <Row>
+            <Field label="Maximum simultaneous jobs" hint="Used when deciding who can take another job">
+              <input type="number" min={1} value={maxConcurrent}
+                onChange={e => setMaxConcurrent(e.target.value)} style={selectStyle}/>
+            </Field>
+            <Field label="Assignment">
+              <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text-primary)", cursor: "pointer", height: 40 }}>
+                <input type="checkbox" checked={canReceive} onChange={e => setCanReceive(e.target.checked)}/>
+                Can be assigned jobs
+              </label>
+            </Field>
+          </Row>
+          <Field label="Skills" hint="Comma separated, e.g. AC Repair, Installation">
+            <Input value={skillsText} onChange={setSkillsText} placeholder="AC Repair, Installation"/>
+          </Field>
+          <Row>
+            <Field label="Reports to" hint="Shown on the member's Help &amp; Support screen">
+              <Input value={reportsToName} onChange={setReportsToName} placeholder="Manager name"/>
+            </Field>
+            <Field label="Reports-to designation">
+              <Input value={reportsToDesignation} onChange={setReportsToDesignation} placeholder="Operations Manager"/>
+            </Field>
+          </Row>
+
+          {/* ── Services (technicians only) ── */}
+          {isTechnician && (
+            <>
+              <SectionTitle>Services this technician can perform</SectionTitle>
+              <Field label="Services &amp; job types" hint="A technician can only be assigned jobs for the services selected here.">
+                {availableServices.length === 0 ? (
+                  <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
+                    No services enabled yet — configure Services &amp; Pricing first.
                   </p>
-                  {activation.credentials && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <code style={{ fontSize: 11, background: "var(--surface)", padding: "6px 8px", borderRadius: 6, flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {activation.credentials.username} / {activation.credentials.password}
-                      </code>
-                      <button
-                        onClick={() => navigator.clipboard?.writeText(
-                          `${activation.credentials!.username} / ${activation.credentials!.password}`,
-                        )}
-                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}
-                      ><Copy size={14}/></button>
-                    </div>
-                  )}
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
+                    {availableServices.map(s => (
+                      <label key={s.tenant_service_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}>
+                        <input type="checkbox" checked={selectedOfferingIds.includes(s.tenant_service_id)}
+                          onChange={e => setSelectedOfferingIds(prev => e.target.checked
+                            ? [...prev, s.tenant_service_id]
+                            : prev.filter(id => id !== s.tenant_service_id))}/>
+                        <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{s.tenant_display_name || s.job_type}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </Field>
+            </>
+          )}
+
+          {/* ── Optional weekly availability (create only) ── */}
+          {isTechnician && !isEdit && (
+            <>
+              <SectionTitle>Weekly availability<Optional/></SectionTitle>
+              <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text-primary)", cursor: "pointer", marginBottom: 12 }}>
+                <input type="checkbox" checked={addAvailability} onChange={e => setAddAvailability(e.target.checked)}/>
+                Set a working window now (you can add more later)
+              </label>
+              {addAvailability && (
+                <Row3>
+                  <Field label="Day">
+                    <select value={dayOfWeek} onChange={e => setDayOfWeek(Number(e.target.value))} style={selectStyle}>
+                      {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Start time"><input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={selectStyle}/></Field>
+                  <Field label="End time"><input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={selectStyle}/></Field>
+                </Row3>
+              )}
+            </>
+          )}
+
+          {/* ── Optional login ── */}
+          <SectionTitle>Login access<Optional/></SectionTitle>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text-primary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={wantsLogin} onChange={e => setWantsLogin(e.target.checked)}/>
+            Create login access so this member can use the app
+          </label>
+          {activation && (
+            <div style={{ padding: 14, borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", marginTop: 12 }}>
+              <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 8px" }}>
+                {activation.credentials
+                  ? "Login created. Share these credentials with your team member — the password is shown only once."
+                  : "Login created for this team member."}
+              </p>
+              {activation.credentials && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <code style={{ fontSize: 11, background: "var(--surface)", padding: "6px 8px", borderRadius: 6, flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {activation.credentials.username} / {activation.credentials.password}
+                  </code>
+                  <button
+                    onClick={() => navigator.clipboard?.writeText(
+                      `${activation.credentials!.username} / ${activation.credentials!.password}`,
+                    )}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}
+                  ><Copy size={14}/></button>
                 </div>
               )}
             </div>
           )}
 
-          {step === "services" && (
-            <div>
-              <Field label="Services & Job Types" required hint="This technician can only be assigned jobs for the exact services selected here.">
-                {availableServices.length === 0 && <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No services enabled yet — configure Services & Pricing first.</p>}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {availableServices.map(s => (
-                    <label key={s.tenant_service_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}>
-                      <input type="checkbox" checked={selectedOfferingIds.includes(s.tenant_service_id)}
-                        onChange={e => setSelectedOfferingIds(prev => e.target.checked ? [...prev, s.tenant_service_id] : prev.filter(id => id !== s.tenant_service_id))}/>
-                      <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{s.tenant_display_name || s.job_type}</span>
-                    </label>
-                  ))}
-                </div>
-              </Field>
-            </div>
-          )}
-
-          {step === "availability" && (
-            <div>
-              <Field label="Day of week">
-                <select value={dayOfWeek} onChange={e => setDayOfWeek(Number(e.target.value))} style={selectStyle}>
-                  {["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((d, i) => <option key={d} value={i}>{d}</option>)}
-                </select>
-              </Field>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <Field label="Start time"><input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={selectStyle}/></Field>
-                <Field label="End time"><input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={selectStyle}/></Field>
-              </div>
-              <Field label="Maximum simultaneous active jobs">
-                <input type="number" min={1} value={maxJobsPerDay} onChange={e => setMaxJobsPerDay(Number(e.target.value))} style={selectStyle}/>
-              </Field>
-            </div>
-          )}
-
-          {step === "review" && (
-            <div>
-              <ReviewRow label="Name" value={fullName}/>
-              <ReviewRow label="Contact" value={email || phone || "—"}/>
-              <ReviewRow label="Role" value={MEMBER_TYPES.find(t => t.value === memberType)?.label ?? memberType}/>
-              {isTechnician && <ReviewRow label="Services" value={`${selectedOfferingIds.length} assigned`}/>}
-              {isTechnician && <ReviewRow label="Availability" value={availabilitySaved ? "Configured" : "Not configured"}/>}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16, padding: "10px 12px", borderRadius: 8, background: "var(--success-bg)", border: "1px solid var(--success-border)" }}>
-                <CheckCircle2 size={16} style={{ color: "var(--success)" }}/>
-                <span style={{ fontSize: 12, color: "var(--success-text)" }}>Readiness will be recalculated after saving.</span>
-              </div>
-            </div>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 20, padding: "10px 12px", borderRadius: 8, background: "var(--success-bg)", border: "1px solid var(--success-border)" }}>
+            <CheckCircle2 size={16} style={{ color: "var(--success)" }}/>
+            <span style={{ fontSize: 12, color: "var(--success-text)" }}>Readiness is recalculated automatically after saving.</span>
+          </div>
         </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 24px", borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
-        <Btn variant="secondary" onClick={step === "identity" ? onClose : back}>
-          <ArrowLeft size={15}/> {step === "identity" ? "Cancel" : "Back"}
-        </Btn>
-        {step === "review" ? (
-          <Btn variant="primary" onClick={onSaved} disabled={saving}>
-            {existing ? "Save changes" : "Add team member"} <CheckCircle2 size={15}/>
+        <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+        <div style={{ display: "flex", gap: 10 }}>
+          {activation && <Btn variant="secondary" onClick={onSaved}>Done</Btn>}
+          <Btn variant="primary" disabled={saving} onClick={handleSave}>
+            {saving
+              ? <Loader2 size={15} style={{ animation: "spin 0.8s linear infinite" }}/>
+              : <>{isEdit ? "Save changes" : "Add team member"} <CheckCircle2 size={15}/></>}
           </Btn>
-        ) : (
-          <Btn variant="primary" disabled={saving} onClick={
-            step === "identity" ? saveIdentity :
-            step === "access" ? saveAccess :
-            step === "services" ? saveServices :
-            saveAvailability
-          }>
-            {saving ? <Loader2 size={15} style={{ animation: "spin 0.8s linear infinite" }}/> : <>Continue <ArrowRight size={15}/></>}
-          </Btn>
-        )}
+        </div>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
 
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 style={{
+      fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em",
+      color: "var(--text-tertiary)", margin: "24px 0 12px", paddingBottom: 6,
+      borderBottom: "1px solid var(--border)",
+    }}>{children}</h3>
+  );
+}
+function Optional() {
+  return <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--text-tertiary)" }}> — optional</span>;
+}
+function Row({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>{children}</div>;
+}
+function Row3({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>{children}</div>;
+}
 function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 18 }}>
@@ -319,14 +395,6 @@ function Field({ label, required, hint, children }: { label: string; required?: 
 }
 function Input({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   return <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={selectStyle}/>;
-}
-function ReviewRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
-      <span style={{ color: "var(--text-tertiary)" }}>{label}</span>
-      <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{value}</span>
-    </div>
-  );
 }
 const selectStyle: React.CSSProperties = {
   width: "100%", height: 40, padding: "0 12px", fontSize: 13, borderRadius: 8,

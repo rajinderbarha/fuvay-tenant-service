@@ -2,8 +2,7 @@
 import React, { useState, useCallback } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import {
-  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Skeleton, EmptyState,
-} from "../../../../components/shared/ui";
+  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Skeleton, EmptyState, SummaryCard,} from "../../../../components/shared/ui";
 import { notifTemplateAdminApi } from "../../../../lib/api";
 import type { AdminNotifTemplate } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
@@ -170,8 +169,8 @@ export function NotificationTemplatesContent() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginBottom: 20 }}>
         {summary.loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={90} style={{ borderRadius:"var(--radius-lg)" }}/>) : <>
           <SummaryCard label="Tenant Overrides" value={s?.tenant_overrides ?? 0}/>
-          <SummaryCard label="Validation Errors" value={s?.validation_errors ?? 0} danger={!!s?.validation_errors}/>
-          <SummaryCard label="Failed Deliveries" value={s?.failed_deliveries ?? 0} danger={!!s?.failed_deliveries}/>
+          <SummaryCard label="Validation Errors" value={s?.validation_errors ?? 0} tone={(!!s?.validation_errors) ? "danger" : undefined}/>
+          <SummaryCard label="Failed Deliveries" value={s?.failed_deliveries ?? 0} tone={(!!s?.failed_deliveries) ? "danger" : undefined}/>
           <SummaryCard label="Missing Translations" value={s?.missing_translations ?? 0}/>
         </>}
       </div>
@@ -278,18 +277,6 @@ export default function NotificationTemplatesPage() {
   );
 }
 
-function SummaryCard({ label, value, accent, danger }: { label: string; value: number; accent?: boolean; danger?: boolean }) {
-  return (
-    <div style={{
-      background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 14,
-      padding: "18px 20px", minHeight: 90,
-      borderTop: danger ? "3px solid var(--danger)" : accent ? "3px solid var(--brand)" : "1px solid var(--border)",
-    }}>
-      <div style={{ fontSize: 26, fontWeight: 800, color: danger ? "var(--danger-text)" : "var(--text-primary)" }}>{value}</div>
-      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
-    </div>
-  );
-}
 
 function AnalyticsStat({ label, value, danger }: { label: string; value: number | string; danger?: boolean }) {
   return (

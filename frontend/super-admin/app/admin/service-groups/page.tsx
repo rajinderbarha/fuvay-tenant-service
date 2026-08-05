@@ -2,8 +2,7 @@
 import React, { useState, useCallback, useMemo } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
-  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader,
-} from "../../../components/shared/ui";
+  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, SummaryCard,} from "../../../components/shared/ui";
 import {
   catalogApi,
   type ServiceGroup, type ServiceGroupEnriched,
@@ -29,18 +28,6 @@ const READINESS_VARIANT: Record<string, "success" | "warning" | "muted" | "dange
 };
 
 // ── Summary card ───────────────────────────────────────────────────────────────
-function SummaryCard({ label, value, sub, color }: { label: string; value: number | string; sub?: string; color?: string }) {
-  return (
-    <div style={{
-      background: "var(--surface)", border: "1px solid var(--border)",
-      borderRadius:"var(--radius-lg)", padding: "16px 20px", flex: "1 1 140px",
-    }}>
-      <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: color ?? "var(--text-secondary)", textTransform: "uppercase", letterSpacing: ".06em" }}>{label}</p>
-      <p style={{ margin: "6px 0 0", fontSize: 28, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1 }}>{value}</p>
-      {sub && <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--text-secondary)" }}>{sub}</p>}
-    </div>
-  );
-}
 
 // ── Form state ─────────────────────────────────────────────────────────────────
 type FormState = {
@@ -388,11 +375,11 @@ export default function ServiceGroupsPage() {
       {s && (
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
           <SummaryCard label="Total Groups" value={s.total} />
-          <SummaryCard label="Active" value={s.active} color="var(--success-text, #22543d)" />
-          <SummaryCard label="Inactive" value={s.inactive} color="var(--warning-text, #744210)" />
+          <SummaryCard label="Active" value={s.active} accent="var(--success-text, #22543d)" />
+          <SummaryCard label="Inactive" value={s.inactive} accent="var(--warning-text, #744210)" />
           <SummaryCard label="With Services" value={s.groups_with_services} />
-          <SummaryCard label="Empty Groups" value={s.empty_groups} color="var(--danger-text, #c53030)" sub="no services linked" />
-          <SummaryCard label="Runtime Ready" value={s.runtime_ready} color="var(--brand, #1a56db)" />
+          <SummaryCard label="Empty Groups" value={s.empty_groups} accent="var(--danger-text, #c53030)" sub="no services linked" />
+          <SummaryCard label="Runtime Ready" value={s.runtime_ready} accent="var(--brand, #1a56db)" />
         </div>
       )}
       {summary.loading && (

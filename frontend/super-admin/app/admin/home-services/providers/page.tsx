@@ -24,7 +24,7 @@ import { useCallback, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Download, FileText } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, SummaryCard,} from "../../../../components/shared/ui";
 import { hsProviderDirectoryApi, adminOnboardingProvidersApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 
@@ -115,15 +115,6 @@ function RuntimeDot({ label, value, ok }: { label: string; value: string; ok: bo
         <div style={{ fontSize: 12, fontWeight: 600 }}>{value}</div>
       </div>
     </div>
-  );
-}
-function SummaryCard({ label, value, tone, onClick }: { label: string; value: number; tone?: "success" | "warning" | "danger"; onClick?: () => void }) {
-  const color = tone === "danger" ? "var(--danger-text, #b91c1c)" : tone === "warning" ? "var(--warning-text, #b45309)" : tone === "success" ? "var(--success-text, #0a7c3f)" : "var(--text-primary)";
-  return (
-    <Card padding={14} onClick={onClick} hover={!!onClick}>
-      <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
-      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>{label}</div>
-    </Card>
   );
 }
 function Field({ label, value }: { label: string; value: string }) {

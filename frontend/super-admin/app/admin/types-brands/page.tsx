@@ -2,8 +2,7 @@
 import React, { useCallback, useState, useEffect, useMemo } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
-  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Skeleton, EmptyState,
-} from "../../../components/shared/ui";
+  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Skeleton, EmptyState, SummaryCard,} from "../../../components/shared/ui";
 import { catalogApi, typesApi } from "../../../lib/api";
 import type {
   ServiceTypeMaster, ServiceTypeSummary, BrandMasterSummary,
@@ -116,18 +115,6 @@ export default function TypesBrandsPage() {
 }
 
 // ── Shared SummaryCard ────────────────────────────────────────────────────────
-function SummaryCard({ label, value, accent }: { label:string; value:number|string; accent?:boolean }) {
-  return (
-    <div style={{
-      background:"var(--card-bg)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)",
-      padding:"16px 20px", flex:"1 1 130px", minWidth:110,
-      borderTop: accent ? "3px solid var(--accent)" : "1px solid var(--border)",
-    }}>
-      <div style={{ fontSize:22, fontWeight:700, color: accent ? "var(--accent)" : "var(--text-primary)" }}>{value}</div>
-      <div style={{ fontSize:11, color:"var(--text-tertiary)", marginTop:4, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SERVICE TYPES TAB

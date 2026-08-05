@@ -5,21 +5,13 @@
 // published reviews never appear here; they live on the Job 360 Review tab.
 import React, { useCallback, useState } from "react";
 import { AdminLayout } from "../../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Modal } from "../../../../../components/shared/ui";
+import { Card, Badge, Btn, Modal, SummaryCard,} from "../../../../../components/shared/ui";
 import { hsReviewApi } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
 import { ExternalLink } from "lucide-react";
 
 const VERTICAL = "home-services";
 
-function SummaryCard({ label, value }: { label: string; value: number | string }) {
-  return (
-    <Card style={{ padding: 14 }}>
-      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>{value}</div>
-      <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{label}</div>
-    </Card>
-  );
-}
 
 export default function HomeServicesReviewModerationPage() {
   const [status, setStatus] = useState<string | undefined>(undefined);

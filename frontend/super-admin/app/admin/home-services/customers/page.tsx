@@ -19,7 +19,7 @@ import { useCallback, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Download, Info, RefreshCw } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, SummaryCard,} from "../../../../components/shared/ui";
 import { hsCustomerDirectoryApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 
@@ -179,15 +179,6 @@ function HomeServicesCustomersWorkspace() {
   );
 }
 
-function SummaryCard({ label, value, tone, onClick }: { label: string; value?: number | string; tone?: "success" | "warning" | "danger"; onClick?: () => void }) {
-  const color = tone === "danger" ? "var(--danger-text, #b91c1c)" : tone === "warning" ? "var(--warning-text, #b45309)" : tone === "success" ? "var(--success-text, #0a7c3f)" : "var(--text-primary)";
-  return (
-    <Card padding={14} onClick={onClick} hover={!!onClick}>
-      <div style={{ fontSize: 22, fontWeight: 800, color }}>{value === undefined ? <Skeleton width={40} height={22} /> : value}</div>
-      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>{label}</div>
-    </Card>
-  );
-}
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <Card padding={14}>

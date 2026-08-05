@@ -9,7 +9,7 @@ import {
   BulkWizardSummary,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
-import { Btn, Modal } from "../../../../components/shared/ui";
+import { Btn, Modal, SummaryCard,} from "../../../../components/shared/ui";
 
 // ── Vertical / Module constants ───────────────────────────────────────────────
 
@@ -160,17 +160,6 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Summary card ──────────────────────────────────────────────────────────────
 
-function SummaryCard({ label, value, accent }: { label: string; value: number | string; accent?: boolean }) {
-  return (
-    <div style={{
-      background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
-      padding: "16px 20px", minWidth: 130,
-    }}>
-      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: accent ? "var(--accent)" : "var(--text-primary)" }}>{value}</div>
-    </div>
-  );
-}
 
 // ── Input helpers ─────────────────────────────────────────────────────────────
 

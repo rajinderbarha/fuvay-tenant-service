@@ -64,6 +64,26 @@ def _tid(user: UserContext) -> uuid.UUID:
     return uuid.UUID(user.tenant_id)
 
 
+def _member_row(row) -> dict:
+    """Shape a provider_team_members row for the frontend.
+
+    Real bug fixed here: every endpoint returned a raw `SELECT *` mapping,
+    whose primary key column is `id` -- but the frontend's
+    ProviderTeamMember type (and all of its call sites) read `member_id`,
+    which was therefore ALWAYS undefined. The visible effect was severe:
+    AddTeamMemberWizard does `setMemberId(res.member.member_id)` after step
+    1, then every later step early-returns on `if (!memberId) return;` -- so
+    role, services, availability and login were silently never saved, and
+    the tenant was left with a name-only technician who could not be
+    assigned any work. `member_id` is exposed alongside `id` (rather than
+    renaming) so nothing already reading `id` breaks.
+    """
+    d = dict(row._mapping)
+    if "id" in d:
+        d["member_id"] = str(d["id"])
+    return d
+
+
 # ── Team Members ──────────────────────────────────────────────────────────────
 
 @router.get("/team-members")
@@ -81,7 +101,7 @@ async def list_team_members(
         params["status"] = status
     q += " ORDER BY created_at DESC"
     result = await db.execute(text(q), params)
-    rows = [dict(r._mapping) for r in result.fetchall()]
+    rows = [_member_row(r) for r in result.fetchall()]
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     return ok({"members": rows, "count": len(rows)}, request_id=rid)
 
@@ -95,33 +115,69 @@ async def create_team_member(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
+    if not str(payload.get("full_name") or "").strip():
+        raise HTTPException(400, "full_name is required.")
+
+    # Capacity is validated the same way the PUT path validates it -- it
+    # feeds the assignment resolver, and 0/negative would make the member
+    # permanently unassignable with no visible reason.
+    capacity = payload.get("max_concurrent_jobs")
+    if capacity is not None and capacity != "":
+        try:
+            capacity = int(capacity)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "INVALID_CAPACITY: max_concurrent_jobs must be a whole number.")
+        if capacity < 1:
+            raise HTTPException(400, "INVALID_CAPACITY: max_concurrent_jobs must be at least 1.")
+    else:
+        capacity = None
+
+    # JSON array params are passed as real JSON via json.dumps rather than
+    # str(list).replace("'", '"'), which corrupts any value containing an
+    # apostrophe (a genuinely common case in names/skills).
+    def _arr(key: str) -> str:
+        v = payload.get(key) or []
+        return json.dumps(v if isinstance(v, list) else [])
+
     new_id = str(uuid.uuid4())
+    # profile_photo_url / max_concurrent_jobs / reports_to_* were previously
+    # absent from this INSERT even though they are real columns the UI
+    # collects and the assignment resolver reads -- so they were silently
+    # dropped on create and only ever settable by a later PUT.
     await db.execute(text("""
         INSERT INTO provider_team_members
             (id, tenant_id, member_type, full_name, phone, email, designation,
              status, can_receive_assignment, skills, supported_offering_ids,
-             supported_type_ids, supported_brand_ids, service_area_ids, category_id)
+             supported_type_ids, supported_brand_ids, service_area_ids, category_id,
+             profile_photo_url, max_concurrent_jobs,
+             reports_to_display_name, reports_to_designation)
         VALUES (:id, :tid, :member_type, :full_name, :phone, :email, :designation,
-                'active', :recv, :skills, :offering_ids,
-                :type_ids, :brand_ids, :area_ids, :cat_id)
+                :status, :recv, :skills, :offering_ids,
+                :type_ids, :brand_ids, :area_ids, :cat_id,
+                :photo, :capacity, :reports_name, :reports_desig)
     """), {
         "id": new_id, "tid": str(tid),
         "member_type": payload.get("member_type", "technician"),
-        "full_name": payload.get("full_name", ""),
+        "full_name": str(payload.get("full_name")).strip(),
         "phone": payload.get("phone"),
         "email": payload.get("email"),
         "designation": payload.get("designation"),
+        "status": payload.get("status") or "active",
         "recv": payload.get("can_receive_assignment", True),
-        "skills": str(payload.get("skills", [])).replace("'", '"'),
-        "offering_ids": str(payload.get("supported_offering_ids", [])).replace("'", '"'),
-        "type_ids": str(payload.get("supported_type_ids", [])).replace("'", '"'),
-        "brand_ids": str(payload.get("supported_brand_ids", [])).replace("'", '"'),
-        "area_ids": str(payload.get("service_area_ids", [])).replace("'", '"'),
+        "skills": _arr("skills"),
+        "offering_ids": _arr("supported_offering_ids"),
+        "type_ids": _arr("supported_type_ids"),
+        "brand_ids": _arr("supported_brand_ids"),
+        "area_ids": _arr("service_area_ids"),
         "cat_id": payload.get("category_id"),
+        "photo": payload.get("profile_photo_url"),
+        "capacity": capacity,
+        "reports_name": payload.get("reports_to_display_name"),
+        "reports_desig": payload.get("reports_to_designation"),
     })
     await db.commit()
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id"), {"id": new_id})
-    member = dict(row.fetchone()._mapping)
+    member = _member_row(row.fetchone())
     return ok({"member": member}, request_id=rid)
 
 
@@ -141,7 +197,7 @@ async def get_team_member(
     row = result.fetchone()
     if not row:
         raise HTTPException(404, "Team member not found")
-    return ok(dict(row._mapping), request_id=rid)
+    return ok(_member_row(row), request_id=rid)
 
 
 @router.put("/team-members/{member_id}")
@@ -164,7 +220,12 @@ async def update_team_member(
     allowed = {"full_name", "phone", "email", "designation", "member_type",
                 "can_receive_assignment", "skills", "supported_offering_ids",
                 "supported_type_ids", "supported_brand_ids", "service_area_ids",
-                "max_concurrent_jobs"}
+                "max_concurrent_jobs",
+                # Same class of omission as max_concurrent_jobs above: real
+                # columns the Team form collects, previously silently
+                # unsaveable because they were missing from this allow-list.
+                "profile_photo_url", "reports_to_display_name",
+                "reports_to_designation", "status", "category_id"}
     # Capacity feeds the assignment resolver's "can this member take another
     # job?" check, and it lands in a raw SQL UPDATE below -- so it is
     # validated here rather than trusted. Zero or negative would make the
@@ -192,7 +253,7 @@ async def update_team_member(
     fetched = row.fetchone()
     if fetched is None:
         raise HTTPException(404, "Team member not found")
-    return ok(dict(fetched._mapping), request_id=rid)
+    return ok(_member_row(fetched), request_id=rid)
 
 
 @router.delete("/team-members/{member_id}")
@@ -227,7 +288,7 @@ async def activate_team_member(
     fetched = row.fetchone()
     if fetched is None:
         raise HTTPException(404, "Team member not found")
-    return ok(dict(fetched._mapping), request_id=rid)
+    return ok(_member_row(fetched), request_id=rid)
 
 
 @router.post("/team-members/{member_id}/deactivate")
@@ -278,7 +339,7 @@ async def deactivate_team_member(
     fetched = row.fetchone()
     if fetched is None:
         raise HTTPException(404, "Team member not found")
-    return ok(dict(fetched._mapping), request_id=rid)
+    return ok(_member_row(fetched), request_id=rid)
 
 
 @router.post("/team-members/{member_id}/create-login")

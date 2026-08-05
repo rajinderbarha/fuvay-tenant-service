@@ -23,7 +23,7 @@ import { useCallback, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Download, FileText, GitCompare, Sparkles, CheckCircle2, Circle, ShieldCheck, Wallet, RefreshCw, PlusCircle, Plus } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, Toaster, type ToastItem } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, Toaster, type ToastItem, SummaryCard,} from "../../../../components/shared/ui";
 import { homeServicesFinanceApi, homeServicesFinanceMonetizationApi, homeServicesTopupPlanApi, adminWalletApi, commerceApi, type MonetizationPolicy, type TopupPlan, type WalletRecord, type CreditPackage } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 
@@ -189,14 +189,6 @@ function StatusDot({ ok, label, value }: { ok: boolean; label: string; value: st
   );
 }
 
-function SummaryCard({ label, value, tone, onClick }: { label: string; value: number | string; tone?: "danger" | "warning"; onClick?: () => void }) {
-  return (
-    <Card padding={16} onClick={onClick} hover={!!onClick}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: tone === "danger" ? "var(--danger-text, #b91c1c)" : tone === "warning" ? "var(--warning-text, #b45309)" : "var(--text-primary)" }}>{value}</div>
-      <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>{label}</div>
-    </Card>
-  );
-}
 
 // ── Overview ─────────────────────────────────────────────────────────────────
 

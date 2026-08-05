@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useCallback } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Modal, Input, SectionHeader, DataTable, EmptyState } from "../../../components/shared/ui";
+import { Card, Badge, Btn, Modal, Input, SectionHeader, DataTable, EmptyState, SummaryCard,} from "../../../components/shared/ui";
 import {
   checklistCatalogApi, catalogApi, catalogWorkspaceApi,
   type ChecklistTemplateRow, type ChecklistTemplateVersionDetail, type ChecklistItemType,
@@ -116,23 +116,6 @@ export default function ChecklistLibraryPage() {
   );
 }
 
-function SummaryCard({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: number; accent?: string }) {
-  return (
-    <Card padding={16}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--surface-sunken)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: accent ?? "var(--primary)", border: "1px solid var(--border)" }}>
-          {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 17 }) : icon}
-        </div>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)" }}>{value}</div>
-          <div style={{ fontSize: 11, color: "var(--muted-text)" }}>{label}</div>
-        </div>
-      </div>
-    </Card>
-  );
-}
 
 // ── New Template ──────────────────────────────────────────────────────────
 

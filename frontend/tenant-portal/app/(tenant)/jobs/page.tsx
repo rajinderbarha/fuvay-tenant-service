@@ -25,7 +25,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { PageHeader, Card, Button, Modal, Textarea } from "@serviceos/design-system";
-import { Badge, Select, Input } from "../../../components/shared/ui";
+import { Badge, Select, Input, SummaryCard,} from "../../../components/shared/ui";
 import { bookingsApi, serviceJobsApi, staffApi, customersApi, catalogApi, providerOfferingsApi, getUserRole } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import type { Booking, ServiceJobRecord } from "../../../lib/api";
@@ -312,19 +312,19 @@ export default function BookingsAndJobsPage() {
       {/* Summary cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, margin: "16px 0 20px" }}>
         <SummaryCard icon={<ClipboardList size={18} />} label="Total" value={summary.total}
-          subtext="Bookings + jobs" tone="neutral" active={tab === "all"} onClick={() => setTab("all")} />
+          sub="Bookings + jobs" active={tab === "all"} onClick={() => setTab("all")} />
         <SummaryCard icon={<Clock size={18} />} label="Pending Confirmation" value={summary.pendingConfirmation}
-          subtext="Needs your response" tone="warning" active={tab === "pending_confirmation"} onClick={() => setTab("pending_confirmation")} />
+          sub="Needs your response" tone="warning" active={tab === "pending_confirmation"} onClick={() => setTab("pending_confirmation")} />
         <SummaryCard icon={<CheckCircle2 size={18} />} label="Confirmed" value={summary.confirmed}
-          subtext="Ready to convert" tone="info" active={tab === "confirmed"} onClick={() => setTab("confirmed")} />
+          sub="Ready to convert" tone="info" active={tab === "confirmed"} onClick={() => setTab("confirmed")} />
         <SummaryCard icon={<Users2 size={18} />} label="Unassigned" value={summary.unassigned}
-          subtext="Needs a technician" tone="warning" active={tab === "unassigned"} onClick={() => setTab("unassigned")} />
+          sub="Needs a technician" tone="warning" active={tab === "unassigned"} onClick={() => setTab("unassigned")} />
         <SummaryCard icon={<PlayCircle size={18} />} label="In Progress" value={summary.inProgress}
-          subtext="Active right now" tone="info" active={false} onClick={() => {}} />
+          sub="Active right now" tone="info" active={false} onClick={() => {}} />
         <SummaryCard icon={<CalendarClock size={18} />} label="Completed Today" value={summary.completedToday}
-          subtext="Finished today" tone="success" active={tab === "completed"} onClick={() => setTab("completed")} />
+          sub="Finished today" tone="success" active={tab === "completed"} onClick={() => setTab("completed")} />
         <SummaryCard icon={<XCircle size={18} />} label="Cancelled" value={summary.cancelled}
-          subtext="No longer active" tone="danger" active={tab === "cancelled"} onClick={() => setTab("cancelled")} />
+          sub="No longer active" tone="danger" active={tab === "cancelled"} onClick={() => setTab("cancelled")} />
       </div>
 
       {/* Pipeline stage tabs */}
@@ -443,36 +443,6 @@ export default function BookingsAndJobsPage() {
 
 // ── Summary card ─────────────────────────────────────────────────────────
 
-function SummaryCard({ icon, label, value, subtext, tone, active, onClick }: {
-  icon: React.ReactNode; label: string; value: number; subtext: string;
-  tone: "neutral" | "success" | "warning" | "danger" | "info"; active: boolean; onClick: () => void;
-}) {
-  const toneBg: Record<string, string> = {
-    neutral: "var(--surface-sunken)", success: "var(--success-bg)", warning: "var(--warning-bg)",
-    danger: "var(--danger-bg)", info: "var(--info-bg)",
-  };
-  const toneColor: Record<string, string> = {
-    neutral: "var(--text-secondary)", success: "var(--success)", warning: "var(--warning)",
-    danger: "var(--danger)", info: "var(--info)",
-  };
-  return (
-    <button onClick={onClick} style={{
-      display: "flex", flexDirection: "column", gap: 8, padding: "1rem", textAlign: "left",
-      background: "var(--surface)", border: active ? "1px solid var(--brand)" : "1px solid var(--border)",
-      borderRadius: "var(--radius-xl, 1rem)", boxShadow: "var(--shadow-sm)", cursor: "pointer", fontFamily: "inherit",
-    }} aria-pressed={active}>
-      <div style={{ width: "2.25rem", height: "2.25rem", borderRadius: "var(--radius-lg)", background: toneBg[tone],
-        display: "flex", alignItems: "center", justifyContent: "center", color: toneColor[tone] }}>
-        {icon}
-      </div>
-      <div>
-        <p style={{ fontSize: 20, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>{value}</p>
-        <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", margin: "2px 0 0" }}>{label}</p>
-        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "1px 0 0" }}>{subtext}</p>
-      </div>
-    </button>
-  );
-}
 
 // ── Progress tracker ─────────────────────────────────────────────────────
 
