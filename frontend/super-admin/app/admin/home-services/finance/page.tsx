@@ -24,7 +24,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Download, FileText, GitCompare, Sparkles, CheckCircle2, Circle, ShieldCheck, Wallet, RefreshCw, PlusCircle, Plus, Trash2 } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, Toaster, type ToastItem, SummaryCard,} from "../../../../components/shared/ui";
-import { homeServicesFinanceApi, homeServicesFinanceMonetizationApi, homeServicesTopupPlanApi, adminWalletApi, commerceApi, type MonetizationPolicy, type TopupPlan, type WalletRecord, type CreditPackage } from "../../../../lib/api";
+import { homeServicesFinanceApi, homeServicesFinanceMonetizationApi, homeServicesTopupPlanApi, adminWalletApi, commerceApi, catalogApi, type MonetizationPolicy, type TopupPlan, type WalletRecord, type CreditPackage } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 
 let _toastId = 0;
@@ -282,13 +282,15 @@ function NotTrackedCard({ label, tracked, value }: { label: string; tracked: boo
 // "home_services" so it can never read or mutate another vertical's policy.
 
 // All 5 are real enum values on the shared cross-vertical
-// VerticalMonetizationPolicy model. Only COMPLETION_CREDITS is currently
-// wired to actual job-completion charging for Home Services (execution/
-// usage_credit_deduction.py::deduct_for_completed_job always reads the flat
-// per-service credit amount from the Provider Completion Charge Config
-// table, never provider_model/provider_percentage) -- the others are kept
-// selectable (per explicit request) and clearly labeled as not-yet-enforced
-// below, rather than removed.
+// VerticalMonetizationPolicy model. As of 2026-08-05, PERCENTAGE_COMMISSION
+// is the wired, live model for Home Services job-completion charging --
+// execution/usage_credit_deduction.py::resolve_commission_credits charges
+// this % of what the tenant collected from the customer, using each
+// category's own rate (edited below in the Provider Charges tab's
+// "Category Rates" table) with this policy's provider_percentage as the
+// fallback default for any category that hasn't set its own. The other
+// models are kept selectable (per explicit request) and clearly labeled as
+// not-yet-enforced for Home Services, rather than removed.
 const PROVIDER_MODELS = ["NONE", "COMPLETION_CREDITS", "PERCENTAGE_COMMISSION", "FIXED_COMPLETION_CHARGE", "SUBSCRIPTION", "LEAD_FEE"];
 const CUSTOMER_FEE_MODELS = ["NONE", "PERCENTAGE", "FIXED", "PERCENTAGE_WITH_MIN_MAX"];
 
@@ -399,12 +401,13 @@ function MonetizationTab() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 14, fontSize: 12 }}>
               <KV label="Revenue model" value={fmt(current?.provider_model)} />
               <KV label="Trigger" value="Eligible job completion" />
-              <KV label="Actual charge" value="Set per-service — see Provider Charges tab" />
+              <KV label="Default rate" value={current?.provider_percentage != null ? `${current.provider_percentage}%` : "Set per-category — see Provider Charges tab"} />
               <KV label="Recovery source" value="Provider usage credits" />
             </div>
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
-              The real per-job amount is configured per service/job-type in the Provider Charges tab's
-              &quot;Provider Completion Charge Config&quot;, not here — this card just records the vertical's charging model.
+              Charged as this % of what the tenant collects from the customer for each completed job. Each
+              category can set its own rate in the Provider Charges tab&apos;s &quot;Category Commission
+              Rates&quot; — the rate above is only the fallback for a category that hasn&apos;t.
             </p>
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)", flexWrap: "wrap" }}>
               <CheckCircle2 size={13} /> Eligible completion → <CheckCircle2 size={13} /> Idempotency check → <CheckCircle2 size={13} /> Credits deducted → <CheckCircle2 size={13} /> Ledger posted
@@ -444,7 +447,7 @@ function MonetizationTab() {
               <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
                 <PreviewRow label="Customer platform charge" value={`₹${fmt(previewResult.customer_platform_fee)}`} />
                 <PreviewRow label="Customer pays provider directly" value={`₹${fmt(previewResult.total_payable)}`} strong />
-                <PreviewRow label="Provider completion charge" value="Varies by service — see Provider Charges tab" />
+                <PreviewRow label="Provider completion charge" value="% of collected amount — varies by category, see Provider Charges tab" />
                 <PreviewRow label="ServiceOS holds provider earnings" value="₹0" />
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>Preview only — does not change tenant pricing.</p>
               </div>
@@ -484,25 +487,25 @@ function MonetizationTab() {
             style={{ width: "100%", padding: "7px 9px", margin: "4px 0 10px" }}>
             {PROVIDER_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
-          {form.provider_model === "COMPLETION_CREDITS" ? (
+          {form.provider_model === "PERCENTAGE_COMMISSION" ? (
             <>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px" }}>
-                This value is a record of intent only — it does not drive actual charging. The real amount deducted
-                per completed job is set per-service in <strong>Provider Charges &gt; Provider Completion Charge
-                Config</strong> (a service with no rule there is charged 0 credits regardless of what's set here).
+                Charged as this % of what the tenant collects from the customer for each completed job. This is
+                the default rate — any category with its own rate set in <strong>Provider Charges &gt; Category
+                Commission Rates</strong> uses that instead.
               </p>
-              <Input placeholder="Credit units (reference only, not enforced)" value={String(form.provider_credit_units ?? "")}
-                onChange={v => setForm({ ...form, provider_credit_units: Number(v) })} />
+              <Input placeholder="Default commission % (e.g. 10)" value={String(form.provider_percentage ?? "")}
+                onChange={v => setForm({ ...form, provider_percentage: v })} />
             </>
           ) : form.provider_model !== "NONE" && (
             <p style={{ fontSize: 11, color: "var(--warning-text, #b45309)", margin: "0 0 8px" }}>
-              Not yet enforced for Home Services — job completion always charges the flat per-service credit amount
-              (Provider Charges tab), regardless of this setting. Saved here for record-keeping only.
+              Not yet enforced for Home Services — job completion only charges via Percentage Commission
+              (Category Commission Rates in the Provider Charges tab). Saved here for record-keeping only.
             </p>
           )}
-          {form.provider_model === "PERCENTAGE_COMMISSION" && (
-            <Input placeholder="Provider commission % of invoice (e.g. 10)" value={String(form.provider_percentage ?? "")}
-              onChange={v => setForm({ ...form, provider_percentage: v })} />
+          {form.provider_model === "COMPLETION_CREDITS" && (
+            <Input placeholder="Credit units (reference only, not enforced)" value={String(form.provider_credit_units ?? "")}
+              onChange={v => setForm({ ...form, provider_credit_units: Number(v) })} />
           )}
           {form.provider_model === "FIXED_COMPLETION_CHARGE" && (
             <Input placeholder="Fixed charge per job (₹)" value={form.provider_fixed_amount_minor != null ? String(form.provider_fixed_amount_minor / 100) : ""}
@@ -1081,27 +1084,58 @@ function ProviderChargesTab() {
         {selected && <ProviderChargeDetail chargeRef={selected} />}
       </Modal>
 
-      <ChargeConfigSection />
+      <CategoryCommissionSection />
     </div>
   );
 }
 
-function ChargeConfigSection() {
-  const config = useApi(useCallback(() => homeServicesFinanceApi.listChargeConfig({ pageSize: 100 }), []));
+// Replaced the old per-service flat "Provider Completion Charge Config"
+// table (2026-08-05, explicit user request: "we dont want this per service
+// system... we are charging percentage on category and want monetization,
+// map this with price that tenant will set and customer will see"). The
+// provider is now charged a % of what the tenant actually collected from
+// the customer for the job (job.completion_data.collected_amount), at a
+// rate set PER CATEGORY here -- reusing the existing, already-real
+// ServiceCategory.commission_pct field/API (previously only reachable via
+// the other, invoice-based verticals' Category Rates page). This only
+// takes effect once the Monetization tab's policy has provider_model =
+// PERCENTAGE_COMMISSION published; see usage_credit_deduction
+// .resolve_commission_credits for the exact precedence (category rate,
+// falling back to the Monetization tab's vertical-wide rate).
+function CategoryCommissionSection() {
+  const rates = useApi(useCallback(() => catalogApi.listCategoryCommissionRates(), []));
+  // This API's own "effective_pct" falls back to a generic platform-wide
+  // default that has nothing to do with Home Services -- the real fallback
+  // used by usage_credit_deduction.resolve_commission_credits at job
+  // completion is the Monetization tab's own provider_percentage. Fetched
+  // separately so "Currently applies" shows the number that's actually
+  // charged, not a different, unrelated default.
+  const policyApi = useApi(useCallback(() => homeServicesFinanceMonetizationApi.getCurrent(), []));
+  const policy = policyApi.data as MonetizationPolicy | null;
+  const policyIsLivePercentage = policy?.provider_model === "PERCENTAGE_COMMISSION";
+  const policyDefaultPct = policy?.provider_percentage != null ? Number(policy.provider_percentage) : null;
+
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  async function save(ruleId: string) {
-    const raw = editing[ruleId];
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value < 0) { alert("Credits must be a non-negative number."); return; }
-    setSaving(ruleId);
+  const hsRates = (rates.data ?? []).filter(c => c.vertical_type === "home_services" && c.is_active);
+
+  async function save(categoryId: string) {
+    const raw = editing[categoryId];
+    const value = raw.trim() === "" ? null : Number(raw);
+    if (value !== null && (!Number.isFinite(value) || value < 0 || value > 100)) {
+      setErr("Commission % must be between 0 and 100 (or blank to use the default).");
+      return;
+    }
+    setErr(null);
+    setSaving(categoryId);
     try {
-      await homeServicesFinanceApi.updateChargeConfig(ruleId, Math.round(value));
-      config.refetch();
-      setEditing(e => { const n = { ...e }; delete n[ruleId]; return n; });
+      await catalogApi.setCategoryCommissionRate(categoryId, value);
+      await rates.refetch();
+      setEditing(e => { const n = { ...e }; delete n[categoryId]; return n; });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to update charge config.");
+      setErr(e instanceof Error ? e.message : "Failed to update commission rate.");
     } finally {
       setSaving(null);
     }
@@ -1109,42 +1143,56 @@ function ChargeConfigSection() {
 
   return (
     <Card padding={16}>
-      <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 4px" }}>Provider Completion Charge Config</h3>
+      <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 4px" }}>Category Commission Rates</h3>
       <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
-        Credits deducted from a provider&apos;s balance per completed job, by service/job type. This amount
-        varies by service — edit and save per row. Changes apply to jobs completed after the change; already-posted
-        charges are never retroactively edited.
+        Provider commission, as a % of the price the tenant collects from the customer for a completed job —
+        set per category. A category left blank uses the Monetization tab&apos;s default rate
+        {policyDefaultPct != null ? ` (currently ${policyDefaultPct}%)` : " (none set yet)"}.
       </p>
+      {!policyIsLivePercentage && (
+        <p style={{ fontSize: 12, color: "var(--warning-text, #b45309)", margin: "0 0 10px" }}>
+          Not live yet — Monetization&apos;s published policy is set to &quot;{fmt(policy?.provider_model)}&quot;,
+          not Percentage Commission, so these rates aren&apos;t charged. Publish Percentage Commission in the
+          Monetization tab to activate them.
+        </p>
+      )}
+      {err && <p style={{ fontSize: 12, color: "var(--danger-text)", margin: "0 0 10px" }}>{err}</p>}
       <DataTable
-        loading={config.loading}
-        rows={(config.data?.items ?? []) as unknown as Record<string, unknown>[]}
-        emptyText="No pricing rules found."
+        loading={rates.loading}
+        rows={hsRates as unknown as Record<string, unknown>[]}
+        emptyText="No Home Services categories found."
         columns={[
-          { key: "master_service_name", label: "Service", render: v => v ? String(v) : "—" },
-          { key: "job_type", label: "Job Type" },
-          { key: "rule_name", label: "Rule", render: v => v ? String(v) : "—" },
-          { key: "is_active", label: "Active", render: v => v ? <Badge variant="success">Active</Badge> : <Badge>Inactive</Badge> },
+          { key: "name", label: "Category" },
           {
-            key: "completed_job_deduction_credits", label: "Completion Charge (credits)",
+            key: "commission_pct", label: "Commission %",
             render: (v, row) => {
-              const ruleId = String((row as Record<string, unknown>).rule_id);
-              const current = editing[ruleId] ?? String(v);
-              const dirty = editing[ruleId] !== undefined && editing[ruleId] !== String(v);
+              const categoryId = String((row as Record<string, unknown>).id);
+              const current = editing[categoryId] ?? (v == null ? "" : String(v));
+              const dirty = editing[categoryId] !== undefined && editing[categoryId] !== (v == null ? "" : String(v));
               return (
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <input
-                    type="number" min={0} value={current}
-                    onChange={e => setEditing(prev => ({ ...prev, [ruleId]: e.target.value }))}
+                    type="number" min={0} max={100} step="0.01" placeholder="default" value={current}
+                    onChange={e => setEditing(prev => ({ ...prev, [categoryId]: e.target.value }))}
                     style={{ width: 80, padding: "4px 6px", fontSize: 12, background: "var(--bg-secondary)",
                              border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-primary)" }}
                   />
                   {dirty && (
-                    <Btn variant="primary" onClick={() => save(ruleId)} disabled={saving === ruleId}>
-                      {saving === ruleId ? "Saving…" : "Save"}
+                    <Btn variant="primary" onClick={() => save(categoryId)} disabled={saving === categoryId}>
+                      {saving === categoryId ? "Saving…" : "Save"}
                     </Btn>
                   )}
                 </div>
               );
+            },
+          },
+          {
+            key: "effective_pct", label: "Currently applies",
+            render: (_v, row) => {
+              const own = (row as Record<string, unknown>).commission_pct as number | null;
+              const pct = own ?? policyDefaultPct;
+              if (pct == null) return "—";
+              return `${pct}%${own == null ? " (default)" : ""}`;
             },
           },
         ]}

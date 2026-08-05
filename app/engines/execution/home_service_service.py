@@ -961,7 +961,8 @@ class HomeServiceJobExecutionService:
         deduction = await deduct_for_completed_job(
             db, tenant_id=tenant_id, job_id=job.id, booking_id=job.booking_id,
             master_service_id=job.offering_id, offering_type_id=offering_type_id,
-            brand_id=brand_id_for_deduction, request_id=request_id,
+            brand_id=brand_id_for_deduction, category_id=job.category_id,
+            job_price=Decimal(str(collected_amount)), request_id=request_id,
         )
         await db.flush()
 
