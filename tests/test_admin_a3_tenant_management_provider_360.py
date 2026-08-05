@@ -20,10 +20,23 @@ Note" action, which had no backend endpoint at all before this sprint
 """
 import pathlib
 
+import pytest
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend/super-admin"
 
-LIST_PAGE = (FRONTEND / "app/admin/tenants/page.tsx").read_text(encoding="utf-8-sig")
+# The tenant LIST page (app/admin/tenants/page.tsx) was deleted 2026-08-05 in
+# the admin console consolidation -- its "all tenants" grid was superseded by
+# Home Services > Providers (which scopes to Tenant.vertical == home_services,
+# currently 100% of tenants). The tenant DETAIL page below is unaffected and is
+# still deep-linked from analytics/bookability/bookings/dashboard/finance.
+#
+# Reading it at import time crashed COLLECTION of the whole suite, so every
+# other test was unrunnable. Guarded rather than deleted so the list-page
+# assertions below stay on record (skipped) instead of vanishing silently.
+LIST_PAGE_PATH = FRONTEND / "app/admin/tenants/page.tsx"
+LIST_PAGE_EXISTS = LIST_PAGE_PATH.is_file()
+LIST_PAGE = LIST_PAGE_PATH.read_text(encoding="utf-8-sig") if LIST_PAGE_EXISTS else ""
 DETAIL_PAGE = (FRONTEND / "app/admin/tenants/[id]/page.tsx").read_text(encoding="utf-8-sig")
 API_TS = (FRONTEND / "lib/api.ts").read_text(encoding="utf-8-sig")
 ADMIN_ROUTER = (ROOT / "app/engines/tenant_engine/admin_router.py").read_text(encoding="utf-8-sig")
@@ -31,25 +44,48 @@ ADMIN_SERVICE = (ROOT / "app/engines/tenant_engine/admin_service.py").read_text(
 
 
 # ── 1. Tenant list ────────────────────────────────────────────────────────────
-def test_list_route_exists():
-    assert (FRONTEND / "app/admin/tenants/page.tsx").exists()
+def test_tenant_directory_is_reachable_somewhere():
+    """Was `test_list_route_exists`, asserting app/admin/tenants/page.tsx.
+
+    That page was deleted 2026-08-05 in the admin console consolidation; the
+    "browse all tenants" capability moved to Home Services > Providers. The
+    requirement that an admin can reach a tenant directory at all still
+    holds, so this asserts the capability rather than the deleted file.
+
+    KNOWN LIMITATION (deliberately asserted, not hidden): the Providers
+    workspace scopes to Tenant.vertical == "home_services". That covers 100%
+    of tenants today, but a coaching/real-estate tenant would currently have
+    no admin list view. If this platform onboards a non-home-services
+    vertical, a cross-vertical directory has to come back.
+    """
+    providers_page = FRONTEND / "app/admin/home-services/providers/page.tsx"
+    assert providers_page.is_file(), "no admin-facing tenant/provider directory exists"
+    src = providers_page.read_text(encoding="utf-8-sig")
+    assert "hsProviderDirectoryApi" in src          # real data, not a stub
+    # The tenant DETAIL page must still exist -- it is deep-linked from
+    # analytics, bookability, bookings, dashboard and finance.
+    assert (FRONTEND / "app/admin/tenants/[id]/page.tsx").is_file()
 
 
+@pytest.mark.skipif(not LIST_PAGE_EXISTS, reason="tenant list page superseded by Home Services > Providers (consolidation 2026-08-05)")
 def test_list_title_and_columns():
     assert "Tenants" in LIST_PAGE
     for col in ["Status", "Verification", "Plan", "Health", "Usage Credits", "Jobs", "Issues"]:
         assert f'label: "{col}"' in LIST_PAGE
 
 
+@pytest.mark.skipif(not LIST_PAGE_EXISTS, reason="tenant list page superseded by Home Services > Providers (consolidation 2026-08-05)")
 def test_list_search_filter_present():
     assert "search" in LIST_PAGE.lower()
     assert "status" in LIST_PAGE.lower()
 
 
+@pytest.mark.skipif(not LIST_PAGE_EXISTS, reason="tenant list page superseded by Home Services > Providers (consolidation 2026-08-05)")
 def test_list_pagination_present():
     assert "PAGE_SIZE" in LIST_PAGE or "page_size" in LIST_PAGE
 
 
+@pytest.mark.skipif(not LIST_PAGE_EXISTS, reason="tenant list page superseded by Home Services > Providers (consolidation 2026-08-05)")
 def test_list_row_actions_present():
     for action in ["Review Verification", "Suspend Tenant", "Change Plan", "Add Usage Credits", "View Audit Logs"]:
         assert action in LIST_PAGE
@@ -136,6 +172,7 @@ FORBIDDEN = [
 ]
 
 
+@pytest.mark.skipif(not LIST_PAGE_EXISTS, reason="tenant list page superseded by Home Services > Providers (consolidation 2026-08-05)")
 def test_no_forbidden_finance_labels_list_page():
     for term in FORBIDDEN:
         assert term not in LIST_PAGE, f"forbidden label found in list page: {term}"
@@ -156,6 +193,7 @@ def test_correct_finance_terminology_used():
 
 
 # ── Data normalization ────────────────────────────────────────────────────────
+@pytest.mark.skipif(not LIST_PAGE_EXISTS, reason="tenant list page superseded by Home Services > Providers (consolidation 2026-08-05)")
 def test_no_bare_unexpected_error():
     assert '"Unexpected error"' not in LIST_PAGE
     assert '"Unexpected error"' not in DETAIL_PAGE

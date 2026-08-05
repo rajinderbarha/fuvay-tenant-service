@@ -6,11 +6,24 @@ import os
 def test_resolve_rate_is_category_aware():
     """_resolve_rate was a hardcoded flat DEFAULT_COMMISSION_RATE for every
     category regardless of value. It must now read the category's commission_pct
-    and fall back to the default only when unset."""
-    from app.engines.invoice_payment.commission_service import ServiceCommissionService
+    and fall back to the default only when unset.
+
+    Updated 2026-08-05: _resolve_rate no longer inlines that lookup -- it
+    delegates to resolve_provider_commission_rate(), the single canonical
+    rate resolver shared with the Home Services charging path. The behaviour
+    this test guards is unchanged, so the assertions now follow the
+    delegation instead of asserting on the caller's source text (which would
+    fail purely because the logic moved, not because it regressed)."""
+    from app.engines.invoice_payment.commission_service import (
+        ServiceCommissionService, resolve_provider_commission_rate,
+    )
     src = inspect.getsource(ServiceCommissionService._resolve_rate)
-    assert "ServiceCategory.commission_pct" in src
-    assert "DEFAULT_COMMISSION_RATE" in src           # fallback retained
+    assert "resolve_provider_commission_rate" in src   # delegates, never re-implements
+
+    resolver = inspect.getsource(resolve_provider_commission_rate)
+    assert "ServiceCategory" in resolver               # loads the category
+    assert "commission_pct" in resolver                # and reads its rate
+    assert "DEFAULT_COMMISSION_RATE" in resolver       # fallback retained
     # and calculate_commission must pass the invoice's category to it
     calc = inspect.getsource(ServiceCommissionService.calculate_commission)
     assert "self._resolve_rate(db, inv.category_id)" in calc
@@ -25,19 +38,36 @@ def test_admin_endpoints_and_page_exist():
     page = os.path.join(root, "frontend", "super-admin", "app", "admin", "pricing",
                         "commission", "page.tsx")
     assert os.path.isfile(page)
+    # Reachability updated 2026-08-05: the standalone "Category Rates" nav item
+    # was removed at explicit user request during the admin nav consolidation
+    # (the /admin/pricing/commission route stays live but unlinked). The same
+    # capability is now reachable as the "Category Commission Rates" table on
+    # Home Services Finance > Provider Charges, which is the surface that
+    # actually drives Home Services job-completion charging. Assert THAT is
+    # reachable rather than asserting a nav item the product deliberately
+    # dropped.
+    fin_page = open(os.path.join(root, "frontend", "super-admin", "app", "admin",
+                                 "home-services", "finance", "page.tsx"),
+                    encoding="utf-8").read()
+    assert "Category Commission Rates" in fin_page
+    assert "setCategoryCommissionRate" in fin_page     # really wired to the API
     nav = open(os.path.join(root, "frontend", "super-admin", "components", "layout",
                             "AdminLayout.tsx"), encoding="utf-8").read()
-    assert "/admin/pricing/commission" in nav          # reachable from the menu
+    assert "/admin/home-services/finance" in nav       # reachable from the menu
 
 
 def test_new_pages_are_reachable_from_navigation():
     """The user asked that the menu be updated everywhere for the pages built
     this session."""
     root = os.path.join(os.path.dirname(__file__), "..")
-    # provider complaints -> tenant nav
+    # provider complaints -> tenant nav. Path corrected 2026-08-05: the nav
+    # pointed at /provider/complaints, but the real, canonical tenant
+    # complaints workspace is /home-services/complaints (backed by
+    # /v1/tenant/home-services/complaints on the shared complaints engine).
+    # Assert the live path, not the superseded one.
     tnav = open(os.path.join(root, "frontend", "tenant-portal", "components", "layout",
                              "TenantLayout.tsx"), encoding="utf-8").read()
-    assert "/provider/complaints" in tnav
+    assert "/home-services/complaints" in tnav
     # customer complaints -> profile entry
     prof = open(os.path.join(root, "frontend", "customer-app", "app", "customer",
                              "profile", "page.tsx"), encoding="utf-8").read()
