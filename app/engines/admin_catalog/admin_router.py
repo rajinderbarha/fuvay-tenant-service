@@ -439,6 +439,46 @@ async def category_options(r: Request,
     return ok(options, _rid(r), ENGINE_ID)
 
 
+@router.get("/pricing-rules", response_model=ApiResponse[dict],
+            summary="List service pricing rules (incl. completed_job_deduction_credits)",
+            tags=["Service Pricing Rules"])
+async def list_pricing_rules(r: Request,
+                              master_service_id: uuid.UUID | None = Query(None),
+                              is_active: bool | None = Query(None),
+                              q: str | None = Query(None),
+                              brand_id: uuid.UUID | None = Query(None),
+                              service_type_id: uuid.UUID | None = Query(None),
+                              tier_id: uuid.UUID | None = Query(None),
+                              city: str | None = Query(None),
+                              zipcode: str | None = Query(None),
+                              pricing_model: str | None = Query(None),
+                              expiring_within_days: int | None = Query(None),
+                              rule_status: str | None = Query(None),
+                              page: int = Query(1, ge=1),
+                              page_size: int = Query(50, ge=1, le=200),
+                              sort_by: str = Query("priority"),
+                              sort_dir: str = Query("desc"),
+                              u: UserContext = Depends(require_super_admin),
+                              s: AdminCatalogService = Depends(_svc)):
+    """Real bug fixed: AdminCatalogService.list_pricing_rules() existed and was
+    fully implemented, but NO router ever exposed it -- so GET
+    /v1/admin/pricing-rules 404'd. Three super-admin surfaces call it via
+    catalogApi.listPricingRules and therefore always rendered empty despite
+    real rows existing in service_pricing_rules:
+      * /admin/pricing-rules            (the Pricing Rules workspace itself)
+      * /admin/home-services/completed-job-deduction
+      * /admin/tenants/{id}             (Pricing tab)
+    Signature mirrors the frontend client's query params exactly, so no
+    frontend change is needed."""
+    return ok(await s.list_pricing_rules(
+        master_service_id=master_service_id, is_active=is_active, q=q,
+        brand_id=brand_id, service_type_id=service_type_id, tier_id=tier_id,
+        city=city, zipcode=zipcode, pricing_model=pricing_model,
+        expiring_within_days=expiring_within_days, rule_status=rule_status,
+        page=page, page_size=page_size, sort_by=sort_by, sort_dir=sort_dir,
+    ), _rid(r), ENGINE_ID)
+
+
 @router.post("/service-categories", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
              summary="Create service category (DEPRECATED -- accepts legacy Brand/Type/pricing "
                       "fields for backward compatibility; use /business-verticals for new callers)",

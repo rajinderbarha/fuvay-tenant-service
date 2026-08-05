@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { loginAsSuperAdmin } from './helpers/admin-auth';
+import { SEED } from './helpers/api';
 
 const APP = process.env.E2E_APP || 'admin';
 const EVIDENCE_DIR = path.join(__dirname, '..', 'evidence', 'e2e03');
@@ -35,11 +36,13 @@ test.describe('ADMIN-TENANT-E2E-03 catalog/pricing', () => {
     }
   });
 
-  test('service catalog: open AC Repair, verify Split AC / Window AC / LG / Not Cooling', async ({ page }) => {
+  test('service catalog: open the seed offering, verify Split AC / Window AC / LG / Not Cooling', async ({ page }) => {
     await loginAsSuperAdmin(page);
     await page.goto('/admin/home-services/service-catalog');
     await page.waitForTimeout(1500);
-    const acRow = page.locator('button', { hasText: 'AC Repair' }).filter({ hasNotText: 'Duplicate' }).first();
+    // Was hasText:'AC Repair' -- that master service was removed, so this row
+    // never rendered and the test failed before exercising any UI.
+    const acRow = page.locator('button', { hasText: SEED.offeringName }).filter({ hasNotText: 'Duplicate' }).first();
     await expect(acRow).toBeVisible({ timeout: 10000 });
     await acRow.click();
     await page.waitForTimeout(1200);

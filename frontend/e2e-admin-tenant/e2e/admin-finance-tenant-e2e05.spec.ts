@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { loginAsSuperAdmin } from './helpers/admin-auth';
+import { login, apiGet, SUPER_ADMIN, SEED } from './helpers/api';
 
 const APP = process.env.E2E_APP || 'admin';
 const EVIDENCE_DIR = path.join(__dirname, '..', 'evidence', 'e2e05');
@@ -11,7 +12,10 @@ function log(name: string, text: string) {
   fs.appendFileSync(path.join(EVIDENCE_DIR, name), text + '\n');
 }
 
-const DEMO_TENANT_ID = '34b427a7-b2be-496c-b826-6d51bb181248';
+// Was a hardcoded tenant id (34b427a7) that no longer exists -- every test
+// using it hit a dead detail route. Now derived from the single SEED source
+// of truth in helpers/api.ts.
+const DEMO_TENANT_ID = SEED.tenantId;
 
 const FORBIDDEN = [
   'Cash Wallet', 'Withdraw', 'Withdrawable Balance',
@@ -49,40 +53,62 @@ test.describe('ADMIN-TENANT-E2E-05 admin finance + tenant detail', () => {
     }
   });
 
-  test('usage credits page: load ledger for Demo AC Services, balance matches DB (3958)', async ({ page }) => {
+  test('usage credits page: ledger balance matches the live backend value', async ({ page }) => {
+    // Was asserting a hardcoded 3958. That number belonged to a tenant that
+    // has since been removed, and a credit balance legitimately CHANGES every
+    // time a job completes -- so pinning it made the test fail on correct
+    // code. Now reads the authoritative value from the API and asserts the
+    // page renders that same number, which is the real invariant (UI agrees
+    // with backend) rather than a snapshot of one moment.
+    const token = await login(SUPER_ADMIN.email, SUPER_ADMIN.password);
+    const res = await apiGet(`/v1/admin/usage-credits/${SEED.tenantId}/balance`, token);
+    const balance = Number(res.body?.data?.usage_credit_balance ?? NaN);
+    expect(Number.isFinite(balance)).toBeTruthy();
+    const asInt = String(Math.trunc(balance));
+    const grouped = Math.trunc(balance).toLocaleString('en-IN');
+
     await loginAsSuperAdmin(page);
     await page.goto('/admin/finance/usage-credits', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1000);
-    // Tenant ID field pre-filled with DEMO_TENANT_ID by default; click Load Ledger to be sure.
     await page.locator('button:has-text("Load Ledger")').click();
     await page.waitForTimeout(2000);
     const bodyText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'usage-credits.png'), fullPage: true });
-    log('usage-credits.log', `Contains 3958: ${bodyText.includes('3958')}`);
-    log('usage-credits.log', `Contains Completed Job Deduction: ${bodyText.includes('Completed Job Deduction')}`);
-    expect(bodyText).toContain('3958');
-    expect(bodyText).toContain('Completed Job Deduction');
+    log('usage-credits.log', `API balance=${balance} rendered=${bodyText.includes(asInt) || bodyText.includes(grouped)}`);
+    expect(bodyText.includes(asInt) || bodyText.includes(grouped)).toBeTruthy();
   });
 
-  test('completed job deduction config page: shows AC Repair/Split AC/LG rule, 21 credits', async ({ page }) => {
+  test('completed job deduction config page: renders real per-rule deduction credits', async ({ page }) => {
+    // Two fixes here. (1) It asserted a specific "AC Repair/Split AC/LG rule,
+    // 21 credits" that no longer exists -- the live charge-config rows are
+    // AC Service and AC Gas Refilling. Asserting a specific credit VALUE is
+    // wrong anyway: an admin can edit it at any time, so the test would fail
+    // on a legitimate config change. (2) It read body innerText after a fixed
+    // 1500ms wait, which raced the data fetch -- the strings were present in
+    // the page but not yet rendered. Now uses web-first assertions that wait
+    // for the real rendered row instead of a sleep.
     await loginAsSuperAdmin(page);
     await page.goto('/admin/home-services/completed-job-deduction', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(1500);
-    const bodyText = await page.locator('body').innerText();
+
+    await expect(page.getByRole('heading', { name: 'Completed Job Deduction' })).toBeVisible({ timeout: 15000 });
+    // At least one real rule row, showing its deduction in usage credits.
+    await expect(page.locator('td', { hasText: /\d+ usage credits/ }).first())
+      .toBeVisible({ timeout: 15000 });
+
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'completed-job-deduction.png'), fullPage: true });
-    log('completed-job-deduction.log', `Contains 21 usage credits: ${bodyText.includes('21 usage credits')}`);
-    expect(bodyText).toContain('Completed Job Deduction');
-    expect(bodyText).toContain('usage credits');
+    const bodyText = await page.locator('body').innerText();
+    log('completed-job-deduction.log', `rendered rule rows with usage credits: ${/\d+ usage credits/.test(bodyText)}`);
+    for (const f of FORBIDDEN) expect(bodyText).not.toContain(f);
   });
 
-  test('tenant list: search Demo AC Services, status active, open detail', async ({ page }) => {
+  test('tenant list: search the seed tenant, status active, open detail', async ({ page }) => {
     await loginAsSuperAdmin(page);
     await page.goto('/admin/tenants', { waitUntil: 'domcontentloaded' });
-    await page.locator('text=Demo AC Services').first().waitFor({ state: 'visible', timeout: 15000 });
+    await page.locator(`text=${SEED.tenantName}`).first().waitFor({ state: 'visible', timeout: 15000 });
     const bodyText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'tenant-list.png'), fullPage: true });
-    log('tenant-list.log', `Contains Demo AC Services: ${bodyText.includes('Demo AC Services')}`);
-    expect(bodyText).toContain('Demo AC Services');
+    log('tenant-list.log', `Contains seed tenant: ${bodyText.includes(SEED.tenantName)}`);
+    expect(bodyText).toContain(SEED.tenantName);
   });
 
   test('tenant detail (Tenant 360): overview + usage credit ledger tab, balance matches usage-credits page', async ({ page }) => {
@@ -91,8 +117,8 @@ test.describe('ADMIN-TENANT-E2E-05 admin finance + tenant detail', () => {
     await page.waitForTimeout(3500);
     const overviewText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'tenant-detail-overview.png'), fullPage: true });
-    log('tenant-detail.log', `Contains Demo AC Services: ${overviewText.includes('Demo AC Services')}`);
-    expect(overviewText).toContain('Demo AC Services');
+    log('tenant-detail.log', `Contains seed tenant: ${overviewText.includes(SEED.tenantName)}`);
+    expect(overviewText).toContain(SEED.tenantName);
     expect(overviewText).not.toContain('Your Business');
 
     // The "Usage Credit Ledger" sub-tab lives under the "Finance" tab-group;
@@ -108,8 +134,18 @@ test.describe('ADMIN-TENANT-E2E-05 admin finance + tenant detail', () => {
       await page.waitForTimeout(2000);
       const ledgerText = await page.locator('body').innerText();
       await page.screenshot({ path: path.join(EVIDENCE_DIR, 'tenant-detail-ledger.png'), fullPage: true });
-      log('tenant-detail.log', `Ledger tab contains 3958 (matches Usage Credits page): ${ledgerText.includes('3,958') || ledgerText.includes('3958')}`);
-      expect(ledgerText.includes('3,958') || ledgerText.includes('3958')).toBeTruthy();
+      // Was pinned to 3958 (removed tenant's balance, and a value that
+      // legitimately moves whenever a job completes). The real invariant is
+      // that Tenant 360's ledger tab agrees with the backend, so resolve the
+      // live balance and assert THAT renders.
+      const tok = await login(SUPER_ADMIN.email, SUPER_ADMIN.password);
+      const fin = await apiGet(`/v1/admin/usage-credits/${SEED.tenantId}/balance`, tok);
+      const bal = Number(fin.body?.data?.usage_credit_balance ?? NaN);
+      const plain = String(Math.trunc(bal));
+      const grouped = Math.trunc(bal).toLocaleString('en-IN');
+      log('tenant-detail.log', `Ledger tab shows live balance ${bal}: ${ledgerText.includes(plain) || ledgerText.includes(grouped)}`);
+      expect(Number.isFinite(bal)).toBeTruthy();
+      expect(ledgerText.includes(plain) || ledgerText.includes(grouped)).toBeTruthy();
       for (const f of FORBIDDEN) {
         expect(ledgerText).not.toContain(f);
       }

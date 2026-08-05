@@ -47,20 +47,45 @@ export const CUSTOMER_ONE = { email: 'customer@serviceos.in', password: 'Passwor
 export const CUSTOMER_TWO = { email: 'customer2@serviceos.in', password: 'Password123!' };
 
 export const SEED = {
-  // NOTE: re-pointed to the current live DB's real Demo AC Services tenant
-  // (Final Phase E2E audit, 2026-08-02) -- the previous hardcoded IDs no
-  // longer existed after a DB reseed, causing every customer-app E2E test
-  // to fail at the seed-check step with HOME_BOOKING_CATEGORY_INVALID
-  // before ever reaching the UI under test. This is test-fixture drift,
-  // not an application bug -- verify against the live DB if these ever
-  // fail again with a 404/NOT_FOUND at the seed step.
-  tenantId: '5209ef33-a53e-4fc0-b3f6-006335b8d712',
-  tenantName: 'Demo AC Services',
+  // Re-pointed 2026-08-05 (second occurrence of the same drift -- see the
+  // 2026-08-02 note this replaces). The previously-referenced "Demo AC
+  // Services" tenant 5209ef33 no longer exists, nor did the master service
+  // "AC Repair", the 3958 credit balance, or the 21-credit deduction rule
+  // that several specs asserted on. Every one of those failures was
+  // test-fixture drift, NOT an application bug: the specs were pinned to a
+  // dataset a DB reseed removed.
+  //
+  // These values were read out of the live DB (verified present at the time
+  // of writing), and deliberately point at the ONE tenant that has real
+  // data to assert against -- 11 enabled services, 11 jobs, an active
+  // home_services enrollment. If these fail again with 404/NOT_FOUND at the
+  // seed step, re-verify against the DB rather than assuming a code
+  // regression.
+  //
+  // NOT re-seeded on purpose: scripts/seed_ac_repair_baseline_mappings.py
+  // expects a ServiceCategory *slugged* "home_services", but this schema
+  // models categories as the services themselves (air-conditioning,
+  // plumbing, ...) with "home_services" living in vertical_type. Creating
+  // such a category to satisfy the old fixture would risk re-scoping
+  // TenantCatalogService.get_home_services_category_id(), which takes the
+  // FIRST vertical_type == 'home_services' row -- i.e. it could silently
+  // repoint the tenant Service Setup wizard at an empty category.
+  tenantId: '244beeec-fedc-452e-8054-317e45557d4d',
+  tenantName: 'Guramrit',
   categorySlug: 'air-conditioning',
   offeringSlug: 'ac-service',
-  offeringTypeId: 'c86dfcf3-53bd-4d83-bf0b-51257f382652', // Split AC
-  brandId: 'a8efc47f-d639-4cf6-a2eb-808f73cad28c', // LG
-  city: 'Ludhiana',
-  zipcode: '141001',
-  issueSummary: 'Not Cooling',
+  // Display name as rendered in the admin catalog UI. Specs used to
+  // hardcode 'AC Repair', a master service that no longer exists; the live
+  // equivalent carrying the Split AC / LG / AC-Not-Cooling relationships is
+  // 'AC Service'.
+  offeringName: 'AC Service',
+  offeringTypeId: 'cf1b20e5-162a-4e8e-b0e1-262c014413a6', // Split AC
+  brandId: 'a8efc47f-d639-4cf6-a2eb-808f73cad28c', // LG (unchanged, still live)
+  // Guramrit's actual declared service area -- was Ludhiana/141001, which
+  // belonged to the removed tenant. A serviceability check against the old
+  // pair fails before any UI assertion runs.
+  city: 'BASSIPATHANA',
+  zipcode: '140412',
+  // Real, active issue on ac-service ("Not Cooling" did not exist).
+  issueSummary: 'AC Not Cooling',
 };
