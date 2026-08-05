@@ -124,6 +124,13 @@ class TenantCatalogService:
                 "service_group_id": str(s.service_group_id) if s.service_group_id else None,
                 "service_group_name": group_names.get(s.service_group_id),
                 "description": s.description,
+                # icon_url/image_url are real MasterService columns the admin
+                # console sets (and the icon picker now uploads to), but they
+                # were absent from this projection -- so the tenant's Services
+                # & Pricing setup page could never show the admin-set service
+                # icon, silently falling back to a generic placeholder.
+                "icon_url": s.icon_url,
+                "image_url": s.image_url,
                 "job_type": s.job_type,
                 "pricing_model": s.pricing_model,
                 "base_price": float(s.base_price),

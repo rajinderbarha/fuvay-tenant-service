@@ -327,6 +327,9 @@ export interface AdminMasterServiceRow {
   /** Grouping keys the Services & Pricing setup page groups by. */
   service_group_id?:string|null; service_group_name?:string|null;
   requires_checklist?:boolean; tenant_override_allowed?:boolean;
+  /** Admin-set service artwork (MasterService.icon_url/image_url). Previously
+   * dropped by the backend projection, so it was never available here. */
+  icon_url?:string|null; image_url?:string|null;
 }
 export interface TenantEnabledService {
   tenant_service_id:string; tenant_id:string; master_service_id:string; category_id:string;
