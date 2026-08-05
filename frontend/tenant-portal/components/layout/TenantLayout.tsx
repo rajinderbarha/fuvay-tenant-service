@@ -491,13 +491,29 @@ function TenantShellInner({ children, activeNav }: {
   const VERTICAL_HIDDEN_ITEMS: Record<string, string[]> = {
     marketing: ["home_services"], "provider-compliance": ["home_services"], privacy: ["home_services"],
   };
+  // Both gates now fail CLOSED while the tenant's vertical/capabilities are
+  // still resolving. They used to fail OPEN, which produced the reported
+  // "menu shows then hides" flash on every refresh: measured with
+  // e2e/tenant-nav-flash-probe as 22 links at t=0 dropping to 18 at
+  // t=2000ms, with these 4 vanishing -- /marketing, /provider/compliance,
+  // /account/privacy (all VERTICAL_HIDDEN_ITEMS for home_services) and
+  // /appointments (capability-gated). Those are all CORRECTLY hidden for a
+  // Home Services tenant and are still valid for coaching/real-estate, so
+  // the fix is to stop showing them prematurely -- not to delete them.
+  // Conditionally-gated items stay hidden until we actually know the answer;
+  // ungated items render immediately, and the nav skeleton below covers the
+  // resolving window so nothing jumps.
+  const gatingResolved = verticalKey !== null && verticalCapabilities !== null;
   const itemVisible = (itemId: string) => {
     const hidden = VERTICAL_HIDDEN_ITEMS[itemId];
-    if (hidden && verticalKey && hidden.includes(verticalKey)) return false;
     const requiredCapability = ITEM_REQUIRES_CAPABILITY[itemId];
+    const isConditional = !!hidden || !!requiredCapability;
+    // Unknown vertical/capabilities -> never render a conditionally-gated
+    // item, otherwise it appears and is then yanked away.
+    if (isConditional && !gatingResolved) return false;
+    if (hidden && verticalKey && hidden.includes(verticalKey)) return false;
     if (!requiredCapability) return true;
-    if (verticalCapabilities === null) return true; // fail open until loaded
-    return verticalCapabilities.includes(requiredCapability);
+    return (verticalCapabilities ?? []).includes(requiredCapability);
   };
   // "provider-staff" label was hardcoded "Staff & Technicians" regardless of
   // vertical, while the page it links to already computes a category-aware

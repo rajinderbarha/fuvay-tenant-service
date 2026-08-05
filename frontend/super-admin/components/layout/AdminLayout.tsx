@@ -361,7 +361,8 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
   const collapsed = false;
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [effectiveMenu, setEffectiveMenu] = useState<EffectiveMenu | null>(null);
-  const { permissions: effectivePermissions, role: effectiveRole } = usePermissions();
+  const { permissions: effectivePermissions, role: effectiveRole,
+          loading: permissionsLoading } = usePermissions();
 
   const loadEffectiveMenu = useCallback(() => {
     const token = typeof window !== "undefined" && localStorage.getItem("serviceos_admin_token");
@@ -459,7 +460,38 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: "12px 8px", display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
-          {NAV_GROUPS.map((group) => {
+          {/* Loading skeleton instead of a pop-in. isNavItemPermitted fails
+              closed while GET /v1/auth/me is in flight (deliberate -- never
+              flash an item the user may not be allowed to see), which meant
+              every refresh rendered ONLY Dashboard for ~400ms and then
+              popped in 21 more items. Measured with e2e/nav-flash-probe:
+              t=0ms count=1 -> t=400ms count=22, 0 vanished / 21 appeared.
+              Rendering fixed-size placeholders keeps the sidebar's height and
+              rhythm stable across that window, so nothing jumps -- and it
+              preserves the fail-closed rule exactly, because no real hrefs
+              are emitted until permissions resolve. */}
+          {permissionsLoading ? (
+            <div aria-hidden="true" style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 4px" }}>
+              {[6, 3, 2, 4, 9].map((rows, gi) => (
+                <div key={gi} style={{ marginBottom: 14 }}>
+                  {!collapsed && (
+                    <div style={{ height: 8, width: 64, margin: "10px 8px 8px",
+                      borderRadius: 4, background: "var(--sidebar-border)", opacity: 0.5 }} />
+                  )}
+                  {Array.from({ length: rows }).map((_, ri) => (
+                    <div key={ri} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 8px" }}>
+                      <div style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                        background: "var(--sidebar-border)", opacity: 0.55 }} />
+                      {!collapsed && (
+                        <div style={{ height: 9, flex: 1, maxWidth: 108, borderRadius: 4,
+                          background: "var(--sidebar-border)", opacity: 0.4 }} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : NAV_GROUPS.map((group) => {
             // FINAL-L5-05M: two independent gates, both must pass — module/
             // category entitlement (isNavItemVisible, pre-existing) AND
             // effective-permission (isNavItemPermitted, this sprint). An
