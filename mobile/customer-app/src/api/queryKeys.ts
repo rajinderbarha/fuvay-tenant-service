@@ -22,6 +22,11 @@ export const queryKeys = {
 
   verticals: () => ["verticals", "enabled"] as const,
 
+  /** Fixed, nationwide list -- deliberately no zipcode/vertical in the key,
+   * unlike home.aggregate, since the backend returns the same list to
+   * every customer regardless of location. */
+  globalServices: () => ["globalServices", "list"] as const,
+
   catalog: {
     categories: () => ["catalog", "categories"] as const,
     category: (slug: string) => ["catalog", "categories", slug] as const,

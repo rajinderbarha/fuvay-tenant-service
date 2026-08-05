@@ -8,7 +8,7 @@ import { OfflineBanner } from "../../components/OfflineBanner";
 import {
   CustomerHeader, ServiceSearch, CampaignCarousel, VerticalSwitcher, HomeServiceCard,
   AssistantEntryCard, ActiveBookingCard, TrustBenefitCard, HowItWorksSection, HomeSkeleton, HomeErrorState,
-  NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal,
+  NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal, GlobalServicesSection,
 } from "../../components/home";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
 import { useCustomerProfileQuery } from "../../api/customer/useCustomerProfileQuery";
@@ -168,6 +168,12 @@ export function HomeScreen() {
         <View style={{ flex: 1, justifyContent: "center" }}>
           <NoAddressState onAddAddress={() => setLocationPickerVisible(true)} />
         </View>
+        {/* Shown even with no address on file -- Global Services is
+            nationwide/fixed, never gated by serviceability (see
+            GlobalServicesSection). */}
+        <View style={{ paddingHorizontal: theme.layout.screenHorizontalPadding, paddingBottom: theme.spacing.lg }}>
+          <GlobalServicesSection defaultName={customerFirstName !== "there" ? customerFirstName : undefined} />
+        </View>
         <LocationPickerModal
           visible={locationPickerVisible}
           currentZipcode={zipcodeOverride ?? null}
@@ -182,6 +188,12 @@ export function HomeScreen() {
     return (
       <AppScreen>
         <UnserviceableState zipcode={home.serviceability.zipcode} onChangeLocation={() => setLocationPickerVisible(true)} />
+        <View style={{ paddingHorizontal: theme.layout.screenHorizontalPadding, paddingBottom: theme.spacing.lg }}>
+          <GlobalServicesSection
+            defaultName={customerFirstName !== "there" ? customerFirstName : undefined}
+            defaultZipcode={home.serviceability.zipcode}
+          />
+        </View>
         <LocationPickerModal
           visible={locationPickerVisible}
           currentZipcode={home.serviceability.zipcode}
@@ -291,6 +303,18 @@ export function HomeScreen() {
             </View>
           </HomeSectionErrorBoundary>
         ) : null}
+
+        {/* Fixed, nationwide section -- never filtered by this ZIP's
+            bookable_categories, unlike "Services near you" above (see
+            GlobalServicesSection). */}
+        <HomeSectionErrorBoundary sectionLabel="global services">
+          <View style={{ marginTop: theme.spacing.xl }}>
+            <GlobalServicesSection
+              defaultName={customerFirstName !== "there" ? customerFirstName : undefined}
+              defaultZipcode={home.address.zipcode}
+            />
+          </View>
+        </HomeSectionErrorBoundary>
 
         {/* Explains the flow to a first-time customer -- in particular that
             they see a real slot before committing and are not left waiting
