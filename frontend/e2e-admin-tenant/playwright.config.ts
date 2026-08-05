@@ -32,11 +32,16 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  reporter: [['list']],
+  reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
   use: {
     baseURL: `http://localhost:${APP_CONFIG.port}`,
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
+    // Full capture (was trace:'retain-on-failure' / screenshot:'only-on-failure').
+    // Capturing on PASS too matters here: several bugs found in this codebase
+    // were pages that returned 200 and "passed" while rendering fabricated or
+    // empty data, which a failure-only trace can never show you.
+    trace: 'on',
+    screenshot: 'on',
+    video: 'retain-on-failure',
   },
   projects: [
     {

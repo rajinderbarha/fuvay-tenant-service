@@ -113,9 +113,13 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       {/* Breadcrumb */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
         fontSize: 12, color: "var(--text-tertiary)" }}>
-        <Link href="/admin/bookings"
+        {/* Was href="/admin/bookings" -- that legacy list page was deleted in
+            the admin console consolidation, so this breadcrumb 404'd. The
+            unified replacement is Bookings & Jobs. This detail route stays
+            live because Customers' booking-history rows deep-link to it. */}
+        <Link href="/admin/home-services/bookings-jobs"
           style={{ color: "var(--text-link)", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-          <ArrowLeft size={13} /> Bookings
+          <ArrowLeft size={13} /> Bookings &amp; Jobs
         </Link>
         <span>›</span>
         <span style={{ color: "var(--text-primary)", fontWeight: 600, fontFamily: "monospace" }}>
@@ -150,7 +154,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       {!booking.loading && !booking.error && !b && (
         <div style={{ textAlign: "center", padding: 60 }}>
           <p style={{ color: "var(--text-tertiary)", fontSize: 15 }}>Booking not found</p>
-          <Link href="/admin/bookings" style={{ fontSize: 13, color: "var(--text-link)" }}>← Back to Bookings</Link>
+          <Link href="/admin/home-services/bookings-jobs" style={{ fontSize: 13, color: "var(--text-link)" }}>← Back to Bookings &amp; Jobs</Link>
         </div>
       )}
 
