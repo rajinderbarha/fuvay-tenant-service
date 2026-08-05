@@ -21,6 +21,11 @@ from app.core.permissions import P, require_tenant_mutation_permission, require_
 
 router = APIRouter(prefix="/v1/provider", tags=["Provider Portal"])
 
+# Mirrors the provider_team_members.max_concurrent_jobs DB default (NOT NULL
+# DEFAULT 4). Kept as a named constant so the fallback is explicit at the one
+# call site that needs it instead of a bare magic number.
+DEFAULT_MAX_CONCURRENT_JOBS = 4
+
 
 def _validate_availability_time_range(start_time: str | None, end_time: str | None) -> None:
     """HS5 fix — end_time must be after start_time. Previously unvalidated,
@@ -130,7 +135,13 @@ async def create_team_member(
         if capacity < 1:
             raise HTTPException(400, "INVALID_CAPACITY: max_concurrent_jobs must be at least 1.")
     else:
-        capacity = None
+        # provider_team_members.max_concurrent_jobs is NOT NULL in the live
+        # schema (DEFAULT 4), so a blank capacity must fall back to that
+        # default -- binding an explicit NULL overrides the column default
+        # and fails the constraint outright. (The ORM model declares this
+        # column nullable=True, which does NOT match the live DB; the DB is
+        # authoritative here.)
+        capacity = DEFAULT_MAX_CONCURRENT_JOBS
 
     # JSON array params are passed as real JSON via json.dumps rather than
     # str(list).replace("'", '"'), which corrupts any value containing an
@@ -342,14 +353,115 @@ async def deactivate_team_member(
     return ok(_member_row(fetched), request_id=rid)
 
 
+# Maps provider_team_members.member_type -> users.role. Only "technician"
+# and "staff" exist as real role keys with permission defaults (see
+# app/core/permissions.py ROLE_DEFAULTS); trainer/counsellor/agent/manager
+# are vertical-flavoured job titles, not distinct permission sets, so they
+# all resolve to "staff" rather than silently creating a role with ZERO
+# permissions (the exact bug the "technician" comment in permissions.py
+# documents having already been hit once).
+_MEMBER_TYPE_TO_ROLE = {"technician": "technician"}
+
+
 @router.post("/team-members/{member_id}/create-login")
 async def create_member_login(
     member_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_tenant_owner_mutation),
 ):
+    """Create a real login (users row) for an existing team member and link
+    it back via provider_team_members.user_id.
+
+    Previously a hardcoded stub that returned {"credentials": None} and
+    created nothing -- so the tenant-portal "Login access" option silently
+    did nothing, AND the member never gained a users row, which is why
+    tenant-created team members never appeared on the super-admin Staff
+    page (app/engines/auth/admin_staff_router.py selects FROM users).
+    provider_team_members.user_id was always meant to hold a real users.id
+    -- deactivate_team_member above already revokes that user's sessions
+    -- there was simply no path that ever populated it.
+
+    Mirrors AdminTenantService.create_staff's proven User-creation shape
+    (generated password + force_password_change) rather than inventing a
+    second credential scheme.
+    """
+    import secrets
+    from app.engines.auth.models import User
+    from app.engines.auth.utils import hash_password
+
+    tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    return ok({"member_id": str(member_id), "credentials": None}, request_id=rid)
+
+    row = await db.execute(
+        text("SELECT id, full_name, email, phone, member_type, user_id "
+             "FROM provider_team_members WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"),
+        {"id": str(member_id), "tid": str(tid)},
+    )
+    member = row.fetchone()
+    if member is None:
+        raise HTTPException(404, "Team member not found")
+
+    # Idempotent: never create a second login for the same member.
+    if member.user_id:
+        return ok({
+            "member_id": str(member_id), "user_id": str(member.user_id),
+            "credentials": None, "already_had_login": True,
+        }, request_id=rid)
+
+    full_name = (member.full_name or "").strip()
+    if not full_name:
+        raise ServiceOSException("TEAM_MEMBER_NAME_REQUIRED",
+                                 "This team member has no name, so a login cannot be created.",
+                                 status_code=422)
+
+    email = (member.email or "").lower().strip()
+    if email:
+        existing = await db.execute(select(User).where(User.email == email))
+        if existing.scalar_one_or_none():
+            raise ServiceOSException(
+                "TEAM_MEMBER_EMAIL_IN_USE",
+                f"A user with email {email} already exists. Change this member's email, "
+                "or link the existing account instead.",
+                status_code=409)
+    else:
+        # No email on file -- generate a non-deliverable placeholder so the
+        # NOT NULL users.email constraint is satisfied without inventing a
+        # real-looking address. Same shape as create_staff's fallback.
+        email = f"member.{uuid.uuid4().hex[:8]}@tenant.local"
+
+    raw_password = secrets.token_urlsafe(12)
+    new_user = User(
+        email=email,
+        phone=member.phone,
+        full_name=full_name,
+        role=_MEMBER_TYPE_TO_ROLE.get(member.member_type, "staff"),
+        tenant_id=tid,
+        hashed_password=hash_password(raw_password),
+        is_active=True,
+        is_verified=False,
+        force_password_change=True,
+    )
+    db.add(new_user)
+    await db.flush()
+
+    await db.execute(
+        text("UPDATE provider_team_members "
+             "SET user_id=:uid, username=:uname, password_generated=true, updated_at=now() "
+             "WHERE id=:id AND tenant_id=:tid"),
+        {"uid": str(new_user.id), "uname": email, "id": str(member_id), "tid": str(tid)},
+    )
+    await db.commit()
+
+    # Shown once, never stored in plaintext -- force_password_change makes
+    # the member set their own on first login. Key names match the existing
+    # frontend contract (providerTeamMembersApi.createLogin expects
+    # {username, password}), so no frontend change is needed.
+    return ok({
+        "member_id": str(member_id),
+        "user_id": str(new_user.id),
+        "credentials": {"username": email, "password": raw_password},
+        "already_had_login": False,
+    }, request_id=rid)
 
 
 # ── Availability ──────────────────────────────────────────────────────────────
