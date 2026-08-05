@@ -26,6 +26,7 @@ import {
   Megaphone, Package, ScrollText, ListChecks, BarChart3,
   HelpCircle, GitBranch, Image, AlertOctagon, Globe,
   PercentSquare, FileText as FileTextIcon,
+  IdCard, UserCog, KeyRound, Link2, Stethoscope, CalendarCheck,
 } from "lucide-react";
 import { verticalCatalogApi, type EffectiveMenu } from "../../lib/api";
 import { useTheme } from "../../hooks/useTheme";
@@ -68,7 +69,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Operations",
     items: [
       { id: "customers",  href: "/admin/customers",  label: "Customers", icon: <UserCheck size={16}/>,    requiredPermission: SUPER_ADMIN_ONLY                },
-      { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <Users size={16}/>,        requiredPermission: "staff:read"                    },
+      { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <IdCard size={16}/>,       requiredPermission: "staff:read"                    },
       { id: "complaints", href: "/admin/complaints", label: "Complaints", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY               },
       // "Complaint Policies" folded into the Complaints page as a "Policies"
       // tab 2026-08-05 at explicit user request -- removed as a separate
@@ -120,8 +121,8 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "workflow-templates", href: "/admin/workflow-templates", label: "Workflows",  icon: <GitBranch size={16}/>,  requiredPermission: SUPER_ADMIN_ONLY },
       { id: "audit-logs",         href: "/admin/audit-logs",        label: "Audit Logs", icon: <ScrollText size={16}/>, requiredPermission: "auth:audit:read" },
       { id: "users",              href: "/admin/users",              label: "Users",      icon: <Users size={16}/>,      requiredPermission: "auth:users:read" },
-      { id: "roles",              href: "/admin/users/roles",        label: "Roles",       icon: <Shield size={16}/>,    requiredPermission: "platform:roles:read" },
-      { id: "permissions",        href: "/admin/users/permissions",  label: "Permissions", icon: <ClipboardCheck size={16}/>, requiredPermission: "platform:permissions:read" },
+      { id: "roles",              href: "/admin/users/roles",        label: "Roles",       icon: <UserCog size={16}/>,   requiredPermission: "platform:roles:read" },
+      { id: "permissions",        href: "/admin/users/permissions",  label: "Permissions", icon: <KeyRound size={16}/>, requiredPermission: "platform:permissions:read" },
       { id: "media",              href: "/admin/media",              label: "Media",      icon: <Image size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       { id: "settings",           href: "/admin/settings",           label: "Settings",   icon: <Settings size={16}/>,   requiredPermission: SUPER_ADMIN_ONLY },
     ],
@@ -159,8 +160,8 @@ const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
   // explicitly defers pricing to the provider ("set by the tenant in
   // Service Setup... not here"). The two pages/APIs remain live, just
   // unlinked, matching the rest of this cleanup.
-  { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Wrench size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Link2 size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Stethoscope size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   // "Service Areas / Zones" removed alongside Pricing Tiers/City-Zip
   // Mapping/Provider Pricing Overrides -- its own page description says it
   // scopes Home Services pricing rules by admin-defined city tier, the same
@@ -172,7 +173,7 @@ const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
   // Phase 2A Slice 2 nav reconciliation: page existed and was fully built
   // (adminBookabilityApi-backed) but had zero sidebar entry — confirmed
   // orphaned in the Phase 1 frontend audit and still true.
-  { id: "bookability", href: "/admin/bookability/providers", label: "Provider Bookability", icon: <Zap size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "bookability", href: "/admin/bookability/providers", label: "Provider Bookability", icon: <CalendarCheck size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
 ];
 
 // Verticals whose operational model is "field-ops style" (booking -> assigned

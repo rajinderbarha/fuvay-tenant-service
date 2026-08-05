@@ -21,7 +21,7 @@
  */
 import { useCallback, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, FileText, GitCompare, Sparkles, CheckCircle2, Circle, ShieldCheck, Wallet, RefreshCw, PlusCircle, Plus } from "lucide-react";
+import { Download, FileText, GitCompare, Sparkles, CheckCircle2, Circle, ShieldCheck, Wallet, RefreshCw, PlusCircle, Plus, Trash2 } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, Toaster, type ToastItem, SummaryCard,} from "../../../../components/shared/ui";
 import { homeServicesFinanceApi, homeServicesFinanceMonetizationApi, homeServicesTopupPlanApi, adminWalletApi, commerceApi, type MonetizationPolicy, type TopupPlan, type WalletRecord, type CreditPackage } from "../../../../lib/api";
@@ -342,6 +342,16 @@ function MonetizationTab() {
 
   async function confirmPublish() {
     if (!reason.trim()) return;
+    // Publish only takes a reason -- it publishes whatever draft is already
+    // saved server-side. If the on-screen form was edited but never sent via
+    // "Save Draft", those edits were silently lost (or, with no draft ever
+    // saved, publish 404'd outright). Always sync the current form first so
+    // Publish reflects exactly what's on screen, edit-then-publish in one step.
+    const saved = await saveDraftAction.execute(form);
+    if (!saved) {
+      push(saveDraftAction.error ?? "Failed to save your changes before publishing.", "danger");
+      return;
+    }
     const r = await publishAction.execute(reason.trim());
     if (r) {
       setShowDraftDrawer(false); setReason(""); currentApi.refetch(); draftApi.refetch();
@@ -367,7 +377,13 @@ function MonetizationTab() {
         <StatusDot ok={!draft} label="Draft" value={draft ? `v${draft.version_number}` : "None"} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <Btn variant="ghost" icon={<GitCompare size={14} />} onClick={() => setShowCompare(true)}>Compare Versions</Btn>
-          <Btn variant="primary" icon={<Sparkles size={14} />} onClick={startDraft}>Create Draft</Btn>
+          {draft && (
+            <Btn variant="ghost" icon={<Trash2 size={14} />} onClick={discardDraft} disabled={discardDraftAction.loading}
+              style={{ color: "var(--danger-text)" }}>
+              {discardDraftAction.loading ? "Deleting…" : "Delete Draft"}
+            </Btn>
+          )}
+          <Btn variant="primary" icon={<Sparkles size={14} />} onClick={startDraft}>{draft ? "Edit Draft" : "Create Draft"}</Btn>
         </div>
       </Card>
 
@@ -618,6 +634,15 @@ function TopupPlanSection({ onToast }: { onToast: (msg: string, variant?: ToastI
   async function confirmPublish() {
     if (!reason.trim()) return;
     if (!(await validateNow())) return;
+    // Publish only takes a reason -- it publishes whatever draft is already
+    // saved server-side, so on-screen edits that were never sent via
+    // "Save Draft" were silently lost (or publish 404'd with no draft to
+    // publish at all). Always sync the form first, then publish it.
+    const saved = await saveDraftAction.execute(form);
+    if (!saved) {
+      onToast(saveDraftAction.error ?? "Failed to save your changes before publishing.", "danger");
+      return;
+    }
     const r = await publishAction.execute(reason.trim());
     if (r) {
       setShowDrawer(false); setReason(""); currentApi.refetch(); draftApi.refetch();
@@ -643,7 +668,15 @@ function TopupPlanSection({ onToast }: { onToast: (msg: string, variant?: ToastI
           Provider Activation Requirement
           {draft && <Badge variant="warning">Draft v{draft.version_number} pending</Badge>}
         </p>
-        <Btn variant="ghost" size="sm" icon={<Sparkles size={14} />} onClick={startDraft}>Edit</Btn>
+        <div style={{ display: "flex", gap: 6 }}>
+          {draft && (
+            <Btn variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={discardDraft} disabled={discardDraftAction.loading}
+              style={{ color: "var(--danger-text)" }}>
+              {discardDraftAction.loading ? "Deleting…" : "Delete Draft"}
+            </Btn>
+          )}
+          <Btn variant="ghost" size="sm" icon={<Sparkles size={14} />} onClick={startDraft}>{draft ? "Edit Draft" : "Edit"}</Btn>
+        </div>
       </div>
 
       {nothingRequired ? (

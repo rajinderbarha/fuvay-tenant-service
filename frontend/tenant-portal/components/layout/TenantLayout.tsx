@@ -13,6 +13,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ArrowRight,
   CreditCard, Shield,
   MapPin, Clock, Star, Truck, Wallet, ListChecks,
+  Image, UserCog, Lock,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import { useTour } from "../../hooks/useTour";
@@ -106,7 +107,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Team",
     items: [
-      { id: "hs-team", href: "/home-services/team", label: "Team Members", icon: <Users2 size={16}/> },
+      { id: "hs-team", href: "/home-services/team", label: "Team Members", icon: <UserCog size={16}/> },
     ],
   },
   {
@@ -135,9 +136,9 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "More",
     items: [
-      { id: "media",        href: "/media",           label: "Media", icon: <FileText size={16}/> },
+      { id: "media",        href: "/media",           label: "Media", icon: <Image size={16}/> },
       { id: "reports",      href: "/reports",         label: "Reports", icon: <BarChart2 size={16}/> },
-      { id: "privacy",      href: "/account/privacy", label: "Privacy & Data", icon: <Shield size={16}/> },
+      { id: "privacy",      href: "/account/privacy", label: "Privacy & Data", icon: <Lock size={16}/> },
       { id: "activity",     href: "/activity",        label: "Activity", icon: <Activity size={16}/> },
       { id: "settings",     href: "/settings",        label: "Settings", icon: <Settings size={16}/> },
       { id: "help-support", href: "/help-support",    label: "Help & Support", icon: <HelpCircle size={16}/> },
