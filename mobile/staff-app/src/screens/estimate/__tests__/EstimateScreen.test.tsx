@@ -5,7 +5,7 @@ import { EstimateScreen } from "../EstimateScreen";
 import { EstimateDetailDTO } from "../../../services/estimate/types";
 
 jest.mock("../useEstimate");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 import { useEstimate } from "../useEstimate";
 import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
@@ -53,7 +53,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("EstimateScreen — loaded draft (spec sections 2, 5, 6)", () => {
@@ -139,7 +139,7 @@ describe("EstimateScreen — sent/read-only states (spec sections 15, 23)", () =
   });
 
   it("offline disables submission and shows the offline notice", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (useEstimate as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText("Offline")).toBeTruthy();

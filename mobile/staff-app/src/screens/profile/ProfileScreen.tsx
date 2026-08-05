@@ -31,7 +31,7 @@ type Props = NativeStackScreenProps<ProfileStackParamList, "ProfileHome">;
 export function ProfileScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const [signOutOpen, setSignOutOpen] = React.useState(false);
   const [signingOut, setSigningOut] = React.useState(false);
 
@@ -67,6 +67,22 @@ export function ProfileScreen({ navigation }: Props) {
 
   if (!data) return null;
 
+  // Mirrors the real backend rule (home_service_assignment/
+  // mobile_documents_service.py: DEFAULT_EXPIRY_WARNING_DAYS=30, verified
+  // docs only) rather than inventing a separate threshold -- missing/
+  // incomplete docs take priority over an expiry warning when both apply.
+  const isDocsIncomplete = data.readiness.missing.some(m => m.code === "DOCUMENTS_INCOMPLETE");
+  const expiringSoonCount = data.documents.filter(d => {
+    if (d.status !== "verified" || !d.expiry_date) return false;
+    const daysLeft = (new Date(d.expiry_date).getTime() - Date.now()) / 86_400_000;
+    return daysLeft >= 0 && daysLeft <= 30;
+  }).length;
+  const documentsTrailing = isDocsIncomplete
+    ? <AppText variant="caption" color="warning">Incomplete</AppText>
+    : expiringSoonCount > 0
+    ? <AppText variant="caption" color="warning">{expiringSoonCount} expiring</AppText>
+    : undefined;
+
   return (
     <SafeAreaScreen style={{ flex: 1, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.base }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: theme.spacing.base }}>
@@ -94,7 +110,7 @@ export function ProfileScreen({ navigation }: Props) {
           <SectionHeader title="Work account" />
           <Card padding="base">
             <ListRow title="Employment details" subtitle="Role, services and skills" trailing={<AppText variant="caption" color="tertiary">Read-only</AppText>} onPress={() => navigation.navigate("EmploymentDetails")} />
-            <ListRow title="Documents" subtitle="Identity and certification" trailing={data.readiness.missing.some(m => m.code === "DOCUMENTS_INCOMPLETE") ? <AppText variant="caption" color="warning">Incomplete</AppText> : undefined} onPress={() => navigation.navigate("Documents")} />
+            <ListRow title="Documents" subtitle="Identity and certification" trailing={documentsTrailing} onPress={() => navigation.navigate("Documents")} />
             <ListRow title="Availability preferences" subtitle="Working pattern and service radius" onPress={() => navigation.navigate("AvailabilityPreferences")} />
           </Card>
         </Section>

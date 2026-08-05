@@ -484,12 +484,17 @@ export default function MasterServicesPage() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   // Data
-  const summary = useApi(useCallback(() => catalogApi.getMasterServicesSummary(), []));
-  const categories = useApi(useCallback(() => catalogApi.listCategories(true), []));
+  // BUG FIX: useApi(fetcher, deps) needs deps passed to BOTH the inner
+  // useCallback AND useApi itself -- its own `run` callback was memoized
+  // with an empty/stale deps array, so category/group/filter changes never
+  // actually refetched (same pattern already fixed on other pages this
+  // session).
+  const summary = useApi(useCallback(() => catalogApi.getMasterServicesSummary(), []), []);
+  const categories = useApi(useCallback(() => catalogApi.listCategories(true), []), []);
   const allGroups = useApi(useCallback(
     () => catalogApi.listServiceGroups({ categoryId: categoryFilter || undefined }),
     [categoryFilter],
-  ));
+  ), [categoryFilter]);
   const services = useApi(useCallback(
     () => catalogApi.listMasterServicesEnterprise({
       q: q || undefined,
@@ -500,7 +505,7 @@ export default function MasterServicesPage() {
       isActive: isActiveFilter === "" ? undefined : isActiveFilter === "true",
     }),
     [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter],
-  ));
+  ), [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter]);
 
   const notify = (msg: string, ok = true) => {
     setToast({ msg, ok });

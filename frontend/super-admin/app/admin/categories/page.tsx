@@ -14,6 +14,7 @@ import {
   Settings2, Zap, DollarSign, Package, AlertCircle, CheckCircle,
   Clock, MinusCircle, XCircle, MoreVertical, MapPin, Calendar,
   Tag, FileText, TrendingUp, Users, ArrowUpDown, ChevronLeft, ChevronRight,
+  Trash2,
 } from "lucide-react";
 
 // ── Label Maps ────────────────────────────────────────────────────────────────
@@ -195,12 +196,13 @@ function LinkedCountsBadges({ counts }: { counts: EnterpriseCategory["linked_cou
   );
 }
 
-function ActionMenu({ cat, onEdit, onActivate, onDeactivate, onDelete }: {
+function ActionMenu({ cat, onEdit, onActivate, onDeactivate, onDelete, onHardDelete }: {
   cat: EnterpriseCategory;
   onEdit: () => void;
   onActivate: () => void;
   onDeactivate: () => void;
   onDelete: () => void;
+  onHardDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -254,6 +256,9 @@ function ActionMenu({ cat, onEdit, onActivate, onDeactivate, onDelete }: {
             : menuItem("Activate", <Power size={13}/>, onActivate)
           }
           {menuItem("Delete", <XCircle size={13}/>, onDelete, true)}
+          {cat.linked_counts.services === 0 && (
+            menuItem("Delete Permanently", <Trash2 size={13}/>, onHardDelete, true)
+          )}
         </div>
       )}
     </div>
@@ -558,6 +563,7 @@ export default function CategoriesPage() {
   const [editing, setEditing] = useState<EnterpriseCategory | null>(null);
   const [form, setForm] = useState<FormState>(BLANK);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [hardDeleteId, setHardDeleteId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [activeCard, setActiveCard] = useState<string | null>(null);
@@ -646,6 +652,11 @@ export default function CategoriesPage() {
   const deleteAction = useAction(useCallback(async (id: string) => {
     await catalogApi.deleteCategory(id);
     cats.refetch(); summary.refetch(); setDeleteId(null); notify("Category deleted.");
+  }, [cats, summary]));
+
+  const hardDeleteAction = useAction(useCallback(async (id: string) => {
+    await catalogApi.hardDeleteCategory(id);
+    cats.refetch(); summary.refetch(); setHardDeleteId(null); notify("Category permanently deleted.");
   }, [cats, summary]));
 
   // FINAL-L5-04: also refresh AdminLayout's sidebar effective-menu, since
@@ -999,6 +1010,7 @@ export default function CategoriesPage() {
                           onActivate={() => activateAction.execute(cat.category_id)}
                           onDeactivate={() => deactivateAction.execute(cat.category_id)}
                           onDelete={() => setDeleteId(cat.category_id)}
+                          onHardDelete={() => setHardDeleteId(cat.category_id)}
                         />
                       </div>
                     </td>
@@ -1062,6 +1074,26 @@ export default function CategoriesPage() {
           <Btn variant="danger" size="sm" loading={deleteAction.loading}
             onClick={() => deleteId && deleteAction.execute(deleteId)}>
             Delete
+          </Btn>
+        </div>
+      </Modal>
+
+      {/* Hard Delete Confirm -- only offered when linked_counts.services === 0
+          (same guard the backend itself enforces server-side; this is a
+          real, permanent row delete, not the deactivate-only "Delete" above,
+          previously built on the backend but never exposed in any UI). */}
+      <Modal open={hardDeleteId !== null} onClose={() => setHardDeleteId(null)} title="Delete Category Permanently">
+        <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 20px" }}>
+          This category has no master services linked to it, so it can be permanently removed. This cannot be undone.
+        </p>
+        {hardDeleteAction.error && (
+          <p style={{ fontSize: 13, color: "var(--danger-text)", margin: "0 0 12px" }}>{hardDeleteAction.error}</p>
+        )}
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Btn variant="ghost" size="sm" onClick={() => setHardDeleteId(null)}>Cancel</Btn>
+          <Btn variant="danger" size="sm" loading={hardDeleteAction.loading}
+            onClick={() => hardDeleteId && hardDeleteAction.execute(hardDeleteId)}>
+            Delete Permanently
           </Btn>
         </div>
       </Modal>

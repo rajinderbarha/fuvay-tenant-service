@@ -56,3 +56,7 @@ db/*.log.txt
 db/pg_log.txt
 db/pglog.txt
 frontend/super-admin/tsconfig.tsbuildinfo
+
+# Editor/shell temp artifacts (never source)
+*.stackdump
+*.tmp.*

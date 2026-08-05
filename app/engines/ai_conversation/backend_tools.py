@@ -6,7 +6,7 @@ import uuid
 from typing import Any
 
 import structlog
-from sqlalchemy import select, and_, desc, text
+from sqlalchemy import select, and_, desc, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger("ai_conversation.tools")
@@ -28,10 +28,18 @@ class BackendToolExecutor:
     }
 
     def __init__(self, db: AsyncSession, customer_id: uuid.UUID | None,
-                 session_id: str | None = None):
+                 session_id: str | None = None, zipcode: str | None = None):
         self.db          = db
         self.customer_id = customer_id
         self.session_id  = session_id
+        # The conversation's own known zipcode (session.context_data) --
+        # used to filter get_category_offerings to what's ACTUALLY
+        # serviceable there, not merely "published by some tenant
+        # somewhere." Confirmed live: "AC Service" is published by a
+        # different tenant (the old Ludhiana demo tenant), not the one
+        # covering 140412 -- without this filter it still surfaced as a
+        # bookable offering to a 140412 customer.
+        self.zipcode     = zipcode
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
         """Dispatch a tool call and return JSON string result."""
@@ -112,50 +120,35 @@ class BackendToolExecutor:
     async def _tool_get_category_offerings(
         self, category_slug: str, search: str | None = None
     ) -> dict:
-        """Return active offerings for a category from real DB."""
+        """Return active offerings for a category from real DB.
+
+        Was reading the `master_offerings` table -- a dead, permanently-empty
+        legacy table unrelated to the real catalog (MasterService, the same
+        table start_home_service_draft/offering_slug actually books against)
+        -- so this tool always returned zero offerings for every category,
+        every time, regardless of what was actually bookable. Also used raw
+        f-string SQL interpolation of `category_slug` (tool-call input, LLM-
+        and ultimately user-influenced) directly into `text()`, a real SQL
+        injection vector; replaced with parameterized ORM filters.
+        """
         try:
-            from app.engines.admin_catalog.models import ServiceCategory, MasterOffering
-
-            cat_q = select(ServiceCategory).where(
-                and_(
-                    ServiceCategory.is_active == True,
-                    ServiceCategory.is_customer_visible == True,
-                )
-            )
-            # Try slug match, then name match
-            cat = (await self.db.execute(
-                cat_q.where(text(f"lower(name) = '{category_slug.lower().replace('-', ' ')}'"))
-            )).scalars().first()
-
-            if not cat:
-                return {"offerings": [], "note": f"Category '{category_slug}' not found."}
-
-            q = select(MasterOffering).where(
-                and_(
-                    MasterOffering.category_id == cat.id,
-                    MasterOffering.is_active == True,
-                )
-            ).order_by(MasterOffering.name)
-
-            if search:
-                q = q.where(MasterOffering.name.ilike(f"%{search}%"))
-
-            rows = (await self.db.execute(q)).scalars().all()
-            return {
-                "category": cat.name,
-                "offerings": [
-                    {
-                        "id":          str(r.id),
-                        "name":        r.name,
-                        "description": r.description if hasattr(r, "description") else None,
-                        "type":        r.customer_flow_type if hasattr(r, "customer_flow_type") else None,
-                        "requires_address": r.requires_address if hasattr(r, "requires_address") else False,
-                        "requires_slot":    r.requires_slot if hasattr(r, "requires_slot") else False,
-                    }
-                    for r in rows
-                ],
-                "total": len(rows),
-            }
+            # Shared with the backend-first assistant-bootstrap endpoint
+            # (offering_catalog_service.list_serviceable_offerings) -- same
+            # zipcode-aware "real published tenant actually covers this
+            # exact zipcode" query, so a customer never sees an offering
+            # here in chat that the deterministic bootstrap would exclude,
+            # or vice versa. Confirmed live: "AC Service" is published by a
+            # real tenant, but that tenant's only service area is a
+            # different city entirely -- without the zipcode filter it
+            # still surfaced as bookable to a 140412 customer.
+            from app.engines.home_service_booking.offering_catalog_service import list_serviceable_offerings
+            result = await list_serviceable_offerings(self.db, category_slug, self.zipcode)
+            if search and result.get("offerings"):
+                needle = search.lower()
+                result = {**result, "offerings": [o for o in result["offerings"] if needle in (o["name"] or "").lower()]}
+                result["total"] = len(result["offerings"])
+            result.pop("category_id", None)
+            return result
         except Exception as exc:
             logger.warning("backend_tools.offerings_failed", error=str(exc))
             return {
@@ -258,6 +251,29 @@ class BackendToolExecutor:
                 "message":   f"We operate in major cities across India including {city}.",
             }
 
+    # Fields the deterministic question-flow's tap-select cards collect
+    # (brand/type CatalogQuestions -> question_flow_service._bridge_to_draft_
+    # columns) -- these must never appear as something DeepSeek asks about
+    # in plain chat text, even while still empty.
+    _CHAT_UNASKABLE_FIELDS = {"offering_type_id", "brand_id"}
+
+    @staticmethod
+    def _still_needed(draft_dict: dict) -> list[str]:
+        """Diff `required_fields` (static, offering-driven) against the
+        draft's own current values to get the genuinely-empty subset that
+        DeepSeek may actually ask about via chat."""
+        value_by_field = {
+            "issue_summary":   draft_dict.get("issue_summary"),
+            "city":            draft_dict.get("city"),
+            "offering_type_id": draft_dict.get("offering_type_id"),
+            "brand_id":        draft_dict.get("brand_id"),
+            "preferred_date":  draft_dict.get("preferred_date"),
+        }
+        return [
+            f for f in draft_dict.get("required_fields", [])
+            if not value_by_field.get(f) and f not in BackendToolExecutor._CHAT_UNASKABLE_FIELDS
+        ]
+
     # ── Sprint 16 — Home Service Booking Draft tools ─────────────────────────
 
     async def _tool_start_home_service_draft(
@@ -283,13 +299,36 @@ class BackendToolExecutor:
                 category_slug=category_slug,
                 offering_slug=offering_slug,
             )
+            # The real problems list is returned in THIS SAME response
+            # (not a separate get_service_problems call DeepSeek has to
+            # remember to make) -- confirmed live that DeepSeek's own tool-
+            # chaining is inconsistent turn to turn: it sometimes narrates
+            # "which brand?" in plain chat text instead of calling
+            # get_service_problems + update_home_service_draft, which
+            # means job_type_id never resolves and the tap-select question
+            # cards can never appear, forcing the customer to type
+            # everything. Collapsing this into one guaranteed round trip
+            # removes an entire step DeepSeek could skip.
+            problems = await self._tool_get_service_problems(draft_id=result["id"])
             return {
                 "draft_id":        result["id"],
                 "offering_name":   result.get("offering_name"),
-                "required_fields": result.get("required_fields", []),
+                # `required_fields` lists every field this offering could
+                # ever need; several (city) are commonly already auto-filled
+                # from the customer's saved address at draft-creation time
+                # (see start_booking_draft) -- only pass the STILL-EMPTY
+                # ones through, so DeepSeek never re-asks something the
+                # backend already knows.
+                "still_needed":    self._still_needed(result),
                 "pricing_model":   result.get("pricing_model"),
                 "draft_status":    result.get("status"),
-                "message":         f"Booking draft started for {result.get('offering_name')}. I need to collect a few details.",
+                "problems":        problems.get("problems", []),
+                "message": (
+                    f"Booking draft started for {result.get('offering_name')}. "
+                    "Match the customer's issue to one of the `problems` above and immediately "
+                    "call update_home_service_draft with selected_problem_id set to it -- "
+                    "do NOT ask about brand/type yourself, the app shows tap-select cards for those."
+                ),
             }
         except Exception as exc:
             logger.warning("backend_tools.start_draft_failed", error=str(exc))
@@ -312,18 +351,86 @@ class BackendToolExecutor:
                 draft_id=_uuid.UUID(draft_id),
                 customer_id=self.customer_id,
             )
-            return {
+            response = {
                 "draft_status":    result.get("status"),
-                "missing_fields":  result.get("required_fields", []),
+                # Was `result.get("required_fields", [])` -- the STATIC list
+                # of everything this offering could ever need, regardless of
+                # whether it's already filled (e.g. always included "city"
+                # even once auto-filled from the customer's address), so
+                # DeepSeek kept re-asking for data the backend already had.
+                "missing_fields":  self._still_needed(result),
                 "serviceability":  result.get("serviceability_status"),
                 "price_status":    result.get("price_status"),
                 "issue_summary":   result.get("issue_summary"),
                 "city":            result.get("city"),
                 "zipcode":         result.get("zipcode"),
             }
+            # Same fix as start_home_service_draft: an OLDER, already-
+            # existing draft (this conversation continuing rather than
+            # just starting one) never got the merged `problems` list --
+            # DeepSeek would call this status tool instead and see no way
+            # to resolve the problem/job type at all, permanently falling
+            # back to asking everything in plain chat text. If no problem
+            # has been selected yet, surface the same real problems list
+            # here too, with the same explicit instruction.
+            if not result.get("job_type_id"):
+                problems = await self._tool_get_service_problems(draft_id=draft_id)
+                response["problems"] = problems.get("problems", [])
+                if response["problems"]:
+                    response["message"] = (
+                        "No problem selected yet. Match the customer's issue to one of `problems` "
+                        "and immediately call update_home_service_draft with selected_problem_id set "
+                        "to it -- do not ask about brand/type yourself, tap-select cards handle those."
+                    )
+            return response
         except Exception as exc:
             logger.warning("backend_tools.get_draft_status_failed", error=str(exc))
             return {"error": "Unable to retrieve booking status.", "draft_status": None}
+
+    async def _tool_get_service_problems(
+        self,
+        draft_id: str,
+    ) -> dict:
+        """
+        Real, admin-defined problem/issue list for a draft's master service
+        (ServiceIssueMapping -> MasterIssueType). Selecting one of these ids
+        as selected_problem_id is what resolves the job type and unlocks the
+        deterministic follow-up questions -- DeepSeek has no other way to do
+        this, it must never guess a problem id.
+        """
+        try:
+            import uuid as _uuid
+            from app.engines.home_service_booking.models import HomeServiceBookingDraft
+            from app.engines.admin_catalog.models import ServiceIssueMapping, MasterIssueType
+
+            draft = await self.db.get(HomeServiceBookingDraft, _uuid.UUID(draft_id))
+            if not draft:
+                return {"error": "Draft not found", "problems": []}
+
+            rows = (await self.db.execute(
+                select(MasterIssueType.id, MasterIssueType.name, MasterIssueType.description)
+                .join(ServiceIssueMapping, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
+                .where(
+                    ServiceIssueMapping.master_service_id == draft.offering_id,
+                    ServiceIssueMapping.status == "active",
+                    ServiceIssueMapping.customer_visible == True,  # noqa: E712
+                    MasterIssueType.is_active == True,  # noqa: E712
+                )
+                .order_by(ServiceIssueMapping.display_order)
+            )).all()
+            return {
+                "problems": [
+                    {"id": str(r.id), "name": r.name, "description": r.description} for r in rows
+                ],
+                "instruction": (
+                    "As soon as you know which of these matches the customer's issue, call "
+                    "update_home_service_draft NOW with selected_problem_id set to its id "
+                    "(same turn if possible) -- do not just say you matched it in text."
+                ) if rows else None,
+            }
+        except Exception as exc:
+            logger.warning("backend_tools.get_service_problems_failed", error=str(exc))
+            return {"error": "Unable to retrieve problem list.", "problems": []}
 
     async def _tool_update_home_service_draft(
         self,
@@ -346,10 +453,18 @@ class BackendToolExecutor:
                 payload=fields,
             )
             return {
-                "draft_status":   result.get("status"),
-                "missing_fields": result.get("required_fields", []),
-                "updated":        True,
-                "message":        "Fields saved. Collecting remaining details.",
+                "draft_status":  result.get("status"),
+                # Was `result.get("required_fields", [])` -- the same
+                # static-list-not-diffed bug already fixed on the other two
+                # tools, missed here. This is the tool DeepSeek calls most
+                # often (every field update), so its `still_needed` is what
+                # actually drives the date-quick-replies detection in
+                # send_message -- with the old key/value this NEVER
+                # triggered, silently leaving "preferred_date" as a typed-
+                # only field forever.
+                "still_needed":  self._still_needed(result),
+                "updated":       True,
+                "message":       "Fields saved. Collecting remaining details.",
             }
         except Exception as exc:
             logger.warning("backend_tools.update_draft_failed", error=str(exc))

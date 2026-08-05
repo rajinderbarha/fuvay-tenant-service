@@ -1,0 +1,12 @@
+import React from "react";
+import { render, waitFor } from "@testing-library/react-native";
+import App from "../App";
+
+describe("App entry", () => {
+  it("renders the provider composition and navigation shell without crashing, reaching the real Login screen", async () => {
+    const { getByText } = render(<App />);
+    // Bootstrap resolves once session restoration completes (Phase F);
+    // with no stored session, this always lands on LoginMethodScreen.
+    await waitFor(() => expect(getByText("Welcome to Fuvay")).toBeTruthy());
+  });
+});

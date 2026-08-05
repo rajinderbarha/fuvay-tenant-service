@@ -6,7 +6,7 @@ import {
   StatusBadge as DsStatusBadge, Alert,
 } from "@serviceos/design-system";
 import {
-  settingsApi, complianceApi, securityApi,
+  settingsApi, complianceApi, securityApi, workspaceSettingsApi,
   type SettingEntry, type Webhook, type WebhookDelivery,
   type ConsentCheck, type DeletionRequestResult, type ExportRequestResult,
   type SecurityApiKey, type SecurityApiKeyCreated, type IpBlockCheck,
@@ -32,7 +32,20 @@ const ACTIVITY_TYPES = [
 ] as const;
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<"general"|"webhooks"|"deliveries"|"privacy"|"security">("general");
+  const [tab, setTab] = useState<"workspace"|"team"|"activity"|"general"|"webhooks"|"deliveries"|"privacy"|"security">("workspace");
+
+  // Workspace settings (real: identity, regional prefs, business hours,
+  // controlled policy -- see workspace_settings_service.py)
+  const workspaceGeneral = useApi(() => workspaceSettingsApi.getGeneral(), []);
+  const teamAccess = useApi(() => workspaceSettingsApi.getTeamAccess(), []);
+  const wsActivity = useApi(() => workspaceSettingsApi.getActivity(30), []);
+  const [wsEdits, setWsEdits] = useState<Record<string, string>>({});
+  const wsSaveAction = useAction(async () => {
+    await workspaceSettingsApi.updateGeneral(wsEdits, workspaceGeneral.data?.configuration_version ?? null);
+    setWsEdits({});
+    await workspaceGeneral.refetch();
+    notify("Workspace settings saved.");
+  });
 
   // General settings
   const settings = useApi(() => settingsApi.get(), []);
@@ -182,11 +195,14 @@ export default function SettingsPage() {
   });
 
   const TABS = [
-    { id:"general",   label:"General Settings" },
-    { id:"webhooks",  label:"Webhooks"         },
+    { id:"workspace", label:"General"          },
+    { id:"team",      label:"Team & Access"    },
+    { id:"activity",  label:"Activity & Audit" },
+    { id:"security",  label:"Security"         },
+    { id:"webhooks",  label:"Integrations"     },
     { id:"deliveries",label:"Delivery Log"     },
     { id:"privacy",   label:"Privacy & Data"   },
-    { id:"security",  label:"Security"         },
+    { id:"general",   label:"Advanced"         },
   ] as const;
 
   return (
@@ -210,7 +226,191 @@ export default function SettingsPage() {
           ))}
         </div>
 
-        {/* GENERAL */}
+        {/* WORKSPACE (General) -- real Tenant/TenantSettings/business-hours/
+            controlled-policy data via workspace_settings_service.py, which
+            existed fully written but had no router until this pass. */}
+        {tab === "workspace" && (
+          workspaceGeneral.loading || !workspaceGeneral.data ? (
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {[...Array(6)].map((_,i) => <Skeleton key={i} height="2.75rem" />)}
+            </div>
+          ) : (
+            <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:16 }} className="ws-grid">
+              <style>{`@media (max-width: 900px) { .ws-grid { grid-template-columns: 1fr !important; } }`}</style>
+              <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+                <Card>
+                  <p style={{ fontWeight:700, margin:"0 0 12px" }}>Workspace identity</p>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px,1fr))", gap:14 }}>
+                    {(workspaceGeneral.data.identity ?? []).map((f: { key: string; label: string; value: unknown; editable: boolean }) => (
+                      <div key={f.key}>
+                        <label style={{ display:"block", fontSize:11, color:"var(--text-tertiary)", marginBottom:4 }}>{f.label}</label>
+                        {f.editable ? (
+                          <Input value={wsEdits[f.key] ?? String(f.value ?? "")}
+                            onChange={e => setWsEdits(p => ({ ...p, [f.key]: e.target.value }))} />
+                        ) : (
+                          <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 0", fontSize:13, color:"var(--text-secondary)" }}>
+                            {String(f.value ?? "—")}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                <Card>
+                  <p style={{ fontWeight:700, margin:"0 0 12px" }}>Regional preferences</p>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px,1fr))", gap:14 }}>
+                    {(workspaceGeneral.data.regional ?? []).map((f: { key: string; label: string; value: unknown; editable: boolean; help_text?: string }) => (
+                      <div key={f.key}>
+                        <label style={{ display:"block", fontSize:11, color:"var(--text-tertiary)", marginBottom:4 }}>{f.label}</label>
+                        {f.editable ? (
+                          <Input value={wsEdits[f.key] ?? String(f.value ?? "")}
+                            onChange={e => setWsEdits(p => ({ ...p, [f.key]: e.target.value }))} />
+                        ) : (
+                          <div style={{ padding:"8px 0", fontSize:13, color:"var(--text-secondary)" }}>{String(f.value ?? "—")}</div>
+                        )}
+                        {f.help_text && <p style={{ fontSize:10.5, color:"var(--text-tertiary)", margin:"2px 0 0" }}>{f.help_text}</p>}
+                      </div>
+                    ))}
+                  </div>
+                  {Object.keys(wsEdits).length > 0 && (
+                    <div style={{ marginTop:14, display:"flex", gap:8 }}>
+                      <Button size="sm" onClick={wsSaveAction.execute} loading={wsSaveAction.loading}>Save changes</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setWsEdits({})}>Discard</Button>
+                    </div>
+                  )}
+                </Card>
+
+                <Card>
+                  <p style={{ fontWeight:700, margin:"0 0 4px" }}>Business hours</p>
+                  <p style={{ fontSize:11.5, color:"var(--text-tertiary)", margin:"0 0 12px" }}>{workspaceGeneral.data.business_hours_note}</p>
+                  <div style={{ overflowX:"auto" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                      <thead>
+                        <tr>
+                          {(workspaceGeneral.data.business_hours ?? []).map((d: { day: string }) => (
+                            <th key={d.day} style={{ padding:"6px 8px", fontSize:11, color:"var(--text-tertiary)", textTransform:"uppercase", borderBottom:"1px solid var(--border)" }}>{d.day}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          {(workspaceGeneral.data.business_hours ?? []).map((d: { day: string; is_open: boolean; start_time: string | null; end_time: string | null }) => (
+                            <td key={d.day} style={{ padding:"8px", fontSize:12, textAlign:"center", color: d.is_open ? "var(--text-primary)" : "var(--text-tertiary)" }}>
+                              {d.is_open ? `${d.start_time} – ${d.end_time}` : "Closed"}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"10px 0 0" }}>
+                    Edited from Availability, not here — see <code>/home-services/availability</code>.
+                  </p>
+                </Card>
+
+                <Card>
+                  <p style={{ fontWeight:700, margin:"0 0 12px" }}>Platform-controlled policy</p>
+                  {(workspaceGeneral.data.controlled_policy ?? []).map((p: { key: string; label: string; effective_value: string; explanation: string }, i: number, arr: unknown[]) => (
+                    <div key={p.key} style={{ padding:"10px 0", borderBottom: i < arr.length-1 ? "1px solid var(--border)" : "none" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:2 }}>
+                        <span style={{ fontSize:13, fontWeight:600 }}>{p.label}</span>
+                        <span style={{ fontSize:13, color:"var(--brand)", fontWeight:600 }}>{p.effective_value}</span>
+                      </div>
+                      <p style={{ fontSize:11.5, color:"var(--text-tertiary)", margin:0 }}>{p.explanation}</p>
+                    </div>
+                  ))}
+                </Card>
+              </div>
+
+              <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+                <Card>
+                  <p style={{ fontWeight:700, margin:"0 0 12px" }}>Configuration ownership</p>
+                  {[
+                    { label:"Tenant controlled", desc:"You can edit these settings.", tone:"success" },
+                    { label:"ServiceOS controlled", desc:"These are platform rules.", tone:"info" },
+                    { label:"Admin policy", desc:"Set by ServiceOS administrators.", tone:"warning" },
+                  ].map(o => (
+                    <div key={o.label} style={{ display:"flex", gap:10, marginBottom:12 }}>
+                      <div style={{ width:8, height:8, borderRadius:"50%", background:`var(--${o.tone}-text)`, marginTop:5, flexShrink:0 }} />
+                      <div>
+                        <p style={{ fontSize:13, fontWeight:600, margin:0 }}>{o.label}</p>
+                        <p style={{ fontSize:11.5, color:"var(--text-tertiary)", margin:"2px 0 0" }}>{o.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </Card>
+                <Card>
+                  <p style={{ fontWeight:700, margin:"0 0 10px" }}>Workspace status</p>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                    <DsStatusBadge status={workspaceGeneral.data.workspace_status === "active" ? "active" : "inactive"}/>
+                  </div>
+                  <p style={{ fontSize:11.5, color:"var(--text-tertiary)", margin:0 }}>
+                    Last updated {workspaceGeneral.data.last_updated_at ? new Date(workspaceGeneral.data.last_updated_at).toLocaleString() : "—"}
+                  </p>
+                </Card>
+              </div>
+            </div>
+          )
+        )}
+
+        {/* TEAM & ACCESS -- real owner + active staff/technicians roster */}
+        {tab === "team" && (
+          teamAccess.loading || !teamAccess.data ? (
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {[...Array(4)].map((_,i) => <Skeleton key={i} height="2.75rem" />)}
+            </div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+              <Card>
+                <p style={{ fontWeight:700, margin:"0 0 10px" }}>Owner</p>
+                {teamAccess.data.owner ? (
+                  <p style={{ fontSize:13, margin:0 }}>{teamAccess.data.owner.full_name} · {teamAccess.data.owner.email}</p>
+                ) : <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No owner on record.</p>}
+              </Card>
+              {[
+                { key:"active_managers", label:"Managers" },
+                { key:"active_staff", label:"Staff" },
+                { key:"active_technicians", label:"Technicians" },
+              ].map(g => (
+                <Card key={g.key}>
+                  <p style={{ fontWeight:700, margin:"0 0 10px" }}>{g.label} ({(teamAccess.data[g.key] ?? []).length})</p>
+                  {(teamAccess.data[g.key] ?? []).length === 0 ? (
+                    <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>None.</p>
+                  ) : (teamAccess.data[g.key] as Array<{ id: string; full_name: string }>).map(m => (
+                    <p key={m.id} style={{ fontSize:13, margin:"4px 0" }}>{m.full_name}</p>
+                  ))}
+                </Card>
+              ))}
+              <p style={{ fontSize:11.5, color:"var(--text-tertiary)" }}>{teamAccess.data.pending_invitations_note}</p>
+            </div>
+          )
+        )}
+
+        {/* ACTIVITY & AUDIT -- real platform_audit_logs projection */}
+        {tab === "activity" && (
+          wsActivity.loading || !wsActivity.data ? (
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {[...Array(6)].map((_,i) => <Skeleton key={i} height="2.75rem" />)}
+            </div>
+          ) : (
+            <Card padding="none">
+              {(wsActivity.data.items ?? []).length === 0 ? (
+                <p style={{ padding:24, textAlign:"center", color:"var(--text-tertiary)", fontSize:13, margin:0 }}>No workspace activity recorded yet.</p>
+              ) : (wsActivity.data.items as Array<{ id: string; operation: string; actor_name: string; created_at: string }>).map((a, i, arr) => (
+                <div key={a.id} style={{ display:"flex", justifyContent:"space-between", padding:"12px 20px", borderBottom: i < arr.length-1 ? "1px solid var(--border)" : "none" }}>
+                  <div>
+                    <p style={{ fontSize:13, fontWeight:600, margin:0 }}>{a.operation.replace(/_/g," ").replace(/\./g," · ")}</p>
+                    <p style={{ fontSize:11.5, color:"var(--text-tertiary)", margin:"2px 0 0" }}>by {a.actor_name}</p>
+                  </div>
+                  <span style={{ fontSize:11.5, color:"var(--text-tertiary)", whiteSpace:"nowrap" }}>{new Date(a.created_at).toLocaleString()}</span>
+                </div>
+              ))}
+            </Card>
+          )
+        )}
+
+        {/* ADVANCED (legacy General Settings key/value table) */}
         {tab === "general" && (
           settings.loading ? (
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
@@ -231,7 +431,7 @@ export default function SettingsPage() {
                   <tbody>
                     {(settings.data?.settings ?? []).map((s: SettingEntry, i: number) => (
                       <tr key={s.key} style={{
-                        borderBottom: i < (settings.data?.settings.length ?? 0)-1 ? "1px solid var(--border)" : "none",
+                        borderBottom: i < (settings.data?.settings?.length ?? 0)-1 ? "1px solid var(--border)" : "none",
                         background: s.is_override ? "rgba(16,185,129,0.05)" : "transparent",
                       }}>
                         <td style={{ padding:"11px 16px", fontSize:12, fontWeight:600, fontFamily:"monospace" }}>{s.key}</td>

@@ -41,10 +41,17 @@ export const CUSTOMER_ONE = { email: 'customer@serviceos.in', password: 'Passwor
 export const CUSTOMER_TWO = { email: 'customer2@serviceos.in', password: 'Password123!' };
 
 export const SEED = {
-  categorySlug: 'home_services',
-  offeringSlug: 'ac_repair',
+  // NOTE: re-pointed to the current live catalog (Final Phase E2E audit,
+  // 2026-08-02) -- the category slug is 'air-conditioning' today, not
+  // 'home_services' (that string is the tenant VERTICAL key, a different
+  // concept from the catalog category slug), and 'ac_repair' no longer
+  // exists as an offering slug (today's active offerings are ac-service /
+  // ac-gas-refilling / ac-installation). Test-fixture drift, not an
+  // application bug -- verify against the live DB if these ever drift again.
+  categorySlug: 'air-conditioning',
+  offeringSlug: 'ac-service',
   offeringTypeId: 'c86dfcf3-53bd-4d83-bf0b-51257f382652', // Split AC
-  brandId: '64a3b25f-23aa-4639-8baf-f67def0f60db', // LG
+  brandId: 'a8efc47f-d639-4cf6-a2eb-808f73cad28c', // LG
   city: 'Ludhiana',
   zipcode: '141001',
   issueSummary: 'Not Cooling',

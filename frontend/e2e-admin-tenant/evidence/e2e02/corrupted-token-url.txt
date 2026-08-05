@@ -1,12 +1,25 @@
-http://localhost:3000/login
-S
+http://localhost:3000/admin/dashboard
+Skip to main content
+
 ServiceOS
 
-Super Admin Portal
+SUPER ADMIN
 
-Sign in to continue
-Email Address
-Password
-Sign in →
+OVERVIEW
 
-Secured by ServiceOS Auth Engine · JWT + TOTP
+Dashboard
+All Systems Live
+
+Super Admin
+
+PLATFORM
+
+SA
+Dashboard / Platform Overview
+Platform Command Center
+
+Monitor ServiceOS health, tenants, operations, finance, trust, compliance, and system engines in real time.
+
+Refresh
+Create Report
+Open

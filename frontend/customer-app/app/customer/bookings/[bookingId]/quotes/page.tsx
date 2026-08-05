@@ -9,7 +9,7 @@
  *
  * Reached from the booking detail with the job id: /customer/bookings/{id}/quotes?job_id=…
  */
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import ErrorBanner from "../../../../../components/ErrorBanner";
 import {
@@ -31,7 +31,7 @@ function statusColor(s: string): string {
 const money = (v?: string | null, ccy?: string | null) =>
   v == null ? "—" : `${ccy ?? "₹"}${Number(v).toLocaleString()}`;
 
-export default function CustomerQuotesPage() {
+function CustomerQuotesPageInner() {
   const params = useParams();
   const search = useSearchParams();
   const router = useRouter();
@@ -166,5 +166,19 @@ export default function CustomerQuotesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Real build failure fixed here: this page calls `useSearchParams()`, which
+ * Next.js requires to sit inside a Suspense boundary. Without one, static
+ * prerendering threw "useSearchParams() should be wrapped in a suspense
+ * boundary" and FAILED THE WHOLE PRODUCTION BUILD.
+ */
+export default function CustomerQuotesPage() {
+  return (
+    <Suspense fallback={null}>
+      <CustomerQuotesPageInner />
+    </Suspense>
   );
 }

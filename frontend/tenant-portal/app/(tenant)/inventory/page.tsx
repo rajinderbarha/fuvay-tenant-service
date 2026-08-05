@@ -309,7 +309,7 @@ export default function InventoryPage() {
                 borderRadius:"var(--radius-lg)", padding:"16px 18px", marginBottom:20 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
                   <h3 style={{ margin:0, fontSize:14, fontWeight:600, color:"var(--text-primary)" }}>
-                    Draft items awaiting review ({drafts.data?.items.length})
+                    Draft items awaiting review ({drafts.data?.items?.length})
                   </h3>
                   <button onClick={handlePublishAllDrafts} disabled={uploading}
                     style={{ padding:"6px 14px", borderRadius:"var(--radius-md)", border:"none",
@@ -319,7 +319,7 @@ export default function InventoryPage() {
                   </button>
                 </div>
                 <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  {drafts.data?.items.map(d => {
+                  {drafts.data?.items?.map(d => {
                     const busy = !!draftBusy[d.item_id];
                     return (
                       <div key={d.item_id} style={{ display:"flex", justifyContent:"space-between",
@@ -360,7 +360,7 @@ export default function InventoryPage() {
                 Publish/Delete on the row itself (outside the modal) for
                 quick access without opening it. */}
             {openDraftModalId && (() => {
-              const d = drafts.data?.items.find(x => x.item_id === openDraftModalId);
+              const d = drafts.data?.items?.find(x => x.item_id === openDraftModalId);
               if (!d) return null;
               const busy = !!draftBusy[d.item_id];
               const patch = editingDraft[d.item_id] ?? {};

@@ -196,6 +196,9 @@ ERR_PARTS_REQUEST_NOT_FOUND   = "PARTS_REQUEST_NOT_FOUND"
 ERR_PARTS_ALREADY_DECIDED     = "PARTS_REQUEST_ALREADY_DECIDED"
 ERR_PARTS_NOT_APPROVED        = "PARTS_REQUEST_NOT_APPROVED"
 ERR_PARTS_REJECTED_CANNOT_INSTALL = "PARTS_REQUEST_REJECTED_CANNOT_INSTALL"
+# PARTS-APPROVAL phase -- a customer tried to decide on a request whose
+# `customer_approval_required` flag is false (business-only decision).
+ERR_PARTS_CUSTOMER_DECISION_NOT_ALLOWED = "PARTS_REQUEST_CUSTOMER_DECISION_NOT_ALLOWED"
 
 # ── HS8B — Single Validated Completion Action ────────────────────────────────
 JS_COMPLETED = "completed"

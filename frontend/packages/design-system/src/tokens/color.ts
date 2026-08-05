@@ -45,8 +45,8 @@ export const colorVar = {
 // Chart series colors — literal hex needed for canvas/SVG libs that can't read
 // CSS vars per-datapoint reliably. Kept in one place, distinct light/dark sets.
 export const chartPalette = {
-  light: ["#F2994A", "#FFB45C", "#16A34A", "#0891B2", "#DC2626", "#7C3AED", "#DB2777", "#65A30D"],
-  dark: ["#F2994A", "#FFB45C", "#4ADE80", "#22D3EE", "#F87171", "#A78BFA", "#F472B6", "#A3E635"],
+  light: ["#3B6FED", "#5B8DEF", "#16A34A", "#0891B2", "#DC2626", "#7C3AED", "#DB2777", "#65A30D"],
+  dark: ["#3B6FED", "#5B8DEF", "#4ADE80", "#22D3EE", "#F87171", "#A78BFA", "#F472B6", "#A3E635"],
 } as const;
 
 export type ThemeMode = "light" | "dark";

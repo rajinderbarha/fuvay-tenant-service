@@ -243,8 +243,14 @@ class ComplianceService:
             if user:
                 user.email    = f"deleted_{user_id}@erasure.invalid"
                 user.full_name = "Deleted User"
-                if hasattr(user, "phone_number"):
-                    user.phone_number = None
+                # BUG FIX (Privacy & Data phase): the real column is `phone`
+                # (confirmed in `app/engines/auth/models.py`), not
+                # `phone_number` -- this hasattr check always evaluated
+                # False, so a completed erasure never actually cleared the
+                # customer's phone number despite `tables_erased` claiming
+                # "users" was fully anonymized.
+                if hasattr(user, "phone"):
+                    user.phone = None
                 erased.append("users")
         except Exception as e:
             logger.warning("compliance.erase_user_failed", error=str(e))

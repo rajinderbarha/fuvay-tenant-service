@@ -70,7 +70,7 @@ export default function PackagesPage() {
 
   // Legacy Razorpay purchase (home services credit top-ups)
   const legacyPurchaseAction = useAction(async (pkg: CreditPackage) => {
-    const order = await financeApi.initiateWalletPurchase(pkg.id);
+    const order = await financeApi.initiateWalletPurchase(pkg.package_id);
     const key = order.key ?? RAZORPAY_KEY;
     if (!key) throw new Error("Razorpay key not configured. Contact support.");
     const result = await rzp.open({
@@ -82,7 +82,7 @@ export default function PackagesPage() {
       description: `Purchase ${pkg.name}`,
     });
     await financeApi.confirmWalletPurchase(
-      result.razorpay_order_id, result.razorpay_payment_id, result.razorpay_signature, pkg.id,
+      result.razorpay_order_id, result.razorpay_payment_id, result.razorpay_signature, pkg.package_id,
     );
     wallet.refetch();
     usageCredits.refetch();
@@ -333,7 +333,7 @@ export default function PackagesPage() {
               ) : (
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:14 }}>
                   {(legacyPkgs.data?.packages ?? []).filter(p => p.is_active).map(pkg => (
-                    <Card key={pkg.id} padding={20}
+                    <Card key={pkg.package_id} padding={20}
                       style={{ border:"1px solid var(--border)", display:"flex", flexDirection:"column" }}>
                       <p style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:"0 0 6px" }}>
                         {pkg.name}
@@ -342,10 +342,10 @@ export default function PackagesPage() {
                         ₹{(pkg.price_inr ?? 0).toFixed(0)}
                       </p>
                       <p style={{ fontSize:12, color:"var(--text-secondary)", margin:"0 0 14px" }}>
-                        {(pkg.credits ?? 0).toLocaleString()} credits
-                        {(pkg.bonus_credits ?? 0) > 0 && (
+                        {(pkg.credits_amount ?? 0).toLocaleString()} credits
+                        {(pkg.bonus_pct ?? 0) > 0 && (
                           <span style={{ color:"var(--success-text)", fontWeight:600 }}>
-                            {" "}+{pkg.bonus_credits} bonus
+                            {" "}+{pkg.bonus_pct}% bonus ({pkg.total_credits} total)
                           </span>
                         )}
                       </p>

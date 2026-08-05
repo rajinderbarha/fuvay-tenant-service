@@ -414,6 +414,31 @@ class TestHomeServiceFinalCreation:
         with pytest.raises(ValueError, match=ERR_DRAFT_NOT_READY):
             await svc.finalize(draft.id)
 
+    @pytest.mark.asyncio
+    async def test_finalize_rejects_cross_customer_confirmation(self):
+        """A customer must never be able to confirm another customer's
+        draft into a real ServiceBooking/ServiceJob -- this was previously
+        only asserted as a constants-existence check (ERR_ACCESS_DENIED
+        being a non-None string), never actually exercised against
+        finalize() itself with a mismatched customer_id."""
+        from app.engines.final_records.creation_service import HomeServiceFinalCreationService
+        from app.engines.final_records.constants import ERR_ACCESS_DENIED
+        draft = _make_hs_draft()  # owned by draft.customer_id
+        attacker_id = uuid.uuid4()
+        db = AsyncMock()
+        draft_res = MagicMock(); draft_res.scalars.return_value.first.return_value = draft
+        db.execute = AsyncMock(return_value=draft_res)
+        db.flush   = AsyncMock()
+
+        lock_svc = AsyncMock()
+        lock_svc.check_and_raise_if_duplicate = AsyncMock(return_value=None)
+
+        svc      = HomeServiceFinalCreationService(db=db)
+        svc.lock = lock_svc
+
+        with pytest.raises(ValueError, match=ERR_ACCESS_DENIED):
+            await svc.finalize(draft.id, customer_id=attacker_id)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. Coaching FinalCreationService

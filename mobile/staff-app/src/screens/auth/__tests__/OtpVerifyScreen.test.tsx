@@ -4,7 +4,7 @@ import { ThemeProvider } from "../../../design-system/themes";
 import { OtpVerifyScreen } from "../OtpVerifyScreen";
 
 jest.mock("../../../services/auth/authApi");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: () => "online" }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: () => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" }) }));
 
 const mockEstablishSession = jest.fn().mockResolvedValue(undefined);
 jest.mock("../../../navigation/session/SessionProvider", () => ({

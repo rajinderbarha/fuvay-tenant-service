@@ -150,9 +150,36 @@ export const TENANT_PROVIDER_PATH_TO_NAV_ID: Record<string, string> = {
   "subscription-status": "finance-package",
 };
 
+/**
+ * NOTE on where the sidebar actually comes from.
+ *
+ * The rendered sidebar is `NAV_GROUPS` inside
+ * components/layout/TenantLayout.tsx -- NOT the groups in this file. This
+ * module only resolves the ACTIVE nav id for highlighting.
+ *
+ * That split is how the Home Services workspaces ended up unreachable:
+ * routes were added and this config was updated, but the sidebar, which is
+ * the thing users click, was never touched. Any new nav entry must be added
+ * to TenantLayout's NAV_GROUPS, and its id mapped here so the highlight
+ * follows. Keep the ids in the two files identical.
+ */
 export function resolveTenantNavId(pathname: string): string {
   const segs = pathname.split("/").filter(Boolean);
   const section = segs[0] ?? "dashboard";
+
+  // Home Services workspaces are two-segment routes whose nav ids are
+  // "hs-<sub>" (see TenantLayout NAV_GROUPS).
+  if (section === "home-services") {
+    const sub = segs[1] ?? "";
+    return sub ? `hs-${sub}` : "hs-bookings-jobs";
+  }
+
+  // The onboarding wizard lives at /tenant/home-services/setup/* and is a
+  // single nav entry ("Business Setup"), so every step highlights it.
+  if (section === "tenant" && segs[1] === "home-services" && segs[2] === "setup") {
+    return "hs-setup";
+  }
+  if (section === "help-support") return "help-support";
 
   if (section === "provider") {
     const sub = segs[1] ?? "";

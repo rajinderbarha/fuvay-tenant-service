@@ -34,6 +34,23 @@ API_KEY_RANDOM_BYTES = 32
 LOGIN_RATE_LIMIT_ATTEMPTS = 100
 LOGIN_RATE_LIMIT_WINDOW_MINUTES = 15
 
+# ── Login Activity phase: internal LoginEvent.event_type -> customer-safe
+# public vocabulary. Centralized here (not scattered string matching) --
+# `app/engines/auth/schemas.py::PUBLIC_LOGIN_OUTCOME` mirrors the outcome
+# categories used for the "All / Successful / Needs attention" filter.
+# Every event_type this engine ever writes MUST have an entry; an unmapped
+# value renders as the neutral "sign-in activity" fallback (see
+# AuthService.get_my_login_activity), never the raw backend string.
+LOGIN_EVENT_PUBLIC_MAP: dict[str, tuple[str, str]] = {
+    # event_type: (public_label, outcome_category)
+    "login_success":          ("Successful sign-in",              "successful"),
+    "mfa_challenge_required": ("Additional verification required", "verification_required"),
+    "login_failed":           ("Sign-in blocked",                  "blocked"),
+    "logout":                 ("Signed out",                       "successful"),
+}
+LOGIN_EVENT_UNKNOWN_LABEL = "Sign-in activity"
+LOGIN_EVENT_UNKNOWN_OUTCOME = "unknown"
+
 # ── Canonical system-role vocabulary ──────────────────────────────────────────
 # MODULE-L5-01D (BLK-01D-1 decision, Option A): the single authoritative role
 # registry is app/core/permissions.py::ROLE_PERMISSIONS. These constants are a

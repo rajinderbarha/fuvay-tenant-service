@@ -24,6 +24,11 @@ class CustomerAddress(ServiceOSBase):
 
     customer_id:   Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     tenant_id:     Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # `label` (Home/Work/Other) is a distinct concept from `name` (the
+    # recipient's full name) -- added additively (migration 223) so the
+    # Add/Edit Address form's segmented label control and full-name field
+    # no longer collide on one free-text column.
+    label:         Mapped[str|None]       = mapped_column(String(20), nullable=True)
     name:          Mapped[str|None]       = mapped_column(String(100), nullable=True)
     phone:         Mapped[str|None]       = mapped_column(String(30), nullable=True)
     address_line_1:Mapped[str]            = mapped_column(String(300), nullable=False)
@@ -119,6 +124,10 @@ class TenantServiceAreaService(ServiceOSBase):
     max_price:              Mapped[Decimal|None]   = mapped_column(Numeric(10, 2), nullable=True)
     base_price:             Mapped[Decimal|None]   = mapped_column(Numeric(10, 2), nullable=True)
     status:                 Mapped[str]            = mapped_column(String(30), default="ACTIVE", nullable=False)  # ACTIVE|SUSPENDED|EXPIRED|REVOKED
+    # Found missing during the "make it 100% working" drift audit -- real,
+    # migrated columns for type/brand-scoped area coverage.
+    brand_id:               Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    service_type_id:        Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class TenantServiceAreaRequest(ServiceOSBase):

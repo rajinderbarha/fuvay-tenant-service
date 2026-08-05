@@ -125,6 +125,32 @@ class TenantBranding(ServiceOSBase):
     favicon_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
+class TenantFinanceReadiness(ServiceOSBase):
+    """Which payment methods a tenant is ready to accept, captured during
+    Home Services onboarding.
+
+    Real bug fixed here: the `tenant_finance_readiness` TABLE exists and
+    vertical_catalog/tenant_finance_readiness_router.py imports this model,
+    but the model was never written -- so that module raised ImportError and
+    its whole router could never be mounted. Columns mirror the live table
+    exactly (verified against information_schema).
+    """
+    __tablename__ = "tenant_finance_readiness"
+    __table_args__ = (UniqueConstraint("tenant_id", name="uq_tfr_tenant"),)
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
+
+    accepts_cash: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    accepts_upi: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    accepts_card_at_service_location: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    accepts_bank_transfer: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    payment_confirmation_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    invoice_business_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    invoice_prefix: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    issue_customer_receipt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
 class TenantBilling(ServiceOSBase):
     __tablename__ = "tenant_billing"
     __table_args__ = (UniqueConstraint("tenant_id", name="uq_tbl_tenant"),)
@@ -138,6 +164,7 @@ class TenantBilling(ServiceOSBase):
     credit_balance: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0.0)
     security_deposit_paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     security_deposit_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0.0)
+    vertical_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
 
 class UsageCreditLedger(ServiceOSBase):
@@ -210,14 +237,39 @@ class TenantLimits(ServiceOSBase):
 
 
 class TenantDocument(ServiceOSBase):
+    """Found significantly out of sync with the real, migrated DB schema
+    during the Final Phase end-to-end pass -- 14 real columns (staff_member_id,
+    status, document_number, version/is_current/superseded_by_id versioning,
+    reviewed_by/review_notes, etc.) existed in the DB and were actively used
+    by mobile_documents_service.py, but were missing from this model
+    entirely, causing every /v1/staff/me/documents call to AttributeError."""
     __tablename__ = "tenant_documents"
-    __table_args__ = (Index("ix_tenant_docs_tenant_id", "tenant_id"),)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    doc_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    file_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    __table_args__ = (
+        Index("ix_tenant_docs_tenant_id", "tenant_id"),
+        Index("ix_tenant_docs_tenant_doctype", "tenant_id", "doc_type"),
+        Index("ix_tenant_docs_current", "tenant_id", "doc_type", "is_current"),
+        Index("ix_tenant_docs_staff", "tenant_id", "staff_member_id", "doc_type", "is_current"),
+    )
+    tenant_id:           Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    doc_type:            Mapped[str]              = mapped_column(String(50), nullable=False)
+    label:                Mapped[str | None]       = mapped_column(String(200), nullable=True)
+    media_asset_id:       Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    file_url:            Mapped[str]              = mapped_column(String(500), nullable=False, default="")
+    document_number:      Mapped[str | None]       = mapped_column(String(100), nullable=True)
+    issue_date:           Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    expiry_date:          Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    version:              Mapped[int]              = mapped_column(Integer, nullable=False, default=1)
+    is_current:           Mapped[bool]             = mapped_column(Boolean, nullable=False, default=True)
+    superseded_by_id:      Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    status:               Mapped[str]              = mapped_column(String(30), nullable=False, default="pending_review")
+    rejection_reason:      Mapped[str | None]       = mapped_column(Text, nullable=True)
+    uploaded_by_user_id:    Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     verified_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    staff_member_id:      Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    reviewed_by:          Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    review_notes:         Mapped[str | None]       = mapped_column(Text, nullable=True)
 
 
 class OnboardingRequest(ServiceOSBase):

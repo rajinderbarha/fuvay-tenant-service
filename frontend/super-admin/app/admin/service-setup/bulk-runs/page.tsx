@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { bulkWizardApi, BulkRunItem } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { Btn } from "../../../../components/shared/ui";
+import { Breadcrumbs } from "../../../../components/layout/Breadcrumbs";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { bg: string; color: string }> = {
@@ -46,9 +47,11 @@ export default function BulkRunsPage() {
 
   return (
     <div style={{ padding: "1.5rem" }}>
-      <div style={{ marginBottom: 8, fontSize: 12, color: "var(--text-tertiary)" }}>
-        Service Setup / Bulk Wizard / Runs
-      </div>
+      <Breadcrumbs crumbs={[
+        { label: "Service Setup", href: "/admin/service-setup" },
+        { label: "Bulk Wizard", href: "/admin/service-setup/bulk-wizard" },
+        { label: "Runs" },
+      ]} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.5rem" }}>
         <div>
           <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>

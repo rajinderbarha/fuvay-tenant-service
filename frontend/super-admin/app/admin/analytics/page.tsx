@@ -1,8 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   platformAnalyticsApi,
+  adminAnalyticsApi,
   PlatformSummary,
   PlatformTrends,
   OperationalAlert,
@@ -146,6 +147,7 @@ function HealthBand({ band }: { band: string }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function PlatformAnalyticsDashboard() {
+  const [tab, setTab] = useState<"dashboard" | "reports">("dashboard");
   const [dateFrom, setDateFrom] = useState(daysAgo(30));
   const [dateTo, setDateTo] = useState(today());
   const [vertical, setVertical] = useState("");
@@ -251,16 +253,33 @@ export default function PlatformAnalyticsDashboard() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Analytics / Platform Overview</div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Platform Analytics</h1>
           <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Enterprise intelligence across all tenants, verticals, and operations</p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Btn size="sm" variant="secondary" onClick={() => platformAnalyticsApi.exportReport("platform_summary", { date_from: dateFrom, date_to: dateTo })}>Export Report</Btn>
-          <Btn size="sm" variant="primary" onClick={() => window.location.reload()}>Refresh</Btn>
-        </div>
+        {tab === "dashboard" && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Btn size="sm" variant="secondary" onClick={() => platformAnalyticsApi.exportReport("platform_summary", { date_from: dateFrom, date_to: dateTo })}>Export Report</Btn>
+            <Btn size="sm" variant="primary" onClick={() => window.location.reload()}>Refresh</Btn>
+          </div>
+        )}
       </div>
 
+      {/* Tabs -- Reports folded in here 2026-08-05 (was a separate
+          /admin/reports page/nav item) at explicit user request. */}
+      <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)" }}>
+        {([["dashboard", "Dashboard"], ["reports", "Reports"]] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            style={{ padding: "10px 16px", fontSize: 13, fontWeight: 600, background: "none", border: "none",
+              borderBottom: tab === key ? "2px solid var(--brand)" : "2px solid transparent",
+              color: tab === key ? "var(--text-primary)" : "var(--text-tertiary)", cursor: "pointer" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "reports" && <ReportsPanel />}
+
+      {tab === "dashboard" && <>
       {/* Date & Filter Bar */}
       <div style={{ ...cardStyle, padding: "14px 20px" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -289,14 +308,14 @@ export default function PlatformAnalyticsDashboard() {
 
       {/* KPI Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-        <KpiCard label="Active Tenants" value={fmt(s.active_tenants)} href="/admin/tenants?status=active" loading={sumLoading} />
-        <KpiCard label="Total Jobs" value={fmt(s.total_jobs)} href="/admin/home-services/service-jobs" loading={sumLoading} />
+        <KpiCard label="Active Tenants" value={fmt(s.active_tenants)} href="/admin/home-services/providers?status=active" loading={sumLoading} />
+        <KpiCard label="Total Jobs" value={fmt(s.total_jobs)} href="/admin/home-services/bookings-jobs" loading={sumLoading} />
         <KpiCard label="Platform Revenue" value={fmtMoney(s.platform_revenue)} helpText="Top-ups + packages" loading={sumLoading} />
         <KpiCard label="Completed Job Deductions" value={fmtMoney(s.completed_job_deductions)} href="/admin/home-services/completed-job-deduction" loading={sumLoading} />
         <KpiCard label="Provider Direct Service Value" value={fmtMoney(s.provider_direct_service_value)} helpText="Paid directly to provider" loading={sumLoading} />
         <KpiCard label="Avg Job Rating" value={fmtRating(s.avg_job_rating)} loading={sumLoading} />
         <KpiCard label="Complaint Rate" value={fmtPct(s.complaint_rate)} href="/admin/complaints" loading={sumLoading} />
-        <KpiCard label="Pending Approvals" value={fmt(s.pending_approvals)} href="/admin/tenants?status=pending_review" loading={sumLoading} />
+        <KpiCard label="Pending Approvals" value={fmt(s.pending_approvals)} href="/admin/home-services/providers?tab=onboarding" loading={sumLoading} />
         <KpiCard label="New Providers" value={fmt(s.new_providers)} loading={sumLoading} />
         <KpiCard label="Customer Service Credits Issued" value={fmtMoney(s.customer_service_credits_issued)} href="/admin/finance/customer-credits" loading={sumLoading} />
         <KpiCard label="Security Deposit Held" value={fmtMoney(s.security_deposit_held)} loading={sumLoading} />
@@ -554,7 +573,145 @@ export default function PlatformAnalyticsDashboard() {
           <KpiCard label="Customer Credits Used" value={fmtMoney(cust.customer_service_credits_used)} loading={custLoading} />
         </div>
       </div>
+      </>}
 
+    </div>
+  );
+}
+
+// ── Reports tab (ported from the standalone /admin/reports page, removed
+// from nav 2026-08-05 at explicit user request). ──────────────────────────
+const REPORT_STATUS_STYLE: Record<string, React.CSSProperties> = {
+  COMPLETED: { background: "var(--success-bg)",     color: "var(--success-text)" },
+  FAILED:    { background: "var(--danger-bg)",      color: "var(--danger-text)" },
+  RUNNING:   { background: "var(--info-bg)",        color: "var(--info-text)" },
+  PENDING:   { background: "var(--surface-sunken)", color: "var(--text-tertiary)" },
+};
+
+function ReportsPanel() {
+  const [definitions, setDefinitions] = useState<any[]>([]);
+  const [runs, setRuns]               = useState<any[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [running, setRunning]         = useState<string | null>(null);
+  const [message, setMessage]         = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      const r = await adminAnalyticsApi.listReports({});
+      setDefinitions(r?.definitions ?? []);
+      setRuns(r?.recent_runs?.items ?? []);
+    } catch { }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function runReport(reportKey: string, exportFormat?: string) {
+    setRunning(reportKey);
+    setMessage("");
+    try {
+      const r = await adminAnalyticsApi.runReport({ report_key: reportKey, export_format: exportFormat });
+      const result = r;
+      if (result?.csv_content) {
+        const blob = new Blob([result.csv_content], { type: "text/csv" });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a");
+        a.href     = url;
+        a.download = `${reportKey}_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setMessage(`${reportKey}: exported ${result?.row_count ?? 0} rows`);
+      } else {
+        setMessage(`${reportKey}: ${result?.row_count ?? 0} rows (no export requested)`);
+      }
+      load();
+    } catch (e: any) {
+      setMessage(`Failed: ${e?.message ?? "unknown error"}`);
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  const btnBase: React.CSSProperties = {
+    padding: "6px 14px", fontSize: 13, borderRadius: "var(--radius-md)", cursor: "pointer",
+    fontFamily: "inherit", border: "1px solid var(--border)",
+    background: "var(--surface)", color: "var(--text-primary)",
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Run and export platform reports. Sync export for up to 5,000 rows.</p>
+
+      {message && (
+        <div style={{ background: "var(--info-bg)", border: "1px solid var(--info-border)", borderRadius: 10,
+          padding: "12px 16px", fontSize: 13, color: "var(--info-text)" }}>
+          {message}
+        </div>
+      )}
+
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 20 }}>
+        <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 16px" }}>Available Reports</h2>
+        {loading ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {[1, 2, 3].map(i => <div key={i} style={{ height: 56, background: "var(--surface-sunken)", borderRadius: "var(--radius-md)" }} />)}
+          </div>
+        ) : definitions.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "32px 0", color: "var(--text-tertiary)", fontSize: 13 }}>No reports available</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {definitions.map((def: any) => (
+              <div key={def.report_key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{def.report_name}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>
+                    Key: {def.report_key} · Formats: {def.export_formats?.join(", ") ?? "json"}
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button onClick={() => runReport(def.report_key)} disabled={running === def.report_key}
+                    style={{ ...btnBase, opacity: running === def.report_key ? 0.5 : 1 }}>
+                    {running === def.report_key ? "Running…" : "Run"}
+                  </button>
+                  {def.export_formats?.includes("csv") && (
+                    <button onClick={() => runReport(def.report_key, "csv")} disabled={running === def.report_key}
+                      style={{ ...btnBase, background: "var(--text-primary)", color: "var(--surface)", border: "none",
+                        opacity: running === def.report_key ? 0.5 : 1 }}>
+                      CSV
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {runs.length > 0 && (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 20 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 16px" }}>Recent Runs</h2>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {runs.map((run: any, idx: number) => (
+              <div key={run.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "10px 0", borderBottom: idx < runs.length - 1 ? "1px solid var(--border)" : "none" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
+                    {run.report_name ?? run.report_key}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>
+                    {run.created_at ? new Date(run.created_at).toLocaleString() : "—"} · {run.row_count ?? 0} rows
+                  </div>
+                </div>
+                <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, fontWeight: 600,
+                  ...(REPORT_STATUS_STYLE[run.status] ?? { background: "var(--surface-sunken)", color: "var(--text-tertiary)" }) }}>
+                  {run.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

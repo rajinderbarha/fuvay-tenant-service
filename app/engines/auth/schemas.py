@@ -101,6 +101,12 @@ class PasswordResetRequest(BaseModel):
         return self
 
 class PasswordResetConfirmRequest(BaseModel):
+    # Added (Account Security phase): confirm_password_reset previously had
+    # no way to identify which account's password to reset -- OTPRecord is
+    # keyed by a one-way recipient_hash, not a reversible user id, so the
+    # same identifier used to request the OTP must be supplied again here.
+    email: EmailStr | None = None
+    phone: str | None = None
     reset_token: str
     new_password: str = Field(min_length=8, max_length=128)
     confirm_password: str
@@ -109,6 +115,12 @@ class PasswordResetConfirmRequest(BaseModel):
     def passwords_match(self):
         if self.new_password != self.confirm_password:
             raise ValueError("Passwords do not match.")
+        return self
+
+    @model_validator(mode="after")
+    def phone_or_email(self):
+        if not self.phone and not self.email:
+            raise ValueError("Either phone or email is required.")
         return self
 
 

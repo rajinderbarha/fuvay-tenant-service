@@ -5,7 +5,7 @@ import { JobDetailScreen } from "../JobDetailScreen";
 import { JobMobileDetailDTO } from "../../../services/jobDetail/types";
 
 jest.mock("../useJobDetail");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 import { useJobDetail } from "../useJobDetail";
 import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
@@ -61,7 +61,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("JobDetailScreen — loaded state (spec sections 2, 5, 6)", () => {
@@ -175,7 +175,7 @@ describe("JobDetailScreen — loading/error/offline states (spec section 19)", (
   });
 
   it("shows the offline banner while still rendering cached data read-only", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (useJobDetail as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText(/offline/i)).toBeTruthy();

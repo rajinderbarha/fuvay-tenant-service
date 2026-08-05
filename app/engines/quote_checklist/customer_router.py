@@ -17,7 +17,15 @@ from app.engines.quote_checklist.checklist_service import ServiceChecklistServic
 quote_svc = ServiceJobQuoteService()
 checklist_svc = ServiceChecklistService()
 
-customer_router = APIRouter(prefix="/customer/quotes", tags=["customer-quotes"])
+# ARRIVAL-INSPECTION-QUOTE-APPROVAL phase: every other customer-facing router
+# in this codebase is mounted under "/v1/customer/..." (confirmed by direct
+# cross-reference of every app.include_router(..._customer_router) call in
+# app/main.py) -- this router was the sole exception, silently missing the
+# "/v1" segment since it was written, making it unreachable at the path any
+# real client would call. Fixed to match the established convention; nothing
+# in this codebase depended on the old "/customer/quotes" path (no frontend
+# consumer existed for this router before this phase).
+customer_router = APIRouter(prefix="/v1/customer/quotes", tags=["customer-quotes"])
 
 
 def _rid(r: Request) -> str:

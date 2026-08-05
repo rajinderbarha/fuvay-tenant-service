@@ -27,7 +27,7 @@ export function ResetPasswordScreen({ route, navigation }: Props) {
   const { theme } = useTheme();
   const { identifier } = route.params;
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
 
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");

@@ -1,0 +1,94 @@
+import { z } from "zod";
+import { bookingSummaryDtoSchema, buildBookingSummaryResponseSchema, ConfirmDraftResponseDto } from "../contracts/bookingReview";
+import { bookingDraftResponseSchema, BookingDraftResponseDto } from "../contracts/bookingDraft";
+import { BookingReviewSummary } from "../../domain/bookingReview";
+import { BookingConfirmationResult } from "../../domain/bookingConfirmation";
+import { classifyReviewPricing } from "../../domain/servicePricing";
+import { asBookingDraftId } from "../../domain/ids";
+import { ContractValidationError } from "../../domain/errors";
+
+export function parseDraftDto(raw: unknown): BookingDraftResponseDto {
+  const result = bookingDraftResponseSchema.safeParse(raw);
+  if (!result.success) throw new ContractValidationError("BookingDraftResponseDto", result.error.issues.map(i => i.message));
+  return result.data;
+}
+
+export function parseBuildBookingSummaryResponse(raw: unknown) {
+  const result = buildBookingSummaryResponseSchema.safeParse(raw);
+  if (!result.success) throw new ContractValidationError("BuildBookingSummaryResponseDto", result.error.issues.map(i => i.message));
+  return result.data;
+}
+
+/** Adapts the combined draft + booking_summary response into the single
+ * Review domain model. `catalogQuestionAnswers`/`categoryName`/
+ * `jobTypeLabel` come from the enriched draft (`_enrich_draft`); pricing,
+ * provider, address and readiness come from `build_booking_summary`. */
+export function adaptBookingReviewSummary(
+  draft: BookingDraftResponseDto,
+  summaryDto: z.infer<typeof bookingSummaryDtoSchema>,
+): BookingReviewSummary {
+  const priceEstimate = summaryDto.price_estimate ?? {};
+  const { state, inspection } = classifyReviewPricing({
+    requiresInspectionEstimate: !!priceEstimate.requires_inspection_estimate,
+    visitFeeRaw: priceEstimate.visit_fee ?? null,
+    feeAdjustmentNote: priceEstimate.customer_message ?? null,
+    bargainAvailable: !!priceEstimate.bargain_available,
+    standardPriceRaw: priceEstimate.standard_price ?? null,
+  });
+
+  const addressSnapshot = (summaryDto.address ?? {}) as Record<string, unknown>;
+  const addressLines = ["line1", "line2", "label", "landmark"]
+    .map(key => addressSnapshot[key])
+    .filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+
+  return {
+    draftId: asBookingDraftId(draft.id),
+    categoryName: draft.category_name ?? null,
+    offeringName: summaryDto.offering_name,
+    jobTypeLabel: draft.job_type_label ?? null,
+    issueSummary: summaryDto.issue_summary,
+    // Backend answer labels are not yet exposed by this endpoint --
+    // rendered from catalog_question_answers only once a labeled-answer
+    // field exists in the summary contract; empty rather than guessed.
+    answers: [],
+    address: {
+      city: summaryDto.city,
+      zipcode: summaryDto.zipcode,
+      lines: addressLines,
+      serviceable: summaryDto.serviceability.serviceable,
+      serviceabilityStatus: summaryDto.serviceability.status,
+    },
+    promisedSlot: summaryDto.promised_slot
+      ? {
+          date: summaryDto.promised_slot.date,
+          timeWindow: summaryDto.promised_slot.time_window,
+          startsAt: summaryDto.promised_slot.starts_at,
+          endsAt: summaryDto.promised_slot.ends_at,
+          slotMinutes: summaryDto.promised_slot.slot_minutes,
+          daysAhead: summaryDto.promised_slot.days_ahead,
+        }
+      : null,
+    serviceSlaMinutes: summaryDto.service_sla_minutes ?? null,
+    serviceDueAt: summaryDto.service_due_at ?? null,
+    priceState: state,
+    inspection,
+    bargainAvailable: !!priceEstimate.bargain_available,
+    provider: summaryDto.selected_provider
+      ? {
+          tenantId: summaryDto.selected_provider.tenant_id,
+          providerName: summaryDto.selected_provider.provider_name,
+          publicBadges: summaryDto.selected_provider.public_badges,
+          rating: summaryDto.selected_provider.rating ?? null,
+        }
+      : null,
+    photoCount: draft.photo_urls?.length ?? 0,
+    photoUrls: draft.photo_urls ?? [],
+    preferredDate: null,
+    readyForConfirmation: summaryDto.ready_for_confirmation,
+    missing: summaryDto.missing,
+  };
+}
+
+export function adaptBookingConfirmationResult(dto: ConfirmDraftResponseDto): BookingConfirmationResult {
+  return { bookingId: dto.booking_id, bookingNumber: dto.booking_number, idempotent: !!dto.idempotent };
+}

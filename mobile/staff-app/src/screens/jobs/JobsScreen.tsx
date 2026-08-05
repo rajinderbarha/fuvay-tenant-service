@@ -44,7 +44,7 @@ export function JobsScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
 
   const [view, setView] = useState<JobsView>("today");
   const [showArchive, setShowArchive] = useState(false);

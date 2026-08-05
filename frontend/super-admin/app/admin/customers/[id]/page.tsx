@@ -5,7 +5,7 @@ import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, SectionHeader, DataTable, Modal, Input } from "../../../../components/shared/ui";
 import { adminCustomersApi, AdminCustomer } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink, X } from "lucide-react";
 import Link from "next/link";
 
 const HEALTH_BADGE: Record<string, "success" | "warning" | "danger" | "info" | "muted"> = {
@@ -33,9 +33,11 @@ function EmptyState({ text }: { text: string }) {
   return <p style={{ padding: "28px 20px", textAlign: "center", color: "var(--muted-text)", fontSize: 13 }}>{text}</p>;
 }
 
-export default function CustomerDetailPage() {
-  const params = useParams<{ id: string }>();
-  const customerId = params?.id ?? "";
+// Reusable content -- used both by the standalone /admin/customers/[id]
+// route (default export below) and as an in-place drawer from the
+// customers list page (no navigation away, matching the pattern used on
+// Home Services Customers). `onClose` is only set in the drawer case.
+function CustomerDetailContent({ customerId, onClose }: { customerId: string; onClose?: () => void }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [reasonModal, setReasonModal] = useState<null | "block" | "unblock" | "suspend" | "reactivate" | "revoke_sessions">(null);
   const [reason, setReason] = useState("");
@@ -44,13 +46,13 @@ export default function CustomerDetailPage() {
   const [creditReason, setCreditReason] = useState("");
 
   const customerFetch = useApi(
-    useCallback(() => adminCustomersApi.get(customerId), [customerId])
+    useCallback(() => adminCustomersApi.get(customerId), [customerId]), [customerId],
   );
   const customer: AdminCustomer | null =
     (customerFetch.data as { data?: AdminCustomer } | null)?.data ?? null;
 
   const bookingsFetch = useApi(
-    useCallback(() => adminCustomersApi.bookings(customerId, { page: 1 }), [customerId])
+    useCallback(() => adminCustomersApi.bookings(customerId, { page: 1 }), [customerId]), [customerId],
   );
   type BookingRow = { id: string; booking_number: string; tenant_name: string; category_name: string; status: string; amount: number | null; city: string; created_at: string | null };
   type BookingsData = { bookings: BookingRow[]; meta: { page: number; total: number; total_pages: number } };
@@ -59,22 +61,22 @@ export default function CustomerDetailPage() {
   const bookings = bookingsData?.bookings ?? [];
   const bookingsMeta = bookingsData?.meta;
 
-  const complaintsFetch = useApi(useCallback(() => adminCustomersApi.complaints(customerId), [customerId]));
+  const complaintsFetch = useApi(useCallback(() => adminCustomersApi.complaints(customerId), [customerId]), [customerId]);
   const complaints = (complaintsFetch.data as unknown as { data?: { complaints: any[] } } | null)?.data?.complaints ?? [];
 
-  const creditsFetch = useApi(useCallback(() => adminCustomersApi.serviceCredits(customerId), [customerId]));
+  const creditsFetch = useApi(useCallback(() => adminCustomersApi.serviceCredits(customerId), [customerId]), [customerId]);
   const creditsData = (creditsFetch.data as unknown as { data?: { credits: any[]; summary: any } } | null)?.data;
 
-  const addressesFetch = useApi(useCallback(() => adminCustomersApi.addresses(customerId), [customerId]));
+  const addressesFetch = useApi(useCallback(() => adminCustomersApi.addresses(customerId), [customerId]), [customerId]);
   const addresses = (addressesFetch.data as unknown as { data?: { addresses: any[] } } | null)?.data?.addresses ?? [];
 
-  const sessionsFetch = useApi(useCallback(() => adminCustomersApi.sessions(customerId), [customerId]));
+  const sessionsFetch = useApi(useCallback(() => adminCustomersApi.sessions(customerId), [customerId]), [customerId]);
   const sessions = (sessionsFetch.data as unknown as { data?: { sessions: any[] } } | null)?.data?.sessions ?? [];
 
-  const loginHistoryFetch = useApi(useCallback(() => adminCustomersApi.loginHistory(customerId), [customerId]));
+  const loginHistoryFetch = useApi(useCallback(() => adminCustomersApi.loginHistory(customerId), [customerId]), [customerId]);
   const loginHistory = (loginHistoryFetch.data as unknown as { data?: { login_history: any[] } } | null)?.data?.login_history ?? [];
 
-  const privacyFetch = useApi(useCallback(() => adminCustomersApi.privacyRequests(customerId), [customerId]));
+  const privacyFetch = useApi(useCallback(() => adminCustomersApi.privacyRequests(customerId), [customerId]), [customerId]);
   const privacyRequests = (privacyFetch.data as unknown as { data?: { items: any[] } } | null)?.data?.items ?? [];
 
   const blockAction = useAction(useCallback((r: string) => adminCustomersApi.block(customerId, r), [customerId]));
@@ -163,11 +165,18 @@ export default function CustomerDetailPage() {
   const isBlocked = customer && !customer.is_active;
 
   return (
-    <AdminLayout activeNav="customers">
+    <>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-        <Link href="/admin/customers" style={{ color: "var(--muted-text)", display: "flex", alignItems: "center", gap: 4, fontSize: 13, textDecoration: "none" }}>
-          <ArrowLeft size={15} /> Customers
-        </Link>
+        {onClose ? (
+          <button onClick={onClose} style={{ color: "var(--muted-text)", display: "flex", alignItems: "center", gap: 4,
+            fontSize: 13, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            <X size={15} /> Close
+          </button>
+        ) : (
+          <Link href="/admin/customers" style={{ color: "var(--muted-text)", display: "flex", alignItems: "center", gap: 4, fontSize: 13, textDecoration: "none" }}>
+            <ArrowLeft size={15} /> Customers
+          </Link>
+        )}
       </div>
 
       <SectionHeader
@@ -408,6 +417,17 @@ export default function CustomerDetailPage() {
           </div>
         </div>
       </Modal>
+    </>
+  );
+}
+
+// Standalone route -- deep links (/admin/customers/[id]) still work directly.
+export default function CustomerDetailPage() {
+  const params = useParams<{ id: string }>();
+  const customerId = params?.id ?? "";
+  return (
+    <AdminLayout activeNav="customers">
+      <CustomerDetailContent customerId={customerId} />
     </AdminLayout>
   );
 }

@@ -136,6 +136,13 @@ async def archive_package(package_id: uuid.UUID, r: Request,
     data = await s.archive_package(package_id)
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
+@router.delete("/packages/{package_id}/permanent", summary="[Admin] Permanently delete a never-purchased credit package", response_model=ApiResponse[dict])
+async def delete_package_permanently(package_id: uuid.UUID, r: Request,
+                                      u: UserContext = Depends(require_super_admin),
+                                      s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
+    data = await s.delete_package_permanently(package_id)
+    return ok(data, _meta(r).request_id, ENGINE_ID)
+
 # ── TENANT WALLET (8) ─────────────────────────────────────────────────────────
 @router.get("/tenants/{tenant_id}/wallet", summary="Get wallet with burn rate and projection", response_model=ApiResponse[dict])
 async def get_wallet(tenant_id: uuid.UUID, r: Request,

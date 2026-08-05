@@ -1,61 +1,68 @@
-/* ServiceOS Customer App — premium, mobile-first, Apple-like light design.
+/* ServiceOS Customer App — premium, mobile-first, Apple-like design.
+ * Rebrand 2026-08-04: warm orange -> blue, per approved reference design.
  * Derived from frontend/tenant-portal/styles/globals.css light-mode palette
- * (soft off-white bg, white cards, soft borders, blue/orange/green accents),
+ * (pure white bg, white cards, soft borders, blue accent),
  * adapted for a consumer booking app: bigger touch targets, bottom nav,
  * floating center CTA, large rounded cards. */
 @import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800&display=swap");
 
 :root {
-  --bg: #F7F7F4;
-  --bg-gradient: radial-gradient(circle at top left, rgba(255, 214, 156, 0.25), transparent 34%),
-                 radial-gradient(circle at top right, rgba(210, 218, 255, 0.28), transparent 38%),
-                 linear-gradient(180deg, #FBFAF7 0%, #F7F7F4 100%);
+  --bg: #FFFFFF;
+  --bg-gradient: radial-gradient(circle at top left, rgba(59, 111, 237, 0.06), transparent 34%),
+                 radial-gradient(circle at top right, rgba(91, 141, 239, 0.05), transparent 38%),
+                 linear-gradient(180deg, #FFFFFF 0%, #FFFFFF 100%);
   --surface: #FFFFFF;
-  --border: rgba(0, 0, 0, 0.06);
-  --border-strong: rgba(0, 0, 0, 0.12);
-  --text-primary: #0B0B0B;
-  --text-secondary: #7A7A7A;
-  --text-tertiary: #9A9A9A;
-  --brand: #5A8DFF;
-  --brand-hover: #3F72E8;
-  --primary-gradient: linear-gradient(135deg, #5A8DFF 0%, #70CFA0 100%);
-  --accent: #FFB45C;
-  --success: #70CFA0;
-  --success-bg: #EAF8F1;
-  --success-text: #2F8F63;
-  --warning: #FFB45C;
-  --warning-bg: #FFF4E6;
-  --warning-text: #B9791E;
-  --danger: #E8615A;
-  --danger-bg: #FDEEED;
-  --danger-text: #B93A34;
-  --info: #5A8DFF;
-  --info-bg: #EEF3FF;
+  --border: #E7EBF3;
+  --border-strong: #CBD3E1;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-tertiary: #94A3B8;
+  --brand: #3B6FED;
+  --brand-hover: #2F5BD1;
+  --primary-gradient: linear-gradient(135deg, #3B6FED 0%, #5B8DEF 100%);
+  --accent: #5B8DEF;
+  --success: #16A34A;
+  --success-bg: #F0FDF4;
+  --success-text: #15803D;
+  --warning: #D97706;
+  --warning-bg: #FFFBEB;
+  --warning-text: #92400E;
+  --danger: #DC2626;
+  --danger-bg: #FEF2F2;
+  --danger-text: #991B1B;
+  --info: #0284C7;
+  --info-bg: #F0F9FF;
   --radius-lg: 20px;
   --radius-xl: 28px;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-sm: 0 1px 3px rgba(15,23,42,0.05);
   --shadow-md: 0 8px 24px rgba(15,23,42,0.08);
   --shadow-lg: 0 16px 40px rgba(15,23,42,0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0F172A;
-    --bg-gradient: radial-gradient(circle at top left, rgba(90,141,255,0.10), transparent 40%), #0F172A;
-    --surface: #17203A;
-    --border: rgba(255,255,255,0.08);
-    --border-strong: rgba(255,255,255,0.14);
-    --text-primary: #F8FAFC;
-    --text-secondary: #94A3B8;
-    --text-tertiary: #64748B;
+    --bg: #1C1C1E;
+    --bg-gradient: radial-gradient(circle at top left, rgba(43,143,255,0.10), transparent 40%), #1C1C1E;
+    --surface: #232326;
+    --border: #333338;
+    --border-strong: #44444A;
+    --text-primary: #F5F5F7;
+    --text-secondary: #9B9BA1;
+    --text-tertiary: #6E6E73;
+    --brand: #2B8FFF;
+    --brand-hover: #5AB0FF;
+    --primary-gradient: linear-gradient(135deg, #2B8FFF 0%, #5AB0FF 100%);
+    --accent: #5AB0FF;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0F172A; --surface: #17203A; --border: rgba(255,255,255,0.08);
-  --text-primary: #F8FAFC; --text-secondary: #94A3B8;
+  --bg: #1C1C1E; --surface: #232326; --border: #333338;
+  --text-primary: #F5F5F7; --text-secondary: #9B9BA1;
+  --brand: #2B8FFF; --brand-hover: #5AB0FF; --accent: #5AB0FF;
+  --primary-gradient: linear-gradient(135deg, #2B8FFF 0%, #5AB0FF 100%);
 }
 :root[data-theme="light"] {
-  --bg: #F7F7F4; --surface: #FFFFFF; --text-primary: #0B0B0B;
+  --bg: #FFFFFF; --surface: #FFFFFF; --text-primary: #0F172A;
 }
 
 * { box-sizing: border-box; }

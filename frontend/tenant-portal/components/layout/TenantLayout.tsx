@@ -11,7 +11,8 @@ import {
   BarChart2, Megaphone,
   Activity, CheckSquare, X, RefreshCw,
   CheckCircle2, XCircle, AlertCircle, ArrowRight,
-  CreditCard, Shield, User,
+  CreditCard, Shield,
+  MapPin, Clock, Star, Truck, Wallet, ListChecks,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import { useTour } from "../../hooks/useTour";
@@ -20,7 +21,7 @@ import { Toaster, type ToastItem } from "../shared/ui";
 import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "./Breadcrumbs";
-import { authApi, providerStatusApi, entitlementApi, providerNotifApi, categoryDashboardApi, type InAppNotificationItem } from "../../lib/api";
+import { authApi, providerStatusApi, entitlementApi, providerNotifApi, categoryDashboardApi, clearSession, type InAppNotificationItem } from "../../lib/api";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
 
 // FINAL-L5-04B: live tenant module/category entitlement state, fetched once
@@ -44,70 +45,102 @@ type NavItem = { id: string; href: string; label: string; icon: React.ReactNode;
 type NavGroup = { label: string; items: NavItem[]; special?: string };
 
 // ── Enterprise static nav ─────────────────────────────────────────────────────
+/**
+ * Sidebar information architecture.
+ *
+ * This adopts the GROUPING and LABELS from the approved UX-03 IA
+ * (lib/ux03/nav-ia.ts) but deliberately does NOT import it wholesale, for
+ * three evidence-based reasons:
+ *
+ *   1. UX03_NAV_GROUPS predates the Home Services consolidation. Its hrefs
+ *      still point at the legacy routes (/bookings, /service-jobs,
+ *      /dispatch, /provider/staff), so adopting it verbatim would send the
+ *      menu BACK to the superseded pages.
+ *   2. Three of its hrefs are route TEMPLATES ("/service-jobs/[id]#quote",
+ *      "/provider/staff/[id]/permissions") which are not navigable at all.
+ *   3. Several items are marked `readiness: "MOCK_DESIGN_ONLY"` -- design
+ *      approved, never built.
+ *
+ * So the structure is UX-03's; the destinations are the canonical routes
+ * that actually exist and are backed by mounted endpoints. Where a Home
+ * Services workspace supersedes a legacy page, the workspace wins -- the
+ * legacy route stays live and reachable by URL, it simply leaves the nav.
+ */
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "Overview",
     items: [
       { id: "dashboard", href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={16}/> },
-      // Business Profile is no longer a sidebar item -- it's reachable from
-      // the top-bar avatar dropdown ("Business Profile" menu entry), which
-      // is also where all setup/config now consolidates.
+    ],
+  },
+  {
+    // Business Setup + Business Profile removed from nav 2026-08-04 (user:
+    // "no longer using") -- routes still exist and are reachable by direct
+    // URL, just no longer linked from the sidebar.
+    label: "Setup & Profile",
+    items: [
+      { id: "provider-compliance", href: "/provider/compliance", label: "Compliance", icon: <Shield size={16}/> },
+    ],
+  },
+  {
+    // UX-03 groups "Bookings" and "Jobs" separately; the two pipelines are
+    // consolidated into one workspace here, which is what that separation
+    // was eventually resolved into.
+    label: "Operations",
+    items: [
+      { id: "hs-bookings-jobs",   href: "/home-services/bookings-jobs",   label: "Bookings & Jobs", icon: <Wrench size={16}/>, badge: 0 },
+      { id: "hs-dispatch",        href: "/home-services/dispatch",        label: "Assignment & Dispatch", icon: <Truck size={16}/> },
+      { id: "appointments",       href: "/appointments",                  label: "Appointments", icon: <CalendarCheck size={16}/> },
+      { id: "hs-availability",    href: "/home-services/availability",    label: "Availability", icon: <Clock size={16}/> },
+    ],
+  },
+  {
+    // UX-03 groups: "Services and Pricing" + "Service Areas".
+    label: "Services & Coverage",
+    items: [
+      { id: "hs-services",  href: "/home-services/services",  label: "Services & Pricing", icon: <ListChecks size={16}/> },
+      { id: "hs-coverage",  href: "/home-services/coverage",  label: "Service Areas", icon: <MapPin size={16}/> },
+      { id: "inventory",    href: "/inventory",               label: "Parts & Inventory", icon: <Package size={16}/> },
     ],
   },
   {
     label: "Team",
     items: [
-      { id: "provider-staff", href: "/provider/staff", label: "Staff & Technicians", icon: <Users2 size={16}/> },
+      { id: "hs-team", href: "/home-services/team", label: "Team Members", icon: <Users2 size={16}/> },
     ],
   },
   {
-    label: "Operations",
+    // UX-03 groups: "Customers" + "Complaints and Support".
+    label: "Customers",
     items: [
-      // Bookings & Jobs: one unified pipeline table, one sidebar entry --
-      // was two separate pages/routes (/bookings, /jobs) for the same
-      // booking->job lifecycle.
-      { id: "jobs",         href: "/jobs",         label: "Bookings & Jobs", icon: <Wrench size={16}/>,       badge: 0 },
-      { id: "appointments", href: "/appointments", label: "Appointments",   icon: <CalendarCheck size={16}/> },
-      { id: "inventory",    href: "/inventory",    label: "Inventory",      icon: <Package size={16}/> },
+      { id: "customers",     href: "/customers",               label: "Customers", icon: <Users2 size={16}/> },
+      { id: "hs-reviews",    href: "/home-services/reviews",   label: "Reviews", icon: <Star size={16}/> },
+      // UX-03 pointed "Complaints" at /reviews, which is a different
+      // surface entirely -- corrected to the real complaints workspace.
+      { id: "hs-complaints", href: "/home-services/complaints", label: "Complaints", icon: <AlertCircle size={16}/> },
+      { id: "marketing",     href: "/marketing",               label: "Marketing", icon: <Megaphone size={16}/> },
     ],
   },
   {
-    label: "Billing",
+    // UX-03 group: "Finance and Credits". Its three separate finance links
+    // are tabs of the consolidated finance workspace now.
+    label: "Finance",
     items: [
-      // Package selection/renewal, instant credit top-up, the usage credit
-      // ledger, and the security deposit view are all tabs on one page now
-      // -- three sidebar entries collapsed into one.
-      { id: "finance-package", href: "/packages", label: "Billing", icon: <Package size={16}/> },
+      { id: "hs-finance",         href: "/home-services/finance",         label: "Finance & Credits", icon: <Wallet size={16}/> },
+      { id: "hs-direct-payments", href: "/home-services/direct-payments", label: "Direct Payments", icon: <CreditCard size={16}/> },
+      // "Billing" (-> /packages) removed from nav 2026-08-04 (user: "no
+      // longer using") -- route still exists, just no longer linked here.
     ],
   },
   {
-    label: "Engagement",
-    items: [
-      // Ordered to match the customer-relationship flow: who you serve,
-      // talk to them, resolve issues, then grow.
-      // Chat (customer<->provider messaging) removed for now -- only AI
-      // chat stays available. The /chat page/API remain live, just unlinked.
-      { id: "customers", href: "/customers", label: "Customers", icon: <Users2 size={16}/> },
-      { id: "provider-complaints", href: "/provider/complaints", label: "Complaints", icon: <AlertCircle size={16}/> },
-      { id: "marketing", href: "/marketing", label: "Marketing", icon: <Megaphone size={16}/> },
-    ],
-  },
-  {
-    // Analytics & Reports moved into the top-bar profile dropdown (next to
-    // Billing/Settings/Logout) -- no longer a sidebar group.
     label: "More",
     items: [
-      // Documents: sidebar entry removed per product decision -- policies/
-      // e-signature docs will be universal, admin-managed across all home
-      // service tenants, so no per-tenant Documents section belongs here.
-      // The page/API remain live (unlinked); only this nav entry is hidden.
-      { id: "provider-compliance", href: "/provider/compliance", label: "Compliance", icon: <Shield size={16}/> },
-      { id: "privacy",       href: "/account/privacy", label: "Privacy & Data", icon: <Shield size={16}/> },
-      // Notifications: sidebar entry removed -- the header bell dropdown is
-      // now the primary access point (see TopNav-equivalent bell below).
-      // The /notifications page remains live and reachable from elsewhere.
-      { id: "activity",      href: "/activity",      label: "Activity",      icon: <Activity size={16}/> },
-      { id: "settings",      href: "/settings",      label: "Settings",      icon: <Settings size={16}/> },
+      { id: "media",        href: "/media",           label: "Media", icon: <FileText size={16}/> },
+      { id: "reports",      href: "/reports",         label: "Reports", icon: <BarChart2 size={16}/> },
+      { id: "privacy",      href: "/account/privacy", label: "Privacy & Data", icon: <Shield size={16}/> },
+      { id: "activity",     href: "/activity",        label: "Activity", icon: <Activity size={16}/> },
+      { id: "settings",     href: "/settings",        label: "Settings", icon: <Settings size={16}/> },
+      { id: "help-support", href: "/help-support",    label: "Help & Support", icon: <HelpCircle size={16}/> },
     ],
   },
 ];
@@ -300,7 +333,20 @@ function TenantShellInner({ children, activeNav }: {
   const tour   = useTour();
   const tenant = useTenant();
   const setupStatus = useSetupStatus();
-  const [collapsed,    setCollapsed]    = useState(true);
+  // Real bug: this always defaulted to collapsed on every fresh session,
+  // so the sidebar rendered as a bare icon rail instead of the labeled,
+  // grouped navigation the IA below actually defines -- reported as the
+  // whole app "looking old". Now defaults open and remembers the user's
+  // last choice, same persistence pattern as useTheme.
+  const [collapsed,    setCollapsed]    = useState(false);
+  useEffect(() => {
+    const saved = localStorage.getItem("serviceos-tenant-sidebar-collapsed");
+    if (saved != null) setCollapsed(saved === "1");
+  }, []);
+  const setCollapsedPersist = useCallback((v: boolean) => {
+    setCollapsed(v);
+    localStorage.setItem("serviceos-tenant-sidebar-collapsed", v ? "1" : "0");
+  }, []);
   const [toasts,       setToasts]       = useState<ToastItem[]>([]);
   const [myName,       setMyName]       = useState<string>("");
   const [myAvatar,     setMyAvatar]     = useState<string | null>(null);
@@ -412,8 +458,12 @@ function TenantShellInner({ children, activeNav }: {
 
   async function handleLogout() {
     try { await authApi.logout(); } catch { /* best effort */ }
-    localStorage.removeItem("serviceos_tenant_token");
-    window.location.href = "/login";
+    // Real bug found this pass (mirrors the identical super-admin one):
+    // this only ever cleared serviceos_tenant_token, leaving the refresh
+    // token and 7 other session keys behind so the app could silently
+    // re-authenticate right after landing on /login. clearSession() is
+    // the same helper this file's own 401 handling already relies on.
+    clearSession();
   }
 
   const w = collapsed ? 84 : 248;
@@ -553,13 +603,20 @@ function TenantShellInner({ children, activeNav }: {
             }
 
             return (
-            // Group category headings ("Overview", "Team", "Billing", etc.)
-            // are intentionally not rendered -- the grouping still exists
-            // in data (for entitlement-based show/hide and the collapsed-
-            // rail boxing below) but the sidebar reads as one clean ordered
-            // list rather than labeled sections. A small gap between groups
-            // is kept as the only visual boundary.
-            <div key={group.label} style={{ marginBottom: gi < visibleNavGroups.length - 1 ? 8 : 0 }}>
+            // Group category headings restored (2026-08-04): the earlier
+            // "one clean ordered list" decision read as generic/unlabeled
+            // once the sidebar actually rendered expanded by default --
+            // the approved reference IA groups items under small-caps
+            // section headers (Overview/Operations/Team/etc.), which also
+            // gives the tenant a map of the app instead of a long flat list.
+            <div key={group.label} style={{ marginBottom: gi < visibleNavGroups.length - 1 ? 16 : 0 }}>
+              {!group.special && (
+                <p style={{
+                  fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase",
+                  color: "var(--sidebar-text-muted, var(--sidebar-text))", opacity: 0.55,
+                  margin: "0 0 6px", padding: "0 10px",
+                }}>{group.label}</p>
+              )}
               {group.special === "setup-wizard" ? (
                 /* ── Special: Setup wizard button ── */
                 <button
@@ -605,7 +662,7 @@ function TenantShellInner({ children, activeNav }: {
               <HelpCircle size={15} style={{ flexShrink: 0 }}/><span style={{ fontSize: 12 }}>Help & Tour</span>
             </button>
           )}
-          <button onClick={() => setCollapsed(!collapsed)} style={footerBtnStyle(collapsed)}>
+          <button onClick={() => setCollapsedPersist(!collapsed)} style={footerBtnStyle(collapsed)}>
             {collapsed ? <ChevronRight size={15} style={{ flexShrink: 0 }}/> : <ChevronLeft size={15} style={{ flexShrink: 0 }}/>}
             {!collapsed && <span style={{ fontSize: 12 }}>Collapse</span>}
           </button>
@@ -778,14 +835,10 @@ function TenantShellInner({ children, activeNav }: {
                   )}
                 </div>
 
-                {/* Menu items */}
+                {/* Menu items -- Business Profile / Billing removed 2026-08-04
+                    (user: "no longer using"); routes still exist, just no
+                    longer linked from this menu. */}
                 <div style={{ padding: "4px 8px" }}>
-                  <Link href="/profile" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
-                    <User size={15}/> Business Profile
-                  </Link>
-                  <Link href="/packages" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
-                    <CreditCard size={15}/> Billing
-                  </Link>
                   <Link href="/analytics" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
                     <BarChart2 size={15}/> Analytics
                   </Link>

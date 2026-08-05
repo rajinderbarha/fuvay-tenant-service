@@ -85,9 +85,9 @@ export function useSyncCenter() {
   // "server unreachable while device is online" state is surfaced by the
   // health probe elsewhere (Home screen banner), not duplicated here.
   const connectionState: "online" | "offline" | "limited" =
-    liveNetworkStatus === "online" ? "online"
-    : liveNetworkStatus === "internet_reachable_false" ? "limited"
-    : liveNetworkStatus === "offline" ? "offline"
+    liveNetworkStatus.networkState === "online" ? "online"
+    : liveNetworkStatus.networkState === "slow" ? "limited"
+    : liveNetworkStatus.networkState === "offline" ? "offline"
     : sessionNetworkStatus === "online" ? "online" : "offline";
 
   return {

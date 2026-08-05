@@ -5,7 +5,7 @@ import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, SectionHeader, DataTable } from "../../../../components/shared/ui";
 import { adminStaffApi, AdminStaffMember } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink, X } from "lucide-react";
 import Link from "next/link";
 
 const AVAIL_BADGE: Record<string, "success" | "warning" | "danger" | "muted"> = {
@@ -26,16 +26,14 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
   );
 }
 
-export default function StaffDetailPage() {
-  const params = useParams<{ id: string }>();
-  const staffId = params?.id ?? "";
+function StaffDetailContent({ staffId, onClose }: { staffId: string; onClose?: () => void }) {
   const [tab, setTab] = useState<"overview" | "jobs">("overview");
 
-  const staffFetch = useApi(useCallback(() => adminStaffApi.get(staffId), [staffId]));
+  const staffFetch = useApi(useCallback(() => adminStaffApi.get(staffId), [staffId]), [staffId]);
   const staff: AdminStaffMember | null =
     (staffFetch.data as { data?: AdminStaffMember } | null)?.data ?? null;
 
-  const jobsFetch = useApi(useCallback(() => adminStaffApi.jobs(staffId, { page: 1 }), [staffId]));
+  const jobsFetch = useApi(useCallback(() => adminStaffApi.jobs(staffId, { page: 1 }), [staffId]), [staffId]);
   type JobRow = { id: string; booking_number: string; tenant_name: string; service_category: string; status: string; customer_rating: number | null; city: string; completed_at: string | null; created_at: string | null };
   type JobsData = { jobs: JobRow[]; meta: { page: number; total: number; total_pages: number } };
   const jobsData: JobsData | undefined =
@@ -95,11 +93,18 @@ export default function StaffDetailPage() {
   });
 
   return (
-    <AdminLayout activeNav="staff">
+    <>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-        <Link href="/admin/staff" style={{ color: "var(--muted-text)", display: "flex", alignItems: "center", gap: 4, fontSize: 13, textDecoration: "none" }}>
-          <ArrowLeft size={15} /> Staff
-        </Link>
+        {onClose ? (
+          <button onClick={onClose} style={{ color: "var(--muted-text)", display: "flex", alignItems: "center", gap: 4,
+            fontSize: 13, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            <X size={15} /> Close
+          </button>
+        ) : (
+          <Link href="/admin/staff" style={{ color: "var(--muted-text)", display: "flex", alignItems: "center", gap: 4, fontSize: 13, textDecoration: "none" }}>
+            <ArrowLeft size={15} /> Staff
+          </Link>
+        )}
       </div>
 
       <SectionHeader
@@ -198,6 +203,17 @@ export default function StaffDetailPage() {
           </Card>
         </div>
       ) : null}
+    </>
+  );
+}
+
+// Standalone route -- deep links (/admin/staff/[id]) still work directly.
+export default function StaffDetailPage() {
+  const params = useParams<{ id: string }>();
+  const staffId = params?.id ?? "";
+  return (
+    <AdminLayout activeNav="staff">
+      <StaffDetailContent staffId={staffId} />
     </AdminLayout>
   );
 }

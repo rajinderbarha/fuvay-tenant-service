@@ -58,6 +58,7 @@ class CustomerComplaint(Base):
     customer_accepted_resolution_at = Column(DateTime(timezone=True), nullable=True)
     resolved_at                     = Column(DateTime(timezone=True), nullable=True)
     closed_at                       = Column(DateTime(timezone=True), nullable=True)
+    vertical_id                     = Column(UUID(as_uuid=True), nullable=True)
     # Migration 075 — SLA + settlement tracking
     severity                        = Column(String(20),  nullable=True, default="medium")
     sla_status                      = Column(String(30),  nullable=True, default="on_time")
@@ -113,7 +114,11 @@ class CustomerComplaint(Base):
 
     def to_customer_dict(self) -> dict:
         d = self.to_dict()
+        # Help & Support Hub audit: assigned_admin_user_id leaked the
+        # internal admin's user id to the customer app -- only
+        # internal_admin_notes was ever stripped here.
         d.pop("internal_admin_notes", None)
+        d.pop("assigned_admin_user_id", None)
         return d
 
     def to_provider_dict(self) -> dict:

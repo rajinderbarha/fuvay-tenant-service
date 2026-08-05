@@ -154,9 +154,31 @@ async def update_team_member(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
+    # Real bug fixed here: `max_concurrent_jobs` is a real column on
+    # provider_team_members and the Team page has always offered it as an
+    # editable field, but it was missing from this allow-list -- so saving a
+    # technician's capacity silently did nothing (or 400'd with "No valid
+    # fields to update" when it was the only field changed). Capacity is what
+    # the assignment resolver reads to decide who can take another job, so
+    # this was silently pinning every technician at the default.
     allowed = {"full_name", "phone", "email", "designation", "member_type",
                 "can_receive_assignment", "skills", "supported_offering_ids",
-                "supported_type_ids", "supported_brand_ids", "service_area_ids"}
+                "supported_type_ids", "supported_brand_ids", "service_area_ids",
+                "max_concurrent_jobs"}
+    # Capacity feeds the assignment resolver's "can this member take another
+    # job?" check, and it lands in a raw SQL UPDATE below -- so it is
+    # validated here rather than trusted. Zero or negative would make the
+    # member permanently unassignable with no visible reason.
+    if "max_concurrent_jobs" in payload:
+        raw = payload["max_concurrent_jobs"]
+        if raw is not None:
+            try:
+                payload["max_concurrent_jobs"] = int(raw)
+            except (TypeError, ValueError):
+                raise HTTPException(400, "INVALID_CAPACITY: max_concurrent_jobs must be a whole number.")
+            if payload["max_concurrent_jobs"] < 1:
+                raise HTTPException(400, "INVALID_CAPACITY: max_concurrent_jobs must be at least 1.")
+
     sets = ", ".join(f"{k}=:{k}" for k in payload if k in allowed)
     if not sets:
         raise HTTPException(400, "No valid fields to update")

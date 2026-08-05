@@ -5,7 +5,7 @@ import { SecurityScreen } from "../SecurityScreen";
 import { SecuritySummaryDTO } from "../../../services/auth/securityApi";
 
 jest.mock("../useSecurity");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 import { useSecurity } from "../useSecurity";
 import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
@@ -22,7 +22,7 @@ const PROTECTED: SecuritySummaryDTO = {
   verified_contacts: { masked_mobile: "••••• 12345", mobile_verified: true, masked_email: "a•••@example.com", email_verified: true },
   active_session_count: 2,
   recent_activity: [
-    { id: "e1", action_type: "auth.login_success", outcome: "success", failure_reason: null, device_id: "d1", ip_masked: "1.2.3.xxx", created_at: "2026-07-31T09:12:00Z" },
+    { event_id: "e1", label: "Successful sign-in", outcome: "successful", channel: "Mobile", device_name: "This Android device", is_current_device: true, occurred_at: "2026-07-31T09:12:00Z" },
   ],
 };
 
@@ -36,7 +36,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("SecurityScreen (Phase V)", () => {
@@ -77,7 +77,7 @@ describe("SecurityScreen (Phase V)", () => {
   });
 
   it("shows an offline banner", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (useSecurity as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText("Offline")).toBeTruthy();

@@ -80,6 +80,16 @@ class HomeServiceBookingDraft(ServiceOSBase):
     # Sprint 34E: structured issue + option IDs
     issue_type_id:          Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     service_option_ids_json: Mapped[list | None]     = mapped_column(JSONB, nullable=True)
+    # migration 222 BOOKING-DETAILS-CONTRACT-FIXES -- found missing from
+    # this model during the "make it 100% working" drift audit.
+    catalog_question_answers: Mapped[dict | None]    = mapped_column(JSONB, nullable=True)
+    # Migration 220 defines this as a NOT NULL Integer version counter
+    # (server_default 1) -- was mis-typed here as a nullable String(30),
+    # which made every INSERT send an explicit NULL cast to VARCHAR against
+    # an Integer column, failing with DatatypeMismatchError on every single
+    # booking-draft creation across every category (not specific to any one
+    # service).
+    question_flow_version:   Mapped[int]             = mapped_column(Integer, nullable=False, default=1)
 
     # ── Offering variant ───────────────────────────────────────────────────────
     offering_type_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

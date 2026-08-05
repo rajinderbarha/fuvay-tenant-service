@@ -28,15 +28,6 @@ const STATUS_VISUAL: Record<SecurityStatusDTO["level"], { icon: "shield-checkmar
 const formatDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString() : "—";
 const formatDateTime = (iso: string) => new Date(iso).toLocaleString();
 
-const ACTIVITY_LABEL: Record<string, string> = {
-  "auth.login_success": "Successful sign-in",
-  "auth.password_changed": "Password changed",
-  "mfa.enabled": "MFA verified",
-  "mfa.disabled": "MFA disabled",
-  "device.trust_removed": "Trusted device removed",
-  "device.trust_added": "Trusted device added",
-  "session.revoked": "Session revoked",
-};
 
 /**
  * Security (Phase V). "Protected" is never shown just because the page
@@ -47,7 +38,7 @@ const ACTIVITY_LABEL: Record<string, string> = {
 export function SecurityScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const { data, isLoading, isError, error, isRefetching, refetch } = useSecurity();
 
   if (isLoading) {
@@ -147,12 +138,12 @@ export function SecurityScreen({ navigation }: Props) {
             {data.recent_activity.length === 0 ? (
               <AppText variant="bodySmall" color="tertiary">No recent activity.</AppText>
             ) : data.recent_activity.slice(0, 3).map(item => (
-              <View key={item.id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: theme.spacing.sm }}>
+              <View key={item.event_id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: theme.spacing.sm }}>
                 <View style={{ flex: 1 }}>
-                  <AppText variant="body">{ACTIVITY_LABEL[item.action_type] ?? item.action_type}</AppText>
-                  <AppText variant="caption" color="tertiary">{item.outcome === "success" ? "This device" : item.failure_reason ?? item.outcome}</AppText>
+                  <AppText variant="body">{item.label}</AppText>
+                  <AppText variant="caption" color="tertiary">{item.is_current_device ? "This device" : item.device_name}</AppText>
                 </View>
-                <AppText variant="caption" color="tertiary">{formatDateTime(item.created_at)}</AppText>
+                <AppText variant="caption" color="tertiary">{formatDateTime(item.occurred_at)}</AppText>
               </View>
             ))}
           </Card>

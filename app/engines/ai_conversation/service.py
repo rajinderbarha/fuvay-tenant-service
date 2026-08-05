@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import structlog
@@ -46,11 +46,13 @@ from app.engines.ai_conversation.models import (
 from app.engines.ai_conversation.safety import (
     sanitize_user_message,
     validate_assistant_reply,
+    strip_markdown_formatting,
 )
 from app.engines.ai_conversation.workflow_router import (
     AIWorkflowRouterService,
     detect_intent,
 )
+from app.engines.ai_conversation.regional_language import build_language_options
 from app.exceptions import ServiceOSException
 
 logger = structlog.get_logger("ai_conversation.service")
@@ -63,6 +65,34 @@ class AIConversationService:
     Manages session lifecycle, message persistence, DeepSeek calls,
     tool execution, safety enforcement, and admin visibility.
     """
+
+    def _session_dict(self, session: AIConversationSession) -> dict[str, Any]:
+        """session.to_dict() plus the real, backend-derived chatbot language
+        options (regional_language.build_language_options) -- was never
+        called anywhere, so the mobile app's LanguageSelector always
+        received an empty list and rendered nothing, even though the
+        customer_home capability flag advertised chatbot_language_selectable.
+        """
+        data = session.to_dict()
+        zipcode = (session.context_data or {}).get("zipcode")
+        data["language_options"] = build_language_options(zipcode)
+        return data
+
+    async def _catalog_questions_complete(self, draft_id_str: str) -> bool:
+        """True only when the deterministic question-flow (question_flow_
+        service.QuestionFlowService) reports no current_question left for
+        this draft -- i.e. the canonical catalog question set genuinely
+        owns nothing more to ask. Any failure (job type not yet resolved,
+        offering unavailable, bad draft id) fails CLOSED (returns False),
+        never assumes completion -- scheduling must never activate on an
+        exception swallowed as "probably fine"."""
+        try:
+            from app.engines.home_service_booking.question_flow_service import QuestionFlowService
+            qf = QuestionFlowService(db=self.db)
+            envelope = await qf.get_current_question(draft_id=uuid.UUID(draft_id_str), customer_id=None)
+            return envelope.get("current_question") is None
+        except Exception:
+            return False
 
     def __init__(self, db: AsyncSession, request_id: str = "—"):
         self.db         = db
@@ -108,12 +138,12 @@ class AIConversationService:
 
         logger.info("ai_conv.session_created", session_id=str(session.id),
                     request_id=self.request_id)
-        return session.to_dict()
+        return self._session_dict(session)
 
     async def get_session(self, session_id: uuid.UUID) -> dict[str, Any]:
         """Get session by ID. Raises if not found."""
         session = await self._require_session(session_id)
-        return session.to_dict()
+        return self._session_dict(session)
 
     async def get_session_by_key(self, session_key: str) -> dict[str, Any]:
         """Get session by session_key string."""
@@ -123,7 +153,7 @@ class AIConversationService:
         session = (await self.db.execute(q)).scalars().first()
         if not session:
             raise ServiceOSException(ERR_SESSION_NOT_FOUND, "Session not found.", status_code=404)
-        return session.to_dict()
+        return self._session_dict(session)
 
     async def close_session(self, session_id: uuid.UUID) -> dict[str, Any]:
         """Mark a session as completed."""
@@ -141,7 +171,27 @@ class AIConversationService:
             severity=SEVERITY_INFO,
         )
         await self.db.commit()
-        return session.to_dict()
+        return self._session_dict(session)
+
+    async def set_session_language(
+        self, session_id: uuid.UUID, language: str,
+    ) -> dict[str, Any]:
+        """Set the chatbot conversation language. Was called by the mobile
+        app (PUT .../language) against a route that never existed on this
+        engine -- every language change silently 404'd. Only allows a code
+        this session's own build_language_options() actually offers, never
+        an arbitrary ALLOWED_LANGUAGES value the customer wasn't shown."""
+        session = await self._require_session(session_id)
+        offered = {opt["code"] for opt in build_language_options((session.context_data or {}).get("zipcode"))}
+        if language not in offered:
+            raise ServiceOSException(
+                "AI_LANGUAGE_NOT_OFFERED",
+                f"'{language}' is not one of this session's offered languages.",
+                status_code=422,
+            )
+        session.language = language
+        await self.db.commit()
+        return self._session_dict(session)
 
     async def list_customer_sessions(
         self,
@@ -261,10 +311,23 @@ class AIConversationService:
             db=self.db,
             customer_id=customer_id or session.customer_id,
             session_id=str(session.id),
+            zipcode=(session.context_data or {}).get("zipcode"),
         )
 
         tools_called: list[str] = []
         start = time.monotonic()
+        # Captures the most recent get_category_offerings result this turn
+        # (real slugs/names, straight from the tool executor) -- if the
+        # conversation ends this turn WITHOUT a draft having been started,
+        # it means DeepSeek is (or should be) disambiguating between
+        # offerings, and the app can render these as real tap buttons
+        # instead of the customer having to type a reply. This is
+        # deliberately generic (not draft/question-flow specific) so any
+        # tool that returns a small set of named choices can opt in the
+        # same way later.
+        pending_offering_choice: dict | None = None
+        pending_date_choice: bool = False
+        pending_date_draft_id: str | None = None
 
         from app.engines.ai_conversation.constants import MAX_TOOL_ITERATIONS
         for iteration in range(MAX_TOOL_ITERATIONS):
@@ -289,10 +352,42 @@ class AIConversationService:
                     "name":         fn_name,
                     "content":      result,
                 })
+
+                if fn_name == "get_category_offerings":
+                    try:
+                        parsed = json.loads(result)
+                        offerings = parsed.get("offerings") or []
+                        if len(offerings) >= 2:
+                            pending_offering_choice = {
+                                "category_slug": parsed.get("category_slug"),
+                                "offerings": offerings,
+                            }
+                        else:
+                            pending_offering_choice = None
+                    except (ValueError, TypeError):
+                        pass
+                elif fn_name in ("start_home_service_draft", "update_home_service_draft"):
+                    pending_offering_choice = None  # resolved -- no longer pending
+                    # `preferred_date` has no natural free-text answer a
+                    # customer would want to type (a real date) -- offer
+                    # real, backend-computed date presets as tap options
+                    # the same way offering choice does, instead of
+                    # leaving it as the one remaining typed field.
+                    try:
+                        parsed = json.loads(result)
+                        still_needed = parsed.get("still_needed") or []
+                        if "preferred_date" in still_needed:
+                            pending_date_choice = True
+                            pending_date_draft_id = fn_args.get("draft_id")
+                        elif fn_name == "update_home_service_draft":
+                            pending_date_choice = False
+                    except (ValueError, TypeError):
+                        pass
         else:
             reply_text = "I'm having trouble processing your request. Please try again."
 
         # ── Safety: strip forbidden fields from reply ──────────────────────────
+        reply_text = strip_markdown_formatting(reply_text)
         safe_reply, violations = validate_assistant_reply(reply_text)
         if violations:
             await self._audit(
@@ -332,11 +427,47 @@ class AIConversationService:
         logger.info("ai_conv.message_processed", session_id=str(session.id),
                     intent=intent, tools=tools_called, latency_ms=latency_ms)
 
+        # Real, backend-sourced tap options for THIS reply (e.g. "AC
+        # Installation" vs "AC Service") -- only when the conversation is
+        # still undecided (no draft started this turn). `value` is the
+        # exact text sent back through the normal sendMessage path when
+        # tapped, so DeepSeek sees it exactly like the customer typed it,
+        # no separate client-side codepath needed.
+        quick_replies = None
+        if pending_offering_choice:
+            quick_replies = [
+                {"label": o["name"], "value": f"I want {o['name']}."}
+                for o in pending_offering_choice["offerings"]
+                if o.get("name")
+            ]
+        elif pending_date_choice and pending_date_draft_id and await self._catalog_questions_complete(pending_date_draft_id):
+            # DETERMINISTIC GUARD (not prompt-wording alone): confirmed live
+            # via a physical-device screenshot that offering date presets
+            # purely from `still_needed` (which only diffs draft columns,
+            # blind to the deterministic question-flow's own state) let a
+            # date quick-reply appear in THE SAME turn a required catalog
+            # question (e.g. "What's happening with the cooling?") first
+            # became active -- both rendered as simultaneous, competing
+            # actionable groups. The question-flow owns the interaction
+            # until it reports complete; only then may schedule quick-
+            # replies appear.
+            today = datetime.now(timezone.utc).date()
+            presets = [
+                ("Today", today),
+                ("Tomorrow", today + timedelta(days=1)),
+                ("This weekend", today + timedelta(days=(5 - today.weekday()) % 7 or 7)),
+            ]
+            quick_replies = [
+                {"label": label, "value": f"I'd like it on {date_val.isoformat()} ({label})."}
+                for label, date_val in presets
+            ]
+
         return {
             "reply":       safe_reply,
             "tools_called": tools_called,
             "intent":      intent,
-            "session":     session.to_dict(),
+            "session":     self._session_dict(session),
+            "quick_replies": quick_replies,
         }
 
     async def get_messages(

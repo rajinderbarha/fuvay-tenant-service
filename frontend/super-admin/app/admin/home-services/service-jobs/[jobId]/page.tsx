@@ -303,7 +303,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
     <AdminLayout activeNav="operations">
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, fontSize: 12, color: "var(--text-tertiary)" }}>
         <span>Admin</span><ChevronRight size={12}/><span>Home Services</span><ChevronRight size={12}/>
-        <Link href="/admin/home-services/service-jobs" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Service Jobs</Link>
+        <Link href="/admin/home-services/bookings-jobs" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Service Jobs</Link>
         <ChevronRight size={12}/>
         <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{d?.job_number ?? jobId}</span>
       </div>

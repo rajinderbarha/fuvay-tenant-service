@@ -55,6 +55,9 @@ class ServiceBooking(ServiceOSBase):
     provider_snapshot:     Mapped[dict | None]      = mapped_column(JSONB, nullable=True)
     issue_summary:         Mapped[str | None]       = mapped_column(Text(), nullable=True)
     issue_details:         Mapped[dict | None]      = mapped_column(JSONB, nullable=True)
+    # migration 222 BOOKING-DETAILS-CONTRACT-FIXES -- found missing during
+    # the "make it 100% working" drift audit.
+    answer_snapshot:       Mapped[dict | None]      = mapped_column(JSONB, nullable=True)
     status:                Mapped[str]              = mapped_column(String(40), nullable=False, default="pending_assignment")
     assignment_status:     Mapped[str]              = mapped_column(String(30), nullable=False, default="unassigned")
     failure_reason:        Mapped[str | None]       = mapped_column(Text(), nullable=True)
@@ -84,6 +87,11 @@ class ServiceBooking(ServiceOSBase):
             "provider_snapshot":     self.provider_snapshot,
             "issue_summary":         self.issue_summary,
             "issue_details":         self.issue_details,
+            # Real bug fixed here: this column is what the customer's booking
+            # page renders as "what you told us", but it was never included
+            # in the payload -- so even once populated it could not reach the
+            # client and the section stayed empty.
+            "answer_snapshot":       self.answer_snapshot,
             "status":                self.status,
             "assignment_status":     self.assignment_status,
             "failure_reason":        self.failure_reason,
@@ -138,6 +146,10 @@ class ServiceJob(ServiceOSBase):
     # mutated by anything except POST .../complete. HS9 reads this to
     # perform usage-credit deduction — this sprint only prepares it.
     completion_data:        Mapped[dict | None]      = mapped_column(JSONB, nullable=True)
+    # CANCEL-RESCHEDULE-FOUNDATION (migration 224) -- count of customer-
+    # initiated reschedules against this job, capped by MAX_RESCHEDULE_COUNT
+    # in home_service_assignment.constants. Never decremented.
+    reschedule_count:       Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
 
     def to_dict(self) -> dict:
         return {
@@ -162,6 +174,7 @@ class ServiceJob(ServiceOSBase):
             "assignment_status":     self.assignment_status,
             "failure_reason":        self.failure_reason,
             "completion_data":       self.completion_data,
+            "reschedule_count":      self.reschedule_count,
             "created_at":            self.created_at.isoformat() if self.created_at else None,
             "updated_at":            self.updated_at.isoformat() if self.updated_at else None,
         }

@@ -33,7 +33,7 @@ const formatDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateStrin
 export function EmploymentDetailsScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
 

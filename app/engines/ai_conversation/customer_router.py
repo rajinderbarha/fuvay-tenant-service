@@ -97,6 +97,21 @@ async def get_session(
     return ok(data, _rid(r), "ai_conversation")
 
 
+@router.put(
+    "/sessions/{session_id}/language",
+    response_model=ApiResponse[dict],
+    summary="Set the chatbot conversation language",
+)
+async def set_session_language(
+    session_id: uuid.UUID,
+    r: Request,
+    svc: AIConversationService = Depends(_svc),
+):
+    body = await r.json()
+    data = await svc.set_session_language(session_id, body["language"])
+    return ok(data, _rid(r), "ai_conversation")
+
+
 @router.post(
     "/sessions/{session_id}/close",
     response_model=ApiResponse[dict],
@@ -141,7 +156,12 @@ async def send_message(
         from app.exceptions import ServiceOSException
         raise ServiceOSException("AI_MESSAGE_EMPTY", "message is required.", status_code=422)
 
-    customer_id = user.user_id if user else None
+    # `user.user_id` is a plain string; every downstream consumer (draft
+    # ownership checks in home_service_booking) compares this against a real
+    # UUID column and never matched, always failing closed with "You do not
+    # have access to this booking draft" -- silently blocking every
+    # DeepSeek-driven draft update for every customer, every time.
+    customer_id = uuid.UUID(user.user_id) if user else None
     data = await svc.send_message(
         session_id=session_id,
         user_message=message,

@@ -47,12 +47,19 @@ export const CUSTOMER_ONE = { email: 'customer@serviceos.in', password: 'Passwor
 export const CUSTOMER_TWO = { email: 'customer2@serviceos.in', password: 'Password123!' };
 
 export const SEED = {
-  tenantId: '34b427a7-b2be-496c-b826-6d51bb181248',
+  // NOTE: re-pointed to the current live DB's real Demo AC Services tenant
+  // (Final Phase E2E audit, 2026-08-02) -- the previous hardcoded IDs no
+  // longer existed after a DB reseed, causing every customer-app E2E test
+  // to fail at the seed-check step with HOME_BOOKING_CATEGORY_INVALID
+  // before ever reaching the UI under test. This is test-fixture drift,
+  // not an application bug -- verify against the live DB if these ever
+  // fail again with a 404/NOT_FOUND at the seed step.
+  tenantId: '5209ef33-a53e-4fc0-b3f6-006335b8d712',
   tenantName: 'Demo AC Services',
-  categorySlug: 'home_services',
-  offeringSlug: 'ac_repair',
+  categorySlug: 'air-conditioning',
+  offeringSlug: 'ac-service',
   offeringTypeId: 'c86dfcf3-53bd-4d83-bf0b-51257f382652', // Split AC
-  brandId: '64a3b25f-23aa-4639-8baf-f67def0f60db', // LG
+  brandId: 'a8efc47f-d639-4cf6-a2eb-808f73cad28c', // LG
   city: 'Ludhiana',
   zipcode: '141001',
   issueSummary: 'Not Cooling',

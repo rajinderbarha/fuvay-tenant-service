@@ -56,11 +56,11 @@ export default function ServiceAreaRequestsPage() {
         <Card style={{ marginBottom: 16, padding: 16, display: "flex", gap: 12, alignItems: "flex-end" }}>
           <div style={{ minWidth: 220 }}>
             <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Status</label>
-            <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} options={STATUS_OPTIONS} />
+            <Select value={statusFilter} onChange={v => setStatusFilter(v)} options={STATUS_OPTIONS} />
           </div>
           <div style={{ minWidth: 260 }}>
             <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Tenant ID</label>
-            <Input value={tenantId} onChange={e => setTenantId(e.target.value)} placeholder="Filter by tenant UUID" />
+            <Input value={tenantId} onChange={v => setTenantId(v)} placeholder="Filter by tenant UUID" />
           </div>
           <Btn variant="ghost" onClick={() => requests.refetch()}>Refresh</Btn>
         </Card>

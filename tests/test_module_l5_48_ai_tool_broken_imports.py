@@ -37,9 +37,18 @@ from app.engines.package_commerce.service import PackageCommerceService
 
 
 def test_category_offerings_imports_real_model():
+    """Regression check updated for the backend-first re-architecture:
+    `_tool_get_category_offerings` now delegates to
+    `offering_catalog_service.list_serviceable_offerings` (shared with the
+    customer-facing assistant-bootstrap endpoint) rather than querying
+    `MasterOffering` inline -- but the real invariant this test protects
+    (never reference the dead `app.engines.customer_flow.models` module,
+    never silently return zero real offerings) still holds via the shared
+    function, confirmed by `test_140412_zipcode_offering_isolation.py`."""
     src = inspect.getsource(BackendToolExecutor._tool_get_category_offerings)
     assert "app.engines.customer_flow.models" not in src
-    assert "from app.engines.admin_catalog.models import ServiceCategory, MasterOffering" in src
+    assert "MasterOffering" not in src
+    assert "list_serviceable_offerings" in src
 
 
 def test_check_service_area_imports_real_model():

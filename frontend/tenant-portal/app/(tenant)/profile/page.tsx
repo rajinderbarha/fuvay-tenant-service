@@ -22,7 +22,7 @@ import {
   CheckCircle2, XCircle, Info, RefreshCw, ChevronRight, Shield, Loader,
   FileText, Activity, Copy, Package, MapPin, Tag, Zap, AlertCircle,
   Save, Search, ExternalLink, Eye, Pencil, Send, Star, Users2, UserPlus,
-  Layers, ImageIcon, X,
+  Layers, ImageIcon, X, Lock,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -234,10 +234,12 @@ function CompletionRing({ pct }: { pct: number }) {
 
 const TABS = [
   { key:"overview", label:"Overview" },
+  { key:"public",    label:"Public Profile" },
   { key:"legal",     label:"Legal & Verification" },
   { key:"address",   label:"Address & Service Areas" },
   { key:"people",    label:"People & Access" },
-  { key:"activity",  label:"Activity" },
+  { key:"media",     label:"Media" },
+  { key:"activity",  label:"Activity & Audit" },
 ] as const;
 type TabKey = typeof TABS[number]["key"];
 
@@ -511,10 +513,25 @@ export default function ProviderProfilePage() {
           <Btn variant="secondary" size="sm" onClick={()=>setPreviewOpen(true)}>
             <Eye size={13}/> Preview Public Profile
           </Btn>
-          {canUpdate && (
+          {/* Real bug fixed here: this edit control (and the other two entry
+              points into the same modal, below) had no gate at all on
+              verification status -- an already-approved profile could be
+              silently edited with no change-request trail, contradicting
+              the reviewed/locked guarantee "Verified by ServiceOS" implies.
+              A real change-request workflow doesn't exist on the backend
+              yet, so rather than fake one, editing is simply blocked once
+              approved -- honest, not a fabricated review queue. */}
+          {canUpdate && !isApproved && (
             <Btn variant="secondary" size="sm" onClick={()=>setEditOpen(true)}>
               <Pencil size={13}/> Edit Business Info
             </Btn>
+          )}
+          {canUpdate && isApproved && (
+            <span title="Verified by ServiceOS — these fields are locked. Contact support to request a change.">
+              <Btn variant="secondary" size="sm" disabled>
+                <Lock size={13}/> Locked (Verified)
+              </Btn>
+            </span>
           )}
           {canSubmit && (
             !isApproved && (
@@ -674,7 +691,7 @@ export default function ProviderProfilePage() {
                 <div className="card">
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
                     <p style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:0 }}>Business Information</p>
-                    {canUpdate && (
+                    {canUpdate && !isApproved && (
                       <button onClick={()=>setEditOpen(true)}
                         style={{ padding:"6px 14px", fontSize:13, fontWeight:500, borderRadius:"var(--radius-md)",
                           border:"1px solid var(--border)", background:"var(--surface-sunken)",
@@ -682,6 +699,12 @@ export default function ProviderProfilePage() {
                           display:"flex", alignItems:"center", gap:6 }}>
                         <Pencil size={13}/> Edit
                       </button>
+                    )}
+                    {canUpdate && isApproved && (
+                      <span title="Verified by ServiceOS — these fields are locked. Contact support to request a change."
+                        style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--text-tertiary)" }}>
+                        <Lock size={12}/> Locked
+                      </span>
                     )}
                   </div>
 
@@ -744,6 +767,79 @@ export default function ProviderProfilePage() {
 
                 {/* Right column */}
                 <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+                  {/* Verification status -- every row is a real, already-
+                      fetched field (me.is_verified for identity, isApproved
+                      for the business itself, missing.length===0 for
+                      "documents current" -- the exact same required-items
+                      list the Complete-your-profile card above uses, not a
+                      second computation that could disagree with it). No
+                      "change requests" row: that concept has no backend
+                      anywhere in this codebase, so it's honestly omitted
+                      rather than shown as a fake 0. */}
+                  <div className="card">
+                    <p className="section-title"><Shield size={15}/> Verification Status</p>
+                    <div style={{ display:"flex", flexDirection:"column" }}>
+                      <SummaryRow icon={<User size={14}/>} label="Identity verified"
+                        badge={me?.is_verified
+                          ? <span style={{ fontSize:11,fontWeight:700,color:"var(--success-text)",display:"flex",alignItems:"center",gap:4 }}><CheckCircle2 size={12}/> Verified</span>
+                          : <span style={{ fontSize:11,fontWeight:700,color:"var(--text-tertiary)" }}>Pending</span>}/>
+                      <SummaryRow icon={<Building2 size={14}/>} label="Business verified"
+                        badge={isApproved
+                          ? <span style={{ fontSize:11,fontWeight:700,color:"var(--success-text)",display:"flex",alignItems:"center",gap:4 }}><CheckCircle2 size={12}/> Verified</span>
+                          : <span style={{ fontSize:11,fontWeight:700,color:"var(--text-tertiary)" }}>{verS.label}</span>}/>
+                      <SummaryRow icon={<FileText size={14}/>} label="Documents current"
+                        badge={missing.length === 0
+                          ? <span style={{ fontSize:11,fontWeight:700,color:"var(--success-text)",display:"flex",alignItems:"center",gap:4 }}><CheckCircle2 size={12}/> Current</span>
+                          : <span style={{ fontSize:11,fontWeight:700,color:"var(--warning-text)" }}>{missing.length} missing</span>}/>
+                    </div>
+                  </div>
+
+                  {/* Customer view -- a compact teaser of the same real
+                      Public Profile tab content, not a separate data source. */}
+                  <div className="card">
+                    <p className="section-title"><Eye size={15}/> Customer View</p>
+                    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+                      <div style={{ width:36,height:36,borderRadius:9,background:"var(--surface-sunken)",border:"1px solid var(--border)",
+                        display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0 }}>
+                        {logoPreview ? <img src={logoPreview} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/> : <Building2 size={16} style={{ color:"var(--text-tertiary)" }}/>}
+                      </div>
+                      <div style={{ minWidth:0 }}>
+                        <p style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", margin:0 }}>{safeText(bizName,"Your Business")}</p>
+                        <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:0 }}>
+                          {isApproved ? "Visible to customers" : "Hidden until verified"}
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={()=>setTab("public")}
+                      style={{ fontSize:12, fontWeight:600, color:"var(--brand)", background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", padding:0 }}>
+                      Preview public profile →
+                    </button>
+                  </div>
+
+                  {/* Visibility & privacy -- static, real system policy (the
+                      same customer-privacy boundary enforced server-side
+                      throughout this codebase, e.g. customer_alias()/
+                      masked_locality() on the dispatch/booking projections)
+                      -- not a per-tenant configurable setting today, so
+                      shown as a fact, not a toggle. */}
+                  <div className="card">
+                    <p className="section-title"><Lock size={15}/> Visibility & Privacy</p>
+                    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", fontSize:12.5 }}>
+                        <span style={{ color:"var(--text-secondary)" }}>Public business details</span>
+                        <span style={{ color:"var(--text-primary)", fontWeight:600 }}>Visible to customers</span>
+                      </div>
+                      <div style={{ display:"flex", justifyContent:"space-between", fontSize:12.5 }}>
+                        <span style={{ color:"var(--text-secondary)" }}>Private legal / owner data</span>
+                        <span style={{ color:"var(--text-primary)", fontWeight:600 }}>Hidden from customers</span>
+                      </div>
+                      <div style={{ display:"flex", justifyContent:"space-between", fontSize:12.5 }}>
+                        <span style={{ color:"var(--text-secondary)" }}>Job-scoped customer access</span>
+                        <span style={{ color:"var(--text-primary)", fontWeight:600 }}>Only for active jobs</span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Quick Summary */}
                   <div className="card">
                     <p className="section-title"><Layers size={15}/> Quick Summary</p>
@@ -780,6 +876,50 @@ export default function ProviderProfilePage() {
                       ].filter(s=>s.done).map(s=>(
                         <NextStep key={s.title} done ctaLabel={s.ctaLabel} title={s.title} desc={s.desc} onClick={s.onClick}/>
                       ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Public Profile -- the SAME customer-safe fields the "Preview
+                Public Profile" modal already renders, now also available as
+                a real tab rather than only a modal. Nothing here is
+                additional/fabricated data -- it's the identical bizName/
+                desc/logo/shop photo/service-area state used everywhere else
+                on this page, just presented as "what a customer sees." */}
+            {tab === "public" && (
+              <div className="overview-grid" id="public">
+                <div className="card" style={{ gridColumn: "1 / -1", maxWidth: 480 }}>
+                  <p style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:"0 0 14px" }}>What customers see</p>
+                  <div style={{ borderRadius:"var(--radius-lg)", overflow:"hidden", border:"1px solid var(--border)" }}>
+                    <div style={{ height:100, background: shopPreview
+                      ? `linear-gradient(180deg, rgba(34,29,20,0.1), rgba(34,29,20,0.5)), url(${shopPreview}) center/cover no-repeat`
+                      : "var(--primary-gradient)" }}/>
+                    <div style={{ padding:20, background:"var(--surface)" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:12, marginTop:-44, marginBottom:10 }}>
+                        <div style={{ width:64,height:64,borderRadius:14,background:"var(--surface)",border:"3px solid var(--surface)",
+                          boxShadow:"0 2px 8px rgba(0,0,0,0.15)",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden" }}>
+                          {logoPreview ? <img src={logoPreview} alt="logo" style={{ width:"100%",height:"100%",objectFit:"cover" }}/> : <Building2 size={26}/>}
+                        </div>
+                      </div>
+                      <h3 style={{ fontSize:16, fontWeight:800, margin:"0 0 2px" }}>{safeText(bizName,"Your Business")}</h3>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
+                        <Star size={12} style={{ color:"var(--warning)" }}/>
+                        <span style={{ fontSize:12, color:"var(--text-secondary)" }}>New — no ratings yet</span>
+                        {isApproved && <span style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:999,
+                          background:"var(--success-bg)", color:"var(--success-text)" }}>Verified</span>}
+                      </div>
+                      <p style={{ fontSize:12, color:"var(--text-secondary)", margin:"0 0 12px" }}>{safeText(desc,"No description added yet.")}</p>
+                      <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}>
+                        {(areasApi.data?.areas ?? []).slice(0,3).map((a,i) => (
+                          <span key={i} style={{ fontSize:11, padding:"4px 10px", borderRadius:999, background:"var(--surface-sunken)",
+                            border:"1px solid var(--border)" }}>{safeText(a.city)}</span>
+                        ))}
+                      </div>
+                      <p style={{ fontSize:10, color:"var(--text-tertiary)", margin:0 }}>
+                        Internal balances, deposits, health scores, and admin notes are never shown here.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1062,6 +1202,44 @@ export default function ProviderProfilePage() {
               </div>
             )}
 
+            {/* Media -- real status of the same two assets HeroCard already
+                manages (logo/cover upload lives there, not duplicated here
+                to avoid a second, divergent upload path). */}
+            {tab === "media" && (
+              <div className="overview-grid" id="media">
+                <div className="card">
+                  <p style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:"0 0 14px" }}>Business logo</p>
+                  <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+                    <div style={{ width:64,height:64,borderRadius:14,background:"var(--surface-sunken)",border:"1px solid var(--border)",
+                      display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0 }}>
+                      {logoPreview ? <img src={logoPreview} alt="logo" style={{ width:"100%",height:"100%",objectFit:"cover" }}/> : <Building2 size={24} style={{ color:"var(--text-tertiary)" }}/>}
+                    </div>
+                    <div>
+                      <p style={{ fontSize:13, fontWeight:600, color:"var(--text-primary)", margin:"0 0 4px" }}>{logoPreview ? "Logo uploaded" : "No logo yet"}</p>
+                      <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})}
+                        style={{ fontSize:12, color:"var(--brand)", background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", padding:0 }}>
+                        {logoPreview ? "Change logo ↑" : "Upload logo ↑"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="card">
+                  <p style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:"0 0 14px" }}>Storefront / cover photo</p>
+                  <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+                    <div style={{ width:96,height:64,borderRadius:10,background: shopPreview ? `url(${shopPreview}) center/cover no-repeat` : "var(--surface-sunken)",
+                      border:"1px solid var(--border)", flexShrink:0 }}/>
+                    <div>
+                      <p style={{ fontSize:13, fontWeight:600, color:"var(--text-primary)", margin:"0 0 4px" }}>{shopPreview ? "Cover photo uploaded" : "No cover photo yet"}</p>
+                      <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})}
+                        style={{ fontSize:12, color:"var(--brand)", background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", padding:0 }}>
+                        {shopPreview ? "Change cover ↑" : "Upload cover ↑"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {tab === "activity" && (
               <div className="card" id="activity">
                 <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4 }}>
@@ -1118,7 +1296,7 @@ export default function ProviderProfilePage() {
       )}
 
       {/* Edit Business Info Modal */}
-      <Modal open={editOpen} onClose={()=>setEditOpen(false)} title="Edit Business Info">
+      <Modal open={editOpen && !isApproved} onClose={()=>setEditOpen(false)} title="Edit Business Info">
         <div style={{ display:"grid", gap:16 }}>
           <p style={{ fontSize:12, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"var(--text-tertiary)", margin:0 }}>Basic Info</p>
           <div className="two-col">

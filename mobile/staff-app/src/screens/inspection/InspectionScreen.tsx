@@ -28,7 +28,7 @@ export function InspectionScreen({ route, navigation }: Props) {
   const { theme } = useTheme();
   const { jobId } = route.params;
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
 
   const {
     data, isLoading, isError, error, isRefetching, refetch,

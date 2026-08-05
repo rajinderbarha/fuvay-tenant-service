@@ -144,7 +144,8 @@ function StaffContent() {
       is_active: isActiveFilter === "" ? undefined : isActiveFilter === "true",
       page,
       page_size: 25,
-    }), [q, roleFilter, availFilter, cityFilter, isActiveFilter, page])
+    }), [q, roleFilter, availFilter, cityFilter, isActiveFilter, page]),
+    [q, roleFilter, availFilter, cityFilter, isActiveFilter, page],
   );
 
   const listData = (listFetch.data as { data?: { staff: AdminStaffMember[]; meta: { page: number; total: number; total_pages: number } } } | null)?.data;

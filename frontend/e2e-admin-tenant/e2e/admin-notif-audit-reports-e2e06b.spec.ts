@@ -16,7 +16,9 @@ test.describe('ADMIN-TENANT-E2E-06B notifications/audit/reports browser', () => 
 
   test('notification bell is visible, clickable, navigates, no fake badge when zero', async ({ page }) => {
     await loginAsSuperAdmin(page);
-    const bell = page.locator('a[aria-label*="Notification"]');
+    // Real element is a <button> (components/layout/AdminLayout.tsx:937-939),
+    // never an <a> -- fixed after confirming via source read (Final Phase audit).
+    const bell = page.locator('button[aria-label*="Notification"]');
     await expect(bell).toBeVisible();
     const badgeCountBefore = await bell.locator('span').count();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'bell-before-click.png') });

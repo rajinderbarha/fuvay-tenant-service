@@ -1,7 +1,7 @@
 """Settings Engine — Models (4 tables)."""
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Index, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import ServiceOSBase, utcnow
@@ -107,6 +107,74 @@ class FeatureFlag(ServiceOSBase):
             "start_date": self.start_date.isoformat() if self.start_date else None,
             "end_date": self.end_date.isoformat() if self.end_date else None,
             "owner_module": self.owner_module,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ConfigurationValueVersion(ServiceOSBase):
+    """Versioned, auditable configuration values (migration 187).
+
+    Real bug fixed here: migration 187 created `configuration_value_versions`
+    and `settings_engine/configuration_router.py` queries this class by name,
+    but the model was never written -- so importing that router raised
+    ImportError and the ENTIRE Platform Configuration engine silently failed
+    to mount. Every /v1/admin/configuration/* route 404'd in production, and
+    the super-admin Configuration workspace could not compile either.
+
+    Columns mirror migration 187 exactly.
+    """
+    __tablename__ = "configuration_value_versions"
+    __table_args__ = (
+        UniqueConstraint("setting_key", "scope_type", "scope_id", "version_number", name="uq_cvv_version"),
+        Index("ix_cvv_key", "setting_key"),
+        Index("ix_cvv_scope", "scope_type", "scope_id"),
+        # One ACTIVE version per key+scope, enforced by a partial unique index.
+        Index("ix_cvv_current", "setting_key", "scope_type", "scope_id",
+              unique=True, postgresql_where=text("status = 'active'")),
+    )
+
+    setting_key:    Mapped[str]            = mapped_column(String(200), nullable=False)
+    scope_type:     Mapped[str]            = mapped_column(String(20), default="global", nullable=False)
+    # Never NULL -- Postgres treats every NULL as distinct in a unique index,
+    # which would silently defeat ix_cvv_current's "one active row per
+    # key+scope" guarantee. "GLOBAL" is the sentinel for global scope.
+    scope_id:       Mapped[str]            = mapped_column(String(80), default="GLOBAL", nullable=False)
+    version_number: Mapped[int]            = mapped_column(Integer, nullable=False)
+    status:         Mapped[str]            = mapped_column(String(20), default="draft", nullable=False)
+    value:          Mapped[dict]           = mapped_column(JSONB, nullable=False)
+
+    effective_from: Mapped[datetime|None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    effective_to:   Mapped[datetime|None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    supersedes_value_id: Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    created_by:      Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    approved_by:     Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    activated_by:    Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    rolled_back_by:  Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    change_reason:   Mapped[str|None]       = mapped_column(Text, nullable=True)
+    rollback_reason: Mapped[str|None]       = mapped_column(Text, nullable=True)
+    activated_at:    Mapped[datetime|None]  = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "setting_key": self.setting_key,
+            "scope_type": self.scope_type,
+            "scope_id": self.scope_id,
+            "version_number": self.version_number,
+            "status": self.status,
+            "value": self.value,
+            "effective_from": self.effective_from.isoformat() if self.effective_from else None,
+            "effective_to": self.effective_to.isoformat() if self.effective_to else None,
+            "supersedes_value_id": str(self.supersedes_value_id) if self.supersedes_value_id else None,
+            "created_by": str(self.created_by) if self.created_by else None,
+            "approved_by": str(self.approved_by) if self.approved_by else None,
+            "activated_by": str(self.activated_by) if self.activated_by else None,
+            "rolled_back_by": str(self.rolled_back_by) if self.rolled_back_by else None,
+            "change_reason": self.change_reason,
+            "rollback_reason": self.rollback_reason,
+            "activated_at": self.activated_at.isoformat() if self.activated_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

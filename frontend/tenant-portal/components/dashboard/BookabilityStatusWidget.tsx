@@ -50,7 +50,7 @@ export function BookabilityStatusWidget() {
           <Btn size="sm" variant="secondary" onClick={() => refreshAction.execute()} disabled={refreshAction.loading}>
             <RefreshCw size={12} />
           </Btn>
-          <Link href="/provider/status" style={{ fontSize: 12, color: "var(--brand)", textDecoration: "none",
+          <Link href="/profile" style={{ fontSize: 12, color: "var(--brand)", textDecoration: "none",
             display: "flex", alignItems: "center", gap: 3, fontWeight: 500, padding: "4px 8px",
             border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)" }}>
             Details <ArrowRight size={11} />
@@ -86,7 +86,7 @@ export function BookabilityStatusWidget() {
           background: "rgba(220,38,38,0.05)", borderRadius: 6, border: "1px solid rgba(220,38,38,0.15)" }}>
           <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>
             {totalBlockers} blocker{totalBlockers > 1 ? "s" : ""} preventing full activation.{" "}
-            <Link href="/provider/status" style={{ color: "var(--danger)", fontWeight: 600 }}>View and resolve →</Link>
+            <Link href="/profile" style={{ color: "var(--danger)", fontWeight: 600 }}>View and resolve →</Link>
           </p>
         </div>
       )}

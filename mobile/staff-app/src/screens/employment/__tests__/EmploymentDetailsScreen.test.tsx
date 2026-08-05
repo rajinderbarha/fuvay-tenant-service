@@ -5,7 +5,7 @@ import { EmploymentDetailsScreen } from "../EmploymentDetailsScreen";
 import { EmploymentDetailDTO } from "../../../services/employment/types";
 
 jest.mock("../useEmploymentDetails");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 import { useEmploymentDetails } from "../useEmploymentDetails";
 import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
@@ -51,7 +51,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("EmploymentDetailsScreen (Phase S)", () => {
@@ -127,7 +127,7 @@ describe("EmploymentDetailsScreen (Phase S)", () => {
   });
 
   it("shows an offline banner when offline", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (useEmploymentDetails as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText("Offline")).toBeTruthy();

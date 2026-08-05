@@ -180,5 +180,19 @@ EVT_CATEGORY_ENABLED      = "category.enabled"
 EVT_CATEGORY_DISABLED     = "category.disabled"
 # Chat
 EVT_CHAT_NEW_MESSAGE      = "chat.new_message"
+# Staff — Leave / Employment Correction / Documents
+# Found missing during the "make it 100% working" pass -- referenced by
+# mobile_schedule_router.py and mobile_employment_service.py but never
+# defined, so the imports of these names raised ImportError at call time
+# (silently swallowed for leave decisions, unhandled -- a real 500 -- for
+# employment correction decisions).
+EVT_LEAVE_APPROVED        = "leave.approved"
+EVT_LEAVE_REJECTED        = "leave.rejected"
+EVT_CORRECTION_APPROVED   = "employment_correction.approved"
+EVT_CORRECTION_CHANGES_REQUESTED = "employment_correction.changes_requested"
+EVT_CORRECTION_REJECTED   = "employment_correction.rejected"
+EVT_DOCUMENT_VERIFIED     = "document.verified"
+EVT_DOCUMENT_CHANGES_REQUESTED = "document.changes_requested"
+EVT_DOCUMENT_REJECTED     = "document.rejected"
 
 MAX_RETRY_COUNT = 3

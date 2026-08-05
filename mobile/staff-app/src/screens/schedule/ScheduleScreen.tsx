@@ -38,7 +38,7 @@ export function ScheduleScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const rootNavigation = useNavigation<any>();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const [selectedDate, setSelectedDate] = useState(new Date());
 
   const { data, isLoading, isError, error, isRefetching, refetch, weekDates, mutating, mutationError, removeBlockedTime } = useSchedule(selectedDate);

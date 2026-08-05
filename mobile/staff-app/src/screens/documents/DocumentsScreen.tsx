@@ -40,7 +40,7 @@ function matchesFilter(req: DocumentRequirementDTO, filter: DocumentFilter): boo
 export function DocumentsScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const [filter, setFilter] = useState<DocumentFilter>("all");
 
   const { data, isLoading, isError, error, isRefetching, refetch } = useDocuments();

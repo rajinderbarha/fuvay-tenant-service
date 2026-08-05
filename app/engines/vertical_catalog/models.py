@@ -33,6 +33,7 @@ class Vertical(ServiceOSBase):
     lifecycle_status:  Mapped[str]        = mapped_column(String(20), nullable=False, default="active")
     registration_allowed: Mapped[bool]    = mapped_column(Boolean, nullable=False, default=True)
     capabilities:       Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    release_stage:      Mapped[str]        = mapped_column(String(20), nullable=False, default="ga")
     onboarding_requirements: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     enabled_by:    Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     disabled_by:   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
@@ -82,6 +83,40 @@ class VerticalMenuConfig(ServiceOSBase):
 
     vertical_id: Mapped[uuid.UUID]     = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
     menu_items:  Mapped[list | None]   = mapped_column(JSONB, nullable=True)
+
+
+class TenantOnboardingDeclaration(ServiceOSBase):
+    """A declaration a tenant accepted during vertical onboarding.
+
+    Real bug fixed here: the `tenant_onboarding_declarations` TABLE exists
+    and vertical_catalog/declarations.py imports this model, but the model
+    was never written -- so that module raised ImportError, which cascaded
+    into the onboarding setup router failing to import and never being
+    mounted. Columns mirror the live table exactly (verified against
+    information_schema).
+
+    One row per accepted declaration, not one row per tenant: this is an
+    append-only consent record, and `document_version` is what makes it
+    auditable -- accepting v1 of a policy says nothing about v2.
+    """
+    __tablename__ = "tenant_onboarding_declarations"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "vertical_id", "declaration_key", "document_version",
+            name="uq_tod_tenant_vertical_key_version",
+        ),
+    )
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    vertical_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    declaration_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    document_version: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Captured for the audit trail -- who accepted, from where.
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
 
 class TenantVerticalEnrollment(ServiceOSBase):

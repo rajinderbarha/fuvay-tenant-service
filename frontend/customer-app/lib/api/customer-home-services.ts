@@ -122,7 +122,14 @@ export async function selectProviderForHomeService(draftId: string): Promise<any
   return apiFetch(`/v1/customer/home-services/booking-drafts/${draftId}/match-and-price`, { method: "POST" });
 }
 
-export async function confirmPriceChoice(draftId: string, priceTier: "low" | "mid" | "high"): Promise<any> {
+/** `"standard"` is not optional extra -- the backend REQUIRES it for
+ * offerings where bargain pricing is disabled ("Bargain is not available for
+ * this offering. Use price_tier='standard' instead."), so omitting it from
+ * this type made the fixed-price path untypeable. */
+export async function confirmPriceChoice(
+  draftId: string,
+  priceTier: "low" | "mid" | "high" | "standard",
+): Promise<any> {
   return apiFetch(`/v1/customer/home-services/booking-drafts/${draftId}/confirm-price-choice`, {
     method: "POST",
     body: JSON.stringify({ price_tier: priceTier }),
@@ -165,25 +172,101 @@ export async function getCustomerBookingTracking(bookingId: string): Promise<any
   return apiFetch(`/v1/customer/bookings/${bookingId}/tracking`);
 }
 
-// MODULE-L5-29: cancel-after-confirmation is now wired to a real endpoint
-// (home_service_assignment customer_cancel_booking). Only allowed before real
-// work has progressed (pending_assignment/assigned/accepted/scheduled) — a
-// 409 means the job is too far along and the customer should raise a
-// complaint instead.
+// TRACK-TECHNICIAN: real technician GPS, submitted by the assigned
+// technician's own device and read only while the job is in an active-
+// tracking status (accepted/scheduled/on_the_way). No ETA field exists —
+// no routing/distance service exists anywhere in this backend, so one is
+// never fabricated here.
+export interface TrackingLocation {
+  available: boolean;
+  reason?: "not_yet_assigned" | "tracking_ended" | "location_unavailable";
+  job_status?: string;
+  latitude?: number;
+  longitude?: number;
+  accuracy_meters?: number | null;
+  recorded_at?: string;
+  is_stale?: boolean;
+  destination_latitude?: number | null;
+  destination_longitude?: number | null;
+  technician?: { name: string; role: string; photo_url: string | null } | null;
+}
+
+export async function getTrackingLocation(bookingId: string): Promise<TrackingLocation> {
+  return apiFetch(`/v1/customer/bookings/${bookingId}/tracking-location`);
+}
+
+// MODULE-L5-29 + CANCEL-RESCHEDULE-FOUNDATION: cancel/reschedule are wired to
+// real endpoints (home_service_assignment customer_cancel_booking /
+// customer_reschedule_booking). Only allowed while the backend's own
+// eligibility check (getCancelRescheduleEligibility) says so — a 409 means
+// the job progressed too far and the customer should raise a complaint
+// instead. Never reproduce the eligibility rule client-side.
+
+export interface CancelRescheduleEligibility {
+  booking_id: string;
+  job_id: string;
+  status: string;
+  version: string;
+  can_cancel: boolean;
+  cancel_block_reason: string | null;
+  allowed_cancellation_reasons: string[];
+  cancellation_reasons_requiring_detail: string[];
+  can_reschedule: boolean;
+  reschedule_block_reason: string | null;
+  remaining_reschedule_allowance: number;
+  max_reschedule_allowance: number;
+  requires_provider_approval: boolean;
+  cancellation_fee: number | null;
+  cancellation_cutoff: string | null;
+}
+
+export async function getCancelRescheduleEligibility(
+  bookingId: string,
+): Promise<CancelRescheduleEligibility> {
+  return apiFetch(`/v1/customer/bookings/${bookingId}/cancel-reschedule-eligibility`);
+}
+
+export interface RescheduleAvailability {
+  booking_id: string;
+  job_id: string;
+  dates: { date: string; available: boolean }[];
+}
+
+export async function getRescheduleAvailability(
+  bookingId: string, horizonDays = 14,
+): Promise<RescheduleAvailability> {
+  return apiFetch(`/v1/customer/bookings/${bookingId}/reschedule-availability?horizon_days=${horizonDays}`);
+}
+
+/** A stable per-attempt key the caller must reuse across retries of the same
+ *  user action (e.g. a failed network request the user retries) so the
+ *  backend's request_id-based idempotency actually kicks in. A NEW value
+ *  must be generated for each distinct customer action. */
+export function newIdempotencyKey(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export async function cancelCustomerBooking(
-  bookingId: string, payload: { reason: string },
-): Promise<{ booking_id: string; job_id: string; status: string }> {
+  bookingId: string,
+  payload: { reason: string; detail?: string; expected_version?: string },
+  idempotencyKey: string,
+): Promise<{ booking_id: string; job_id: string; status: string; version: string }> {
   return apiFetch(`/v1/customer/bookings/${bookingId}/cancel`, {
     method: "POST", body: JSON.stringify(payload),
+    headers: { "X-Request-ID": idempotencyKey },
   });
 }
 
 export async function rescheduleCustomerBooking(
   bookingId: string,
-  payload: { scheduled_date: string; scheduled_time_window?: string; reason: string },
-): Promise<{ booking_id: string; job_id: string; scheduled_date: string; scheduled_time_window: string | null }> {
+  payload: { scheduled_date: string; scheduled_time_window?: string; reason: string; expected_version?: string },
+  idempotencyKey: string,
+): Promise<{ booking_id: string; job_id: string; scheduled_date: string; scheduled_time_window: string | null; version: string }> {
   return apiFetch(`/v1/customer/bookings/${bookingId}/reschedule`, {
     method: "POST", body: JSON.stringify(payload),
+    headers: { "X-Request-ID": idempotencyKey },
   });
 }
 

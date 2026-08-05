@@ -360,6 +360,21 @@ class ServiceJobWorkflow(ServiceOSBase):
     version_number:          Mapped[int]       = mapped_column(Integer, default=1, nullable=False)
     is_current:              Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
     superseded_at:           Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Found missing during the "make it 100% working" model-vs-DB drift
+    # audit -- real, migrated columns for the draft/approve/publish admin
+    # lifecycle beyond the basic set_workflow() path already proven working.
+    status:                       Mapped[str]              = mapped_column(String(20), default="published", nullable=False)
+    supersedes_workflow_id:        Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    effective_from:                Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    effective_to:                  Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by:                    Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    approved_by:                   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    published_by:                  Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    change_reason:                 Mapped[str | None]       = mapped_column(Text, nullable=True)
+    published_at:                  Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    allows_cancellation:           Mapped[bool]             = mapped_column(Boolean, default=True, nullable=False)
+    allows_reschedule:             Mapped[bool]             = mapped_column(Boolean, default=True, nullable=False)
+    requires_direct_payment_record: Mapped[bool]            = mapped_column(Boolean, default=False, nullable=False)
 
     def to_dict(self) -> dict:
         return {
@@ -962,6 +977,7 @@ class TenantService(ServiceOSBase):
     requires_brand:      Mapped[bool]          = mapped_column(Boolean, default=False, nullable=False)
     requires_type:       Mapped[bool]          = mapped_column(Boolean, default=False, nullable=False)
     is_active:           Mapped[bool]          = mapped_column(Boolean, default=True, nullable=False)
+    tenant_emergency_surcharge: Mapped[Decimal|None] = mapped_column(Numeric(12, 2), nullable=True)
     deleted_at:          Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Tenant Home Services Service Setup Wizard additions
     setup_status:        Mapped[str]           = mapped_column(String(20), default="draft", nullable=False)

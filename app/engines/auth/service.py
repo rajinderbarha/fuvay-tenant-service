@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import structlog
-from sqlalchemy import select, update, delete, and_, func
+from sqlalchemy import select, update, delete, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -26,7 +26,7 @@ from app.engines.auth.constants import (
     MAX_FAILED_LOGIN_ATTEMPTS, LOCKOUT_MINUTES, HARD_LOCKOUT_ATTEMPTS,
     OTP_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS, PASSWORD_HISTORY_COUNT,
     REDIS_BLACKLIST_PREFIX, REDIS_IMPERSONATION_PREFIX, REDIS_MFA_CHALLENGE_PREFIX,
-    AUDIENCE,
+    AUDIENCE, LOGIN_EVENT_PUBLIC_MAP, LOGIN_EVENT_UNKNOWN_LABEL, LOGIN_EVENT_UNKNOWN_OUTCOME,
 )
 from app.engines.auth.models import (
     User, UserSession, RefreshToken, RefreshTokenFamily,
@@ -416,6 +416,15 @@ class AuthService:
             challenge = create_mfa_challenge_token(str(user.id), user.email)
             await self._audit("login.mfa_required", "pending", actor_id=user.id,
                               tenant_id=user.tenant_id)
+            # Login Activity phase: previously only password success/failure
+            # and logout ever wrote a `login_events` row -- an MFA challenge
+            # (a real, customer-relevant "additional verification required"
+            # moment) was invisible in a customer's own login history.
+            await self._log_login_event(
+                "mfa_challenge_required", user_id=user.id,
+                email_attempted=email, tenant_id=user.tenant_id,
+                device_id=device_id, user_agent=user_agent,
+            )
             return {"mfa_required": True, "mfa_challenge_token": challenge}
 
         # Create session
@@ -549,6 +558,10 @@ class AuthService:
         tokens = await self._build_token_pair(user, session, enabled_engines or [], tenant_name, plan_type)
         await self._audit("login.phone_otp_success", "success", actor_id=user.id,
                           tenant_id=user.tenant_id, session_id=session.id)
+        await self._log_login_event(
+            "login_success", user_id=user.id, tenant_id=user.tenant_id,
+            device_id=device_id, user_agent=user_agent,
+        )
         return {
             "access_token": tokens["access_token"],
             "refresh_token": tokens["refresh_token"],
@@ -617,6 +630,10 @@ class AuthService:
 
         tokens = await self._build_token_pair(user, session, enabled_engines or [], tenant_name, plan_type)
         await self._audit("mfa.verify_success", "success", actor_id=user.id, session_id=session.id)
+        await self._log_login_event(
+            "login_success", user_id=user.id, tenant_id=user.tenant_id,
+            device_id=device_id, user_agent=user_agent,
+        )
         return {
             "access_token": tokens["access_token"],
             "refresh_token": tokens["refresh_token"],
@@ -684,6 +701,13 @@ class AuthService:
         if not mfa or not verify_totp(mfa.encrypted_secret, code):
             raise ServiceOSException("UNAUTHORIZED", "Invalid MFA code.",
                                      resolution="You must provide a valid TOTP code to disable MFA.")
+        if user.mfa_required:
+            raise ServiceOSException(
+                "MFA_POLICY_REQUIRED",
+                "MFA cannot be disabled for this account — it is required by policy.",
+                resolution="Contact your administrator to change this account's MFA policy.",
+                status_code=422,
+            )
         user.is_mfa_enabled = False
         mfa.is_confirmed = False
         await self._audit("mfa.disabled", "success", actor_id=user_id, tenant_id=user.tenant_id)
@@ -825,23 +849,40 @@ class AuthService:
         )
         await self._publish_event("auth.logout", user_id, {"session_id": session_id})
 
-    async def logout_all(self, user_id: str, current_jti: str) -> int:
-        """Revoke all sessions except the current one."""
+    async def logout_all(
+        self, user_id: str, current_jti: str, exclude_session_id: uuid.UUID | None = None,
+    ) -> int:
+        """Revoke every active session for `user_id`.
+
+        BUG FIX (Manage Sessions phase): `exclude_session_id` previously
+        didn't exist -- the ONLY lever callers had was `current_jti`
+        (blacklist-or-not), but the actual SESSION revocation query had no
+        exclusion filter at all, so it wiped every session unconditionally
+        regardless of what jti was passed. `/v1/auth/sessions/revoke-all-
+        other`'s own docstring promised "except the current one" while its
+        implementation revoked literally everything, including the caller's
+        own session -- confirmed via direct read, not assumed. Full global
+        logout (`/v1/auth/logout-all`) still passes no exclusion (revokes
+        everything, matching that endpoint's own contract); the
+        revoke-all-other endpoint now passes the real current session id.
+        """
         uid = uuid.UUID(user_id)
-        r = await self.db.execute(
-            select(UserSession).where(
-                UserSession.user_id == uid, UserSession.revoked_at == None
-            )
-        )
+        conditions = [UserSession.user_id == uid, UserSession.revoked_at == None]
+        if exclude_session_id is not None:
+            conditions.append(UserSession.id != exclude_session_id)
+        r = await self.db.execute(select(UserSession).where(and_(*conditions)))
         sessions = r.scalars().all()
         count = 0
         for session in sessions:
             session.revoked_at = utcnow()
             count += 1
-        # Blacklist current token too
-        await self._blacklist(current_jti)
+        if exclude_session_id is None:
+            # Full logout: also blacklist the current access token's jti so
+            # it stops passing auth checks immediately, not just at its
+            # natural TTL expiry.
+            await self._blacklist(current_jti)
         await self._audit("session.logout_all", "success", actor_id=uid,
-                          metadata={"sessions_revoked": count})
+                          metadata={"sessions_revoked": count, "excluded_current": exclude_session_id is not None})
         await self._publish_event("auth.logout_all", user_id, {"sessions_revoked": count})
         return count
 
@@ -866,7 +907,25 @@ class AuthService:
             return {"active": False}
 
     # ── Sessions ──────────────────────────────────────────────────────────────
-    async def list_sessions(self, user_id: uuid.UUID, current_device_id: str) -> list[dict]:
+    @staticmethod
+    def _channel_for(device_type: str) -> str:
+        """Derived from the real stored `device_type` (see `parse_device_info`)
+        -- never fabricated. `device_type` values map cleanly to a coarse
+        channel; anything else is honestly reported as "Web"."""
+        return {"mobile": "Mobile", "tablet": "Mobile", "desktop": "Web"}.get(device_type, "Web")
+
+    async def list_sessions(self, user_id: uuid.UUID, current_session_id: uuid.UUID | None) -> list[dict]:
+        """`current_session_id` (Manage Sessions phase) is the authoritative
+        session id carried in the access token's own claims -- NOT a
+        device_id comparison. Multiple sessions can legitimately share a
+        device_id (reinstall, cleared storage), so device_id equality was
+        never a reliable "this is the request that's asking" signal; the
+        token's own `session_id` claim is.
+
+        Customer-facing fields are an explicit allowlist -- `ip_address`
+        (full IP) is intentionally NOT included; no geo-lookup capability
+        exists in this codebase, so no approximate-location field is
+        fabricated either."""
         r = await self.db.execute(
             select(UserSession).where(
                 UserSession.user_id == user_id,
@@ -879,26 +938,261 @@ class AuthService:
                 "session_id": str(s.id),
                 "device_name": s.device_name,
                 "device_type": s.device_type,
-                "ip_address": s.ip_address,
+                "channel": self._channel_for(s.device_type),
                 "last_active_at": s.last_active_at.isoformat(),
-                "is_current": s.device_id == current_device_id,
-                "is_trusted": s.is_trusted,
-                "is_approved": s.is_approved,
                 "created_at": s.created_at.isoformat(),
+                "is_current": current_session_id is not None and s.id == current_session_id,
+                "is_trusted": s.is_trusted,
             }
             for s in sessions
         ]
 
-    async def revoke_session(self, session_id: uuid.UUID, requesting_user_id: uuid.UUID) -> None:
+    async def get_mobile_security_summary(
+        self, user_id: uuid.UUID, current_session_id: uuid.UUID | None,
+        current_device_id: str | None = None,
+    ) -> dict:
+        """Technician mobile app Phase V -- composed entirely over real,
+        existing data (User row + list_sessions' own live session query),
+        never a fabricated status. Found deleted from source entirely
+        during the "make it 100% working" pass despite a real, passing
+        pytest suite existing for it; rebuilt to the exact shape that
+        suite already proves against real data.
+
+        Staff-app full-audit finding: the previously "rebuilt" shape above
+        only covered `verified_contacts.masked_*`/`mfa.enabled+required`/
+        `current_device.session_id+trusted`/`active_session_count`/
+        `security_status.level+reasons` -- but SecurityScreen.tsx (and
+        TrustedDeviceScreen.tsx) also read `password.*`, `mfa.method`/
+        `enabled_at`/`recovery_codes_remaining`/`required_by_policy`,
+        `current_device.device_name`/`last_active_at`,
+        `verified_contacts.mobile_verified`/`email_verified`,
+        `security_status.label`, and `recent_activity` -- none of which
+        this endpoint ever returned, so those sections silently rendered
+        undefined/blank. Every added field below is sourced from real,
+        already-existing data (User row, the session dict already computed
+        by list_sessions(), MFASecret/MFABackupCode rows, the same
+        LOGIN_EVENT query get_my_login_activity uses) -- nothing fabricated."""
+        from sqlalchemy import func as _func
+        user = await self.db.get(User, user_id)
+        if not user:
+            raise ServiceOSException("NOT_FOUND", "User not found.", status_code=404)
+
+        def _mask_phone(phone: str | None) -> str | None:
+            if not phone or len(phone) < 5:
+                return None
+            return "•" * 5 + " " + phone[-5:]
+
+        def _mask_email(email: str | None) -> str | None:
+            if not email or "@" not in email:
+                return None
+            local, _, domain = email.partition("@")
+            first = local[0] if local else "*"
+            return f"{first}***@{domain}"
+
+        sessions = await self.list_sessions(user_id, current_session_id)
+        current = next((s for s in sessions if s["is_current"]), None)
+        active_session_count = len(sessions)
+
+        if user.is_mfa_enabled:
+            level, reasons = "protected", []
+            label = "Your account is protected"
+        elif user.recovery_email or user.recovery_phone:
+            level, reasons = "protection_recommended", ["mfa_not_enabled"]
+            label = "Turn on two-step verification for extra protection"
+        else:
+            level, reasons = "action_required", ["mfa_not_enabled", "no_recovery_contact"]
+            label = "Your account needs attention"
+
+        mfa_enabled_at = None
+        recovery_codes_remaining = None
+        if user.is_mfa_enabled:
+            secret = (await self.db.execute(
+                select(MFASecret).where(MFASecret.user_id == user_id)
+            )).scalar_one_or_none()
+            mfa_enabled_at = secret.confirmed_at.isoformat() if secret and secret.confirmed_at else None
+            recovery_codes_remaining = await self.db.scalar(
+                select(_func.count()).select_from(MFABackupCode).where(
+                    MFABackupCode.user_id == user_id, MFABackupCode.is_used == False,
+                )
+            )
+
+        # Same event query/mapping as get_my_login_activity, just capped
+        # short for an inline "recent activity" preview rather than the
+        # full paginated feed.
+        r = await self.db.execute(
+            select(LoginEvent).where(LoginEvent.user_id == user_id)
+            .order_by(LoginEvent.created_at.desc(), LoginEvent.id.desc()).limit(5)
+        )
+        recent_activity = []
+        for e in r.scalars().all():
+            evt_label, outcome = LOGIN_EVENT_PUBLIC_MAP.get(
+                e.event_type, (LOGIN_EVENT_UNKNOWN_LABEL, LOGIN_EVENT_UNKNOWN_OUTCOME)
+            )
+            device_name, device_type = parse_device_info(e.user_agent)
+            recent_activity.append({
+                "event_id": str(e.id), "label": evt_label, "outcome": outcome,
+                "channel": self._channel_for(device_type), "device_name": device_name,
+                "is_current_device": bool(current_device_id) and e.device_id == current_device_id,
+                "occurred_at": e.created_at.isoformat(),
+            })
+
+        return {
+            "verified_contacts": {
+                "masked_mobile": _mask_phone(user.phone),
+                "mobile_verified": user.is_verified,
+                "masked_email": _mask_email(user.email),
+                "email_verified": user.is_verified,
+            },
+            "password": {
+                "configured": bool(user.hashed_password),
+                "changed_at": user.password_changed_at.isoformat() if user.password_changed_at else None,
+                "change_allowed": True,
+            },
+            "mfa": {
+                "enabled": user.is_mfa_enabled,
+                "method": "totp" if user.is_mfa_enabled else None,
+                "enabled_at": mfa_enabled_at,
+                "recovery_codes_remaining": recovery_codes_remaining,
+                "required_by_policy": user.mfa_required,
+            },
+            "current_device": {
+                "session_id": current["session_id"] if current else None,
+                "trusted": current["is_trusted"] if current else None,
+                "device_name": current["device_name"] if current else None,
+                "last_active_at": current["last_active_at"] if current else None,
+            },
+            "active_session_count": active_session_count,
+            "security_status": {"level": level, "label": label, "reasons": reasons},
+            "recent_activity": recent_activity,
+        }
+
+    async def revoke_session(
+        self, session_id: uuid.UUID, requesting_user_id: uuid.UUID,
+        current_session_id: uuid.UUID | None = None,
+    ) -> None:
         r = await self.db.execute(select(UserSession).where(UserSession.id == session_id))
         session = r.scalar_one_or_none()
-        if not session:
-            raise NotFoundException("Session", str(session_id))
-        if session.user_id != requesting_user_id:
-            raise ServiceOSException("PERMISSION_DENIED", "Cannot revoke another user's session.")
+        # Enumeration-safe (Account Security phase): a session that doesn't
+        # exist and one that belongs to another customer previously raised
+        # different error shapes (404 NOT_FOUND vs 403 PERMISSION_DENIED),
+        # letting a caller distinguish "no such session" from "exists but
+        # not mine" by probing session IDs. Both now raise the identical
+        # generic 404 SESSION_NOT_FOUND.
+        if not session or session.user_id != requesting_user_id:
+            raise ServiceOSException("SESSION_NOT_FOUND", f"Session '{session_id}' not found.",
+                                     status_code=404)
+        if current_session_id is not None and session_id == current_session_id:
+            raise ServiceOSException(
+                "CANNOT_REVOKE_CURRENT_SESSION",
+                "You cannot revoke the session you're currently using here.",
+                resolution="Log out to end this session instead.",
+                status_code=422,
+            )
+        if session.revoked_at is not None:
+            return  # idempotent -- already revoked
         session.revoked_at = utcnow()
+        session.is_trusted = False
+
+        try:
+            await self.redis.setex(
+                f"serviceos:session:revoked:{session_id}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, "1")
+        except Exception:
+            pass
+
+        from app.engines.platform_notifications.push_device_models import StaffPushDevice
+        await self.db.execute(
+            update(StaffPushDevice)
+            .where(StaffPushDevice.user_id == requesting_user_id,
+                   StaffPushDevice.device_id == session.device_id,
+                   StaffPushDevice.revoked_at.is_(None))
+            .values(revoked_at=utcnow())
+        )
+
         await self._audit("session.revoked", "success", actor_id=requesting_user_id,
                           target_id=session_id, target_type="session")
+        await self.db.commit()
+
+    async def remove_session_trust(
+        self, session_id: uuid.UUID, requesting_user_id: uuid.UUID,
+    ) -> dict:
+        """Clears UserSession.is_trusted WITHOUT revoking the session -- a
+        real gap found by the staff-app API audit: the mobile Trusted
+        Device screen (and its confirmation copy: "you may be asked to
+        verify with a code more often, afterward" -- explicitly promising
+        the device STAYS signed in) called POST .../devices/{id}/remove-
+        trust, but no such endpoint existed. The only place `is_trusted`
+        was ever cleared was as a side effect of full revoke_session()
+        above, which would have silently logged the device out instead --
+        the opposite of what the screen promises. This is the narrow,
+        real operation the UI actually describes."""
+        r = await self.db.execute(select(UserSession).where(UserSession.id == session_id))
+        session = r.scalar_one_or_none()
+        # Enumeration-safe, matching revoke_session's convention above.
+        if not session or session.user_id != requesting_user_id:
+            raise ServiceOSException("SESSION_NOT_FOUND", f"Session '{session_id}' not found.",
+                                     status_code=404)
+        if session.revoked_at is not None:
+            raise ServiceOSException("SESSION_NOT_FOUND", f"Session '{session_id}' not found.",
+                                     status_code=404)
+        session.is_trusted = False
+        await self._audit("session.trust_removed", "success", actor_id=requesting_user_id,
+                          target_id=session_id, target_type="session")
+        await self.db.commit()
+        return {"session_id": str(session_id), "is_trusted": False}
+
+    async def get_sessions_projection(
+        self, user_id: uuid.UUID, current_session_id: uuid.UUID | None,
+        current_device_id: str | None,
+    ) -> dict:
+        """Richer 'Manage Sessions' projection for GET /v1/auth/sessions.
+        Resolves "current" via the token's own session_id claim when present;
+        falls back to device_id match only when no session_id claim is
+        available on the request context (device_id can legitimately repeat
+        across reinstalls, so it's a fallback, never the primary signal)."""
+        r = await self.db.execute(
+            select(UserSession).where(
+                UserSession.user_id == user_id,
+                UserSession.revoked_at == None,
+            ).order_by(UserSession.last_active_at.desc())
+        )
+        rows = r.scalars().all()
+
+        resolved_current_id = None
+        if current_session_id is not None and any(s.id == current_session_id for s in rows):
+            resolved_current_id = current_session_id
+        elif current_device_id:
+            match = next((s for s in rows if s.device_id == current_device_id), None)
+            if match:
+                resolved_current_id = match.id
+
+        sessions = []
+        trusted_count = 0
+        for s in rows:
+            if s.is_trusted:
+                trusted_count += 1
+            is_current = s.id == resolved_current_id
+            device_display_name = s.device_name or f"Unknown {s.device_type or 'device'}"
+            sessions.append({
+                "session_id": str(s.id),
+                "device_display_name": device_display_name,
+                "device_type": s.device_type,
+                "channel": self._channel_for(s.device_type),
+                "last_active_at": s.last_active_at.isoformat() if s.last_active_at else None,
+                "created_at": s.created_at.isoformat(),
+                "is_current": is_current,
+                "is_trusted": s.is_trusted,
+                "allowed_actions": (["view", "remove_trust"] if is_current else ["view", "revoke"]),
+                # No geo-lookup capability exists in this codebase --
+                # never fabricate an approximate location.
+                "approximate_location": None,
+            })
+
+        return {
+            "sessions": sessions,
+            "total": len(sessions),
+            "current_session_id": str(resolved_current_id) if resolved_current_id else None,
+            "trusted_device_count": trusted_count,
+        }
 
     async def approve_device(
         self, session_id: uuid.UUID, approving_user_id: uuid.UUID, approving_role: str
@@ -921,8 +1215,9 @@ class AuthService:
 
     # ── Password ──────────────────────────────────────────────────────────────
     async def change_password(
-        self, user_id: uuid.UUID, current_password: str, new_password: str
-    ) -> None:
+        self, user_id: uuid.UUID, current_password: str, new_password: str,
+        current_session_id: uuid.UUID | None = None,
+    ) -> int:
         user = await self._get_user_by_id(user_id)
         if not user:
             raise NotFoundException("User", str(user_id))
@@ -945,11 +1240,26 @@ class AuthService:
         user.force_password_change = False
         user.password_reset_required = False
         user.temporary_password_active = False
+
+        # SECURITY (Account Security phase): a password change is exactly
+        # the moment a compromised session should be cut off elsewhere --
+        # previously this silently left every other session alive. The
+        # session that just authenticated this request is preserved (the
+        # customer does not need to re-login for the device they're on).
+        revoke_conditions = [UserSession.user_id == user_id, UserSession.revoked_at == None]
+        if current_session_id is not None:
+            revoke_conditions.append(UserSession.id != current_session_id)
+        result = await self.db.execute(
+            update(UserSession).where(and_(*revoke_conditions)).values(revoked_at=utcnow())
+        )
+        sessions_revoked = result.rowcount or 0
+
         await self._audit("auth.password_changed", "success", actor_id=user_id,
                           tenant_id=user.tenant_id,
-                          metadata={"reason": "user_initiated"})
+                          metadata={"reason": "user_initiated", "other_sessions_revoked": sessions_revoked})
         await self._publish_event("auth.password_changed", str(user_id), {},
                                    tenant_id=str(user.tenant_id) if user.tenant_id else None)
+        return sessions_revoked
 
     async def request_password_reset(self, email: str | None, phone: str | None) -> dict:
         user = None
@@ -980,11 +1290,79 @@ class AuthService:
         return {"message": "If an account exists, a reset OTP has been sent.",
                 "otp_hint": otp_plain}
 
-    async def confirm_password_reset(self, reset_token: str, new_password: str) -> dict:
-        """reset_token is the OTP here. In Phase 3 can be a proper signed token."""
-        raise ServiceOSException("SERVICE_UNAVAILABLE",
-                                 "Password reset via token requires Phase 3 Notification Engine.",
-                                 resolution="Use change password at PUT /v1/auth/password/change")
+    async def confirm_password_reset(
+        self, email: str | None, phone: str | None, reset_token: str, new_password: str
+    ) -> dict:
+        """`reset_token` is the OTP issued by `request_password_reset`. Mirrors
+        `verify_phone_otp_login`'s OTPRecord lookup/attempt-limiting pattern --
+        OTPRecord has no reversible user reference (only a one-way
+        `recipient_hash`), so the same identifier used to request the OTP is
+        required again here to locate both the OTP and the account."""
+        recipient = email or phone
+        if not recipient:
+            raise ServiceOSException("VALIDATION_ERROR", "Either email or phone is required.")
+        recipient_hash = hash_recipient(recipient)
+        r = await self.db.execute(
+            select(OTPRecord).where(
+                and_(OTPRecord.purpose == "password_reset",
+                     OTPRecord.recipient_hash == recipient_hash,
+                     OTPRecord.is_used == False,
+                     OTPRecord.expires_at > utcnow())
+            ).order_by(OTPRecord.created_at.desc()).limit(1)
+        )
+        otp_record = r.scalar_one_or_none()
+        # Enumeration-safe: an unknown recipient and an expired/wrong OTP for
+        # a real recipient both fail identically -- never reveal which.
+        if not otp_record:
+            raise ServiceOSException("UNAUTHORIZED", "Invalid or expired reset code.",
+                                     resolution="Request a new reset code.")
+        otp_record.attempts += 1
+        if otp_record.attempts > 3:
+            otp_record.is_used = True
+            raise ServiceOSException("UNAUTHORIZED", "Too many incorrect attempts. Request a new reset code.")
+        if not verify_otp(reset_token, otp_record.hashed_otp):
+            raise ServiceOSException("UNAUTHORIZED", "Invalid or expired reset code.",
+                                     resolution=f"{3 - otp_record.attempts} attempts remaining.")
+        otp_record.is_used = True
+
+        user = await self._get_user_by_email(email) if email else await self._get_user_by_phone(phone)
+        if not user or not user.is_active:
+            raise ServiceOSException("UNAUTHORIZED", "Invalid or expired reset code.")
+
+        errors = validate_password_strength(new_password, user.full_name, user.email)
+        if errors:
+            raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors))
+        history = user.password_history or []
+        for old_hash in history:
+            if verify_password(new_password, old_hash):
+                raise ServiceOSException(
+                    "VALIDATION_ERROR",
+                    f"Cannot reuse any of your last {PASSWORD_HISTORY_COUNT} passwords.",
+                )
+        new_hash = hash_password(new_password)
+        user.hashed_password = new_hash
+        user.password_history = ([new_hash] + history)[:PASSWORD_HISTORY_COUNT]
+        user.password_changed_at = utcnow()
+        user.force_password_change = False
+        user.password_reset_required = False
+        user.temporary_password_active = False
+
+        # A compromised-password scenario is exactly what recovery exists
+        # for -- every existing session (and its refresh-token family) is
+        # revoked, matching change_password's own other-sessions revocation
+        # but here covering the current session too, since there is no
+        # "current session" during an unauthenticated recovery flow.
+        await self.db.execute(
+            update(UserSession).where(
+                UserSession.user_id == user.id, UserSession.revoked_at == None
+            ).values(revoked_at=utcnow())
+        )
+
+        await self._audit("auth.password_reset_confirmed", "success", actor_id=user.id,
+                          tenant_id=user.tenant_id)
+        await self._publish_event("auth.password_changed", str(user.id), {"reason": "reset"},
+                                   tenant_id=str(user.tenant_id) if user.tenant_id else None)
+        return {"message": "Password reset successfully. Please log in with your new password."}
 
     # ── Required password change (force-change flow) ──────────────────────────
     async def change_password_required(
@@ -2188,7 +2566,7 @@ class AuthService:
 
         try:
             await self.redis.setex(
-                f"revoked_session:{session_id}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, "1")
+                f"serviceos:session:revoked:{session_id}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, "1")
         except Exception:
             pass
 
@@ -2767,6 +3145,82 @@ class AuthService:
             ],
             "total": len(events),
         }
+
+    async def get_my_login_activity(
+        self, user_id: uuid.UUID, current_device_id: str | None,
+        outcome_filter: str = "all", limit: int = 20, cursor: str | None = None,
+    ) -> dict:
+        """Customer-safe login history (Login Activity phase) -- deliberately
+        a SEPARATE method from `get_login_history` (which stays the raw
+        admin/tenant-owner view). Reuses the same canonical `LoginEvent`
+        table -- no parallel mobile-only history table, no synthetic
+        events derived from sessions.
+
+        Every internal `event_type` is mapped through the centralized
+        `LOGIN_EVENT_PUBLIC_MAP`; an unmapped value renders as the neutral
+        fallback rather than leaking the raw backend string. `ip_address`
+        and `failure_reason` are never included in the response -- only a
+        public label/outcome. `channel`/`device_name` are derived from the
+        stored `user_agent` via the same `parse_device_info` helper used
+        for sessions (LoginEvent has no stored device_type column).
+        `is_current_device` uses the same device_id-comparison heuristic
+        already disclosed as imperfect for sessions -- LoginEvent has no
+        session_id column to compare against instead."""
+        conditions = [LoginEvent.user_id == user_id]
+        if outcome_filter == "successful":
+            success_types = [k for k, v in LOGIN_EVENT_PUBLIC_MAP.items() if v[1] == "successful"]
+            conditions.append(LoginEvent.event_type.in_(success_types))
+        elif outcome_filter == "needs_attention":
+            attention_types = [k for k, v in LOGIN_EVENT_PUBLIC_MAP.items()
+                                if v[1] in ("verification_required", "blocked")]
+            conditions.append(LoginEvent.event_type.in_(attention_types))
+
+        if cursor:
+            try:
+                cursor_ts_raw, cursor_id_raw = cursor.split("|", 1)
+                cursor_ts = datetime.fromisoformat(cursor_ts_raw)
+                cursor_id = uuid.UUID(cursor_id_raw)
+                conditions.append(
+                    or_(
+                        LoginEvent.created_at < cursor_ts,
+                        and_(LoginEvent.created_at == cursor_ts, LoginEvent.id < cursor_id),
+                    )
+                )
+            except (ValueError, TypeError):
+                pass  # Malformed cursor -- ignore rather than 500.
+
+        page_size = min(max(limit, 1), 100)
+        r = await self.db.execute(
+            select(LoginEvent).where(and_(*conditions))
+            .order_by(LoginEvent.created_at.desc(), LoginEvent.id.desc())
+            .limit(page_size + 1)
+        )
+        rows = r.scalars().all()
+        has_more = len(rows) > page_size
+        rows = rows[:page_size]
+
+        items = []
+        for e in rows:
+            label, outcome = LOGIN_EVENT_PUBLIC_MAP.get(
+                e.event_type, (LOGIN_EVENT_UNKNOWN_LABEL, LOGIN_EVENT_UNKNOWN_OUTCOME)
+            )
+            device_name, device_type = parse_device_info(e.user_agent)
+            items.append({
+                "event_id": str(e.id),
+                "label": label,
+                "outcome": outcome,
+                "channel": self._channel_for(device_type),
+                "device_name": device_name,
+                "is_current_device": bool(current_device_id) and e.device_id == current_device_id,
+                "occurred_at": e.created_at.isoformat(),
+            })
+
+        next_cursor = None
+        if has_more and rows:
+            last = rows[-1]
+            next_cursor = f"{last.created_at.isoformat()}|{last.id}"
+
+        return {"events": items, "next_cursor": next_cursor}
 
     # ── Phase 0E: Enhanced security status ───────────────────────────────────
     async def get_full_security_status(

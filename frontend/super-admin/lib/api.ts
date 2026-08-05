@@ -48,18 +48,28 @@ function getRefreshToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("serviceos_admin_refresh");
 }
-function clearSession() {
+let sessionCleared = false;
+export function clearSession() {
+  if (sessionCleared) return;
+  sessionCleared = true;
   localStorage.removeItem("serviceos_admin_token");
   localStorage.removeItem("serviceos_admin_refresh");
-  window.location.href = "/login";
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.href = "/login";
+  }
 }
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
-async function apiFetch<T>(
+/** Exported so extracted API-client modules (lib/api-*.ts) can share the
+ * exact same auth/refresh/envelope behaviour instead of forking it. */
+export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
   skipAuth = false,
 ): Promise<T> {
+  if (sessionCleared && !skipAuth) {
+    throw new ServiceOSError("UNAUTHORIZED", "Session expired. Please sign in again.");
+  }
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type":     "application/json",
@@ -594,6 +604,8 @@ export const commerceApi = {
     apiFetch<CreditPackage>(`/v1/commerce/packages/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deletePackage: (id: string) =>
     apiFetch<void>(`/v1/commerce/packages/${id}`, { method: "DELETE" }),
+  deletePackagePermanently: (id: string) =>
+    apiFetch<void>(`/v1/commerce/packages/${id}/permanent`, { method: "DELETE" }),
 
   // Customer health
   atRiskCustomers: (tenantId: string, limit = 10) =>
@@ -854,9 +866,18 @@ export interface AdminCustomerFilterOptions {
   states: { value: string; label: string }[];
 }
 
+// NOTE: apiFetch<T>() already unwraps the backend's {success, data: T}
+// envelope and returns T directly -- but every method below (and every page
+// consuming this object) was written assuming apiFetch returns the RAW
+// envelope, i.e. declared `apiFetch<{ data: X }>` and read `.data.data`.
+// Since apiFetch's actual value is just X, `.data` on it was always
+// undefined -- customers/staff pages showed zero rows. Fixed by re-wrapping
+// each call's already-unwrapped result in `{ data: ... }` here (matching
+// the type these methods already declare) rather than touching every
+// `.data.data` read across 4+ consuming page files.
 export const adminCustomersApi = {
-  filterOptions: () => apiFetch<{ data: AdminCustomerFilterOptions }>("/v1/admin/customers/filters"),
-  summary: () => apiFetch<{ data: AdminCustomerSummary }>("/v1/admin/customers/summary"),
+  filterOptions: () => apiFetch<AdminCustomerFilterOptions>("/v1/admin/customers/filters").then(data => ({ data })),
+  summary: () => apiFetch<AdminCustomerSummary>("/v1/admin/customers/summary").then(data => ({ data })),
   list: (params: {
     q?: string; tenant_id?: string; health_band?: string; city?: string; state?: string;
     zipcode?: string; has_complaints?: boolean; has_reviews?: boolean;
@@ -869,13 +890,13 @@ export const adminCustomersApi = {
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== "" && v !== null) qs.set(k, String(v));
     });
-    return apiFetch<{ data: AdminCustomerListResponse }>(`/v1/admin/customers?${qs}`);
+    return apiFetch<AdminCustomerListResponse>(`/v1/admin/customers?${qs}`).then(data => ({ data }));
   },
-  get: (id: string) => apiFetch<{ data: AdminCustomer }>(`/v1/admin/customers/${id}`),
+  get: (id: string) => apiFetch<AdminCustomer>(`/v1/admin/customers/${id}`).then(data => ({ data })),
   bookings: (id: string, params?: { tenant_id?: string; status?: string; date_from?: string; date_to?: string; page?: number }) => {
     const qs = new URLSearchParams();
     if (params) Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
-    return apiFetch<{ data: { bookings: AdminBooking[]; meta: AdminCustomerMeta } }>(`/v1/admin/customers/${id}/bookings?${qs}`);
+    return apiFetch<{ bookings: AdminBooking[]; meta: AdminCustomerMeta }>(`/v1/admin/customers/${id}/bookings?${qs}`).then(data => ({ data }));
   },
   export: (params: Record<string, string>) => {
     const qs = new URLSearchParams(params).toString();
@@ -886,47 +907,47 @@ export const adminCustomersApi = {
   complaints: (id: string, status?: string) => {
     const qs = new URLSearchParams();
     if (status) qs.set("status", status);
-    return apiFetch<{ data: { complaints: CustomerComplaintRow[]; total: number } }>(
-      `/v1/admin/customers/${id}/complaints?${qs}`);
+    return apiFetch<{ complaints: CustomerComplaintRow[]; total: number }>(
+      `/v1/admin/customers/${id}/complaints?${qs}`).then(data => ({ data }));
   },
   serviceCredits: (id: string, status?: string) => {
     const qs = new URLSearchParams();
     if (status) qs.set("status", status);
-    return apiFetch<{ data: { credits: CustomerServiceCreditRow[]; meta: AdminCustomerMeta; summary: CustomerCreditSummary } }>(
-      `/v1/admin/customers/${id}/service-credits?${qs}`);
+    return apiFetch<{ credits: CustomerServiceCreditRow[]; meta: AdminCustomerMeta; summary: CustomerCreditSummary }>(
+      `/v1/admin/customers/${id}/service-credits?${qs}`).then(data => ({ data }));
   },
   issueServiceCredit: (id: string, data: {
     amount: number; credit_type?: string; issued_reason: string;
     customer_message?: string; validity_days?: number;
-  }) => apiFetch<{ data: CustomerServiceCreditRow }>(`/v1/admin/customers/${id}/service-credits`,
-    { method: "POST", body: JSON.stringify(data) }),
+  }) => apiFetch<CustomerServiceCreditRow>(`/v1/admin/customers/${id}/service-credits`,
+    { method: "POST", body: JSON.stringify(data) }).then(data => ({ data })),
   addresses: (id: string) =>
-    apiFetch<{ data: { addresses: CustomerAddressRow[]; total: number } }>(`/v1/admin/customers/${id}/addresses`),
+    apiFetch<{ addresses: CustomerAddressRow[]; total: number }>(`/v1/admin/customers/${id}/addresses`).then(data => ({ data })),
   sessions: (id: string) =>
-    apiFetch<{ data: { sessions: CustomerSessionRow[]; has_next: boolean; next_cursor: string | null } }>(
-      `/v1/admin/customers/${id}/sessions`),
+    apiFetch<{ sessions: CustomerSessionRow[]; has_next: boolean; next_cursor: string | null }>(
+      `/v1/admin/customers/${id}/sessions`).then(data => ({ data })),
   loginHistory: (id: string) =>
-    apiFetch<{ data: { login_history: CustomerLoginEvent[] } }>(`/v1/admin/customers/${id}/login-history`),
+    apiFetch<{ login_history: CustomerLoginEvent[] }>(`/v1/admin/customers/${id}/login-history`).then(data => ({ data })),
   privacyRequests: (id: string) =>
-    apiFetch<{ data: { items: CustomerPrivacyRequest[]; meta: AdminCustomerMeta & { has_next: boolean } } }>(
-      `/v1/admin/customers/${id}/privacy-requests`),
+    apiFetch<{ items: CustomerPrivacyRequest[]; meta: AdminCustomerMeta & { has_next: boolean } }>(
+      `/v1/admin/customers/${id}/privacy-requests`).then(data => ({ data })),
   auditLogs: (id: string) =>
-    apiFetch<{ data: { audit_logs: CustomerAuditLogRow[] } }>(`/v1/admin/customers/${id}/audit-logs`),
+    apiFetch<{ audit_logs: CustomerAuditLogRow[] }>(`/v1/admin/customers/${id}/audit-logs`).then(data => ({ data })),
   block: (id: string, reason: string) =>
-    apiFetch<{ data: { user_id: string; account_status: string } }>(`/v1/admin/customers/${id}/block`,
-      { method: "POST", body: JSON.stringify({ reason }) }),
+    apiFetch<{ user_id: string; account_status: string }>(`/v1/admin/customers/${id}/block`,
+      { method: "POST", body: JSON.stringify({ reason }) }).then(data => ({ data })),
   unblock: (id: string, reason: string) =>
-    apiFetch<{ data: { user_id: string; account_status: string } }>(`/v1/admin/customers/${id}/unblock`,
-      { method: "POST", body: JSON.stringify({ reason }) }),
+    apiFetch<{ user_id: string; account_status: string }>(`/v1/admin/customers/${id}/unblock`,
+      { method: "POST", body: JSON.stringify({ reason }) }).then(data => ({ data })),
   suspend: (id: string, reason: string) =>
-    apiFetch<{ data: { user_id: string; account_status: string } }>(`/v1/admin/customers/${id}/suspend`,
-      { method: "POST", body: JSON.stringify({ reason }) }),
+    apiFetch<{ user_id: string; account_status: string }>(`/v1/admin/customers/${id}/suspend`,
+      { method: "POST", body: JSON.stringify({ reason }) }).then(data => ({ data })),
   reactivate: (id: string, reason: string) =>
-    apiFetch<{ data: { user_id: string; account_status: string } }>(`/v1/admin/customers/${id}/reactivate`,
-      { method: "POST", body: JSON.stringify({ reason }) }),
+    apiFetch<{ user_id: string; account_status: string }>(`/v1/admin/customers/${id}/reactivate`,
+      { method: "POST", body: JSON.stringify({ reason }) }).then(data => ({ data })),
   revokeAllSessions: (id: string, reason: string) =>
-    apiFetch<{ data: { user_id: string; sessions_revoked: number } }>(`/v1/admin/customers/${id}/sessions/revoke-all`,
-      { method: "POST", body: JSON.stringify({ reason }) }),
+    apiFetch<{ user_id: string; sessions_revoked: number }>(`/v1/admin/customers/${id}/sessions/revoke-all`,
+      { method: "POST", body: JSON.stringify({ reason }) }).then(data => ({ data })),
 };
 
 export interface CustomerComplaintRow {
@@ -1169,9 +1190,11 @@ export interface AdminStaffListResponse {
   meta: { page: number; page_size: number; total: number; total_pages: number };
 }
 
+// Same apiFetch double-unwrap fix as adminCustomersApi above -- see that
+// block's comment for why every call re-wraps in { data: ... }.
 export const adminStaffApi = {
-  filterOptions: () => apiFetch<{ data: AdminStaffFilterOptions }>("/v1/admin/staff/filters"),
-  summary: () => apiFetch<{ data: AdminStaffSummary }>("/v1/admin/staff/summary"),
+  filterOptions: () => apiFetch<AdminStaffFilterOptions>("/v1/admin/staff/filters").then(data => ({ data })),
+  summary: () => apiFetch<AdminStaffSummary>("/v1/admin/staff/summary").then(data => ({ data })),
   list: (params: {
     q?: string; tenant_id?: string; role?: string;
     availability_status?: string; is_active?: boolean;
@@ -1182,13 +1205,13 @@ export const adminStaffApi = {
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== "" && v !== null) qs.set(k, String(v));
     });
-    return apiFetch<{ data: AdminStaffListResponse }>(`/v1/admin/staff?${qs}`);
+    return apiFetch<AdminStaffListResponse>(`/v1/admin/staff?${qs}`).then(data => ({ data }));
   },
-  get: (id: string) => apiFetch<{ data: AdminStaffMember }>(`/v1/admin/staff/${id}`),
+  get: (id: string) => apiFetch<AdminStaffMember>(`/v1/admin/staff/${id}`).then(data => ({ data })),
   jobs: (id: string, params?: { status?: string; page?: number }) => {
     const qs = new URLSearchParams();
     if (params) Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
-    return apiFetch<{ data: { jobs: Record<string, unknown>[]; meta: { page: number; total: number; total_pages: number } } }>(`/v1/admin/staff/${id}/jobs?${qs}`);
+    return apiFetch<{ jobs: Record<string, unknown>[]; meta: { page: number; total: number; total_pages: number } }>(`/v1/admin/staff/${id}/jobs?${qs}`).then(data => ({ data }));
   },
   export: (params: Record<string, string>) => {
     const qs = new URLSearchParams(params).toString();
@@ -1435,7 +1458,16 @@ export const catalogApi = {
     if (serviceGroupId) params.set("service_group_id", serviceGroupId);
     if (jobType) params.set("job_type", jobType);
     if (isActive !== undefined) params.set("is_active", String(isActive));
-    return apiFetch<{ services: MasterService[] }>(`/v1/admin/master-services?${params.toString()}`);
+    return apiFetch<{ services: MasterService[] }>(`/v1/admin/master-services?${params.toString()}`)
+      .then(r => ({
+        ...r,
+        // Same fix as listMasterServicesEnterprise: the real backend row
+        // only ever has `service_name`, never `name` -- every caller of
+        // this endpoint (e.g. the type/brand mapping modals' "Service"
+        // dropdown) rendered blank option labels despite real data coming
+        // back, since MasterService declares `name` as the field.
+        services: r.services.map(s => ({ ...s, name: (s as unknown as { service_name?: string }).service_name ?? s.name })),
+      }));
   },
   createMasterService: (data: Partial<MasterService> & { category_id:string; service_name:string; job_type:string; pricing_model:string; base_price:number }) =>
     apiFetch<MasterService>("/v1/admin/master-services", { method:"POST", body:JSON.stringify(data) }),
@@ -1669,7 +1701,15 @@ export const catalogApi = {
     if (params?.isActive !== undefined) p.set("is_active", String(params.isActive));
     if (params?.limit)          p.set("limit", String(params.limit));
     if (params?.offset)         p.set("offset", String(params.offset));
-    return apiFetch<{ services: MasterServiceEnriched[]; total: number }>(`/v1/admin/master-services?${p.toString()}`);
+    return apiFetch<{ services: MasterServiceEnriched[]; total: number }>(`/v1/admin/master-services?${p.toString()}`)
+      .then(r => ({
+        ...r,
+        // BUG FIX: the real backend row only ever has `service_name`, never
+        // `name` -- MasterServiceEnriched has always declared `name` as the
+        // field, so every row's Service column (and every place that reads
+        // .name) has been silently blank since this endpoint existed.
+        services: r.services.map(s => ({ ...s, name: (s as unknown as { service_name?: string }).service_name ?? s.name })),
+      }));
   },
   activateMasterService: (serviceId: string) =>
     apiFetch<MasterService>(`/v1/admin/master-services/${serviceId}/activate`, { method:"POST" }),
@@ -1683,7 +1723,11 @@ export const catalogApi = {
     if (params?.serviceGroupId) p.set("service_group_id", params.serviceGroupId);
     if (params?.jobType)        p.set("job_type", params.jobType);
     if (params?.isActive !== undefined) p.set("is_active", String(params.isActive));
-    return apiFetch<{ rows: MasterServiceEnriched[]; count: number }>(`/v1/admin/master-services/export?${p.toString()}`);
+    return apiFetch<{ rows: MasterServiceEnriched[]; count: number }>(`/v1/admin/master-services/export?${p.toString()}`)
+      .then(r => ({
+        ...r,
+        rows: r.rows.map(s => ({ ...s, name: (s as unknown as { service_name?: string }).service_name ?? s.name })),
+      }));
   },
 
   // Customer flow config (Sprint 38)
@@ -2592,7 +2636,16 @@ export interface CommissionRate { rate: number; effective_from: string; plan_typ
 export interface CommissionProjection { projected_monthly: number; based_on_jobs: number; period_days: number; }
 export interface Deposit { tenant_id: string; status: string; required_amount: number; total_paid: number; warranty_drawn: number; replenishment_total: number; current_balance: number; }
 export interface DepositList { deposits: Deposit[]; has_next: boolean; }
-export interface CreditPackage { id: string; name: string; credits: number; price_inr: number; bonus_credits?: number; is_active: boolean; created_at: string; }
+// Matches the real backend shape (CommerceService._pkg_dict) -- was
+// previously `{id, credits, bonus_credits}`, which never matched what
+// `/v1/commerce/packages` actually returns (`package_id`, `credits_amount`,
+// `bonus_pct`, `total_credits`), so every consumer silently rendered 0s.
+export interface CreditPackage {
+  package_id: string; name: string; description?: string | null;
+  credits_amount: number; price_inr: number; bonus_pct: number; total_credits: number;
+  validity_days?: number | null; plan_restriction?: string | null;
+  is_active: boolean; sort_order: number; purchase_count: number;
+}
 export interface CreditPackageList { packages: CreditPackage[]; }
 export interface CustomerAtRisk { customer_id: string; name: string; health_score: number; risk_flags: string[]; last_job_at?: string; }
 export interface CustomerAtRiskList { customers: CustomerAtRisk[]; total: number; }
@@ -3883,7 +3936,7 @@ export const monetizationApi = {
   },
 };
 export interface MasterService {
-  service_id:string; category_id:string; service_name:string; slug:string; description?:string|null;
+  service_id:string; category_id:string; service_name:string; name?:string; slug:string; description?:string|null;
   job_type:string; pricing_model:"fixed"|"range"|"post_assessment"|"hourly";
   base_price:number|null; min_price?:number|null; max_price?:number|null; visit_fee:number;
   pre_approval_limit?:number|null; default_estimate?:number|null;
@@ -6579,7 +6632,7 @@ export const adminReviewApi = {
     return apiFetch<ReviewSummary>(`/v1/admin/reviews/summary${qs}`);
   },
   list: (params?: {
-    q?: string; tenant_id?: string; rating?: string; rating_min?: string; rating_max?: string;
+    q?: string; tenant_id?: string; job_id?: string; rating?: string; rating_min?: string; rating_max?: string;
     status?: string; record_type?: string; has_reply?: string;
     sort_by?: string; sort_dir?: string; page?: string; page_size?: string;
   }) => {
@@ -6589,6 +6642,8 @@ export const adminReviewApi = {
     return apiFetch<ReviewListResponse>(`/v1/admin/reviews${qs ? `?${qs}` : ""}`);
   },
   get:     (id: string)  => apiFetch<CustomerReviewRecord>(`/v1/admin/reviews/${id}`),
+  edit:    (id: string, updates: { overall_rating?: number; review_title?: string; review_text?: string }) =>
+    apiFetch<CustomerReviewRecord>(`/v1/admin/reviews/${id}`, { method: "PUT", body: JSON.stringify(updates) }),
   approve: (id: string)  => apiFetch<CustomerReviewRecord>(`/v1/admin/reviews/${id}/approve`, { method: "POST" }),
   reject:  (id: string, reason: string) =>
     apiFetch<CustomerReviewRecord>(`/v1/admin/reviews/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
@@ -6888,6 +6943,11 @@ export interface NotificationOutboxRecord {
   max_retries: number;
   sent_at: string | null;
   created_at: string;
+
+  /** Backend sends more fields than are enumerated here; the page
+   * asserts what it needs. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
 }
 
 export interface NotificationEventRecord {
@@ -7017,6 +7077,19 @@ export const sprint27AdminApi = {
     apiFetch<{ items: AuditLogRecord[]; total: number }>(`/v1/admin/audit-logs?${new URLSearchParams(params as Record<string, string>)}`),
   getAuditTimeline: (resource_type: string, resource_id: string) =>
     apiFetch<{ timeline: AuditLogRecord[] }>(`/v1/admin/audit-logs/record-timeline?resource_type=${resource_type}&resource_id=${resource_id}`),
+
+  /** Delivery-channel health. There is no dedicated channel-status route;
+   * the outbox is the source of truth for what is actually being delivered,
+   * so this derives from it rather than inventing an endpoint. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getChannelStatus: () => apiFetch<{ items: Record<string, any>[] }>("/v1/admin/notification-outbox?group_by=channel"),
+  /** Cancels a queued outbox message. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cancelOutbox: (outboxId: string) => apiFetch<Record<string, any>>(`/v1/admin/notification-outbox/${outboxId}`, { method: "DELETE" }),
+  /** Bulk pull for CSV export -- same list route, large page. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  exportOutbox: (params?: Record<string, any>) => apiFetch<{ items: Record<string, any>[] }>(
+    `/v1/admin/notification-outbox?${new URLSearchParams({ ...(params ?? {}), limit: "5000" } as Record<string, string>)}`),
 };
 
 // ── Sprint 28 — Analytics Types ───────────────────────────────────────────────
@@ -9178,6 +9251,11 @@ export interface VerticalModuleItem extends CatalogModuleItem {
 
 export interface VerticalDetail extends VerticalItem {
   modules: VerticalModuleItem[];
+
+  /** Backend sends more fields than are enumerated here; the page
+   * asserts what it needs. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
 }
 
 export interface EffectiveMenuVertical {
@@ -9205,6 +9283,17 @@ export interface EffectiveMenu {
   };
 }
 
+/** Admin diagnostics payloads for a vertical. Deliberately permissive --
+ * see the AdminPayload note in lib/api-hs-finance.ts. */
+export interface VerticalCapabilityRegistry { [key: string]: any }  // eslint-disable-line @typescript-eslint/no-explicit-any
+export interface VerticalDependencyHealth { [key: string]: any }    // eslint-disable-line @typescript-eslint/no-explicit-any
+export interface VerticalAuditEntry { [key: string]: any }          // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/** Marks a diagnostics surface the backend genuinely does not implement, so
+ * the page can say so plainly instead of rendering an empty list that reads
+ * as "nothing wrong". Never fabricates rows. */
+export interface UnsupportedSurface { supported: false; reason: string }
+
 export const verticalCatalogApi = {
   listVerticals: (includeDisabled = false) =>
     apiFetch<{ items: VerticalItem[]; total: number }>(
@@ -9214,8 +9303,13 @@ export const verticalCatalogApi = {
     apiFetch<VerticalDetail>(`/v1/admin/verticals/${key}`),
   enableVertical: (key: string) =>
     apiFetch<VerticalItem>(`/v1/admin/verticals/${key}/enable`, { method: "POST" }),
-  disableVertical: (key: string) =>
-    apiFetch<VerticalItem>(`/v1/admin/verticals/${key}/disable`, { method: "POST" }),
+  /** The backend accepts and AUDITS a disable reason
+   * (`payload.get("reason")`), but this client silently dropped it -- so
+   * every vertical disable was recorded with no justification. */
+  disableVertical: (key: string, reason?: string) =>
+    apiFetch<VerticalItem>(`/v1/admin/verticals/${key}/disable`, {
+      method: "POST", body: JSON.stringify({ reason: reason ?? "" }),
+    }),
   updateVertical: (key: string, payload: Partial<VerticalItem>) =>
     apiFetch<VerticalItem>(`/v1/admin/verticals/${key}`, {
       method: "PATCH", body: JSON.stringify(payload),
@@ -9232,6 +9326,30 @@ export const verticalCatalogApi = {
     apiFetch<{ items: CatalogModuleItem[]; total: number }>("/v1/admin/catalog/modules"),
   getEffectiveMenu: () =>
     apiFetch<EffectiveMenu>("/v1/admin/catalog/navigation/effective-menu"),
+
+  /** Real route. Shows what breaks if this vertical is turned off. */
+  getDisableImpact: (key: string) =>
+    apiFetch<Record<string, any>>(`/v1/admin/verticals/${encodeURIComponent(key)}/disable-impact`),  // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  /** A vertical's capabilities ARE its enabled modules, which
+   * `getVertical` already returns -- so this reads from the real detail
+   * route rather than a second endpoint that does not exist. */
+  getCapabilities: async (key: string): Promise<VerticalCapabilityRegistry> => {
+    const detail = await apiFetch<Record<string, any>>(`/v1/admin/verticals/${encodeURIComponent(key)}`);  // eslint-disable-line @typescript-eslint/no-explicit-any
+    return { vertical_key: key, modules: detail?.modules ?? [] };
+  },
+
+  /** NOT IMPLEMENTED BACKEND-SIDE. There is no dependency-health endpoint
+   * for a vertical (verified against the live OpenAPI schema). Returning an
+   * explicit unsupported marker keeps the page honest -- an empty list here
+   * would read as "all dependencies healthy", which nobody has checked. */
+  getDependencyHealth: async (_key: string): Promise<VerticalDependencyHealth & UnsupportedSurface> =>
+    ({ supported: false, reason: "Dependency health is not yet available for verticals." }),
+
+  /** NOT IMPLEMENTED BACKEND-SIDE for verticals (only monetization policies
+   * carry their own audit trail). Same honesty rule as above. */
+  getAuditLog: async (_key: string): Promise<{ items: VerticalAuditEntry[] } & UnsupportedSurface> =>
+    ({ supported: false, reason: "Audit history is not yet available for verticals.", items: [] }),
 };
 
 // ── Platform Settings Enterprise Upgrade ──────────────────────────────────────
@@ -10433,6 +10551,15 @@ export const autoPriceOptionsApi = {
   getMatchingPolicy: () => apiFetch<MatchingPolicyManifest>("/v1/admin/home-services/matching/policy"),
   getMatchingAudit: (limit = 50) => apiFetch<{ items: MatchingAuditRow[] }>(`/v1/admin/home-services/matching/audit?limit=${limit}`),
   getMatchingLiveDecisions: (limit = 50) => apiFetch<{ items: MatchingAuditRow[] }>(`/v1/admin/home-services/matching/decisions?limit=${limit}`),
+
+  /** Price-experience preview. No backend route exists for this yet
+   * (verified against the live OpenAPI schema), so this fails loudly rather
+   * than calling a 404 or fabricating a preview the pricing engine never
+   * produced. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  previewPriceExperience: async (_input: Record<string, any>): Promise<never> => {
+    throw new Error("Price experience preview is not available yet.");
+  },
 };
 
 // ── Home Services Catalog Setup Console ──────────────────────────────────────
@@ -10853,4 +10980,429 @@ export const checklistCatalogApi = {
     apiFetch<JobTypeChecklistMappingRow>(`/v1/admin/checklist-catalog/mappings/${mappingId}/disable`, { method: "POST" }),
 
   getExecutionHealth: () => apiFetch<ChecklistExecutionHealth>("/v1/admin/checklist-catalog/execution-health"),
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Notification Event Policies — /v1/admin/notification-policies
+//
+// Real bug fixed here: `app/admin/notifications/EventPoliciesPanel.tsx` has
+// always imported `notificationPolicyApi` and its three types, but they were
+// never implemented in this file -- so the Notifications workspace could not
+// compile at all. Every route below is matched against the real backend
+// router (app/engines/platform_notifications/policy_router.py).
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface NotificationPolicyListItem {
+  event_key: string;
+  event_name: string;
+  source_engine: string;
+  vertical_key: string | null;
+  severity: string;
+  is_mandatory: boolean;
+  default_channels: string[];
+  status: string;
+  has_draft: boolean;
+  version: number | null;
+  published_at: string | null;
+}
+
+export interface NotificationPolicySummary {
+  delivery_engine_active: boolean;
+  latest_publish_at: string | null;
+  registered_events: number;
+  active_policies: number;
+  need_review: number;
+  failed_deliveries: number;
+  delivery_rate_pct: number | null;
+}
+
+/** The editable policy body itself (current or draft) -- fields mirror
+ * `NotificationPolicy` in app/engines/platform_notifications/policy_models.py.
+ * Deliberately has NO index signature: one would make every property access
+ * resolve to `unknown` and defeat the type entirely. */
+export interface NotificationPolicy {
+  id?: string;
+  event_key: string;
+  vertical_key: string | null;
+  version_number: number;
+  status: string;
+  is_current: boolean;
+
+  delivery_mode: string;
+  required_channels: string[];
+  primary_channels: string[];
+  fallback_channels: string[];
+  escalation_delay_minutes: number | null;
+  consent_required: boolean;
+
+  retry_interval_seconds: number;
+  max_attempts: number;
+  dedup_window_seconds: number;
+  rate_limit_per_hour: number | null;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  severity_override_bypasses_quiet_hours: boolean;
+  expiry_minutes: number | null;
+
+  recipient_rules: NotificationPolicyRecipientRule[];
+  change_summary?: string | null;
+  published_at?: string | null;
+}
+
+/** One "who gets told" rule on a policy -- mirrors
+ * `NotificationPolicyRecipientRule` in policy_models.py. */
+export interface NotificationPolicyRecipientRule {
+  id: string;
+  policy_id?: string;
+  recipient_role: string;
+  is_required: boolean;
+  notes?: string | null;
+}
+
+export interface NotificationPolicyDetail {
+  event_key: string;
+  event_name: string;
+  source_engine: string;
+  vertical_key: string | null;
+  severity: string;
+  is_mandatory: boolean;
+  default_channels: string[];
+  current: NotificationPolicy | null;
+  draft: NotificationPolicy | null;
+  /** Read-only structural guarantees of the fire_event()/outbox pipeline --
+   * never admin-toggleable, shown for auditability only. */
+  safety: Record<string, boolean>;
+}
+
+/** `vertical_key` is a real query parameter on every per-event route: the
+ * same event can carry a different policy per vertical, and omitting it
+ * addresses the vertical-agnostic policy. `null` is sent as "absent",
+ * matching the backend's `Optional[str] = Query(None)`. */
+function _npQuery(verticalKey?: string | null): string {
+  return verticalKey ? `?vertical_key=${encodeURIComponent(verticalKey)}` : "";
+}
+
+export const notificationPolicyApi = {
+  list: (params?: { vertical_key?: string; channel?: string; status?: string; search?: string }) => {
+    const qs = params
+      ? `?${new URLSearchParams(
+          Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== "")) as Record<string, string>,
+        )}`
+      : "";
+    return apiFetch<{ items: NotificationPolicyListItem[]; summary: NotificationPolicySummary }>(
+      `/v1/admin/notification-policies${qs}`,
+    );
+  },
+
+  getDetail: (eventKey: string, verticalKey?: string | null) =>
+    apiFetch<NotificationPolicyDetail>(
+      `/v1/admin/notification-policies/${encodeURIComponent(eventKey)}/detail${_npQuery(verticalKey)}`,
+    ),
+
+  getHistory: (eventKey: string, verticalKey?: string | null) =>
+    apiFetch<{ items: NotificationPolicy[] }>(
+      `/v1/admin/notification-policies/${encodeURIComponent(eventKey)}/history${_npQuery(verticalKey)}`,
+    ),
+
+  getAudit: (eventKey: string, verticalKey?: string | null) =>
+    apiFetch<{ items: Record<string, unknown>[] }>(
+      `/v1/admin/notification-policies/${encodeURIComponent(eventKey)}/audit${_npQuery(verticalKey)}`,
+    ),
+
+  /** Validates a draft WITHOUT saving -- the backend takes the draft body
+   * and event_key in the POST body, not the path. */
+  validate: (eventKey: string, draft: Record<string, unknown>) =>
+    apiFetch<{ valid: boolean; errors: string[]; warnings?: string[] }>(
+      "/v1/admin/notification-policies/validate",
+      { method: "POST", body: JSON.stringify({ event_key: eventKey, draft }) },
+    ),
+
+  saveDraft: (eventKey: string, verticalKey: string | null | undefined, draft: Record<string, unknown>) =>
+    apiFetch<NotificationPolicy>(
+      `/v1/admin/notification-policies/${encodeURIComponent(eventKey)}/draft${_npQuery(verticalKey)}`,
+      { method: "POST", body: JSON.stringify(draft) },
+    ),
+
+  publish: (eventKey: string, verticalKey: string | null | undefined, reason: string) =>
+    apiFetch<NotificationPolicy>(
+      `/v1/admin/notification-policies/${encodeURIComponent(eventKey)}/publish${_npQuery(verticalKey)}`,
+      { method: "POST", body: JSON.stringify({ reason }) },
+    ),
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Admin Tenant Support Queue — /v1/admin/support
+//
+// Real bug fixed here: app/admin/support/page.tsx and
+// app/admin/support/[id]/page.tsx have always imported `supportAdminApi` and
+// its types, but they were never implemented -- the whole Support workspace
+// failed to compile. Routes matched against app/engines/support/admin_router.py.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface SupportTicketRow {
+  id: string;
+  ticket_number: string;
+  tenant_id: string;
+  subject: string;
+  category: string;
+  category_label: string;
+  subcategory: string | null;
+  priority: string;
+  status: string;
+  status_label: string;
+  impact: string | null;
+  impact_label: string | null;
+  reporter_name: string | null;
+  reporter_role: string | null;
+  assigned_team: string | null;
+  assigned_admin_name: string | null;
+  is_critical_incident: boolean;
+  created_at: string;
+  updated_at: string | null;
+  sla: SupportSlaProjection;
+  sla_display?: string;
+  sla_breach_state?: string;
+}
+
+/** Live SLA projection for a ticket -- mirrors `sla_projection()` in
+ * app/engines/support/service.py. */
+export interface SupportSlaProjection {
+  sla_policy: string;
+  first_response_due_at: string | null;
+  first_response_met_at: string | null;
+  first_response_state: string;
+  next_update_due_at: string | null;
+  next_update_state: string;
+  resolution_target_at: string | null;
+  resolution_state: string;
+  paused_at: string | null;
+  paused: boolean;
+  breach_state: string;
+  breached_at: string | null;
+  escalation_available: boolean;
+  display_message: string;
+}
+
+/** One message in a ticket's conversation thread. */
+export interface SupportConversationMessage {
+  id: string;
+  kind: string;
+  author_name: string | null;
+  author_type: string | null;
+  author_role: string | null;
+  body: string;
+  visibility: string;
+  attachments: Record<string, unknown>[];
+  created_at: string;
+}
+
+/** One audited status/assignment/priority change. */
+export interface SupportStatusHistoryEntry {
+  id: string;
+  event_type: string;
+  from: string | null;
+  to: string | null;
+  reason: string | null;
+  actor_type: string | null;
+  actor_name: string | null;
+  created_at: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface SupportQueueResponse {
+  items: SupportTicketRow[];
+  total: number;
+  counts: {
+    open: number;
+    unassigned: number;
+    waiting_for_tenant: number;
+    resolved: number;
+    sla_breached_on_page: number;
+    by_status: Record<string, number>;
+  };
+  categories: { key: string; label: string }[];
+  priorities: string[];
+  statuses: { key: string; label: string }[];
+}
+
+export interface SupportTicketDetail extends SupportTicketRow {
+  description?: string | null;
+  affected_feature?: string | null;
+  resolution_summary?: string | null;
+  resolved_at?: string | null;
+  reopen_count?: number;
+  priority_reasons?: string[];
+  allowed_transitions?: string[];
+  conversation: SupportConversationMessage[];
+  status_history: SupportStatusHistoryEntry[];
+  attachments?: Record<string, unknown>[];
+  started_at?: string | null;
+}
+
+export interface SupportIncidentRow {
+  id: string;
+  reference: string;
+  title: string;
+  description?: string | null;
+  severity: string;
+  status: string;
+  components?: string[];
+  started_at: string;
+  resolved_at?: string | null;
+}
+
+/** Aggregate platform status returned by the heartbeat endpoint -- mirrors
+ * `service_status()` in app/engines/support/service.py. Note this is the
+ * whole-platform rollup, NOT the single component that was just reported. */
+export interface SupportServiceStatus {
+  state: string;
+  message: string;
+  last_checked_at: string | null;
+  evidence_fresh: boolean;
+  affected_components: string[];
+  active_incident_count: number;
+  incidents: SupportIncidentRow[];
+  status_page_href: string;
+}
+
+export const supportAdminApi = {
+  queue: (params?: {
+    search?: string; tenant_id?: string; category?: string; status?: string; priority?: string;
+    limit?: number; offset?: number;
+  }) => {
+    const qs = params
+      ? `?${new URLSearchParams(
+          Object.fromEntries(
+            Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]),
+          ),
+        )}`
+      : "";
+    return apiFetch<SupportQueueResponse>(`/v1/admin/support/queue${qs}`);
+  },
+
+  detail: (ticketId: string) =>
+    apiFetch<SupportTicketDetail>(`/v1/admin/support/requests/${ticketId}`),
+
+  transition: (ticketId: string, payload: { to_status: string; reason?: string; resolution_summary?: string }) =>
+    apiFetch<SupportTicketDetail>(`/v1/admin/support/requests/${ticketId}/transition`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+
+  assign: (ticketId: string, payload: { team?: string; assignee_id?: string; assignee_name?: string }) =>
+    apiFetch<SupportTicketDetail>(`/v1/admin/support/requests/${ticketId}/assign`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+
+  /** `reason` is required by the backend (min_length=3). */
+  setPriority: (ticketId: string, payload: { priority: string; reason: string }) =>
+    apiFetch<SupportTicketDetail>(`/v1/admin/support/requests/${ticketId}/priority`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+
+  /** `internal: true` posts an internal note (different permission) rather
+   * than a tenant-visible reply. */
+  reply: (ticketId: string, payload: { body: string; internal?: boolean; request_info?: boolean }) =>
+    apiFetch<SupportTicketDetail>(`/v1/admin/support/requests/${ticketId}/messages`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+
+  merge: (ticketId: string, payload: { merge_into_id: string; reason: string }) =>
+    apiFetch<SupportTicketDetail>(`/v1/admin/support/requests/${ticketId}/merge`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+
+  listIncidents: () =>
+    apiFetch<{ items: SupportIncidentRow[]; statuses?: SupportServiceStatus[] }>("/v1/admin/support/incidents"),
+
+  createIncident: (payload: { title: string; description?: string; severity?: string; components?: string[] }) =>
+    apiFetch<SupportIncidentRow>("/v1/admin/support/incidents", {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+
+  resolveIncident: (incidentId: string) =>
+    apiFetch<SupportIncidentRow>(`/v1/admin/support/incidents/${incidentId}/resolve`, { method: "POST" }),
+
+  /** `component`/`is_healthy` are QUERY parameters on the backend, not a body. */
+  heartbeat: (component: string, isHealthy: boolean, detail?: string) => {
+    const qs = new URLSearchParams({ component, is_healthy: String(isHealthy) });
+    if (detail) qs.set("detail", detail);
+    return apiFetch<SupportServiceStatus>(`/v1/admin/support/status/heartbeat?${qs}`, { method: "POST" });
+  },
+};
+
+// Re-exported so every consumer keeps importing from "lib/api" -- the
+// vertical-directory client lives in its own module purely for file size.
+export { verticalDirectoryApi } from "./api-vertical-directory";
+export type { VerticalDirectoryPage } from "./api-vertical-directory";
+export { hsReviewApi } from "./api-hs-review";
+export type { HsModerationQueue } from "./api-hs-review";
+export { hsCustomerDirectoryApi, hsProviderDirectoryApi, hsDashboardApi } from "./api-hs-directory";
+export { configurationApi, verticalMonetizationApi } from "./api-configuration";
+export type {
+  ConfigurationListItem, ConfigurationDetail, ConfigurationValueVersion,
+  MonetizationPolicy, MonetizationPolicyRow, MonetizationImpact, ConfigurationSummary,
+} from "./api-configuration";
+export { homeServicesFinanceApi, homeServicesFinanceMonetizationApi, homeServicesTopupPlanApi } from "./api-hs-finance";
+export type { TopupPlan } from "./api-hs-finance";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Customer Home campaigns (the promotional banner carousel)
+//
+// Real bug fixed here: the customer_campaigns engine powers the banner
+// carousel on the customer Home screen, but BOTH of its routers were written
+// and never mounted -- so there was no way for an admin to create, schedule
+// or update a banner. The carousel still rendered because customer_home
+// calls CampaignService in-process, which is why the gap went unnoticed.
+// Routes match app/engines/customer_campaigns/admin_router.py.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Deep-link targets are restricted to known in-app destinations -- never an
+ * arbitrary external URL. Mirrors ALLOWED_DEEPLINK_PREFIXES on the backend,
+ * which rejects anything else with a 422. */
+export const CAMPAIGN_DEEPLINK_PREFIXES = [
+  "app://home",
+  "app://category/",
+  "app://service/",
+  "app://booking/",
+  "app://offers",
+] as const;
+
+export interface CustomerCampaign {
+  campaign_id: string;
+  /** Operator-facing name; never shown to customers. */
+  internal_name: string;
+  eyebrow: string | null;
+  title: string;
+  description: string | null;
+  artwork_url_light: string | null;
+  artwork_url_dark: string | null;
+  cta_label: string | null;
+  cta_deeplink: string | null;
+  is_enabled: boolean;
+  /** Lower shows first. */
+  priority: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  eligible_vertical_keys: string[];
+  eligible_category_ids: string[];
+  target_zipcodes: string[];
+  target_zones: string[];
+  target_cities: string[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export type CustomerCampaignPayload = Partial<Omit<CustomerCampaign,
+  "campaign_id" | "created_at" | "updated_at">>;
+
+const CUSTOMER_CAMPAIGNS = "/v1/admin/customer-campaigns";
+
+export const customerCampaignApi = {
+  list: () => apiFetch<{ items: CustomerCampaign[]; total: number }>(CUSTOMER_CAMPAIGNS),
+  create: (payload: CustomerCampaignPayload) =>
+    apiFetch<CustomerCampaign>(CUSTOMER_CAMPAIGNS, { method: "POST", body: JSON.stringify(payload) }),
+  update: (id: string, payload: CustomerCampaignPayload) =>
+    apiFetch<CustomerCampaign>(`${CUSTOMER_CAMPAIGNS}/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  remove: (id: string) =>
+    apiFetch<{ deleted: boolean; campaign_id: string }>(`${CUSTOMER_CAMPAIGNS}/${id}`, { method: "DELETE" }),
 };

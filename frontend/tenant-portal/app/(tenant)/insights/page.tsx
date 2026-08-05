@@ -351,7 +351,7 @@ export default function InsightsPage() {
             </p>
           ) : (pricing.data?.recommendations ?? []).map((rec: PricingRecommendation, i: number) => (
             <div key={rec.service_type_id} style={{ display:"flex", alignItems:"center", gap:14, padding:"14px 20px",
-              borderBottom: i < (pricing.data?.recommendations.length ?? 0) - 1 ? "1px solid var(--border)" : "none" }}>
+              borderBottom: i < (pricing.data?.recommendations?.length ?? 0) - 1 ? "1px solid var(--border)" : "none" }}>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
                   <p style={{ fontSize:13, fontWeight:600, color:"var(--text-primary)", margin:0 }}>{rec.service_type_id}</p>
@@ -391,7 +391,7 @@ export default function InsightsPage() {
             <div key={s.staff_id}
               onClick={() => window.location.href = `/staff/${s.staff_id}`}
               style={{ display:"flex", alignItems:"center", gap:14, padding:"12px 20px", cursor:"pointer",
-                borderBottom: i < (rankings.data?.rankings.length ?? 0) - 1 ? "1px solid var(--border)" : "none" }}>
+                borderBottom: i < (rankings.data?.rankings?.length ?? 0) - 1 ? "1px solid var(--border)" : "none" }}>
               <div style={{ width:28, height:28, borderRadius:"50%", flexShrink:0,
                 background: s.rank <= 3 ? "var(--warning-bg)" : "var(--surface-sunken)",
                 display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700,
@@ -433,7 +433,7 @@ export default function InsightsPage() {
             <div key={cust.customer_id}
               onClick={() => window.location.href = `/customers/${cust.customer_id}`}
               style={{ display:"flex", alignItems:"center", gap:14, padding:"12px 20px", cursor:"pointer",
-                borderBottom: i < (highValue.data?.high_value_customers.length ?? 0) - 1 ? "1px solid var(--border)" : "none" }}>
+                borderBottom: i < (highValue.data?.high_value_customers?.length ?? 0) - 1 ? "1px solid var(--border)" : "none" }}>
               <div style={{ flex:1, minWidth:0 }}>
                 <p style={{ fontSize:13, fontWeight:600, color:"var(--text-primary)", margin:0, fontFamily:"monospace" }}>
                   {cust.customer_id.slice(0,8)}

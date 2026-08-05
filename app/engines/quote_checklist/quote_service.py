@@ -4,8 +4,11 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
+import logging
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+_qlog = logging.getLogger(__name__)
 
 from app.engines.quote_checklist.constants import (
     QS_DRAFT, QS_SENT_TO_CUSTOMER, QS_CUSTOMER_APPROVED,
@@ -516,6 +519,30 @@ class ServiceJobQuoteService:
         )
         from app.engines.quote_checklist.notifications import notify_provider_quote_decision
         await notify_provider_quote_decision(db, q, "approved")
+
+        # Customer platform fee for a quote-priced job (vertical_monetization).
+        #
+        # Real production gap fixed here: the monetization engine could be
+        # configured and published by Super Admin but was never called by the
+        # live quote pipeline, so an approved quote never produced a platform
+        # fee charge. `is_current` is passed through explicitly -- the charge
+        # service refuses to bill against a SUPERSEDED quote version, so a
+        # customer can never be charged twice for a re-quoted job.
+        #
+        # Non-fatal by design: a monetization misconfiguration must not block
+        # a customer approving their quote. The call is idempotent (keyed
+        # "quote:{id}:v{version}") and returns None when no policy applies.
+        try:
+            from app.engines.vertical_monetization.charge_service import create_charge_for_quote
+            await create_charge_for_quote(
+                db, vertical_key="home_services",
+                quote_id=q.id, quote_version=q.version_number, is_current=q.is_current,
+                job_id=q.job_id, tenant_id=q.tenant_id,
+                customer_id=uuid.UUID(customer_id) if customer_id else None,
+            )
+        except Exception as exc:  # noqa: BLE001 -- never block a quote approval
+            _qlog.warning("monetization.quote_charge_failed quote_id=%s error=%s", q.id, exc)
+
         await db.commit()
         await db.refresh(q)
         return await self._customer_dict(db, q)
@@ -688,13 +715,28 @@ class ServiceJobQuoteService:
     async def list_customer_quotes(
         self, db: AsyncSession, customer_id: str, job_id: str,
     ) -> list[dict]:
+        """ARRIVAL-INSPECTION-QUOTE-APPROVAL phase fix: this previously
+        returned `q.to_dict()` verbatim for every quote version on the job --
+        unlike `get_quote`'s already-hardened customer view (2F-16/2F-16A),
+        it never stripped `provider_internal_notes`, and returned every
+        superseded historical version alongside the current one. A customer
+        listing their own job's quotes has no legitimate need to see a prior
+        revision's provider notes, and the mobile client only ever needs the
+        single current, actionable quote -- filtered to `is_current` and
+        stripped exactly like `get_quote`'s customer view."""
         res = await db.execute(
             select(ServiceJobQuote).where(
                 ServiceJobQuote.job_id == uuid.UUID(job_id),
                 ServiceJobQuote.customer_id == uuid.UUID(customer_id),
+                ServiceJobQuote.is_current.is_(True),
             ).order_by(ServiceJobQuote.created_at.desc())
         )
-        return [q.to_dict() for q in res.scalars().all()]
+        out = []
+        for q in res.scalars().all():
+            d = q.to_dict()
+            d.pop("provider_internal_notes", None)
+            out.append(d)
+        return out
 
     # ── Quote events ───────────────────────────────────────────────────────────
 

@@ -144,6 +144,57 @@ class PartsRequest(ServiceOSBase):
         }
 
 
+class WorkSession(ServiceOSBase):
+    """Phase M -- technician work-execution elapsed-time tracking
+    (start/pause/resume). Supplementary evidence only, never a
+    workflow-status authority (ServiceJob.status remains sole source of
+    truth for gating). One row per job -- matches migration 210's real
+    `service_job_work_sessions` table; found missing from this module
+    entirely during the Final Phase end-to-end pass (the table existed and
+    was migrated, but no ORM model was ever written for it, so every
+    caller of WorkSessionService failed at import time)."""
+    __tablename__ = "service_job_work_sessions"
+    __table_args__ = (
+        Index("ix_sjws_job_id",    "job_id"),
+        Index("ix_sjws_tenant_id", "tenant_id"),
+    )
+    job_id:              Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
+    tenant_id:           Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    staff_member_id:     Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    state:               Mapped[str]              = mapped_column(String(20), nullable=False, default="active")
+    started_at:          Mapped[datetime]         = mapped_column(DateTime(timezone=True), nullable=False)
+    segment_started_at:  Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_at:           Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    pause_reason:        Mapped[str | None]       = mapped_column(String(60), nullable=True)
+    accumulated_seconds: Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
+    finished_at:         Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CompletionProof(ServiceOSBase):
+    """Phase N -- pre-final-completion proof/handover capture stage (matches
+    migration 211's real `service_job_completion_proofs` table). Found
+    missing from this module entirely during the Final Phase end-to-end
+    pass, same as WorkSession above -- table migrated, model never written."""
+    __tablename__ = "service_job_completion_proofs"
+    __table_args__ = (
+        Index("ix_sjcp_job_id",    "job_id"),
+        Index("ix_sjcp_tenant_id", "tenant_id"),
+    )
+    job_id:                     Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
+    tenant_id:                  Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    staff_member_id:            Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    status:                     Mapped[str]              = mapped_column(String(20), nullable=False, default="draft")
+    resolution_summary:         Mapped[str | None]       = mapped_column(Text(), nullable=True)
+    final_service_notes:        Mapped[str | None]       = mapped_column(Text(), nullable=True)
+    before_photo_ids:           Mapped[list | None]      = mapped_column(JSONB, nullable=True)
+    after_photo_ids:            Mapped[list | None]      = mapped_column(JSONB, nullable=True)
+    handover_status:            Mapped[str]              = mapped_column(String(30), nullable=False, default="not_requested")
+    handover_requested_at:      Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    handover_last_reminder_at:  Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    submitted_by:                Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    submitted_at:                Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class CoachingAppointmentExecutionEvent(ServiceOSBase):
     __tablename__ = "coaching_appointment_execution_events"
     __table_args__ = (

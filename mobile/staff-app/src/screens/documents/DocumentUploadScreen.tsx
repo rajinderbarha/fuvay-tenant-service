@@ -26,7 +26,7 @@ export function DocumentUploadScreen({ navigation, route }: Props) {
   const initialCode = route.params?.docCode;
   const { data, submit, uploading, uploadError } = useDocuments();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
 
   const [docCode, setDocCode] = useState<string | undefined>(initialCode);
   const [pickedAsset, setPickedAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);

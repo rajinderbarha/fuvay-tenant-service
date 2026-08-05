@@ -368,6 +368,80 @@ async def get_me(
               ))
 
 
+# ── 14b. Access Context (canonical role/audience/tenant) ──────────────────────
+@router.get(
+    "/access-context",
+    summary="Get canonical role/audience/tenant access context",
+    response_model=ApiResponse[dict],
+)
+async def get_access_context(
+    request: Request,
+    user: UserContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[dict]:
+    """Every mobile client's session-establishment step calls this exact
+    path immediately after login (see customer-app's sessionManager.
+    validateAndAdoptSession) to confirm the token's real role/audience
+    before trusting it -- but no backend implementation existed. Login
+    always succeeded, then this 404'd on the very next call, and the
+    client discarded the session it had just received, bouncing back to
+    the login screen.
+
+    tenant_status/technician_status/technician_id/capabilities were
+    previously hardcoded null/empty with a comment claiming "no current
+    client reads them" -- that became false once the staff app's real root
+    (src/root/App.tsx -> RootNavigator -> resolveNavigationState) started
+    gating on them: a null tenant_status fails the guard's `=== "active"`
+    check for every single account, regardless of the tenant's real status,
+    permanently showing "tenant suspended". Now resolved for real.
+    """
+    from app.engines.auth.constants import AUDIENCE
+    from app.core.permissions import ROLE_PERMISSIONS
+
+    audience = AUDIENCE.get(user.role, "serviceos:customer")
+
+    tenant_status = None
+    enabled_verticals: list[str] = []
+    if user.tenant_id:
+        from app.engines.tenant_engine.models import Tenant
+        tenant = await db.get(Tenant, uuid.UUID(user.tenant_id))
+        if tenant:
+            tenant_status = tenant.status
+            enabled_verticals = [tenant.vertical]
+
+    technician_id = None
+    technician_status = None
+    if user.role in ("technician", "staff") and user.tenant_id:
+        # Same resolution order as home_service_assignment.staff_router.
+        # _resolve_staff_member_id: assigned_staff_id/technician identity may
+        # be a real ProviderTeamMember row, or (in real/demo data where that
+        # roster table is unpopulated) the raw auth user itself.
+        from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+        from sqlalchemy import select as _select
+        ptm = (await db.execute(
+            _select(ProviderTeamMember).where(ProviderTeamMember.user_id == uuid.UUID(user.user_id))
+        )).scalars().first()
+        if ptm:
+            technician_id = str(ptm.id)
+            technician_status = ptm.status
+        else:
+            technician_id = user.user_id
+            technician_status = "active" if getattr(user, "is_verified", True) is not False else "suspended"
+
+    data = {
+        "user_id": user.user_id,
+        "canonical_role": user.role,
+        "audience": audience,
+        "tenant_id": user.tenant_id,
+        "tenant_status": tenant_status,
+        "technician_id": technician_id,
+        "technician_status": technician_status,
+        "enabled_verticals": enabled_verticals,
+        "capabilities": ROLE_PERMISSIONS.get(user.role, []),
+    }
+    return ok(data, _meta(request).request_id, ENGINE_ID)
+
+
 # ── 15. Update Profile ────────────────────────────────────────────────────────
 @router.put(
     "/me",
@@ -398,9 +472,12 @@ async def change_password(
     user: UserContext = Depends(get_current_user),
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
-    await svc.change_password(uuid.UUID(user.user_id), body.current_password, body.new_password)
+    sessions_revoked = await svc.change_password(
+        uuid.UUID(user.user_id), body.current_password, body.new_password,
+        current_session_id=uuid.UUID(user.session_id) if user.session_id else None,
+    )
     return ok(
-        {"message": "Password changed successfully. Log in again with your new password."},
+        {"message": "Password changed successfully.", "other_sessions_revoked": sessions_revoked},
         _meta(request).request_id, ENGINE_ID,
     )
 
@@ -439,7 +516,12 @@ async def confirm_password_reset(
     request: Request,
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
-    data = await svc.confirm_password_reset(body.reset_token, body.new_password)
+    data = await svc.confirm_password_reset(
+        email=str(body.email) if body.email else None,
+        phone=body.phone,
+        reset_token=body.reset_token,
+        new_password=body.new_password,
+    )
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
 
@@ -454,9 +536,12 @@ async def list_sessions(
     user: UserContext = Depends(get_current_user),
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
-    sessions = await svc.list_sessions(uuid.UUID(user.user_id), user.device_id or "")
-    return ok({"sessions": sessions, "total": len(sessions)},
-              _meta(request).request_id, ENGINE_ID)
+    data = await svc.get_sessions_projection(
+        uuid.UUID(user.user_id),
+        uuid.UUID(user.session_id) if user.session_id else None,
+        user.device_id,
+    )
+    return ok(data, _meta(request).request_id, ENGINE_ID)
 
 
 # ── 20. Revoke Session ────────────────────────────────────────────────────────
@@ -471,7 +556,10 @@ async def revoke_session(
     user: UserContext = Depends(get_current_user),
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
-    await svc.revoke_session(session_id, uuid.UUID(user.user_id))
+    await svc.revoke_session(
+        session_id, uuid.UUID(user.user_id),
+        current_session_id=uuid.UUID(user.session_id) if user.session_id else None,
+    )
     return ok({"session_id": str(session_id), "revoked": True},
               _meta(request).request_id, ENGINE_ID)
 
@@ -803,7 +891,7 @@ async def get_audit_log(
 # ── 35–37. Platform User Management (Super Admin) ─────────────────────────────
 @router.get(
     "/users",
-    summary="[Super Admin] List all users across all tenants",
+    summary="[Super Admin] List all users across all tenants; tenant callers see only their own tenant",
     response_model=ApiResponse[dict],
 )
 async def list_users(
@@ -815,6 +903,17 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[dict]:
     from sqlalchemy import select
+    # SECURITY: this route is shared by the super-admin "Users" page (sees
+    # every tenant) and the tenant-portal "Staff" page (should see only its
+    # own staff). P.AUTH_USERS_READ is granted to tenant-owner-level roles
+    # too, and a caller-supplied tenant_id was previously optional -- a
+    # tenant user could omit it (as the tenant-portal staff client always
+    # did) and read every tenant's users platform-wide. Non-super-admin
+    # callers now have tenant_id forced to their own, never client-supplied.
+    if user.role != "super_admin":
+        if not user.tenant_id:
+            raise ServiceOSException("PERMISSION_DENIED", "No tenant context for this account.", status_code=403)
+        tenant_id = uuid.UUID(user.tenant_id)
     q = select(_UserModel).order_by(_UserModel.created_at.desc())
     if role:
         q = q.where(_UserModel.role == role)
@@ -1162,6 +1261,24 @@ _me_security_router = APIRouter(prefix="/v1/auth", tags=["Login History", "User 
 
 
 @_me_security_router.get(
+    "/me/mobile-security-summary",
+    summary="Technician mobile app security summary card",
+    response_model=ApiResponse[dict],
+)
+async def get_mobile_security_summary(
+    request: Request,
+    user: UserContext = Depends(get_current_user),
+    svc: AuthService = Depends(_svc),
+) -> ApiResponse[dict]:
+    data = await svc.get_mobile_security_summary(
+        user_id=uuid.UUID(user.user_id),
+        current_session_id=uuid.UUID(user.session_id) if user.session_id else None,
+        current_device_id=user.device_id,
+    )
+    return ok(data, _meta(request).request_id, ENGINE_ID)
+
+
+@_me_security_router.get(
     "/login-history",
     summary="View your own recent login history",
     response_model=ApiResponse[dict],
@@ -1181,6 +1298,31 @@ async def get_own_login_history(
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
 
+@_me_security_router.get(
+    "/me/login-activity",
+    summary="View your own login activity in a customer-safe, allowlisted shape",
+    response_model=ApiResponse[dict],
+)
+async def get_my_login_activity(
+    request: Request,
+    filter: str = Query(default="all", pattern="^(all|successful|needs_attention)$"),
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = None,
+    user: UserContext = Depends(get_current_user),
+    svc: AuthService = Depends(_svc),
+) -> ApiResponse[dict]:
+    """Distinct from `GET /login-history` (kept as-is for admin/tenant-owner
+    tooling, which returns the raw internal shape) -- this route returns
+    only the customer-safe allowlisted fields (see
+    AuthService.get_my_login_activity)."""
+    data = await svc.get_my_login_activity(
+        user_id=uuid.UUID(user.user_id),
+        current_device_id=user.device_id,
+        outcome_filter=filter, limit=limit, cursor=cursor,
+    )
+    return ok(data, _meta(request).request_id, ENGINE_ID)
+
+
 @_me_security_router.post(
     "/sessions/revoke-all-other",
     summary="Revoke all sessions except the current one",
@@ -1191,10 +1333,36 @@ async def revoke_all_other_sessions(
     user: UserContext = Depends(get_current_user),
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
-    # Logout all but keep current session alive (exclude current jti from blacklist)
-    count = await svc.logout_all(user.user_id, "")  # empty jti = don't blacklist any specific token
-    return ok({"sessions_revoked": count, "message": f"{count} other session(s) revoked."},
-              _meta(request).request_id, ENGINE_ID)
+    count = await svc.logout_all(
+        user.user_id, "",
+        exclude_session_id=uuid.UUID(user.session_id) if user.session_id else None,
+    )
+    active_sessions = await svc.list_sessions(
+        uuid.UUID(user.user_id), uuid.UUID(user.session_id) if user.session_id else None,
+    )
+    return ok(
+        {"sessions_revoked": count, "active_session_count": len(active_sessions),
+         "message": f"{count} other session(s) revoked."},
+        _meta(request).request_id, ENGINE_ID,
+    )
 
+
+@_me_security_router.post(
+    "/me/devices/{session_id}/remove-trust",
+    summary="Remove trusted-device status from a session without revoking it",
+    response_model=ApiResponse[dict],
+)
+async def remove_device_trust(
+    session_id: uuid.UUID,
+    request: Request,
+    user: UserContext = Depends(get_current_user),
+    svc: AuthService = Depends(_svc),
+) -> ApiResponse[dict]:
+    """Staff-app API audit finding: the Trusted Device screen already
+    called this exact path, but no backend route implemented it -- every
+    tap of "Remove trust" failed. The device stays signed in; only the
+    is_trusted flag clears (see AuthService.remove_session_trust)."""
+    data = await svc.remove_session_trust(session_id, uuid.UUID(user.user_id))
+    return ok(data, _meta(request).request_id, ENGINE_ID)
 
 

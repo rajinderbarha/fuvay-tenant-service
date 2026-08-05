@@ -3,18 +3,160 @@ import React, { useState, useCallback } from "react";
 import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
-  Card, Badge, Btn, Modal, SectionHeader, Skeleton, EmptyState, Select, Input,
+  Card, Badge, Btn, Modal, SectionHeader, Skeleton, EmptyState, Select, Input, Spinner,
 } from "../../../components/shared/ui";
 import { sprint27AdminApi } from "../../../lib/api";
 import type { InAppNotification } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
-import { Bell, CheckCheck, RefreshCw, Eye } from "lucide-react";
+import { Bell, CheckCheck, RefreshCw, Eye, Settings } from "lucide-react";
+import { RequirePermission } from "../../../components/shared/PermissionGate";
+import { NotificationTemplatesContent } from "./templates/page";
+import { EventPoliciesPanel } from "./EventPoliciesPanel";
+import { DeliveryProvidersPanel } from "./DeliveryProvidersPanel";
+import { LogsFailuresPanel } from "./LogsFailuresPanel";
+
+const CHANNELS = [
+  { key: "in_app",   label: "In-app" },
+  { key: "email",    label: "Email" },
+  { key: "sms",      label: "SMS" },
+  { key: "whatsapp", label: "WhatsApp" },
+  { key: "push",     label: "Push" },
+];
+
+// Curated set of admin-relevant notification events. Toggling a channel writes a
+// per-(event, channel) preference; the key matches what the backend fires.
+const EVENT_GROUPS: { group: string; events: { key: string; label: string }[] }[] = [
+  { group: "Complaints & Disputes", events: [
+    { key: "complaint.filed",                 label: "New complaint filed" },
+    { key: "complaint.sla.escalated",         label: "Complaint SLA escalated" },
+    { key: "complaint.ai_settlement.escalated", label: "AI settlement escalated to admin" },
+    { key: "complaint.settlement_proposed",   label: "Settlement proposed" },
+  ]},
+  { group: "Providers & Onboarding", events: [
+    { key: "tenant.activated",     label: "Provider activated" },
+    { key: "tenant.onboarding",    label: "New onboarding request" },
+  ]},
+  { group: "Finance", events: [
+    { key: "wallet.low_balance",   label: "Provider wallet low balance" },
+    { key: "deposit.refund",       label: "Security deposit refunded" },
+    { key: "topup.credited",       label: "Credit top-up received" },
+  ]},
+  { group: "Jobs & Bookings", events: [
+    { key: "booking.confirmed",    label: "Booking confirmed" },
+    { key: "job.completed",        label: "Job completed" },
+  ]},
+];
+
+// ── Settings tab (was a separate /admin/notifications/settings page +
+// nav item, folded in here 2026-08-05 at explicit user request). ──────────
+function NotificationSettingsPanel() {
+  const prefs = useApi(useCallback(() => sprint27AdminApi.getPreferences(), []), []);
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const rows = prefs.data ?? [];
+  const prefMap: Record<string, boolean> = {};
+  for (const p of rows) prefMap[`${p.event_key}::${p.channel}`] = p.is_enabled;
+
+  const isOn = (event: string, channel: string) => {
+    const k = `${event}::${channel}`;
+    if (k in overrides) return overrides[k];
+    if (k in prefMap) return prefMap[k];
+    return true; // no preference row = default enabled
+  };
+
+  const toggle = async (event: string, channel: string) => {
+    const k = `${event}::${channel}`;
+    const next = !isOn(event, channel);
+    setOverrides(o => ({ ...o, [k]: next }));
+    setSavingKey(k); setError(null);
+    try {
+      await sprint27AdminApi.updatePreference(event, channel, next);
+    } catch (e) {
+      setOverrides(o => ({ ...o, [k]: !next })); // revert on failure
+      setError(e instanceof Error ? e.message : "Could not save preference.");
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  return (
+    <RequirePermission requiredPermission="" parentLabel="Settings">
+      {prefs.loading ? <Spinner /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
+            Choose which channels you receive each notification on. An unset toggle uses the platform default (on).
+          </p>
+          {error && <p style={{ color: "var(--danger)", fontSize: 13 }}>{error}</p>}
+          {EVENT_GROUPS.map(g => (
+            <Card key={g.group} padding={0}>
+              <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)",
+                fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+                {g.group}
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ textAlign: "left" }}>
+                      <th style={{ padding: "10px 16px", color: "var(--text-tertiary)", fontWeight: 600 }}>Event</th>
+                      {CHANNELS.map(c => (
+                        <th key={c.key} style={{ padding: "10px 12px", textAlign: "center",
+                          color: "var(--text-tertiary)", fontWeight: 600 }}>{c.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {g.events.map(ev => (
+                      <tr key={ev.key} style={{ borderTop: "1px solid var(--border)" }}>
+                        <td style={{ padding: "11px 16px", color: "var(--text-primary)" }}>{ev.label}</td>
+                        {CHANNELS.map(c => {
+                          const on = isOn(ev.key, c.key);
+                          const k = `${ev.key}::${c.key}`;
+                          return (
+                            <td key={c.key} style={{ padding: "8px 12px", textAlign: "center" }}>
+                              <button
+                                role="switch" aria-checked={on}
+                                disabled={savingKey === k}
+                                onClick={() => toggle(ev.key, c.key)}
+                                title={on ? "On" : "Off"}
+                                style={{
+                                  width: 38, height: 22, borderRadius: 999, border: "none",
+                                  cursor: "pointer", position: "relative", verticalAlign: "middle",
+                                  background: on ? "var(--accent)" : "var(--surface-sunken, #d0d0d0)",
+                                  opacity: savingKey === k ? 0.5 : 1, transition: "background 0.15s",
+                                }}>
+                                <span style={{
+                                  position: "absolute", top: 2, left: on ? 18 : 2, width: 18, height: 18,
+                                  borderRadius: "50%", background: "#fff", transition: "left 0.15s",
+                                  boxShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                                }} />
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ))}
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+            Changes save automatically. <Badge variant="muted">in-app</Badge> notifications also appear in the bell.
+          </p>
+        </div>
+      )}
+    </RequirePermission>
+  );
+}
 
 const SEVERITY_VARIANT: Record<string, "danger" | "warning" | "success" | "muted"> = {
   critical: "danger", high: "danger", medium: "warning", low: "muted", info: "muted",
 };
 
 export default function NotificationCenterPage() {
+  const [tab, setTab] = useState<"feed" | "templates" | "policies" | "providers" | "logs" | "settings">("feed");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -100,7 +242,7 @@ export default function NotificationCenterPage() {
       <SectionHeader
         title="Notification Center"
         subtitle="Real-time feed of platform, tenant, and system notifications."
-        actions={
+        actions={tab === "feed" ? (
           <div style={{ display: "flex", gap: 8 }}>
             <Btn size="sm" variant="secondary" onClick={handleMarkAllRead} loading={markAllReadAction.loading}>
               <CheckCheck size={14} style={{ marginRight: 4 }}/> Mark All Read
@@ -109,9 +251,31 @@ export default function NotificationCenterPage() {
               <RefreshCw size={14}/>
             </Btn>
           </div>
-        }
+        ) : undefined}
       />
 
+      <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 20, overflowX: "auto" }}>
+        {([
+          ["feed", "Feed"], ["templates", "Templates"], ["policies", "Event Policies"],
+          ["providers", "Delivery Providers"], ["logs", "Logs & Failures"], ["settings", "Settings"],
+        ] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            style={{ padding: "10px 16px", fontSize: 13, fontWeight: 600, background: "none", border: "none",
+              borderBottom: tab === key ? "2px solid var(--brand)" : "2px solid transparent",
+              color: tab === key ? "var(--text-primary)" : "var(--text-tertiary)", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+            {key === "settings" && <Settings size={13} />} {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "templates" && <NotificationTemplatesContent />}
+      {tab === "policies" && <EventPoliciesPanel />}
+      {tab === "providers" && <DeliveryProvidersPanel />}
+      {tab === "logs" && <LogsFailuresPanel />}
+      {tab === "settings" && <NotificationSettingsPanel />}
+
+      {tab === "feed" && <>
       {toast && (
         <div style={{ padding: "10px 16px", marginBottom: 16, borderRadius: 10,
           background: toast.ok ? "var(--success-bg)" : "var(--danger-bg)",
@@ -286,6 +450,7 @@ export default function NotificationCenterPage() {
           </div>
         </Modal>
       )}
+      </>}
     </AdminLayout>
   );
 }

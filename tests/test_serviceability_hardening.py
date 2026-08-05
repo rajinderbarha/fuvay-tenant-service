@@ -161,7 +161,11 @@ async def test_07_get_address_not_found_raises_404():
 
 @pytest.mark.asyncio
 async def test_08_get_address_cross_customer_access_denied_as_not_found():
-    """Ownership-hiding convention: cross-customer access looks like 404, not 403."""
+    """Ownership-hiding convention: cross-customer access looks like 404, not
+    403 -- and (Add/Edit Address phase, 2026-08-01) uses the EXACT SAME
+    error_code/detail shape as a genuinely missing address, not a distinct
+    NotFoundException, so a caller cannot enumerate "exists but not mine"
+    vs "doesn't exist" by inspecting the error body."""
     db = make_db()
     owner_id = uuid.uuid4()
     other_customer_id = uuid.uuid4()
@@ -169,8 +173,10 @@ async def test_08_get_address_cross_customer_access_denied_as_not_found():
                             city="Pune", state="MH", zipcode="411001", address_line_1="a")
     db.get.return_value = addr
     svc = ServiceabilityService(db=db, actor_role="customer", actor_id=other_customer_id)
-    with pytest.raises(NotFoundException):
+    with pytest.raises(ServiceOSException) as exc_info:
         await svc.get_address_dict(addr.id)
+    assert exc_info.value.error_code == ERR_ADDRESS_NOT_FOUND
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio

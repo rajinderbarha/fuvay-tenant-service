@@ -1,579 +1,640 @@
 "use client";
 /**
- * Public Tenant Registration — dynamic packages from backend.
- * Flow:
- *   1. Business Info + Vertical/Category selection
- *   2. Load active signup packages from /v1/public/packages?vertical_type=…
- *   3. Package selection
- *   4. OTP verify
- *   5. Payment via Razorpay
- *   6. Done — show credentials
+ * Tenant Signup — 5-step no-payment wizard, wired to the real backend.
+ *
+ * Layout matches the approved external design (left step rail + right
+ * form card) — supplied as reference images. Rebuilt directly against
+ * those references.
+ *
+ * REAL BACKEND (corrected): this wizard now calls
+ * `/v1/public/signup/*` (`RegistrationService` via
+ * app/engines/public_registration/signup_router.py). That service was
+ * fully built already -- real OTP, password hashing, atomic
+ * tenant+user+enrollment creation, auto-login -- but was never mounted, so
+ * an earlier version of this page posted to the WRONG backend
+ * (`publicTenantSignupApi`, an admin-lead-queue flow with no login until
+ * manual approval). That mismatch is why a completed signup had no way to
+ * log in or reach the setup wizard. The intended flow is: signup (no
+ * payment) -> auto-login -> complete vertical setup -> submit for admin
+ * review -> activation. See lib/api.ts `publicSignupApi`.
  */
-
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import {
-  Check, AlertTriangle, Sparkles, ArrowRight, ArrowLeft,
-  PartyPopper, Info, ShieldCheck, FlaskConical, CreditCard,
-  Loader2,
+  Building2, CheckCircle2, Clock, Eye, EyeOff, Lock, Mail,
+  Phone, ShieldCheck, User, ArrowRight, ArrowLeft, FileText, RefreshCw,
 } from "lucide-react";
-import { publicRegApi, publicPackagesApi, SignupPackage } from "../../lib/api";
-import { Input, Btn } from "../../components/shared/ui";
+import { Button, Alert, Card } from "@serviceos/design-system";
+import { publicSignupApi, SignupVertical } from "../../lib/api";
 
-type Step = "info" | "plans" | "otp" | "payment" | "done";
+const VERTICAL_ICONS: Record<string, string> = {
+  home_services: "🔧", real_estate: "🏘️", salon: "💇", coaching: "📚",
+  automotive: "🚗", cleaning_services: "🧹", laundry: "👕", restaurant: "🍽️",
+  repair_services: "🛠️", professional_services: "💼", pharmacy: "💊", hardware: "🔩",
+};
 
-const STEP_LABELS = ["Business Info", "Choose Plan", "Verify OTP", "Payment", "Done"];
-
-const VERTICALS = [
-  { value: "home_services",         label: "Home Services"       },
-  { value: "salon",                 label: "Salon & Beauty"      },
-  { value: "coaching",              label: "Coaching / IELTS"    },
-  { value: "real_estate",           label: "Real Estate"         },
-  { value: "automotive",            label: "Automotive"          },
-  { value: "cleaning_services",     label: "Cleaning Services"   },
-  { value: "laundry",               label: "Laundry"             },
-  { value: "restaurant",            label: "Restaurant"          },
-  { value: "repair_services",       label: "Repair Services"     },
-  { value: "professional_services", label: "Professional Services"},
-  { value: "pharmacy",              label: "Pharmacy"            },
-  { value: "hardware",              label: "Hardware"            },
-  { value: "marketplace_products",  label: "Marketplace"         },
+type StepId = "account" | "verify" | "identity" | "vertical" | "review";
+const STEPS: { id: StepId; label: string; desc: string }[] = [
+  { id: "account",  label: "Owner Account",   desc: "Secure your login" },
+  { id: "verify",   label: "Verify Contact",  desc: "Mobile and email verification" },
+  { id: "identity", label: "Business Identity", desc: "Legal business information" },
+  { id: "vertical", label: "Select Vertical",  desc: "Choose where to start" },
+  { id: "review",   label: "Review & Consent", desc: "Confirm and create workspace" },
 ];
 
-// Load Razorpay checkout.js lazily
-function loadRazorpay(): Promise<boolean> {
-  return new Promise(resolve => {
-    if ((window as unknown as Record<string, unknown>).Razorpay) { resolve(true); return; }
-    const s = document.createElement("script");
-    s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload = () => resolve(true);
-    s.onerror = () => resolve(false);
-    document.body.appendChild(s);
-  });
+function passwordScore(pw: string): number {
+  let s = 0;
+  if (pw.length >= 8) s++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s++;
+  if (/[0-9]/.test(pw) || /[^A-Za-z0-9]/.test(pw)) s++;
+  if (pw.length >= 12) s++;
+  return s;
 }
 
-export default function RegisterPage() {
-  const [step,    setStep]    = useState<Step>("info");
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState("");
-
-  const [form, setForm] = useState({
-    business_name: "", owner_name: "", owner_email: "",
-    owner_phone: "", city: "", country: "India", zipcode: "", state: "",
-    vertical: "",
-  });
-
-  // Plans loaded from backend
-  const [plans,        setPlans]        = useState<SignupPackage[]>([]);
-  const [plansLoading, setPlansLoading] = useState(false);
-  const [plansError,   setPlansError]   = useState("");
-  const [selectedPlan, setSelectedPlan] = useState<SignupPackage | null>(null);
-
-  const [sessionId, setSessionId] = useState("");
-  const [otp,       setOtp]       = useState("");
-  const [devOtp,    setDevOtp]    = useState("");
-  const [orderData, setOrderData] = useState<{order_id:string; amount:number; amount_inr:number; key_id:string; prefill:{name:string; email:string; contact:string}} | null>(null);
-  const [result,    setResult]    = useState<{tenant_id:string; business_name:string; plan_type:string; trial_days:number; owner_email:string; temp_password:string} | null>(null);
-
-  function setField(key: keyof typeof form) {
-    return (v: string) => setForm(p => ({ ...p, [key]: v }));
-  }
-
-  // Load packages whenever vertical changes
-  const loadPlans = useCallback(async (vertical: string) => {
-    if (!vertical) { setPlans([]); return; }
-    setPlansLoading(true);
-    setPlansError("");
-    try {
-      const res = await publicPackagesApi.list(vertical);
-      setPlans(res.packages ?? []);
-      setSelectedPlan(null);
-    } catch {
-      setPlansError("Could not load packages. Please try again.");
-      setPlans([]);
-    } finally {
-      setPlansLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (form.vertical) loadPlans(form.vertical);
-  }, [form.vertical, loadPlans]);
-
-  function handleInfoSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    const required = ["business_name", "owner_name", "owner_email", "owner_phone", "city", "country", "zipcode", "vertical"] as const;
-    for (const k of required) {
-      if (!form[k].trim()) {
-        setError(`${k.replace(/_/g, " ")} is required.`); return;
-      }
-    }
-    if (!/^[^@]+@[^@]+\.[^@]+$/.test(form.owner_email)) {
-      setError("Please enter a valid email address."); return;
-    }
-    setStep("plans");
-  }
-
-  async function handleInitiate() {
-    if (!selectedPlan) { setError("Please select a package."); return; }
-    setError("");
-    setLoading(true);
-    try {
-      const res = await publicRegApi.initiate(
-        form.business_name, form.owner_name, form.owner_email,
-        form.owner_phone, form.vertical, form.city,
-        form.country, form.zipcode, form.state || undefined,
-        selectedPlan.package_id,
-      );
-      if (res) {
-        setSessionId(res.session_id);
-        if (res.dev_otp) { setDevOtp(res.dev_otp); setOtp(res.dev_otp); } else { setDevOtp(""); }
-        setStep("otp");
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Registration failed. Please try again.");
-    } finally { setLoading(false); }
-  }
-
-  async function handleVerify(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmedOtp = otp.trim();
-    if (!trimmedOtp || trimmedOtp.length < 4) { setError("Enter the OTP sent to your phone."); return; }
-    setError(""); setLoading(true);
-    try {
-      const res = await publicRegApi.verify(sessionId, trimmedOtp);
-      if (res?.verified) {
-        const order = await publicRegApi.paymentOrder(sessionId);
-        if (order) { setOrderData(order); setStep("payment"); }
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Verification failed. Check your OTP and try again.");
-    } finally { setLoading(false); }
-  }
-
-  async function handlePay() {
-    if (!orderData) return;
-    setError(""); setLoading(true);
-
-    const loaded = await loadRazorpay();
-    if (!loaded) {
-      setError("Could not load payment gateway. Check your internet connection.");
-      setLoading(false); return;
-    }
-
-    if (!orderData.key_id || orderData.order_id.startsWith("order_local_")) {
-      try {
-        const res = await publicRegApi.complete(sessionId, orderData.order_id, "pay_dev_bypass", "dev_sig", selectedPlan?.package_id);
-        if (res) { setResult(res); setStep("done"); }
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Registration failed. Please try again.");
-      } finally { setLoading(false); }
-      return;
-    }
-
-    const RazorpayClass = (window as unknown as { Razorpay: new (opts: Record<string, unknown>) => { open(): void } }).Razorpay;
-    const rzp = new RazorpayClass({
-      key: orderData.key_id, amount: orderData.amount, currency: "INR",
-      name: "ServiceOS",
-      description: selectedPlan?.name ?? "Plan",
-      order_id: orderData.order_id, prefill: orderData.prefill,
-      theme: { color: "#4F46E5" },
-      handler: async (response: {razorpay_order_id:string; razorpay_payment_id:string; razorpay_signature:string}) => {
-        try {
-          const res = await publicRegApi.complete(sessionId, response.razorpay_order_id, response.razorpay_payment_id, response.razorpay_signature, selectedPlan?.package_id);
-          if (res) { setResult(res); setStep("done"); }
-        } catch (err: unknown) {
-          setError(err instanceof Error ? err.message : "Payment successful but account creation failed. Please contact support.");
-        } finally { setLoading(false); }
-      },
-      modal: { ondismiss: () => setLoading(false) },
-    });
-    rzp.open();
-  }
-
-  const stepNum = { info: 1, plans: 2, otp: 3, payment: 4, done: 5 }[step];
-
-  // ── Format helpers
-  function formatPrice(pkg: SignupPackage) {
-    const sym = pkg.currency === "INR" ? "₹" : pkg.currency;
-    const amount = pkg.package_price ?? pkg.price ?? 0;
-    return `${sym}${amount.toLocaleString("en-IN")}`;
-  }
-  function formatCycle(pkg: SignupPackage) {
-    if (!pkg.billing_cycle) return "";
-    const map: Record<string,string> = { one_time: " one-time", monthly: "/mo", quarterly: "/qtr", yearly: "/yr" };
-    return map[pkg.billing_cycle] ?? `/${pkg.billing_cycle}`;
-  }
-
+function Field({
+  label, icon, type = "text", value, onChange, placeholder, required, trailing, autoComplete,
+}: {
+  label: string; icon?: React.ReactNode; type?: string; value: string;
+  onChange: (v: string) => void; placeholder?: string; required?: boolean;
+  trailing?: React.ReactNode; autoComplete?: string;
+}) {
+  const [focused, setFocused] = useState(false);
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", padding: "48px 24px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-
-      {/* Logo */}
-      <div style={{ textAlign: "center", marginBottom: 28 }}>
-        <div style={{ width: 56, height: 56, borderRadius: 14, background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", boxShadow: "var(--shadow-md)" }}>
-          <span style={{ color: "white", fontWeight: 800, fontSize: 22 }}>S</span>
-        </div>
-        <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>ServiceOS</h1>
-        <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0 }}>Start your free trial in minutes</p>
+    <div>
+      <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+        {label}{required && <span style={{ color: "var(--danger-text)" }}> *</span>}
+      </label>
+      {/* Bordered icon cell, matching the field style used on /login. */}
+      <div style={{
+        position: "relative", display: "flex", alignItems: "center", height: 44,
+        background: "var(--surface)", border: `1px solid ${focused ? "var(--border-focus)" : "var(--border)"}`,
+        borderRadius: "var(--radius-md)", overflow: "hidden", transition: "border-color 0.15s ease",
+      }}>
+        {icon && (
+          <span style={{
+            display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: "100%",
+            color: "var(--text-tertiary)", borderRight: "1px solid var(--border)", flexShrink: 0,
+          }}>
+            {icon}
+          </span>
+        )}
+        <input
+          type={type} value={value} required={required} autoComplete={autoComplete}
+          onChange={e => onChange(e.target.value)} placeholder={placeholder}
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+          style={{
+            flex: 1, height: "100%", padding: `0 ${trailing ? 40 : 12}px 0 12px`,
+            fontSize: 14, background: "transparent", border: "none",
+            color: "var(--text-primary)", outline: "none",
+            fontFamily: "inherit", boxSizing: "border-box", minWidth: 0,
+          }}
+        />
+        {trailing && <span style={{ position: "absolute", right: 14, display: "flex" }}>{trailing}</span>}
       </div>
-
-      {/* Step indicator */}
-      {step !== "done" && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 28 }}>
-          {STEP_LABELS.map((label, i) => (
-            <React.Fragment key={label}>
-              <div title={label} style={{
-                width: 28, height: 28, borderRadius: "50%",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 12, fontWeight: 700, flexShrink: 0,
-                border: `2px solid ${stepNum > i + 1 || stepNum === i + 1 ? "var(--brand)" : "var(--border)"}`,
-                background: stepNum > i + 1 ? "var(--accent)" : stepNum === i + 1 ? "var(--brand)" : "transparent",
-                color: stepNum >= i + 1 ? "#fff" : "var(--text-tertiary)",
-                transition: "all 0.15s",
-              }}>
-                {stepNum > i + 1 ? <Check size={14}/> : i + 1}
-              </div>
-              {i < STEP_LABELS.length - 1 && (
-                <div style={{ height: 2, width: 32, background: stepNum > i + 1 ? "var(--accent)" : "var(--border)", transition: "background 0.15s" }}/>
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-      )}
-
-      {/* ── Step 1: Business Info ── */}
-      {step === "info" && (
-        <form onSubmit={handleInfoSubmit} style={{ width: "100%", maxWidth: 860, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, padding: 36, boxShadow: "var(--shadow-lg)" }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 6px" }}>Tell us about your business</h2>
-          <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 22px", lineHeight: 1.5 }}>
-            Verify your phone, choose a plan, pay once, and your account is live instantly.
-          </p>
-
-          {error && <ErrorBanner text={error}/>}
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-            <Input label="Business Name *" required placeholder="e.g. Rahul AC Services" value={form.business_name} onChange={setField("business_name")}/>
-            <Input label="Your Full Name *" required placeholder="Owner's name" value={form.owner_name} onChange={setField("owner_name")}/>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-            <Input label="Email Address *" required type="email" placeholder="owner@business.com" value={form.owner_email} onChange={setField("owner_email")}/>
-            <Input label="Phone Number *" required type="tel" placeholder="+91 9876543210" hint="OTP will be sent here" value={form.owner_phone} onChange={setField("owner_phone")}/>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
-            <Input label="City *" required placeholder="e.g. Mumbai" value={form.city} onChange={setField("city")}/>
-            <Input label="Country *" required placeholder="India" value={form.country} onChange={setField("country")}/>
-            <Input label="Zipcode / PIN *" required placeholder="400001" value={form.zipcode} onChange={setField("zipcode")}/>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 24 }}>
-            <Input label="State (optional)" placeholder="e.g. Maharashtra" value={form.state} onChange={setField("state")}/>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Business Vertical *</label>
-              <select
-                required
-                value={form.vertical}
-                onChange={e => setForm(p => ({ ...p, vertical: e.target.value }))}
-                style={{
-                  width: "100%", height: 40, padding: "0 12px", fontSize: 13, borderRadius:"var(--radius-md)",
-                  border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)",
-                  outline: "none", fontFamily: "inherit",
-                }}
-              >
-                <option value="">Select industry…</option>
-                {VERTICALS.map(v => (
-                  <option key={v.value} value={v.value}>{v.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <Btn type="submit" variant="primary" size="lg" fullWidth>
-            Continue to Plans <ArrowRight size={16}/>
-          </Btn>
-          <p style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "var(--text-secondary)" }}>
-            Already registered? <Link href="/login" style={{ color: "var(--brand)", fontWeight: 600 }}>Sign in</Link>
-          </p>
-        </form>
-      )}
-
-      {/* ── Step 2: Plan Selection ── */}
-      {step === "plans" && (
-        <div style={{ width: "100%", maxWidth: 1000 }}>
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, padding: 36, boxShadow: "var(--shadow-lg)" }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 6px" }}>
-              Choose your plan
-            </h2>
-            <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 22px" }}>
-              Plans available for <strong style={{ color: "var(--brand)" }}>{VERTICALS.find(v => v.value === form.vertical)?.label ?? form.vertical}</strong>
-            </p>
-
-            {error && <ErrorBanner text={error}/>}
-            {plansError && <ErrorBanner text={plansError}/>}
-
-            {plansLoading && (
-              <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                <Loader2 size={20} style={{ animation: "spin 1s linear infinite" }}/>
-                <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
-                Loading plans…
-              </div>
-            )}
-
-            {!plansLoading && plans.length === 0 && !plansError && (
-              <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 8 }}>
-                  No signup plans are currently available for this vertical.
-                </p>
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                  Please contact us or try a different business category.
-                </p>
-              </div>
-            )}
-
-            {!plansLoading && plans.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(plans.length, 3)}, 1fr)`, gap: 16, marginBottom: 26 }}>
-                {plans.map(pkg => {
-                  const isSelected = selectedPlan?.package_id === pkg.package_id;
-                  const pkgFeatures = (pkg.package_features ?? []).filter(f => f.is_included);
-                  const pkgLimits   = pkg.package_limits ?? [];
-                  const badgeText   = pkg.badge_label || (pkg.is_popular ? "Most Popular" : "");
-                  return (
-                    <div key={pkg.package_id} onClick={() => setSelectedPlan(pkg)} style={{
-                      border: `2px solid ${isSelected ? "var(--brand)" : "var(--border)"}`,
-                      background: isSelected ? "var(--accent-muted)" : "var(--surface)",
-                      borderRadius: 14, padding: 20, cursor: "pointer", position: "relative",
-                      transition: "all 0.15s",
-                    }}>
-                      {badgeText && (
-                        <div style={{
-                          position: "absolute", top: -11, left: "50%", transform: "translateX(-50%)",
-                          background: "var(--golden)", color: "#1A1A18", fontSize: 11, fontWeight: 700,
-                          padding: "3px 10px", borderRadius: 999, display: "flex", alignItems: "center", gap: 4,
-                          whiteSpace: "nowrap", boxShadow: "var(--shadow-sm)",
-                        }}>
-                          <Sparkles size={11}/> {badgeText}
-                        </div>
-                      )}
-
-                      <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>{pkg.name}</p>
-                      <p style={{ fontSize: 22, fontWeight: 800, color: "var(--brand)", margin: "0 0 2px" }}>
-                        {formatPrice(pkg)}<span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-tertiary)" }}>{formatCycle(pkg)}</span>
-                      </p>
-                      {pkg.validity_days && (
-                        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px" }}>
-                          Valid for {pkg.validity_days} days
-                        </p>
-                      )}
-
-                      {/* Short/full description */}
-                      {(pkg.short_description || pkg.description) && (
-                        <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 10px", lineHeight: 1.5 }}>
-                          {pkg.short_description || pkg.description}
-                        </p>
-                      )}
-
-                      {/* Security deposit note */}
-                      {Number(pkg.security_deposit_amount) > 0 && (
-                        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px",
-                          padding: "4px 8px", background: "var(--warning-bg)", borderRadius: 5 }}>
-                          + ₹{Number(pkg.security_deposit_amount).toLocaleString("en-IN")} security deposit
-                        </p>
-                      )}
-
-                      {/* Included credits note */}
-                      {Number(pkg.included_credit_amount) > 0 && (
-                        <p style={{ fontSize: 11, color: "var(--success-text)", margin: "0 0 8px",
-                          padding: "4px 8px", background: "var(--success-bg)", borderRadius: 5 }}>
-                          Includes ₹{Number(pkg.included_credit_amount).toLocaleString("en-IN")} wallet credits
-                        </p>
-                      )}
-
-                      {/* Features from backend */}
-                      {pkgFeatures.length > 0 && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
-                          {pkgFeatures.slice(0, 6).map(f => (
-                            <div key={f.feature_id} style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 12, color: "var(--text-secondary)" }}>
-                              <Check size={13}
-                                color={f.is_highlighted ? "var(--brand)" : "var(--success)"}
-                                style={{ flexShrink: 0, marginTop: 1 }}/>
-                              <span style={{ fontWeight: f.is_highlighted ? 600 : 400, color: f.is_highlighted ? "var(--text-primary)" : undefined }}>
-                                {f.feature_label}
-                              </span>
-                            </div>
-                          ))}
-                          {pkgFeatures.length > 6 && (
-                            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "2px 0 0" }}>
-                              +{pkgFeatures.length - 6} more features
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Limits as chips */}
-                      {pkgLimits.length > 0 && (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 10 }}>
-                          {pkgLimits.slice(0, 4).map(l => (
-                            <span key={l.limit_id} style={{
-                              fontSize: 10, padding: "2px 7px", borderRadius: 4,
-                              background: "var(--surface-sunken)", color: "var(--text-tertiary)",
-                              border: "1px solid var(--border)",
-                            }}>
-                              {l.is_unlimited ? "Unlimited" : l.limit_value} {l.limit_unit} {l.limit_label}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Terms summary */}
-                      {pkg.terms_summary && (
-                        <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "10px 0 0", textAlign: "center" }}>
-                          {pkg.terms_summary}
-                        </p>
-                      )}
-
-                      {isSelected && (
-                        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--brand)" }}>
-                          <Check size={14}/> {pkg.cta_label || "Selected"}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: 12 }}>
-              <Btn variant="secondary" size="lg" icon={<ArrowLeft size={16}/>} onClick={() => { setStep("info"); setError(""); }}>
-                Back
-              </Btn>
-              <Btn variant="primary" size="lg" style={{ flex: 1 }} loading={loading}
-                disabled={!selectedPlan} onClick={handleInitiate}>
-                {loading ? "Sending OTP…" : <>Continue <ArrowRight size={16}/></>}
-              </Btn>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Step 3: OTP Verification ── */}
-      {step === "otp" && (
-        <form onSubmit={handleVerify} style={{ width: "100%", maxWidth: 460, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, padding: 36, boxShadow: "var(--shadow-lg)" }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 6px" }}>Verify your phone</h2>
-          <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 22px", lineHeight: 1.5 }}>
-            We sent a 6-digit OTP to <strong style={{ color: "var(--text-primary)" }}>{form.owner_phone}</strong>.
-          </p>
-
-          {error && <ErrorBanner text={error}/>}
-
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderRadius:"var(--radius-lg)", background: "var(--info-bg)", border: "1px solid var(--info-border)", marginBottom: 20, fontSize: 13, color: "var(--info-text)", lineHeight: 1.6 }}>
-            <Info size={15} style={{ flexShrink: 0, marginTop: 1 }}/>
-            <span>Plan: <strong>{selectedPlan?.name}</strong> · {form.business_name} · {form.city}, {form.country}</span>
-          </div>
-
-          {devOtp && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "var(--golden-bg)", border: "1px solid var(--golden-border)", marginBottom: 18, fontSize: 13, color: "var(--golden-text)" }}>
-              <FlaskConical size={14} style={{ flexShrink: 0 }}/>
-              <span>Dev mode — OTP auto-filled: <strong>{devOtp}</strong></span>
-            </div>
-          )}
-
-          <div style={{ marginBottom: 22 }}>
-            <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 8 }}>Enter OTP</label>
-            <input type="text" inputMode="numeric" maxLength={6} placeholder="——————" value={otp}
-              onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
-              style={{ width: "100%", height: 58, textAlign: "center", fontSize: 28, fontWeight: 700, letterSpacing: "0.5em", fontFamily: "inherit", color: "var(--text-primary)", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", outline: "none", boxSizing: "border-box" }}
-              onFocus={e => { e.currentTarget.style.borderColor = "var(--border-focus)"; }}
-              onBlur={e  => { e.currentTarget.style.borderColor = "var(--border)"; }}/>
-          </div>
-          <Btn type="submit" variant="primary" size="lg" fullWidth loading={loading} disabled={otp.trim().length < 4}>
-            {loading ? "Verifying…" : <>Verify Phone <ArrowRight size={16}/></>}
-          </Btn>
-          <Btn type="button" variant="ghost" size="md" fullWidth icon={<ArrowLeft size={14}/>} style={{ marginTop: 10 }}
-            onClick={() => { setStep("plans"); setOtp(""); setDevOtp(""); setError(""); }}>
-            Back / Resend OTP
-          </Btn>
-        </form>
-      )}
-
-      {/* ── Step 4: Payment ── */}
-      {step === "payment" && orderData && (
-        <div style={{ width: "100%", maxWidth: 460, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, padding: 36, boxShadow: "var(--shadow-lg)" }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 6px" }}>Complete Payment</h2>
-          <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 22px", lineHeight: 1.5 }}>
-            One payment activates your account. Your trial starts immediately after.
-          </p>
-          {error && <ErrorBanner text={error}/>}
-          <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 18, marginBottom: 22 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Plan</span>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{selectedPlan?.name}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Business</span>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{form.business_name}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, borderTop: "1px solid var(--border)" }}>
-              <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span>
-              <span style={{ fontSize: 20, fontWeight: 800, color: "var(--brand)" }}>₹{orderData.amount_inr.toLocaleString("en-IN")}</span>
-            </div>
-          </div>
-          {orderData.order_id.startsWith("order_local_") && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "var(--golden-bg)", border: "1px solid var(--golden-border)", marginBottom: 18, fontSize: 13, color: "var(--golden-text)" }}>
-              <FlaskConical size={14} style={{ flexShrink: 0 }}/>
-              <span>Dev mode — Razorpay not configured. Payment will be bypassed.</span>
-            </div>
-          )}
-          <Btn variant="primary" size="lg" fullWidth loading={loading} icon={<CreditCard size={16}/>} onClick={handlePay}>
-            {loading ? "Processing…" : `Pay ₹${orderData.amount_inr.toLocaleString("en-IN")} & Activate`}
-          </Btn>
-          <Btn variant="ghost" size="md" fullWidth icon={<ArrowLeft size={14}/>} style={{ marginTop: 10 }}
-            onClick={() => { setStep("otp"); setError(""); }}>Back</Btn>
-          <p style={{ textAlign: "center", fontSize: 11, color: "var(--text-tertiary)", marginTop: 16 }}>
-            Secured by Razorpay · PCI DSS compliant
-          </p>
-        </div>
-      )}
-
-      {/* ── Step 5: Done ── */}
-      {step === "done" && result && (
-        <div style={{ width: "100%", maxWidth: 480, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, padding: 36, boxShadow: "var(--shadow-lg)", textAlign: "center" }}>
-          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--success-bg)", border: "1px solid var(--success-border)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", color: "var(--success-text)" }}>
-            <PartyPopper size={28}/>
-          </div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 10px" }}>
-            Welcome to ServiceOS!
-          </h2>
-          <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 6px", lineHeight: 1.6 }}>
-            <strong style={{ color: "var(--text-primary)" }}>{result.business_name}</strong> is live on the{" "}
-            <strong style={{ color: "var(--brand)" }}>{selectedPlan?.name ?? result.plan_type}</strong> plan.
-          </p>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 24px" }}>
-            Your <strong>{result.trial_days}-day free trial</strong> has started.
-          </p>
-          <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 16, fontSize: 13, color: "var(--text-secondary)", marginBottom: 22, textAlign: "left", lineHeight: 1.9 }}>
-            <p style={{ margin: 0 }}><strong style={{ color: "var(--text-primary)" }}>Login Email:</strong> {result.owner_email}</p>
-            <p style={{ margin: 0 }}><strong style={{ color: "var(--text-primary)" }}>Temp Password:</strong> <span style={{ fontFamily: "monospace" }}>{result.temp_password}</span></p>
-            <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-tertiary)" }}>
-              Save this now — it won&apos;t be shown again. You&apos;ll be prompted to set a new one on login.
-            </p>
-          </div>
-          <Btn variant="primary" size="lg" fullWidth onClick={() => { window.location.href = "/login"; }}>
-            Log In Now <ArrowRight size={16}/>
-          </Btn>
-        </div>
-      )}
-
-      <p style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-tertiary)", marginTop: 28 }}>
-        <ShieldCheck size={13}/> Secured by ServiceOS Auth · JWT + TOTP
-      </p>
     </div>
   );
 }
 
-function ErrorBanner({ text }: { text: string }) {
+function PasswordField({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder: string;
+}) {
+  const [show, setShow] = useState(false);
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "12px 14px", borderRadius: 10, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 13, marginBottom: 18, lineHeight: 1.5 }}>
-      <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }}/>
-      <span>{text}</span>
+    <Field
+      label={label} icon={<Lock size={16} />} type={show ? "text" : "password"}
+      value={value} onChange={onChange} placeholder={placeholder} required autoComplete="new-password"
+      trailing={
+        <button type="button" onClick={() => setShow(s => !s)} aria-label={show ? "Hide password" : "Show password"}
+          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", display: "flex" }}>
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      }
+    />
+  );
+}
+
+export default function RegisterPage() {
+  const [stepIndex, setStepIndex] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const [registrationId, setRegistrationId] = useState<string | null>(null);
+  const [devOtps, setDevOtps] = useState<Record<string, string> | null>(null);
+  const [mobileVerified, setMobileVerified] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [mobileOtp, setMobileOtp] = useState("");
+  const [emailOtp, setEmailOtp] = useState("");
+  const [otpBusy, setOtpBusy] = useState<"mobile" | "email" | null>(null);
+  const [verticals, setVerticals] = useState<SignupVertical[]>([]);
+  const [verticalsLoaded, setVerticalsLoaded] = useState(false);
+
+  const [form, setForm] = useState({
+    owner_name: "", owner_email: "", owner_phone: "",
+    password: "", confirmPassword: "",
+    business_name: "", gstin: "", description: "",
+    city: "", state: "",
+    vertical: "",
+    authorized: false, agreedTerms: false, marketingOptIn: false,
+  });
+  const set = useCallback(<K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+    setForm(f => ({ ...f, [k]: v })), []);
+
+  const step = STEPS[stepIndex];
+  const pct = Math.round(((stepIndex + 1) / STEPS.length) * 100);
+  const pwScore = passwordScore(form.password);
+
+  useEffect(() => {
+    if (step.id !== "vertical" || verticalsLoaded) return;
+    publicSignupApi.listVerticals()
+      .then(res => { setVerticals(res.verticals); setVerticalsLoaded(true); })
+      .catch(() => setVerticalsLoaded(true));
+  }, [step.id, verticalsLoaded]);
+
+  function stepValid(id: StepId): boolean {
+    switch (id) {
+      case "account":
+        return !!(form.owner_name && form.owner_phone && form.owner_email &&
+          form.password && form.password === form.confirmPassword && pwScore >= 2);
+      case "verify":
+        return mobileVerified && emailVerified;
+      case "identity":
+        return !!(form.business_name && form.city && form.state);
+      case "vertical":
+        return !!form.vertical;
+      case "review":
+        return form.authorized && form.agreedTerms;
+      default:
+        return false;
+    }
+  }
+
+  async function goNext() {
+    if (step.id === "account") {
+      if (!stepValid("account")) { setError("Please complete the required fields before continuing."); return; }
+      setSubmitting(true); setError("");
+      try {
+        const res = await publicSignupApi.ownerAccount({
+          full_name: form.owner_name, email: form.owner_email, mobile: form.owner_phone,
+          password: form.password, password_confirm: form.confirmPassword,
+          authorized_declaration: true, tos_privacy_accepted: true,
+          marketing_consent: form.marketingOptIn, registration_id: registrationId ?? undefined,
+        });
+        setRegistrationId(res.registration_id);
+        setDevOtps(res.dev_otps ?? null);
+        setError("");
+        setStepIndex(i => i + 1);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Couldn't create your account. Please try again.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+    if (step.id === "identity") {
+      if (!stepValid("identity") || !registrationId) { setError("Please complete the required fields before continuing."); return; }
+      setSubmitting(true); setError("");
+      try {
+        await publicSignupApi.businessIdentity({
+          registration_id: registrationId, business_name: form.business_name,
+          gstin: form.gstin || undefined, description: form.description || undefined,
+          registered_address: { city: form.city, state: form.state },
+        });
+        setStepIndex(i => i + 1);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Couldn't save business details. Please try again.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+    if (step.id === "vertical") {
+      if (!stepValid("vertical") || !registrationId) { setError("Please select a vertical to continue."); return; }
+      setSubmitting(true); setError("");
+      try {
+        await publicSignupApi.selectVertical(registrationId, form.vertical);
+        setStepIndex(i => i + 1);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Couldn't save your vertical selection. Please try again.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+    if (!stepValid(step.id)) { setError("Please complete the required fields before continuing."); return; }
+    setError("");
+    setStepIndex(i => Math.min(i + 1, STEPS.length - 1));
+  }
+  function goBack() {
+    setError("");
+    setStepIndex(i => Math.max(i - 1, 0));
+  }
+
+  async function verifyChannel(channel: "mobile" | "email") {
+    if (!registrationId) return;
+    const otp = channel === "mobile" ? mobileOtp : emailOtp;
+    if (!otp) { setError(`Enter the ${channel} code first.`); return; }
+    setOtpBusy(channel); setError("");
+    try {
+      const res = await publicSignupApi.verifyContact(registrationId, channel, otp);
+      setMobileVerified(res.mobile_verified);
+      setEmailVerified(res.email_verified);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `Couldn't verify that ${channel} code.`);
+    } finally {
+      setOtpBusy(null);
+    }
+  }
+
+  async function resendOtp(channel: "mobile" | "email") {
+    if (!registrationId) return;
+    setOtpBusy(channel); setError("");
+    try {
+      await publicSignupApi.resendOtp(registrationId, channel);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `Couldn't resend the ${channel} code.`);
+    } finally {
+      setOtpBusy(null);
+    }
+  }
+
+  async function submit() {
+    if (!stepValid("review") || !registrationId) { setError("Please confirm both required checkboxes."); return; }
+    setSubmitting(true); setError("");
+    try {
+      const idempotencyKey = (globalThis.crypto?.randomUUID?.() ?? `${registrationId}-${Date.now()}`);
+      const res = await publicSignupApi.complete(
+        registrationId, idempotencyKey, form.authorized, form.agreedTerms, form.marketingOptIn,
+      );
+      localStorage.setItem("serviceos_tenant_token", res.access_token);
+      if (res.refresh_token) localStorage.setItem("serviceos_tenant_refresh", res.refresh_token);
+      localStorage.setItem("serviceos_tenant_id", res.tenant_id);
+      localStorage.setItem("serviceos_tenant_vertical", res.vertical_key);
+      // Only the home_services vertical has a built setup wizard today; any
+      // other vertical lands on the dashboard rather than a fabricated wizard.
+      window.location.href = res.vertical_key === "home_services"
+        ? "/tenant/home-services/setup/overview"
+        : "/dashboard";
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "We couldn't create your workspace. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+      <header style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "18px 32px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", gap: 12,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 30, height: 30, borderRadius: "var(--radius-md)", background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ color: "var(--text-on-brand, #fff)", fontWeight: 800, fontSize: 14 }}>S</span>
+          </div>
+          <span style={{ fontWeight: 800, fontSize: 17, color: "var(--text-primary)" }}>ServiceOS</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Already have an account?</span>
+          <Link href="/login"><Button variant="secondary">Sign in</Button></Link>
+          <Link href="/help" style={{ fontSize: 13, color: "var(--brand)", fontWeight: 600, textDecoration: "none" }}>Need help?</Link>
+        </div>
+      </header>
+
+      <div style={{
+        flex: 1, display: "flex", gap: 28, padding: "40px 32px", flexWrap: "wrap",
+        maxWidth: 1260, margin: "0 auto", width: "100%", alignItems: "flex-start",
+      }}>
+        {/* Left rail */}
+        <div style={{ flex: "1 1 300px", maxWidth: 340 }}>
+          <Card>
+            <h2 style={{ fontSize: 19, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Create your workspace</h2>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 14px" }}>
+              Complete these steps to register your business.
+            </p>
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px",
+              borderRadius: 999, border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", marginBottom: 18,
+            }}>
+              <Clock size={13} /> About 4 minutes
+            </div>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {STEPS.map((s, i) => {
+                const state = i < stepIndex ? "done" : i === stepIndex ? "active" : "todo";
+                return (
+                  <div key={s.id} style={{ display: "flex", gap: 12, paddingBottom: i < STEPS.length - 1 ? 18 : 0, position: "relative" }}>
+                    {i < STEPS.length - 1 && (
+                      <div style={{
+                        position: "absolute", left: 12, top: 26, bottom: 0, width: 2,
+                        background: state === "done" ? "var(--brand)" : "var(--border)",
+                      }} />
+                    )}
+                    <div style={{
+                      width: 26, height: 26, borderRadius: "50%", flexShrink: 0, zIndex: 1,
+                      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700,
+                      background: state === "done" ? "var(--brand)" : state === "active" ? "var(--brand)" : "var(--surface)",
+                      color: state === "todo" ? "var(--text-tertiary)" : "var(--text-on-brand, #fff)",
+                      border: state === "todo" ? "1px solid var(--border)" : "none",
+                    }}>
+                      {state === "done" ? <CheckCircle2 size={14} /> : i + 1}
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: state === "active" ? "var(--brand)" : "var(--text-primary)" }}>{s.label}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--text-tertiary)" }}>{s.desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+          <div style={{ marginTop: 14 }}>
+            <Card>
+              <p style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 10px" }}>
+                <FileText size={15} /> What happens after signup?
+              </p>
+              {["Complete your vertical setup", "Submit for admin review", "Activate after approval"].map(t => (
+                <p key={t} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--text-secondary)", margin: "0 0 6px" }}>
+                  <CheckCircle2 size={13} color="var(--success-text)" /> {t}
+                </p>
+              ))}
+            </Card>
+            <div style={{
+              marginTop: 14, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
+              borderRadius: "var(--radius-md)", background: "var(--success-bg)", border: "1px solid var(--success-border)",
+            }}>
+              <ShieldCheck size={15} color="var(--success-text)" />
+              <span style={{ fontSize: 12.5, color: "var(--success-text)" }}>No package or payment required now.</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right form card */}
+        <div style={{ flex: "2 1 600px", maxWidth: 860 }}>
+          <Card style={{ padding: 40 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-secondary)" }}>Step {stepIndex + 1} of {STEPS.length}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--brand)" }}>{pct}%</span>
+            </div>
+            <div style={{ height: 5, borderRadius: 999, background: "var(--neutral-bg, var(--border))", overflow: "hidden", marginBottom: 24 }}>
+              <div style={{ width: `${pct}%`, height: "100%", background: "var(--brand)", transition: "width 0.25s ease" }} />
+            </div>
+
+            {error && <div style={{ marginBottom: 18 }}><Alert tone="danger">{error}</Alert></div>}
+
+            {step.id === "account" && (
+              <>
+                <h3 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Create your owner account</h3>
+                <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 24px" }}>
+                  Start with your secure login. Business and service setup comes next.
+                </p>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Owner details</p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                  <Field label="Full name" icon={<User size={16} />} required value={form.owner_name}
+                    onChange={v => set("owner_name", v)} placeholder="Enter your full name" autoComplete="name" />
+                  <Field label="Mobile number" icon={<Phone size={16} />} type="tel" required value={form.owner_phone}
+                    onChange={v => set("owner_phone", v)} placeholder="Enter mobile number" autoComplete="tel" />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 8 }}>
+                  <Field label="Email address" icon={<Mail size={16} />} type="email" required value={form.owner_email}
+                    onChange={v => set("owner_email", v)} placeholder="Enter your email address" autoComplete="email" />
+                  <PasswordField label="Password" value={form.password} onChange={v => set("password", v)} placeholder="Create a password" />
+                </div>
+                {/* Confirm password is full width, not tucked into the
+                    right column of the row above -- it stands alone below
+                    Email/Password, matching the reference design. */}
+                <div style={{ marginBottom: 6 }}>
+                  <PasswordField label="Confirm password" value={form.confirmPassword} onChange={v => set("confirmPassword", v)} placeholder="Re-enter your password" />
+                </div>
+                {form.password && (
+                  <div style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    flexWrap: "wrap", gap: 12, margin: "10px 0 4px",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 12, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>Password strength</span>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {[0, 1, 2, 3].map(i => (
+                          <div key={i} style={{
+                            width: 26, height: 4, borderRadius: 2,
+                            background: i < pwScore ? (pwScore >= 3 ? "var(--success)" : "var(--warning)") : "var(--border)",
+                          }} />
+                        ))}
+                      </div>
+                    </div>
+                    {/* Three independent checklist items, each with its own
+                        circle marker -- spread across the row rather than
+                        run together as one wrapped sentence. */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+                      {[
+                        { done: form.password.length >= 8, label: "At least 8 characters" },
+                        { done: /[a-z]/.test(form.password) && /[A-Z]/.test(form.password), label: "Uppercase and lowercase" },
+                        { done: /[0-9]/.test(form.password) || /[^A-Za-z0-9]/.test(form.password), label: "Number or symbol" },
+                      ].map(c => (
+                        <span key={c.label} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: c.done ? "var(--success-text)" : "var(--text-tertiary)", whiteSpace: "nowrap" }}>
+                          {c.done ? <CheckCircle2 size={13} /> : <span style={{ width: 13, height: 13, borderRadius: "50%", border: "1px solid var(--text-tertiary)", display: "inline-block" }} />}
+                          {c.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {form.confirmPassword && form.password !== form.confirmPassword && (
+                  <p style={{ fontSize: 12, color: "var(--danger-text)", margin: "4px 0 0" }}>Passwords don&apos;t match.</p>
+                )}
+                {/* Honest disclosure: this endpoint does not accept a
+                    password today -- see the file header. Rather than
+                    silently drop what the tenant typed, this is stated
+                    plainly before submit. */}
+                <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "10px 0 0" }}>
+                  Your workspace login is issued by our team once your request is approved, using this email address.
+                </p>
+              </>
+            )}
+
+            {step.id === "verify" && (
+              <>
+                <h3 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Verify your contact details</h3>
+                <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 24px" }}>
+                  Enter the codes we sent to your mobile and email to continue.
+                </p>
+                {devOtps && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Alert tone="warning" title="Development mode">
+                      Real delivery is disabled in this environment. Codes: {Object.entries(devOtps).map(([k, v]) => `${k}: ${v}`).join("  ·  ")}
+                    </Alert>
+                  </div>
+                )}
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {([
+                    { channel: "mobile" as const, icon: <Phone size={16} />, value: form.owner_phone, label: "Mobile number", otp: mobileOtp, setOtp: setMobileOtp, verified: mobileVerified },
+                    { channel: "email" as const, icon: <Mail size={16} />, value: form.owner_email, label: "Email", otp: emailOtp, setOtp: setEmailOtp, verified: emailVerified },
+                  ]).map(row => (
+                    <div key={row.channel} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: 14 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: row.verified ? 0 : 10 }}>
+                        {row.icon}
+                        <div style={{ flex: 1 }}>
+                          <p style={{ margin: 0, fontSize: 13, color: "var(--text-primary)" }}>{row.value || "—"}</p>
+                          <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-tertiary)" }}>{row.label}</p>
+                        </div>
+                        {row.verified && (
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--success-text)", fontWeight: 700 }}>
+                            <CheckCircle2 size={15} /> Verified
+                          </span>
+                        )}
+                      </div>
+                      {!row.verified && (
+                        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                          <input
+                            value={row.otp} onChange={e => row.setOtp(e.target.value)} placeholder="Enter code"
+                            style={{
+                              flex: 1, height: 38, padding: "0 12px", fontSize: 14, background: "var(--surface)",
+                              border: "1px solid var(--border)", borderRadius: "var(--radius-md)",
+                              color: "var(--text-primary)", outline: "none", fontFamily: "inherit", boxSizing: "border-box",
+                            }}
+                          />
+                          <Button variant="secondary" disabled={otpBusy === row.channel} onClick={() => verifyChannel(row.channel)}>
+                            {otpBusy === row.channel ? "Verifying…" : "Verify"}
+                          </Button>
+                          <button type="button" onClick={() => resendOtp(row.channel)} disabled={otpBusy === row.channel}
+                            style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", fontSize: 12.5, color: "var(--brand)", whiteSpace: "nowrap" }}>
+                            <RefreshCw size={13} /> Resend
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {step.id === "identity" && (
+              <>
+                <h3 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Business identity</h3>
+                <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 24px" }}>
+                  Legal and location details for your business.
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <Field label="Business name" icon={<Building2 size={16} />} required value={form.business_name}
+                    onChange={v => set("business_name", v)} placeholder="e.g. Rahul AC Services" />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                    <Field label="City" required value={form.city} onChange={v => set("city", v)} placeholder="e.g. Mumbai" />
+                    <Field label="State" required value={form.state} onChange={v => set("state", v)} placeholder="e.g. Maharashtra" />
+                  </div>
+                  <Field label="GSTIN (optional)" value={form.gstin} onChange={v => set("gstin", v)} placeholder="22AAAAA0000A1Z5" />
+                  <div>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+                      Business description (optional)
+                    </label>
+                    <textarea
+                      value={form.description} onChange={e => set("description", e.target.value)}
+                      placeholder="A short description of the services you offer"
+                      rows={3}
+                      style={{
+                        width: "100%", padding: 12, fontSize: 14, background: "var(--surface)",
+                        border: "1px solid var(--border)", borderRadius: "var(--radius-md)",
+                        color: "var(--text-primary)", outline: "none", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box",
+                      }}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {step.id === "vertical" && (
+              <>
+                <h3 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Select your vertical</h3>
+                <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 24px" }}>
+                  Choose the business you&apos;re starting with. You can request additional verticals later.
+                </p>
+                {!verticalsLoaded && <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Loading available verticals…</p>}
+                {verticalsLoaded && verticals.length === 0 && (
+                  <Alert tone="danger">Couldn&apos;t load available verticals. Please refresh and try again.</Alert>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>
+                  {verticals.map(v => (
+                    <button key={v.key} type="button" onClick={() => set("vertical", v.key)}
+                      style={{
+                        display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6,
+                        padding: "14px", borderRadius: "var(--radius-md)", cursor: "pointer", textAlign: "left",
+                        border: `1px solid ${form.vertical === v.key ? "var(--brand)" : "var(--border)"}`,
+                        background: form.vertical === v.key ? "var(--accent-muted)" : "var(--surface)",
+                      }}>
+                      <span style={{ fontSize: 20 }}>{VERTICAL_ICONS[v.key] ?? "🏢"}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: form.vertical === v.key ? "var(--brand)" : "var(--text-primary)" }}>{v.label}</span>
+                      {v.description && <span style={{ fontSize: 11.5, color: "var(--text-tertiary)" }}>{v.description}</span>}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {step.id === "review" && (
+              <>
+                <h3 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Review &amp; consent</h3>
+                <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 20px" }}>
+                  Confirm your details before submitting for review.
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+                  {[
+                    ["Owner", form.owner_name], ["Email", form.owner_email], ["Mobile", form.owner_phone],
+                    ["Business", form.business_name], ["City", form.city + (form.state ? `, ${form.state}` : "")],
+                    ["Vertical", verticals.find(v => v.key === form.vertical)?.label ?? form.vertical ?? "—"],
+                  ].map(([k, v]) => (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+                      <span style={{ color: "var(--text-tertiary)" }}>{k}</span>
+                      <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{v || "—"}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13, color: "var(--text-primary)", cursor: "pointer" }}>
+                    <input type="checkbox" checked={form.authorized} onChange={e => set("authorized", e.target.checked)}
+                      style={{ marginTop: 2, width: 16, height: 16, accentColor: "var(--success)" }} />
+                    I confirm that I am authorized to create this business account. *
+                  </label>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13, color: "var(--text-primary)", cursor: "pointer" }}>
+                    <input type="checkbox" checked={form.agreedTerms} onChange={e => set("agreedTerms", e.target.checked)}
+                      style={{ marginTop: 2, width: 16, height: 16, accentColor: "var(--success)" }} />
+                    I agree to the <Link href="/terms" style={{ color: "var(--brand)" }}>Terms of Service</Link> and acknowledge the <Link href="/privacy" style={{ color: "var(--brand)" }}>Privacy Notice</Link>. *
+                  </label>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13, color: "var(--text-secondary)", cursor: "pointer" }}>
+                    <input type="checkbox" checked={form.marketingOptIn} onChange={e => set("marketingOptIn", e.target.checked)}
+                      style={{ marginTop: 2, width: 16, height: 16, accentColor: "var(--success)" }} />
+                    Send me product updates and business tips. (Optional)
+                  </label>
+                </div>
+              </>
+            )}
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28 }}>
+              {stepIndex > 0
+                ? <Button variant="ghost" onClick={goBack}><ArrowLeft size={15} style={{ marginRight: 6 }} />Back</Button>
+                : <Link href="/login" style={{ fontSize: 13, color: "var(--text-secondary)", textDecoration: "none" }}>Exit</Link>}
+              {step.id === "review"
+                ? <Button variant="primary" loading={submitting} disabled={submitting} onClick={submit}>
+                    {submitting ? "Submitting…" : "Submit for review"}
+                  </Button>
+                : <Button variant="primary" loading={submitting} disabled={submitting} onClick={goNext}>
+                    Continue{stepIndex === 0 ? " to verification" : ""} <ArrowRight size={15} style={{ marginLeft: 6 }} />
+                  </Button>}
+            </div>
+            <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", textAlign: "center", margin: "16px 0 0" }}>
+              🔒 Your information is encrypted and saved securely.
+            </p>
+          </Card>
+        </div>
+      </div>
+
+      <footer style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "16px 32px", borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text-tertiary)", flexWrap: "wrap", gap: 8,
+      }}>
+        <span>© {new Date().getFullYear()} ServiceOS. All rights reserved.</span>
+        <div style={{ display: "flex", gap: 16 }}>
+          <Link href="/terms" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Terms of Service</Link>
+          <Link href="/privacy" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Privacy Notice</Link>
+          <Link href="/security" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Security</Link>
+        </div>
+      </footer>
     </div>
   );
 }

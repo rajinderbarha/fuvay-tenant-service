@@ -5,7 +5,7 @@ import { DirectPaymentScreen } from "../DirectPaymentScreen";
 import { DirectPaymentDetailDTO } from "../../../services/directPayment/types";
 
 jest.mock("../useDirectPayment");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 import { useDirectPayment } from "../useDirectPayment";
 import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
@@ -45,7 +45,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("DirectPaymentScreen — declaration state (spec sections 1, 3, 6, 8)", () => {
@@ -141,7 +141,7 @@ describe("DirectPaymentScreen — completed read-only state (spec section 20)", 
 
 describe("DirectPaymentScreen — offline/loading/error", () => {
   it("goes read-only offline", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (useDirectPayment as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText("Offline")).toBeTruthy();

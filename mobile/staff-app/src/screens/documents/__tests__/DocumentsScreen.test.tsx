@@ -5,7 +5,7 @@ import { DocumentsScreen } from "../DocumentsScreen";
 import { DocumentsDetailDTO } from "../../../services/documents/types";
 
 jest.mock("../useDocuments");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 import { useDocuments } from "../useDocuments";
 import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
@@ -37,7 +37,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("DocumentsScreen (Phase T)", () => {
@@ -78,7 +78,7 @@ describe("DocumentsScreen (Phase T)", () => {
   });
 
   it("disables upload affordances while offline", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (useDocuments as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText("Offline")).toBeTruthy();

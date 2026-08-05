@@ -242,7 +242,7 @@ export default function CustomerComplaintDetailPage() {
             {messages.map(m => (
               <div key={m.id} style={{
                 padding: 10, borderRadius: 8, marginBottom: 8,
-                background: m.sender_type === "customer" ? "#eef4ff" : "#f6f6f6",
+                background: m.sender_type === "customer" ? "#FFF4E6" : "#f6f6f6",
               }}>
                 <div style={{ fontSize: 11, color: "#666", marginBottom: 3 }}>
                   {m.sender_type} · {String(m.created_at).slice(0, 16).replace("T", " ")}

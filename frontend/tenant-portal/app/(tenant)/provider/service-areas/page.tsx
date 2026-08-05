@@ -327,7 +327,7 @@ function AreaDetailDrawer({ area, onClose, onEdit, onDelete, onToggle, totalActi
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {mappings.map(m => {
-                  const offering = offeringsApi.data?.offerings.find(o => o.offering_id === m.service_id);
+                  const offering = offeringsApi.data?.offerings?.find(o => o.offering_id === m.service_id);
                   return (
                     <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
                       padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-sunken)" }}>

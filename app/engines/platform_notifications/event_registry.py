@@ -31,6 +31,9 @@ from app.engines.platform_notifications.constants import (
     EVT_ENGINE_ENABLED, EVT_ENGINE_DISABLED,
     EVT_CATEGORY_ENABLED, EVT_CATEGORY_DISABLED,
     EVT_CHAT_NEW_MESSAGE,
+    EVT_LEAVE_APPROVED, EVT_LEAVE_REJECTED,
+    EVT_CORRECTION_APPROVED, EVT_CORRECTION_CHANGES_REQUESTED, EVT_CORRECTION_REJECTED,
+    EVT_DOCUMENT_VERIFIED, EVT_DOCUMENT_CHANGES_REQUESTED, EVT_DOCUMENT_REJECTED,
 )
 
 
@@ -44,6 +47,7 @@ class NotificationEventConfig:
     template_key:       str          # {event_key}.in_app suffix convention
     severity:           str = SEV_INFO
     is_enabled:         bool = True
+    is_mandatory:       bool = False         # user cannot disable this event's in_app delivery
     also_notify:        list[str] = field(default_factory=list)  # additional recipient types
 
 
@@ -254,6 +258,34 @@ _reg(NotificationEventConfig(EVT_TENANT_SUSPENDED, "Provider Suspended",
 _reg(NotificationEventConfig(EVT_CHAT_NEW_MESSAGE, "New Chat Message",
      "platform_notifications", [CHANNEL_IN_APP], RECIP_CUSTOMER,
      "chat.new_message.in_app"))
+
+# ── Staff — Leave / Employment Correction / Documents ─────────────────────────
+# Found missing during the "make it 100% working" pass -- registered to match
+# real templates/constants that already existed with no registry entry.
+_reg(NotificationEventConfig(EVT_LEAVE_APPROVED, "Leave Request Approved",
+     "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
+     "leave.approved.in_app", SEV_SUCCESS))
+_reg(NotificationEventConfig(EVT_LEAVE_REJECTED, "Leave Request Rejected",
+     "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
+     "leave.rejected.in_app", SEV_WARNING))
+_reg(NotificationEventConfig(EVT_CORRECTION_APPROVED, "Employment Correction Approved",
+     "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
+     "employment_correction.approved.in_app", SEV_SUCCESS))
+_reg(NotificationEventConfig(EVT_CORRECTION_CHANGES_REQUESTED, "Employment Correction Changes Requested",
+     "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
+     "employment_correction.changes_requested.in_app", SEV_WARNING))
+_reg(NotificationEventConfig(EVT_CORRECTION_REJECTED, "Employment Correction Rejected",
+     "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
+     "employment_correction.rejected.in_app", SEV_WARNING))
+_reg(NotificationEventConfig(EVT_DOCUMENT_VERIFIED, "Document Verified",
+     "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
+     "document.verified.in_app", SEV_SUCCESS))
+_reg(NotificationEventConfig(EVT_DOCUMENT_CHANGES_REQUESTED, "Document Changes Requested",
+     "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
+     "document.changes_requested.in_app", SEV_WARNING))
+_reg(NotificationEventConfig(EVT_DOCUMENT_REJECTED, "Document Rejected",
+     "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
+     "document.rejected.in_app", SEV_WARNING))
 
 
 class NotificationEventRegistry:

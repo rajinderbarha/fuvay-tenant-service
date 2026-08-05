@@ -6,7 +6,7 @@
  * customer_chat_router exposes the full API. This lists the customer's
  * conversations; the conversation view lives at /customer/chat/[threadId].
  */
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import BottomNav from "../../../components/BottomNav";
 import ErrorBanner from "../../../components/ErrorBanner";
@@ -17,7 +17,7 @@ const RECORD_LABEL: Record<string, string> = {
   coaching_appointment: "Appointment", real_estate_lead: "Enquiry",
 };
 
-export default function CustomerChatPage() {
+function CustomerChatPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   // Deep link from a booking: /customer/chat?record_type=service_booking&record_id=…
@@ -75,5 +75,19 @@ export default function CustomerChatPage() {
 
       <BottomNav />
     </div>
+  );
+}
+
+/**
+ * Real build failure fixed here: this page calls `useSearchParams()`, which
+ * Next.js requires to sit inside a Suspense boundary. Without one, static
+ * prerendering threw "useSearchParams() should be wrapped in a suspense
+ * boundary" and FAILED THE WHOLE PRODUCTION BUILD.
+ */
+export default function CustomerChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <CustomerChatPageInner />
+    </Suspense>
   );
 }

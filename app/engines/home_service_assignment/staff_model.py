@@ -6,10 +6,14 @@ We define a read-only model here to support staff eligibility lookups.
 from __future__ import annotations
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Index, String
+from sqlalchemy import Boolean, DateTime, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import ServiceOSBase
+
+# migration 209's own docstring is the authoritative source for these three
+# values (Technician Home screen's availability selector).
+AVAILABILITY_STATES = ("available", "busy", "offline")
 
 
 class ProviderTeamMember(ServiceOSBase):
@@ -41,6 +45,18 @@ class ProviderTeamMember(ServiceOSBase):
     password_generated:     Mapped[bool]             = mapped_column(Boolean, nullable=False, default=False)
     last_login_at:          Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at:             Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    # migration 209 -- self-settable technician presence (Technician Home
+    # screen). Found missing from this model entirely during the Final
+    # Phase end-to-end pass: the column existed in the DB but any write to
+    # it via the ORM was a plain Python attribute, never persisted.
+    availability_state:     Mapped[str]              = mapped_column(String(20), nullable=False, default="available")
+    availability_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Found missing during the Final Phase model-vs-DB drift audit -- real,
+    # migrated columns the staff-app Help & Support "Contact your manager"
+    # card and dispatch load-balancing already depend on.
+    max_concurrent_jobs:     Mapped[int | None]       = mapped_column(Integer, nullable=True)
+    reports_to_display_name: Mapped[str | None]       = mapped_column(String(200), nullable=True)
+    reports_to_designation:  Mapped[str | None]       = mapped_column(String(100), nullable=True)
 
     def to_dict(self) -> dict:
         return {

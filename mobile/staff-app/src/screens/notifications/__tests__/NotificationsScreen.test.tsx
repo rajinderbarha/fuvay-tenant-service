@@ -5,7 +5,7 @@ import { NotificationsScreen } from "../NotificationsScreen";
 import { NotificationInboxDTO } from "../../../services/notifications/types";
 
 jest.mock("../useNotifications");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 const mockNavigate = jest.fn();
 const mockGetParent = jest.fn(() => ({ navigate: mockNavigate }));
@@ -43,7 +43,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("NotificationsScreen — loaded state (spec sections 3, 4)", () => {
@@ -111,7 +111,7 @@ describe("NotificationsScreen — empty/offline/error/loading", () => {
   });
 
   it("shows an offline banner with cached content still visible", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (useNotifications as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText("Offline")).toBeTruthy();

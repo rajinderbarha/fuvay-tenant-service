@@ -92,8 +92,14 @@ class TypesService:
             )
         )
         total = r.scalar_one_or_none() or 0
+        # BUG FIX: this counted every mapping ROW with a non-null
+        # category_id, not distinct categories -- since every mapping
+        # always carries category_id alongside its service_group_id (the
+        # frontend sets both on create), mapping one type to 4 service
+        # groups under the SAME category showed "Cat: 4" instead of the
+        # correct "Cat: 1". Same distinct-ness issue applied to services.
         rc = await self.db.execute(
-            select(func.count(ServiceTypeMapping.id)).where(
+            select(func.count(func.distinct(ServiceTypeMapping.category_id))).where(
                 ServiceTypeMapping.type_id == type_id,
                 ServiceTypeMapping.category_id.isnot(None),
                 ServiceTypeMapping.status != "archived",
@@ -101,7 +107,7 @@ class TypesService:
         )
         categories = rc.scalar_one_or_none() or 0
         rs = await self.db.execute(
-            select(func.count(ServiceTypeMapping.id)).where(
+            select(func.count(func.distinct(ServiceTypeMapping.service_id))).where(
                 ServiceTypeMapping.type_id == type_id,
                 ServiceTypeMapping.service_id.isnot(None),
                 ServiceTypeMapping.status != "archived",
@@ -282,11 +288,43 @@ class TypesService:
     # ── Type Mappings ─────────────────────────────────────────────────────────
 
     async def _create_mapping_row(self, type_id: uuid.UUID, data: dict) -> ServiceTypeMapping:
+        category_id = uuid.UUID(data["category_id"]) if data.get("category_id") else None
+        service_group_id = uuid.UUID(data["service_group_id"]) if data.get("service_group_id") else None
+        service_id = uuid.UUID(data["service_id"]) if data.get("service_id") else None
+
+        # The uq_stm_type_cat_grp_svc UNIQUE constraint does NOT prevent
+        # duplicates in practice: service_id (and often service_group_id) is
+        # NULL for "all services in group" mappings, and Postgres treats
+        # NULLs as never-equal, so the constraint silently never fires for
+        # them. That let the same type->category/group mapping be inserted
+        # unlimited times -- e.g. "Split AC / Air Conditioning" existed 9x,
+        # showing duplicate rows in the Type Mappings tab and duplicate
+        # "Currently Mapped" entries in the Map Type modal.
+        # Guarded here at the application layer instead, using IS NULL so
+        # NULL columns compare correctly. Reactivates an archived duplicate
+        # rather than stacking another row on top of it.
+        dup_q = select(ServiceTypeMapping).where(
+            ServiceTypeMapping.type_id == type_id,
+            ServiceTypeMapping.category_id == category_id if category_id is not None
+                else ServiceTypeMapping.category_id.is_(None),
+            ServiceTypeMapping.service_group_id == service_group_id if service_group_id is not None
+                else ServiceTypeMapping.service_group_id.is_(None),
+            ServiceTypeMapping.service_id == service_id if service_id is not None
+                else ServiceTypeMapping.service_id.is_(None),
+        )
+        existing = (await self.db.execute(dup_q)).scalars().first()
+        if existing:
+            existing.status = data.get("status", "active")
+            existing.customer_visible = data.get("customer_visible", True)
+            existing.provider_visible = data.get("provider_visible", True)
+            await self.db.flush()
+            return existing
+
         m = ServiceTypeMapping(
             type_id=type_id,
-            category_id=uuid.UUID(data["category_id"]) if data.get("category_id") else None,
-            service_group_id=uuid.UUID(data["service_group_id"]) if data.get("service_group_id") else None,
-            service_id=uuid.UUID(data["service_id"]) if data.get("service_id") else None,
+            category_id=category_id,
+            service_group_id=service_group_id,
+            service_id=service_id,
             customer_visible=data.get("customer_visible", True),
             provider_visible=data.get("provider_visible", True),
             status=data.get("status", "active"),
@@ -452,11 +490,37 @@ class TypesService:
             select(Brand).where(Brand.id == brand_id, Brand.deleted_at.is_(None)))
         if not br.scalar_one_or_none():
             raise NotFoundException("Brand", str(brand_id))
+
+        category_id = uuid.UUID(data["category_id"]) if data.get("category_id") else None
+        service_group_id = uuid.UUID(data["service_group_id"]) if data.get("service_group_id") else None
+        service_id = uuid.UUID(data["service_id"]) if data.get("service_id") else None
+
+        # Same NULL-defeats-UNIQUE duplicate problem as _create_mapping_row
+        # above -- see that method's comment for the full explanation.
+        dup_q = select(BrandMapping).where(
+            BrandMapping.brand_id == brand_id,
+            BrandMapping.category_id == category_id if category_id is not None
+                else BrandMapping.category_id.is_(None),
+            BrandMapping.service_group_id == service_group_id if service_group_id is not None
+                else BrandMapping.service_group_id.is_(None),
+            BrandMapping.service_id == service_id if service_id is not None
+                else BrandMapping.service_id.is_(None),
+        )
+        existing = (await self.db.execute(dup_q)).scalars().first()
+        if existing:
+            existing.status = data.get("status", "active")
+            existing.customer_visible = data.get("customer_visible", True)
+            existing.provider_visible = data.get("provider_visible", True)
+            await self.db.flush()
+            await self.db.commit()
+            await self.db.refresh(existing)
+            return self._brand_mapping_dict(existing)
+
         m = BrandMapping(
             brand_id=brand_id,
-            category_id=uuid.UUID(data["category_id"]) if data.get("category_id") else None,
-            service_group_id=uuid.UUID(data["service_group_id"]) if data.get("service_group_id") else None,
-            service_id=uuid.UUID(data["service_id"]) if data.get("service_id") else None,
+            category_id=category_id,
+            service_group_id=service_group_id,
+            service_id=service_id,
             customer_visible=data.get("customer_visible", True),
             provider_visible=data.get("provider_visible", True),
             status=data.get("status", "active"),

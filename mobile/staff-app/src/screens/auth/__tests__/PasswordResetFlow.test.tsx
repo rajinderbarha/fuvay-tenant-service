@@ -5,7 +5,7 @@ import { ForgotPasswordScreen } from "../ForgotPasswordScreen";
 import { ResetPasswordScreen } from "../ResetPasswordScreen";
 
 jest.mock("../../../services/auth/authApi");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: () => "online" }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: () => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" }) }));
 
 import * as authApi from "../../../services/auth/authApi";
 

@@ -38,7 +38,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
   const { theme } = useTheme();
   const { jobId } = route.params;
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const [menuOpen, setMenuOpen] = useState(false);
 
   const {

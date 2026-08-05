@@ -1,12 +1,25 @@
 """Serviceability Engine — Pydantic Schemas."""
 from __future__ import annotations
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
+
+from app.engines.serviceability.constants import ERR_INVALID_PIN_CODE
+
+ADDRESS_LABELS = ("Home", "Work", "Other")
+_PIN_RE = re.compile(r"^\d{6}$")
+
+
+def _validate_pin(zipcode: str | None) -> str | None:
+    if zipcode is not None and not _PIN_RE.match(zipcode):
+        raise ValueError(ERR_INVALID_PIN_CODE)
+    return zipcode
 
 
 # ── Customer Addresses ──────────────────────────────────────────────────────────
 
 class AddressCreate(BaseModel):
-    name: str | None = None
+    label: str | None = Field(None, description=f"One of {ADDRESS_LABELS}")
+    name: str | None = Field(None, max_length=100, description="Recipient's full name")
     phone: str | None = None
     address_line_1: str = Field(..., min_length=2, max_length=300)
     address_line_2: str | None = None
@@ -20,9 +33,19 @@ class AddressCreate(BaseModel):
     longitude: float | None = None
     is_default: bool = False
 
+    _validate_zipcode = field_validator("zipcode")(_validate_pin)
+
+    @field_validator("label")
+    @classmethod
+    def _validate_label(cls, v: str | None) -> str | None:
+        if v is not None and v not in ADDRESS_LABELS:
+            raise ValueError(f"label must be one of {ADDRESS_LABELS}")
+        return v
+
 
 class AddressUpdate(BaseModel):
-    name: str | None = None
+    label: str | None = None
+    name: str | None = Field(None, max_length=100)
     phone: str | None = None
     address_line_1: str | None = None
     address_line_2: str | None = None
@@ -35,6 +58,15 @@ class AddressUpdate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     is_default: bool | None = None
+
+    _validate_zipcode = field_validator("zipcode")(_validate_pin)
+
+    @field_validator("label")
+    @classmethod
+    def _validate_label(cls, v: str | None) -> str | None:
+        if v is not None and v not in ADDRESS_LABELS:
+            raise ValueError(f"label must be one of {ADDRESS_LABELS}")
+        return v
 
 
 # ── Tenant Service Areas ────────────────────────────────────────────────────────

@@ -29,8 +29,9 @@
     "plugins": [
       "expo-location",
       "expo-notifications",
-      "expo-image-picker"
+      "expo-image-picker",
+      "expo-secure-store"
     ],
-    "sdkVersion": "56.0.0"
+    "sdkVersion": "54.0.0"
   }
 }

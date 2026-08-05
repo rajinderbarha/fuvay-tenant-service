@@ -81,6 +81,8 @@ export default function MarketingAutomationPage() {
           <Btn variant="secondary" size="sm" icon={<CalendarIcon size={14}/>}>View Calendar</Btn>
           <Btn variant="secondary" size="sm" icon={<Link2 size={14}/>}>Connect Account</Btn>
           <Btn variant="ghost" size="sm" icon={<Upload size={14}/>}>Import Content</Btn>
+          <Btn variant="ghost" size="sm" icon={<Sparkles size={14}/>}
+            onClick={() => { window.location.href = "/admin/marketing/automation"; }}>Automation Triggers</Btn>
           <Btn variant="ghost" size="sm" icon={<RefreshCw size={14}/>} onClick={refetchAll}/>
         </>}
       />

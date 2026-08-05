@@ -18,13 +18,13 @@ export interface SecuritySummaryDTO {
 }
 
 export interface SecurityActivityItemDTO {
-  id: string;
-  action_type: string;
-  outcome: string;
-  failure_reason: string | null;
-  device_id: string | null;
-  ip_masked: string | null;
-  created_at: string;
+  event_id: string;
+  label: string;
+  outcome: "successful" | "verification_required" | "blocked" | "unknown";
+  channel: string;
+  device_name: string;
+  is_current_device: boolean;
+  occurred_at: string;
 }
 
 /** Technician Security & MFA (Phase V). Reuses the EXISTING real
@@ -35,8 +35,18 @@ export function getSecuritySummary(signal?: AbortSignal): Promise<ApiResult<Secu
   return authenticatedRequest<SecuritySummaryDTO>(`/v1/auth/me/mobile-security-summary`, { method: "GET", signal });
 }
 
-export function getSecurityActivity(limit = 50, offset = 0, signal?: AbortSignal): Promise<ApiResult<{ items: SecurityActivityItemDTO[]; total: number; limit: number; offset: number }>> {
-  return authenticatedRequest(`/v1/auth/me/security-activity?limit=${limit}&offset=${offset}`, { method: "GET", signal });
+export type SecurityActivityFilter = "all" | "successful" | "needs_attention";
+
+/** Real route: GET /v1/auth/me/login-activity (auth/router.py) --
+ * cursor-paginated, not offset-paginated. Was previously calling a
+ * nonexistent "/v1/auth/me/security-activity" path with limit/offset
+ * params the real endpoint doesn't accept (staff-app API audit finding). */
+export function getSecurityActivity(
+  filter: SecurityActivityFilter = "all", limit = 20, cursor?: string, signal?: AbortSignal,
+): Promise<ApiResult<{ events: SecurityActivityItemDTO[]; next_cursor: string | null }>> {
+  const params = new URLSearchParams({ filter, limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  return authenticatedRequest(`/v1/auth/me/login-activity?${params.toString()}`, { method: "GET", signal });
 }
 
 export function removeDeviceTrust(sessionId: string): Promise<ApiResult<{ session_id: string; is_trusted: boolean }>> {

@@ -88,7 +88,13 @@ async def upload_media(
         owner_id=effective_owner_id,
         is_public=is_public,
     )
-    return ok({"success": True, "data": data}, _req_id(r))
+    # Real bug fixed here: `ok()` ALREADY builds the {data, links, meta}
+    # envelope, so wrapping the payload in another {"success", "data"} made
+    # this the only media route that returned a double envelope -- a client
+    # reading `response.data.preview_url` got undefined, because the asset
+    # was actually at `response.data.data.preview_url`. Every other route in
+    # this file (list_media, get_media) passes `data` straight through.
+    return ok(data, _req_id(r))
 
 
 @router.get(
@@ -145,6 +151,16 @@ async def view_media(
     """
     Serves local files directly; redirects to CDN URL for remote storage.
     Performs access check before serving — private files never bypass auth.
+
+    BUG FIX (2026-08-04): the "redirects to CDN URL for remote storage" this
+    docstring promised never actually happened for cloudinary-stored assets
+    -- to_dict() didn't expose storage_key, and the only thing checked here
+    (data.get("preview_url")) is always the self-referential
+    "/v1/media/{id}/view" path (doesn't start with "http"), so this always
+    fell through to 404 "File not available." for every cloudinary asset,
+    confirmed live (10 of 16 media assets platform-wide use cloudinary).
+    app.cloudinary_client.build_delivery_url already existed and is used by
+    the OLDER media/service.py engine, but was never wired into this one.
     """
     try:
         path, mime_type = await svc.get_local_file_for_serve(media_id)
@@ -159,6 +175,10 @@ async def view_media(
         preview_url = data.get("preview_url") or data.get("public_url")
         if preview_url and preview_url.startswith("http"):
             return RedirectResponse(url=preview_url, status_code=302)
+        if data.get("storage_driver") == "cloudinary" and data.get("storage_key"):
+            from app.cloudinary_client import build_delivery_url
+            resource_type = "image" if str(data.get("mime_type", "")).startswith("image/") else "raw"
+            return RedirectResponse(url=build_delivery_url(data["storage_key"], resource_type), status_code=302)
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="File not available.")
 

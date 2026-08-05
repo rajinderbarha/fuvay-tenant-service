@@ -129,9 +129,16 @@ export function RowActions({
 
 // ── Badge ───────────────────────────────────────────────────────────────────
 type BadgeV = "default" | "success" | "warning" | "danger" | "info" | "muted" | "golden" | "terra";
-export function Badge({ children, variant = "default", size = "md", dot }: {
-  children: React.ReactNode; variant?: BadgeV; size?: "sm" | "md" | "lg"; dot?: boolean;
+export function Badge({ children, variant, tone, size = "md", dot }: {
+  children: React.ReactNode;
+  variant?: BadgeV;
+  /** Alias for `variant`. Several admin pages were written against `tone`
+   * (matching the mobile design system) and would not compile otherwise --
+   * accepting both keeps one Badge rather than two divergent ones. */
+  tone?: BadgeV | string;
+  size?: "sm" | "md" | "lg"; dot?: boolean;
 }) {
+  const resolved: BadgeV = (variant ?? (tone as BadgeV) ?? "default");
   const V: Record<BadgeV, React.CSSProperties> = {
     default:{ background: "var(--accent-muted)",     color: "var(--accent)",        border: "1px solid transparent"              },
     success:{ background: "var(--success-bg)",        color: "var(--success-text)",  border: "1px solid var(--success-border)"    },
@@ -151,7 +158,7 @@ export function Badge({ children, variant = "default", size = "md", dot }: {
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
       borderRadius: 999, fontWeight: 700, letterSpacing: "0.03em",
-      whiteSpace: "nowrap", ...V[variant], ...S[size],
+      whiteSpace: "nowrap", ...V[resolved], ...S[size],
     }}>
       {dot && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "currentColor", flexShrink: 0 }}/>}
       {children}
@@ -265,8 +272,8 @@ export function Select({ label, value, onChange, options, placeholder, disabled 
         outline: "none", cursor: disabled ? "not-allowed" : "pointer", boxShadow: "var(--shadow-sm)",
         opacity: disabled ? 0.7 : 1,
       }}>
-        {placeholder && <option value="">{placeholder}</option>}
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {placeholder && <option value="" style={{ background: "var(--surface)", color: "var(--text-primary)" }}>{placeholder}</option>}
+        {options.map(o => <option key={o.value} value={o.value} style={{ background: "var(--surface)", color: "var(--text-primary)" }}>{o.label}</option>)}
       </select>
     </div>
   );
@@ -287,7 +294,24 @@ export function Spinner({ size = 20, color = "var(--accent)" }: { size?: number;
 export function Skeleton({ width, height = 20, radius = 6, style = {} }: {
   width?: number | string; height?: number; radius?: number; style?: React.CSSProperties;
 }) {
-  return <div className="skeleton" style={{ width: width ?? "100%", height, borderRadius: radius, ...style }}/>;
+  /**
+   * Renders a <span>, not a <div>, on purpose -- a skeleton usually stands
+   * in for a line of TEXT, so it frequently lands inside a <p>, and a <div>
+   * inside a <p> is invalid HTML. The parser closes the paragraph early, the
+   * server and client trees diverge, and React throws a hydration error
+   * ("In HTML, <div> cannot be a descendant of <p>"). That is exactly what
+   * took out the tenant Dashboard; this is the same component, so it had the
+   * same latent bug.
+   *
+   * `display: block` preserves the box behaviour every caller already
+   * relied on; callers can still override it via `style`.
+   */
+  return (
+    <span
+      className="skeleton"
+      style={{ display: "block", width: width ?? "100%", height, borderRadius: radius, ...style }}
+    />
+  );
 }
 
 // ── Avatar ───────────────────────────────────────────────────────────────────
@@ -561,7 +585,16 @@ export function DataTable<T extends Record<string, unknown>>({ columns, rows, lo
   rows: T[]; loading?: boolean; emptyText?: string; onRowClick?: (row: T) => void;
 }) {
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl, 1rem)", overflow: "hidden", boxShadow: "var(--shadow-sm)" }}>
+    <div style={{
+      background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl, 1rem)",
+      boxShadow: "var(--shadow-sm)",
+      // BUG FIX: overflow:hidden here clipped any in-cell dropdown menu
+      // (e.g. row "Actions ▾" menus) that extended past the table's own
+      // bounds -- no z-index on the dropdown can override an ancestor's
+      // overflow:hidden. Rounded corners are kept via the table itself
+      // clipping instead, since this wrapper no longer does.
+      overflow: "visible",
+    }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
@@ -732,6 +765,42 @@ export function Pagination({ page, total, pageSize = 20, onPage }: {
         <span style={{ display: "flex", alignItems: "center", padding: "0 10px", fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{page} / {pages}</span>
         <IconBtn icon={<ChevronRight/>} onClick={() => onPage(page + 1)} disabled={page >= pages} size="sm" variant="default" tooltip="Next"/>
       </div>
+    </div>
+  );
+}
+
+
+/** Multi-line text input. Genuinely absent before -- the service-area
+ * request detail page imported it and could not compile. Mirrors `Input`'s
+ * label/hint/error treatment so the two look like one family. */
+export function Textarea({ label, placeholder, value, onChange, hint, error, rows = 4, disabled, required }: {
+  label?: string; placeholder?: string; value: string;
+  onChange: (v: string) => void;
+  hint?: string; error?: string; rows?: number; disabled?: boolean; required?: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      {label && (
+        <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", letterSpacing: "0.02em" }}>
+          {label}{required ? " *" : ""}
+        </label>
+      )}
+      <textarea
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        disabled={disabled}
+        style={{
+          padding: "9px 12px", fontSize: 14, fontFamily: "inherit", resize: "vertical",
+          borderRadius: 8, border: `1px solid ${error ? "var(--danger)" : "var(--border)"}`,
+          background: "var(--surface)", color: "var(--text-primary)",
+          opacity: disabled ? 0.6 : 1,
+        }}
+      />
+      {error
+        ? <span style={{ fontSize: 12, color: "var(--danger)" }}>{error}</span>
+        : hint ? <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{hint}</span> : null}
     </div>
   );
 }

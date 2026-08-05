@@ -190,6 +190,7 @@ async def get_flow_config(r: Request,
         requires_schedule = cat_data.get("requires_schedule", False)
         requires_location = cat_data.get("requires_location", True)
 
+    steps: list[str] = []
     if requires_issue:
         steps.append("select_issue_type")
     if requires_brand:

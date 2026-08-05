@@ -6,6 +6,7 @@ import { PartsRequestScreen } from "../PartsRequestScreen";
 
 jest.mock("../useWorkExecution");
 import { useWorkExecution } from "../useWorkExecution";
+import type { PartsRequestDTO } from "../../../services/workExecution/types";
 
 const TEST_INSETS = { frame: { x: 0, y: 0, width: 0, height: 0 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
 
@@ -22,7 +23,7 @@ function baseReturn(overrides: Partial<ReturnType<typeof useWorkExecution>> = {}
       parts: [
         { parts_request_id: "p1", job_id: "job-1", part_name: "Copper pipe", quantity: 2, estimated_cost: 500, reason: "Leak repair", technician_note: null, customer_approval_required: false, status: "requested", rejection_reason: null, created_at: null },
         { parts_request_id: "p2", job_id: "job-1", part_name: "Valve", quantity: 1, estimated_cost: 300, reason: "Replacement", technician_note: null, customer_approval_required: false, status: "business_rejected", rejection_reason: "Too expensive", created_at: null },
-      ],
+      ] as PartsRequestDTO[],
       readiness: { can_finish_work: false, missing_checklist_item_ids: [], pending_part_request_ids: ["p1"], missing_evidence_categories: [], blockers: [] },
       allowed_actions: [],
     },

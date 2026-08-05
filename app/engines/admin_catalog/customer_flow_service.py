@@ -117,7 +117,13 @@ class CustomerFlowService:
                 {
                     "id":          str(c.id),
                     "name":        c.name,
-                    "code":        c.code,
+                    # ServiceCategory has no `code` column -- this raised
+                    # AttributeError on every call, so `list_active_categories`
+                    # always failed, and Home's `bookable_categories` was
+                    # always empty for every customer (see customer_home/
+                    # service.py's own comment about this exact class of bug,
+                    # already fixed there but not here). Real field is `slug`.
+                    "slug":        c.slug,
                     "description": c.description,
                     "icon_url":    c.icon_url,
                     "vertical_type": c.vertical_type,

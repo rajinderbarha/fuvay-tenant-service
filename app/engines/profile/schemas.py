@@ -56,6 +56,18 @@ CRITICAL_BUSINESS_FIELDS = frozenset({
 class UpdateBusinessProfileRequest(BaseModel):
     """Fields a provider/tenant can update on their business profile."""
     business_name: str | None = Field(None, min_length=2, max_length=255)
+    # Real bug fixed here: the onboarding Business Profile form has always
+    # collected legal_name / business_type / registration_number /
+    # year_established and sent them on PUT, but this schema never declared
+    # them -- so Pydantic silently DROPPED all four and the tenant's answers
+    # were lost on every save. The first three map to real Tenant columns;
+    # registration_number has no column, so it is stored in tenant.meta
+    # alongside website_url/description, which is the established pattern
+    # here and avoids a migration for a single optional string.
+    legal_name: str | None = Field(None, max_length=255)
+    business_type: str | None = Field(None, max_length=50)
+    registration_number: str | None = Field(None, max_length=100)
+    year_established: int | None = Field(None, ge=1800, le=2200)
     owner_name: str | None = Field(None, min_length=2, max_length=255)
     business_phone: str | None = Field(None, alias="phone")
     business_email: str | None = Field(None, alias="email")

@@ -9,6 +9,34 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import ServiceOSBase, utcnow
 
 
+class DPDPPolicyVersion(ServiceOSBase):
+    """A published version of the DPDP (data-protection) compliance policy.
+
+    Real bug fixed here: the `dpdp_policy_versions` table exists and
+    public_registration/service.py imports this model to stamp the active
+    policy version onto every consent record captured at signup, but the
+    model was never written -- so importing that service raised
+    ImportError, and the whole 5-step no-payment signup flow it implements
+    could never be mounted. Columns mirror the live table exactly.
+    """
+    __tablename__ = "dpdp_policy_versions"
+
+    policy_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    publication_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    enforcement_phase: Mapped[str] = mapped_column(String(50), nullable=False)
+    applicable_request_types: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    sla_policy: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    retention_policy_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    evidence_requirements: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    last_policy_review: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    superseded_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
 class ConsentRecord(ServiceOSBase):
     """PROVEN: immutable — one row per consent event.
     Consent history is a full ledger of every grant/withdraw/update.

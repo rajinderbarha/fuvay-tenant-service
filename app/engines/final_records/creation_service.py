@@ -163,10 +163,63 @@ class HomeServiceFinalCreationService:
             issue_summary         = draft.issue_summary,
             issue_details         = draft.issue_details,
             status                = "pending_assignment",
+            # Real bug fixed here: `answer_snapshot` is a real column and
+            # QuestionFlowService.build_answer_snapshot() exists to fill it,
+            # but nothing ever called it from finalize -- so the column was
+            # NULL on every booking ever created, and the "what you told us"
+            # section of the customer's booking page was permanently empty.
+            # Resolved ONCE here, at finalize, so a later question/option
+            # relabel can never change what a historical booking shows.
+            answer_snapshot       = await self._build_answer_snapshot(draft),
         )
         self.db.add(booking)
         await self.db.flush()
         await self.db.refresh(booking)
+
+        # 4a-bis. Lock in the slot the customer was actually promised.
+        #
+        # The offer they accepted was resolved when the summary was built,
+        # which may have been minutes ago -- another customer can have taken
+        # the last place in that slot since. So the promise is ALWAYS
+        # re-validated against live provider capacity here, never trusted
+        # from the earlier offer. If it is gone we roll forward to the next
+        # genuinely available slot rather than silently overbooking the
+        # provider or dropping the schedule entirely.
+        promised_date = None
+        promised_window = None
+        summary_slot = (draft.booking_summary or {}).get("promised_slot") or {}
+        if draft.selected_tenant_id:
+            from app.engines.home_service_booking.provider_slot_service import (
+                find_earliest_available_slot, slot_has_capacity,
+            )
+            import datetime as _dt
+            offered_date = summary_slot.get("date")
+            offered_window = summary_slot.get("time_window")
+            if offered_date and offered_window:
+                try:
+                    # `booking_summary` is JSONB, so a real round-tripped
+                    # summary always carries an ISO string -- but an
+                    # in-memory/mocked draft can hand back a real date.
+                    # Accept both rather than raising inside confirmation.
+                    d = (offered_date if isinstance(offered_date, _dt.date)
+                         else _dt.date.fromisoformat(str(offered_date)))
+                    if await slot_has_capacity(
+                        self.db, tenant_id=draft.selected_tenant_id,
+                        day=d, time_window=offered_window,
+                    ):
+                        promised_date, promised_window = d, offered_window
+                except (ValueError, TypeError):
+                    pass
+            if promised_date is None:
+                try:
+                    fresh = await find_earliest_available_slot(
+                        self.db, tenant_id=draft.selected_tenant_id,
+                    )
+                    if fresh:
+                        promised_date = _dt.date.fromisoformat(str(fresh["date"]))
+                        promised_window = fresh["time_window"]
+                except Exception as exc:  # noqa: BLE001 -- never fail a paid booking
+                    log.warning("booking.promised_slot_revalidate_failed error=%s", exc)
 
         # 4b. Create ServiceJob
         job = ServiceJob(
@@ -183,8 +236,14 @@ class HomeServiceFinalCreationService:
             master_service_job_type_id = booking.master_service_job_type_id,
             service_job_workflow_id    = booking.service_job_workflow_id,
             selected_problem_id        = booking.selected_problem_id,
-            scheduled_date        = draft.preferred_date,
-            scheduled_time_window = draft.preferred_time_window,
+            # The slot the customer was actually shown and accepted on the
+            # review screen wins. `preferred_*` remains the fallback for any
+            # flow that sets it explicitly. Without this the job was created
+            # with NO schedule at all for the whole assistant flow (which
+            # never sets preferred_date), so the provider had no idea when
+            # the customer expected them and capacity was never consumed.
+            scheduled_date        = promised_date or draft.preferred_date,
+            scheduled_time_window = promised_window or draft.preferred_time_window,
             city                  = draft.city,
             zipcode               = draft.zipcode,
             address_snapshot      = draft.address_snapshot,
@@ -231,6 +290,29 @@ class HomeServiceFinalCreationService:
         await self._notify_booking_confirmed(
             booking_id=booking.id, booking_number=booking_number,
             tenant_id=draft.selected_tenant_id, customer_id=draft.customer_id)
+
+        # 9. Customer platform fee (vertical_monetization).
+        #
+        # Real production gap fixed here: the entire vertical_monetization
+        # engine -- policies, charge records, calculation -- existed and could
+        # be configured and "published" by Super Admin, but NOTHING in the live
+        # booking pipeline ever called it. No customer platform fee was ever
+        # created for any booking, so a published PLATFORM_FEE policy earned
+        # the platform nothing.
+        #
+        # Deliberately non-fatal: a monetization misconfiguration must never
+        # block a booking the customer has already paid for and confirmed.
+        # `create_charge_for_booking` is itself idempotent (keyed
+        # "booking:{id}") and returns None when the vertical has no policy.
+        try:
+            from app.engines.vertical_monetization.charge_service import create_charge_for_booking
+            await create_charge_for_booking(
+                self.db, vertical_key="home_services",
+                booking_id=booking.id, tenant_id=draft.selected_tenant_id,
+            )
+        except Exception as exc:  # noqa: BLE001 -- never fail a confirmed booking
+            log.warning("monetization.booking_charge_failed booking_id=%s error=%s",
+                        booking.id, exc)
 
         booking_summary = draft.booking_summary or {}
         return {
@@ -294,6 +376,25 @@ class HomeServiceFinalCreationService:
             await self.db.flush()
         except Exception as exc:
             log.warning("audit log failed: %s", exc)
+
+    async def _build_answer_snapshot(self, draft) -> dict | None:
+        """The immutable record of what the customer actually answered.
+
+        Imported lazily to keep the final_records engine from taking a
+        module-level dependency on home_service_booking (the reverse
+        direction already exists and would cycle).
+
+        A failure here must never block a confirmed booking: the answers are
+        a receipt detail, not part of the commitment being made. It is logged
+        loudly rather than swallowed silently, because a NULL snapshot is
+        exactly the bug this method was added to fix.
+        """
+        try:
+            from app.engines.home_service_booking.question_flow_service import QuestionFlowService
+            return await QuestionFlowService(db=self.db).build_answer_snapshot(draft)
+        except Exception as exc:  # pragma: no cover - defensive
+            log.warning("answer snapshot build failed for draft %s: %s", draft.id, exc)
+            return None
 
 
 class CoachingFinalCreationService:

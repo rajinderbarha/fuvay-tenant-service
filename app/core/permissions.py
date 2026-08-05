@@ -189,6 +189,26 @@ class P:
     RAG_QUERY               = "rag:query"
     RAG_KB_MANAGE           = "rag:kb:manage"
 
+    # ── Tenant Help & Support (Phase Y) ─────────────────────────────────────
+    # Found missing from this registry entirely during the "make it 100%
+    # working" pass -- app/engines/support/tenant_router.py references all
+    # 5 of these on every request, crashing every call with AttributeError.
+    SUPPORT_REQUESTS_CREATE   = "support:requests:create"
+    SUPPORT_REQUESTS_VIEW     = "support:requests:view"
+    SUPPORT_REQUESTS_VIEW_ALL = "support:requests:view_all"
+    SUPPORT_REQUESTS_REPLY    = "support:requests:reply"
+    SUPPORT_REQUESTS_REOPEN   = "support:requests:reopen"
+    SUPPORT_INCIDENT_REPORT   = "support:incident:report"
+    # ── Platform Admin Support Queue ─────────────────────────────────────────
+    # Also missing entirely -- app/engines/support/admin_router.py references
+    # all 6 of these on every request.
+    SUPPORT_ADMIN_QUEUE_VIEW      = "support:admin:queue_view"
+    SUPPORT_ADMIN_TRIAGE          = "support:admin:triage"
+    SUPPORT_ADMIN_REPLY           = "support:admin:reply"
+    SUPPORT_ADMIN_RESOLVE         = "support:admin:resolve"
+    SUPPORT_ADMIN_INTERNAL_NOTE   = "support:admin:internal_note"
+    SUPPORT_ADMIN_INCIDENT_MANAGE = "support:admin:incident_manage"
+
     # ── Settings ──────────────────────────────────────────────────────────────
     SETTINGS_READ           = "settings:read"
     SETTINGS_WRITE          = "settings:write"
@@ -304,6 +324,13 @@ class P:
     VERTICALS_DISABLE         = "verticals:disable"
     CATALOG_HOME_SERVICES_READ         = "catalog:home_services:read"
     CATALOG_HOME_SERVICES_UPDATE       = "catalog:home_services:update"
+    # Home Services customer/provider directories (tenant_engine hs_*_router).
+    # Same defect as FINANCE_MONETIZATION_* above: referenced by the routers
+    # but never declared, so those three engines could not import and never
+    # mounted -- the entire Home Services directory + dashboard API 404'd.
+    HOME_SERVICES_CUSTOMERS_VIEW       = "home_services:customers:view"
+    HOME_SERVICES_PROVIDERS_VIEW       = "home_services:providers:view"
+    HOME_SERVICES_PROVIDERS_EXPORT     = "home_services:providers:export"
     CATALOG_COACHING_READ              = "catalog:coaching:read"
     CATALOG_COACHING_UPDATE            = "catalog:coaching:update"
     CATALOG_REAL_ESTATE_READ           = "catalog:real_estate:read"
@@ -350,6 +377,46 @@ class P:
     FINANCE_WALLETS_READ      = "finance:wallets:read"
     FINANCE_WALLETS_ADJUST    = "finance:wallets:adjust"
     FINANCE_AUDIT_READ        = "finance:audit:read"
+    # Vertical Monetization policy workspace (vertical_monetization engine).
+    # These constants were referenced by the engine's admin_router but never
+    # declared here, so importing that router raised AttributeError and the
+    # WHOLE engine silently failed to mount -- every /v1/admin/monetization/
+    # verticals route 404'd in production.
+    FINANCE_MONETIZATION_READ    = "finance:monetization:read"
+    FINANCE_MONETIZATION_DRAFT   = "finance:monetization:draft"
+    FINANCE_MONETIZATION_PUBLISH = "finance:monetization:publish"
+
+    # Platform Configuration workspace (settings_engine configuration_router).
+    # Same never-declared defect: the router referenced these, could not
+    # import, and the whole engine failed to mount -- /v1/admin/configuration
+    # 404'd everywhere.
+    CONFIGURATION_READ                  = "configuration:read"
+    CONFIGURATION_CHANGE_REQUEST_CREATE = "configuration:change_request:create"
+    CONFIGURATION_APPROVE               = "configuration:approve"
+    CONFIGURATION_ACTIVATE              = "configuration:activate"
+    CONFIGURATION_ROLLBACK              = "configuration:rollback"
+    CONFIGURATION_AUDIT_READ            = "configuration:audit:read"
+
+    # Direct (cash/UPI-to-provider) payments — invoice_payment
+    # direct_payments_router. Never-declared, engine never mounted.
+    DIRECT_PAYMENTS_READ            = "direct_payments:read"
+    DIRECT_PAYMENTS_DECLARE         = "direct_payments:declare"
+    DIRECT_PAYMENTS_CORRECT         = "direct_payments:correct"
+    DIRECT_PAYMENTS_EXPORT          = "direct_payments:export"
+    DIRECT_PAYMENTS_OPEN_DISPUTE    = "direct_payments:open_dispute"
+    DIRECT_PAYMENTS_REMIND_CUSTOMER = "direct_payments:remind_customer"
+    DIRECT_PAYMENTS_UPLOAD_EVIDENCE = "direct_payments:upload_evidence"
+
+    # Tenant-facing Home Services finance hub — finance_hub
+    # tenant_hs_finance_router. Never-declared, engine never mounted.
+    TENANT_FINANCE_READ                   = "tenant_finance:read"
+    TENANT_FINANCE_EXPORT                 = "tenant_finance:export"
+    TENANT_FINANCE_POLICY_READ            = "tenant_finance:policy:read"
+    TENANT_FINANCE_TRANSACTIONS_READ      = "tenant_finance:transactions:read"
+    TENANT_FINANCE_RECEIPTS_DOWNLOAD      = "tenant_finance:receipts:download"
+    TENANT_FINANCE_DEPOSIT_READ           = "tenant_finance:deposit:read"
+    TENANT_FINANCE_DEPOSIT_REFUND_REQUEST = "tenant_finance:deposit:refund_request"
+    TENANT_FINANCE_BUY_CREDITS            = "tenant_finance:buy_credits"
     # Customer Credits + Dispute Settlement (migration 080)
     FINANCE_SETTLEMENTS_READ    = "finance:settlements:read"
     FINANCE_SETTLEMENTS_CREATE  = "finance:settlements:create"
@@ -431,6 +498,13 @@ class P:
     TENANT_STAFF_SECURITY_MANAGE   = "tenant_staff:security:manage"
     TENANT_STAFF_SECURITY_REVOKE   = "tenant_staff:security:revoke_sessions"
     TENANT_STAFF_SECURITY_HISTORY  = "tenant_staff:security:view_login_history"
+
+    # ── Tenant Vertical Documents Workspace ──────────────────────────────────
+    # Found missing entirely during the "make it 100% working" pass --
+    # app/engines/vertical_catalog/tenant_documents_workspace_router.py
+    # references both on every one of its endpoints.
+    TENANT_DOCUMENTS_READ          = "tenant_documents:read"
+    TENANT_DOCUMENTS_UPLOAD        = "tenant_documents:upload"
 
     # ── Security & Threats SOC (Security Enterprise Upgrade, migration 083) ──
     SECURITY_READ                  = "security:read"
@@ -556,6 +630,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.REVIEW_READ, P.REVIEW_RESPOND, P.REVIEW_MODERATE,
         P.RAG_QUERY, P.RAG_KB_MANAGE,
         P.SETTINGS_READ, P.SETTINGS_WRITE, P.SETTINGS_BRANDING,
+        P.SUPPORT_REQUESTS_CREATE, P.SUPPORT_REQUESTS_VIEW, P.SUPPORT_REQUESTS_VIEW_ALL,
+        P.SUPPORT_REQUESTS_REPLY, P.SUPPORT_REQUESTS_REOPEN, P.SUPPORT_INCIDENT_REPORT,
         # Service areas — own tenant only (service enforces tenant scoping)
         P.TENANT_SERVICE_AREA_READ, P.TENANT_SERVICE_AREA_CREATE,
         P.TENANT_SERVICE_AREA_UPDATE, P.TENANT_SERVICE_AREA_DELETE,
@@ -573,6 +649,20 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.USERS_SECURITY_VIEW_HISTORY, P.USERS_SECURITY_LOCK,
         P.USERS_SECURITY_UNLOCK, P.USERS_SECURITY_DEACTIVATE,
         P.USERS_SECURITY_REACTIVATE, P.USERS_SECURITY_REVOKE_SESSIONS,
+        P.TENANT_DOCUMENTS_READ, P.TENANT_DOCUMENTS_UPLOAD,
+        # Real bug fixed here: DIRECT_PAYMENTS_* permissions were defined
+        # but never assigned to any role, so every tenant_owner got a 403
+        # on their own Home Services direct-payments workspace.
+        P.DIRECT_PAYMENTS_READ, P.DIRECT_PAYMENTS_DECLARE, P.DIRECT_PAYMENTS_CORRECT,
+        P.DIRECT_PAYMENTS_EXPORT, P.DIRECT_PAYMENTS_OPEN_DISPUTE,
+        P.DIRECT_PAYMENTS_REMIND_CUSTOMER, P.DIRECT_PAYMENTS_UPLOAD_EVIDENCE,
+        # Same bug, same fix: TENANT_FINANCE_* was defined but never
+        # assigned to any role -- every tenant_owner got a 403 on their own
+        # Home Services finance workspace (/v1/tenant/home-services/finance).
+        P.TENANT_FINANCE_READ, P.TENANT_FINANCE_EXPORT, P.TENANT_FINANCE_POLICY_READ,
+        P.TENANT_FINANCE_TRANSACTIONS_READ, P.TENANT_FINANCE_RECEIPTS_DOWNLOAD,
+        P.TENANT_FINANCE_DEPOSIT_READ, P.TENANT_FINANCE_DEPOSIT_REFUND_REQUEST,
+        P.TENANT_FINANCE_BUY_CREDITS,
     ],
 
     "staff": [
@@ -592,6 +682,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.SETTINGS_READ,           # Business hours, service catalog
         P.TENANT_SERVICE_AREA_READ, # View (not edit) tenant's configured service areas
         P.RAG_QUERY,               # Query knowledge base mid-job
+        P.SUPPORT_REQUESTS_CREATE, P.SUPPORT_REQUESTS_VIEW, P.SUPPORT_REQUESTS_REPLY, P.SUPPORT_REQUESTS_REOPEN,
+        P.SUPPORT_INCIDENT_REPORT,
     ],
 
     # "technician" is the role value actually seeded onto real staff/User rows
@@ -603,6 +695,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.FIELD_OPS_PHOTOS_CREATE, P.FIELD_OPS_PARTS_ADD, P.FIELD_OPS_QUOTES_MANAGE,
         P.INVENTORY_READ, P.BOOKING_READ, P.CHAT_READ, P.CHAT_WRITE, P.REVIEW_READ,
         P.NOTIFICATION_LOGS_READ, P.SETTINGS_READ, P.TENANT_SERVICE_AREA_READ, P.RAG_QUERY,
+        P.SUPPORT_REQUESTS_CREATE, P.SUPPORT_REQUESTS_VIEW, P.SUPPORT_REQUESTS_REPLY, P.SUPPORT_REQUESTS_REOPEN,
+        P.SUPPORT_INCIDENT_REPORT,
     ],
 
     "customer": [

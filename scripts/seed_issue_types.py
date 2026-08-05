@@ -77,6 +77,13 @@ ISSUES: list[dict] = [
 # ── Service → issue slug mapping ──────────────────────────────────────────────
 # Maps service slug → list of issue slugs
 SERVICE_ISSUE_MAP: dict[str, list[str]] = {
+    # Real live catalog slug (Final Phase E2E audit, 2026-08-02) -- the
+    # 'ac_repair' key below was aspirational and never matched any actual
+    # seeded master_services row; 'ac-service' is what's live today.
+    "ac-service": [
+        "ac_not_cooling", "ac_water_leakage", "ac_noise_issue", "ac_gas_refill_needed",
+        "ac_not_starting", "ac_bad_smell", "ac_remote_not_working", "ac_cooling_low",
+    ],
     "ac_repair": [
         "ac_not_cooling", "ac_water_leakage", "ac_noise_issue", "ac_gas_refill_needed",
         "ac_not_starting", "ac_bad_smell", "ac_remote_not_working", "ac_cooling_low",

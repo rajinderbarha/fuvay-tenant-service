@@ -7,6 +7,7 @@
  * the compliance customer self-service engine (/v1/me/compliance).
  */
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import BottomNav from "../../../components/BottomNav";
 import ErrorBanner from "../../../components/ErrorBanner";
 import {
@@ -21,6 +22,7 @@ function statusColor(s: string): string {
 }
 
 export default function CustomerPrivacyPage() {
+  const router = useRouter();
   const [requests, setRequests] = useState<ComplianceRequest[] | null>(null);
   const [consents, setConsents] = useState<ConsentRecord[] | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -29,6 +31,8 @@ export default function CustomerPrivacyPage() {
   const [type, setType] = useState(REQUEST_TYPES[0].value);
   const [reason, setReason] = useState("");
   const [confirm, setConfirm] = useState(false);
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -39,16 +43,39 @@ export default function CustomerPrivacyPage() {
 
   const selected = REQUEST_TYPES.find((t) => t.value === type);
   const needsReason = !!selected?.needsReason;
-  const canSubmit = confirm && (!needsReason || reason.trim().length > 0) && !busy;
+  const needsPassword = !!selected?.needsPassword;
+  const canSubmit = confirm && (!needsReason || reason.trim().length > 0)
+    && (!needsPassword || password.length > 0) && !busy;
+
+  function changeType(next: string) {
+    setType(next);
+    // Password is only meaningful for the erasure gate — never let it
+    // linger in memory once the customer switches to a different request type.
+    setPassword("");
+  }
 
   async function submit() {
     setBusy(true); setError(null); setOk(null);
     try {
-      const res = await createPrivacyRequest(type, reason.trim());
+      const res = await createPrivacyRequest(type, reason.trim(), needsPassword ? password : undefined);
+      setReason(""); setConfirm(false); setPassword("");
+      const authoritativeId = res.request_id ?? res.id;
+      if (authoritativeId) {
+        // Replace (not push) so browser/device Back cannot return into this
+        // form and resubmit the same destructive request.
+        router.replace(`/customer/privacy/${authoritativeId}/submitted`);
+        return;
+      }
+      // Fallback only if the backend response is missing an id (shouldn't
+      // happen) — stay on this page with the inline confirmation.
       setOk(res.message ?? "Your request has been submitted.");
-      setReason(""); setConfirm(false);
       load();
-    } catch (e) { setError(e); } finally { setBusy(false); }
+    } catch (e) {
+      setError(e);
+      // Never leave a submitted password sitting in the field, whether it was
+      // right or wrong — the customer must re-enter it to retry.
+      setPassword("");
+    } finally { setBusy(false); }
   }
 
   async function doWithdraw(ct: string) {
@@ -71,7 +98,7 @@ export default function CustomerPrivacyPage() {
       {/* New request */}
       <div className="co-card" style={{ marginBottom: 16 }}>
         <div style={{ fontWeight: 700, marginBottom: 10 }}>Make a data request</div>
-        <select value={type} onChange={(e) => setType(e.target.value)}
+        <select value={type} onChange={(e) => changeType(e.target.value)}
           style={{ width: "100%", padding: 12, borderRadius: 12, border: "1px solid var(--border-strong)",
             fontSize: 15, marginBottom: 10 }}>
           {REQUEST_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -81,6 +108,31 @@ export default function CustomerPrivacyPage() {
             placeholder="Please tell us why (required)"
             style={{ width: "100%", padding: 12, borderRadius: 12, border: "1px solid var(--border-strong)",
               fontSize: 15, marginBottom: 10 }} />
+        )}
+        {needsPassword && (
+          <div style={{ marginBottom: 10 }}>
+            <label htmlFor="erasure-password" style={{ display: "block", fontSize: 13,
+              color: "var(--text-secondary)", marginBottom: 6 }}>
+              Confirm your password to continue
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input id="erasure-password" type={showPassword ? "text" : "password"}
+                value={password} onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password" placeholder="Current password"
+                style={{ flex: 1, padding: 12, borderRadius: 12, border: "1px solid var(--border-strong)",
+                  fontSize: 15 }} />
+              <button type="button" className="co-btn-secondary"
+                onClick={() => setShowPassword((s) => !s)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                style={{ padding: "0 14px", minWidth: 44 }}>
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6 }}>
+              This protects your account from unauthorized deletion requests. Verifying does not
+              delete your account.
+            </div>
+          </div>
         )}
         <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13,
           color: "var(--text-secondary)", marginBottom: 12 }}>

@@ -32,6 +32,10 @@ class SocialAccount(ServiceOSBase):
     follower_count:   Mapped[int]           = mapped_column(Integer,     default=0, nullable=False)
     post_count:       Mapped[int]           = mapped_column(Integer,     default=0, nullable=False)
     is_primary:       Mapped[bool]          = mapped_column(Boolean,     default=False, nullable=False)
+    connection_status:   Mapped[str]        = mapped_column(Text,        default="connected", nullable=False)
+    daily_post_limit:    Mapped[int]        = mapped_column(Integer,     default=10, nullable=False)
+    last_sync_at:        Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    publishing_enabled:  Mapped[bool]       = mapped_column(Boolean,     default=True, nullable=False)
     meta:             Mapped[dict]          = mapped_column(JSONB,       default=dict, nullable=False)
 
 

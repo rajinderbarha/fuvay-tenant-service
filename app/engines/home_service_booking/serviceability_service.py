@@ -110,6 +110,16 @@ class HomeServiceServiceabilityService:
         ]
 
         # ── Try zipcode match first ───────────────────────────────────────────
+        # A zipcode already uniquely identifies the coverage area on its own
+        # -- requiring the free-text `city` field to ALSO match exactly was a
+        # real bug: confirmed live, a tenant's TenantServiceArea.city was
+        # stored as "BASSIPATHANA" (no space) while the customer's own
+        # address city was "Bassi Pathana" (with space). Both genuinely
+        # describe the same 140412 coverage area with an active, available
+        # offering mapping, but the case/whitespace mismatch made the AND'd
+        # city-equality clause silently fail, so `check_serviceability`
+        # reported NO_PROVIDER_IN_ZIPCODE for a zipcode a real tenant does
+        # cover -- permanently blocking Booking Review after this point.
         if strip_zip:
             zip_count = (await self.db.execute(
                 select(func.count(func.distinct(TenantServiceArea.tenant_id)))
@@ -118,7 +128,6 @@ class HomeServiceServiceabilityService:
                 .join(Tenant, Tenant.id == TenantServiceArea.tenant_id)
                 .where(
                     *base_filters,
-                    func.lower(TenantServiceArea.city) == norm_city,
                     TenantServiceArea.zipcode == strip_zip,
                 )
             )).scalar_one_or_none() or 0

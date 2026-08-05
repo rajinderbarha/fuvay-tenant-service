@@ -5,7 +5,7 @@ import { PrivacyAndDataScreen } from "../PrivacyAndDataScreen";
 import { PrivacySummaryDTO, ConsentPurposeDTO } from "../../../services/privacy/types";
 
 jest.mock("../usePrivacy");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 import { usePrivacy } from "../usePrivacy";
 import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
@@ -48,7 +48,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("PrivacyAndDataScreen (Phase X)", () => {
@@ -105,7 +105,7 @@ describe("PrivacyAndDataScreen (Phase X)", () => {
   });
 
   it("shows an offline banner", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (usePrivacy as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText("Offline")).toBeTruthy();

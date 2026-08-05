@@ -15,7 +15,7 @@ from app.engines.home_service_assignment.service import HomeServiceJobAssignment
 from app.engines.home_service_assignment.constants import (
     ERR_JOB_NOT_FOUND, ERR_STAFF_JOB_NOT_ASSIGNED, ERR_STAFF_JOB_ALREADY_ACCEPTED,
     ERR_STAFF_JOB_ALREADY_REJECTED, ERR_REASON_REQUIRED, ERR_JOB_CANCELLED,
-    ERR_ACCESS_DENIED,
+    ERR_ACCESS_DENIED, ERR_LOCATION_NOT_TRACKABLE, ERR_LOCATION_INVALID_COORDS,
 )
 
 
@@ -62,6 +62,8 @@ _MESSAGES = {
     ERR_REASON_REQUIRED:             "Rejection reason is required.",
     ERR_JOB_CANCELLED:               "This job has been cancelled.",
     ERR_ACCESS_DENIED:               "Job not found.",
+    ERR_LOCATION_NOT_TRACKABLE:      "This job is not in a live-tracking state right now.",
+    ERR_LOCATION_INVALID_COORDS:     "Invalid coordinates.",
 }
 
 
@@ -71,6 +73,38 @@ def _err(code: str) -> dict:
 
 class RejectRequest(BaseModel):
     reason: str
+
+
+class LocationSubmitRequest(BaseModel):
+    latitude: float
+    longitude: float
+    accuracy_meters: float | None = None
+
+
+@router.put("/{job_id}/location", response_model=ApiResponse,
+            summary="Submit my current GPS position for an active job")
+async def submit_job_location(
+    job_id: uuid.UUID,
+    body: LocationSubmitRequest,
+    r:    Request      = ...,
+    user: UserContext  = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+):
+    try:
+        staff_id = await _resolve_staff_member_id(user, db)
+    except ValueError:
+        return ok(_err(ERR_STAFF_JOB_NOT_ASSIGNED), _RID(r), "assignment")
+    svc = HomeServiceJobAssignmentService(db)
+    try:
+        result = await svc.submit_technician_location(
+            job_id=job_id, staff_id=staff_id,
+            tenant_id=uuid.UUID(user.tenant_id) if user.tenant_id else None,
+            latitude=body.latitude, longitude=body.longitude,
+            accuracy_meters=body.accuracy_meters,
+        )
+    except ValueError as exc:
+        return ok(_err(str(exc)), _RID(r), "assignment")
+    return ok(result, _RID(r), "assignment")
 
 
 @router.get("", response_model=ApiResponse,

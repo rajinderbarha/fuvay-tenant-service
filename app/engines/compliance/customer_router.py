@@ -22,6 +22,8 @@ from sqlalchemy import select, func
 from app.core.security import get_client_ip
 from app.dependencies.auth import UserContext, require_customer
 from app.dependencies.db import get_db
+from app.engines.auth.models import User
+from app.engines.auth.utils import verify_password
 from app.engines.compliance.enterprise_service import ComplianceEnterpriseService
 from app.engines.compliance.models import (
     ComplianceRequest, ComplianceAuditLog, ComplianceExport,
@@ -75,6 +77,12 @@ SLA_LABELS = {
 RATE_LIMIT_CREATE_PER_DAY = 5
 RATE_LIMIT_DOWNLOAD_PER_DAY = 10
 RATE_LIMIT_CONSENT_WITHDRAW_PER_DAY = 10
+
+# Account deletion (right_to_erasure) requires current-password confirmation.
+# Wrong-password attempts are rate-limited separately from request creation
+# itself, so a customer probing passwords can't also burn through the
+# request-creation quota, and vice versa.
+ERASURE_PASSWORD_MAX_ATTEMPTS_PER_DAY = 5
 
 
 def _svc(r: Request, db: AsyncSession = Depends(get_db),
@@ -194,6 +202,17 @@ async def create_my_request(
     body = await r.json()
     request_type = body.get("request_type", "")
     reason = body.get("reason", "")
+    # Data Export Request phase: no idempotency contract previously existed
+    # on this route at all -- a client retry after a timeout (the request
+    # actually succeeded server-side but the response never arrived) could
+    # only be told apart from a genuine new submission by the duplicate-
+    # open-request check below, which only covers OPEN_STATUSES and only
+    # after the first request has already committed. A caller-supplied key
+    # closes that gap deterministically: reusing the same key for the same
+    # customer + request_type always returns the original request instead
+    # of creating a second one, with no schema migration (reuses the
+    # existing `metadata_json` JSONB column).
+    idempotency_key = body.get("idempotency_key")
 
     if request_type not in CUSTOMER_ALLOWED_REQUEST_TYPES:
         raise ServiceOSException(
@@ -209,6 +228,47 @@ async def create_my_request(
         raise ServiceOSException(
             "VALIDATION_ERROR",
             f"reason is required for request_type '{request_type}'.")
+
+    # Account deletion requires current-password confirmation. This is a
+    # step-up gate only: on success it marks verification_status="verified"
+    # on the request being created below; it never deletes anything itself.
+    verification_status = "not_required"
+    if request_type == "right_to_erasure":
+        await _check_rate_limit(db, user_id, "compliance.erasure_password_failed",
+                                ERASURE_PASSWORD_MAX_ATTEMPTS_PER_DAY)
+        password = body.get("password")
+        if not password:
+            raise ServiceOSException(
+                "VALIDATION_ERROR", "password is required to confirm account deletion.")
+        user_row = await db.scalar(select(User).where(User.id == user_id))
+        if not user_row or not verify_password(password, user_row.hashed_password or ""):
+            db.add(ComplianceAuditLog(
+                user_id=user_id, actor_id=user_id, actor_role="customer",
+                actor_ip=get_client_ip(r), action="compliance.erasure_password_failed",
+                legal_basis="dpdp_act_2023", meta={}))
+            await db.commit()
+            raise ServiceOSException("INVALID_PASSWORD", "Incorrect password. Please try again.")
+        verification_status = "verified"
+
+    if idempotency_key:
+        replay = await db.scalar(
+            select(ComplianceRequest).where(
+                ComplianceRequest.subject_id == user_id,
+                ComplianceRequest.request_type == request_type,
+                ComplianceRequest.metadata_json["idempotency_key"].astext == idempotency_key,
+            ))
+        if replay:
+            return ok({
+                "request_id": str(replay.id),
+                "request_number": replay.request_number,
+                "request_type": replay.request_type,
+                "status": replay.status,
+                "status_label": STATUS_LABELS.get(replay.status, replay.status),
+                "sla_status": replay.sla_status,
+                "submitted_at": replay.submitted_at.isoformat() if replay.submitted_at else None,
+                "due_at": replay.due_at.isoformat() if replay.due_at else None,
+                "message": "Your request has been submitted. We will respond within 72 hours.",
+            }, _rid(r), "compliance_customer")
 
     # Duplicate open-request check
     existing = await db.scalar(
@@ -231,7 +291,8 @@ async def create_my_request(
         "request_type": request_type,
         "reason": reason,
         "request_source": "customer_app",
-        "verification_status": "not_required",
+        "verification_status": verification_status,
+        "metadata_json": {"idempotency_key": idempotency_key} if idempotency_key else {},
     })
 
     # Rate-limit audit
@@ -492,8 +553,12 @@ async def download_my_export(
         reference_id=str(export_id), legal_basis="dpdp_act_2023", meta={}))
     await db.commit()
 
+    # ComplianceExport.download_url is written by the admin-processing path
+    # (enterprise_service.process_request) as an admin-only route the
+    # customer can never call (require_super_admin). Return the real
+    # customer-callable route here instead of forwarding that stored value.
     return ok({
-        "download_url": export.download_url,
+        "download_url": f"/v1/me/compliance/exports/{export.id}/download",
         "export_id": str(export.id),
         "status": "downloaded",
         "downloaded_at": export.downloaded_at.isoformat() if export.downloaded_at else None,

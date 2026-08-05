@@ -32,7 +32,7 @@ export function CompletionProofScreen({ route, navigation }: Props) {
   const { theme } = useTheme();
   const { jobId } = route.params;
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
 
   const [resolutionSummary, setResolutionSummary] = useState<string | null>(null);
   const [serviceNotes, setServiceNotes] = useState<string | null>(null);

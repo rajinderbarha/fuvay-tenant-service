@@ -4,10 +4,10 @@ All settings loaded from environment / .env file via pydantic-settings.
 Never import settings directly — always use get_settings() to allow DI in tests.
 """
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Current release version — bump for each release candidate
 APP_RC_VERSION = "rc-1"
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # ── API ────────────────────────────────────────────────────────
     API_V1_PREFIX: str = "/v1"
-    ALLOWED_ORIGINS: list[str] = [
+    ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = [
         "http://localhost:3000",   # Super Admin Portal
         "http://localhost:3001",   # Tenant Owner Portal
         "http://localhost:3002",   # Customer App

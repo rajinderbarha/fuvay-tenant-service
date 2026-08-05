@@ -32,7 +32,7 @@ export function WorkExecutionScreen({ route, navigation }: Props) {
   const { theme } = useTheme();
   const { jobId } = route.params;
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const [requestPartOpen, setRequestPartOpen] = useState(false);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);

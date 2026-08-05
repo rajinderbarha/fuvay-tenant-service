@@ -29,7 +29,7 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "muted" | "danger">
 
 type Tab = "all" | "platform" | "vertical" | "tenant" | "drafts" | "audit";
 
-export default function NotificationTemplatesPage() {
+export function NotificationTemplatesContent() {
   const [tab, setTab] = useState<Tab>("all");
   const [eventFilter, setEventFilter] = useState("");
   const [channelFilter, setChannelFilter] = useState("");
@@ -136,7 +136,7 @@ export default function NotificationTemplatesPage() {
   ];
 
   return (
-    <AdminLayout activeNav="notifications">
+    <>
       <SectionHeader
         title="Notification Templates"
         subtitle="Manage platform, vertical, tenant, and channel-specific notification templates."
@@ -265,6 +265,15 @@ export default function NotificationTemplatesPage() {
           notify={notify}
         />
       )}
+    </>
+  );
+}
+
+// Standalone route -- deep links (/admin/notifications/templates) still work.
+export default function NotificationTemplatesPage() {
+  return (
+    <AdminLayout activeNav="notifications">
+      <NotificationTemplatesContent />
     </AdminLayout>
   );
 }

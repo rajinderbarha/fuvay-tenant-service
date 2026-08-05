@@ -6,7 +6,7 @@ import { TechnicianHomeScreen } from "../TechnicianHomeScreen";
 import { MobileHomeDTO } from "../../../services/home/types";
 
 jest.mock("../../../services/home/homeApi");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 jest.mock("../../../navigation/session/SessionProvider", () => ({
   useSession: () => ({ accessContext: { tenantId: "t1", technicianId: "tech1" } }),
 }));
@@ -57,7 +57,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("TechnicianHomeScreen — loaded state (spec sections 2, 15)", () => {
@@ -140,7 +140,7 @@ describe("TechnicianHomeScreen — error/offline", () => {
   });
 
   it("shows the offline banner and disables the availability selector while offline", async () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (homeApi.getMobileHome as jest.Mock).mockResolvedValue({ ok: true, data: BASE_HOME, meta: {} });
     renderScreen();
     await waitFor(() => expect(screen.getByText(/offline/i)).toBeTruthy());

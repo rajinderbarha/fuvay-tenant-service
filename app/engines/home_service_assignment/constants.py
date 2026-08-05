@@ -74,6 +74,11 @@ ERR_RESCHEDULE_NOT_ALLOWED       = "JOB_ASSIGNMENT_RESCHEDULE_NOT_ALLOWED"
 ERR_STAFF_JOB_NOT_ASSIGNED       = "STAFF_JOB_NOT_ASSIGNED_TO_USER"
 ERR_STAFF_JOB_ALREADY_ACCEPTED   = "STAFF_JOB_ALREADY_ACCEPTED"
 ERR_STAFF_JOB_ALREADY_REJECTED   = "STAFF_JOB_ALREADY_REJECTED"
+ERR_RESCHEDULE_LIMIT_REACHED     = "JOB_ASSIGNMENT_RESCHEDULE_LIMIT_REACHED"
+ERR_STALE_VERSION                = "JOB_ASSIGNMENT_STALE_VERSION"
+ERR_SLOT_UNAVAILABLE             = "JOB_ASSIGNMENT_SLOT_UNAVAILABLE"
+ERR_INVALID_REASON               = "JOB_ASSIGNMENT_INVALID_REASON"
+ERR_PAST_DATE                    = "JOB_ASSIGNMENT_PAST_DATE"
 
 # MODULE-L5-29: a customer may cancel/reschedule its own booking only before
 # real work has begun — once a quote is approved or an invoice is issued the
@@ -82,3 +87,33 @@ ERR_STAFF_JOB_ALREADY_REJECTED   = "STAFF_JOB_ALREADY_REJECTED"
 CUSTOMER_CANCELLABLE_JOB_STATUSES = {
     "pending_assignment", "assigned", "accepted", "scheduled",
 }
+
+# CANCEL-RESCHEDULE-FOUNDATION policy decisions (resolved 2026-08-02):
+#  - No cancellation fee, no cancellation cutoff window (kept as-is: allowed
+#    any time while job status is in CUSTOMER_CANCELLABLE_JOB_STATUSES).
+#  - Reschedule is capped at MAX_RESCHEDULE_COUNT per job (new).
+#  - Reschedule stays immediate (no provider-approval workflow invented),
+#    but is now re-validated against real technician/aggregate availability
+#    before being applied.
+MAX_RESCHEDULE_COUNT = 3
+
+# Allow-listed customer cancellation reasons — the eligibility endpoint
+# returns this list so the mobile app never has to hardcode/guess it.
+CUSTOMER_CANCELLATION_REASONS = {
+    "changed_mind", "found_another_provider", "price_concern",
+    "schedule_conflict", "no_longer_needed", "other",
+}
+CANCELLATION_REASON_REQUIRES_DETAIL = {"other"}
+
+# TRACK-TECHNICIAN: live location may be submitted/read only while the job is
+# actively en route to the customer. "on_the_way" is the execution engine's
+# real ServiceJob.status value (execution/constants.py JS_ON_THE_WAY) written
+# by the SAME ServiceJob.status column this engine reads — not a guessed
+# value. Location must stop being served once the job leaves this set
+# (arrived/started/completed/cancelled), matching "stop tracking once work
+# begins or ends".
+TRACKING_ACTIVE_JOB_STATUSES = {"accepted", "scheduled", "on_the_way"}
+LOCATION_STALE_SECONDS = 120
+
+ERR_LOCATION_NOT_TRACKABLE   = "JOB_ASSIGNMENT_LOCATION_NOT_TRACKABLE"
+ERR_LOCATION_INVALID_COORDS  = "JOB_ASSIGNMENT_LOCATION_INVALID_COORDS"

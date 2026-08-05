@@ -36,7 +36,7 @@ export function NotificationsScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
 
   const [filter, setFilter] = useState<NotificationFilter>("all");
   const [category, setCategory] = useState<NotificationCategory | null>(null);

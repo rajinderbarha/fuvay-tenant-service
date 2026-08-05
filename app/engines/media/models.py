@@ -88,6 +88,23 @@ class MediaAsset(ServiceOSBase):
     height:                Mapped[int|None]       = mapped_column(Integer,      nullable=True)
     metadata_json:         Mapped[dict]           = mapped_column(JSONB,        nullable=False, default=dict)
     deleted_at:            Mapped[datetime|None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    # Found missing during the "make it 100% working" drift audit -- real,
+    # migrated moderation/lifecycle columns.
+    archived_at:           Mapped[datetime|None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    description:           Mapped[str|None]       = mapped_column(String(500),  nullable=True)
+    flag_reason:           Mapped[str|None]       = mapped_column(String(80),   nullable=True)
+    flagged_at:            Mapped[datetime|None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    is_flagged:            Mapped[bool]           = mapped_column(Boolean,      nullable=False, default=False)
+    linked_module:         Mapped[str|None]       = mapped_column(String(60),   nullable=True)
+    linked_record_id:      Mapped[str|None]       = mapped_column(String(100),  nullable=True)
+    media_number:          Mapped[str|None]       = mapped_column(String(30),   nullable=True)
+    moderation_status:     Mapped[str]            = mapped_column(String(30),   nullable=False, default="clean")
+    processing_status:     Mapped[str]            = mapped_column(String(30),   nullable=False, default="ready")
+    scan_status:           Mapped[str]            = mapped_column(String(30),   nullable=False, default="not_scanned")
+    tags_json:             Mapped[list|None]      = mapped_column(JSONB,        nullable=True)
+    thumbnail_key:         Mapped[str|None]       = mapped_column(String(1000), nullable=True)
+    uploaded_from_app:     Mapped[str|None]       = mapped_column(String(60),   nullable=True)
+    visibility:            Mapped[str]            = mapped_column(String(30),   nullable=False, default="private")
 
     def to_dict(self, view_url: str | None = None) -> dict:
         return {
@@ -103,6 +120,7 @@ class MediaAsset(ServiceOSBase):
             "file_extension":      self.file_extension,
             "file_size_bytes":     self.file_size_bytes,
             "storage_driver":      self.storage_driver,
+            "storage_key":         self.storage_key,
             "is_public":           self.is_public,
             "access_level":        self.access_level,
             "status":              self.status,

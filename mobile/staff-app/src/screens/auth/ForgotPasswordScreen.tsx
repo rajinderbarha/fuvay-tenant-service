@@ -25,7 +25,7 @@ const ENUMERATION_SAFE_MESSAGE = "If this account exists, a reset code has been 
 export function ForgotPasswordScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
 
   const [identifier, setIdentifier] = useState("");
   const [submitting, setSubmitting] = useState(false);

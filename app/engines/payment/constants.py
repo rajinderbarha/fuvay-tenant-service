@@ -16,6 +16,12 @@ class PaymentType:
     SUBSCRIPTION     = "subscription"
     PAYOUT           = "payout"
     REFUND           = "refund"
+    # Customer-paid platform fee (vertical_monetization). Referenced by
+    # charge_service but never declared here, so that engine could not
+    # create a payment order at all. This money belongs 100% to the
+    # platform -- see process_payment_webhook, which must never settle any
+    # part of it to a tenant.
+    CUSTOMER_PLATFORM_FEE = "customer_platform_fee"
 
 class PayoutStatus:
     PENDING    = "pending"

@@ -59,6 +59,15 @@ class User(ServiceOSBase):
     platform_role: Mapped[str | None] = mapped_column(String(50), nullable=True)
     access_scope: Mapped[str | None] = mapped_column(String(50), nullable=True)
     invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Found missing during the "make it 100% working" drift audit -- real,
+    # migrated columns for notification quiet-hours and account recovery.
+    notif_prefs_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    quiet_hours_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    quiet_hours_start_local: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    quiet_hours_end_local: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    recovery_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recovery_phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    recovery_contact_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class UserSession(ServiceOSBase):

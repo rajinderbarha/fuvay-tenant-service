@@ -5,7 +5,7 @@ import { HelpAndSupportScreen } from "../HelpAndSupportScreen";
 import { HelpWorkspaceDTO } from "../../../services/support/types";
 
 jest.mock("../useHelpWorkspace");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 import { useHelpWorkspace } from "../useHelpWorkspace";
 import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
@@ -44,7 +44,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("HelpAndSupportScreen (Phase Y)", () => {
@@ -103,7 +103,7 @@ describe("HelpAndSupportScreen (Phase Y)", () => {
   });
 
   it("shows an offline banner", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (useHelpWorkspace as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText("Offline")).toBeTruthy();

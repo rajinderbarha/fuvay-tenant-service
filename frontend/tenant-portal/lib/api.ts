@@ -8,7 +8,8 @@
  *   ✅ API_BASE from env — zero hardcoded URLs in components
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/** Exported: the direct-payments page builds a CSV download href from it. */
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // ── Error type ────────────────────────────────────────────────────────────────
 export class ServiceOSError extends Error {
@@ -54,7 +55,7 @@ export function isTenantReadOnly(): boolean {
 export function isTenantOwnerRole(role: string | null | undefined): boolean {
   return role === "tenant_owner" || role === undefined;
 }
-function clearSession() {
+export function clearSession() {
   ["serviceos_tenant_token","serviceos_tenant_refresh","serviceos_tenant_id","serviceos_tenant_name",
    "serviceos_tenant_vertical","serviceos_tenant_plan","serviceos_tenant_health","serviceos_user_id",
    "serviceos_force_pw_change"].forEach(k => localStorage.removeItem(k));
@@ -62,6 +63,10 @@ function clearSession() {
 }
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
+// Type-only import: erased at compile time, so it does not create a runtime
+// require cycle with api-tenant-workspaces.ts (which imports apiFetch here).
+import type { TeamReadinessSummary, ServiceCoverageRow, BusinessProfileOptions } from "./api-tenant-workspaces";
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}, skipAuth = false): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -319,6 +324,9 @@ export interface AdminMasterServiceRow {
   job_type:"repair"|"service"|"consultation"; pricing_model:string; base_price:number;
   min_price?:number|null; max_price?:number|null; visit_fee:number;
   is_brand_required:boolean; is_type_required:boolean; is_active:boolean; is_enabled?:boolean;
+  /** Grouping keys the Services & Pricing setup page groups by. */
+  service_group_id?:string|null; service_group_name?:string|null;
+  requires_checklist?:boolean; tenant_override_allowed?:boolean;
 }
 export interface TenantEnabledService {
   tenant_service_id:string; tenant_id:string; master_service_id:string; category_id:string;
@@ -329,6 +337,7 @@ export interface TenantEnabledService {
   type_coverage_mode?: "all" | "selected" | "all_except";
   brand_coverage_mode?: "all" | "selected" | "all_except";
   last_active_step?: string | null;
+  tenant_emergency_surcharge?: number | null;
 }
 export const masterCatalogApi = {
   listAvailable: () => {
@@ -364,7 +373,11 @@ export interface HsPricePreview {
 }
 
 export interface HsSetupType {
-  mapping_id: string; service_type_id: string; name: string;
+  id: string;
+  /** Kept as an alias of `id` -- older callers use this name. */
+  mapping_id: string;
+  service_type_id: string; name: string;
+  is_enabled: boolean;
   is_required: boolean; is_default: boolean;
   tenant_price_adjustment: number | null;
 }
@@ -372,6 +385,8 @@ export interface HsSetupType {
 export interface HsSetupBrand {
   id: string; brand_id: string; name: string; is_enabled: boolean;
   tenant_price_adjustment: number | null;
+  /** Admin decides per brand whether the tenant may override its price. */
+  can_override_price?: boolean;
 }
 
 export interface HsTypePricing {
@@ -500,6 +515,17 @@ export const homeServicesSetupApi = {
   },
   getEnabledService: (tenantServiceId: string) =>
     apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}`),
+  /** Saves tenant-level overrides on an enabled service (price, display
+   * name, surcharge...). Same route masterCatalogApi.updateEnabled uses. */
+  updateEnabledService: (tenantServiceId: string, data: Partial<TenantEnabledService>) =>
+    apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}`,
+      { method: "PUT", body: JSON.stringify(data) }),
+  /** The types/brands a tenant is ALLOWED to offer for a master service --
+   * distinct from getTypes/getBrands, which return what they HAVE selected. */
+  getAvailableTypes: (tenantServiceId: string) =>
+    apiFetch<{ types: HsSetupType[] }>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/types`),
+  getAvailableBrands: (tenantServiceId: string) =>
+    apiFetch<{ brands: HsSetupBrand[] }>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/brands`),
   getTypes: (tenantServiceId: string) =>
     apiFetch<{ types: HsSetupType[] }>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/types`),
   setTypes: (tenantServiceId: string, typeIds: string[]) =>
@@ -1639,7 +1665,7 @@ export const aiChatApi = {
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export interface TenantUser  { id:string; user_id?:string; email:string; full_name:string; role:string; tenant_id:string; force_password_change?:boolean; }
+export interface TenantUser  { id:string; user_id?:string; email:string; full_name:string; role:string; tenant_id:string; force_password_change?:boolean; onboarding_complete?:boolean; }
 export interface TenantCtx   { id:string; name:string; vertical:string; city:string; plan_type:string; health_score:number; }
 export interface JobChecklistItem { step:string; completed:boolean; }
 export interface Job         { id:string; job_id:string; job_number:string; tenant_id:string; customer_id?:string; customer_name?:string; customer_phone?:string; customer_address?:string; status:string; job_type:string; parent_job_id?:string; service_type_id:string; service_type?:string; service_category?:string; city?:string; assigned_staff_id?:string; assigned_staff?:string; created_at:string; updated_at?:string; commission_amount?:number; sla_minutes?:number; minutes_in_status?:number; job_value?:number; quoted_price?:number; final_price?:number; findings?:string; recommendation?:string; notes?:string; closing_notes?:string; checklist?:JobChecklistItem[]; allowed_transitions:string[]; duration_estimate_minutes?:number;
@@ -2156,7 +2182,13 @@ export interface WebhookDeliveryList { deliveries:WebhookDelivery[]; has_next:bo
 export interface WalletTransaction { id:string; type:string; amount:number; balance_after:number; job_id?:string; notes?:string; created_at:string; }
 export interface WalletTransactionList { transactions:WalletTransaction[]; has_next:boolean; next_cursor?:string; }
 export interface WalletProjection { tenant_id:string; current_balance:number; burn_rate_daily:number; projected_days_remaining:number|null; low_balance_alert:boolean; recommended_package?:CreditPackage|null; monthly_commission_estimate:number; }
-export interface CreditPackage { id:string; name:string; credits:number; price_inr:number; bonus_credits?:number; is_active:boolean; created_at:string; }
+// Matches the real backend shape (CommerceService._pkg_dict) -- was
+// previously `{id, credits, bonus_credits}`, causing the "Instant Credit
+// Top-up" cards on this page to always render 0 credits / no bonus.
+export interface CreditPackage {
+  package_id: string; name: string; credits_amount: number; price_inr: number;
+  bonus_pct: number; total_credits: number; is_active: boolean;
+}
 export interface CreditPackageList { packages:CreditPackage[]; }
 export interface PurchaseOrder {
   order_id:string; amount:number; currency?:string; amount_paise?:number;
@@ -2844,6 +2876,9 @@ export interface ProviderTeamMember {
   can_receive_assignment: boolean;
   profile_photo_url: string | null;
   status: "active" | "inactive";
+  /** How many jobs this member can hold at once. The assignment resolver
+   * reads it to decide who can take another job. */
+  max_concurrent_jobs: number | null;
   created_at: string | null;
 }
 
@@ -2860,6 +2895,9 @@ export interface ProviderTeamMemberPayload {
   service_area_ids?: string[] | null;
   can_receive_assignment?: boolean;
   profile_photo_url?: string | null;
+  /** Now really persisted -- the backend allow-list was missing this, so
+   * capacity edits used to be silently discarded. */
+  max_concurrent_jobs?: number | null;
   create_login?: boolean;
 }
 
@@ -2884,6 +2922,52 @@ export const providerTeamMembersApi = {
     apiFetch<{ member_id: string; credentials?: { username: string; password: string } | null }>(
       `/v1/provider/team-members/${id}/create-login`, { method: "POST" }
     ),
+  /**
+   * Real bug fixed here: `readiness` used to call `/matching-readiness`,
+   * which (a) REQUIRES a `master_service_id` query param and so returned
+   * 422 on every call -- the Staff setup page's data error -- and (b)
+   * answers a different question entirely ("can this tenant be matched for
+   * ONE service?", returning `{matching_ready, message}`), nothing like the
+   * `{counts, per_member}` shape this page renders.
+   *
+   * The team directory already computes per-member readiness AND the
+   * roll-up counts in a single call, so both are projected from it.
+   */
+  readiness: async (): Promise<TeamReadinessSummary> => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = await apiFetch<any>("/v1/tenant/home-services/team");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const staff: any[] = Array.isArray(d?.staff) ? d.staff : [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const per_member: Record<string, any> = {};
+    for (const m of staff) {
+      per_member[String(m?.staff_id)] = { status: m?.readiness, missing: m?.readiness_missing ?? [] };
+    }
+    const total = Number(d?.summary?.total_team ?? staff.length);
+    const incomplete = Number(d?.summary?.setup_incomplete ?? 0);
+    return {
+      counts: { total, ready: Math.max(0, total - incomplete), not_ready: incomplete },
+      per_member,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  },
+  /**
+   * REAL, REMAINING GAP -- deliberately returns an empty list.
+   *
+   * The Staff step renders per-SERVICE technician coverage
+   * (`{offering_id, name, ready_technician_count}`). No endpoint exposes
+   * that: `/home-services/coverage` returns AREAS with an area-level
+   * technician count, and the services workspace carries no technician
+   * counts at all. Mapping areas onto services would be inventing a number
+   * the backend never computed.
+   *
+   * This previously returned the areas payload, whose missing `coverage`
+   * key left the page calling `.some()` on undefined -- a crash. An empty
+   * list renders the section's own empty state instead, and the page says
+   * plainly that the breakdown is unavailable rather than implying no
+   * services are enabled.
+   */
+  coverage: async (): Promise<{ coverage: ServiceCoverageRow[] }> => ({ coverage: [] }),
 };
 
 // ── Sprint 11 — Provider Availability ────────────────────────────────────────
@@ -3820,6 +3904,11 @@ export interface BusinessProfile {
   email: string | null;
   gst_number: string | null;
   business_type: string | null;
+  /** Backed by real Tenant columns; `registration_number` lives in
+   * tenant.meta. All four were being silently dropped on save until the
+   * backend PUT schema was fixed to declare them. */
+  registration_number: string | null;
+  year_established: number | null;
   address_line1: string | null;
   address_line2: string | null;
   city: string | null;
@@ -3841,6 +3930,10 @@ export interface BusinessProfile {
 
 export interface UpdateBusinessProfilePayload {
   business_name?: string;
+  legal_name?: string;
+  business_type?: string;
+  registration_number?: string;
+  year_established?: number;
   owner_name?: string;
   phone?: string;
   email?: string;
@@ -3869,6 +3962,15 @@ export const profileApi = {
 export const businessProfileApi = {
   get: () =>
     apiFetch<BusinessProfile>("/v1/provider/business-profile"),
+  /**
+   * HONEST GAP: the Business Profile setup page wants the option lists for
+   * its dropdowns (business types, states...). There is no
+   * `/v1/provider/business-profile/options` route in the schema, so this
+   * reads the serviceability meta endpoint, which is the only real source of
+   * geography options a tenant may call. Business-type options are not
+   * served by any route today -- the page falls back to its own list.
+   */
+  getOptions: () => apiFetch<BusinessProfileOptions>("/v1/serviceability/meta"),
   update: (data: UpdateBusinessProfilePayload) =>
     apiFetch<BusinessProfile & { reverification_triggered?: boolean; reverification_message?: string }>(
       "/v1/provider/business-profile",
@@ -4555,4 +4657,135 @@ export const entitlementApi = {
   getMyCategories: () => apiFetch<{ categories: TenantCategoryEntitlement[] }>("/v1/tenant/me/categories"),
   getMyEntitlements: () =>
     apiFetch<{ modules: TenantModuleEntitlement[]; categories: TenantCategoryEntitlement[] }>("/v1/tenant/me/entitlements"),
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tenant workspace API clients.
+//
+// Every page in this app imports from "lib/api", so the clients that live in
+// their own modules are re-exported here rather than making fourteen pages
+// learn a second import path. See each module's header for the routes it is
+// matched against and for the surfaces that have no backend route yet.
+// ═══════════════════════════════════════════════════════════════════════════
+export * from "./api-tenant-support";
+export * from "./api-hs-finance-tenant";
+export * from "./api-tenant-workspaces";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Public tenant signup (no auth) — the review-request flow.
+//
+// Distinct from publicRegApi above: that flow (initiate -> confirm-plan ->
+// verify -> payment-order -> complete) creates a tenant immediately and
+// REQUIRES payment. This one (POST /v1/tenants/onboarding/signup) submits a
+// signup REQUEST for admin review with no payment step -- matches the
+// approved "no package or payment required now" signup design. Owner
+// login credentials are issued by the platform after admin approval (same
+// pattern as the paid flow's `complete` returning a temp_password); this
+// endpoint's request body has no password field, so one is not sent here.
+// ═══════════════════════════════════════════════════════════════════════════
+export interface TenantSignupRequestPayload {
+  business_name: string;
+  vertical: string;
+  owner_name: string;
+  owner_email: string;
+  owner_phone: string;
+  city: string;
+  /** Required by the backend model (NOT NULL on onboarding_requests) even
+   * though the route accepted it as optional until this session -- kept
+   * required here so the client catches the omission before a round trip. */
+  state: string;
+  gstin?: string;
+  description?: string;
+  plan_type?: string;
+  source?: string;
+}
+
+export interface TenantSignupRequestResult {
+  id: string;
+  status: string;
+  business_name: string;
+  vertical: string;
+  created_at: string | null;
+}
+
+export const publicTenantSignupApi = {
+  submit: (payload: TenantSignupRequestPayload) =>
+    apiFetch<TenantSignupRequestResult>("/v1/tenants/onboarding/signup", {
+      method: "POST", body: JSON.stringify({ source: "self_signup", ...payload }),
+    }, /* skipAuth */ true),
+};
+
+/** Real no-payment signup backend: `RegistrationService` via
+ * app/engines/public_registration/signup_router.py -- fully built, real
+ * OTP, but was never mounted until this fix, so nothing called it before.
+ * Distinct from `publicTenantSignupApi` above, which posts to the
+ * admin-lead-queue flow that has no password/login until manual approval;
+ * this is the flow that matches "after signup he will setup everything
+ * then will send for approval" -- signup grants immediate login. */
+export interface SignupOwnerAccountPayload {
+  full_name: string; email: string; mobile: string;
+  password: string; password_confirm: string;
+  authorized_declaration: boolean; tos_privacy_accepted: boolean;
+  marketing_consent?: boolean; registration_id?: string;
+}
+export interface SignupBusinessIdentityPayload {
+  registration_id: string;
+  legal_name?: string; business_name?: string; gstin?: string; pan?: string; cin?: string;
+  business_type?: string; year_established?: number; employee_count?: number;
+  website_url?: string; description?: string; registered_address?: Record<string, unknown>;
+}
+export interface SignupVertical { key: string; label: string; description?: string }
+export interface SignupCompleteResult {
+  access_token: string; refresh_token: string;
+  tenant_id: string; user_id: string; vertical_key: string;
+  enrollment_status: string;
+}
+
+export const publicSignupApi = {
+  ownerAccount: (payload: SignupOwnerAccountPayload) =>
+    apiFetch<{ registration_id: string; otp_channels_sent: string[]; dev_otps?: Record<string, string> }>(
+      "/v1/public/signup/owner-account", { method: "POST", body: JSON.stringify(payload) }, true),
+  verifyContact: (registration_id: string, channel: "mobile" | "email", otp: string) =>
+    apiFetch<{ mobile_verified: boolean; email_verified: boolean }>(
+      "/v1/public/signup/verify-contact",
+      { method: "POST", body: JSON.stringify({ registration_id, channel, otp }) }, true),
+  resendOtp: (registration_id: string, channel: "mobile" | "email") =>
+    apiFetch<{ sent: boolean }>(
+      "/v1/public/signup/resend-otp",
+      { method: "POST", body: JSON.stringify({ registration_id, channel }) }, true),
+  businessIdentity: (payload: SignupBusinessIdentityPayload) =>
+    apiFetch<{ registration_id: string }>(
+      "/v1/public/signup/business-identity", { method: "POST", body: JSON.stringify(payload) }, true),
+  listVerticals: () =>
+    apiFetch<{ verticals: SignupVertical[] }>("/v1/public/signup/verticals", undefined, true),
+  selectVertical: (registration_id: string, vertical_key: string) =>
+    apiFetch<{ registration_id: string; vertical_key: string }>(
+      "/v1/public/signup/select-vertical",
+      { method: "POST", body: JSON.stringify({ registration_id, vertical_key }) }, true),
+  complete: (registration_id: string, idempotency_key: string, authorized_declaration: boolean,
+    tos_privacy_accepted: boolean, marketing_consent: boolean) =>
+    apiFetch<SignupCompleteResult>("/v1/public/signup/complete", {
+      method: "POST",
+      body: JSON.stringify({ registration_id, idempotency_key, authorized_declaration, tos_privacy_accepted, marketing_consent }),
+    }, true),
+};
+
+export const publicLocationsApi = {
+  states: (search?: string) =>
+    apiFetch<{ items: { code: string; name: string }[] }>(
+      `/v1/public/locations/states${search ? `?search=${encodeURIComponent(search)}` : ""}`,
+      undefined, true,
+    ),
+};
+
+/** Public (no-auth) signup-status lookup, used by /login to distinguish
+ * "wrong password" from "you signed up but aren't activated yet" -- see
+ * app/engines/tenant_engine/service.py lookup_signup_status_by_email for
+ * why this deliberately returns nothing beyond {exists, status}. */
+export const publicSignupStatusApi = {
+  lookupByEmail: (email: string) =>
+    apiFetch<{ exists: boolean; status: string | null }>(
+      `/v1/tenants/onboarding/signup-status?email=${encodeURIComponent(email)}`,
+      undefined, true,
+    ),
 };

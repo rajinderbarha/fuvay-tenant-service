@@ -110,7 +110,7 @@ export default function ServiceAreaRequestDetailPage() {
                       {item.decision_status === "PENDING" && canReview ? (
                         <Textarea
                           value={reasons[item.id] ?? ""}
-                          onChange={e => setReasons(r => ({ ...r, [item.id]: e.target.value }))}
+                          onChange={v => setReasons(r => ({ ...r, [item.id]: v }))}
                           placeholder="Reason (required to reject / request changes)"
                           rows={2}
                         />

@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_, func
 
 from datetime import timedelta
 
@@ -369,6 +369,55 @@ class ComplaintService:
         q = q.order_by(CustomerComplaint.created_at.desc()).limit(100)
         r = await db.execute(q)
         return r.scalars().all()
+
+    async def tenant_queue_summary(self, db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+        """Real bug fixed here: tenant_router.py's queue endpoint called this
+        method (and tenant_list_complaints below) unconditionally on every
+        request, but neither was ever implemented on ComplaintService --
+        every tenant-facing complaints request 500'd (masked as a CORS
+        error in the browser, since the crashed response carries no CORS
+        headers). Counts mirror the same FINAL_STATUSES / sla_status /
+        severity vocabulary already used elsewhere in this file."""
+        base = select(CustomerComplaint).where(CustomerComplaint.tenant_id == tenant_id)
+        rows = (await db.execute(base)).scalars().all()
+        open_rows = [c for c in rows if c.status not in FINAL_STATUSES]
+        return {
+            "total": len(rows),
+            "open": len(open_rows),
+            "at_risk": len([c for c in open_rows if c.sla_status == "at_risk"]),
+            "breached": len([c for c in open_rows if c.sla_status == "breached"]),
+            "escalated": len([c for c in open_rows if c.sla_status == "escalated"]),
+            "critical": len([c for c in open_rows if c.severity == "critical"]),
+        }
+
+    async def tenant_list_complaints(
+        self, db: AsyncSession, tenant_id: uuid.UUID, *,
+        search: str | None = None, status: str | None = None, severity: str | None = None,
+        sla_status: str | None = None, service_offering_id: uuid.UUID | None = None,
+        cursor: int = 0, limit: int = 20,
+    ) -> tuple[list[CustomerComplaint], int]:
+        clauses = [CustomerComplaint.tenant_id == tenant_id]
+        if status:
+            clauses.append(CustomerComplaint.status == status if status != "open"
+                            else CustomerComplaint.status.notin_(FINAL_STATUSES))
+        if severity:
+            clauses.append(CustomerComplaint.severity == severity)
+        if sla_status:
+            clauses.append(CustomerComplaint.sla_status == sla_status)
+        if service_offering_id:
+            clauses.append(CustomerComplaint.offering_id == service_offering_id)
+        if search:
+            like = f"%{search}%"
+            clauses.append(or_(CustomerComplaint.complaint_number.ilike(like), CustomerComplaint.title.ilike(like)))
+
+        total = (await db.execute(
+            select(func.count()).select_from(select(CustomerComplaint).where(*clauses).subquery())
+        )).scalar() or 0
+        rows = (await db.execute(
+            select(CustomerComplaint).where(*clauses)
+            .order_by(CustomerComplaint.created_at.desc()).offset(cursor).limit(limit)
+        )).scalars().all()
+        return list(rows), total
 
     async def provider_get_complaint(
         self, db: AsyncSession, tenant_id: uuid.UUID, complaint_id: uuid.UUID

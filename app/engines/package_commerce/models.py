@@ -209,6 +209,7 @@ class TenantPackageAssignment(ServiceOSBase):
 
     # Audit metadata
     metadata_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PackageAuditLog(ServiceOSBase):

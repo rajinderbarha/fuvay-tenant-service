@@ -5,7 +5,7 @@ import { NotificationPreferencesScreen } from "../NotificationPreferencesScreen"
 import { NotificationPreferencesDetailDTO } from "../../../services/notifications/preferencesTypes";
 
 jest.mock("../useNotificationPreferences");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 import { useNotificationPreferences } from "../useNotificationPreferences";
 import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
@@ -44,7 +44,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("NotificationPreferencesScreen (Phase U)", () => {
@@ -111,7 +111,7 @@ describe("NotificationPreferencesScreen (Phase U)", () => {
   });
 
   it("shows an offline banner and disables optional toggles", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (useNotificationPreferences as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText("Offline")).toBeTruthy();

@@ -13,7 +13,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
-    MasterService, ServiceCategory, ServicePricingRule,
+    MasterService, ServiceCategory, ServiceGroup, ServicePricingRule,
     TenantService, TenantServiceType, TenantServiceBrand,
     MasterServiceType, MasterServiceBrand, ServiceType, Brand,
     ServiceBlueprintVersion,
@@ -103,11 +103,26 @@ class TenantCatalogService:
             ))
         enabled_set = {ts.master_service_id for ts in enabled_res.scalars().all()}
 
+        # Group names for the setup page's grouping (one query, not N).
+        group_ids = {s.service_group_id for s in services if s.service_group_id}
+        group_names: dict = {}
+        if group_ids:
+            grp_res = await self.db.execute(
+                select(ServiceGroup.id, ServiceGroup.name).where(ServiceGroup.id.in_(group_ids))
+            )
+            group_names = {gid: name for gid, name in grp_res.all()}
+
         return {"services": [
             {
                 "service_id": str(s.id),
                 "category_id": str(s.category_id),
                 "service_name": s.service_name,
+                # Real bug fixed here: the Services & Pricing setup page groups
+                # the catalog by service group, but this response never carried
+                # the grouping keys -- so every service fell into one unnamed
+                # bucket and the grouping silently did nothing.
+                "service_group_id": str(s.service_group_id) if s.service_group_id else None,
+                "service_group_name": group_names.get(s.service_group_id),
                 "description": s.description,
                 "job_type": s.job_type,
                 "pricing_model": s.pricing_model,
@@ -330,17 +345,31 @@ class TenantCatalogService:
     async def get_tenant_service_types(self, tenant_service_id: uuid.UUID) -> dict:
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
+        # Real bug fixed here: `is_required` / `is_default` live on
+        # MasterServiceType and the setup wizard uses them to pre-select the
+        # types a tenant MUST offer -- but this response never carried them,
+        # so that auto-selection silently selected nothing and tenants had to
+        # find the required types by hand. Outer-joined so a tenant type with
+        # no master mapping still returns (defaulting to not-required).
         res = await self.db.execute(
-            select(TenantServiceType, ServiceType)
+            select(TenantServiceType, ServiceType, MasterServiceType)
             .join(ServiceType, ServiceType.id == TenantServiceType.service_type_id)
+            .outerjoin(
+                MasterServiceType,
+                (MasterServiceType.service_type_id == TenantServiceType.service_type_id)
+                & (MasterServiceType.master_service_id == ts.master_service_id),
+            )
             .where(TenantServiceType.tenant_service_id == tenant_service_id,
                    TenantServiceType.is_enabled == True))
         rows = res.all()
         return {"types": [
-            {"id": str(tst.id), "service_type_id": str(tst.service_type_id),
+            {"id": str(tst.id), "mapping_id": str(tst.id),
+             "service_type_id": str(tst.service_type_id),
              "name": st.name, "is_enabled": tst.is_enabled,
+             "is_required": bool(mst.is_required) if mst else False,
+             "is_default": bool(mst.is_default) if mst else False,
              "tenant_price_adjustment": float(tst.tenant_price_adjustment) if tst.tenant_price_adjustment else None}
-            for tst, st in rows
+            for tst, st, mst in rows
         ]}
 
     async def set_tenant_service_types(self, tenant_service_id: uuid.UUID, type_ids: list[str]) -> dict:

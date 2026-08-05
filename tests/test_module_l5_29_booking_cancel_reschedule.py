@@ -134,6 +134,77 @@ class TestCancelRescheduleLive:
             r = await cust.post(f"/v1/customer/bookings/{info['booking_id']}/cancel", json={})
             assert r.status_code == 422
 
+    async def test_eligibility_reflects_real_state(self):
+        """CANCEL-RESCHEDULE-FOUNDATION: the eligibility endpoint must be the
+        single source of truth the mobile app reads — no client-side
+        reproduction of CUSTOMER_CANCELLABLE_JOB_STATUSES/MAX_RESCHEDULE_COUNT."""
+        info = await self._seed_cancellable()
+        if not info or not info["email"]:
+            pytest.skip("no suitable job/customer to seed against")
+        tok = await _login(info["email"])
+        if not tok:
+            pytest.skip("customer login unavailable")
+        async with AsyncClient(base_url=BASE, timeout=30,
+                               headers={"Authorization": f"Bearer {tok}"}) as cust:
+            r = await cust.get(f"/v1/customer/bookings/{info['booking_id']}/cancel-reschedule-eligibility")
+            assert r.status_code == 200, r.text
+            data = r.json()["data"]
+            assert data["can_cancel"] is True
+            assert data["can_reschedule"] is True
+            assert data["remaining_reschedule_allowance"] == 3
+            assert data["requires_provider_approval"] is False
+            assert data["cancellation_fee"] is None
+            assert "version" in data and data["version"]
+
+    async def test_reschedule_limit_is_enforced(self):
+        """Policy decision 2026-08-02: cap customer reschedules at 3."""
+        info = await self._seed_cancellable()
+        if not info or not info["email"]:
+            pytest.skip("no suitable job/customer to seed against")
+        tok = await _login(info["email"])
+        if not tok:
+            pytest.skip("customer login unavailable")
+        async with AsyncClient(base_url=BASE, timeout=30,
+                               headers={"Authorization": f"Bearer {tok}"}) as cust:
+            for i in range(3):
+                r = await cust.post(f"/v1/customer/bookings/{info['booking_id']}/reschedule",
+                                    json={"scheduled_date": f"2026-09-{10+i:02d}",
+                                         "reason": f"attempt {i}"})
+                assert r.status_code == 200, r.text
+            # 4th reschedule must be refused — limit reached.
+            r4 = await cust.post(f"/v1/customer/bookings/{info['booking_id']}/reschedule",
+                                 json={"scheduled_date": "2026-09-20", "reason": "one more"})
+            assert r4.status_code == 409
+            elig = await cust.get(f"/v1/customer/bookings/{info['booking_id']}/cancel-reschedule-eligibility")
+            assert elig.json()["data"]["remaining_reschedule_allowance"] == 0
+            assert elig.json()["data"]["can_reschedule"] is False
+
+    async def test_reschedule_rejects_past_date(self):
+        info = await self._seed_cancellable()
+        if not info or not info["email"]:
+            pytest.skip("no suitable job/customer to seed against")
+        tok = await _login(info["email"])
+        if not tok:
+            pytest.skip("customer login unavailable")
+        async with AsyncClient(base_url=BASE, timeout=30,
+                               headers={"Authorization": f"Bearer {tok}"}) as cust:
+            r = await cust.post(f"/v1/customer/bookings/{info['booking_id']}/reschedule",
+                                json={"scheduled_date": "2020-01-01", "reason": "test"})
+            assert r.status_code == 422
+
+    async def test_cancel_rejects_stale_version(self):
+        info = await self._seed_cancellable()
+        if not info or not info["email"]:
+            pytest.skip("no suitable job/customer to seed against")
+        tok = await _login(info["email"])
+        if not tok:
+            pytest.skip("customer login unavailable")
+        async with AsyncClient(base_url=BASE, timeout=30,
+                               headers={"Authorization": f"Bearer {tok}"}) as cust:
+            r = await cust.post(f"/v1/customer/bookings/{info['booking_id']}/cancel",
+                                json={"reason": "test", "expected_version": "2000-01-01T00:00:00+00:00"})
+            assert r.status_code == 409
+
     async def test_cancel_is_blocked_once_invoiced(self):
         import asyncpg
         c = await asyncpg.connect("postgresql://serviceos:serviceos@127.0.0.1:5432/serviceos")

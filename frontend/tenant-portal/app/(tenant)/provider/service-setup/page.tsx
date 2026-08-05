@@ -100,10 +100,10 @@ export default function ServiceSetupPage() {
   }
 
   const enabledIds = new Set((enabled.data?.offerings ?? []).map(o => o.offering_id));
-  const enabledCount = enabled.data?.offerings.length ?? 0;
+  const enabledCount = enabled.data?.offerings?.length ?? 0;
   const bookableCount = (offeringStatuses.data?.statuses ?? []).filter(s => s.is_bookable).length;
   const activeAreas = (areas.data?.areas ?? []).filter(a => a.is_active).length;
-  const totalAreas = areas.data?.areas.length ?? 0;
+  const totalAreas = areas.data?.areas?.length ?? 0;
   const activeTechnicians = (team.data?.members ?? []).filter(m => m.status === "active").length;
   const hasAvailability = (availability.data?.rules ?? []).length > 0;
   const setupIssues = (enabled.data?.offerings ?? []).reduce(
@@ -637,7 +637,7 @@ function ServiceSetupWizard({ offering, existing, onClose, onSaved }: {
             ) : (
               <div style={{ padding: 12, background: "var(--success-bg)", borderRadius:"var(--radius-md)" }}>
                 <p style={{ margin: 0, fontSize: 12, color: "var(--success-text)" }}>
-                  Availability configured — {availability.data?.rules.length} rule(s) active.
+                  Availability configured — {availability.data?.rules?.length} rule(s) active.
                 </p>
               </div>
             )}

@@ -31,7 +31,7 @@ const EVENTS = [
 ];
 
 const STATUS_COLOR = (s: string) =>
-  s === "critical" || s === "danger" ? "#c0392b" : s === "warning" ? "#b45309" : "#1d4ed8";
+  s === "critical" || s === "danger" ? "#c0392b" : s === "warning" ? "#b45309" : "#3B6FED";
 
 export default function CustomerNotificationsPage() {
   const [tab, setTab] = useState<"list" | "settings">("list");
@@ -102,7 +102,7 @@ export default function CustomerNotificationsPage() {
             return (
               <div key={n.id} className="co-card" onClick={() => open(n)}
                 style={{ marginBottom: 10, cursor: "pointer", display: "flex", gap: 10,
-                  background: unread ? "#f4f8ff" : undefined }}>
+                  background: unread ? "#FFF9F0" : undefined }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", marginTop: 6, flexShrink: 0,
                   background: unread ? STATUS_COLOR(n.severity) : "transparent" }} />
                 <div style={{ minWidth: 0 }}>

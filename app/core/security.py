@@ -51,6 +51,11 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     "auth:refresh":          (3600, 60),   # 60 per hour
     "auth:mfa_verify":       (300,  5),    # 5 per 5 min
     "auth:register":         (3600, 3),    # 3 per hour per IP
+    # Found missing during the "make it 100% working" pass -- real,
+    # tested rate-limit types for account-security-sensitive actions.
+    "auth:password_change":  (3600, 10),   # 10 per hour per account
+    "auth:mfa_confirm":      (300,  5),    # 5 per 5 min
+    "auth:mfa_disable":      (3600, 5),    # 5 per hour per account
     # API endpoints — by tenant
     "api:read":              (60,   300),  # 300 reads per minute per tenant
     "api:write":             (60,   100),  # 100 writes per minute per tenant
@@ -58,6 +63,18 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     "api:export":            (3600, 5),    # 5 exports per hour
     # Webhook
     "webhook:delivery":      (60,   1000), # 1000/min per tenant
+}
+
+# Dev-only override: local testing (repeated manual OTP send/verify/register
+# attempts against the same phone number) hits the strict production limits
+# above almost immediately. Applied only when APP_ENV is development/testing
+# (see RateLimiter.check) -- production and staging always use RATE_LIMITS
+# unchanged.
+DEV_RATE_LIMIT_OVERRIDES: dict[str, tuple[int, int]] = {
+    "auth:login_phone": (3600, 100),
+    "auth:otp_send":    (3600, 100),
+    "auth:otp_verify":  (300,  100),
+    "auth:register":    (3600, 100),
 }
 
 
@@ -88,7 +105,11 @@ class RateLimiter:
         """
         try:
             redis = await self._get_redis()
-            config = RATE_LIMITS.get(limit_type, (60, 100))
+            from app.config import get_settings
+            if get_settings().APP_ENV in ("development", "testing") and limit_type in DEV_RATE_LIMIT_OVERRIDES:
+                config = DEV_RATE_LIMIT_OVERRIDES[limit_type]
+            else:
+                config = RATE_LIMITS.get(limit_type, (60, 100))
             window, limit = config
             now_ms = int(time.time() * 1000)
             redis_key = f"serviceos:ratelimit:{limit_key}:{identifier}"

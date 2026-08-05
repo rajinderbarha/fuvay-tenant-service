@@ -211,6 +211,34 @@ class TenantService:
         result["message"] = "Request received. Our team will review within 24 hours."
         return result
 
+    async def lookup_signup_status_by_email(self, email: str) -> dict:
+        """Public, deliberately minimal: lets the LOGIN page distinguish
+        "wrong password" from "you signed up but aren't activated yet"
+        without exposing anything about the applicant beyond their own
+        request's status.
+
+        Real bug this fixes: a tenant who submits the no-payment signup
+        flow has no user account until an admin activates their request --
+        but login had no way to know that, so it always said "Invalid
+        email or password", which reads as a typo to someone whose real
+        problem is "nobody has approved me yet".
+
+        Returns only `{exists, status}` -- never the business name, owner
+        name, or any other field, and never distinguishes "never signed up"
+        from "signed up under a different email" (both return exists=False)
+        so this cannot be used to enumerate real applicants' emails.
+        """
+        r = await self.db.execute(
+            select(OnboardingRequest)
+            .where(OnboardingRequest.owner_email == email)
+            .order_by(OnboardingRequest.created_at.desc())
+            .limit(1)
+        )
+        req = r.scalar_one_or_none()
+        if not req:
+            return {"exists": False, "status": None}
+        return {"exists": True, "status": req.status}
+
     async def get_onboarding_request(self, request_id: uuid.UUID) -> dict:
         r = await self.db.execute(select(OnboardingRequest).where(OnboardingRequest.id == request_id))
         req = r.scalar_one_or_none()

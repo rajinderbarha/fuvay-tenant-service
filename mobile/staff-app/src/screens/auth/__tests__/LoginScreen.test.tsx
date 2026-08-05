@@ -4,7 +4,7 @@ import { ThemeProvider } from "../../../design-system/themes";
 import { LoginScreen } from "../LoginScreen";
 
 jest.mock("../../../services/auth/authApi");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: () => "online" }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: () => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" }) }));
 jest.mock("../../../services/api/healthApi", () => ({ checkPublicHealth: jest.fn().mockResolvedValue("online") }));
 
 const mockEstablishSession = jest.fn().mockResolvedValue(undefined);

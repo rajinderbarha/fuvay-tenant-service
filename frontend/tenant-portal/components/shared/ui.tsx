@@ -270,7 +270,26 @@ export function Spinner({ size = 20, color = "var(--accent)" }: { size?: number;
 export function Skeleton({ width, height = 20, radius = 6, style = {} }: {
   width?: number | string; height?: number; radius?: number; style?: React.CSSProperties;
 }) {
-  return <div className="skeleton" style={{ width: width ?? "100%", height, borderRadius: radius, ...style }}/>;
+  /**
+   * Renders a <span>, not a <div>, on purpose.
+   *
+   * Real bug fixed here: a skeleton is very often used as a placeholder for
+   * a line of TEXT, which puts it inside a <p> -- and a <div> inside a <p>
+   * is invalid HTML. The parser closes the paragraph early, so the server
+   * and client trees disagree and React throws a hydration error
+   * ("In HTML, <div> cannot be a descendant of <p>"), which took out the
+   * tenant Dashboard.
+   *
+   * A <span> is phrasing content and is valid anywhere text is, while
+   * `display: block` keeps the exact box behaviour every existing caller
+   * was already relying on. Callers can still override display via `style`.
+   */
+  return (
+    <span
+      className="skeleton"
+      style={{ display: "block", width: width ?? "100%", height, borderRadius: radius, ...style }}
+    />
+  );
 }
 
 // ── Avatar ───────────────────────────────────────────────────────────────────

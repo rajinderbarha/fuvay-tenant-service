@@ -38,7 +38,7 @@ export function LoginScreen({ navigation, route }: Props) {
   const { theme } = useTheme();
   const { establishSession, lastKnownScope } = useSession();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const sessionExpired = route.params?.reasonCode === "SESSION_EXPIRED";
 
   const [method, setMethod] = useState<"password" | "otp">("password");

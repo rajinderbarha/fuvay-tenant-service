@@ -96,6 +96,7 @@ async def list_reviews(
     r: Request,
     q: str | None = Query(None, description="Search review text / customer / tenant / booking#"),
     tenant_id: str | None = Query(None),
+    job_id: str | None = Query(None, description="Filter to the review left for one specific job"),
     rating: int | None = Query(None, ge=1, le=5),
     rating_min: int | None = Query(None, ge=1, le=5),
     rating_max: int | None = Query(None, ge=1, le=5),
@@ -133,6 +134,11 @@ async def list_reviews(
     if tenant_id:
         try:
             stmt = stmt.where(CustomerReview.tenant_id == uuid.UUID(tenant_id))
+        except ValueError:
+            pass
+    if job_id:
+        try:
+            stmt = stmt.where(CustomerReview.job_id == uuid.UUID(job_id))
         except ValueError:
             pass
     if rating:
@@ -229,6 +235,18 @@ async def get_review(
     d = review.to_dict()
     d["reply"] = reply.to_dict() if reply else None
     return ok(d, _rid(r), "admin.review.fetched")
+
+
+@admin_review_router.put("/{review_id}")
+async def edit_review(
+    review_id: str,
+    body: dict,
+    r: Request,
+    u: UserContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    review = await _svc.admin_edit_review(db, uuid.UUID(review_id), u.user_id, body, request_id=_rid(r))
+    return ok(review.to_dict(), _rid(r), "admin.review.edited")
 
 
 @admin_review_router.post("/{review_id}/approve")

@@ -159,11 +159,11 @@ function VerticalCard({ v, onToggle, onConfigure }: {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: "auto" }}>
         <Btn variant="ghost" size="sm" icon={<Settings size={13}/>} onClick={() => onConfigure(v)}>
           Modules
         </Btn>
-        <Link href={`/admin/verticals/${v.key}?tab=capabilities`} style={{ textDecoration: "none" }}>
+        <Link href={`/admin/verticals/${v.key}?tab=capabilities`} style={{ textDecoration: "none", display: "inline-flex" }}>
           <Btn variant="ghost" size="sm">Capabilities & Policies</Btn>
         </Link>
         <div style={{ flex: 1 }}/>

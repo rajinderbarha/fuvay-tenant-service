@@ -6,7 +6,7 @@ import { ScheduleDetailDTO } from "../../../services/schedule/types";
 
 jest.mock("../useSchedule");
 jest.mock("../../home/useTechnicianHome");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 const mockNavigate = jest.fn();
 const mockGetParent = jest.fn(() => ({ navigate: mockNavigate }));
@@ -57,7 +57,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
   (useTechnicianHome as jest.Mock).mockReturnValue({ data: { availability: { state: "available" } }, updateAvailability: jest.fn() });
   jest.useFakeTimers().setSystemTime(SELECTED);
 });
@@ -98,7 +98,7 @@ describe("ScheduleScreen — empty/offline/error", () => {
   });
 
   it("shows the offline banner with cached-time context", () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     (useSchedule as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getByText("Offline")).toBeTruthy();

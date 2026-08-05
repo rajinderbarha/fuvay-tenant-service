@@ -247,7 +247,7 @@ function CustomersContent() {
     page_size:       25,
     sort_by:         "last_booking_at",
     sort_dir:        "desc",
-  }), [applied]));
+  }), [applied]), [applied]);
 
   type ListData = { customers: AdminCustomer[]; meta: { page: number; total: number; total_pages: number } };
   const listData: ListData | undefined =

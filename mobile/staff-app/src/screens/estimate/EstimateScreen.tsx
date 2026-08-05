@@ -38,7 +38,7 @@ export function EstimateScreen({ route, navigation }: Props) {
   const { theme } = useTheme();
   const { jobId } = route.params;
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const [itemSheet, setItemSheet] = useState<{ open: boolean; editing: QuoteLineItemDTO | null }>({ open: false, editing: null });
 
   const {

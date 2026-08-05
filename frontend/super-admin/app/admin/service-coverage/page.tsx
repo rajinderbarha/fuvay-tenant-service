@@ -68,7 +68,7 @@ export default function ActiveCoveragePage() {
         <Card style={{ marginBottom: 16, padding: 16, display: "flex", gap: 12, alignItems: "flex-end" }}>
           <div style={{ minWidth: 220 }}>
             <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Status</label>
-            <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} options={STATUS_OPTIONS} />
+            <Select value={statusFilter} onChange={v => setStatusFilter(v)} options={STATUS_OPTIONS} />
           </div>
           <Btn variant="ghost" onClick={() => coverage.refetch()}>Refresh</Btn>
         </Card>

@@ -44,6 +44,25 @@ class ProfileService:
         return self._serialize_user(user)
 
     async def update_user_profile(self, body: UpdateUserProfileRequest) -> dict:
+        # SECURITY (2026-08-01, Personal Details phase closure): no
+        # authenticated contact-change OTP flow exists ANYWHERE in this
+        # codebase (confirmed via direct audit of app/engines/auth/router.py
+        # -- only the pre-auth LOGIN phone-OTP endpoints exist). Before this
+        # fix, `phone` was silently accepted and mutated here with only a
+        # uniqueness check, no verification -- an authenticated customer
+        # (or anyone with a valid access token) could call this endpoint
+        # directly and take over a phone number's association with their
+        # account without ever proving they control it. Rejected atomically
+        # -- before any other field on the request is applied -- so a
+        # request combining a legitimate `full_name` change with a `phone`
+        # change never partially succeeds.
+        if body.phone is not None:
+            raise ServiceOSException(
+                "PHONE_CHANGE_REQUIRES_VERIFICATION",
+                "Mobile number changes require verification.",
+                status_code=422,
+            )
+
         user = await self._load_user(uuid.UUID(self.actor.user_id))
 
         changed: dict[str, tuple] = {}  # field → (old, new)
@@ -69,19 +88,6 @@ class ProfileService:
             if body.timezone != old:
                 changed["timezone"] = (old, body.timezone)
             user.timezone = body.timezone  # type: ignore[attr-defined]
-
-        if body.phone is not None and body.phone != user.phone:
-            # Uniqueness check
-            existing = await self.db.execute(
-                select(User).where(User.phone == body.phone, User.id != user.id)
-            )
-            if existing.scalar_one_or_none():
-                raise ServiceOSException(
-                    "PROFILE_VALIDATION_FAILED",
-                    "This phone number is already in use by another account.",
-                )
-            changed["phone"] = (user.phone, body.phone)
-            user.phone = body.phone
 
         if not changed:
             return self._serialize_user(user)
@@ -170,6 +176,23 @@ class ProfileService:
         if body.gst_number is not None:
             tenant.gst_number = body.gst_number
             changed_keys.append("gst_number")
+        if body.legal_name is not None:
+            tenant.legal_name = body.legal_name
+            changed_keys.append("legal_name")
+        if body.business_type is not None:
+            tenant.business_type = body.business_type
+            changed_keys.append("business_type")
+        if body.year_established is not None:
+            # Real bug fixed here: `Tenant` has no `year_established` column
+            # (it lives on TenantBusinessProfile, a different table) --
+            # every save/load of the business profile 500'd. Stored in
+            # tenant.meta, the same pattern already used for
+            # registration_number/website_url/description below.
+            tenant.meta = {**(tenant.meta or {}), "year_established": body.year_established}
+            changed_keys.append("year_established")
+        if body.registration_number is not None:
+            tenant.meta = {**(tenant.meta or {}), "registration_number": body.registration_number}
+            changed_keys.append("registration_number")
         if body.website_url is not None:
             tenant.meta = {**(tenant.meta or {}), "website_url": body.website_url}
             changed_keys.append("website_url")
@@ -353,6 +376,8 @@ class ProfileService:
             "email": tenant.email,
             "gst_number": tenant.gst_number,
             "business_type": tenant.business_type,
+            "year_established": meta.get("year_established"),
+            "registration_number": meta.get("registration_number"),
             "address_line1": tenant.address_line1,
             "address_line2": tenant.address_line2,
             "city": tenant.city,

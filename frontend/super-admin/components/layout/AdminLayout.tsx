@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback, createContext, useContext } from "react";
+import Link from "next/link";
 
 // Prevents double-rendering when a page already wraps itself with AdminLayout
 // AND the route-level layout also renders AdminLayout.
@@ -33,7 +34,7 @@ import { Toaster, type ToastItem } from "../shared/ui";
 import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "./Breadcrumbs";
-import { authApi, sprint27AdminApi } from "../../lib/api";
+import { authApi, sprint27AdminApi, clearSession } from "../../lib/api";
 import { usePermissions } from "../../hooks/usePermissions";
 import { SUPER_ADMIN_ONLY } from "../../lib/permission-catalog";
 
@@ -58,24 +59,6 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // Provider lifecycle: discover → request → verify → subscribe
-    label: "Providers",
-    items: [
-      { id: "tenants",              href: "/admin/tenants",              label: "All Providers",    icon: <Building2 size={16}/>,  requiredPermission: "tenant:read" },
-      { id: "onboarding",           href: "/admin/tenants/onboarding",   label: "New Requests",     icon: <Inbox size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "onboarding-providers", href: "/admin/onboarding/providers", label: "Verify & Approve", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      // The one genuinely cross-vertical monetization tool: package_type
-      // includes onboarding/deposit/credit-topup (Home Services model) AND
-      // subscription_plan/lead_credit_package (coaching, real estate, and
-      // every other lead- or subscription-billed vertical) -- see
-      // PACKAGE_TYPE_TABS in app/admin/packages/page.tsx. Renamed so it
-      // reads as "the place to configure monetization for any category",
-      // not a Home-Services-only word.
-      { id: "packages",             href: "/admin/packages",             label: "Packages & Subscriptions", icon: <Package size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "trust-quality",        href: "/admin/trust-quality",        label: "Trust & Quality",  icon: <Star size={16}/>,       requiredPermission: SUPER_ADMIN_ONLY },
-    ],
-  },
-  {
     // Bookings/Jobs/Reviews/Category Rates moved into FIELD_OPS_SHARED_ITEMS
     // (rendered inside the relevant vertical's Catalog section, see below) so
     // they group with -- and enable/disable alongside -- Home Services as a
@@ -87,7 +70,9 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "customers",  href: "/admin/customers",  label: "Customers", icon: <UserCheck size={16}/>,    requiredPermission: SUPER_ADMIN_ONLY                },
       { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <Users size={16}/>,        requiredPermission: "staff:read"                    },
       { id: "complaints", href: "/admin/complaints", label: "Complaints", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY               },
-      { id: "complaint-policies", href: "/admin/complaint-policies", label: "Complaint Policies", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      // "Complaint Policies" folded into the Complaints page as a "Policies"
+      // tab 2026-08-05 at explicit user request -- removed as a separate
+      // nav item. /admin/complaint-policies route stays live, unlinked.
     ],
   },
   {
@@ -101,35 +86,17 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // Security Deposits/Credit Top-ups/Usage Credits/Warranty Claims/Service
-    // Invoices/Commission Records/Provider Wallets/Payments moved into
-    // FIELD_OPS_SHARED_ITEMS below -- same reasoning as the Operations group
-    // above. Payments (/admin/payments -> /v1/admin/payments) reads off
-    // ServiceInvoice/booking_id, the exact same field-ops job/booking
-    // pipeline as Service Invoices, so it isn't platform-wide either --
-    // confirmed via the invoice_payment engine's models (booking_id FK on
-    // every row). "Payouts" removed entirely (not gated) -- confirmed the
-    // platform never pays staff/technicians/providers out; the only money-
-    // back-to-provider flow is a security deposit refund request, now part
-    // of the grouped set. The /admin/finance/payouts page/API stay live,
-    // just unlinked. Finance Hub/Financial Events/Compliance stay here:
-    // genuinely polymorphic/platform-wide (checked each page's source and
-    // type shape, no job/vertical tie).
-    label: "Finance",
-    items: [
-      { id: "finance",          href: "/admin/finance",          label: "Finance Hub",    icon: <Banknote size={16}/>,      requiredPermission: "finance:hub:read" },
-      { id: "finance-financial-events",   href: "/admin/financial-events",   label: "Financial Events",   icon: <ScrollText size={16}/>,   requiredPermission: "finance:hub:read" },
-      { id: "compliance",       href: "/admin/compliance",        label: "Compliance",      icon: <ClipboardCheck size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-    ],
-  },
-  {
     label: "Marketing & Growth",
     items: [
       { id: "marketing",     href: "/admin/marketing",     label: "Campaigns",       icon: <Megaphone size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "notification-settings", href: "/admin/notifications/settings", label: "Notification Settings", icon: <Bell size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      // "Notification Settings" folded into Notifications as a "Settings"
+      // tab 2026-08-05 at explicit user request -- removed as a separate
+      // nav item. /admin/notifications/settings route stays live, unlinked.
       { id: "analytics",     href: "/admin/analytics",     label: "Analytics",       icon: <BarChart3 size={16}/>, requiredPermission: "analytics:dashboard:read" },
-      { id: "reports",       href: "/admin/reports",       label: "Reports",         icon: <ScrollText size={16}/>, requiredPermission: "analytics:dashboard:read" },
+      // "Reports" folded into Analytics as a "Reports" tab 2026-08-05 at
+      // explicit user request -- removed as a separate nav item.
+      // /admin/reports route stays live, unlinked.
       { id: "intelligence",  href: "/admin/intelligence",  label: "AI Intelligence", icon: <Brain size={16}/>,     requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
@@ -138,6 +105,18 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "engines",            href: "/admin/engines",            label: "Engines",    icon: <Cpu size={16}/>,        requiredPermission: SUPER_ADMIN_ONLY },
       { id: "security",           href: "/admin/security",           label: "Security",   icon: <Shield size={16}/>,     requiredPermission: "security:read" },
+      // Moved out of a standalone "Finance" nav group 2026-08-05 -- it's DPDP
+      // data-privacy compliance (right-to-erasure, consent, retention, legal
+      // holds, audit), not finance at all. It only ever shared that group
+      // with Finance Hub/Financial Events, which are now gone (folded into
+      // Home Services Finance), leaving Compliance stranded alone under a
+      // misleading "Finance" header. Platform is the right home alongside
+      // Security/Audit Logs/Roles -- the other legal/security surfaces.
+      { id: "compliance",         href: "/admin/compliance",         label: "Compliance", icon: <ClipboardCheck size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      // Moved out of the "Providers" nav group 2026-08-05 at explicit user
+      // request -- it was the only item left there after earlier cleanups
+      // (Packages & Subscriptions removed), leaving a single-item group.
+      { id: "trust-quality",      href: "/admin/trust-quality",      label: "Trust & Quality", icon: <Star size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "workflow-templates", href: "/admin/workflow-templates", label: "Workflows",  icon: <GitBranch size={16}/>,  requiredPermission: SUPER_ADMIN_ONLY },
       { id: "audit-logs",         href: "/admin/audit-logs",        label: "Audit Logs", icon: <ScrollText size={16}/>, requiredPermission: "auth:audit:read" },
       { id: "users",              href: "/admin/users",              label: "Users",      icon: <Users size={16}/>,      requiredPermission: "auth:users:read" },
@@ -213,6 +192,11 @@ const FIELD_OPS_VERTICALS = new Set(["home_services", "repair_services", "cleani
 // and hide/show alongside -- that vertical as a whole via
 // FIELD_OPS_VERTICALS membership in VerticalCatalogSection below.
 const FIELD_OPS_SHARED_ITEMS: NavItem[] = [
+  // Provider 360 directory (HomeServicesProviderDirectoryService) -- added
+  // here because the page existed (built for the provider-detail rebuild)
+  // but had zero sidebar entry, same orphaned-page pattern as
+  // "bookability" above. Only reachable via direct URL until this line.
+  { id: "home-services-providers", href: "/admin/home-services/providers", label: "Providers", icon: <Building2 size={16}/>, requiredPermission: "admin:jobs:read" },
   // HOME-SERVICES-OPERATIONS unified workspace (canonical service_bookings +
   // service_jobs pipeline only). "Bookings"/"Jobs" below are the two
   // pre-existing pages this replaces for daily ops use -- kept live,
@@ -220,19 +204,34 @@ const FIELD_OPS_SHARED_ITEMS: NavItem[] = [
   // delete/redirect before that). "Bookings" also still separately serves
   // the legacy, non-canonical bookings/field_ops.jobs pipeline, which this
   // unified page deliberately excludes (confirmed disconnected via audit).
-  { id: "home-services-operations", href: "/admin/home-services/operations", label: "Bookings & Jobs", icon: <Wrench size={16}/>, requiredPermission: "admin:jobs:read" },
-  { id: "bookings", href: "/admin/bookings", label: "Bookings (legacy)", icon: <CalendarDays size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  { id: "operations", href: "/admin/home-services/service-jobs", label: "Jobs (legacy)", icon: <Wrench size={16}/>, requiredPermission: "admin:jobs:read" },
-  { id: "reviews", href: "/admin/reviews", label: "Reviews", icon: <Star size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  { id: "category-commission", href: "/admin/pricing/commission", label: "Category Rates", icon: <PercentSquare size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  { id: "finance-claims", href: "/admin/finance/claims", label: "Warranty Claims", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  { id: "finance-service-invoices", href: "/admin/service-invoices", label: "Service Invoices", icon: <FileTextIcon size={16}/>, requiredPermission: "finance:hub:read" },
-  { id: "finance-deposits", href: "/admin/finance/deposits", label: "Security Deposits", icon: <Shield size={16}/>, requiredPermission: "finance:deposits:read" },
-  { id: "finance-topups", href: "/admin/finance/topups", label: "Credit Top-ups", icon: <Tag size={16}/>, requiredPermission: "finance:topups:read" },
-  { id: "finance-usage-credits", href: "/admin/finance/usage-credits", label: "Usage Credits", icon: <Banknote size={16}/>, requiredPermission: "finance.usage_credits.read" },
-  { id: "finance-commission-records", href: "/admin/commission-records", label: "Commission Records", icon: <PercentSquare size={16}/>, requiredPermission: "finance:hub:read" },
-  { id: "finance-provider-wallets", href: "/admin/provider-wallets", label: "Provider Wallets", icon: <Banknote size={16}/>, requiredPermission: "finance:hub:read" },
-  { id: "finance-payments", href: "/admin/payments", label: "Payments", icon: <Tag size={16}/>, requiredPermission: "finance:hub:read" },
+  { id: "home-services-operations", href: "/admin/home-services/bookings-jobs", label: "Bookings & Jobs", icon: <Wrench size={16}/>, requiredPermission: "admin:jobs:read" },
+  // "Bookings (legacy)" list page removed 2026-08-04 at explicit user
+  // request -- Bookings & Jobs above is the unified replacement. The
+  // /admin/bookings/[id] detail route stays live (unlinked from nav) since
+  // Customers' booking-history rows still deep-link to it directly.
+  // "Reviews" removed from nav 2026-08-05 at explicit user request -- reviews
+  // now show inline on each completed job in Bookings & Jobs (the drawer's
+  // Customer Review card: view rating/text, Enable Rating, and a direct
+  // Edit action), rather than a separate platform-wide moderation page.
+  // /admin/reviews route/API stay live, unlinked.
+  // "Category Rates" (per-category commission_pct/customer_charge_pct, read
+  // by resolve_provider_commission_rate/ServiceCommissionService) removed
+  // from nav 2026-08-05 at explicit user request -- confirmed it has ZERO
+  // effect on Home Services jobs: job completion charges flat usage credits
+  // (execution.usage_credit_deduction) and the vertical monetization policy
+  // (Home Services Finance > Monetization tab) only, never
+  // ServiceCommissionService/invoice-based commission. Route stays live
+  // (unlinked) since it's still the real mechanism for any OTHER vertical
+  // that creates ServiceInvoice rows.
+  // Service Invoices/Credit Top-ups/Usage Credits/Payments/Security Deposits/
+  // Commission Records/Provider Wallets were 7 separate nav items pointing
+  // at 7 separate pages -- explicitly replaced 2026-08-05 by the single
+  // consolidated "Home Services Finance" workspace (Overview/Monetization/
+  // Direct Payments/Provider Charges/Credits & Top-ups/Deposits/Invoices/
+  // Refunds/Warranty Claims/Financial Events/Wallets tabs, all in one page)
+  // per direct user request. The standalone /admin/provider-wallets route
+  // stays live (unlinked) for any existing deep links.
+  { id: "home-services-finance", href: "/admin/home-services/finance", label: "Home Services Finance", icon: <Banknote size={16}/>, requiredPermission: "finance:hub:read" },
 ];
 
 // Flattened (id, href) list derived from the actual rendered sidebar (NAV_GROUPS
@@ -375,8 +374,13 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
 
   async function handleLogout() {
     try { await authApi.logout(); } catch { /* best effort */ }
-    localStorage.removeItem("serviceos_admin_token");
-    window.location.href = "/login";
+    // Real bug found in this pass: this used to only clear
+    // serviceos_admin_token and leave serviceos_admin_refresh behind,
+    // which the axios-style refresh interceptor in lib/api.ts would then
+    // use to silently re-authenticate on the very next request after
+    // landing on /login -- logout looked like it worked but didn't.
+    // clearSession() is the same helper api.ts's own 401 handler uses.
+    clearSession();
   }
 
   const w = collapsed ? 84 : 248;
@@ -654,7 +658,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
                 const path = m.admin_path || `/admin/catalog/${vertical.vertical_key}`;
                 const isActive = activeNav === navId;
                 return (
-                  <a
+                  <Link
                     key={m.key} href={path} role="menuitem"
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => setFlyoutOpen(false)}
@@ -668,13 +672,13 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
                   >
                     <Settings2 size={14} style={{ opacity: 0.7, flexShrink: 0 }}/>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.label}</span>
-                  </a>
+                  </Link>
                 );
               })}
               {extraItems.map(item => {
                 const isActive = activeNav === item.id;
                 return (
-                  <a
+                  <Link
                     key={item.id} href={item.href} role="menuitem"
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => setFlyoutOpen(false)}
@@ -688,7 +692,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
                   >
                     {item.icon}
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
-                  </a>
+                  </Link>
                 );
               })}
             </div>
@@ -767,7 +771,7 @@ function SidebarItem({
 
   if (collapsed) {
     return (
-      <a
+      <Link
         href={item.href}
         id={`nav-${item.id}`}
         title={item.label}
@@ -802,12 +806,12 @@ function SidebarItem({
           fontSize: 9.5, fontWeight: active ? 700 : 500, lineHeight: 1.2, textAlign: "center",
           maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         }}>{item.label}</span>
-      </a>
+      </Link>
     );
   }
 
   return (
-    <a
+    <Link
       href={item.href}
       id={`nav-${item.id}`}
       aria-current={active ? "page" : undefined}
@@ -837,7 +841,7 @@ function SidebarItem({
           padding: "1px 7px", flexShrink: 0,
         }}>{item.badge}</span>
       )}
-    </a>
+    </Link>
   );
 }
 
@@ -1013,24 +1017,24 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
               })}
             </div>
 
-            <a href="/admin/notifications" onClick={() => setBellOpen(false)}
+            <Link href="/admin/notifications" onClick={() => setBellOpen(false)}
               style={{ display: "block", textAlign: "center", padding: "12px 16px",
                 borderTop: "1px solid var(--border)", fontSize: 13, fontWeight: 600,
                 color: "var(--accent)", textDecoration: "none" }}>
               View all notifications
-            </a>
+            </Link>
           </div>
         )}
       </div>
 
       {/* User → My Profile */}
-      <a href="/admin/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+      <Link href="/admin/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
         <div style={{ textAlign: "right" }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{myName || "Super Admin"}</p>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Platform</p>
         </div>
         <DefaultAvatar name={myName || "Super Admin"} src={myAvatar} size={34}/>
-      </a>
+      </Link>
 
       {/* Logout */}
       <button onClick={onLogout} title="Log out" style={iconBtnStyle}>

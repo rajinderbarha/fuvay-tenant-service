@@ -19,6 +19,27 @@ from app.engines.ai_conversation.constants import (
 logger = structlog.get_logger("ai_conversation.safety")
 
 
+def strip_markdown_formatting(text: str) -> str:
+    """Renders as one plain chat bubble on the client, never a document --
+    the system prompt already tells DeepSeek not to use markdown, but LLM
+    instruction-following isn't 100% reliable turn to turn (confirmed live:
+    the same prompt sometimes produces "**AC Service**" bold markers and
+    numbered lists anyway). This is a guaranteed server-side safety net so
+    a customer never sees literal asterisks/hashes regardless of what the
+    model actually output.
+    """
+    # Bold/italic markers: **text** / __text__ / *text* / _text_ -> text
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"__([^_]+)__", r"\1", text)
+    text = re.sub(r"(?<!\w)\*([^*\n]+)\*(?!\w)", r"\1", text)
+    text = re.sub(r"(?<!\w)_([^_\n]+)_(?!\w)", r"\1", text)
+    # Markdown headers: "## Title" -> "Title"
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
+    # Leading list markers: "1. " / "- " / "* " -> stripped (keeps the text)
+    text = re.sub(r"^\s*(?:\d+\.|[-*])\s+", "", text, flags=re.MULTILINE)
+    return text.strip()
+
+
 def detect_prompt_injection(text: str) -> list[str]:
     """Return list of detected injection patterns (empty = safe)."""
     lower = text.lower()

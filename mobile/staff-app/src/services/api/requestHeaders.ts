@@ -13,6 +13,12 @@ export function buildPublicHeaders(extra?: Record<string, string>): Record<strin
     "Content-Type": "application/json",
     Accept: "application/json",
     "X-Request-ID": generateCorrelationId(),
+    // No-op against the real backend; only matters when EXPO_PUBLIC_API_BASE_URL
+    // points at a free ngrok tunnel (local dev over a physical device) -- ngrok's
+    // free tier otherwise serves an HTML interstitial to any request whose
+    // User-Agent looks browser-like (which React Native's fetch does), breaking
+    // every API call with an unparseable-response error instead of JSON.
+    "ngrok-skip-browser-warning": "true",
     ...extra,
   };
 }

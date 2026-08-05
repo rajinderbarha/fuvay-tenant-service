@@ -14,10 +14,27 @@ from app.engines.vertical_catalog.models import (
     VerticalEngineMapping, TenantVerticalEnrollment, VerticalAuditLog,
 )
 
+# Real runtime bug fixed here (TENANT-ADMIN-LIFECYCLE-CLOSURE): the three
+# activation-lifecycle states below were introduced in
+# `vertical_catalog.activation` and are passed to `transition_enrollment`
+# by `approve_enrollment` / `try_auto_activate`, but were never added to
+# this allowlist -- so EVERY activation attempt raised
+# `ValueError("Invalid enrollment status ...")` and no tenant could ever
+# be auto-activated.
 ENROLLMENT_STATUSES = {
     "draft", "submitted", "under_review", "changes_requested",
-    "approved", "active", "suspended", "rejected",
+    "approved", "approved_pending_activation",
+    "activation_requirements_pending", "activating",
+    "active", "suspended", "rejected",
 }
+
+# The subset an API CLIENT (Admin UI) may request directly. "active" and
+# "activating" are deliberately excluded: reaching them means every
+# activation gate has genuinely passed, which only
+# `activation.try_auto_activate` can determine. Letting an admin PATCH
+# straight to "active" would bypass the entire gate system and mark a
+# tenant live with, for example, no service area or no payout account.
+CLIENT_REQUESTABLE_STATUSES = ENROLLMENT_STATUSES - {"active", "activating"}
 
 
 class VerticalCatalogService:

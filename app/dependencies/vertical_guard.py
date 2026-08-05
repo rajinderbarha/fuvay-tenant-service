@@ -15,6 +15,8 @@ require_tenant_vertical_active(vertical_key) -> AND this tenant's enrollment in
                                                   that vertical is status="active"
 require_vertical_capability(vertical_key, capability) -> AND the vertical
                                                   declares that capability
+require_vertical_not_active(vertical_key)   -> the INVERSE: this tenant has
+                                                  NOT finished activating yet
 """
 from typing import Callable
 
@@ -27,7 +29,7 @@ from app.dependencies.db import get_db
 from app.engines.vertical_catalog.models import Vertical, TenantVerticalEnrollment
 from app.exceptions import (
     VerticalDisabledException, TenantVerticalNotActiveException,
-    VerticalCapabilityUnavailableException,
+    VerticalCapabilityUnavailableException, VerticalAlreadyActiveException,
 )
 
 
@@ -76,6 +78,48 @@ def require_tenant_vertical_active(vertical_key: str) -> Callable:
         return user
 
     _guard.__name__ = f"tenant_vertical_active_{vertical_key}"
+    return _guard
+
+
+def require_vertical_not_active(vertical_key: str) -> Callable:
+    """The inverse of `require_tenant_vertical_active`: the caller must NOT be
+    activated in this vertical yet.
+
+    Real bug fixed here: this guard was imported by
+    vertical_catalog/tenant_documents_router.py but never existed, so that
+    module raised ImportError on import -- which is why the whole onboarding
+    documents router could never be mounted and all of its routes 404'd.
+
+    It guards ONBOARDING-only surfaces (submitting setup paperwork). Once a
+    tenant is live, those endpoints must close: re-submitting onboarding
+    documents against an active vertical is not an edit path, it is a way to
+    put a live tenant back into a half-configured state.
+
+    A missing enrollment counts as "not active" -- a tenant who has not
+    enrolled yet is exactly who this surface is for.
+    """
+    async def _guard(
+        user: UserContext = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> UserContext:
+        if not user.tenant_id:
+            # No tenant context at all -- nothing is active, so this
+            # onboarding-only surface stays open.
+            return user
+        v = await _load_vertical(db, vertical_key)
+        if not v or not v.is_enabled:
+            raise VerticalDisabledException(vertical_key)
+        enrollment = (await db.execute(
+            select(TenantVerticalEnrollment).where(
+                TenantVerticalEnrollment.tenant_id == user.tenant_id,
+                TenantVerticalEnrollment.vertical_id == v.id,
+            )
+        )).scalar_one_or_none()
+        if enrollment and enrollment.status == "active":
+            raise VerticalAlreadyActiveException(vertical_key, user.tenant_id)
+        return user
+
+    _guard.__name__ = f"vertical_not_active_{vertical_key}"
     return _guard
 
 

@@ -26,7 +26,7 @@ export function CoveragePricingStep({ service, onRefetchService }: {
   const brandsRes = useApi(useCallback(() => hasBrand ? serviceSetupApi.getBrands(tsid) : Promise.resolve({ brands: [] }), [tsid, hasBrand]));
 
   const [activeTypeId, setActiveTypeId] = useState<string | null>(null);
-  const activeTypeName = typePricingRes.data?.types.find(t => t.service_type_id === activeTypeId)?.name ?? null;
+  const activeTypeName = typePricingRes.data?.types?.find(t => t.service_type_id === activeTypeId)?.name ?? null;
   const brandPricingRes = useApi(useCallback(
     () => hasBrand ? serviceSetupApi.getBrandPricing(tsid, activeTypeId ?? undefined) : Promise.resolve({ brands: [] }),
     [tsid, hasBrand, activeTypeId]));

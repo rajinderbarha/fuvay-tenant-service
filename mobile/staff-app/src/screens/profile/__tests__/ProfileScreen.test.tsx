@@ -5,7 +5,7 @@ import { ProfileScreen } from "../ProfileScreen";
 import { ProfileDetailDTO } from "../../../services/profile/types";
 
 jest.mock("../useProfile");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 jest.mock("../../../services/auth/sessionManager", () => ({ revokeCurrentSession: jest.fn(async () => {}) }));
 
 import { useProfile } from "../useProfile";
@@ -39,7 +39,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
 });
 
 describe("ProfileScreen — identity, readiness and menu (Phase R spec sections 3-6)", () => {

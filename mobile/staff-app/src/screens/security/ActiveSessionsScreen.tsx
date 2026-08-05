@@ -45,7 +45,7 @@ export function ActiveSessionsScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const queryClient = useQueryClient();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
 
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);

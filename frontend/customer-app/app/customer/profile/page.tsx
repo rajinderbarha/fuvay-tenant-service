@@ -36,7 +36,7 @@ export default function ProfilePage() {
           style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
                    padding: "14px 16px", textDecoration: "none", color: "inherit",
                    borderBottom: "1px solid #f0f0f0" }}>
-          <span style={{ fontWeight: 600 }}>My Credits</span>
+          <span style={{ fontWeight: 600 }}>Service Credits</span>
           <span style={{ color: "var(--text-tertiary)" }}>›</span>
         </Link>
         <Link href="/customer/chat"

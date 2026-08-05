@@ -72,7 +72,7 @@ function BookHomeServiceInner() {
 
   // Step: provider + price
   const [matchResult, setMatchResult] = useState<any>(null);
-  const [priceTier, setPriceTier] = useState<"low" | "mid" | "high" | null>(null);
+  const [priceTier, setPriceTier] = useState<"low" | "mid" | "high" | "standard" | null>(null);
 
   // Step: confirm result
   const [bookingResult, setBookingResult] = useState<any>(null);
@@ -161,7 +161,7 @@ function BookHomeServiceInner() {
     }
   }
 
-  async function handleSelectPrice(tier: "low" | "mid" | "high") {
+  async function handleSelectPrice(tier: "low" | "mid" | "high" | "standard") {
     setPriceTier(tier);
   }
 
@@ -394,8 +394,36 @@ function PriceStep({ matchResult, priceTier, onSelect, onNext, loading }: any) {
     { key: "mid", label: "Mid", blurb: "Recommended fair price" },
     { key: "high", label: "High", blurb: "Higher acceptance priority" },
   ];
-  if (!options.low && !options.mid && !options.high) {
-    return <div className="co-card"><div className="co-empty">Price options are loading...</div></div>;
+  const hasBargainTiers = Boolean(options.low || options.mid || options.high);
+  // Real backend behavior (HomeServiceChatbotBookingService.match_provider_and_price):
+  // bargain_available=false is a normal, common case (no BargainRule
+  // configured for this offering) -- the customer still gets a real,
+  // authoritative standard_price and price_tier="standard" is a fully
+  // supported confirm-price-choice value. This was previously unhandled
+  // here, permanently stuck on a fake "loading" message for every
+  // non-bargain offering.
+  if (!hasBargainTiers && typeof matchResult?.standard_price === "number" && matchResult.standard_price > 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className={`co-price-card ${priceTier === "standard" ? "selected" : ""}`} onClick={() => onSelect("standard")}>
+          <div style={{ fontWeight: 700 }}>Standard price — ₹{matchResult.standard_price}</div>
+          <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Fixed price for this service</div>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Pay provider directly after service.</div>
+        <button className="co-btn-primary" disabled={loading || !priceTier} onClick={onNext}>{loading ? "Please wait..." : "Continue"}</button>
+      </div>
+    );
+  }
+  if (!hasBargainTiers) {
+    // Genuinely absent (no pricing configured for this offering at all),
+    // not a transient load -- match-and-price has already returned by the
+    // time this step renders, so an infinite "loading" claim would be
+    // false. Show the real state instead.
+    return (
+      <div className="co-card">
+        <div className="co-empty">Pricing isn&apos;t available for this service in your area yet. Please try again later or contact support.</div>
+      </div>
+    );
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -428,7 +456,7 @@ function ReviewStep({ draft, matchResult, priceTier, loading, onConfirm }: any) 
       <div><strong>Issue:</strong> {draft?.issue_summary}</div>
       <div><strong>Address:</strong> {draft?.address_snapshot?.address_line1}, {draft?.city} {draft?.zipcode}</div>
       <div><strong>Provider:</strong> {provider.provider_name || provider.business_name}</div>
-      <div><strong>Selected price:</strong> {priceTier ? `${priceTier} — ₹${options[priceTier]}` : "—"}</div>
+      <div><strong>Selected price:</strong> {priceTier ? `${priceTier} — ₹${priceTier === "standard" ? matchResult?.standard_price : options[priceTier as "low" | "mid" | "high"]}` : "—"}</div>
       <div><strong>Payment:</strong> Customer Pays Provider Directly</div>
       {blockedByJobType && jobTypeErrors.map((e) => (
         <div key={e.code} style={{ color: "var(--danger-text, #991b1b)", fontSize: 13 }}>{e.message}</div>

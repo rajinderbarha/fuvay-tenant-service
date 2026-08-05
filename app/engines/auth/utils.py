@@ -36,7 +36,15 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    # A malformed/unidentifiable stored hash (corrupt seed data, a bad
+    # migration, manual DB tampering) must fail auth cleanly, never crash
+    # the request with a raw 500 -- found live during this pass: a seeded
+    # technician's hashed_password wasn't a real passlib hash and every
+    # login attempt for that account 500'd instead of returning 401.
+    try:
+        return pwd_context.verify(plain, hashed)
+    except Exception:
+        return False
 
 _SPECIAL_CHARS = set(r"""!@#$%^&*()_+-=[]{}|;':",.<>?/`~\\""")
 

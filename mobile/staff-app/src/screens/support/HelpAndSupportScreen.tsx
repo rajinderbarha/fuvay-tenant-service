@@ -47,7 +47,7 @@ const formatRelative = (iso: string) => {
 export function HelpAndSupportScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const { data, isLoading, isError, error, isRefetching, refetch, manager } = useHelpWorkspace();
 
   if (isLoading) {

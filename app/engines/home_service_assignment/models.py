@@ -2,7 +2,8 @@
 from __future__ import annotations
 import uuid
 from datetime import date, datetime
-from sqlalchemy import Boolean, Date, DateTime, Index, String, Text, UniqueConstraint
+from decimal import Decimal
+from sqlalchemy import Boolean, Date, DateTime, Index, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import ServiceOSBase
@@ -96,3 +97,30 @@ class ServiceJobAssignmentEvent(ServiceOSBase):
             "request_id":    self.request_id,
             "created_at":    self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class TechnicianLiveLocation(ServiceOSBase):
+    """CANCEL-RESCHEDULE-FOUNDATION sibling phase — TRACK-TECHNICIAN.
+
+    One row per job holding the technician's LATEST reported GPS fix only —
+    not a position history/trail. There was no live-location capability
+    anywhere in this codebase before this table (confirmed by audit: the
+    only prior lat/lng was a one-shot capture on the disconnected/dead
+    field_ops.Job table). Submitted by the assigned technician's own device
+    while the job is in an active-tracking status; read by the owning
+    customer via a booking-scoped, ownership-checked endpoint. Never
+    retained beyond the job's live window — overwritten in place, not
+    appended, so no location history accumulates past "right now"."""
+    __tablename__ = "technician_live_locations"
+    __table_args__ = (
+        Index("ix_tll_job_id", "job_id", unique=True),
+        Index("ix_tll_staff_id", "staff_id"),
+    )
+
+    job_id:          Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    staff_id:        Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    tenant_id:       Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    latitude:        Mapped[Decimal]          = mapped_column(Numeric(10, 7), nullable=False)
+    longitude:       Mapped[Decimal]          = mapped_column(Numeric(10, 7), nullable=False)
+    accuracy_meters: Mapped[Decimal | None]   = mapped_column(Numeric(8, 2), nullable=True)
+    recorded_at:     Mapped[datetime]         = mapped_column(DateTime(timezone=True), nullable=False)

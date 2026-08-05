@@ -2,7 +2,7 @@
 from __future__ import annotations
 import uuid
 from decimal import Decimal
-from sqlalchemy import Boolean, DateTime, Index, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import ServiceOSBase
@@ -171,6 +171,28 @@ class ServicePaymentRecord(ServiceOSBase):
     provider_confirmed_at:         Mapped[object|None]    = mapped_column(DateTime(timezone=True), nullable=True)
     admin_verified_at:             Mapped[object|None]    = mapped_column(DateTime(timezone=True), nullable=True)
     failure_reason:                Mapped[str|None]       = mapped_column(Text(), nullable=True)
+    # Found missing from this model entirely during the Final Phase
+    # end-to-end pass -- all 17 columns below are real, already-migrated
+    # DB columns that direct_payments_service.py actively constructs
+    # ServicePaymentRecord with; every /mobile-direct-payment/declare call
+    # 500'd on "invalid keyword argument" until these were added back.
+    expected_amount:                Mapped[Decimal|None]   = mapped_column(Numeric(14,2), nullable=True)
+    payment_reference_id:           Mapped[str|None]       = mapped_column(String(120), nullable=True)
+    declaration_note:               Mapped[str|None]       = mapped_column(Text(), nullable=True)
+    declaration_version:            Mapped[int]            = mapped_column(Integer, nullable=False, default=1)
+    correction_reason:              Mapped[str|None]       = mapped_column(Text(), nullable=True)
+    amount_difference_reason:       Mapped[str|None]       = mapped_column(Text(), nullable=True)
+    received_at:                    Mapped[object|None]    = mapped_column(DateTime(timezone=True), nullable=True)
+    reconciliation_status:          Mapped[str|None]       = mapped_column(String(40), nullable=True)
+    customer_reported_amount:       Mapped[Decimal|None]   = mapped_column(Numeric(14,2), nullable=True)
+    customer_reported_method:       Mapped[str|None]       = mapped_column(String(40), nullable=True)
+    customer_confirmation_action:   Mapped[str|None]       = mapped_column(String(40), nullable=True)
+    customer_confirmation_note:     Mapped[str|None]       = mapped_column(Text(), nullable=True)
+    dispute_complaint_id:           Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    last_reminder_at:               Mapped[object|None]    = mapped_column(DateTime(timezone=True), nullable=True)
+    reminder_count:                 Mapped[int]            = mapped_column(Integer, nullable=False, default=0)
+    evidence_media_id:              Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    evidence_type:                  Mapped[str|None]       = mapped_column(String(40), nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -187,6 +209,13 @@ class ServicePaymentRecord(ServiceOSBase):
             "provider_confirmed_at":  self.provider_confirmed_at.isoformat() if self.provider_confirmed_at else None,
             "admin_verified_at":      self.admin_verified_at.isoformat()     if self.admin_verified_at     else None,
             "failure_reason":    self.failure_reason,
+            "expected_amount":   str(self.expected_amount) if self.expected_amount is not None else None,
+            "payment_reference_id": self.payment_reference_id,
+            "declaration_note":  self.declaration_note,
+            "declaration_version": self.declaration_version,
+            "reconciliation_status": self.reconciliation_status,
+            "evidence_media_id": str(self.evidence_media_id) if self.evidence_media_id else None,
+            "evidence_type":     self.evidence_type,
             "created_at":        self.created_at.isoformat() if self.created_at else None,
             "updated_at":        self.updated_at.isoformat() if self.updated_at else None,
         }

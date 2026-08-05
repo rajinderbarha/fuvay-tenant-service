@@ -10,11 +10,12 @@ from datetime import datetime, timezone
 
 import structlog
 from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.serviceability.constants import (
     CoverageType, MatchLevel, MATCH_LEVEL_PRIORITY, JOB_TYPES,
-    ERR_ADDRESS_NOT_FOUND, ERR_INVALID_ZIPCODE, ERR_INVALID_CITY,
+    ERR_ADDRESS_NOT_FOUND, ERR_ADDRESS_DEFAULT_CONFLICT, ERR_INVALID_ZIPCODE, ERR_INVALID_CITY,
     ERR_SERVICE_NOT_FOUND, ERR_SERVICE_NOT_ACTIVE, ERR_NOT_AVAILABLE,
     ERR_NO_TENANT, ERR_NO_STAFF, ERR_AREA_NOT_FOUND, ERR_DUPLICATE_AREA,
     ERR_INVALID_COVERAGE, ERR_ZIPCODE_REQUIRED, ERR_CITY_REQUIRED,
@@ -58,12 +59,6 @@ class ServiceabilityService:
     # Customer Addresses
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _assert_owns_address(self, address: CustomerAddress) -> None:
-        if self.actor_role == "customer" and (
-            self.actor_id is None or address.customer_id != self.actor_id
-        ):
-            raise NotFoundException("CustomerAddress", str(address.id))
-
     async def list_addresses(self, customer_id: uuid.UUID) -> dict:
         rows = (await self.db.execute(
             select(CustomerAddress)
@@ -95,7 +90,7 @@ class ServiceabilityService:
 
         addr = CustomerAddress(
             customer_id=customer_id, tenant_id=tenant_id,
-            name=payload.get("name"), phone=payload.get("phone"),
+            label=payload.get("label"), name=payload.get("name"), phone=payload.get("phone"),
             address_line_1=payload["address_line_1"],
             address_line_2=payload.get("address_line_2"),
             landmark=payload.get("landmark"),
@@ -106,7 +101,13 @@ class ServiceabilityService:
             is_default=is_default, is_active=True,
         )
         self.db.add(addr)
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            raise ServiceOSException(ERR_ADDRESS_DEFAULT_CONFLICT,
+                "A concurrent request already changed the default address. Please retry.",
+                status_code=409)
         await self.db.refresh(addr)
         logger.info("address.created", customer_id=str(customer_id), address_id=str(addr.id))
         return addr.to_dict()
@@ -123,10 +124,22 @@ class ServiceabilityService:
 
     async def get_address(self, address_id: uuid.UUID) -> CustomerAddress:
         addr = await self.db.get(CustomerAddress, address_id)
-        if not addr or not addr.is_active:
+        # Enumeration-safe: an address that doesn't exist and an address
+        # that exists but belongs to another customer must be
+        # indistinguishable to the caller -- same error_code, same detail,
+        # same status. Previously the ownership check raised a separate
+        # NotFoundException("CustomerAddress", ...) with a different
+        # error_code ("NOT_FOUND" vs "CUSTOMER_ADDRESS_NOT_FOUND") and a
+        # different detail string, letting a caller distinguish "missing"
+        # from "not yours" by probing address IDs.
+        not_visible = not addr or not addr.is_active or (
+            self.actor_role == "customer" and (
+                self.actor_id is None or addr.customer_id != self.actor_id
+            )
+        )
+        if not_visible:
             raise ServiceOSException(ERR_ADDRESS_NOT_FOUND,
                                       f"Address '{address_id}' not found.", status_code=404)
-        self._assert_owns_address(addr)
         return addr
 
     async def get_address_dict(self, address_id: uuid.UUID) -> dict:
@@ -134,12 +147,31 @@ class ServiceabilityService:
 
     async def update_address(self, address_id: uuid.UUID, payload: dict) -> dict:
         addr = await self.get_address(address_id)
-        if payload.get("is_default"):
+        # `is_default` is handled separately from the generic field loop:
+        # only `True` is ever actionable here (atomically clear every other
+        # default and set this one). A bare `is_default: false` in the
+        # payload is silently ignored rather than applied directly --
+        # applying it would leave this customer with zero default addresses
+        # while other active addresses remain, which is not a state the
+        # server-owned default invariant permits. Un-defaulting only ever
+        # happens as a side effect of another address becoming default
+        # (set_default_address) or the default address being deleted
+        # (delete_address's promotion logic).
+        make_default = payload.pop("is_default", None) is True
+        if make_default:
             await self._clear_default(addr.customer_id)
         for k, v in payload.items():
             if v is not None and hasattr(addr, k):
                 setattr(addr, k, v)
-        await self.db.commit()
+        if make_default:
+            addr.is_default = True
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            raise ServiceOSException(ERR_ADDRESS_DEFAULT_CONFLICT,
+                "A concurrent request already changed the default address. Please retry.",
+                status_code=409)
         await self.db.refresh(addr)
         return addr.to_dict()
 
@@ -169,7 +201,13 @@ class ServiceabilityService:
         addr = await self.get_address(address_id)
         await self._clear_default(addr.customer_id)
         addr.is_default = True
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            raise ServiceOSException(ERR_ADDRESS_DEFAULT_CONFLICT,
+                "A concurrent request already changed the default address. Please retry.",
+                status_code=409)
         await self.db.refresh(addr)
         return addr.to_dict()
 

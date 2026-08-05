@@ -287,6 +287,21 @@ class CommerceService:
         p.is_active = False; p.archived_at = utcnow()
         return {"package_id": str(pid), "archived": True}
 
+    async def delete_package_permanently(self, pid):
+        """Hard-delete -- only ever safe for a package that has NEVER been
+        purchased (purchase_count == 0), since CreditTopupOrder.
+        credit_package_id would otherwise reference a row that no longer
+        exists. Archive (above) is the only option once a package has any
+        purchase history -- this is a real constraint, not just a policy."""
+        r = await self.db.execute(select(CreditPackage).where(CreditPackage.id == pid))
+        p = r.scalar_one_or_none()
+        if not p: raise NotFoundException("CreditPackage", str(pid))
+        if p.purchase_count > 0:
+            raise ServiceOSException("CONFLICT",
+                "Cannot permanently delete a package that has been purchased. Archive it instead.")
+        await self.db.delete(p)
+        return {"package_id": str(pid), "deleted": True}
+
     # ── Wallet (8) ─────────────────────────────────────────────────────────────
     async def get_wallet(self, tid):
         rec = await reconcile_wallet(self.db, tid)

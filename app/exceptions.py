@@ -151,6 +151,22 @@ class TenantVerticalNotActiveException(ServiceOSException):
         )
 
 
+class VerticalAlreadyActiveException(ServiceOSException):
+    """Raised by `require_vertical_not_active`: an onboarding-only surface was
+    called by a tenant who has already finished activating. Re-submitting
+    setup paperwork against a live vertical is not an edit path -- it would
+    put an operating tenant back into a half-configured state."""
+    def __init__(self, vertical_key: str, tenant_id: str):
+        super().__init__(
+            error_code="TENANT_VERTICAL_ALREADY_ACTIVE",
+            detail=f"Tenant '{tenant_id}' is already active in '{vertical_key}'; onboarding setup is closed.",
+            status_code=409,
+            blocking_rule="tenant_vertical_enrollments.status must NOT be 'active'",
+            resolution="Use the live workspace to make changes; onboarding setup applies before activation only.",
+            context={"vertical_key": vertical_key, "tenant_id": tenant_id},
+        )
+
+
 class VerticalCapabilityUnavailableException(ServiceOSException):
     def __init__(self, vertical_key: str, capability: str):
         super().__init__(

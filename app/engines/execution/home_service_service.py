@@ -2,6 +2,7 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select, update
@@ -33,6 +34,7 @@ from app.engines.execution.constants import (
     ERR_PARTS_REASON_REQUIRED, ERR_PARTS_NOT_ALLOWED_STATUS,
     ERR_PARTS_REQUEST_NOT_FOUND, ERR_PARTS_ALREADY_DECIDED,
     ERR_PARTS_NOT_APPROVED, ERR_PARTS_REJECTED_CANNOT_INSTALL,
+    ERR_PARTS_CUSTOMER_DECISION_NOT_ALLOWED,
     JS_COMPLETED, COMPLETABLE_JOB_STATUSES, PAYMENT_MODE_HOME_SERVICES,
     ERR_WORK_SUMMARY_REQUIRED, ERR_COLLECTED_AMOUNT_REQUIRED,
     ERR_COLLECTED_AMOUNT_INVALID, ERR_PAYMENT_MODE_INVALID,
@@ -278,6 +280,23 @@ class HomeServiceJobExecutionService:
         self._assert_transition(old, new_status)
         if new_status == JS_SERVICE_STARTED:
             await self._assert_quote_approval_satisfied(db, job)
+            # Customer platform fee gate (vertical_monetization).
+            #
+            # Real production gap fixed here: the monetization engine defined
+            # this gate but nothing ever called it, so work could start on a
+            # job whose customer platform fee was still unpaid -- the platform
+            # then had no leverage to collect it. Sits beside the existing
+            # quote-approval gate because both answer the same question:
+            # "is this job actually authorised to begin?".
+            #
+            # This one is deliberately NOT swallowed: unlike charge CREATION
+            # (best-effort), an unpaid required fee must genuinely block work.
+            # The helper is a no-op when no policy/charge applies.
+            from app.engines.vertical_monetization.charge_service import (
+                assert_customer_platform_fee_paid_if_required,
+            )
+            await assert_customer_platform_fee_paid_if_required(db, job)
+            await self._assert_checklist_satisfied(db, job)
         job.status = new_status
         job.updated_at = _now()
         db.add(job)
@@ -436,10 +455,57 @@ class HomeServiceJobExecutionService:
         await db.flush()
         return job.to_dict()
 
+    async def _assert_checklist_satisfied(self, db: AsyncSession, job) -> None:
+        """Workflow checklist gate.
+
+        Real bug fixed here: `ServiceJobWorkflow.checklist_required` is a real,
+        admin-configurable column, but nothing enforced it -- a technician
+        could start work on a job type that explicitly requires a pre-work
+        checklist without any checklist row ever existing, defeating the whole
+        safety/compliance purpose of the setting.
+
+        Fails closed ONLY when a workflow genuinely resolves AND explicitly
+        requires a checklist. A legacy job with no resolvable workflow is
+        unaffected, so this can never strand existing in-flight jobs.
+        """
+        workflow = await self._resolve_job_type_workflow(db, job)
+        if workflow is None or not workflow.checklist_required:
+            return
+        from app.engines.quote_checklist.models import ServiceJobChecklist
+        exists = (await db.execute(
+            select(ServiceJobChecklist.id).where(ServiceJobChecklist.job_id == job.id).limit(1)
+        )).scalars().first()
+        if not exists:
+            raise ServiceOSException(
+                "CHECKLIST_REQUIRED_BEFORE_WORK_START",
+                "A pre-work checklist is required for this job type before work can start.",
+                status_code=409,
+            )
+
     async def cancel_job(self, db, job_id, tenant_id, user_id, reason: str, actor_role: str = "provider", request_id=None):
         if not reason or not reason.strip():
             raise ServiceOSException(ERR_REASON_REQUIRED, "Reason is required.", status_code=422)
         job = await self._get_job(db, job_id, tenant_id)
+
+        # Workflow cancellation gate.
+        #
+        # Real bug fixed here: `ServiceJobWorkflow.allows_cancellation` is a
+        # real, admin-configurable column that the catalog UI exposes, but
+        # cancel_job never read it -- so a job type explicitly configured as
+        # non-cancellable could still be cancelled by any provider/staff user.
+        #
+        # Fails closed ONLY when a workflow genuinely resolves AND explicitly
+        # disallows cancellation. A legacy job with no resolvable workflow
+        # (service_job_workflow_id NULL) stays cancellable, so this can never
+        # strand an old job with no way to close it out.
+        workflow = await self._resolve_job_type_workflow(db, job)
+        if workflow is not None and not workflow.allows_cancellation:
+            raise ServiceOSException(
+                "JOB_CANCELLATION_NOT_ALLOWED",
+                "This job type cannot be cancelled once it has been created.",
+                status_code=422,
+            )
+
         await self._set_status(db, job, JS_CANCELLED, EV_JOB_CANCELLED, user_id, actor_role, notes=reason, request_id=request_id)
         job.failure_reason = reason
         db.add(job)
@@ -643,6 +709,136 @@ class HomeServiceJobExecutionService:
         db.add(pr)
         await db.flush()
         return pr.to_dict()
+
+    # ── PARTS-APPROVAL phase — customer read/decide ──────────────────────────
+    # Audit finding: `customer_approval_required` is a real, per-request
+    # policy flag (set by staff at request time), and `approve_parts_request`
+    # already computes a real `PARTS_STATUS_CUSTOMER_APPROVAL_PENDING` status
+    # when it's set -- but no method anywhere transitioned a request OUT of
+    # that status (a customer literally could not decide, and no customer
+    # read endpoint existed at all). This is the smallest correct customer
+    # extension (Outcome C): mirrors the already-proven quote_checklist
+    # customer-decision pattern (ownership via job.customer_id, only a
+    # PENDING request is actionable, decided requests fail safely on retry)
+    # rather than inventing a second decision engine.
+    #
+    # A request is customer-visible only once the business has acted on it
+    # (approved into either CUSTOMER_APPROVAL_PENDING or BUSINESS_APPROVED)
+    # or reached a customer-facing terminal state -- a bare `requested` or
+    # `business_rejected` request is internal technician/business back-and-
+    # forth the customer has no proven need to see.
+    _CUSTOMER_VISIBLE_PARTS_STATUSES = frozenset({
+        PARTS_STATUS_CUSTOMER_APPROVAL_PENDING, PARTS_STATUS_CUSTOMER_APPROVED,
+        PARTS_STATUS_CUSTOMER_REJECTED, PARTS_STATUS_BUSINESS_APPROVED, PARTS_STATUS_INSTALLED,
+    })
+
+    @staticmethod
+    def _customer_safe_parts_request(pr) -> dict:
+        decided_at = pr.approved_at or pr.rejected_at
+        return {
+            "parts_request_id":           str(pr.id),
+            "status":                     pr.status,
+            "part_name":                  pr.part_name,
+            "quantity":                   pr.quantity,
+            "unit_amount":                str(pr.estimated_cost),
+            "line_total":                 str(Decimal(str(pr.estimated_cost)) * pr.quantity),
+            "reason":                     pr.reason,
+            "customer_approval_required": pr.customer_approval_required,
+            "submitted_at":               pr.created_at.isoformat() if pr.created_at else None,
+            "decided_at":                 decided_at.isoformat() if decided_at else None,
+            "rejection_reason":           pr.rejection_reason if pr.status == PARTS_STATUS_CUSTOMER_REJECTED else None,
+        }
+
+    async def customer_list_parts_requests(self, db: AsyncSession, job_id: uuid.UUID, customer_id: uuid.UUID) -> dict:
+        from app.engines.execution.models import PartsRequest
+        from app.engines.final_records.models import ServiceJob
+        job = await db.get(ServiceJob, job_id)
+        if not job or not job.customer_id or str(job.customer_id) != str(customer_id):
+            raise ServiceOSException(ERR_PARTS_REQUEST_NOT_FOUND, "Parts request not found.", status_code=404)
+
+        res = await db.execute(
+            select(PartsRequest).where(PartsRequest.job_id == job_id).order_by(PartsRequest.created_at.desc())
+        )
+        visible = [p for p in res.scalars().all() if p.status in self._CUSTOMER_VISIBLE_PARTS_STATUSES]
+        items = [self._customer_safe_parts_request(p) for p in visible]
+        additional_total = sum((Decimal(i["line_total"]) for i in items), Decimal("0"))
+
+        # Backend-authoritative "previous estimate" -- the job's own current
+        # quote, the same customer-safe total the Quote Review card already
+        # shows. Absent when no quote exists yet (a genuinely valid state --
+        # a part can be requested before any estimate is sent).
+        from app.engines.quote_checklist.models import ServiceJobQuote
+        quote = (await db.execute(
+            select(ServiceJobQuote).where(ServiceJobQuote.job_id == job_id, ServiceJobQuote.is_current.is_(True))
+        )).scalars().first()
+        previous_total = Decimal(str(quote.customer_payable_amount)) if quote else Decimal("0")
+        currency = quote.currency if quote else "INR"
+
+        return {
+            "currency":                str(currency),
+            "previous_estimated_total": str(previous_total),
+            "additional_total":         str(additional_total),
+            "new_estimated_total":      str(previous_total + additional_total),
+            "items":                    items,
+        }
+
+    async def customer_decide_parts_request(
+        self, db: AsyncSession, parts_request_id: uuid.UUID, customer_id: uuid.UUID,
+        decision: str, reason: str | None, request_id: str | None = None,
+    ) -> dict:
+        from app.engines.execution.models import PartsRequest
+        from app.engines.final_records.models import ServiceJob
+        res = await db.execute(select(PartsRequest).where(PartsRequest.id == parts_request_id))
+        pr = res.scalars().first()
+        if not pr:
+            raise ServiceOSException(ERR_PARTS_REQUEST_NOT_FOUND, "Parts request not found.", status_code=404)
+        job = await db.get(ServiceJob, pr.job_id)
+        # Enumeration-safe: a foreign customer's request and a genuinely
+        # missing one return the identical NOT_FOUND, mirroring the same
+        # pattern established for bookings/quotes.
+        if not job or not job.customer_id or str(job.customer_id) != str(customer_id):
+            raise ServiceOSException(ERR_PARTS_REQUEST_NOT_FOUND, "Parts request not found.", status_code=404)
+        if not pr.customer_approval_required:
+            raise ServiceOSException(
+                ERR_PARTS_CUSTOMER_DECISION_NOT_ALLOWED,
+                "This parts request does not require your approval.", status_code=403,
+            )
+        # Only a request currently awaiting the customer's decision is
+        # actionable -- a repeat call after either decision, or a call
+        # before business approval, fails safely rather than double-
+        # transitioning or silently no-op'ing.
+        if pr.status != PARTS_STATUS_CUSTOMER_APPROVAL_PENDING:
+            raise ServiceOSException(
+                ERR_PARTS_ALREADY_DECIDED,
+                f"This parts request is not awaiting your decision (status: {pr.status}).", status_code=409,
+            )
+        now = _now()
+        if decision == "approve":
+            pr.status = PARTS_STATUS_CUSTOMER_APPROVED
+            pr.approved_by = customer_id
+            pr.approved_at = now
+            event_type = "customer_part_approved"
+        elif decision == "decline":
+            if not reason or not reason.strip():
+                raise ServiceOSException(ERR_PARTS_REASON_REQUIRED, "A reason is required to decline.", status_code=422)
+            pr.status = PARTS_STATUS_CUSTOMER_REJECTED
+            pr.rejected_by = customer_id
+            pr.rejected_at = now
+            pr.rejection_reason = reason.strip()
+            event_type = "customer_part_declined"
+        else:
+            raise ServiceOSException("PARTS_INVALID_DECISION", "decision must be 'approve' or 'decline'.", status_code=422)
+        db.add(pr)
+        # Reuses the existing job-event log (no new audit table) -- job.status
+        # itself is untouched by this decision (see phase report: no
+        # canonical transition ties parts resolution to work resuming).
+        await self._log_event(
+            db, job, event_type, job.status, job.status,
+            actor_user_id=customer_id, actor_role="customer",
+            notes=f"parts_request_id={pr.id}", request_id=request_id,
+        )
+        await db.flush()
+        return self._customer_safe_parts_request(pr)
 
     # ── HS8B — single validated completion action ────────────────────────────
 

@@ -41,7 +41,7 @@ export function TechnicianHomeScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
   const { data, isLoading, isError, error, isRefetching, refetch, updateAvailability, lastUpdatedAt } = useTechnicianHome();
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
 

@@ -69,7 +69,14 @@ export function buildEnvironment(env: Partial<NodeJS.ProcessEnv> = process.env):
     throw new Error(`EXPO_PUBLIC_API_BASE_URL is not a valid URL: "${apiBaseUrl}"`);
   }
 
-  const isLocalHost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "10.0.2.2";
+  // Real bug found while testing on a physical device over LAN: this only
+  // ever matched simulator-loopback hostnames, never the private LAN IP a
+  // physical device actually uses to reach the dev machine -- even though
+  // the .env file's own documented workflow ("Physical device: replace
+  // with your computer's local IP address") assumes exactly that works.
+  // RFC1918 private ranges only, still appEnv==="local"-gated below.
+  const isPrivateLanIp = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(parsed.hostname);
+  const isLocalHost = parsed.hostname === "localhost" || parsed.hostname === "10.0.2.2" || isPrivateLanIp;
   if (parsed.protocol !== "https:" && !(appEnv === "local" && isLocalHost)) {
     throw new Error(
       `EXPO_PUBLIC_API_BASE_URL must use HTTPS outside local development (got "${parsed.protocol}" for appEnv="${appEnv}").`,

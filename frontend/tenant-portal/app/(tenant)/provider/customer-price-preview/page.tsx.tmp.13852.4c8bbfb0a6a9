@@ -31,7 +31,7 @@ export default function CustomerPricePreviewPage() {
 
   const enabled = useApi(useCallback(() => providerOfferingsApi.listEnabled(), []));
   const activeOffering = selectedServiceId
-    ? enabled.data?.offerings.find(o => o.offering_id === selectedServiceId)
+    ? enabled.data?.offerings?.find(o => o.offering_id === selectedServiceId)
     : enabled.data?.offerings[0];
   const offeringId = activeOffering?.offering_id ?? null;
 
@@ -84,7 +84,7 @@ export default function CustomerPricePreviewPage() {
         <EmptyState title="No services enabled yet" description="Enable a service from Service Setup to see its customer price preview."/>
       ) : (
         <>
-          {(enabled.data?.offerings.length ?? 0) > 1 && (
+          {(enabled.data?.offerings?.length ?? 0) > 1 && (
             <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
               {enabled.data!.offerings.map(o => (
                 <button key={o.provider_enabled_offering_id} onClick={() => setSelectedServiceId(o.offering_id)}

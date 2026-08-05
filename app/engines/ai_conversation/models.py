@@ -30,6 +30,7 @@ class AIConversationSession(Base):
     completed_at     = Column(DateTime(timezone=True), nullable=True)
     is_active        = Column(Boolean, nullable=False, server_default=text("true"))
     created_at       = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    language         = Column(String(10), nullable=False, server_default=text("'en'"))
     updated_at       = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
 
     messages     = relationship("AIConversationMessage", back_populates="session",
@@ -53,6 +54,11 @@ class AIConversationSession(Base):
             "is_active":        self.is_active,
             "created_at":       self.created_at.isoformat() if self.created_at else None,
             "updated_at":       self.updated_at.isoformat() if self.updated_at else None,
+            # Real column (server_default 'en'), was never serialized here --
+            # the customer app's AssistantSessionResponseDto requires
+            # `language` as a non-optional field, so every session response
+            # failed that contract check.
+            "language":         self.language,
         }
 
 

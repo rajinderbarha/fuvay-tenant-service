@@ -37,9 +37,11 @@ export interface ConsentRecord {
 
 // Customer-facing request types (mirror CUSTOMER_ALLOWED_REQUEST_TYPES) with the
 // human labels shown in the app.
-export const REQUEST_TYPES: { value: string; label: string; needsReason?: boolean }[] = [
+export const REQUEST_TYPES: {
+  value: string; label: string; needsReason?: boolean; needsPassword?: boolean;
+}[] = [
   { value: "data_export",          label: "Export my data" },
-  { value: "right_to_erasure",     label: "Delete my account & data", needsReason: true },
+  { value: "right_to_erasure",     label: "Delete my account & data", needsReason: true, needsPassword: true },
   { value: "data_correction",      label: "Correct my data",          needsReason: true },
   { value: "consent_withdrawal",   label: "Withdraw a consent" },
   { value: "processing_objection", label: "Object to data processing" },
@@ -52,11 +54,14 @@ export async function listPrivacyRequests(): Promise<ComplianceRequest[]> {
 }
 
 export async function createPrivacyRequest(
-  requestType: string, reason: string,
+  requestType: string, reason: string, password?: string,
 ): Promise<ComplianceRequest> {
   return apiFetch<ComplianceRequest>("/v1/me/compliance/requests", {
     method: "POST",
-    body: JSON.stringify({ request_type: requestType, reason, confirm_understanding: true }),
+    body: JSON.stringify({
+      request_type: requestType, reason, confirm_understanding: true,
+      ...(password ? { password } : {}),
+    }),
   });
 }
 

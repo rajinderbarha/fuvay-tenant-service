@@ -317,6 +317,16 @@ class TestStartBookingDraft:
         db.execute = AsyncMock(side_effect=[
             _scalars([cat]),
             _scalars([offering]),
+            # Added later this phase: start_booking_draft now independently
+            # re-checks (a) at least one tenant has actually published this
+            # offering, and (b) it has real problem/issue-type wiring,
+            # before allowing a draft to be created -- both must resolve
+            # truthy here for this "happy path" test to reach draft
+            # creation. Then the customer-address auto-fill lookup (may
+            # legitimately find nothing -- empty is fine, it's optional).
+            _scalars([MagicMock()]),  # has_publisher: truthy
+            _scalars([MagicMock()]),  # has_problems: truthy
+            _scalars([]),             # customer's default address: none found
         ])
         db.add     = MagicMock()
         db.flush   = AsyncMock()

@@ -1315,7 +1315,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
     <AdminLayout activeNav="tenants">
       {/* Breadcrumb */}
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, fontSize:12, color:"var(--text-tertiary)" }}>
-        <Link href="/admin/tenants" style={{ color:"var(--text-link)", textDecoration:"none" }}>Tenants</Link>
+        <Link href="/admin/home-services/providers" style={{ color:"var(--text-link)", textDecoration:"none" }}>Tenants</Link>
         <span>›</span>
         <span style={{ color:"var(--text-primary)", fontWeight:500 }}>
           {tenant.loading ? "…" : t?.tenant_name ?? id}

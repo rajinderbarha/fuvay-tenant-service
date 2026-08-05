@@ -22,17 +22,21 @@ test.describe('Customer Home Services — real browser E2E (system Chrome, real 
   test('provider-first booking flow: catalog -> match -> price -> confirm -> track', async ({ page }) => {
     await loginViaUi(page, CUSTOMER_ONE.email, CUSTOMER_ONE.password);
 
+    // NOTE: catalog labels re-pointed to the current live catalog (Final
+    // Phase E2E audit, 2026-08-02) -- the real category display name is
+    // "Air Conditioning" and the real offering is "AC Service" (see
+    // helpers/api.ts's SEED comment for the full explanation).
     await page.goto('/customer/home-services');
-    await expect(page.getByText('Home Services')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Air Conditioning')).toBeVisible({ timeout: 15_000 });
 
     // Navigate straight to the booking wizard (category id resolved by the app itself)
     await page.goto('/customer/home-services/book');
-    await page.getByRole('button', { name: 'Home Services' }).click();
-    await page.getByRole('button', { name: 'AC Repair' }).click();
+    await page.getByRole('button', { name: 'Air Conditioning' }).click();
+    await page.getByRole('button', { name: 'AC Service' }).click();
     await page.getByRole('button', { name: 'Next', exact: true }).click();
 
     // Details step — type + brand must be selected (pricing is type+brand-specific for this offering)
-    const splitAcChip = page.getByRole('button', { name: 'Split AC', exact: true });
+    const splitAcChip = page.getByRole('button', { name: 'Split', exact: true });
     await expect(splitAcChip).toBeVisible({ timeout: 15_000 });
     await splitAcChip.click();
     await expect(splitAcChip).toHaveClass(/selected/);
@@ -40,7 +44,13 @@ test.describe('Customer Home Services — real browser E2E (system Chrome, real 
     await expect(lgChip).toBeVisible({ timeout: 15_000 });
     await lgChip.click();
     await expect(lgChip).toHaveClass(/selected/);
-    await page.locator('textarea').fill(SEED.issueSummary);
+    // Selecting a real issue-type chip (not just free text) is what
+    // resolves the canonical job type server-side -- required for the
+    // Review step to ever unblock (see helpers/api.ts SEED note).
+    const issueChip = page.getByRole('button', { name: 'AC Not Cooling', exact: true });
+    await expect(issueChip).toBeVisible({ timeout: 15_000 });
+    await issueChip.click();
+    await expect(issueChip).toHaveClass(/selected/);
     await page.getByRole('button', { name: 'Next', exact: true }).click();
 
     // Location step
@@ -56,14 +66,23 @@ test.describe('Customer Home Services — real browser E2E (system Chrome, real 
     expect(providerCardText.length).toBeGreaterThan(0);
     await page.getByRole('button', { name: 'See Price Options' }).click();
 
-    // Price step — Low/Mid/High must be visible, no editable numeric input
-    await expect(page.getByText(/Low —/)).toBeVisible();
-    await expect(page.getByText(/Mid —/)).toBeVisible();
-    await expect(page.getByText(/High —/)).toBeVisible();
+    // Price step — either real Low/Mid/High bargain tiers (when a
+    // BargainRule is configured for this offering) OR a real standard
+    // fixed price (when it isn't, the common case for this demo offering
+    // today) must be visible -- never an editable numeric input either way.
+    const midTier = page.getByText(/Mid —/);
+    const standardTier = page.getByText(/Standard price —/);
+    await expect(midTier.or(standardTier)).toBeVisible({ timeout: 15_000 });
     const numericInputs = await page.locator('input[type="number"]').count();
     expect(numericInputs).toBe(0);
 
-    await page.getByText(/Mid —/).click();
+    if (await midTier.isVisible()) {
+      await expect(page.getByText(/Low —/)).toBeVisible();
+      await expect(page.getByText(/High —/)).toBeVisible();
+      await midTier.click();
+    } else {
+      await standardTier.click();
+    }
     await page.getByRole('button', { name: 'Continue' }).click();
 
     // Review step

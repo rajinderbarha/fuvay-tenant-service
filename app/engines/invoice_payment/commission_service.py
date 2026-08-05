@@ -30,6 +30,80 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+async def resolve_provider_commission_rate(db: AsyncSession, category_id) -> Decimal:
+    """The SINGLE live authority for a provider's commission rate.
+
+    Real bug this fixes (Home Services finance audit): Super Admin's
+    Monetization workspace lets an admin configure and publish a
+    `PERCENTAGE_COMMISSION` policy with a real `provider_percentage`, but
+    the live invoice pipeline only ever read `ServiceCategory.
+    commission_pct`. A published monetization policy therefore had ZERO
+    runtime effect -- the platform kept charging the category rate (or the
+    flat default) no matter what an admin configured and "published".
+
+    Precedence, most-specific first:
+      1. The vertical's CURRENT published PERCENTAGE_COMMISSION policy.
+      2. The category's own `commission_pct` override.
+      3. The platform default.
+
+    A policy whose `provider_model` is something other than
+    PERCENTAGE_COMMISSION (e.g. COMPLETION_CREDITS, SUBSCRIPTION) is
+    deliberately NOT treated as a rate source -- those models charge
+    providers through a different mechanism entirely, and silently
+    reinterpreting them as a percentage would invent a charge the admin
+    never configured.
+
+    Both the live invoice pipeline (`ServiceCommissionService._resolve_rate`)
+    and the tenant Finance Readiness onboarding step call this, so they can
+    never disagree about what a provider will actually be charged.
+    """
+    if category_id is None:
+        return Decimal(str(DEFAULT_COMMISSION_RATE))
+
+    from app.engines.admin_catalog.models import ServiceCategory
+    category = (await db.execute(
+        select(ServiceCategory).where(ServiceCategory.id == category_id)
+    )).scalar_one_or_none()
+    if category is None:
+        return Decimal(str(DEFAULT_COMMISSION_RATE))
+
+    category_rate = (
+        Decimal(str(category.commission_pct))
+        if category.commission_pct is not None else None
+    )
+
+    # A category with no vertical cannot resolve a monetization policy --
+    # skip the lookup entirely rather than scanning for a policy that
+    # structurally cannot apply to it.
+    if not getattr(category, "vertical_type", None):
+        return category_rate if category_rate is not None else Decimal(str(DEFAULT_COMMISSION_RATE))
+
+    from app.engines.vertical_catalog.models import Vertical
+    from app.engines.vertical_monetization.models import VerticalMonetizationPolicy
+
+    vertical = (await db.execute(
+        select(Vertical).where(Vertical.key == category.vertical_type)
+    )).scalar_one_or_none()
+    if vertical is not None:
+        policy = (await db.execute(
+            select(VerticalMonetizationPolicy).where(
+                VerticalMonetizationPolicy.vertical_id == vertical.id,
+                VerticalMonetizationPolicy.is_current.is_(True),
+                VerticalMonetizationPolicy.status == "published",
+            )
+        )).scalar_one_or_none()
+        if (
+            policy is not None
+            and policy.provider_model == "PERCENTAGE_COMMISSION"
+            and policy.provider_percentage is not None
+        ):
+            return Decimal(str(policy.provider_percentage))
+
+    if category_rate is not None:
+        return category_rate
+    return Decimal(str(DEFAULT_COMMISSION_RATE))
+
+
 class ServiceCommissionService:
 
     def __init__(self):
@@ -66,17 +140,14 @@ class ServiceCommissionService:
 
     async def _resolve_rate(self, db: AsyncSession, category_id) -> Decimal:
         """MODULE-L5-10: commission rate, per category. Was a hardcoded flat 10%
-        for every category regardless of value; now reads the category's
-        commission_pct, falling back to the platform default when it is unset."""
-        if category_id is not None:
-            from app.engines.admin_catalog.models import ServiceCategory
-            rate = (await db.execute(
-                select(ServiceCategory.commission_pct)
-                .where(ServiceCategory.id == category_id)
-            )).scalar_one_or_none()
-            if rate is not None:
-                return Decimal(str(rate))
-        return Decimal(str(DEFAULT_COMMISSION_RATE))
+        for every category regardless of value; then read the category's
+        commission_pct only.
+
+        Now delegates to `resolve_provider_commission_rate` -- the single
+        live authority -- so a published Super Admin monetization policy
+        genuinely takes effect on real invoices instead of being silently
+        ignored (see that function's own docstring for the full bug)."""
+        return await resolve_provider_commission_rate(db, category_id)
 
     # ── Calculate commission ───────────────────────────────────────────────────
 

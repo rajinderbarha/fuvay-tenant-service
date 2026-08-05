@@ -43,7 +43,7 @@ export function DirectPaymentScreen({ route, navigation }: Props) {
   const { theme } = useTheme();
   const { jobId } = route.params;
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
 
   const [method, setMethod] = useState<DirectPaymentMethod>("onsite_cash");
   const [reference, setReference] = useState("");

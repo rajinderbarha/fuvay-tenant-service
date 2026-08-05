@@ -7,7 +7,7 @@ import { SessionListResponseDTO } from "../../../services/auth/types";
 
 jest.mock("../../../services/auth/authApi");
 jest.mock("../../../services/auth/securityApi");
-jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => "online") }));
+jest.mock("../../../hooks/useNetworkStatus", () => ({ useNetworkStatus: jest.fn(() => ({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" })) }));
 
 import * as authApi from "../../../services/auth/authApi";
 import * as securityApi from "../../../services/auth/securityApi";
@@ -36,7 +36,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useNetworkStatus as jest.Mock).mockReturnValue("online");
+  (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "online", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
   (authApi.listSessions as jest.Mock).mockResolvedValue({ ok: true, data: DATA });
 });
 
@@ -96,7 +96,7 @@ describe("ActiveSessionsScreen (Phase W)", () => {
   });
 
   it("shows an offline banner", async () => {
-    (useNetworkStatus as jest.Mock).mockReturnValue("offline");
+    (useNetworkStatus as jest.Mock).mockReturnValue({ meta: { readiness: "production_ready" }, networkState: "offline", cacheState: "fresh", pendingDrafts: 0, syncState: "idle" });
     renderScreen();
     expect(await screen.findByText("Offline")).toBeTruthy();
   });

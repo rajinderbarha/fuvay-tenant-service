@@ -133,6 +133,20 @@ async def transition_enrollment(
     new_status = payload.get("status")
     if not new_status:
         raise HTTPException(status_code=400, detail="'status' is required")
+    # "active"/"activating" are never client-requestable: reaching them
+    # means every activation gate genuinely passed, which only
+    # `activation.try_auto_activate` can determine. Without this guard an
+    # admin could PATCH straight to "active" and mark a tenant live with
+    # no service area, no payout account and no verified documents.
+    from app.engines.vertical_catalog.service import CLIENT_REQUESTABLE_STATUSES
+    if new_status not in CLIENT_REQUESTABLE_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"'{new_status}' cannot be set directly. Activation is granted "
+                "automatically once every activation requirement is met."
+            ),
+        )
     try:
         data = await _svc.transition_enrollment(
             db, enrollment_id, new_status,

@@ -26,6 +26,7 @@ import {
   Section,
   DataTable,
   useTheme,
+  ThemeProvider,
   pushToast,
 } from "@serviceos/design-system";
 
@@ -43,7 +44,7 @@ const fixtureTenants = [
   { name: "TrustHands Co-op", plan: "Starter", status: "pending" },
 ];
 
-export default function DesignSystemShowcase() {
+function DesignSystemShowcaseInner() {
   const { resolvedTheme, toggle } = useTheme();
   const [modalOpen, setModalOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -192,5 +193,26 @@ export default function DesignSystemShowcase() {
         </ul>
       </Section>
     </PageShell>
+  );
+}
+
+
+/**
+ * Real build failure fixed here: this dev-only showcase renders
+ * `@serviceos/design-system` components that call that package's OWN
+ * `useTheme`, which throws outside its `ThemeProvider`. The app's root
+ * layout deliberately does NOT mount that provider (it uses this app's own
+ * `hooks/useTheme` with a different localStorage key -- see the comment in
+ * app/layout.tsx), so prerendering this page crashed with "useTheme must be
+ * used within a ThemeProvider" and FAILED THE WHOLE PRODUCTION BUILD.
+ *
+ * Scoping the provider to this one dev route fixes the build without
+ * touching app-wide theming, which was changed deliberately.
+ */
+export default function DesignSystemShowcase() {
+  return (
+    <ThemeProvider>
+      <DesignSystemShowcaseInner />
+    </ThemeProvider>
   );
 }

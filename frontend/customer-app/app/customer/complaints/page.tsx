@@ -6,7 +6,7 @@
  * files a complaint could not file one, read it, or act on it — every endpoint
  * existed and none was reachable.
  */
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import BottomNav from "../../../components/BottomNav";
@@ -50,7 +50,7 @@ function statusColor(s: string): string {
   return "#1d4ed8";
 }
 
-export default function CustomerComplaintsPage() {
+function CustomerComplaintsPageInner() {
   const searchParams = useSearchParams();
   // Deep link from a job/booking: /customer/complaints?record_type=service_job&record_id=…
   const presetType = searchParams?.get("record_type") ?? "";
@@ -201,5 +201,19 @@ export default function CustomerComplaintsPage() {
 
       <BottomNav />
     </div>
+  );
+}
+
+/**
+ * Real build failure fixed here: this page calls `useSearchParams()`, which
+ * Next.js requires to sit inside a Suspense boundary. Without one, static
+ * prerendering threw "useSearchParams() should be wrapped in a suspense
+ * boundary" and FAILED THE WHOLE PRODUCTION BUILD.
+ */
+export default function CustomerComplaintsPage() {
+  return (
+    <Suspense fallback={null}>
+      <CustomerComplaintsPageInner />
+    </Suspense>
   );
 }

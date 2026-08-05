@@ -1,141 +1,145 @@
-/* ServiceOS Tenant Portal — Design System v3
- * Light: clean white + soft blue-gray gradient, enterprise-premium
- * Dark: charcoal slate, not pure black
+/* ServiceOS Tenant Portal — Design System v4
+ * Rebrand 2026-08-04: warm orange -> blue, per approved reference design.
+ * Light: pure white background (explicit requirement), enterprise-premium.
+ * Dark: near-black navy, not pure black.
+ * Icons: single-color by default (var(--text-tertiary) neutral / var(--brand)
+ * for active-accent) rather than per-category multi-hue -- reads calmer and
+ * more premium against this blue palette than mixed icon colors would.
  */
 @import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;1,14..32,400&family=JetBrains+Mono:wght@400;500&display=swap");
 
-/* ─── LIGHT MODE — Premium Soft Palette ───────────────────────────────────── */
+/* ─── LIGHT MODE — Pure White, Blue Accent ────────────────────────────────── */
 :root, [data-theme="light"] {
   /* ── Backgrounds ── */
-  --bg:               #F7F7F4;
-  --bg-soft:          #F3F1EF;
-  --bg-muted:         #EFEDEA;
-  --bg-gradient:      radial-gradient(circle at top left, rgba(255, 214, 156, 0.30), transparent 34%),
-                      radial-gradient(circle at top right, rgba(255, 180, 92, 0.14), transparent 38%),
-                      linear-gradient(180deg, #FBFAF7 0%, #F7F7F4 100%);
+  --bg:               #FFFFFF;
+  --bg-soft:          #F8F9FB;
+  --bg-muted:         #F1F3F8;
+  --bg-gradient:      radial-gradient(circle at top left, rgba(59, 111, 237, 0.05), transparent 34%),
+                      radial-gradient(circle at top right, rgba(91, 141, 239, 0.04), transparent 38%),
+                      linear-gradient(180deg, #FFFFFF 0%, #FFFFFF 100%);
 
   /* ── Surfaces ── */
   --surface:          #FFFFFF;
   --surface-elevated: #FFFFFF;
-  --surface-sunken:   #F3F1EF;
+  --surface-sunken:   #F3F4F8;
 
   /* ── Borders ── */
-  --border:           rgba(34, 29, 20, 0.08);
-  --border-strong:    rgba(34, 29, 20, 0.15);
-  --border-focus:     #F2994A;
+  --border:           rgba(15, 23, 42, 0.08);
+  --border-strong:    rgba(15, 23, 42, 0.16);
+  --border-focus:     #3B6FED;
 
   /* ── Text ── */
-  --text-primary:     #221D14;
-  --text-secondary:   #6B6153;
-  --text-tertiary:    #A39A8A;
-  --text-link:        #E0812F;
+  --text-primary:     #0F172A;
+  --text-secondary:   #475569;
+  --text-tertiary:    #94A3B8;
+  --text-link:        #3B6FED;
   --text-on-brand:    #FFFFFF;
 
-  /* ── Brand / Primary — warm orange (matches super-admin) ── */
-  --brand:            #F2994A;
-  --brand-hover:      #E0812F;
-  --primary-gradient: linear-gradient(135deg, #F2994A 0%, #FFB45C 100%);
+  /* ── Brand / Primary — blue ── */
+  --brand:            #3B6FED;
+  --brand-hover:      #2F5BD1;
+  --primary-gradient: linear-gradient(135deg, #3B6FED 0%, #5B8DEF 100%);
 
   /* ── Accent ── */
-  --accent:           #FFB45C;
-  --accent-hover:     #F0A047;
-  --accent-muted:     #FFF4E6;
+  --accent:           #5B8DEF;
+  --accent-hover:     #3B6FED;
+  --accent-muted:     #EAF0FE;
 
-  /* ── Sidebar — light warm cream, theme-aware (see dark block) ── */
+  /* ── Sidebar — white, theme-aware (see dark block) ── */
   --sidebar-bg:           #FFFFFF;
-  --sidebar-text:         #6B6153;
-  --sidebar-text-active:  #E0812F;
-  --sidebar-active:       #FDECD8;
-  --sidebar-hover:        #FBF3E9;
-  --sidebar-border:       #EFEAE1;
-  --sidebar-category:     #A39A8A;
+  --sidebar-text:         #475569;
+  --sidebar-text-active:  #3B6FED;
+  --sidebar-active:       #EAF0FE;
+  --sidebar-hover:        #F3F6FE;
+  --sidebar-border:       #E7EBF3;
+  --sidebar-category:     #94A3B8;
 
   /* ── Semantic — Success ── */
-  --success:          #70CFA0;
-  --success-bg:       #EAF8F1;
-  --success-border:   rgba(112, 207, 160, 0.35);
-  --success-text:     #2F8F63;
+  --success:          #16A34A;
+  --success-bg:       #F0FDF4;
+  --success-border:   #BBF7D0;
+  --success-text:     #15803D;
 
   /* ── Semantic — Warning ── */
-  --warning:          #FFB45C;
-  --warning-bg:       #FFF4E6;
-  --warning-border:   rgba(255, 180, 92, 0.35);
-  --warning-text:     #B9791E;
+  --warning:          #D97706;
+  --warning-bg:       #FFFBEB;
+  --warning-border:   #FDE68A;
+  --warning-text:     #92400E;
 
   /* ── Semantic — Danger ── */
-  --danger:           #E8615A;
-  --danger-bg:        #FDEEED;
-  --danger-border:    rgba(232, 97, 90, 0.30);
-  --danger-text:      #B93A34;
+  --danger:           #DC2626;
+  --danger-bg:        #FEF2F2;
+  --danger-border:    #FECACA;
+  --danger-text:      #991B1B;
 
-  /* ── Semantic — Info (neutral warm-gray, not blue/orange) ── */
-  --info:             #6B6153;
-  --info-bg:          #F3F1EA;
-  --info-border:      rgba(107, 97, 83, 0.25);
-  --info-text:        #45402F;
+  /* ── Semantic — Info (sky blue, distinct from brand indigo-blue) ── */
+  --info:             #0284C7;
+  --info-bg:          #F0F9FF;
+  --info-border:      #BAE6FD;
+  --info-text:        #075985;
 
   /* ── Golden ── */
-  --golden:           #FFB45C;
-  --golden-bg:        #FFF4E6;
-  --golden-border:    rgba(255, 180, 92, 0.35);
-  --golden-text:      #B9791E;
+  --golden:           #D97706;
+  --golden-bg:        #FFFBEB;
+  --golden-border:    #FDE68A;
+  --golden-text:      #92400E;
 
-  /* ── Terra — true warm terracotta, was blue despite the name ── */
-  --terra:            #E0812F;
-  --terra-bg:         #FFF4E6;
-  --terra-border:     rgba(224, 129, 47, 0.30);
-  --terra-text:       #B4601C;
+  /* ── Terra — kept as a distinct decorative accent, unrelated to brand ── */
+  --terra:            #C2410C;
+  --terra-bg:         #FFF7ED;
+  --terra-border:     #FED7AA;
+  --terra-text:       #9A3412;
 
-  /* ── Shadows — warm-neutral tint ── */
-  --shadow-sm: 0 1px 2px rgba(38, 30, 20, 0.05);
-  --shadow:    0 8px 24px rgba(38, 30, 20, 0.08);
-  --shadow-md: 0 16px 40px rgba(38, 30, 20, 0.09);
-  --shadow-lg: 0 30px 80px rgba(38, 30, 20, 0.11);
+  /* ── Shadows — neutral slate tint ── */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow:    0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 16px 40px rgba(15, 23, 42, 0.09);
+  --shadow-lg: 0 30px 80px rgba(15, 23, 42, 0.11);
 }
 
-/* ─── DARK MODE (TRUE CHARCOAL — neutral, no blue undertone) ─────────────── */
+/* ─── DARK MODE (near-black navy, blue accent) ────────────────────────────── */
 [data-theme="dark"] {
-  /* ── Backgrounds ── */
-  --bg:               #171614;
-  --bg-soft:          #121110;
-  --bg-muted:         #211F1C;
-  --bg-gradient:      linear-gradient(160deg, #171614 0%, #121110 55%, #171614 100%);
+  /* ── Backgrounds — Tesla-app reference: neutral charcoal-black ── */
+  --bg:               #1C1C1E;
+  --bg-soft:          #161618;
+  --bg-muted:         #202024;
+  --bg-gradient:      linear-gradient(160deg, #1C1C1E 0%, #161618 55%, #1C1C1E 100%);
 
   /* ── Surfaces ── */
-  --surface:          #201E1B;
-  --surface-elevated: #2A2724;
-  --surface-sunken:   #171614;
+  --surface:          #232326;
+  --surface-elevated: #2C2C30;
+  --surface-sunken:   #161618;
 
   /* ── Borders ── */
-  --border:           #38352F;
-  --border-strong:    #4A463E;
-  --border-focus:     #F2994A;
+  --border:           #333338;
+  --border-strong:    #44444A;
+  --border-focus:     #2B8FFF;
 
   /* ── Text ── */
-  --text-primary:     #F5F3EF;
-  --text-secondary:   #C9C3B7;
-  --text-tertiary:    #8A8375;
-  --text-link:        #FFB45C;
-  --text-on-brand:    #171614;
+  --text-primary:     #F5F5F7;
+  --text-secondary:   #9B9BA1;
+  --text-tertiary:    #6E6E73;
+  --text-link:        #5AB0FF;
+  --text-on-brand:    #FFFFFF;
 
-  /* ── Brand / Primary — warm orange ── */
-  --brand:            #F2994A;
-  --brand-hover:      #FFB45C;
-  --primary-gradient: linear-gradient(135deg, #F2994A 0%, #FFB45C 100%);
+  /* ── Brand / Primary — electric blue ── */
+  --brand:            #2B8FFF;
+  --brand-hover:      #5AB0FF;
+  --primary-gradient: linear-gradient(135deg, #2B8FFF 0%, #5AB0FF 100%);
 
   /* ── Accent ── */
-  --accent:           #FFB45C;
-  --accent-hover:     #F2994A;
-  --accent-muted:     rgba(242, 153, 74, 0.16);
+  --accent:           #5AB0FF;
+  --accent-hover:     #2B8FFF;
+  --accent-muted:     rgba(43, 143, 255, 0.16);
 
-  /* ── Sidebar — true charcoal, theme-aware (was navy in both modes) ── */
-  --sidebar-bg:           #171614;
-  --sidebar-text:         #A39A8A;
-  --sidebar-text-active:  #FFB45C;
-  --sidebar-active:       rgba(242, 153, 74, 0.18);
+  /* ── Sidebar — neutral charcoal-black, theme-aware ── */
+  --sidebar-bg:           #1C1C1E;
+  --sidebar-text:         #9B9BA1;
+  --sidebar-text-active:  #5AB0FF;
+  --sidebar-active:       rgba(43, 143, 255, 0.18);
   --sidebar-hover:        rgba(255, 255, 255, 0.04);
   --sidebar-border:       rgba(255, 255, 255, 0.06);
-  --sidebar-category:     #6B6557;
+  --sidebar-category:     #6E6E73;
 
   /* ── Semantic — Success ── */
   --success:          #22C55E;
@@ -155,11 +159,11 @@
   --danger-border:    rgba(248, 113, 113, 0.25);
   --danger-text:      #FCA5A5;
 
-  /* ── Semantic — Info (neutral warm-gray, not blue/orange) ── */
-  --info:             #C9C3B7;
-  --info-bg:          rgba(201, 195, 183, 0.12);
-  --info-border:      rgba(201, 195, 183, 0.25);
-  --info-text:        #E4E0D8;
+  /* ── Semantic — Info (sky blue, distinct from brand indigo-blue) ── */
+  --info:             #38BDF8;
+  --info-bg:          rgba(56, 189, 248, 0.12);
+  --info-border:      rgba(56, 189, 248, 0.25);
+  --info-text:        #7DD3FC;
 
   /* ── Golden ── */
   --golden:           #FBBF24;
@@ -168,10 +172,10 @@
   --golden-text:      #FCD34D;
 
   /* ── Terra ── */
-  --terra:            #FFB45C;
-  --terra-bg:         rgba(255, 180, 92, 0.14);
-  --terra-border:     rgba(255, 180, 92, 0.28);
-  --terra-text:       #FFCB8A;
+  --terra:            #FB923C;
+  --terra-bg:         rgba(251, 146, 60, 0.14);
+  --terra-border:     rgba(251, 146, 60, 0.28);
+  --terra-text:       #FDBA74;
 
   /* ── Shadows ── */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.40), 0 1px 2px rgba(0, 0, 0, 0.30);

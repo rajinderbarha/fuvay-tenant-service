@@ -598,6 +598,20 @@ class AdminTenantService:
             logger.warning("reject_verification.package_rejection_failed",
                            tenant_id=str(tenant_id), error=str(exc))
 
+        # BUG FIX: rejection reason was saved (suspension_reason/audit) but
+        # never told to the provider -- they had no way to know what to fix.
+        try:
+            from app.engines.tenant_engine.notifications import notify_tenant_verification
+            await notify_tenant_verification(
+                self.db, tenant_id,
+                notification_type="tenant.verification_rejected",
+                title="Verification rejected",
+                body=f"Your business verification was rejected: {reason}. Please correct this and resubmit.",
+                severity="danger",
+            )
+        except Exception as exc:
+            logger.warning("reject_verification.notify_failed", tenant_id=str(tenant_id), error=str(exc))
+
         return self._tenant_dict(t)
 
     async def archive_tenant(self, tenant_id: uuid.UUID) -> dict:
@@ -1231,6 +1245,20 @@ class AdminTenantService:
             after={"verification_status": "changes_requested"},
             notes=reason,
         )
+        # BUG FIX: same as reject_verification -- the reason was recorded
+        # but the provider was never told, so "changes_requested" silently
+        # stalled with no one aware they needed to act.
+        try:
+            from app.engines.tenant_engine.notifications import notify_tenant_verification
+            await notify_tenant_verification(
+                self.db, tenant_id,
+                notification_type="tenant.verification_changes_requested",
+                title="Changes requested on your verification",
+                body=f"Please make the following changes and resubmit: {reason}",
+                severity="warning",
+            )
+        except Exception as exc:
+            logger.warning("request_changes.notify_failed", tenant_id=str(tenant_id), error=str(exc))
         return {"tenant_id": str(tenant_id), "verification_status": "changes_requested", "reason": reason}
 
     async def send_notification(self, tenant_id: uuid.UUID, message: str, subject: str = "") -> dict:

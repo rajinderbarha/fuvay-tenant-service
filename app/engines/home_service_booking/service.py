@@ -27,7 +27,7 @@ from app.engines.home_service_booking.constants import (
     DRAFT_STATUS_PROVIDER_MATCHED, DRAFT_STATUS_READY_FOR_CONFIRMATION,
     DRAFT_STATUS_SERVICEABILITY_CHECKED, EVENT_DRAFT_CANCELLED,
     EVENT_DRAFT_CONFIRMED, EVENT_DRAFT_CREATED, EVENT_DRAFT_FAILED,
-    EVENT_FIELD_COLLECTED, EVENT_PHOTO_UPLOADED, EVENT_PRICE_ESTIMATED,
+    EVENT_FIELD_COLLECTED, EVENT_PHOTO_UPLOADED, EVENT_PHOTO_REMOVED, EVENT_PRICE_ESTIMATED,
     EVENT_PROVIDER_MATCHED, EVENT_PROVIDER_SELECTED,
     EVENT_SERVICEABILITY_CHECKED, EVENT_SUMMARY_GENERATED,
     ERR_ADDRESS_REQUIRED, ERR_BRAND_REQUIRED, ERR_CATEGORY_INVALID,
@@ -124,6 +124,51 @@ class HomeServiceChatbotBookingService:
                 status_code=422,
             )
 
+        # A category can carry orphaned/legacy MasterService rows
+        # (is_active=True, but no tenant has ever actually published an
+        # offering against them -- confirmed live, e.g. a leftover "AC
+        # Service" entry alongside the real "AC Repair"/"AC Installation"
+        # tenant offerings). Failing closed here, not just at the DeepSeek
+        # tool-listing layer, means a draft can never be started for
+        # something no tenant could ever actually fulfill, regardless of
+        # how the offering_slug was supplied.
+        from app.engines.admin_catalog.models import TenantService, ServiceIssueMapping
+        has_publisher = (await self.db.execute(
+            select(TenantService.id).where(
+                TenantService.master_service_id == offering.id,
+                TenantService.is_enabled.is_(True),
+                TenantService.is_active.is_(True),
+                TenantService.setup_status == "published",
+            ).limit(1)
+        )).scalars().first()
+        if not has_publisher:
+            raise ServiceOSException(
+                ERR_OFFERING_INVALID,
+                f"Offering '{offering_slug}' is not currently offered by any provider.",
+                status_code=422,
+            )
+
+        # A published offering can still have ZERO real problem/issue-type
+        # wiring (confirmed live: "AC Service" is published by a tenant but
+        # has no ServiceIssueMapping rows at all) -- DeepSeek's
+        # get_service_problems would then always return empty, job_type_id
+        # could never resolve, and the whole question-flow would
+        # permanently fall back to plain-text chat. Same fail-closed
+        # principle as the publisher check above, just for catalog content
+        # completeness instead of tenant enablement.
+        has_problems = (await self.db.execute(
+            select(ServiceIssueMapping.id).where(
+                ServiceIssueMapping.master_service_id == offering.id,
+                ServiceIssueMapping.status == "active",
+            ).limit(1)
+        )).scalars().first()
+        if not has_problems:
+            raise ServiceOSException(
+                ERR_OFFERING_INVALID,
+                f"Offering '{offering_slug}' is not fully configured for booking yet.",
+                status_code=422,
+            )
+
         expires_at = utcnow() + timedelta(hours=DRAFT_EXPIRY_HOURS)
         draft = HomeServiceBookingDraft(
             id=uuid.uuid4(),
@@ -137,8 +182,29 @@ class HomeServiceChatbotBookingService:
             provider_match_status=PROVIDER_MATCH_PENDING,
             expires_at=expires_at,
         )
+
         self.db.add(draft)
         await self.db.flush()
+
+        # Auto-fill city/zipcode/address from the customer's own default
+        # address (via the existing _resolve_address_snapshot helper --
+        # already used elsewhere on this service, just never called at
+        # draft-creation time) rather than asking DeepSeek to collect city
+        # in plain chat. The app already knows this the moment the customer
+        # is logged in (same source Home's own zipcode/address display
+        # uses); previously every draft asked "confirm your city" even
+        # though the backend already had it, with no tap-to-select way to
+        # answer -- just a redundant free-text round trip.
+        if customer_id:
+            from app.engines.serviceability.models import CustomerAddress
+            addr = (await self.db.execute(
+                select(CustomerAddress)
+                .where(CustomerAddress.customer_id == customer_id, CustomerAddress.is_active == True)
+                .order_by(CustomerAddress.is_default.desc(), CustomerAddress.created_at.desc())
+                .limit(1)
+            )).scalars().first()
+            if addr:
+                await self._resolve_address_snapshot(draft, addr.id)
 
         await self._emit_event(
             draft_id=draft.id,
@@ -173,6 +239,231 @@ class HomeServiceChatbotBookingService:
         """Return a draft, enforcing customer ownership."""
         draft = await self._require_draft(draft_id, customer_id)
         return await self._enrich_draft(draft)
+
+    async def get_booking_draft_by_ai_session(
+        self,
+        ai_session_id: uuid.UUID,
+        customer_id: uuid.UUID,
+    ) -> dict | None:
+        """Resolve the customer's own non-terminal draft (if any) linked to
+        an AI conversation session -- the Booking Assistant's own bootstrap
+        call, used to resume a draft DeepSeek's tool call created mid-
+        conversation. A genuinely missing route here (confirmed absent --
+        the customer app has called this exact path since it was built,
+        always hitting a raw framework 404) meant the Assistant crashed to
+        a generic error on EVERY category tap, since "no draft yet" is the
+        normal first-load state, not a real error. Returns None (never
+        raises) when no matching draft exists -- that is a valid state, not
+        a not-found error; ownership is enforced in the query itself rather
+        than via `_require_draft`'s raise-on-missing behavior."""
+        result = await self.db.execute(
+            select(HomeServiceBookingDraft).where(
+                HomeServiceBookingDraft.ai_session_id == ai_session_id,
+                HomeServiceBookingDraft.customer_id == customer_id,
+                HomeServiceBookingDraft.status.notin_(TERMINAL_STATUSES),
+            ).order_by(HomeServiceBookingDraft.created_at.desc())
+        )
+        draft = result.scalars().first()
+        if not draft:
+            return None
+
+        # A draft created against an offering that's since become
+        # unpublished (or was always an orphaned catalog entry no tenant
+        # ever offered -- confirmed live: "AC Service" alongside the real
+        # "AC Repair"/"AC Installation") must never be silently resumed.
+        # Without this, a customer's app can get permanently stuck re-
+        # opening a dead conversation about an offering that structurally
+        # has no admin-catalog wiring (no issue types, no job type), which
+        # falls back to DeepSeek asking everything in free chat forever --
+        # returning None here instead makes the app treat it as "no draft
+        # yet" and start a genuinely fresh, bookable one.
+        from app.engines.admin_catalog.models import TenantService
+        has_publisher = (await self.db.execute(
+            select(TenantService.id).where(
+                TenantService.master_service_id == draft.offering_id,
+                TenantService.is_enabled.is_(True),
+                TenantService.is_active.is_(True),
+                TenantService.setup_status == "published",
+            ).limit(1)
+        )).scalars().first()
+        if not has_publisher:
+            return None
+
+        return await self._enrich_draft(draft)
+
+    async def get_assistant_bootstrap(
+        self, customer_id: uuid.UUID, category_slug: str, zipcode: str | None,
+    ) -> dict:
+        """Backend-first Booking Assistant bootstrap -- ISSUE-first (real
+        customer intent: "what's wrong with your AC", never an internal
+        offering/job-type split, and never Brand or any other follow-up
+        attribute). Returns everything the Customer App needs to render
+        the FIRST screen of a structured booking conversation without
+        ever consulting DeepSeek: the category, the real zipcode-
+        serviceable issues (see offering_catalog_service.list_serviceable_
+        issues), and the customer's own resumable draft for this category,
+        if one exists and is still genuinely bookable.
+
+        Never includes another tenant's data, internal readiness reasons,
+        or an issue whose only real offering isn't currently bookable in
+        this zipcode."""
+        from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
+
+        catalog = await list_serviceable_issues(self.db, category_slug, zipcode)
+        issues = catalog.get("issues", [])
+
+        resumable_draft = None
+        if catalog.get("category_id"):
+            result = await self.db.execute(
+                select(HomeServiceBookingDraft).where(
+                    HomeServiceBookingDraft.customer_id == customer_id,
+                    HomeServiceBookingDraft.category_id == uuid.UUID(catalog["category_id"]),
+                    HomeServiceBookingDraft.status.notin_(TERMINAL_STATUSES),
+                ).order_by(HomeServiceBookingDraft.created_at.desc())
+            )
+            draft = result.scalars().first()
+            if draft:
+                # Same "still genuinely bookable" guard as the AI-session
+                # resume path -- never resume a draft against an offering
+                # that's since become unpublished or was never real. A
+                # draft is resumable if ANY currently-serviceable issue
+                # still resolves to the same master service it was
+                # created against (an issue's own id can't be compared --
+                # the draft only stores selected_problem_id once an issue
+                # has actually been answered onto it, and a draft can
+                # legitimately exist with no problem selected yet).
+                offering_ids = {i["master_service_id"] for i in issues}
+                if str(draft.offering_id) in offering_ids:
+                    resumable_draft = await self._enrich_draft(draft)
+
+        return {
+            "schema_version": 1,
+            "category": {"id": catalog.get("category_id"), "slug": catalog.get("category_slug"), "name": catalog.get("category")},
+            "zipcode": zipcode,
+            "serviceable": len(issues) > 0,
+            "issues": [
+                {
+                    "id": i["id"], "label": i["label"],
+                    "selection_mode": i["selection_mode"], "compatibility_group": i["compatibility_group"],
+                }
+                for i in issues
+            ],
+            "resumable_draft": resumable_draft,
+            "current_stage": "issue_selection" if resumable_draft is None else "questions",
+        }
+
+    async def select_issue(
+        self, customer_id: uuid.UUID, ai_session_id: uuid.UUID | None,
+        category_slug: str, zipcode: str | None, issue_id: str,
+        additional_issue_ids: list[str] | None = None,
+    ) -> dict:
+        """Canonical issue-selection operation (Phase 7): validates the
+        issue(s) against the SAME real, zipcode-serviceable list bootstrap
+        just returned, resolves the real master service, creates (or
+        reuses, via start_booking_draft's existing ai_session_id
+        idempotency) the canonical draft, stores `selected_problem_id` via
+        the exact same `update_draft_fields` path a manual chat turn uses
+        (which already resolves job_type_id/workflow from it), and returns
+        the resulting question-flow envelope. DeepSeek is never involved
+        anywhere in this call; the frontend never infers the offering from
+        the issue label.
+
+        Multiple problems: a customer may report more than one real issue
+        at once (e.g. both "AC Not Cooling" and "Water Leakage" on the
+        same unit). All selected issue ids are stored on the draft's
+        existing `service_option_ids_json` column (already modeled, never
+        previously wired to this flow) for full customer-safe visibility
+        in Booking Review / final records. Job type/workflow resolution
+        still keys off exactly ONE canonical problem -- the first selected
+        issue -- so every additional issue must resolve to that SAME
+        master service; issues spanning genuinely different services
+        (e.g. "New AC Installation" + "AC Not Cooling") have no single
+        shared workflow and are rejected rather than silently merged or
+        silently dropped."""
+        from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
+        from app.engines.home_service_booking.question_flow_service import QuestionFlowService
+
+        catalog = await list_serviceable_issues(self.db, category_slug, zipcode)
+        issues = catalog.get("issues", [])
+        issues_by_id = {i["id"]: i for i in issues}
+
+        all_ids = [issue_id, *(additional_issue_ids or [])]
+
+        # Reject duplicate ids outright (AC-ISSUE-DATA-01 section 3) --
+        # never silently collapsed, so a client bug that sends the same id
+        # twice is surfaced rather than masked.
+        if len(all_ids) != len(set(all_ids)):
+            raise ServiceOSException(
+                "QI_DUPLICATE_ISSUE_ID",
+                "The same issue was submitted more than once.",
+                status_code=422,
+            )
+
+        matched_list = []
+        for iid in all_ids:
+            # A hidden/deprecated issue (customer_visible=False -- e.g. the
+            # legacy ac-gas-refilling entry point superseded by ac-service's
+            # "Gas Refill Needed") is simply absent from `issues_by_id`,
+            # exactly like an invented or out-of-area id: never selectable
+            # for a NEW draft, regardless of whether it was real once.
+            matched = issues_by_id.get(iid)
+            if matched is None:
+                raise ServiceOSException(
+                    ERR_OFFERING_INVALID,
+                    "This issue is not available for booking right now.",
+                    status_code=422,
+                )
+            matched_list.append(matched)
+
+        if len(matched_list) > 1:
+            # An "exclusive" issue (e.g. New AC Installation) can never be
+            # combined with anything else, regardless of compatibility
+            # group -- it represents a whole distinct service intent, not
+            # one of several diagnostic symptoms on the same unit.
+            if any(m["selection_mode"] == "exclusive" for m in matched_list):
+                raise ServiceOSException(
+                    "QI_EXCLUSIVE_ISSUE_COMBINED",
+                    "This service must be booked on its own, not combined with other issues.",
+                    status_code=422,
+                )
+            distinct_groups = {m["compatibility_group"] for m in matched_list}
+            if len(distinct_groups) > 1:
+                raise ServiceOSException(
+                    "QI_MIXED_ISSUE_SERVICES",
+                    "These issues can't be booked together yet -- please book them as separate requests.",
+                    status_code=422,
+                )
+
+        primary = matched_list[0]
+        draft_dict = await self.start_booking_draft(
+            customer_id=customer_id, ai_session_id=ai_session_id,
+            category_slug=category_slug, offering_slug=primary["master_service_slug"],
+        )
+        draft_id = uuid.UUID(draft_dict["id"])
+        await self.update_draft_fields(
+            draft_id=draft_id, customer_id=customer_id,
+            payload={
+                "selected_problem_id": primary["id"],
+                # Real bug fixed here: `issue_summary` is an unconditionally
+                # REQUIRED field in `_compute_missing_fields`, but the
+                # issue-first flow never populated it -- so every booking
+                # failed confirmation with "Missing required fields:
+                # issue_summary", even though the customer had explicitly
+                # told us exactly what was wrong. The selected issue label(s)
+                # ARE the issue summary; there is nothing further to ask.
+                "issue_summary": " + ".join(m["label"] for m in matched_list),
+            },
+        )
+
+        if len(matched_list) > 1:
+            draft = await self._require_draft(draft_id, customer_id)
+            draft.service_option_ids_json = [m["id"] for m in matched_list]
+            draft.updated_at = utcnow()
+            await self.db.commit()
+
+        qf = QuestionFlowService(db=self.db)
+        envelope = await qf.get_current_question(draft_id=draft_id, customer_id=customer_id)
+        return {"draft_id": str(draft_id), "envelope": envelope, "selected_issue_ids": [m["id"] for m in matched_list]}
 
     # ══════════════════════════════════════════════════════════════════════════
     # 3. UPDATE DRAFT FIELDS
@@ -681,53 +972,75 @@ class HomeServiceChatbotBookingService:
             },
         ))
 
-        # Resolve the selected provider's bargain rule (customer range + fee)
-        # and its linked pricing rule (admin range) — real, tenant-scoped data.
-        #
-        # HS6 fix: previously matched ONLY on master_service_id, completely
-        # ignoring offering_type_id/brand_id even though they were already
-        # passed into select_best_provider() for eligibility filtering — the
-        # exact "Window AC brand price used for Split AC" bug this whole
-        # Home Services pricing lineage exists to prevent, except it was
-        # still live in the actual matching/booking price-resolution path.
-        # Fixed: join the linked ServicePricingRule and prefer the most
-        # specific match — type+brand > type-only > service-only — mirroring
-        # the hierarchy already used by _find_admin_pricing_rule elsewhere.
-        bargain_candidates = (await self.db.execute(
-            select(BargainRule, ServicePricingRule)
-            .join(ServicePricingRule, ServicePricingRule.id == BargainRule.pricing_rule_id, isouter=True)
-            .where(
-                BargainRule.master_service_id == master_service_id,
-                BargainRule.status == "active", BargainRule.deleted_at.is_(None),
-            )
-        )).all()
+        # Inspection-first offerings (pricing_model == visit_fee_plus_quote)
+        # must NEVER have a fixed/bargain "standard_price" computed for them
+        # at all -- real defect fixed here: this function previously ran the
+        # ServicePricingRule/BargainRule lookup unconditionally for every
+        # offering, so Guramrit's AC Gas Refilling (inspection-mode) got a
+        # `standard_price` of literally ₹0.00 from an unrelated, tenant-
+        # agnostic global pricing rule, which then reached the customer-
+        # facing Booking Review as if it were a real price. The visit fee /
+        # `requires_inspection_estimate` flag was already correctly resolved
+        # earlier by `resolve_price_estimate` (`_compute_price_snapshot`)
+        # and lives in `draft.price_snapshot` -- this function must leave it
+        # untouched, not overwrite it with a spurious fixed number.
+        offering = await self._get_offering(master_service_id)
+        inspection_mode = offering.pricing_model == PRICING_MODEL_VISIT_FEE
 
-        def _specificity(row) -> int:
-            spr = row[1]
-            if spr is None:
-                return 0
-            has_type = offering_type_id is not None and spr.service_type_id == offering_type_id
-            has_brand = brand_id is not None and spr.brand_id == brand_id
-            if has_type and has_brand:
-                return 3
-            if has_type:
-                return 2
-            if spr.service_type_id is None and spr.brand_id is None:
-                return 1
-            return -1  # a type/brand-scoped rule that doesn't match this request — never usable here
-
-        eligible_candidates = [row for row in bargain_candidates if _specificity(row) >= 0]
-        eligible_candidates.sort(key=lambda row: (_specificity(row), row[0].created_at), reverse=True)
-        bargain_rule = eligible_candidates[0][0] if eligible_candidates else None
-
-        bargain_available = bool(
-            bargain_rule and bargain_rule.customer_min_price is not None
-            and bargain_rule.customer_max_price is not None
-        )
+        bargain_available = False
         price_options: dict | None = None
         standard_price: Decimal | None = None
 
-        if bargain_available:
+        if inspection_mode:
+            pass  # bargain_available/price_options/standard_price stay None/False.
+        else:
+            # Resolve the selected provider's bargain rule (customer range + fee)
+            # and its linked pricing rule (admin range) — real, tenant-scoped data.
+            #
+            # HS6 fix: previously matched ONLY on master_service_id, completely
+            # ignoring offering_type_id/brand_id even though they were already
+            # passed into select_best_provider() for eligibility filtering — the
+            # exact "Window AC brand price used for Split AC" bug this whole
+            # Home Services pricing lineage exists to prevent, except it was
+            # still live in the actual matching/booking price-resolution path.
+            # Fixed: join the linked ServicePricingRule and prefer the most
+            # specific match — type+brand > type-only > service-only — mirroring
+            # the hierarchy already used by _find_admin_pricing_rule elsewhere.
+            bargain_candidates = (await self.db.execute(
+                select(BargainRule, ServicePricingRule)
+                .join(ServicePricingRule, ServicePricingRule.id == BargainRule.pricing_rule_id, isouter=True)
+                .where(
+                    BargainRule.master_service_id == master_service_id,
+                    BargainRule.status == "active", BargainRule.deleted_at.is_(None),
+                )
+            )).all()
+
+            def _specificity(row) -> int:
+                spr = row[1]
+                if spr is None:
+                    return 0
+                has_type = offering_type_id is not None and spr.service_type_id == offering_type_id
+                has_brand = brand_id is not None and spr.brand_id == brand_id
+                if has_type and has_brand:
+                    return 3
+                if has_type:
+                    return 2
+                if spr.service_type_id is None and spr.brand_id is None:
+                    return 1
+                return -1  # a type/brand-scoped rule that doesn't match this request — never usable here
+
+            eligible_candidates = [row for row in bargain_candidates if _specificity(row) >= 0]
+            eligible_candidates.sort(key=lambda row: (_specificity(row), row[0].created_at), reverse=True)
+            bargain_rule = eligible_candidates[0][0] if eligible_candidates else None
+
+            bargain_available = bool(
+                bargain_rule and bargain_rule.customer_min_price is not None
+                and bargain_rule.customer_max_price is not None
+            )
+
+        if inspection_mode:
+            pass
+        elif bargain_available:
             pricing_rule = None
             if bargain_rule.pricing_rule_id:
                 pricing_rule = await self.db.get(ServicePricingRule, bargain_rule.pricing_rule_id)
@@ -795,22 +1108,38 @@ class HomeServiceChatbotBookingService:
             eligible_sprs.sort(key=lambda s: _spr_specificity(s), reverse=True)
             pricing_rule = eligible_sprs[0] if eligible_sprs else None
 
-            if not pricing_rule or pricing_rule.base_price is None:
-                # Genuinely no pricing configuration at all for this offering —
-                # not a bargain-specific gap, a real absence of any price. This
-                # is the one case that must still fail; there is no authoritative
-                # number to show the customer.
+            # The selected tenant's OWN configured price takes precedence
+            # over the tenant-agnostic global ServicePricingRule fallback --
+            # a tenant with a real min/max range configured (e.g. Guramrit's
+            # own TenantService.tenant_min_price/max_price) must never be
+            # priced off an unrelated, possibly-unconfigured global rule.
+            tenant_price = await self._resolve_tenant_price_for(
+                selected_tenant_id, master_service_id, offering_type_id, brand_id,
+            )
+            if tenant_price is not None:
+                base = Decimal(str(tenant_price["minimum_price"]))
+                fee_amount = Decimal("0")
+                standard_price = _round2(base + fee_amount)
+            elif pricing_rule is not None and pricing_rule.base_price is not None and pricing_rule.base_price > 0:
+                fee_percent = pricing_rule.platform_fee_percent or Decimal("0")
+                fee_fixed = Decimal("0")  # ServicePricingRule has no separate fixed-fee column; only BargainRule does.
+                base = pricing_rule.base_price
+                fee_amount = _round2(base * fee_percent / Decimal("100") + fee_fixed)
+                standard_price = _round2(base + fee_amount)
+            else:
+                # Genuinely no valid pricing configuration for this offering
+                # -- not a bargain-specific gap, a real absence of any usable
+                # price (a `base_price` of exactly 0 counts as absent, never
+                # as a real free/zero price). This is the one case that must
+                # still fail; there is no authoritative number to show the
+                # customer, and Review must never proceed with an invalid
+                # price (spec: "Zero or missing price makes the offering
+                # temporarily unbookable").
                 raise ServiceOSException(
                     "PRICE_OPTIONS_UNAVAILABLE",
-                    "This service does not have pricing configured yet.",
+                    "This service does not have valid pricing configured yet.",
                     status_code=422,
                 )
-
-            fee_percent = pricing_rule.platform_fee_percent or Decimal("0")
-            fee_fixed = Decimal("0")  # ServicePricingRule has no separate fixed-fee column; only BargainRule does.
-            base = pricing_rule.base_price
-            fee_amount = _round2(base * fee_percent / Decimal("100") + fee_fixed)
-            standard_price = _round2(base + fee_amount)
 
         area_comparison = await get_area_market_comparison(
             self.db, category_id=category_id, offering_id=master_service_id,
@@ -822,11 +1151,15 @@ class HomeServiceChatbotBookingService:
 
         result = {
             "selected_provider": selected_provider_public,
+            "pricing_mode": "inspection" if inspection_mode else "fixed",
             "bargain_available": bargain_available,
             "selected_provider_price_options": price_options,
             # Present only when bargain_available is False — the ordinary,
             # server-authoritative, fee-inclusive price the customer may book
-            # at directly. Never present alongside price_options.
+            # at directly. Never present alongside price_options, and never
+            # present at all under inspection mode (None, not 0 -- the
+            # inspection-mode visit fee/requires_inspection_estimate already
+            # resolved earlier in draft.price_snapshot is what Review shows).
             "standard_price": float(standard_price) if standard_price is not None else None,
             "area_market_comparison": area_comparison,
         }
@@ -976,6 +1309,47 @@ class HomeServiceChatbotBookingService:
 
         existing = draft.booking_summary or {}
         job_type_error = await self._validate_job_type_context(draft)
+
+        # Pricing readiness has two genuinely different, mutually exclusive
+        # shapes: a fixed/bargain offering is ready once the customer has
+        # picked a price tier (`confirm_price_choice`); an inspection-first
+        # offering has no tier to pick at all -- the frontend controller
+        # correctly never calls `confirm_price_choice` when `standard_price`
+        # is null (see useBookingReviewController.ts), so requiring
+        # `selected_price_tier` here would make EVERY inspection-mode
+        # offering permanently unconfirmable. Ready instead once a real,
+        # positive visit fee has been resolved into `draft.price_snapshot`
+        # by `resolve_price_estimate`.
+        price_snapshot = draft.price_snapshot or {}
+        pricing_ready = bool(existing.get("selected_price_tier") in ("low", "mid", "high", "standard")) or bool(
+            price_snapshot.get("requires_inspection_estimate")
+            and price_snapshot.get("visit_fee")
+            and price_snapshot.get("visit_fee") > 0
+        )
+
+        # Resolve the promise BEFORE building the summary: the customer sees
+        # a real slot and its SLA on the review screen and decides from
+        # there. Provider-level capacity only -- technician allocation is
+        # the provider's own downstream responsibility.
+        promised_slot = None
+        # The catalog's own per-service duration is authoritative when an
+        # admin has set it. When they have not, the promised slot length IS
+        # the commitment -- fall back to it rather than reporting no SLA at
+        # all (which would leave the provider with nothing to be held to).
+        sla_minutes = offering.estimated_duration_minutes
+        if draft.selected_tenant_id:
+            from app.engines.home_service_booking.provider_slot_service import (
+                find_earliest_available_slot,
+            )
+            try:
+                promised_slot = await find_earliest_available_slot(
+                    self.db, tenant_id=draft.selected_tenant_id,
+                )
+            except Exception as exc:  # noqa: BLE001 -- never block the summary
+                logger.warning("home_service.promised_slot_failed", error=str(exc))
+        if not sla_minutes and promised_slot:
+            sla_minutes = promised_slot.get("slot_minutes")
+
         summary = {
             **existing,
             "offering_name":    offering.service_name,
@@ -995,18 +1369,29 @@ class HomeServiceChatbotBookingService:
             "ready_for_confirmation": (
                 draft.serviceability_status == SVCABILITY_SERVICEABLE
                 and bool(draft.selected_tenant_id)
-                # fix/bargain-optional-price-path: "standard" is a real,
-                # legitimate selected_price_tier value when bargain_available
-                # is False -- previously only low/mid/high were accepted here,
-                # which made a customer who correctly booked at the standard
-                # price incorrectly show as "not ready for confirmation".
-                and existing.get("selected_price_tier") in ("low", "mid", "high", "standard")
+                and pricing_ready
                 and job_type_error is None
             ),
             # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 6): the
             # customer-facing field-level readiness contract.
             "missing": (["job_type"] if job_type_error else []),
             "errors":  ([job_type_error] if job_type_error else []),
+            # The real, capacity-checked slot this provider can actually
+            # honour -- resolved BEFORE the customer confirms so they make
+            # the final call on a promise rather than confirming blind and
+            # waiting to find out. Today first, then the next day, and so
+            # on. `None` means the provider has no capacity in the search
+            # horizon; the customer is told that rather than being given a
+            # date nobody can keep.
+            "promised_slot": promised_slot,
+            # What the provider is actually committing to, in customer terms:
+            # the service is done by the END of the promised slot. The clock
+            # runs from when the booking request is created, not from when a
+            # technician happens to pick the job up -- so provider-side
+            # allocation delay is the provider's problem, never the
+            # customer's wait.
+            "service_sla_minutes": sla_minutes,
+            "service_due_at": (promised_slot or {}).get("ends_at"),
         }
 
         draft.booking_summary = summary
@@ -1070,15 +1455,28 @@ class HomeServiceChatbotBookingService:
                 status_code=422,
             )
 
-        # fix/bargain-optional-price-path: a draft may have been matched via
-        # either the bargain-available path ("price_options" in the
-        # snapshot) or the standard-price path ("standard_price" in the
-        # snapshot, bargain_available: False) -- both are real, matched,
-        # priced states; only a draft with NEITHER has genuinely not been
-        # through provider matching yet.
-        if not draft.selected_tenant_id or not draft.price_snapshot or (
-            "price_options" not in draft.price_snapshot
-            and draft.price_snapshot.get("standard_price") is None
+        # A draft may have reached a genuinely priced, matched state through
+        # THREE distinct paths -- bargain-available ("price_options" in the
+        # snapshot), standard fixed-price ("standard_price" in the snapshot,
+        # bargain_available: False), or inspection-first (no tier at all;
+        # `requires_inspection_estimate` + a real positive `visit_fee` is
+        # the whole story -- see `_compute_price_snapshot`/`match_provider_
+        # and_price`). Only a draft with NONE of the three has genuinely not
+        # been through provider matching / pricing yet. Requiring
+        # `standard_price` or `price_options` unconditionally previously
+        # made confirm() permanently reject every inspection-mode offering,
+        # since match_provider_and_price correctly never computes a
+        # standard_price for one.
+        price_snapshot = draft.price_snapshot or {}
+        is_inspection_priced = bool(
+            price_snapshot.get("requires_inspection_estimate")
+            and price_snapshot.get("visit_fee")
+            and price_snapshot.get("visit_fee") > 0
+        )
+        if not draft.selected_tenant_id or not price_snapshot or (
+            "price_options" not in price_snapshot
+            and price_snapshot.get("standard_price") is None
+            and not is_inspection_priced
         ):
             raise ServiceOSException(
                 ERR_NO_PROVIDER_AVAILABLE,
@@ -1087,7 +1485,7 @@ class HomeServiceChatbotBookingService:
             )
 
         selected_tier = (draft.booking_summary or {}).get("selected_price_tier")
-        if selected_tier not in ("low", "mid", "high", "standard"):
+        if selected_tier not in ("low", "mid", "high", "standard") and not is_inspection_priced:
             raise ServiceOSException(
                 "INVALID_SELECTED_PRICE_OPTION",
                 "Selected price option is no longer valid.",
@@ -1345,6 +1743,45 @@ class HomeServiceChatbotBookingService:
         await self.db.refresh(draft)
         return {"photo_urls": draft.photo_urls, "draft_status": draft.status}
 
+    async def remove_photo(
+        self,
+        draft_id: uuid.UUID,
+        customer_id: uuid.UUID | None,
+        photo_url: str,
+    ) -> dict:
+        """Detach a photo from the draft.
+
+        Added because attaching was one-way: a customer who picked the wrong
+        image had no way to take it back and would have had to abandon the
+        draft. Only the draft's reference is dropped -- the media asset
+        itself is owned by the media engine and is left to its own
+        retention rules rather than being deleted from under it.
+        """
+        draft = await self._require_draft(draft_id, customer_id)
+        self._assert_not_terminal(draft)
+
+        existing = list(draft.photo_urls or [])
+        if photo_url not in existing:
+            raise ServiceOSException(
+                ERR_PHOTO_UPLOAD_FAILED,
+                "That photo is not attached to this booking.",
+                status_code=404,
+            )
+
+        existing.remove(photo_url)
+        draft.photo_urls = existing
+        draft.updated_at = utcnow()
+
+        await self._emit_event(
+            draft_id=draft.id, actor_type=ACTOR_CUSTOMER,
+            event_type=EVENT_PHOTO_REMOVED,
+            new_value={"url": photo_url},
+            message="Photo removed from draft",
+        )
+        await self.db.commit()
+        await self.db.refresh(draft)
+        return {"photo_urls": draft.photo_urls, "draft_status": draft.status}
+
     # ══════════════════════════════════════════════════════════════════════════
     # PRIVATE HELPERS
     # ══════════════════════════════════════════════════════════════════════════
@@ -1420,13 +1857,24 @@ class HomeServiceChatbotBookingService:
         dedicated follow-up (not touched here -- see MODULE-L5-56 report)."""
         if not draft.selected_tenant_id:
             return None
+        return await self._resolve_tenant_price_for(
+            draft.selected_tenant_id, draft.offering_id, draft.offering_type_id, draft.brand_id,
+        )
+
+    async def _resolve_tenant_price_for(
+        self, tenant_id: uuid.UUID, master_service_id: uuid.UUID,
+        offering_type_id: uuid.UUID | None, brand_id: uuid.UUID | None,
+    ) -> dict | None:
+        """Tenant-id-based counterpart to `_resolve_selected_tenant_price`,
+        for call sites (e.g. `match_provider_and_price`) that resolve a
+        provider before a draft necessarily exists yet."""
         from app.engines.admin_catalog.models import TenantService
         from app.engines.admin_catalog.tenant_service import TenantCatalogService
 
         ts = (await self.db.execute(
             select(TenantService).where(
-                TenantService.tenant_id == draft.selected_tenant_id,
-                TenantService.master_service_id == draft.offering_id,
+                TenantService.tenant_id == tenant_id,
+                TenantService.master_service_id == master_service_id,
                 TenantService.is_active.is_(True),
             )
         )).scalars().first()
@@ -1434,9 +1882,30 @@ class HomeServiceChatbotBookingService:
             return None
         svc = TenantCatalogService(db=self.db)
         result = await svc.resolve_tenant_price(
-            ts.id, service_type_id=draft.offering_type_id, brand_id=draft.brand_id,
+            ts.id, service_type_id=offering_type_id, brand_id=brand_id,
         )
         return result if result.get("resolved") else None
+
+    async def _resolve_selected_tenant_visit_fee(self, draft: HomeServiceBookingDraft) -> float | None:
+        """Inspection-mode counterpart to `_resolve_selected_tenant_price`:
+        a tenant may configure their own `tenant_visit_fee`, which takes
+        precedence over the offering's admin-default `visit_fee` -- never
+        the tenant's `tenant_min_price`/`tenant_max_price` range, which is
+        fixed/bargain-mode pricing and must never be surfaced as a number
+        under inspection mode (see `_compute_price_snapshot`)."""
+        if not draft.selected_tenant_id:
+            return None
+        from app.engines.admin_catalog.models import TenantService
+        ts = (await self.db.execute(
+            select(TenantService).where(
+                TenantService.tenant_id == draft.selected_tenant_id,
+                TenantService.master_service_id == draft.offering_id,
+                TenantService.is_active.is_(True),
+            )
+        )).scalars().first()
+        if ts is None or ts.tenant_visit_fee is None:
+            return None
+        return float(ts.tenant_visit_fee)
 
     async def _compute_price_snapshot(self, draft: HomeServiceBookingDraft, offering) -> dict:
         """
@@ -1463,19 +1932,42 @@ class HomeServiceChatbotBookingService:
         floor_price  = float(floor_row.floor_price) if floor_row else 0.0
         pricing_model = offering.pricing_model or "visit_fee_plus_quote"
 
-        tenant_price = await self._resolve_selected_tenant_price(draft)
+        # Pricing MODE is decided by the offering's own `pricing_model` --
+        # never by whether a tenant happens to have configured a price range.
+        # This was a real defect: `_resolve_selected_tenant_price` resolves
+        # ANY tenant-configured min/max price regardless of pricing_model,
+        # so an inspection-first offering (visit_fee_plus_quote) whose
+        # selected tenant had ALSO configured a tenant_min_price/max_price
+        # (e.g. Guramrit's AC Gas Refilling: 500/700, likely left over from
+        # a bargain-style config) got silently reclassified as a fixed,
+        # numeric price -- the exact customer-facing ₹0/wrong-number defect
+        # this fix closes. Inspection mode is checked FIRST and always wins;
+        # tenant/admin numeric prices are only ever used to fill in the
+        # actual number for a genuinely fixed/range offering.
+        if pricing_model == PRICING_MODEL_VISIT_FEE:
+            tenant_visit_fee = await self._resolve_selected_tenant_visit_fee(draft)
+            visit_fee_value = tenant_visit_fee if tenant_visit_fee and tenant_visit_fee > 0 else float(offering.visit_fee)
+            base  = max(visit_fee_value, floor_price)
+            min_price = base
+            max_price = None
+            # The visit fee is not an extra charge on top of the repair --
+            # it is adjusted against the final bill if the customer goes
+            # ahead. Saying so up front is what makes an inspection-first
+            # price feel fair rather than like a surprise call-out charge.
+            note  = ("The technician will inspect your service and provide an estimate before starting the work. "
+                     "Your approval will be required before repair begins. "
+                     "This visit fee is adjusted against your final bill if you continue with the service.")
+            tenant_price = None
+        else:
+            tenant_price = await self._resolve_selected_tenant_price(draft)
 
-        if tenant_price is not None:
+        if pricing_model == PRICING_MODEL_VISIT_FEE:
+            pass  # base/min_price/max_price/note already set above.
+        elif tenant_price is not None:
             base = max(tenant_price["minimum_price"], floor_price)
             min_price = tenant_price["minimum_price"]
             max_price = tenant_price["maximum_price"]
             note = f"Tenant-set price ({tenant_price['source']})."
-        elif pricing_model == PRICING_MODEL_VISIT_FEE:
-            base  = max(float(offering.visit_fee), floor_price)
-            min_price = float(offering.min_price) if offering.min_price else base
-            max_price = float(offering.max_price) if offering.max_price else None
-            note  = ("The technician will contact you and inspect the issue before providing a cost estimate. "
-                     "Work starts only after your approval.")
         elif pricing_model == PRICING_MODEL_FIXED:
             base  = max(float(offering.base_price), floor_price)
             min_price = float(offering.min_price) if offering.min_price else base
@@ -1501,6 +1993,11 @@ class HomeServiceChatbotBookingService:
 
         return {
             "pricing_model":   pricing_model,
+            # Canonical, explicit mode flag (Level-5 pricing-contract fix) --
+            # "inspection" vs "fixed" -- so downstream consumers (match-and-
+            # price, confirm-price-choice, booking summary) never have to
+            # re-derive the mode from `requires_inspection_estimate` alone.
+            "pricing_mode":    "inspection" if pricing_model == PRICING_MODEL_VISIT_FEE else "fixed",
             "visit_fee":       base if pricing_model == PRICING_MODEL_VISIT_FEE else 0,
             # Repair/inspection-based pricing must never present Low/Mid/High
             # as a promised repair amount before inspection -- the customer

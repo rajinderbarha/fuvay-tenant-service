@@ -32,7 +32,7 @@ export function OtpVerifyScreen({ route, navigation }: Props) {
   const { phone } = route.params;
   const { establishSession } = useSession();
   const networkStatus = useNetworkStatus();
-  const offline = networkStatus === "offline" || networkStatus === "internet_reachable_false";
+  const offline = networkStatus.networkState === "offline";
 
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);

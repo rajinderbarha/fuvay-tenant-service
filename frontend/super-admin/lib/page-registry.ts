@@ -20,12 +20,6 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     breadcrumbs: [{ label: "Dashboard" }],
     description: "Platform overview and key metrics",
   },
-  "/admin/tenants": {
-    title: "Tenants",
-    section: "core",
-    breadcrumbs: [{ label: "Tenants" }],
-    description: "Manage all service provider tenants",
-  },
   "/admin/users": {
     title: "Users",
     section: "core",
@@ -41,11 +35,6 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "core",
     breadcrumbs: [{ label: "Staff" }],
   },
-  "/admin/bookings": {
-    title: "Bookings",
-    section: "operations",
-    breadcrumbs: [{ label: "Bookings" }],
-  },
   "/admin/operations": {
     title: "Operations",
     section: "operations",
@@ -55,6 +44,56 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     title: "Home Services",
     section: "operations",
     breadcrumbs: [{ label: "Operations", href: "/admin/operations" }, { label: "Home Services" }],
+  },
+  "/admin/home-services/finance": {
+    title: "Home Services Finance",
+    section: "operations",
+    breadcrumbs: [
+      { label: "Operations", href: "/admin/operations" },
+      { label: "Home Services", href: "/admin/home-services" },
+      { label: "Finance" },
+    ],
+  },
+  "/admin/home-services/bookings-jobs": {
+    title: "Bookings & Jobs",
+    section: "operations",
+    breadcrumbs: [
+      { label: "Operations", href: "/admin/operations" },
+      { label: "Home Services", href: "/admin/home-services" },
+      { label: "Bookings & Jobs" },
+    ],
+  },
+  "/admin/home-services/providers": {
+    title: "Providers",
+    section: "operations",
+    breadcrumbs: [
+      { label: "Operations", href: "/admin/operations" },
+      { label: "Home Services", href: "/admin/home-services" },
+      { label: "Providers" },
+    ],
+  },
+  "/admin/home-services/customers": {
+    title: "Customers",
+    section: "operations",
+    breadcrumbs: [
+      { label: "Operations", href: "/admin/operations" },
+      { label: "Home Services", href: "/admin/home-services" },
+      { label: "Customers" },
+    ],
+  },
+  "/admin/home-services/dashboard": {
+    title: "Dashboard",
+    section: "operations",
+    breadcrumbs: [
+      { label: "Operations", href: "/admin/operations" },
+      { label: "Home Services", href: "/admin/home-services" },
+      { label: "Dashboard" },
+    ],
+  },
+  "/admin/catalog-workspace": {
+    title: "Catalog Workspace",
+    section: "operations",
+    breadcrumbs: [{ label: "Catalog", href: "/admin/categories" }, { label: "Workspace" }],
   },
   "/admin/real-estate": {
     title: "Real Estate",
@@ -107,11 +146,6 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "catalog",
     breadcrumbs: [{ label: "Catalog", href: "/admin/catalog-workspace" }, { label: "Issue Types (Retired)" }],
   },
-  "/admin/checklist-templates": {
-    title: "Checklist Templates",
-    section: "catalog",
-    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Checklists" }],
-  },
   "/admin/checklists": {
     title: "Checklist Library",
     section: "catalog",
@@ -127,6 +161,20 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "catalog",
     breadcrumbs: [{ label: "Service Setup" }],
     description: "Bulk service configuration templates",
+  },
+  "/admin/service-setup/bulk-wizard": {
+    title: "Bulk Wizard",
+    section: "catalog",
+    breadcrumbs: [{ label: "Service Setup", href: "/admin/service-setup" }, { label: "Bulk Wizard" }],
+  },
+  "/admin/service-setup/bulk-runs": {
+    title: "Bulk Runs",
+    section: "catalog",
+    breadcrumbs: [
+      { label: "Service Setup", href: "/admin/service-setup" },
+      { label: "Bulk Wizard", href: "/admin/service-setup/bulk-wizard" },
+      { label: "Runs" },
+    ],
   },
   "/admin/customer-flow": {
     title: "Customer Flow",

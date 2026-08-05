@@ -27,7 +27,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     label: "Core",
     items: [
       { id: "dashboard",   label: "Dashboard",   href: "/admin/dashboard",   icon: "🏠", group: "core" },
-      { id: "tenants",     label: "Tenants",     href: "/admin/tenants",     icon: "🏢", group: "core" },
+      { id: "tenants",     label: "Tenants",     href: "/admin/home-services/providers",     icon: "🏢", group: "core" },
       { id: "users",       label: "Users",       href: "/admin/users",       icon: "👤", group: "core" },
       { id: "customers",   label: "Customers",   href: "/admin/customers",   icon: "🧑", group: "core" },
       { id: "staff",       label: "Staff",       href: "/admin/staff",       icon: "👷", group: "core" },
@@ -37,12 +37,11 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     id: "operations",
     label: "Operations",
     items: [
-      { id: "bookings",       label: "Bookings",       href: "/admin/bookings",       icon: "📅", group: "operations" },
       { id: "operations",     label: "Operations",     href: "/admin/operations",     icon: "⚙️", group: "operations" },
       { id: "real-estate",    label: "Real Estate",    href: "/admin/real-estate/lead-drafts",                  icon: "🏘️", group: "operations" },
       { id: "coaching",       label: "Coaching",       href: "/admin/coaching/appointment-drafts",              icon: "📚", group: "operations" },
       { id: "bookability",    label: "Bookability",    href: "/admin/bookability/providers",                    icon: "✅", group: "operations" },
-      { id: "onboarding",     label: "Onboarding",     href: "/admin/onboarding/providers",                     icon: "🚀", group: "operations" },
+      { id: "onboarding",     label: "Onboarding",     href: "/admin/home-services/providers?tab=onboarding",  icon: "🚀", group: "operations" },
     ],
   },
   {
@@ -119,6 +118,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     label: "Engagement",
     items: [
       { id: "marketing",     label: "Marketing",      href: "/admin/marketing",     icon: "📣", group: "engagement" },
+      { id: "home-banners",  label: "Home Banners",   href: "/admin/home-banners",  icon: "🖼️", group: "engagement" },
       { id: "notifications", label: "Notifications",  href: "/admin/notifications", icon: "🔔", group: "engagement" },
       { id: "reviews",       label: "Reviews",        href: "/admin/reviews",       icon: "⭐", group: "engagement" },
       { id: "complaints",    label: "Complaints",     href: "/admin/complaints",    icon: "⚠️", group: "engagement" },
@@ -192,6 +192,7 @@ export const ADMIN_PATH_TO_NAV_ID: Record<string, string> = {
   ai:                     "ai",
   "ai-chat":              "ai-chat",
   marketing:              "marketing",
+  "home-banners":         "home-banners",
   notifications:          "notifications",
   "notification-templates": "notifications",
   "notification-outbox":    "notifications",

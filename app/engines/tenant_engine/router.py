@@ -30,7 +30,12 @@ class SignupBody(BaseModel):
     owner_email:   str
     owner_phone:   str
     city:          str
-    state:         str | None = None
+    # Real bug fixed here: this field was declared optional here, but the
+    # OnboardingRequest model (and the live "onboarding_requests" table)
+    # define it NOT NULL -- so every signup that omitted state failed with
+    # a raw 500 IntegrityError instead of a clean 422 telling the caller
+    # what was wrong.
+    state:         str
     gstin:         str | None = None
     description:   str | None = None
     source:        str        = "self_signup"
@@ -122,6 +127,15 @@ async def submit_signup(body: SignupBody, request: Request, svc: TenantService =
     return ok(data, _meta(request).request_id, ENGINE_ID,
               links=Links(actions=[Link(href="/v1/tenants/onboarding/queue", method="GET",
                                        rel="admin_queue", description="Admins see this in the queue")]))
+
+
+# 1b. Public signup-status lookup by email (no auth) — must be before
+# /{request_id} to avoid UUID parse on "signup-status".
+@router.get("/onboarding/signup-status", summary="Public: check signup request status by email (no auth)",
+            response_model=ApiResponse[dict])
+async def lookup_signup_status(email: str, request: Request, svc: TenantService = Depends(_svc)) -> ApiResponse[dict]:
+    data = await svc.lookup_signup_status_by_email(email)
+    return ok(data, _meta(request).request_id, ENGINE_ID)
 
 
 # 2. List onboarding queue — must be before /{request_id} to avoid UUID parse on "queue"

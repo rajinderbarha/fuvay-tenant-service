@@ -30,6 +30,8 @@ class NotificationEvent(ServiceOSBase):
     severity:           Mapped[str]            = mapped_column(String(20), default="info", nullable=False)
     status:             Mapped[str]            = mapped_column(String(20), default="created", nullable=False)
     processed_at:       Mapped[datetime | None]= mapped_column(DateTime(timezone=True), nullable=True)
+    is_mandatory:       Mapped[bool]           = mapped_column(Boolean, default=False, nullable=False)
+    vertical_key:       Mapped[str | None]     = mapped_column(String(80), nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -74,6 +76,7 @@ class NotificationOutbox(ServiceOSBase):
     scheduled_at:       Mapped[datetime | None]= mapped_column(DateTime(timezone=True), nullable=True)
     sent_at:            Mapped[datetime | None]= mapped_column(DateTime(timezone=True), nullable=True)
     delivered_at:       Mapped[datetime | None]= mapped_column(DateTime(timezone=True), nullable=True)
+    vertical_key:       Mapped[str | None]     = mapped_column(String(80), nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -111,6 +114,9 @@ class InAppNotification(ServiceOSBase):
     severity:           Mapped[str]            = mapped_column(String(20), default="info", nullable=False)
     read_status:        Mapped[str]            = mapped_column(String(20), default="unread", nullable=False)
     read_at:            Mapped[datetime | None]= mapped_column(DateTime(timezone=True), nullable=True)
+    # Found missing during the "make it 100% working" drift audit.
+    is_mandatory:       Mapped[bool]           = mapped_column(Boolean, default=False, nullable=False)
+    vertical_key:       Mapped[str | None]     = mapped_column(String(80), nullable=True)
 
     def to_dict(self) -> dict:
         return {

@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect, useMemo } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Skeleton, EmptyState,
@@ -41,6 +41,17 @@ function MultiCheckList({ label, options, selected, onToggle, emptyText = "None 
 
 function toggleInList(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter(v => v !== value) : [...list, value];
+}
+
+// Mirrors the backend's own _slugify (admin_catalog/types_service.py) so the
+// slug shown while typing matches what will actually be saved -- the
+// backend already auto-generates a slug from name when none is sent, but
+// the form always sent whatever the (previously blank, manually-typed)
+// slug field held, which was confusing UX ("why do I have to fill this in
+// myself"). Still editable by hand after that -- auto-fill stops once the
+// user types into Slug directly.
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -124,24 +135,21 @@ function SummaryCard({ label, value, accent }: { label:string; value:number|stri
 function ServiceTypesTab() {
   const [q,        setQ]        = useState("");
   const [status,   setStatus]   = useState("");
-  const [mapped,   setMapped]   = useState("");
   const [family,   setFamily]   = useState("");
   const [page,     setPage]     = useState(1);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem,   setEditItem]   = useState<ServiceTypeMaster | null>(null);
   const [detailItem, setDetailItem] = useState<ServiceTypeMaster | null>(null);
-  const [mapItem,    setMapItem]    = useState<ServiceTypeMaster | null>(null);
 
-  const summaryRes = useApi(useCallback(() => typesApi.summary(), []));
+  const summaryRes = useApi(useCallback(() => typesApi.summary(), []), []);
   const listRes    = useApi(useCallback(
     () => typesApi.list({
       q: q || undefined, status: status || undefined,
-      mapped: mapped === "yes" ? true : mapped === "no" ? false : undefined,
       page, page_size: 50,
     }),
-    [q, status, mapped, page],
-  ));
+    [q, status, page],
+  ), [q, status, page]);
 
   const activateAction   = useAction(useCallback((id:string) => typesApi.activate(id),   []));
   const deactivateAction = useAction(useCallback((id:string) => typesApi.deactivate(id), []));
@@ -191,7 +199,6 @@ function ServiceTypesTab() {
           typesApi.get(row.type_id).then(r => setDetailItem(r));
         }}
         onEdit={() => setEditItem(row)}
-        onMapType={() => setMapItem(row)}
         onActivate={() => doStatus(row.type_id, "activate")}
         onDeactivate={() => doStatus(row.type_id, "deactivate")}
         onArchive={() => doStatus(row.type_id, "archive")}
@@ -232,13 +239,10 @@ function ServiceTypesTab() {
               color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
             {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <select value={mapped} onChange={e=>{setMapped(e.target.value);setPage(1);}}
-            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
-              color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
-            <option value="">All (Mapped/Unmapped)</option>
-            <option value="yes">Mapped Only</option>
-            <option value="no">Unmapped Only</option>
-          </select>
+          {/* Mapped/Unmapped filter dropdown removed 2026-08-05 at explicit
+              user request -- the MAPPED column and the Mapped/Unmapped
+              summary cards already convey this, and mapping is managed from
+              the dedicated Type Mappings tab. */}
           <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
             <Btn variant="ghost" size="sm" onClick={() => { listRes.refetch(); summaryRes.refetch(); }}>
               <RefreshCw size={14}/>
@@ -284,18 +288,16 @@ function ServiceTypesTab() {
       {detailItem && (
         <TypeDetailDrawer item={detailItem} onClose={() => setDetailItem(null)}/>
       )}
-      {mapItem && (
-        <AddTypeMappingModal typeId={mapItem.type_id} typeName={mapItem.name}
-          onClose={() => setMapItem(null)}
-          onSaved={() => { setMapItem(null); listRes.refetch(); summaryRes.refetch(); }}/>
-      )}
     </div>
   );
 }
 
 // ── Type Action Menu ──────────────────────────────────────────────────────────
-function TypeActionMenu({ row, onView, onEdit, onMapType, onActivate, onDeactivate, onArchive }:
-  { row:ServiceTypeMaster; onView():void; onEdit():void; onMapType():void;
+// Mapping is managed exclusively from the dedicated "Type Mappings" tab now
+// (explicit user request) -- this menu no longer has a "Manage Mappings"
+// shortcut, so this tab is purely Type CRUD.
+function TypeActionMenu({ row, onView, onEdit, onActivate, onDeactivate, onArchive }:
+  { row:ServiceTypeMaster; onView():void; onEdit():void;
     onActivate():void; onDeactivate():void; onArchive():void }) {
   const [open, setOpen] = useState(false);
   return (
@@ -312,7 +314,6 @@ function TypeActionMenu({ row, onView, onEdit, onMapType, onActivate, onDeactiva
           {[
             { label:"View Details",   fn:() => { onView(); setOpen(false); } },
             { label:"Edit Type",      fn:() => { onEdit(); setOpen(false); } },
-            { label:"Manage Mappings",fn:() => { onMapType(); setOpen(false); } },
             row.status !== "active"   ? { label:"Activate",   fn:() => { onActivate(); setOpen(false); } } : null,
             row.status === "active"   ? { label:"Deactivate", fn:() => { onDeactivate(); setOpen(false); } } : null,
             row.status !== "archived" ? { label:"Archive",    fn:() => { onArchive(); setOpen(false); }, danger:true } : null,
@@ -343,6 +344,9 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
     status:           initial?.status ?? "active",
     display_order:    initial?.display_order ?? 0,
   });
+  // Only auto-fill slug for brand-new records, and only until the user
+  // edits Slug by hand.
+  const [slugTouched, setSlugTouched] = useState(!!initial?.slug);
 
   const createAction = useAction(useCallback((d:object) => typesApi.create(d), []));
   const updateAction = useAction(useCallback((d:object) =>
@@ -364,7 +368,14 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
             style={{ borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"8px 10px", resize:"vertical" }}/>
         : <input type={type} value={form[key] as string|number}
-            onChange={e => setForm(f => ({ ...f, [key]: type==="number"?+e.target.value:e.target.value }))}
+            onChange={e => {
+              const v = type === "number" ? +e.target.value : e.target.value;
+              if (key === "slug") setSlugTouched(true);
+              setForm(f => ({
+                ...f, [key]: v,
+                ...(key === "name" && !slugTouched ? { slug: slugify(String(v)) } : {}),
+              }));
+            }}
             style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}/>
       }
@@ -382,7 +393,7 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
         {F("Name *", "name")}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
           {F("Code", "code")}
-          {F("Slug", "slug")}
+          {F("Slug (auto-generated, editable)", "slug")}
         </div>
         {F("Description", "description", "textarea")}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
@@ -483,17 +494,45 @@ function AddTypeMappingModal({ typeId, typeName, onClose, onSaved }:
   const [serviceId,       setServiceId]       = useState("");
   const [custVis,         setCustVis]         = useState(true);
 
-  const categories = useApi(useCallback(() => catalogApi.listCategories(true), []));
-  const serviceGroups = useApi(useCallback(() => catalogApi.listServiceGroups(), []));
+  const categories = useApi(useCallback(() => catalogApi.listCategories(true), []), []);
+  const serviceGroups = useApi(useCallback(() => catalogApi.listServiceGroups(), []), []);
   const allGroups = serviceGroups.data?.groups ?? [];
-  const visibleGroups = categoryIds.length === 0
-    ? allGroups : allGroups.filter(g => categoryIds.includes(g.category_id));
+
+  // Was previously a pure "add" form with no visibility into what this
+  // type is already mapped to -- a user could only tell whether a mapping
+  // "took" by counting rows on the outer list, and had no way to edit or
+  // remove an existing one from here at all.
+  const existing = useApi(useCallback(() => typesApi.listMappings({ type_id: typeId }), [typeId]), [typeId]);
+  const removeAction = useAction(useCallback((mappingId: string) => typesApi.deleteMapping(mappingId), []));
+  const mappedGroupIds = useMemo(() =>
+    new Set((existing.data?.mappings ?? []).map(m => m.service_group_id).filter(Boolean) as string[]),
+    [existing.data]);
+
+  // Already-mapped groups are excluded here -- re-selecting one and
+  // submitting again silently created a duplicate mapping row (visible only
+  // as a Cat/Svc count bump on the outer list, easy to mistake for "nothing
+  // happened"). Remove the existing mapping first (Currently Mapped, above)
+  // if you need to change it.
+  const visibleGroups = (categoryIds.length === 0
+    ? allGroups : allGroups.filter(g => categoryIds.includes(g.category_id))
+  ).filter(g => !mappedGroupIds.has(g.id));
   // "Service" filter only makes sense once exactly one group is selected.
   const singleGroupId = serviceGroupIds.length === 1 ? serviceGroupIds[0] : undefined;
   const services   = useApi(useCallback(
     () => singleGroupId ? catalogApi.listMasterServices(undefined, undefined, undefined, singleGroupId) : Promise.resolve({ services:[] }),
     [singleGroupId],
-  ));
+  ), [singleGroupId]);
+
+  const catNameById = useMemo(() => {
+    const m: Record<string,string> = {};
+    (categories.data?.categories ?? []).forEach((c:any) => { m[c.category_id] = c.name; });
+    return m;
+  }, [categories.data]);
+  const groupNameById = useMemo(() => {
+    const m: Record<string,string> = {};
+    allGroups.forEach(g => { m[g.id] = g.name; });
+    return m;
+  }, [allGroups]);
 
   const action = useAction(useCallback(async (groupIds: string[]) => {
     const results = await Promise.all(groupIds.map(gid => {
@@ -511,12 +550,44 @@ function AddTypeMappingModal({ typeId, typeName, onClose, onSaved }:
   async function handleSave() {
     if (serviceGroupIds.length === 0) return;
     const res = await action.execute(serviceGroupIds);
-    if (res) onSaved();
+    if (res) { setServiceGroupIds([]); setServiceId(""); existing.refetch(); onSaved(); }
+  }
+
+  async function handleRemove(mappingId: string) {
+    const res = await removeAction.execute(mappingId);
+    if (res) existing.refetch();
   }
 
   return (
     <Modal open title={`Map Type: ${typeName}`} onClose={onClose}>
       <div style={{ display:"flex", flexDirection:"column", gap:14, minWidth:320 }}>
+        <div>
+          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Currently Mapped</label>
+          {existing.loading ? (
+            <p style={{ fontSize:12, color:"var(--text-tertiary)", margin:"6px 0 0" }}>Loading…</p>
+          ) : (existing.data?.mappings ?? []).length === 0 ? (
+            <p style={{ fontSize:12, color:"var(--text-tertiary)", margin:"6px 0 0" }}>Not mapped to anything yet.</p>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:6, maxHeight:160, overflowY:"auto" }}>
+              {(existing.data?.mappings ?? []).map(m => (
+                <div key={m.mapping_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+                  padding:"6px 10px", borderRadius:"var(--radius-md)", background:"var(--surface-sunken)", fontSize:12 }}>
+                  <span>
+                    {m.service_group_id ? (groupNameById[m.service_group_id] ?? "Service group") : (m.category_id ? catNameById[m.category_id] ?? "Category" : "—")}
+                    {m.service_id && " · specific service"}
+                  </span>
+                  <button onClick={() => handleRemove(m.mapping_id)} disabled={removeAction.loading}
+                    style={{ background:"none", border:"none", color:"var(--danger-text)", cursor:"pointer", fontSize:12, padding:0 }}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ borderTop:"1px solid var(--border)", paddingTop:12, fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>
+          Add New Mapping
+        </div>
         {action.error && <div style={{ padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)",
           fontSize:12, color:"var(--danger-text)" }}>{action.error}</div>}
         <MultiCheckList label="Category (filter)" emptyText="No categories"
@@ -579,9 +650,9 @@ function BrandRequestsTab() {
   const requests = useApi(useCallback(
     () => catalogApi.listBrandRequests({ status: statusFilter || undefined }),
     [statusFilter],
-  ));
+  ), [statusFilter]);
 
-  const brands = useApi(useCallback(() => catalogApi.listBrands({ status: "active" }), []));
+  const brands = useApi(useCallback(() => catalogApi.listBrands({ status: "active" }), []), []);
 
   const approveAction = useAction(async ({ id }: { id: string }) => {
     await catalogApi.approveBrandRequest(id, adminNote || undefined);
@@ -745,13 +816,12 @@ function BrandMasterTab() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem,   setEditItem]   = useState<Brand34D | null>(null);
   const [detailItem, setDetailItem] = useState<Brand34D | null>(null);
-  const [mapItem,    setMapItem]    = useState<Brand34D | null>(null);
 
-  const summaryRes = useApi(useCallback(() => typesApi.brandSummary(), []));
+  const summaryRes = useApi(useCallback(() => typesApi.brandSummary(), []), []);
   const listRes    = useApi(useCallback(
     () => catalogApi.listBrands({ search: q || undefined, status: status || undefined, page, page_size: 50 }),
     [q, status, page],
-  ));
+  ), [q, status, page]);
 
   const activateAction   = useAction(useCallback((id:string) => catalogApi.activateBrand(id),   []));
   const deactivateAction = useAction(useCallback((id:string) => catalogApi.deactivateBrand(id), []));
@@ -799,7 +869,6 @@ function BrandMasterTab() {
       <BrandActionMenu row={row}
         onView={() => setDetailItem(row)}
         onEdit={() => setEditItem(row)}
-        onMapBrand={() => setMapItem(row)}
         onActivate={() => doStatus(row.brand_id, "activate")}
         onDeactivate={() => doStatus(row.brand_id, "deactivate")}
         onArchive={() => doStatus(row.brand_id, "archive")}
@@ -861,6 +930,17 @@ function BrandMasterTab() {
                 action={<Btn variant="primary" size="sm" onClick={() => setCreateOpen(true)}><Plus size={14}/> New Brand</Btn>}/>
             : <DataTable columns={columns} rows={(listRes.data?.brands ?? []) as unknown as Record<string, unknown>[]}/>
         }
+        {/* Pagination -- was previously missing entirely on this tab (fetched
+            page_size:50 but gave no way to reach page 2+). */}
+        {Math.ceil((listRes.data?.total ?? 0) / 50) > 1 && (
+          <div style={{ display:"flex", justifyContent:"center", gap:8, padding:16 }}>
+            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1}>Prev</Btn>
+            <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>
+              Page {page} / {Math.ceil((listRes.data?.total ?? 0) / 50)}
+            </span>
+            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>p+1)} disabled={page>=Math.ceil((listRes.data?.total ?? 0) / 50)}>Next</Btn>
+          </div>
+        )}
       </Card>
 
       {/* Modals */}
@@ -875,17 +955,15 @@ function BrandMasterTab() {
       {detailItem && (
         <BrandDetailDrawer item={detailItem} onClose={() => setDetailItem(null)}/>
       )}
-      {mapItem && (
-        <AddBrandMappingModal brandId={mapItem.brand_id} brandName={mapItem.name}
-          onClose={() => setMapItem(null)}
-          onSaved={() => { setMapItem(null); listRes.refetch(); summaryRes.refetch(); }}/>
-      )}
     </div>
   );
 }
 
-function BrandActionMenu({ row, onView, onEdit, onMapBrand, onActivate, onDeactivate, onArchive }:
-  { row:Brand34D; onView():void; onEdit():void; onMapBrand():void;
+// Mapping is managed exclusively from the dedicated "Brand-Service Mapping"
+// tab now (explicit user request, same as Service Types) -- this tab is
+// purely Brand CRUD.
+function BrandActionMenu({ row, onView, onEdit, onActivate, onDeactivate, onArchive }:
+  { row:Brand34D; onView():void; onEdit():void;
     onActivate():void; onDeactivate():void; onArchive():void }) {
   const [open, setOpen] = useState(false);
   return (
@@ -902,7 +980,6 @@ function BrandActionMenu({ row, onView, onEdit, onMapBrand, onActivate, onDeacti
           {[
             { label:"View Details",   fn:() => { onView(); setOpen(false); } },
             { label:"Edit Brand",     fn:() => { onEdit(); setOpen(false); } },
-            { label:"Manage Mappings",fn:() => { onMapBrand(); setOpen(false); } },
             row.status !== "active"   ? { label:"Activate",   fn:() => { onActivate(); setOpen(false); } } : null,
             row.status === "active"   ? { label:"Deactivate", fn:() => { onDeactivate(); setOpen(false); } } : null,
             row.status !== "archived" ? { label:"Archive", fn:() => { onArchive(); setOpen(false); }, danger:true } : null,
@@ -933,6 +1010,9 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
     country_of_origin: initial?.country_of_origin ?? "",
     website_url:      initial?.website_url ?? "",
   });
+  // Same auto-slug-from-name UX as the Service Type form, stops once the
+  // user edits Slug by hand.
+  const [slugTouched, setSlugTouched] = useState(!!initial?.slug);
 
   const createAction = useAction(useCallback((d:object) => catalogApi.createBrand(d as Partial<Brand34D> & { name: string }), []));
   const updateAction = useAction(useCallback((d:object) => catalogApi.updateBrand(initial!.brand_id, d), [initial]));
@@ -951,12 +1031,20 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
         {err && <div style={{ padding:"8px 12px", borderRadius:"var(--radius-md)", background:"var(--danger-bg)",
           fontSize:12, color:"var(--danger-text)" }}>{err}</div>}
         {([
-          ["Name *", "name"], ["Code", "code"], ["Slug", "slug"],
+          ["Name *", "name"], ["Code", "code"], ["Slug (auto-generated, editable)", "slug"],
           ["Country of Origin", "country_of_origin"], ["Website URL", "website_url"],
         ] as [string, keyof typeof form][]).map(([label, key]) => (
           <div key={key} style={{ display:"flex", flexDirection:"column", gap:4 }}>
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>{label}</label>
-            <input value={form[key] as string} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}
+            <input value={form[key] as string}
+              onChange={e => {
+                const v = e.target.value;
+                if (key === "slug") setSlugTouched(true);
+                setForm(f => ({
+                  ...f, [key]: v,
+                  ...(key === "name" && !slugTouched ? { slug: slugify(v) } : {}),
+                }));
+              }}
               style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
                 color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}/>
           </div>
@@ -1135,9 +1223,11 @@ function TypeMappingsTab() {
   const listRes = useApi(useCallback(
     () => typesApi.listMappings({ page }),
     [page],
-  ));
+  ), [page]);
 
   const deleteAction = useAction(useCallback((id:string) => typesApi.deleteMapping(id), []));
+  const pageSize = 50;
+  const totalPages = Math.max(1, Math.ceil((listRes.data?.total ?? 0) / pageSize));
 
   const columns = [
     { key:"type_name",     label:"Type",     render:(_v:unknown, row:any) => (
@@ -1192,6 +1282,13 @@ function TypeMappingsTab() {
                 action={<Btn variant="primary" size="sm" onClick={() => setCreateOpen(true)}><Plus size={14}/> Add Mapping</Btn>}/>
             : <DataTable columns={columns} rows={(listRes.data?.mappings ?? []) as unknown as Record<string, unknown>[]}/>
         }
+        {totalPages > 1 && (
+          <div style={{ display:"flex", justifyContent:"center", gap:8, padding:16 }}>
+            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1}>Prev</Btn>
+            <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>Page {page} / {totalPages}</span>
+            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>p+1)} disabled={page>=totalPages}>Next</Btn>
+          </div>
+        )}
       </Card>
 
       {createOpen && (
@@ -1213,9 +1310,9 @@ function CreateTypeMappingFullModal({ onClose, onSaved }:{ onClose():void; onSav
   const [serviceId,       setServiceId]       = useState("");
   const [custVis,         setCustVis]         = useState(true);
 
-  const typesRes   = useApi(useCallback(() => typesApi.list({ status:"active", page_size:200 }), []));
-  const categories = useApi(useCallback(() => catalogApi.listCategories(true), []));
-  const serviceGroups = useApi(useCallback(() => catalogApi.listServiceGroups(), []));
+  const typesRes   = useApi(useCallback(() => typesApi.list({ status:"active", page_size:200 }), []), []);
+  const categories = useApi(useCallback(() => catalogApi.listCategories(true), []), []);
+  const serviceGroups = useApi(useCallback(() => catalogApi.listServiceGroups(), []), []);
   const allGroups = serviceGroups.data?.groups ?? [];
   const visibleGroups = categoryIds.length === 0
     ? allGroups : allGroups.filter(g => categoryIds.includes(g.category_id));
@@ -1223,7 +1320,7 @@ function CreateTypeMappingFullModal({ onClose, onSaved }:{ onClose():void; onSav
   const services   = useApi(useCallback(
     () => singleGroupId ? catalogApi.listMasterServices(undefined, undefined, undefined, singleGroupId) : Promise.resolve({ services:[] }),
     [singleGroupId],
-  ));
+  ), [singleGroupId]);
 
   const action = useAction(useCallback(async (groupIds: string[]) => {
     return Promise.all(groupIds.map(gid => {
@@ -1306,9 +1403,11 @@ function BrandMappingsTab() {
   const listRes = useApi(useCallback(
     () => typesApi.listBrandMappings({ page }),
     [page],
-  ));
+  ), [page]);
 
   const deleteAction = useAction(useCallback((id:string) => typesApi.deleteBrandMapping(id), []));
+  const pageSize = 50;
+  const totalPages = Math.max(1, Math.ceil((listRes.data?.total ?? 0) / pageSize));
 
   const columns = [
     { key:"brand_name",    label:"Brand",    render:(_v:unknown, row:any) => (
@@ -1363,6 +1462,13 @@ function BrandMappingsTab() {
                 action={<Btn variant="primary" size="sm" onClick={() => setCreateOpen(true)}><Plus size={14}/> Add Mapping</Btn>}/>
             : <DataTable columns={columns} rows={(listRes.data?.mappings ?? []) as unknown as Record<string, unknown>[]}/>
         }
+        {totalPages > 1 && (
+          <div style={{ display:"flex", justifyContent:"center", gap:8, padding:16 }}>
+            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1}>Prev</Btn>
+            <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>Page {page} / {totalPages}</span>
+            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>p+1)} disabled={page>=totalPages}>Next</Btn>
+          </div>
+        )}
       </Card>
 
       {createOpen && (
@@ -1383,9 +1489,9 @@ function CreateBrandMappingFullModal({ onClose, onSaved }:{ onClose():void; onSa
   const [serviceId,       setServiceId]       = useState("");
   const [custVis,         setCustVis]         = useState(true);
 
-  const brandsRes  = useApi(useCallback(() => catalogApi.listBrands({ status:"active", page_size:200 }), []));
-  const categories = useApi(useCallback(() => catalogApi.listCategories(true), []));
-  const serviceGroups = useApi(useCallback(() => catalogApi.listServiceGroups(), []));
+  const brandsRes  = useApi(useCallback(() => catalogApi.listBrands({ status:"active", page_size:200 }), []), []);
+  const categories = useApi(useCallback(() => catalogApi.listCategories(true), []), []);
+  const serviceGroups = useApi(useCallback(() => catalogApi.listServiceGroups(), []), []);
   const allGroups = serviceGroups.data?.groups ?? [];
   const visibleGroups = categoryIds.length === 0
     ? allGroups : allGroups.filter(g => categoryIds.includes(g.category_id));
@@ -1393,7 +1499,7 @@ function CreateBrandMappingFullModal({ onClose, onSaved }:{ onClose():void; onSa
   const services   = useApi(useCallback(
     () => singleGroupId ? catalogApi.listMasterServices(undefined, undefined, undefined, singleGroupId) : Promise.resolve({ services:[] }),
     [singleGroupId],
-  ));
+  ), [singleGroupId]);
 
   const action = useAction(useCallback(async (groupIds: string[]) => {
     return Promise.all(groupIds.map(gid => {

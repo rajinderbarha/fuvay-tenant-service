@@ -229,6 +229,44 @@ class ReviewService:
         await self._trigger_aggregation(db, review)
         return review
 
+    # ── Admin: edit review ────────────────────────────────────────────────────
+    # Distinct from the customer's own edit_review above: no ownership check,
+    # no edit-window enforcement, and does NOT reset status to pending -- an
+    # admin correction to an already-moderated review shouldn't require
+    # re-approval of itself. Recomputes tenant/staff rating aggregates since
+    # overall_rating can change.
+    async def admin_edit_review(
+        self,
+        db: AsyncSession,
+        review_id: uuid.UUID,
+        admin_user_id: uuid.UUID,
+        updates: dict,
+        request_id: str = "—",
+    ) -> CustomerReview:
+        review = await self._get_review(db, review_id)
+        if review.status == STATUS_DELETED:
+            raise ValueError(ERR_REVIEW_NOT_EDITABLE)
+
+        old = {"overall_rating": review.overall_rating, "review_title": review.review_title,
+               "review_text": review.review_text}
+        editable = ["overall_rating", "provider_rating", "staff_rating", "communication_rating",
+                    "punctuality_rating", "quality_rating", "value_rating",
+                    "review_title", "review_text"]
+        for k in editable:
+            if k in updates:
+                setattr(review, k, updates[k])
+
+        if "overall_rating" in updates and not (1 <= updates["overall_rating"] <= 5):
+            raise ValueError(ERR_REVIEW_INVALID_RATING)
+
+        review.edited_at = datetime.now(timezone.utc)
+        await db.flush()
+        await self._log_event(db, review.id, review.tenant_id, ACTOR_ADMIN, admin_user_id,
+                              EVT_REVIEW_EDITED, old, updates, request_id)
+        await db.commit()
+        await self._trigger_aggregation(db, review)
+        return review
+
     # ── Admin: delete review ──────────────────────────────────────────────────
     async def delete_review(
         self,

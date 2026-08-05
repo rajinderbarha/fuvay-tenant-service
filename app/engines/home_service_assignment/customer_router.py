@@ -150,8 +150,7 @@ async def get_booking_tracking(
     job = res2.scalars().first()
 
     # Build customer-safe timeline from assignment events
-    timeline = []
-    timeline.append({"event": "Booking confirmed", "status": "confirmed"})
+    dated_events: list[dict] = []
 
     if job:
         res3 = await db.execute(
@@ -162,11 +161,40 @@ async def get_booking_tracking(
         for ev in res3.scalars().all():
             label = _safe_event_label(ev.event_type)
             if label:
-                timeline.append({
+                dated_events.append({
                     "event":      label,
                     "event_type": ev.event_type,
                     "created_at": ev.created_at.isoformat() if ev.created_at else None,
+                    "_sort_key":  ev.created_at,
                 })
+
+        # TRACK-TECHNICIAN: the execution engine's on_the_way/reached_site
+        # transitions are real, server-enforced ServiceJob.status changes,
+        # but they're logged to a SEPARATE table (ServiceJobExecutionEvent,
+        # not ServiceJobAssignmentEvent) — the timeline above silently
+        # dropped them because _safe_event_label had no entries for them.
+        # Merge them in for real rather than inventing status copy.
+        from app.engines.execution.models import ServiceJobExecutionEvent
+        res4 = await db.execute(
+            select(ServiceJobExecutionEvent)
+            .where(ServiceJobExecutionEvent.job_id == job.id)
+            .order_by(ServiceJobExecutionEvent.created_at)
+        )
+        for ev in res4.scalars().all():
+            label = _safe_execution_event_label(ev.event_type)
+            if label:
+                dated_events.append({
+                    "event":      label,
+                    "event_type": ev.event_type,
+                    "created_at": ev.created_at.isoformat() if ev.created_at else None,
+                    "_sort_key":  ev.created_at,
+                })
+
+    dated_events.sort(key=lambda e: e["_sort_key"] or _dt_min())
+    for e in dated_events:
+        e.pop("_sort_key", None)
+
+    timeline = [{"event": "Booking confirmed", "status": "confirmed"}, *dated_events]
 
     assignment_status = booking.assignment_status or "unassigned"
     return ok({
@@ -176,6 +204,31 @@ async def get_booking_tracking(
         "assignment_message": _ASSIGNMENT_DISPLAY.get(assignment_status, ""),
         "timeline":           timeline,
     }, _RID(r), "assignment")
+
+
+@router.get("/{booking_id}/tracking-location", response_model=ApiResponse,
+            summary="Real-time technician location for an active visit, when available")
+async def get_booking_tracking_location(
+    booking_id: uuid.UUID,
+    r:    Request      = ...,
+    user: UserContext  = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+):
+    """Returns {available: false, reason: ...} whenever the job isn't in an
+    active-tracking status or no location has been submitted yet — never a
+    stale/fabricated position. Coordinates/timestamp/technician identity are
+    all backend-authoritative (see HomeServiceJobAssignmentService.
+    get_customer_tracking_location); this route only handles ownership
+    enumeration-safety and error-code mapping."""
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    try:
+        result = await HomeServiceJobAssignmentService(db).get_customer_tracking_location(
+            booking_id=booking_id, customer_id=uuid.UUID(user.user_id),
+        )
+    except ValueError as exc:
+        _cancel_reschedule_error(exc)
+    return ok(result, _RID(r), "assignment")
 
 
 def _safe_event_label(event_type: str) -> str | None:
@@ -190,6 +243,21 @@ def _safe_event_label(event_type: str) -> str | None:
         "job_scheduled":          "Visit scheduled.",
     }
     return _map.get(event_type)
+
+
+def _safe_execution_event_label(event_type: str) -> str | None:
+    """Customer-safe labels for the execution engine's real, server-enforced
+    job-progress transitions (separate table from assignment events)."""
+    _map = {
+        "technician_on_the_way":   "Technician is on the way.",
+        "technician_reached_site": "Technician has arrived.",
+    }
+    return _map.get(event_type)
+
+
+def _dt_min():
+    import datetime as _dt
+    return _dt.datetime.min.replace(tzinfo=_dt.timezone.utc)
 
 
 # ── HS9B — customer rating/review, wraps the real Review Engine ──────────────
@@ -226,12 +294,21 @@ async def submit_booking_rating(
 
     # The engine's eligibility check owns the "completed"/"already reviewed" rules;
     # map its domain ValueErrors back to the codes/messages the app expects.
+    # WORK-IN-PROGRESS-COMPLETION-RATING phase -- `review_tags` was already
+    # a real, accepted parameter on `ReviewService.submit_review` (JSONB
+    # column, no backend enum constraint) but this router never forwarded
+    # it, so a customer's selected tags (e.g. "Professional", "On time")
+    # were silently dropped. `tags` must be a list of strings if present.
+    tags = body.get("tags")
+    if tags is not None and not isinstance(tags, list):
+        raise ServiceOSException("VALIDATION_ERROR", "tags must be a list of strings.", status_code=422)
+
     try:
         review = await ReviewService().submit_review(
             db, customer_id=customer_id, tenant_id=booking.tenant_id,
             record_type="service_booking", record_id=booking_id,
             overall_rating=int(rating), review_text=body.get("comment"),
-            request_id=_RID(r),
+            review_tags=tags, request_id=_RID(r),
         )
     except ValueError as exc:
         code = str(exc)
@@ -245,7 +322,19 @@ async def submit_booking_rating(
                                      status_code=422)
         status = 404 if code == "RECORD_NOT_FOUND" else 422
         raise ServiceOSException(code, code.replace("_", " ").title(), status_code=status)
-    return ok(review.to_dict(), _RID(r), "assignment")
+    # WORK-IN-PROGRESS-COMPLETION-RATING phase -- this previously returned
+    # `review.to_dict()` verbatim, leaking customer_id/tenant_id/
+    # staff_member_id and every sub-rating column straight to the customer
+    # app. Allow-listed to the same shape `get_booking_rating` already
+    # returns, now with `tags` included.
+    return ok({
+        "review": {
+            "rating":  review.overall_rating,
+            "comment": review.review_text,
+            "tags":    review.review_tags,
+            "created_at": review.created_at.isoformat() if review.created_at else None,
+        },
+    }, _RID(r), "assignment")
 
 
 @router.get("/{booking_id}/rating", response_model=ApiResponse)
@@ -273,6 +362,7 @@ async def get_booking_rating(
         "review": {
             "rating": review.overall_rating,
             "comment": review.review_text,
+            "tags": review.review_tags,
             "created_at": review.created_at.isoformat() if review.created_at else None,
         },
     }, _RID(r), "assignment")
@@ -291,11 +381,56 @@ def _cancel_reschedule_error(exc: ValueError):
         "JOB_ASSIGNMENT_JOB_NOT_FOUND": 404,
         "JOB_ASSIGNMENT_ACCESS_DENIED": 403,
         "JOB_ASSIGNMENT_REASON_REQUIRED": 422,
+        "JOB_ASSIGNMENT_INVALID_REASON": 422,
+        "JOB_ASSIGNMENT_PAST_DATE": 422,
         "JOB_ASSIGNMENT_CANCEL_NOT_ALLOWED": 409,
         "JOB_ASSIGNMENT_RESCHEDULE_NOT_ALLOWED": 409,
+        "JOB_ASSIGNMENT_RESCHEDULE_LIMIT_REACHED": 409,
+        "JOB_ASSIGNMENT_STALE_VERSION": 409,
+        "JOB_ASSIGNMENT_SLOT_UNAVAILABLE": 409,
     }
     raise ServiceOSException(code, code.replace("_", " ").title(),
                              status_code=status_map.get(code, 422))
+
+
+@router.get("/{booking_id}/cancel-reschedule-eligibility", response_model=ApiResponse,
+            summary="Check whether this booking can be cancelled/rescheduled")
+async def get_cancel_reschedule_eligibility(
+    booking_id: uuid.UUID,
+    r:    Request      = ...,
+    user: UserContext  = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+):
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    try:
+        result = await HomeServiceJobAssignmentService(db).get_customer_eligibility(
+            booking_id=booking_id, customer_id=uuid.UUID(user.user_id),
+        )
+    except ValueError as exc:
+        _cancel_reschedule_error(exc)
+    return ok(result, _RID(r), "assignment")
+
+
+@router.get("/{booking_id}/reschedule-availability", response_model=ApiResponse,
+            summary="Real day-level availability for the reschedule date picker")
+async def get_reschedule_availability(
+    booking_id: uuid.UUID,
+    r:    Request      = ...,
+    horizon_days: int = 14,
+    user: UserContext  = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+):
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    try:
+        result = await HomeServiceJobAssignmentService(db).get_reschedule_available_dates(
+            booking_id=booking_id, customer_id=uuid.UUID(user.user_id),
+            horizon_days=horizon_days,
+        )
+    except ValueError as exc:
+        _cancel_reschedule_error(exc)
+    return ok(result, _RID(r), "assignment")
 
 
 @router.post("/{booking_id}/cancel", response_model=ApiResponse)
@@ -311,7 +446,8 @@ async def cancel_booking(
     try:
         result = await HomeServiceJobAssignmentService(db).customer_cancel_booking(
             booking_id=booking_id, customer_id=uuid.UUID(user.user_id),
-            reason=body.get("reason", ""), request_id=_RID(r),
+            reason=body.get("reason", ""), detail=body.get("detail"),
+            expected_version=body.get("expected_version"), request_id=_RID(r),
         )
     except ValueError as exc:
         _cancel_reschedule_error(exc)
@@ -343,7 +479,8 @@ async def reschedule_booking(
             booking_id=booking_id, customer_id=uuid.UUID(user.user_id),
             scheduled_date=scheduled_date,
             scheduled_time_window=body.get("scheduled_time_window"),
-            reason=body.get("reason", ""), request_id=_RID(r),
+            reason=body.get("reason", ""),
+            expected_version=body.get("expected_version"), request_id=_RID(r),
         )
     except ValueError as exc:
         _cancel_reschedule_error(exc)

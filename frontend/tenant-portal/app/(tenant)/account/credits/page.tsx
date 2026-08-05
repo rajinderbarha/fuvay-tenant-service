@@ -64,13 +64,13 @@ export default function MyCreditsPage() {
         {list.loading && (
           <div style={{ padding: 32, textAlign: "center", color: "var(--text-tertiary)" }}>Loading…</div>
         )}
-        {!list.loading && !list.data?.credits.length && (
+        {!list.loading && !list.data?.credits?.length && (
           <div style={{ padding: 32, textAlign: "center", color: "var(--text-tertiary)" }}>
             <p style={{ margin: 0, fontWeight: 600 }}>No service credits yet</p>
             <p style={{ margin: "8px 0 0", fontSize: 13 }}>Credits are issued after dispute settlements are resolved in your favour.</p>
           </div>
         )}
-        {list.data?.credits.map((c: MyServiceCredit) => (
+        {list.data?.credits?.map((c: MyServiceCredit) => (
           <div key={c.id} style={{ padding: "14px 16px", borderBottom: "1px solid var(--border-subtle, var(--border))", display: "flex", alignItems: "flex-start", gap: 14 }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -96,11 +96,11 @@ export default function MyCreditsPage() {
           </div>
         ))}
 
-        {(list.data?.meta.total_pages ?? 1) > 1 && (
+        {(list.data?.meta?.total_pages ?? 1) > 1 && (
           <div style={{ padding: "12px 14px", display: "flex", gap: 8 }}>
             <Btn size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Btn>
-            <span style={{ fontSize: 13, padding: "6px 0" }}>Page {page} / {list.data?.meta.total_pages}</span>
-            <Btn size="sm" variant="ghost" disabled={page >= (list.data?.meta.total_pages ?? 1)} onClick={() => setPage(p => p + 1)}>Next</Btn>
+            <span style={{ fontSize: 13, padding: "6px 0" }}>Page {page} / {list.data?.meta?.total_pages}</span>
+            <Btn size="sm" variant="ghost" disabled={page >= (list.data?.meta?.total_pages ?? 1)} onClick={() => setPage(p => p + 1)}>Next</Btn>
           </div>
         )}
       </Card>

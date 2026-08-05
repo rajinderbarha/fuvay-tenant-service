@@ -26,7 +26,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 import structlog
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.bargain_engine import (
@@ -383,7 +383,22 @@ async def select_best_provider(
             # sprint) — vertical is the correct, populated gate; category_id
             # is intentionally not filtered on here.
             TenantServiceArea.is_active.is_(True),
-            func.lower(TenantServiceArea.city) == norm_city,
+            # A zipcode is already a unique, authoritative geographic
+            # identifier -- requiring the free-text `city` column to ALSO
+            # match exactly excluded a real, active tenant whose coverage
+            # area was stored as "BASSIPATHANA" while the customer's own
+            # address city was "Bassi Pathana" (same bug fixed in
+            # HomeServiceServiceabilityService.check; that fix alone wasn't
+            # enough because this is a second, independent query with the
+            # same city-equality mistake -- confirmed live: serviceability
+            # reported serviceable=True but match-and-price still excluded
+            # the same tenant from its own candidate pool). A zipcode match
+            # is accepted on its own; city match remains the fallback for
+            # when no zipcode was supplied.
+            or_(
+                func.lower(TenantServiceArea.city) == norm_city,
+                TenantServiceArea.zipcode == strip_zip,
+            ) if strip_zip else func.lower(TenantServiceArea.city) == norm_city,
         )
         .limit(limit_candidates)
     )).all()
@@ -627,12 +642,45 @@ async def _passes_full_eligibility_gate(
         if not inputs["available_at_requested_time"]:
             return False, "NOT_AVAILABLE_AT_REQUESTED_TIME"
 
-    # 4. Pricing exists for this service.
-    pricing_row = (await db.execute(text(
-        "SELECT id FROM service_pricing_rules WHERE master_service_id=:oid AND is_active=true LIMIT 1"
+    # 4. Pricing exists for this service -- either a real, positive
+    # tenant-owned price (TenantService.tenant_base_price/tenant_min_price,
+    # this tenant's OWN configured number) or a real, positive global
+    # ServicePricingRule. Real defect fixed here: this previously only
+    # checked that a ServicePricingRule ROW EXISTED (any `is_active` row,
+    # even one with `base_price=0.00`) and never even looked at whether the
+    # candidate tenant had its own price configured at all -- Guramrit's
+    # AC Installation offering has a real, positive tenant price
+    # (tenant_min_price=1200) but was excluded from matching entirely
+    # because the global admin ServicePricingRule for that offering has
+    # base_price=0.00. An inspection-mode offering (requires_inspection_
+    # estimate) is priced via its visit fee, never this fixed/range rule at
+    # all -- checked first so a real inspection offering with no
+    # ServicePricingRule/TenantService price row is never wrongly excluded.
+    offering_row = (await db.execute(text(
+        "SELECT pricing_model, visit_fee FROM master_services WHERE id=:oid"
     ), {"oid": str(offering_id)})).fetchone()
-    if not pricing_row:
-        return False, "NO_VALID_PRICE_RULE"
+    is_inspection_offering = bool(offering_row and offering_row[0] == "visit_fee_plus_quote")
+    if is_inspection_offering:
+        if not offering_row[1] or float(offering_row[1]) <= 0:
+            return False, "NO_VALID_PRICE_RULE"
+    else:
+        tenant_price_row = (await db.execute(text(
+            "SELECT tenant_base_price, tenant_min_price FROM tenant_services "
+            "WHERE tenant_id=:tid AND master_service_id=:oid AND is_active=true LIMIT 1"
+        ), {"tid": str(tenant_id), "oid": str(offering_id)})).fetchone()
+        has_tenant_price = bool(
+            tenant_price_row and (
+                (tenant_price_row[0] and float(tenant_price_row[0]) > 0)
+                or (tenant_price_row[1] and float(tenant_price_row[1]) > 0)
+            )
+        )
+        if not has_tenant_price:
+            pricing_row = (await db.execute(text(
+                "SELECT id FROM service_pricing_rules "
+                "WHERE master_service_id=:oid AND is_active=true AND base_price > 0 LIMIT 1"
+            ), {"oid": str(offering_id)})).fetchone()
+            if not pricing_row:
+                return False, "NO_VALID_PRICE_RULE"
 
     return True, None
 

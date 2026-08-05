@@ -20,7 +20,7 @@ const ICONS: Record<string, React.ComponentType<{ size?: number; color?: string 
 
 export function TrustBadgeChip({ badge, size = 16 }: { badge: EarnedBadge; size?: number }) {
   const Cmp = ICONS[badge.icon ?? ""] ?? Award;
-  const c = "var(--warning)";
+  const c = badge.color || "var(--warning)";
   return (
     <span title={badge.description ?? badge.name} style={{
       display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px 5px 7px",

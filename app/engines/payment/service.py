@@ -121,10 +121,23 @@ class PaymentService:
             logger.info("payment.webhook_idempotent", gw_id=gateway_payment_id)
             return {**self._payment_dict(existing), "idempotent": True}
 
-        # Compute settlement breakdown
-        platform_fee = (amount * Decimal(str(PLATFORM_FEE_PCT))).quantize(Decimal("0.01"))
-        tax_amount   = (amount * Decimal(str(TAX_PCT))).quantize(Decimal("0.01"))
-        net_to_tenant = amount - platform_fee - tax_amount
+        # Compute settlement breakdown.
+        #
+        # Real revenue bug fixed here: a CUSTOMER_PLATFORM_FEE payment is the
+        # platform's OWN fee, collected from the customer by the platform. The
+        # generic branch below treats every payment as tenant service revenue
+        # and settles `net_to_tenant` to the provider -- which for a platform
+        # fee meant the platform paid a tenant a share of its own fee, and
+        # under-collected on every single monetized booking. A platform fee is
+        # never split: the whole amount is platform revenue, net_to_tenant 0.
+        if payment_type == PaymentType.CUSTOMER_PLATFORM_FEE:
+            platform_fee = amount
+            tax_amount = Decimal("0")
+            net_to_tenant = Decimal("0")
+        else:
+            platform_fee = (amount * Decimal(str(PLATFORM_FEE_PCT))).quantize(Decimal("0.01"))
+            tax_amount   = (amount * Decimal(str(TAX_PCT))).quantize(Decimal("0.01"))
+            net_to_tenant = amount - platform_fee - tax_amount
 
         rec = PaymentRecord(
             tenant_id=tenant_id, booking_id=booking_id, customer_id=customer_id,
