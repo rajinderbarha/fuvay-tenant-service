@@ -3460,14 +3460,15 @@ export const profilePhotoApi = {
 };
 
 // ── Icon Library (shared by the IconPicker used on Category / Subcategory /
-// Master Service / Type / Brand forms) ──────────────────────────────────────
-// media_context is one of "category_icon" | "service_icon" | "brand_logo" --
-// all three are pre-registered, public, image-only contexts (see backend
-// app/engines/media/validation.py CONTEXT_RULES). The list endpoint is
-// Redis-cached server-side for these contexts (app/redis_client.py
-// RedisKeys.media_icon_library), so repeatedly opening the picker doesn't
-// re-hit Postgres.
-export type IconLibraryContext = "category_icon" | "service_icon" | "brand_logo";
+// Master Service / Type / Brand / Problem / Checklist / Question forms) ─────
+// All 6 media_context values below are pre-registered, public, image-only
+// contexts (see backend app/engines/media/validation.py CONTEXT_RULES). The
+// list endpoint is Redis-cached server-side for these contexts (app/
+// redis_client.py RedisKeys.media_icon_library), so repeatedly opening the
+// picker doesn't re-hit Postgres.
+export type IconLibraryContext =
+  | "category_icon" | "service_icon" | "brand_logo"
+  | "issue_icon" | "checklist_icon" | "question_icon";
 
 export const iconLibraryApi = {
   list: (mediaContext: IconLibraryContext) =>
@@ -10924,7 +10925,7 @@ export interface ChecklistTemplateVersionSummary {
   created_at: string | null;
 }
 export interface ChecklistTemplateRow {
-  id: string; name: string; code: string; description: string | null;
+  id: string; name: string; code: string; description: string | null; icon_url?: string | null;
   purpose: ChecklistPurpose; status: "active" | "archived"; owner_scope: "PLATFORM" | "TENANT";
   tenant_id: string | null; created_at: string | null; updated_at: string | null;
   latest_version: ChecklistTemplateVersionSummary | null; mapping_count: number;
@@ -10965,8 +10966,10 @@ export interface ChecklistExecutionHealth {
 
 export const checklistCatalogApi = {
   listTemplates: () => apiFetch<ChecklistTemplateRow[]>("/v1/admin/checklist-catalog/templates"),
-  createTemplate: (data: { name: string; code: string; description?: string; purpose: ChecklistPurpose; owner_scope?: string }) =>
+  createTemplate: (data: { name: string; code: string; description?: string; icon_url?: string; purpose: ChecklistPurpose; owner_scope?: string }) =>
     apiFetch<ChecklistTemplateRow>("/v1/admin/checklist-catalog/templates", { method: "POST", body: JSON.stringify(data) }),
+  updateTemplate: (templateId: string, data: { name?: string; description?: string; icon_url?: string | null }) =>
+    apiFetch<ChecklistTemplateRow>(`/v1/admin/checklist-catalog/templates/${templateId}`, { method: "PUT", body: JSON.stringify(data) }),
   getTemplate: (templateId: string) =>
     apiFetch<ChecklistTemplateDetail>(`/v1/admin/checklist-catalog/templates/${templateId}`),
   getOrCreateDraftVersion: (templateId: string) =>

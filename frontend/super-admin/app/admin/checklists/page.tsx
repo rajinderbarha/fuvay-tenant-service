@@ -2,6 +2,7 @@
 import React, { useState, useCallback } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Modal, Input, SectionHeader, DataTable, EmptyState, SummaryCard,} from "../../../components/shared/ui";
+import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   checklistCatalogApi, catalogApi, catalogWorkspaceApi,
   type ChecklistTemplateRow, type ChecklistTemplateVersionDetail, type ChecklistItemType,
@@ -122,13 +123,15 @@ export default function ChecklistLibraryPage() {
 function NewTemplateButton({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", code: "", description: "", purpose: "INSPECTION" as ChecklistPurpose });
+  const [iconUrl, setIconUrl] = useState<string | null>(null);
   const create = useAction(useCallback(async () => {
     await checklistCatalogApi.createTemplate({
       name: form.name, code: form.code || form.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 60),
       description: form.description || undefined, purpose: form.purpose,
+      icon_url: iconUrl || undefined,
     });
-    setOpen(false); setForm({ name: "", code: "", description: "", purpose: "INSPECTION" }); onCreated();
-  }, [form, onCreated]));
+    setOpen(false); setForm({ name: "", code: "", description: "", purpose: "INSPECTION" }); setIconUrl(null); onCreated();
+  }, [form, iconUrl, onCreated]));
 
   return (
     <>
@@ -155,6 +158,7 @@ function NewTemplateButton({ onCreated }: { onCreated: () => void }) {
               rows={2} placeholder="Technician inspection checklist before estimate preparation."
               style={{ ...selectStyle, fontFamily: "inherit", resize: "vertical" }} />
           </FieldRow>
+          <IconPicker label="Icon" context="checklist_icon" value={iconUrl} onChange={setIconUrl}/>
           <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--surface-sunken)",
             border: "1px solid var(--border)", fontSize: 12, color: "var(--muted-text)" }}>
             Templates start as an unmapped Draft. Runtime use requires an explicit Job-Type mapping (next step, in the Mappings tab).

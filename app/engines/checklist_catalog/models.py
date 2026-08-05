@@ -35,6 +35,7 @@ class ChecklistTemplate(ServiceOSBase):
     name:               Mapped[str]              = mapped_column(String(200), nullable=False)
     code:               Mapped[str]              = mapped_column(String(80),  nullable=False)
     description:        Mapped[str | None]       = mapped_column(Text, nullable=True)
+    icon_url:           Mapped[str | None]       = mapped_column(String(500), nullable=True)
     purpose:            Mapped[str]              = mapped_column(String(30), nullable=False)
     status:             Mapped[str]              = mapped_column(String(20), default="active", nullable=False)
     owner_scope:        Mapped[str]              = mapped_column(String(20), default="PLATFORM", nullable=False)
@@ -44,7 +45,7 @@ class ChecklistTemplate(ServiceOSBase):
     def to_dict(self) -> dict:
         return {
             "id": str(self.id), "name": self.name, "code": self.code,
-            "description": self.description, "purpose": self.purpose,
+            "description": self.description, "icon_url": self.icon_url, "purpose": self.purpose,
             "status": self.status, "owner_scope": self.owner_scope,
             "tenant_id": str(self.tenant_id) if self.tenant_id else None,
             "created_by_user_id": str(self.created_by_user_id) if self.created_by_user_id else None,

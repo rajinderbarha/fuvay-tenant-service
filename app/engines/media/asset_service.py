@@ -38,7 +38,10 @@ MAX_PAGE_SIZE = 100
 # picker's "choose existing" tab -- so the unfiltered, page-1 listing is
 # cached in Redis (see RedisKeys.media_icon_library) rather than hitting
 # Postgres on every open.
-ICON_LIBRARY_CONTEXTS = {"category_icon", "service_icon", "brand_logo"}
+ICON_LIBRARY_CONTEXTS = {
+    "category_icon", "service_icon", "brand_logo",
+    "issue_icon", "checklist_icon", "question_icon",
+}
 ICON_LIBRARY_CACHE_TTL = 300
 
 
@@ -722,6 +725,7 @@ class MediaAssetService:
         from app.engines.media.access import CUSTOMER_CONTEXTS
         if media_context in CUSTOMER_CONTEXTS:
             return "customer"
-        if media_context in ("admin_profile_photo", "brand_logo", "category_icon", "service_icon"):
+        if media_context in ("admin_profile_photo", "brand_logo", "category_icon", "service_icon",
+                             "issue_icon", "checklist_icon", "question_icon"):
             return "public"
         return "tenant"

@@ -35,14 +35,14 @@ def _now() -> datetime:
 async def create_template(
     db: AsyncSession, *, name: str, code: str, description: str | None,
     purpose: str, owner_scope: str, tenant_id: uuid.UUID | None,
-    created_by_user_id: uuid.UUID | None,
+    created_by_user_id: uuid.UUID | None, icon_url: str | None = None,
 ) -> ChecklistTemplate:
     if purpose not in c.TEMPLATE_PURPOSES:
         raise ServiceOSException("CHECKLIST_PURPOSE_INVALID", "Unknown checklist purpose.", status_code=422)
     if owner_scope not in c.OWNER_SCOPES:
         raise ServiceOSException("CHECKLIST_OWNER_SCOPE_INVALID", "Unknown owner scope.", status_code=422)
     template = ChecklistTemplate(
-        name=name, code=code, description=description, purpose=purpose,
+        name=name, code=code, description=description, icon_url=icon_url, purpose=purpose,
         status=c.TEMPLATE_STATUS_ACTIVE, owner_scope=owner_scope, tenant_id=tenant_id,
         created_by_user_id=created_by_user_id,
     )
@@ -54,6 +54,24 @@ async def create_template(
         checklist_template_id=template.id, version_number=1, status=c.VERSION_DRAFT,
     )
     db.add(version)
+    await db.flush()
+    return template
+
+
+async def update_template_metadata(
+    db: AsyncSession, template: ChecklistTemplate, fields: dict,
+) -> ChecklistTemplate:
+    """Metadata-only edit (name/description/icon_url) -- never content.
+    Template content changes always go through a new draft version (see
+    create_draft_version), this only touches the template's own row.
+    `fields` uses key-presence (not None-ness) to distinguish "leave
+    unchanged" from "clear to null", so icon_url can be explicitly removed."""
+    if "name" in fields:
+        template.name = fields["name"]
+    if "description" in fields:
+        template.description = fields["description"]
+    if "icon_url" in fields:
+        template.icon_url = fields["icon_url"]
     await db.flush()
     return template
 

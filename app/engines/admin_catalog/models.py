@@ -1147,6 +1147,7 @@ class MasterIssueType(ServiceOSBase):
     name:                 Mapped[str]              = mapped_column(String(200), nullable=False)
     slug:                 Mapped[str]              = mapped_column(String(200), nullable=False)
     description:          Mapped[str | None]      = mapped_column(Text, nullable=True)
+    icon_url:             Mapped[str | None]      = mapped_column(String(500), nullable=True)
     severity:             Mapped[str]              = mapped_column(String(20), nullable=False, default="medium")
     is_active:            Mapped[bool]            = mapped_column(Boolean, default=True, nullable=False)
     display_order:        Mapped[int]             = mapped_column(Integer, default=0, nullable=False)
@@ -1169,6 +1170,7 @@ class MasterIssueType(ServiceOSBase):
             "name":                 self.name,
             "slug":                 self.slug,
             "description":          self.description,
+            "icon_url":             self.icon_url,
             "severity":             self.severity,
             "is_active":            self.is_active,
             "customer_visible":     self.customer_visible,
@@ -2401,6 +2403,7 @@ class CatalogQuestion(ServiceOSBase):
     deepseek_enabled:      Mapped[bool]             = mapped_column(Boolean, nullable=False, default=True)
     validation:            Mapped[dict | None]      = mapped_column(JSONB, nullable=True)
     help_text:             Mapped[str | None]       = mapped_column(Text, nullable=True)
+    icon_url:              Mapped[str | None]       = mapped_column(String(500), nullable=True)
     display_order:         Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
     is_active:             Mapped[bool]             = mapped_column(Boolean, nullable=False, default=True)
 
@@ -2413,7 +2416,7 @@ class CatalogQuestion(ServiceOSBase):
             "dimension_id": str(self.dimension_id) if self.dimension_id else None,
             "required": self.required, "customer_visible": self.customer_visible,
             "tenant_setup_visible": self.tenant_setup_visible, "deepseek_enabled": self.deepseek_enabled,
-            "validation": self.validation, "help_text": self.help_text,
+            "validation": self.validation, "help_text": self.help_text, "icon_url": self.icon_url,
             "display_order": self.display_order, "is_active": self.is_active,
         }
 

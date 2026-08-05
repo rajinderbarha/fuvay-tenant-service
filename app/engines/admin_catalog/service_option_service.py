@@ -411,6 +411,7 @@ class ServiceOptionService:
             name=name,
             slug=slug,
             description=body.get("description"),
+            icon_url=body.get("icon_url"),
             severity=body.get("severity_default", body.get("severity", "medium")),
             is_active=True,
             display_order=body.get("display_order", 0),
@@ -433,7 +434,7 @@ class ServiceOptionService:
         if not it:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Issue type not found")
         old = it.to_dict()
-        for field in ("name", "description", "vertical_type", "metadata_json",
+        for field in ("name", "description", "icon_url", "vertical_type", "metadata_json",
                       "requires_photo", "requires_description", "customer_visible", "display_order"):
             if field in body:
                 setattr(it, field, body[field])

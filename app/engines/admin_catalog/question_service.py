@@ -27,7 +27,7 @@ CONDITION_TYPES = {"job_type", "problem", "dimension_enabled", "answer_equals"}
 # Explicit editable field allowlist -- fails closed against any monetary key.
 EDITABLE_FIELDS = {"label", "input_type", "answer_source", "dimension_id", "required",
                    "customer_visible", "tenant_setup_visible", "deepseek_enabled",
-                   "validation", "help_text", "display_order", "is_active"}
+                   "validation", "help_text", "icon_url", "display_order", "is_active"}
 
 
 class CatalogQuestionService:
@@ -75,6 +75,7 @@ class CatalogQuestionService:
             tenant_setup_visible=bool(data.get("tenant_setup_visible", False)),
             deepseek_enabled=bool(data.get("deepseek_enabled", True)),
             validation=data.get("validation"), help_text=data.get("help_text"),
+            icon_url=data.get("icon_url"),
             display_order=int(data.get("display_order", 0)))
         self.db.add(qn)
         await self.db.commit()

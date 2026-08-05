@@ -52,11 +52,25 @@ async def list_templates(r: Request, user=Depends(require_super_admin), db: Asyn
 async def create_template(body: dict, r: Request, user=Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
     template = await svc.create_template(
         db, name=body["name"], code=body["code"], description=body.get("description"),
+        icon_url=body.get("icon_url"),
         purpose=body["purpose"], owner_scope=body.get("owner_scope", "PLATFORM"),
         tenant_id=body.get("tenant_id"), created_by_user_id=getattr(user, "id", None),
     )
     await db.commit()
     return ok(template.to_dict(), _rid(r), "create_template")
+
+
+@router.put("/templates/{template_id}")
+async def update_template(template_id: str, body: dict, r: Request,
+                          user=Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
+    template = await db.get(ChecklistTemplate, uuid.UUID(template_id))
+    if not template:
+        from app.exceptions import NotFoundException
+        raise NotFoundException("ChecklistTemplate", template_id)
+    fields = {k: body[k] for k in ("name", "description", "icon_url") if k in body}
+    template = await svc.update_template_metadata(db, template, fields)
+    await db.commit()
+    return ok(template.to_dict(), _rid(r), "update_template")
 
 
 @router.get("/templates/{template_id}")
