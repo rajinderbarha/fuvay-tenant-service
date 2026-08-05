@@ -316,7 +316,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # Step 6 — Job Assignment + Staff Status Lifecycle
     from app.engines.field_ops.staff_router    import router as fieldops_staff_router
     from app.engines.field_ops.customer_router import (
-        router as fieldops_customer_router, quote_router as fieldops_customer_quote_router,
+        router as fieldops_customer_router,
         invoice_router as fieldops_customer_invoice_router,
     )
     # Step 8 — Checklist Templates (tenant CRUD)
@@ -335,9 +335,19 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # are unaffected since they don't overlap.
     from app.engines.finance_hub.admin_router import router as finance_hub_router
     app.include_router(finance_hub_router)
+    # fieldops_customer_quote_router is deliberately NOT mounted: it declares
+    # the same prefix (/v1/customer/quotes) and the same three paths
+    # (GET /{quote_id}, POST /{quote_id}/approve, POST /{quote_id}/reject) as
+    # quote_checklist's customer_router, and being registered first it
+    # silently swallowed every customer quote approve/reject/detail request.
+    # It is backed by the dead field_ops `job_quotes` table (0 rows platform-
+    # wide) while the live engine is quote_checklist's `service_job_quotes` --
+    # so extra-work quote approval could never succeed from either the web or
+    # mobile customer app. Its bare list route (GET "") has no callers in any
+    # frontend. Unmounting removes the collision; the file is left in place.
     for _r in [geo_router, dispatch_router, fieldops_router,
                fieldops_staff_router, fieldops_customer_router,
-               fieldops_customer_quote_router, fieldops_checklist_router,
+               fieldops_checklist_router,
                fieldops_customer_invoice_router, fieldops_tenant_finance_router,
                fieldops_tenant_wallet_router, fieldops_admin_finance_router,
                fieldops_admin_wallet_router]:

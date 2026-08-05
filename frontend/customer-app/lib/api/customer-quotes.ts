@@ -8,17 +8,21 @@
  * for a revision — but the customer app had NO surface for it, so any job that
  * needed a quote simply stalled. This wires it.
  *
- * NOTE: this router is mounted at /customer/quotes (no /v1 prefix) because the
- * field_ops job-tracking engine occupies /v1/customer/quotes; the provider's real
- * quote engine is quote_checklist, which is what the tenant-portal uses.
+ * PREFIX FIX (2026-08-05): these paths previously omitted the /v1 prefix, on
+ * the assumption that field_ops permanently occupied /v1/customer/quotes --
+ * so every call here 404'd and quote approval never worked from the web app.
+ * The real router IS at /v1/customer/quotes; the field_ops router that
+ * collided with it was backed by a dead, empty table and is no longer
+ * mounted (see app/main.py). The mobile customer app already used the
+ * correct /v1 paths and was being silently swallowed by that collision.
  *
  * Real router: app/engines/quote_checklist/customer_router.py
- *   GET  /customer/quotes/jobs/{job_id}
- *   GET  /customer/quotes/{quote_id}
- *   POST /customer/quotes/{quote_id}/approve           (Idempotency-Key header)
- *   POST /customer/quotes/{quote_id}/reject            { reason }
- *   POST /customer/quotes/{quote_id}/request-revision  { reason }
- *   GET  /customer/quotes/{quote_id}/events
+ *   GET  /v1/customer/quotes/jobs/{job_id}
+ *   GET  /v1/customer/quotes/{quote_id}
+ *   POST /v1/customer/quotes/{quote_id}/approve           (Idempotency-Key header)
+ *   POST /v1/customer/quotes/{quote_id}/reject            { reason }
+ *   POST /v1/customer/quotes/{quote_id}/request-revision  { reason }
+ *   GET  /v1/customer/quotes/{quote_id}/events
  */
 import { apiFetch } from "./client";
 
@@ -49,30 +53,30 @@ export interface Quote {
 }
 
 export async function listJobQuotes(jobId: string): Promise<Quote[]> {
-  const d = await apiFetch<Quote[]>(`/customer/quotes/jobs/${jobId}`);
+  const d = await apiFetch<Quote[]>(`/v1/customer/quotes/jobs/${jobId}`);
   return Array.isArray(d) ? d : [];
 }
 
 export async function getQuote(quoteId: string): Promise<Quote> {
-  return apiFetch<Quote>(`/customer/quotes/${quoteId}`);
+  return apiFetch<Quote>(`/v1/customer/quotes/${quoteId}`);
 }
 
 export async function approveQuote(quoteId: string): Promise<Quote> {
   // Approval is money-moving, so the backend requires an idempotency key.
   const key = `approve-${quoteId}-${Date.now()}`;
-  return apiFetch<Quote>(`/customer/quotes/${quoteId}/approve`, {
+  return apiFetch<Quote>(`/v1/customer/quotes/${quoteId}/approve`, {
     method: "POST", headers: { "Idempotency-Key": key }, body: "{}",
   });
 }
 
 export async function rejectQuote(quoteId: string, reason: string): Promise<Quote> {
-  return apiFetch<Quote>(`/customer/quotes/${quoteId}/reject`, {
+  return apiFetch<Quote>(`/v1/customer/quotes/${quoteId}/reject`, {
     method: "POST", body: JSON.stringify({ reason }),
   });
 }
 
 export async function requestQuoteRevision(quoteId: string, reason: string): Promise<Quote> {
-  return apiFetch<Quote>(`/customer/quotes/${quoteId}/request-revision`, {
+  return apiFetch<Quote>(`/v1/customer/quotes/${quoteId}/request-revision`, {
     method: "POST", body: JSON.stringify({ reason }),
   });
 }

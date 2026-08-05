@@ -60,3 +60,4 @@ frontend/super-admin/tsconfig.tsbuildinfo
 # Editor/shell temp artifacts (never source)
 *.stackdump
 *.tmp.*
+frontend/customer-app/tsconfig.tsbuildinfo
