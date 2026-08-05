@@ -145,7 +145,14 @@ const NAV_GROUPS: NavGroup[] = [
 // since permission requirements aren't part of the backend module payload yet
 // -- a genuine remaining gap, not a rendering shortcut.
 const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
-  { id: "hs-overview", href: "/admin/home-services/overview", label: "Overview", icon: <LayoutGrid size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // Repointed from /admin/home-services/overview -> /dashboard. The
+  // `overview` page was deleted in 5994b63 but this nav entry was left
+  // behind, so the Home Services "Overview" menu item led to a hard 404
+  // (confirmed live and in Playwright evidence: status=404, len=33,
+  // hasSidebar=0). /admin/home-services/dashboard is the real, live
+  // equivalent -- vertical-gated, and its Customer Intelligence cards reuse
+  // HomeServicesCustomerDirectoryService.get_summary() verbatim.
+  { id: "hs-overview", href: "/admin/home-services/dashboard", label: "Overview", icon: <LayoutGrid size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   // Bookings/Jobs/Reviews/Pricing Tiers/City-Zip Mapping/Provider Pricing
   // Overrides/Category Rates/Usage Credits/Warranty Claims/Service Invoices/
   // Commission Records/Security Deposits/Credit Top-ups/Provider Wallets
