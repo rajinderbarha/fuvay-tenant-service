@@ -1184,7 +1184,7 @@ export default function BusinessHoursPage() {
   }));
 
   const activities = (() => {
-    const d = activityApi.data as Record<string,unknown> | null;
+    const d = activityApi.data as unknown as Record<string,unknown> | null;
     if (!d) return [];
     const items = d.events ?? d.activities ?? d.items ?? [];
     return Array.isArray(items) ? (items as unknown[]).slice(0, 6) : [];

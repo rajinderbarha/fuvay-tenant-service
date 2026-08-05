@@ -445,7 +445,7 @@ export default function PricingPage() {
     ((servicesApi.data as unknown) as { services?: Record<string, unknown>[] } | null)?.services ?? [];
 
   const activities = (()=>{
-    const d = activityApi.data as Record<string,unknown>|null;
+    const d = activityApi.data as unknown as Record<string,unknown>|null;
     if (!d) return [];
     const list = d.events ?? d.activities ?? d.items ?? [];
     return Array.isArray(list) ? (list as unknown[]).slice(0, 6) : [];

@@ -4209,8 +4209,45 @@ export const tenantSetupApi = {
   getOverrideRequests: () => apiFetch<Record<string, unknown>>("/v1/provider/pricing/overrides"),
   submitOverride:      (data: Record<string, unknown>) =>
     apiFetch<Record<string, unknown>>("/v1/provider/pricing/overrides", { method: "POST", body: JSON.stringify(data) }),
-  getActivity:         (page = 1) => apiFetch<Record<string, unknown>>(`/v1/provider/activity?page=${page}`),
+  /** Real bug fixed here: this called `/v1/provider/activity`, which does
+   * NOT exist in any engine -- the tenant's "Activity & Audit Log" page was
+   * a permanent 404/error state. The real, already-mounted, tenant-scoped
+   * endpoint is `/v1/provider/audit-logs`
+   * (app/engines/platform_notifications/provider_router.py::
+   * provider_list_audit), which reads the SAME PlatformAuditLogService the
+   * super-admin audit-logs page uses, filtered to the caller's tenant --
+   * so admin and tenant genuinely see the same log. It is offset/limit
+   * paged (not `page`), so the page number is converted here. */
+  getActivity: (page = 1, limit = 50) =>
+    apiFetch<ProviderAuditLogPage>(
+      `/v1/provider/audit-logs?limit=${limit}&offset=${(Math.max(1, page) - 1) * limit}`,
+    ),
 };
+
+/** Shape returned by GET /v1/provider/audit-logs (audit_service.py::_to_dict).
+ * `old_value`/`new_value` are arbitrary JSON snapshots, not strings. */
+export interface ProviderAuditLogEntry {
+  id: string;
+  actor_id: string | null;
+  actor_role: string | null;
+  actor_ip: string | null;
+  action: string | null;
+  engine_key: string | null;
+  resource_type: string | null;
+  resource_id: string | null;
+  tenant_id: string | null;
+  old_value: unknown;
+  new_value: unknown;
+  is_high_risk: boolean | null;
+  request_id: string | null;
+  created_at: string;
+}
+export interface ProviderAuditLogPage {
+  items: ProviderAuditLogEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
 
 // ── Tenant Pricing API (uses existing /v1/pricing/tenants/{tid}/* endpoints) ──
 export const tenantPricingApi = {

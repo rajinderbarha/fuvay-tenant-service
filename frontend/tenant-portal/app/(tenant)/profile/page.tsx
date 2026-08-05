@@ -439,7 +439,7 @@ export default function ProviderProfilePage() {
   const totalAreas = areasApi.data?.total ?? areasApi.data?.areas?.length ?? 0;
 
   const activities = (()=>{
-    const d = activityApi.data as Record<string,unknown>|null;
+    const d = activityApi.data as unknown as Record<string,unknown>|null;
     if (!d) return [];
     if (Array.isArray(d)) return d.slice(0,8);
     const list = d.events ?? d.activities ?? d.items ?? [];

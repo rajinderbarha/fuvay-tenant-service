@@ -896,7 +896,7 @@ export default function ProviderServiceAreasPage() {
   });
 
   const activities = (()=>{
-    const d = activityApi.data as Record<string,unknown>|null;
+    const d = activityApi.data as unknown as Record<string,unknown>|null;
     if (!d) return [];
     const list2 = d.events ?? d.activities ?? d.items ?? [];
     return Array.isArray(list2) ? (list2 as unknown[]).slice(0,5) : [];
