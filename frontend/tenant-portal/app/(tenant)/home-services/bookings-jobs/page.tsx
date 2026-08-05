@@ -32,16 +32,21 @@ import {
 import { bookingsJobsApi, type BJItem, type BJDetail } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 
+// Tab labels mirror the super-admin Bookings & Jobs STAGE_LABEL wording
+// (and the backend's STAGE_LABELS in bookings_jobs_stage_mapping.py) so the
+// same job never reads as a differently-named stage across the two consoles.
+// The `id` values are the backend's own stage keys and must NOT be renamed --
+// they are the `stage` query filter and drive LIFECYCLE_STAGES below.
 const STAGE_TABS: { id: string; label: string }[] = [
   { id: "",                  label: "All" },
-  { id: "new",                label: "New" },
-  { id: "assignment",         label: "Assignment" },
+  { id: "new",                label: "Unassigned" },
+  { id: "assignment",         label: "Assigned" },
   { id: "scheduled",          label: "Scheduled" },
   { id: "on_the_way",         label: "On the way" },
   { id: "inspection",         label: "Inspection" },
-  { id: "estimate_approval",  label: "Estimate approval" },
-  { id: "in_progress",        label: "In progress" },
-  { id: "payment",            label: "Payment" },
+  { id: "estimate_approval",  label: "Awaiting estimate" },
+  { id: "in_progress",        label: "Work in progress" },
+  { id: "payment",            label: "Work done" },
   { id: "completed",          label: "Completed" },
 ];
 

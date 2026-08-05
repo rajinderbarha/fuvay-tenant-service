@@ -32,10 +32,15 @@ TERMINAL_STATUSES = {"completed", JS_CANCELLED, JS_FAILED, JS_CLOSED_ESTIMATE_DE
 _STAGE_MAP: dict[str, tuple[str, str | None, str | None]] = {
     JS_PENDING_ASSIGNMENT:       ("new",                "assign_technician",   "Assign technician"),
     JS_ASSIGNED:                 ("assignment",         "confirm_schedule",    "Confirm schedule"),
-    JS_ACCEPTED:                 ("scheduled",          "mark_on_the_way",     "Mark on the way"),
+    # accepted/reached_site aligned to the admin projection's assignment
+    # (operations_service.JOB_STAGE_MAP) so the same job never sits in a
+    # different stage on the two screens: `accepted` is still the ASSIGNED
+    # phase (the tech accepted, nothing is scheduled yet), and `reached_site`
+    # is still ON_THE_WAY until inspection actually starts.
+    JS_ACCEPTED:                 ("assignment",         "confirm_schedule",    "Confirm schedule"),
     JS_SCHEDULED:                ("scheduled",          "mark_on_the_way",     "Mark on the way"),
     JS_ON_THE_WAY:               ("on_the_way",         "mark_reached_site",  "Mark reached site"),
-    JS_REACHED_SITE:             ("inspection",         "start_inspection",   "Start inspection"),
+    JS_REACHED_SITE:             ("on_the_way",         "start_inspection",   "Start inspection"),
     JS_INSPECTION_STARTED:       ("inspection",         "complete_inspection","Complete inspection"),
     JS_INSPECTION_DONE:          ("estimate_approval",  "create_estimate",    "Create estimate"),
     JS_QUOTE_REQUIRED:           ("estimate_approval",  "send_estimate",      "Send / follow up on estimate"),
@@ -43,26 +48,53 @@ _STAGE_MAP: dict[str, tuple[str, str | None, str | None]] = {
     JS_WORK_DONE:                ("payment",            "confirm_payment",    "Confirm direct payment"),
     "completed":                 ("completed",          None,                 None),
     JS_CANCELLED:                ("cancelled",          None,                 None),
-    JS_FAILED:                   ("exception",          None,                 None),
+    # `failed` is TERMINAL (see TERMINAL_STATUSES) but used to share the
+    # "exception" stage with customer_not_available, which is recoverable and
+    # carries a reschedule action -- so a dead job was labelled "At risk",
+    # implying it was still actionable. Split so the terminal case reads as
+    # closed and only the recoverable case reads as at-risk.
+    JS_FAILED:                   ("failed",             None,                 None),
     JS_CUSTOMER_NOT_AVAIL:       ("exception",          "reschedule",         "Reschedule visit"),
     JS_CLOSED_ESTIMATE_DECLINED: ("estimate_declined",  None,                 None),
 }
 
 # Display-group label shown on the lifecycle tabs (spec section "LIFECYCLE
 # PRESENTATION GROUPS") — purely cosmetic grouping over the same statuses.
+#
+# WORDING IS DELIBERATELY IDENTICAL to the super-admin projection's
+# STAGE_LABEL (frontend/super-admin/app/admin/home-services/bookings-jobs/
+# page.tsx), so one job never reads as a differently-named stage depending on
+# which console you open. Previously these two vocabularies drifted ("New" vs
+# "Unassigned", "Estimate approval" vs "Awaiting estimate", "In progress" vs
+# "Work in progress", "Payment" vs "Work done"), which made admin and tenant
+# unable to discuss a job by stage name.
+#
+# The stage KEYS are intentionally NOT renamed to admin's uppercase set --
+# they drive this workspace's lifecycle stepper ordering, tab filtering and
+# next-action CTAs (see the tenant bookings-jobs page's LIFECYCLE_STAGES).
+# Only the human-facing labels are unified.
 STAGE_LABELS: dict[str, str] = {
-    "new":               "New",
-    "assignment":        "Assignment",
+    "new":               "Unassigned",
+    "assignment":        "Assigned",
     "scheduled":         "Scheduled",
     "on_the_way":        "On the way",
     "inspection":        "Inspection",
-    "estimate_approval": "Estimate approval",
-    "in_progress":       "In progress",
-    "payment":           "Payment",
+    "estimate_approval": "Awaiting estimate",
+    "in_progress":       "Work in progress",
+    "payment":           "Work done",
     "completed":         "Completed",
-    "cancelled":         "Cancelled",
-    "estimate_declined": "Estimate declined",
-    "exception":         "Exception / blocked",
+    # The three below stay FINER than the admin projection, which collapses
+    # cancelled / failed / estimate-declined into a single "CLOSED" stage.
+    # Keeping them separate here is deliberate: the tenant needs to tell
+    # "customer wasn't available -> reschedule" apart from "cancelled" and
+    # from "customer declined the estimate" to know what to do next, and
+    # collapsing them to match admin would remove that. Labels are chosen not
+    # to collide with admin's wording so the difference reads as more detail
+    # rather than a contradiction.
+    "cancelled":         "Closed — cancelled",
+    "estimate_declined": "Closed — estimate declined",
+    "failed":            "Closed — failed",
+    "exception":         "At risk",
 }
 
 
