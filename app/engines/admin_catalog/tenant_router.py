@@ -47,6 +47,18 @@ async def list_home_services_available_services(r: Request,
     return ok(await s.list_home_services_available(tenant_id), _rid(r), ENGINE_ID)
 
 
+@router.get("/services/{master_service_id}/requirements", response_model=ApiResponse[dict],
+            summary="Read-only: Problems, Questions and Checklists the platform attached to this service")
+async def get_service_requirements(master_service_id: uuid.UUID, r: Request,
+                                    tenant_id: uuid.UUID | None = Query(None),
+                                    u: UserContext = Depends(get_current_user),
+                                    s: TenantCatalogService = Depends(_svc)):
+    """Lets a tenant see what the customer will be asked at booking and what
+    the technician must complete on site. Admin-authored and read-only here;
+    403s for a service this tenant has not enabled."""
+    return ok(await s.get_service_requirements(master_service_id, tenant_id), _rid(r), ENGINE_ID)
+
+
 @router.get("/home-services/enabled-services", response_model=ApiResponse[dict],
             summary="List tenant's enabled Home Services (setup wizard's Enabled Services list)",
             tags=["Tenant Home Services Setup"])

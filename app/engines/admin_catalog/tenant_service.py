@@ -16,7 +16,7 @@ from app.engines.admin_catalog.models import (
     MasterService, ServiceCategory, ServiceGroup, ServicePricingRule,
     TenantService, TenantServiceType, TenantServiceBrand,
     MasterServiceType, MasterServiceBrand, ServiceType, Brand,
-    ServiceBlueprintVersion,
+    ServiceBlueprintVersion, MasterServiceJobType,
 )
 from app.engines.admin_catalog.bargain_engine import (
     compute_symmetric_customer_price_tiers, BargainValidationError,
@@ -146,6 +146,125 @@ class TenantCatalogService:
             }
             for s in services
         ]}
+
+    # ═══════════════════════════════════════════════════════════
+    # Service Requirements (READ-ONLY view of admin-authored catalog)
+    # ═══════════════════════════════════════════════════════════
+
+    async def get_service_requirements(self, master_service_id: uuid.UUID,
+                                       tenant_id_raw=None) -> dict:
+        """Read-only view of the Problems, Questions and Checklists the admin
+        has attached to one of THIS tenant's enabled services.
+
+        Closes a genuine visibility gap: admin authors these per
+        (master_service, job_type) in the Catalog Workspace, and they drive
+        what the customer is asked at booking and what the technician must
+        complete on site -- but the tenant, who has to train the technician
+        and set the customer's expectations, had no way to see any of it.
+
+        Strictly read-only and strictly scoped: the tenant must already have
+        this service enabled, so this cannot be used to enumerate catalog
+        content for services they don't offer. Reuses the same services the
+        admin console reads (ServiceOptionService.list_service_issue_mappings,
+        CatalogQuestionService.list_questions, checklist_catalog mappings) --
+        no second projection of the same data.
+        """
+        from app.engines.admin_catalog.service_option_service import ServiceOptionService
+        from app.engines.admin_catalog.question_service import CatalogQuestionService
+        from app.engines.checklist_catalog.models import (
+            JobTypeChecklistMapping, ChecklistTemplateVersion, ChecklistTemplate,
+        )
+
+        tenant_id = self._require_tenant_id(tenant_id_raw)
+
+        # Scope gate: only services this tenant has actually enabled.
+        enabled = (await self.db.execute(
+            select(TenantService).where(
+                TenantService.tenant_id == tenant_id,
+                TenantService.master_service_id == master_service_id,
+                TenantService.is_enabled == True,  # noqa: E712
+                TenantService.deleted_at.is_(None),
+            )
+        )).scalars().first()
+        if not enabled:
+            raise ServiceOSException(
+                "SERVICE_NOT_ENABLED",
+                "You can only view requirements for services you have enabled.",
+                status_code=403)
+
+        service = await self.db.get(MasterService, master_service_id)
+        if not service:
+            raise NotFoundException("MasterService", str(master_service_id))
+
+        # Read-only use: no actor/request context is needed because
+        # list_service_issue_mappings performs no writes and no audit.
+        problems = await ServiceOptionService(
+            self.db, actor_id=None, actor_role=None, request_id="—", tenant_id=tenant_id,
+        ).list_service_issue_mappings(master_service_id)
+        questions_res = await CatalogQuestionService(self.db).list_questions(master_service_id, None)
+
+        # Checklists resolve through the (master_service, job_type) child
+        # record, then the published template VERSION -> template.
+        job_type_ids = (await self.db.execute(
+            select(MasterServiceJobType.id).where(
+                MasterServiceJobType.master_service_id == master_service_id)
+        )).scalars().all()
+        checklists: list[dict] = []
+        if job_type_ids:
+            rows = (await self.db.execute(
+                select(JobTypeChecklistMapping, ChecklistTemplate, ChecklistTemplateVersion)
+                .join(ChecklistTemplateVersion,
+                      JobTypeChecklistMapping.checklist_template_version_id == ChecklistTemplateVersion.id)
+                .join(ChecklistTemplate,
+                      ChecklistTemplateVersion.checklist_template_id == ChecklistTemplate.id)
+                .where(JobTypeChecklistMapping.master_service_job_type_id.in_(job_type_ids))
+            )).all()
+            for mapping, template, version in rows:
+                checklists.append({
+                    "mapping_id": str(mapping.id),
+                    "template_name": template.name,
+                    "template_code": template.code,
+                    "purpose": template.purpose,
+                    "icon_url": template.icon_url,
+                    "version_number": version.version_number,
+                    "phase": getattr(mapping, "phase", None),
+                    "status": mapping.status,
+                })
+
+        return {
+            "master_service_id": str(master_service_id),
+            "service_name": service.service_name,
+            "problems": [
+                {
+                    "issue_type_id": str(p["issue_type"]["id"]),
+                    "name": p["issue_type"].get("name"),
+                    "description": p["issue_type"].get("description"),
+                    "icon_url": p["issue_type"].get("icon_url"),
+                    "severity": p["issue_type"].get("severity"),
+                    "is_common": p.get("is_common"),
+                    "requires_photo": p.get("requires_photo"),
+                    "requires_description": p.get("requires_description"),
+                }
+                for p in problems if p.get("issue_type")
+            ],
+            "questions": [
+                {
+                    "question_id": q["id"],
+                    "label": q.get("label"),
+                    "input_type": q.get("input_type"),
+                    "required": q.get("required"),
+                    "customer_visible": q.get("customer_visible"),
+                    "help_text": q.get("help_text"),
+                    "icon_url": q.get("icon_url"),
+                    "options": [o.get("label") for o in (q.get("options") or [])],
+                }
+                for q in questions_res.get("questions", [])
+            ],
+            "checklists": checklists,
+            "tenant_editable": False,
+            "note": ("Configured centrally by the platform. These drive what the customer is "
+                     "asked when booking and what your technician must complete on site."),
+        }
 
     # ═══════════════════════════════════════════════════════════
     # Enabled Services (tenant's active list)

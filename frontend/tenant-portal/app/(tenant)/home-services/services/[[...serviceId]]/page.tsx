@@ -37,6 +37,7 @@ import {
   type HsSetupAvailableType, type HsSetupBrand,
 } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
+import { ServiceRequirementsPanel } from "../../../../../components/services/ServiceRequirementsPanel";
 
 export default function ServicesPricingPage() {
   return (
@@ -155,11 +156,11 @@ function CatalogRow({ s, selected, onClick }: { s: SWCatalogService; selected: b
   );
 }
 
-const TABS = ["overview", "types-brands", "pricing", "visit-fee", "activity"] as const;
+const TABS = ["overview", "types-brands", "pricing", "visit-fee", "requirements"] as const;
 type Tab = typeof TABS[number];
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview", "types-brands": "Types & Brands", pricing: "Pricing",
-  "visit-fee": "Visit Fee", activity: "Activity & Audit",
+  "visit-fee": "Visit Fee", requirements: "Problems & Checklists",
 };
 
 /** Two-column detail+effective-pricing area, driven by one shared refetch so an
@@ -178,7 +179,7 @@ function OfferingWorkspace({ tenantServiceId, onWorkspaceChanged }: { tenantServ
   if (detail.error) return <Card><Alert tone="danger">{detail.error}</Alert></Card>;
 
   const data = detail.data;
-  const ts = data.tenant_service as { setup_status: string; requires_type: boolean; requires_brand: boolean };
+  const ts = data.tenant_service as { setup_status: string; requires_type: boolean; requires_brand: boolean; master_service_id?: string };
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) 320px", gap: 16, alignItems: "start" }}>
@@ -212,10 +213,16 @@ function OfferingWorkspace({ tenantServiceId, onWorkspaceChanged }: { tenantServ
         {tab === "visit-fee" && (
           <VisitFeeTab tenantServiceId={tenantServiceId} data={data} onChanged={refreshAll} />
         )}
-        {tab === "activity" && (
-          <Card><div style={{ textAlign: "center", padding: 28, color: "var(--text-tertiary)", fontSize: 13 }}>
-            Activity & audit isn&apos;t built yet — coming in a follow-up pass.
-          </div></Card>
+        {/* Replaced a "not built yet" Activity placeholder with a real,
+            read-only view of the admin-authored Problems / Questions /
+            Checklists for this service -- previously invisible to tenants
+            even though they drive customer booking and technician work. */}
+        {tab === "requirements" && (
+          <Card title="Configured by the platform (read-only)">
+            <ServiceRequirementsPanel
+              masterServiceId={String((ts as unknown as { master_service_id?: string }).master_service_id ?? "")}
+            />
+          </Card>
         )}
 
         <PublicationCard tenantServiceId={tenantServiceId} data={data} onChanged={refreshAll} />

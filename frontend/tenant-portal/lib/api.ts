@@ -342,6 +342,33 @@ export interface TenantEnabledService {
   last_active_step?: string | null;
   tenant_emergency_surcharge?: number | null;
 }
+/** GET /v1/tenant/catalog/services/{id}/requirements -- admin-authored,
+ * read-only. `tenant_editable` is always false by design. */
+export interface ServiceRequirementProblem {
+  issue_type_id: string; name?: string | null; description?: string | null;
+  icon_url?: string | null; severity?: string | null;
+  is_common?: boolean | null; requires_photo?: boolean | null; requires_description?: boolean | null;
+}
+export interface ServiceRequirementQuestion {
+  question_id: string; label?: string | null; input_type?: string | null;
+  required?: boolean | null; customer_visible?: boolean | null;
+  help_text?: string | null; icon_url?: string | null; options: (string | null)[];
+}
+export interface ServiceRequirementChecklist {
+  mapping_id: string; template_name: string; template_code: string;
+  purpose?: string | null; icon_url?: string | null;
+  version_number: number; phase?: string | null; status?: string | null;
+}
+export interface ServiceRequirements {
+  master_service_id: string;
+  service_name: string;
+  problems: ServiceRequirementProblem[];
+  questions: ServiceRequirementQuestion[];
+  checklists: ServiceRequirementChecklist[];
+  tenant_editable: boolean;
+  note: string;
+}
+
 export const masterCatalogApi = {
   listAvailable: () => {
     const tid = getTenantId();
@@ -350,6 +377,15 @@ export const masterCatalogApi = {
   listEnabled: () => {
     const tid = getTenantId();
     return apiFetch<{ services: TenantEnabledService[] }>(`/v1/tenant/catalog/enabled-services?tenant_id=${tid}`);
+  },
+  /** Read-only view of the Problems / Questions / Checklists the platform
+   * attached to one of THIS tenant's enabled services -- what the customer
+   * gets asked at booking and what the technician must complete on site.
+   * 403s (SERVICE_NOT_ENABLED) for a service the tenant hasn't enabled. */
+  getServiceRequirements: (masterServiceId: string) => {
+    const tid = getTenantId();
+    return apiFetch<ServiceRequirements>(
+      `/v1/tenant/catalog/services/${masterServiceId}/requirements?tenant_id=${tid}`);
   },
   enable: (data: { master_service_id:string; tenant_display_name?:string; tenant_base_price?:number;
                     tenant_min_price?:number; tenant_max_price?:number; tenant_visit_fee?:number }) => {
