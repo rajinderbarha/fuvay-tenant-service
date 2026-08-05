@@ -138,6 +138,25 @@ async def get_policy(
     return ok(data, _rid(r), ENGINE_ID)
 
 
+@router.get("/commission-rates", response_model=ApiResponse,
+            summary="Provider commission rate actually applied to this tenant's completed jobs")
+async def get_commission_rates(
+    r: Request,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(require_permission(P.TENANT_FINANCE_POLICY_READ)),
+    _guard: UserContext = Depends(_hs_active),
+):
+    """Closes a real transparency gap: the tenant had NO way to see the
+    commission rate being charged. The dashboard's "Monetization Status"
+    widget read provider_monetization_statuses -- a table that does not
+    exist in this schema (its endpoint swallows the failure and returns a
+    hardcoded not-ready fallback), so it reported a fabricated status
+    unrelated to actual charging. This returns the rate resolved the same
+    way job completion resolves it."""
+    svc = _svc(r, db, user)
+    return ok(await svc.get_commission_rates(), _rid(r), ENGINE_ID)
+
+
 # ── 6. Top-ups ───────────────────────────────────────────────────────────────
 
 @router.get("/credit-packages", response_model=ApiResponse, summary="Admin-approved credit packages")

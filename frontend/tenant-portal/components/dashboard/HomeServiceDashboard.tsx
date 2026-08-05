@@ -3,7 +3,7 @@ import React, { useCallback } from "react";
 import { StatCard, Card, Skeleton, Badge, JobStatusBadge, HealthMeter } from "../shared/ui";
 import { analyticsApi, serviceJobsApi, financeApi, reviewsApi, bookingsApi, staffApi } from "../../lib/api";
 import type { ServiceJobRecord } from "../../lib/api";
-import { MonetizationStatusWidget } from "./MonetizationStatusWidget";
+import { CommissionRatesWidget } from "./CommissionRatesWidget";
 import { OnboardingWidget } from "./OnboardingWidget";
 import { MarketingLaunchWidget } from "./MarketingLaunchWidget";
 import { useApi } from "../../hooks/useApi";
@@ -43,7 +43,7 @@ export function HomeServiceDashboard() {
       {/* Onboarding widget — shown until onboarding is complete */}
       <OnboardingWidget/>
       {/* Monetization status */}
-      <MonetizationStatusWidget/>
+      <CommissionRatesWidget/>
       {/* Marketing launch */}
       <MarketingLaunchWidget/>
       {/* KPI Row */}

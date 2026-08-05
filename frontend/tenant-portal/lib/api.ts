@@ -2498,6 +2498,20 @@ export interface ProviderMonetizationStatus {
   override_reason: string | null;
 }
 
+/** DEAD -- kept only so any future caller finds this note instead of the
+ * endpoint. `/v1/tenant/monetization/status` reads
+ * `provider_monetization_statuses`, a table that does NOT exist in this
+ * schema; its handler swallows the failure and returns a hardcoded
+ * `{is_monetization_ready: false, monetization_model: null}`, so it can only
+ * ever report a fabricated "not ready" state. Its model taxonomy
+ * (subscription/freemium/fixed_billing/credit_wallet_commission) is also not
+ * what Home Services charging implements.
+ *
+ * For the commission a tenant is ACTUALLY charged, use
+ * homeServicesFinanceApi.getCommissionRates() (lib/api-hs-finance-tenant.ts),
+ * which mirrors execution/usage_credit_deduction.py's real resolution.
+ * The dashboard widget that consumed this was replaced by
+ * components/dashboard/CommissionRatesWidget.tsx. */
 export const providerMonetizationApi = {
   getStatus: () => apiFetch<ProviderMonetizationStatus>("/v1/tenant/monetization/status"),
 };

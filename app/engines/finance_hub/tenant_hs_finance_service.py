@@ -549,6 +549,91 @@ class TenantHomeServicesFinanceService:
             "immutable": True,
         }
 
+    # ── Commission rates (what this tenant is actually charged) ─────────────
+
+    async def get_commission_rates(self) -> dict:
+        """The provider-commission rate actually applied to this tenant's
+        completed jobs, and how it is derived.
+
+        Deliberately mirrors execution/usage_credit_deduction.py::
+        resolve_commission_credits -- the ONE function that decides the real
+        charge -- rather than reporting a separately-stored "monetization
+        status". Precedence there is: the job's own category
+        (ServiceCategory.commission_pct) -> the vertical policy's
+        provider_percentage default. Reproducing that here (instead of
+        inventing a second source) is what makes this number trustworthy;
+        if the two ever diverge, this is the copy that is wrong.
+
+        Only categories the tenant actually has enabled services in are
+        listed, since a rate for a category they don't serve is noise.
+        """
+        from app.engines.vertical_catalog.models import Vertical
+        from app.engines.vertical_monetization.models import VerticalMonetizationPolicy
+        from app.engines.admin_catalog.models import ServiceCategory, TenantService
+
+        vertical = (await self.db.execute(
+            select(Vertical).where(Vertical.key == HOME_SERVICES_VERTICAL_KEY)
+        )).scalar_one_or_none()
+        policy = None
+        if vertical:
+            policy = (await self.db.execute(
+                select(VerticalMonetizationPolicy).where(
+                    VerticalMonetizationPolicy.vertical_id == vertical.id,
+                    VerticalMonetizationPolicy.is_current.is_(True),
+                )
+            )).scalar_one_or_none()
+
+        model = policy.provider_model if policy else None
+        is_live = model == "PERCENTAGE_COMMISSION"
+        default_pct = (
+            _d(policy.provider_percentage)
+            if policy is not None and policy.provider_percentage is not None else None
+        )
+
+        # Categories this tenant actually serves (enabled services only).
+        cat_ids = (await self.db.execute(
+            select(TenantService.category_id).where(
+                TenantService.tenant_id == self.tenant_id,
+                TenantService.is_enabled.is_(True),
+                TenantService.deleted_at.is_(None),
+            ).distinct()
+        )).scalars().all()
+        cat_ids = [c for c in cat_ids if c is not None]
+
+        categories: list[dict] = []
+        if cat_ids:
+            rows = (await self.db.execute(
+                select(ServiceCategory).where(ServiceCategory.id.in_(cat_ids))
+                .order_by(ServiceCategory.name)
+            )).scalars().all()
+            for c in rows:
+                own = _d(c.commission_pct) if c.commission_pct is not None else None
+                effective = own if own is not None else default_pct
+                categories.append({
+                    "category_id": str(c.id),
+                    "category_name": c.name,
+                    "category_rate_pct": str(own) if own is not None else None,
+                    "effective_rate_pct": str(effective) if effective is not None else None,
+                    "using_default": own is None,
+                })
+
+        return {
+            "is_live": is_live,
+            "provider_model": model,
+            "default_rate_pct": str(default_pct) if default_pct is not None else None,
+            "basis": "Percentage of the amount you collect from the customer for each completed job",
+            "charged_as": "Usage credits deducted from your balance at job completion",
+            "categories": categories,
+            # Honest disclosure rather than showing a rate that isn't charged:
+            # every other provider_model leaves job completion falling back to
+            # the legacy per-service flat-credit rules, not this percentage.
+            "not_live_reason": None if is_live else (
+                f"Percentage commission is not the active model"
+                + (f" (currently {model})" if model else "")
+                + ". These rates are not being charged."
+            ),
+        }
+
     # ── Transactions (section 14, all four ledgers, never merged) ───────────
 
     async def get_transactions(self, *, date_from: str | None = None, date_to: str | None = None,

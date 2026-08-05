@@ -48,8 +48,32 @@ function query(params?: Record<string, string | number | boolean | undefined>): 
   return `?${new URLSearchParams(Object.fromEntries(entries.map(([k, v]) => [k, String(v)])))}`;
 }
 
+/** GET /v1/tenant/home-services/finance/commission-rates -- the provider
+ * commission actually charged on this tenant's completed jobs, resolved the
+ * same way execution/usage_credit_deduction.py resolves it (the job's own
+ * category rate, falling back to the vertical policy default). */
+export interface HsCommissionCategoryRate {
+  category_id: string;
+  category_name: string;
+  /** null when this category has no rate of its own and inherits the default. */
+  category_rate_pct: string | null;
+  effective_rate_pct: string | null;
+  using_default: boolean;
+}
+export interface HsCommissionRates {
+  is_live: boolean;
+  provider_model: string | null;
+  default_rate_pct: string | null;
+  basis: string;
+  charged_as: string;
+  categories: HsCommissionCategoryRate[];
+  /** Populated only when percentage commission is NOT the active model. */
+  not_live_reason: string | null;
+}
+
 export const homeServicesFinanceApi = {
   getOverview: <T = HsFinanceOverview>() => apiFetch<T>(FIN),
+  getCommissionRates: <T = HsCommissionRates>() => apiFetch<T>(`${FIN}/commission-rates`),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getTransactions: <T = HsFinanceTxnPage>(params?: Record<string, any>) =>
     apiFetch<T>(`${FIN}/transactions${query(params)}`),

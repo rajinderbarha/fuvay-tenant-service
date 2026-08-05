@@ -2,7 +2,6 @@
 import React, { useCallback } from "react";
 import { StatCard, Card, Skeleton } from "../shared/ui";
 import { categoryDashboardApi } from "../../lib/api";
-import { MonetizationStatusWidget } from "./MonetizationStatusWidget";
 import { OnboardingWidget } from "./OnboardingWidget";
 import { MarketingLaunchWidget } from "./MarketingLaunchWidget";
 import { useApi } from "../../hooks/useApi";
@@ -17,7 +16,6 @@ export function CoachingDashboard() {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:22 }}>
       <OnboardingWidget/>
-      <MonetizationStatusWidget/>
       <MarketingLaunchWidget/>
       {/* Header banner */}
       <div style={{ background:"linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)",
