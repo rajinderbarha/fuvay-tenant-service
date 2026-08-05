@@ -3468,7 +3468,7 @@ export const profilePhotoApi = {
 // picker doesn't re-hit Postgres.
 export type IconLibraryContext =
   | "category_icon" | "service_icon" | "brand_logo"
-  | "issue_icon" | "checklist_icon" | "question_icon";
+  | "issue_icon" | "checklist_icon" | "question_icon" | "global_service_icon";
 
 export const iconLibraryApi = {
   list: (mediaContext: IconLibraryContext) =>
@@ -3477,6 +3477,52 @@ export const iconLibraryApi = {
     ),
   upload: (file: File, mediaContext: IconLibraryContext) =>
     profilePhotoApi.uploadAsset(file, mediaContext, "platform", undefined, true),
+};
+
+// ── Global Services (migration 227) ───────────────────────────────────────────
+// Platform-owned promotional service cards shown to every customer
+// nationwide -- NOT a ServiceCategory, deliberately outside the vertical/
+// tenant-serviceability system. A customer's interest becomes a Lead an
+// admin calls back; there is no booking/job/payment here.
+export interface GlobalService {
+  id: string; name: string; tagline: string | null; description: string | null;
+  icon_url: string | null; display_order: number; is_active: boolean;
+  created_by_user_id: string | null; created_at: string; updated_at: string;
+}
+export interface GlobalServiceLead {
+  id: string; global_service_id: string; global_service_name: string;
+  customer_id: string | null; name: string; phone: string; email: string | null;
+  zipcode: string | null; message: string | null;
+  status: "new" | "contacted" | "converted" | "closed";
+  admin_notes: string | null; assigned_admin_id: string | null;
+  contacted_at: string | null; closed_at: string | null;
+  created_at: string; updated_at: string;
+}
+export interface GlobalServiceLeadsSummary {
+  new: number; contacted: number; converted: number; closed: number; total: number;
+}
+
+export const globalServicesApi = {
+  listServices: (includeInactive = true) =>
+    apiFetch<GlobalService[]>(`/v1/admin/global-services?include_inactive=${includeInactive}`),
+  createService: (data: { name: string; tagline?: string; description?: string; icon_url?: string; display_order?: number; is_active?: boolean }) =>
+    apiFetch<GlobalService>("/v1/admin/global-services", { method: "POST", body: JSON.stringify(data) }),
+  updateService: (id: string, data: Partial<GlobalService>) =>
+    apiFetch<GlobalService>(`/v1/admin/global-services/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deactivateService: (id: string) =>
+    apiFetch<{ id: string; is_active: boolean }>(`/v1/admin/global-services/${id}`, { method: "DELETE" }),
+
+  leadsSummary: () => apiFetch<GlobalServiceLeadsSummary>("/v1/admin/global-services/leads/summary"),
+  listLeads: (params?: { status?: string; global_service_id?: string; page?: number; page_size?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.global_service_id) qs.set("global_service_id", params.global_service_id);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    return apiFetch<{ items: GlobalServiceLead[]; total: number; page: number; page_size: number }>(`/v1/admin/global-services/leads?${qs}`);
+  },
+  updateLead: (id: string, data: { status?: string; admin_notes?: string }) =>
+    apiFetch<GlobalServiceLead>(`/v1/admin/global-services/leads/${id}`, { method: "PUT", body: JSON.stringify(data) }),
 };
 
 // ── Platform Settings ─────────────────────────────────────────────────────────

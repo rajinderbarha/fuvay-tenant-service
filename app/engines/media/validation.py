@@ -60,6 +60,7 @@ CONTEXT_RULES: dict[str, dict] = {
     "issue_icon":                   {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
     "checklist_icon":               {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
     "question_icon":                {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
+    "global_service_icon":          {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
     "marketing_asset":              {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 20},
 }
 

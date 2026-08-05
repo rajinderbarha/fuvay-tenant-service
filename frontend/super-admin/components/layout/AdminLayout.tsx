@@ -26,7 +26,7 @@ import {
   Megaphone, Package, ScrollText, ListChecks, BarChart3,
   HelpCircle, GitBranch, Image, AlertOctagon, Globe,
   PercentSquare, FileText as FileTextIcon,
-  IdCard, UserCog, KeyRound, Link2, Stethoscope, CalendarCheck,
+  IdCard, UserCog, KeyRound, Link2, Stethoscope, CalendarCheck, PhoneCall,
 } from "lucide-react";
 import { verticalCatalogApi, type EffectiveMenu } from "../../lib/api";
 import { useTheme } from "../../hooks/useTheme";
@@ -90,6 +90,10 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Marketing & Growth",
     items: [
       { id: "marketing",     href: "/admin/marketing",     label: "Campaigns",       icon: <Megaphone size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      // Platform-owned promotional service cards shown to every customer
+      // nationwide (mobile app's fixed section) -- independent of vertical/
+      // category/tenant serviceability, see app/engines/global_services.
+      { id: "global-services", href: "/admin/global-services", label: "Global Services", icon: <PhoneCall size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       // "Notification Settings" folded into Notifications as a "Settings"
       // tab 2026-08-05 at explicit user request -- removed as a separate

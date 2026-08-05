@@ -923,6 +923,14 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.roles_permissions.admin_router import router as roles_permissions_router
     app.include_router(roles_permissions_router)
 
+    # Global Services (migration 227) — platform-owned promotional listings
+    # shown to every customer nationwide, independent of vertical/category/
+    # tenant serviceability. Customer interest becomes a Lead an admin calls.
+    from app.engines.global_services.admin_router import router as global_services_admin_router
+    from app.engines.global_services.customer_router import router as global_services_customer_router
+    app.include_router(global_services_admin_router)
+    app.include_router(global_services_customer_router)
+
     # Phase 1B — safe, dev-only 500-error-envelope verification route.
     # Never mounted in production; requires super_admin even in dev/test.
     from app.config import get_settings as _get_settings
