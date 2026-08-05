@@ -1158,10 +1158,37 @@ class AdminCatalogService:
         if existing.scalar_one_or_none():
             raise ServiceOSException("SERVICE_CATEGORY_SLUG_DUPLICATE", f"Category slug '{slug}' already exists.", status_code=409)
 
+        # Validate optional universal fields. Bug fix: this canonical create
+        # path (migration 160's "New Business Vertical") validated and set
+        # finance_model but silently dropped vertical_type/customer_flow_type/
+        # provider_business_model -- all three are NOT in
+        # CATEGORY_FORBIDDEN_CREATE_FIELDS (they aren't Job-Type Blueprint
+        # fields, unlike requires_location etc.) and update_category has
+        # always accepted them; they were just never wired into this
+        # constructor. A vertical created here landed with all three null
+        # even though the edit form marks Vertical Type/Customer Flow Type as
+        # required, leaving every newly-created vertical in a half-configured
+        # state (e.g. never matching FIELD_OPS_VERTICALS/vertical_type
+        # filters) until an admin remembered to open Edit and fill them in.
+        vt = data.get("vertical_type")
+        if vt and vt not in VALID_VERTICAL_TYPES:
+            raise ServiceOSException("INVALID_VERTICAL_TYPE",
+                f"vertical_type '{vt}' is not valid. Choose from: {sorted(VALID_VERTICAL_TYPES)}",
+                status_code=422)
         fm = data.get("finance_model")
         if fm and fm not in VALID_FINANCE_MODELS:
             raise ServiceOSException("INVALID_FINANCE_MODEL",
                 f"finance_model '{fm}' is not valid. Choose from: {sorted(VALID_FINANCE_MODELS)}",
+                status_code=422)
+        cft = data.get("customer_flow_type")
+        if cft and cft not in VALID_CUSTOMER_FLOW_TYPES:
+            raise ServiceOSException("INVALID_CUSTOMER_FLOW_TYPE",
+                f"customer_flow_type '{cft}' is not valid. Choose from: {sorted(VALID_CUSTOMER_FLOW_TYPES)}",
+                status_code=422)
+        pbm = data.get("provider_business_model")
+        if pbm and pbm not in VALID_PROVIDER_BUSINESS_MODELS:
+            raise ServiceOSException("INVALID_PROVIDER_BUSINESS_MODEL",
+                f"provider_business_model '{pbm}' is not valid.",
                 status_code=422)
 
         cat = ServiceCategory(
@@ -1171,7 +1198,10 @@ class AdminCatalogService:
             image_url=data.get("image_url"),
             display_order=int(data.get("display_order", 0) or 0),
             is_active=bool(data.get("is_active", True)),
+            vertical_type=vt,
             finance_model=fm,
+            customer_flow_type=cft,
+            provider_business_model=pbm,
             tenant_selectable=bool(data.get("tenant_selectable", True)),
             is_customer_visible=bool(data.get("is_customer_visible", True)),
             is_provider_registerable=bool(data.get("registration_available", True)),

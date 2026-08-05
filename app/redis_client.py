@@ -87,6 +87,13 @@ class RedisKeys:
     def session(session_id: str) -> str:
         return f"serviceos:session:{session_id}"
 
+    @staticmethod
+    def media_icon_library(media_context: str) -> str:
+        """Cached page-1 icon-library listing (category_icon/service_icon/
+        brand_logo) so the admin icon picker's "choose existing" tab doesn't
+        re-query the DB every time it's opened."""
+        return f"serviceos:media:icon_library:{media_context}"
+
 
 # ── Cache Helpers ────────────────────────────────────────────────────────────
 import json

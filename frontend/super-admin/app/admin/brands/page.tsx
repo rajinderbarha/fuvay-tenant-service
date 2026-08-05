@@ -4,6 +4,7 @@ import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader,
 } from "../../../components/shared/ui";
+import { IconPicker } from "../../../components/shared/IconPicker";
 import { catalogApi, type Brand34D, type BrandDuplicateWarning } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { RefreshCw, Download, Merge } from "lucide-react";
@@ -314,8 +315,8 @@ export default function BrandsPage() {
           </div>
           <Input label="Website URL" placeholder="https://samsung.com" value={form.website_url}
             onChange={v => setF("website_url", v)} />
-          <Input label="Logo URL" placeholder="https://…/logo.png" value={form.logo_url}
-            onChange={v => setF("logo_url", v)} />
+          <IconPicker label="Logo" context="brand_logo" shape="circle" value={form.logo_url}
+            onChange={v => setF("logo_url", v ?? "")} />
 
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button onClick={() => setF("is_global", !form.is_global)} style={{

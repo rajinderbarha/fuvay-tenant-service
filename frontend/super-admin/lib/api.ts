@@ -1430,7 +1430,8 @@ export const catalogApi = {
   // Blueprint, never on the vertical itself. Backend rejects them outright.
   createBusinessVertical: (data: {
     name: string; description?: string; icon_url?: string; image_url?: string;
-    display_order?: number; is_active?: boolean; finance_model?: string;
+    display_order?: number; is_active?: boolean; vertical_type?: string; finance_model?: string;
+    customer_flow_type?: string; provider_business_model?: string;
     tenant_selectable?: boolean; is_customer_visible?: boolean; registration_available?: boolean;
   }) =>
     apiFetch<ServiceCategory>("/v1/admin/business-verticals", { method: "POST", body: JSON.stringify(data) }),
@@ -3458,6 +3459,25 @@ export const profilePhotoApi = {
   getAsset:    (mediaId: string) => apiFetch<MediaAsset>(`/v1/media/${mediaId}`),
 };
 
+// ── Icon Library (shared by the IconPicker used on Category / Subcategory /
+// Master Service / Type / Brand forms) ──────────────────────────────────────
+// media_context is one of "category_icon" | "service_icon" | "brand_logo" --
+// all three are pre-registered, public, image-only contexts (see backend
+// app/engines/media/validation.py CONTEXT_RULES). The list endpoint is
+// Redis-cached server-side for these contexts (app/redis_client.py
+// RedisKeys.media_icon_library), so repeatedly opening the picker doesn't
+// re-hit Postgres.
+export type IconLibraryContext = "category_icon" | "service_icon" | "brand_logo";
+
+export const iconLibraryApi = {
+  list: (mediaContext: IconLibraryContext) =>
+    apiFetch<{ items: MediaAsset[]; total: number; page: number; page_size: number }>(
+      `/v1/media?media_context=${mediaContext}&page=1&page_size=25`,
+    ),
+  upload: (file: File, mediaContext: IconLibraryContext) =>
+    profilePhotoApi.uploadAsset(file, mediaContext, "platform", undefined, true),
+};
+
 // ── Platform Settings ─────────────────────────────────────────────────────────
 export const platformSettingsApi = {
   getAll: () => apiFetch<PlatformSettingsList>("/v1/settings/platform"),
@@ -3947,9 +3967,9 @@ export interface MasterService {
   unit_label?:string|null;
   requires_checklist:boolean; is_brand_required:boolean; is_type_required:boolean;
   requires_issue_type?:boolean; requires_schedule?:boolean; requires_address?:boolean;
-  service_group_id?:string|null; image_url?:string|null; is_active:boolean; created_at?:string;
+  service_group_id?:string|null; image_url?:string|null; icon_url?:string|null; is_active:boolean; created_at?:string;
 }
-export interface ServiceTypeRow { type_id:string; category_id:string; name:string; slug:string; description?:string|null; is_active:boolean; }
+export interface ServiceTypeRow { type_id:string; category_id:string; name:string; slug:string; description?:string|null; is_active:boolean; icon_url?:string|null; }
 export interface BrandRow { brand_id:string; name:string; slug:string; category_id?:string|null; logo_url?:string|null; is_active:boolean; }
 
 // ── Types & Brands Enterprise (Sprint 76) ─────────────────────────────────────
@@ -3957,7 +3977,7 @@ export interface ServiceTypeMaster {
   type_id:string; name:string; code?:string|null; slug:string; description?:string|null;
   type_family?:string|null; customer_visible:boolean; status:string; display_order:number;
   is_active:boolean; category_count:number; service_count:number; mapping_count:number;
-  created_at:string; updated_at:string; mappings?:ServiceTypeMapRecord[];
+  created_at:string; updated_at:string; mappings?:ServiceTypeMapRecord[]; icon_url?:string|null;
 }
 export interface ServiceTypeMapRecord {
   mapping_id:string; type_id:string; category_id?:string|null; service_group_id?:string|null;

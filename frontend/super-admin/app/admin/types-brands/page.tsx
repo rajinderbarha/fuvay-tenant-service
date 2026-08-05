@@ -3,6 +3,7 @@ import React, { useCallback, useState, useEffect, useMemo } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Skeleton, EmptyState, SummaryCard,} from "../../../components/shared/ui";
+import { IconPicker } from "../../../components/shared/IconPicker";
 import { catalogApi, typesApi } from "../../../lib/api";
 import type {
   ServiceTypeMaster, ServiceTypeSummary, BrandMasterSummary,
@@ -331,6 +332,7 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
     status:           initial?.status ?? "active",
     display_order:    initial?.display_order ?? 0,
   });
+  const [iconUrl, setIconUrl] = useState<string | null>(initial?.icon_url ?? null);
   // Only auto-fill slug for brand-new records, and only until the user
   // edits Slug by hand.
   const [slugTouched, setSlugTouched] = useState(!!initial?.slug);
@@ -340,9 +342,10 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
     typesApi.update(initial!.type_id, d), [initial]));
 
   async function handleSave() {
+    const payload = { ...form, icon_url: iconUrl || undefined };
     const res = initial
-      ? await updateAction.execute(form)
-      : await createAction.execute(form);
+      ? await updateAction.execute(payload)
+      : await createAction.execute(payload);
     if (res) onSaved();
   }
 
@@ -383,6 +386,7 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
           {F("Slug (auto-generated, editable)", "slug")}
         </div>
         {F("Description", "description", "textarea")}
+        <IconPicker label="Icon" context="service_icon" value={iconUrl} onChange={setIconUrl}/>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Type Family</label>

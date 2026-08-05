@@ -31,6 +31,16 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 MAX_PAGE_SIZE = 100
 
+# Contexts used as a shared, browsable "icon library" by the admin icon
+# picker (Category/Subcategory/Master Service/Type/Brand). Unlike every
+# other media context, these are read far more often than written -- the
+# same platform-wide icon set is fetched every time any admin opens the
+# picker's "choose existing" tab -- so the unfiltered, page-1 listing is
+# cached in Redis (see RedisKeys.media_icon_library) rather than hitting
+# Postgres on every open.
+ICON_LIBRARY_CONTEXTS = {"category_icon", "service_icon", "brand_logo"}
+ICON_LIBRARY_CACHE_TTL = 300
+
 
 @dataclass
 class MediaAssetRecord:
@@ -140,6 +150,13 @@ class MediaAssetService:
         self.db.add(asset)
         await self.db.flush()
 
+        if media_context in ICON_LIBRARY_CONTEXTS:
+            from app.redis_client import cache_delete, RedisKeys
+            try:
+                await cache_delete(RedisKeys.media_icon_library(media_context))
+            except RuntimeError:
+                pass
+
         logger.info("media.uploaded", asset_id=str(asset.id), context=media_context,
                     driver=stored.storage_driver, size=len(file_bytes))
 
@@ -234,6 +251,27 @@ class MediaAssetService:
         page_size = min(page_size, MAX_PAGE_SIZE)
         offset = (page - 1) * page_size
 
+        # Icon-library reads: cached (see ICON_LIBRARY_CONTEXTS docstring).
+        # Only the unfiltered page-1/default-page-size call is cache-eligible
+        # -- an owner-scoped or paged-past-1 call is rare enough (and cheap
+        # enough) to just hit Postgres, and caching every distinct
+        # page/owner combination isn't worth the key sprawl.
+        cache_key = None
+        is_cacheable = (
+            media_context in ICON_LIBRARY_CONTEXTS
+            and owner_type is None and owner_id is None
+            and page == 1 and page_size == 25
+        )
+        if is_cacheable:
+            from app.redis_client import cache_get, cache_set, RedisKeys
+            cache_key = RedisKeys.media_icon_library(media_context)
+            try:
+                cached = await cache_get(cache_key)
+                if cached is not None:
+                    return cached
+            except RuntimeError:
+                pass  # Redis not initialized (e.g. tests) -- fall through to DB
+
         q = select(MediaAsset).where(MediaAsset.status != "deleted")
 
         # Scope to actor
@@ -258,12 +296,18 @@ class MediaAssetService:
         result = await self.db.execute(q)
         assets = result.scalars().all()
 
-        return {
+        result_dict = {
             "items": [a.to_dict(view_url=self._view_url(a)) for a in assets],
             "total": total,
             "page": page,
             "page_size": page_size,
         }
+        if cache_key is not None:
+            try:
+                await cache_set(cache_key, result_dict, ttl=ICON_LIBRARY_CACHE_TTL)
+            except RuntimeError:
+                pass
+        return result_dict
 
     # ── Replace ───────────────────────────────────────────────────────────────
 
@@ -378,6 +422,13 @@ class MediaAssetService:
         # Physical delete for local storage (safe — no shared references for new assets)
         if asset.storage_driver == "local":
             await self._storage.delete_file(asset.storage_driver, asset.storage_key)
+
+        if asset.media_context in ICON_LIBRARY_CONTEXTS:
+            from app.redis_client import cache_delete, RedisKeys
+            try:
+                await cache_delete(RedisKeys.media_icon_library(asset.media_context))
+            except RuntimeError:
+                pass
 
         logger.info("media.deleted", asset_id=str(media_id), context=asset.media_context)
         await record_platform_audit(

@@ -3,6 +3,7 @@ import React, { useState, useCallback, useMemo } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, SummaryCard,} from "../../../components/shared/ui";
+import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   catalogApi,
   type ServiceGroup, type ServiceGroupEnriched,
@@ -505,8 +506,8 @@ export default function ServiceGroupsPage() {
                 options={[{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]} />
             )}
           </div>
-          <Input label="Icon URL" placeholder="https://…" value={form.icon_url}
-            onChange={v => setF("icon_url", v)} />
+          <IconPicker label="Icon" context="category_icon" value={form.icon_url}
+            onChange={v => setF("icon_url", v ?? "")} />
 
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <Btn variant="secondary" size="sm" onClick={() => setModal("none")}>Cancel</Btn>

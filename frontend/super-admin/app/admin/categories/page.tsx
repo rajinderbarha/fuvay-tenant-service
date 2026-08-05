@@ -3,6 +3,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { AdminLayout, useAdminMenuRefresh } from "../../../components/layout/AdminLayout";
 import { Card, SectionHeader, Badge, Btn, Modal, Input, Select, Skeleton } from "../../../components/shared/ui";
+import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   categoryRuntimeApi, catalogApi,
   type ServiceCategory, type EnterpriseCategory, type CategorySummaryData,
@@ -386,79 +387,54 @@ const PROVIDER_BIZ_OPTIONS = [
 ];
 
 // ── New Business Vertical -- canonical creation (migration 160) ─────────────
-// A focused, standalone form (not the full legacy modal): Name, Description,
-// Display Order, Status, Tenant Selectable, Customer Visible. No Brand/Type/
-// Schedule/Address/pricing fields -- those vary per Master Service and Job
-// Type and belong on the Job-Type Blueprint. The backend rejects them
-// outright if this form (or anything else) tries to send them.
+// Uses the SAME CategoryForm/FormState as Edit (see below), so create and
+// edit can never drift apart again. Bug fix: this used to be a separate,
+// much shorter form (Name/Description/Display Order/3 checkboxes only) that
+// never collected Vertical Type/Finance Model/Customer Flow Type/Provider
+// Business Model/Icon/Image -- even though the backend's
+// create_category_canonical already accepted finance_model/icon_url/
+// image_url, and (after the fix accompanying this change) now also accepts
+// vertical_type/customer_flow_type/provider_business_model. A vertical
+// created via the old short form landed with all of those null even though
+// Edit marks Vertical Type/Customer Flow Type as required -- every new
+// vertical needed a second, easy-to-forget Edit pass before it actually
+// worked. No Brand/Type/Schedule/Address/pricing fields here or in Edit --
+// those vary per Master Service and Job Type and belong on the Job-Type
+// Blueprint; the backend rejects them outright.
 function BusinessVerticalCreateModal({ open, onClose, onCreated }: {
   open: boolean; onClose: () => void; onCreated: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [displayOrder, setDisplayOrder] = useState(0);
-  const [tenantSelectable, setTenantSelectable] = useState(true);
-  const [customerVisible, setCustomerVisible] = useState(true);
-  const [registrationAvailable, setRegistrationAvailable] = useState(true);
+  const [form, setForm] = useState<FormState>(BLANK);
   const createAction = useAction(catalogApi.createBusinessVertical);
 
-  function reset() {
-    setName(""); setDescription(""); setDisplayOrder(0);
-    setTenantSelectable(true); setCustomerVisible(true); setRegistrationAvailable(true);
+  function setF<K extends keyof FormState>(k: K, v: FormState[K]) {
+    setForm(p => ({ ...p, [k]: v }));
   }
 
   async function submit() {
     const result = await createAction.execute({
-      name: name.trim(), description: description.trim() || undefined,
-      display_order: displayOrder, tenant_selectable: tenantSelectable,
-      is_customer_visible: customerVisible, registration_available: registrationAvailable,
+      name: form.name.trim(),
+      description: form.description.trim() || undefined,
+      icon_url: form.icon_url || undefined,
+      image_url: form.image_url || undefined,
+      display_order: form.display_order || 0,
+      vertical_type: form.vertical_type || undefined,
+      finance_model: form.finance_model || undefined,
+      customer_flow_type: form.customer_flow_type || undefined,
+      provider_business_model: form.provider_business_model || undefined,
+      tenant_selectable: form.tenant_selectable,
     });
-    if (result) { reset(); onCreated(); }
+    if (result) { setForm(BLANK); onCreated(); }
   }
 
   return (
     <Modal open={open} onClose={onClose} title="New Business Vertical">
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {createAction.error && (
-          <div style={{ padding: "10px 14px", borderRadius: 9, background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
-            <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>{createAction.error}</p>
-          </div>
-        )}
-        <Input label="Name *" placeholder="Home Services" value={name} onChange={setName}/>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Description</label>
-          <textarea value={description} onChange={e => setDescription(e.target.value)}
-            placeholder="Short description shown across the platform…" rows={2}
-            style={{ width: "100%", padding: "8px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)",
-              background: "var(--bg)", color: "var(--text-primary)", fontSize: 13, boxSizing: "border-box",
-              outline: "none", resize: "vertical", fontFamily: "inherit" }}/>
-        </div>
-        <Input label="Display Order" type="number" value={String(displayOrder)}
-          onChange={v => setDisplayOrder(parseInt(v, 10) || 0)}/>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer" }}>
-            <input type="checkbox" checked={registrationAvailable} onChange={e => setRegistrationAvailable(e.target.checked)} style={{ width: 15, height: 15 }}/>
-            Registration Available
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer" }}>
-            <input type="checkbox" checked={tenantSelectable} onChange={e => setTenantSelectable(e.target.checked)} style={{ width: 15, height: 15 }}/>
-            Tenant Selectable
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer" }}>
-            <input type="checkbox" checked={customerVisible} onChange={e => setCustomerVisible(e.target.checked)} style={{ width: 15, height: 15 }}/>
-            Customer Visible
-          </label>
-        </div>
-        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-          Brand, Type, Schedule, Address, and pricing requirements vary by service and job type —
-          configure them per service after creation, in its Job-Type Blueprint.
-        </p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 4 }}>
-          <Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" size="sm" disabled={!name.trim()} loading={createAction.loading} onClick={submit}>
-            Create Business Vertical
-          </Btn>
-        </div>
+      <CategoryForm form={form} setF={setF} error={createAction.error}/>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 14 }}>
+        <Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn>
+        <Btn variant="primary" size="sm" disabled={!form.name.trim()} loading={createAction.loading} onClick={submit}>
+          Create Business Vertical
+        </Btn>
       </div>
     </Modal>
   );
@@ -543,8 +519,8 @@ function CategoryForm({
         Appearance
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Input label="Icon URL" placeholder="https://…" value={form.icon_url} onChange={v => setF("icon_url", v)}/>
-        <Input label="Image URL" placeholder="https://…" value={form.image_url} onChange={v => setF("image_url", v)}/>
+        <IconPicker label="Icon" context="category_icon" value={form.icon_url} onChange={v => setF("icon_url", v ?? "")}/>
+        <IconPicker label="Image" context="category_icon" value={form.image_url} onChange={v => setF("image_url", v ?? "")}/>
       </div>
       <Input label="Display Order" type="number" placeholder="0"
         value={String(form.display_order)} onChange={v => setF("display_order", Number(v) || 0)}/>
@@ -1058,8 +1034,8 @@ export default function CategoriesPage() {
         </div>
       </Modal>
 
-      {/* New Business Vertical -- canonical creation (migration 160), a
-          focused form, not the full legacy modal. */}
+      {/* New Business Vertical -- canonical creation (migration 160), now
+          the same CategoryForm as Edit (see BusinessVerticalCreateModal). */}
       <BusinessVerticalCreateModal open={modal === "create-vertical"} onClose={() => setModal("none")}
         onCreated={() => { cats.refetch(); summary.refetch(); setModal("none"); notify("Business Vertical created."); }}/>
 

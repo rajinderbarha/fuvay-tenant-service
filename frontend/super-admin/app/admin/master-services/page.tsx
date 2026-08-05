@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, SummaryCard,} from "../../../components/shared/ui";
+import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   catalogApi,
   type MasterService, type MasterServiceEnriched,
@@ -82,12 +83,13 @@ type FormState = {
   description: string;
   unit_label: string;
   is_active: boolean;
+  icon_url: string;
 } & FormRequirements;
 
 const BLANK: FormState = {
   name: "", category_id: "", service_group_id: "", job_type: "service",
   pricing_model: "fixed", base_price: "", min_price: "", max_price: "",
-  description: "", unit_label: "per visit", is_active: true,
+  description: "", unit_label: "per visit", is_active: true, icon_url: "",
   ...JOB_TYPE_DEFAULTS.service,
 } as FormState;
 
@@ -397,6 +399,7 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
   const [groupId, setGroupId] = useState("");
   const [description, setDescription] = useState("");
   const [displayOrder, setDisplayOrder] = useState(0);
+  const [iconUrl, setIconUrl] = useState<string | null>(null);
   const createAction = useAction(catalogApi.createMasterServiceV2);
 
   const groupOptions = useMemo(
@@ -404,13 +407,14 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
     [allGroups, categoryId]);
 
   function reset() {
-    setName(""); setCategoryId(""); setGroupId(""); setDescription(""); setDisplayOrder(0);
+    setName(""); setCategoryId(""); setGroupId(""); setDescription(""); setDisplayOrder(0); setIconUrl(null);
   }
 
   async function submit() {
     const result = await createAction.execute({
       service_name: name.trim(), category_id: categoryId, service_group_id: groupId,
       description: description.trim() || undefined, display_order: displayOrder,
+      icon_url: iconUrl || undefined,
     });
     if (result) { reset(); onCreated(); }
   }
@@ -435,6 +439,7 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
           value={description} onChange={setDescription}/>
         <Input label="Display Order" type="number" value={String(displayOrder)}
           onChange={v => setDisplayOrder(parseInt(v, 10) || 0)}/>
+        <IconPicker label="Icon" context="service_icon" value={iconUrl} onChange={setIconUrl}/>
         <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
           Job types (Repair, Installation, …), pricing behavior, and Brand/Type requirements are
           configured after creation, per job type, in this service's Job-Type Blueprint.
@@ -528,6 +533,7 @@ export default function MasterServicesPage() {
       // (MODULE-L5-56) -- pricing is tenant-owned only.
       description: data.description || undefined,
       unit_label: data.unit_label || undefined,
+      icon_url: data.icon_url || undefined,
       is_active: data.is_active,
       // Brand/Type/Issue/Checklist/Schedule/Address requirements are no
       // longer edited from this form -- they are configured per exact Job
@@ -587,6 +593,7 @@ export default function MasterServicesPage() {
       min_price: svc.min_price != null ? String(svc.min_price) : "",
       max_price: svc.max_price != null ? String(svc.max_price) : "",
       description: svc.description ?? "", unit_label: svc.unit_label ?? "per visit",
+      icon_url: svc.icon_url ?? "",
       is_active: svc.is_active,
       requires_issue_type: !!svc.requires_issue_type,
       is_brand_required: !!svc.is_brand_required,
@@ -879,6 +886,9 @@ export default function MasterServicesPage() {
 
           <Input label="Description" placeholder="Optional description for this service"
             value={form.description} onChange={v => setF("description", v)} />
+
+          <IconPicker label="Icon" context="service_icon" value={form.icon_url}
+            onChange={v => setF("icon_url", v ?? "")} />
 
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
             <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: ".06em" }}>
