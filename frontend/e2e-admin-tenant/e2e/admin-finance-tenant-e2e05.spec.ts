@@ -68,7 +68,10 @@ test.describe('ADMIN-TENANT-E2E-05 admin finance + tenant detail', () => {
     const grouped = Math.trunc(balance).toLocaleString('en-IN');
 
     await loginAsSuperAdmin(page);
-    await page.goto('/admin/finance/usage-credits', { waitUntil: 'domcontentloaded' });
+    // The page no longer pre-fills a (dead) demo tenant id, so the test must
+    // supply one -- previously it relied on that hardcoded default and would
+    // silently assert against whatever tenant the page happened to embed.
+    await page.goto(`/admin/finance/usage-credits?tenant_id=${SEED.tenantId}`, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1000);
     await page.locator('button:has-text("Load Ledger")').click();
     await page.waitForTimeout(2000);
@@ -114,7 +117,11 @@ test.describe('ADMIN-TENANT-E2E-05 admin finance + tenant detail', () => {
   test('tenant detail (Tenant 360): overview + usage credit ledger tab, balance matches usage-credits page', async ({ page }) => {
     await loginAsSuperAdmin(page);
     await page.goto(`/admin/tenants/${DEMO_TENANT_ID}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3500);
+    // Was a bare 3500ms sleep then a body innerText read, which raced the
+    // detail fetch on a slow compile and failed even though the API returns
+    // business_name correctly. Wait for the actual rendered name instead.
+    await expect(page.getByText(SEED.tenantName, { exact: false }).first())
+      .toBeVisible({ timeout: 20000 });
     const overviewText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'tenant-detail-overview.png'), fullPage: true });
     log('tenant-detail.log', `Contains seed tenant: ${overviewText.includes(SEED.tenantName)}`);

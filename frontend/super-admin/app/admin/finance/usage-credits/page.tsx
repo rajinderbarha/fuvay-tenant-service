@@ -9,7 +9,12 @@ import { usePermissions } from "../../../../hooks/usePermissions";
 import { usageCreditsAdminApi } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 
-const DEMO_TENANT_ID = "34b427a7-b2be-496c-b826-6d51bb181248";
+// Removed: this page defaulted its Tenant ID field to a hardcoded demo
+// tenant ("34b427a7-..."), which no longer exists in any environment. Every
+// admin opening /admin/finance/usage-credits therefore loaded a ledger for a
+// dead tenant and saw "No ledger entries for this tenant yet" -- looking like
+// an empty system rather than an unset filter. There is no correct tenant to
+// default to, so the field now starts empty and the page asks for one.
 
 // FINAL-L5-03: useSearchParams() requires a Suspense boundary in the App
 // Router for static export to succeed -- this page previously failed
@@ -27,14 +32,16 @@ function AdminUsageCreditsPageInner() {
   const searchParams = useSearchParams();
   const perm = usePermissions();
   const jobIdFilter = searchParams.get("job_id") ?? "";
-  const [tenantId, setTenantId] = useState(searchParams.get("tenant_id") || DEMO_TENANT_ID);
+  const [tenantId, setTenantId] = useState(searchParams.get("tenant_id") || "");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
 
+  // Never fire the request without a tenant -- an empty tenant_id would 422
+  // (or worse, look like "no data") instead of prompting for input.
   const ledger = useApi(useCallback(
     () => usageCreditsAdminApi.getTenantLedger(tenantId, jobIdFilter || undefined),
     [tenantId, jobIdFilter],
-  ));
+  ), [tenantId, jobIdFilter], { enabled: !!tenantId.trim() });
 
   const addAction = useAction(
     useCallback(() => usageCreditsAdminApi.addCredits(tenantId, Number(amount), reason), [tenantId, amount, reason]),
@@ -117,7 +124,14 @@ function AdminUsageCreditsPageInner() {
 
       <Card padding={0}>
         <p style={{ fontSize: 13, fontWeight: 700, padding: "14px 16px 0" }}>Completed Job Deductions / Ledger</p>
-        {ledger.loading ? (
+        {!tenantId.trim() ? (
+          /* Distinct from the empty-result state below: with no tenant chosen
+             there is nothing to have found, and saying "no entries" would
+             imply the system is empty. */
+          <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "var(--text-tertiary)" }}>
+            Enter a Tenant ID above to load its Completed Job Deduction ledger.
+          </div>
+        ) : ledger.loading ? (
           <div style={{ padding: 20, fontSize: 13, color: "var(--text-tertiary)" }}>Loading…</div>
         ) : entries.length === 0 ? (
           <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "var(--text-tertiary)" }}>
