@@ -234,14 +234,23 @@ export function HomeScreen() {
           <ServiceSearch value={searchValue} onChangeText={setSearchValue} />
         </View>
 
-        {/* An in-flight job is the single most common reason a customer
-            reopens the app, so it sits directly under the search box
-            instead of below the promo carousel and service grid where it
-            was previously buried. */}
-        {home.activeBooking ? (
-          <HomeSectionErrorBoundary sectionLabel="active booking">
+        {/* Section order below matches the reference design: verticals,
+            then the promo banner, then Services Nearby, then Active
+            Booking, then Global Services, then the trust strip. (An
+            earlier pass here moved Active Booking above the banner for a
+            UX reason -- reverted so the app matches the design the way it
+            was actually asked for.) The spacer-avoidance comment on
+            VerticalSwitcher still applies: it self-hides with one
+            vertical, so its wrapper is conditionally rendered too rather
+            than always contributing a top margin. */}
+        {home.enabledVerticals.length > 1 ? (
+          <HomeSectionErrorBoundary sectionLabel="verticals">
             <View style={{ marginTop: theme.spacing.lg }}>
-              <ActiveBookingCard booking={home.activeBooking} onPress={() => navigation.navigate("Bookings")} />
+              <VerticalSwitcher
+                verticals={home.enabledVerticals}
+                selectedVerticalKey={selectedVerticalKey}
+                onSelect={v => setSelectedVerticalKey(v.key)}
+              />
             </View>
           </HomeSectionErrorBoundary>
         ) : null}
@@ -259,22 +268,6 @@ export function HomeScreen() {
             />
           </View>
         </HomeSectionErrorBoundary>
-
-        {/* The spacer View is inside the length check too: VerticalSwitcher
-            self-hides with one vertical, but an always-rendered wrapper
-            would still contribute its top margin, leaving a phantom gap
-            where the switcher used to be. */}
-        {home.enabledVerticals.length > 1 ? (
-          <HomeSectionErrorBoundary sectionLabel="verticals">
-            <View style={{ marginTop: theme.spacing.lg }}>
-              <VerticalSwitcher
-                verticals={home.enabledVerticals}
-                selectedVerticalKey={selectedVerticalKey}
-                onSelect={v => setSelectedVerticalKey(v.key)}
-              />
-            </View>
-          </HomeSectionErrorBoundary>
-        ) : null}
 
         <HomeSectionErrorBoundary sectionLabel="services">
           <View style={{ marginTop: theme.spacing.xl }}>
@@ -338,6 +331,14 @@ export function HomeScreen() {
             <AssistantEntryCard onPress={() => navigateToGenericAssistant(home.address!.zipcode as string)} />
           </View>
         </HomeSectionErrorBoundary>
+
+        {home.activeBooking ? (
+          <HomeSectionErrorBoundary sectionLabel="active booking">
+            <View style={{ marginTop: theme.spacing.xl }}>
+              <ActiveBookingCard booking={home.activeBooking} onPress={() => navigation.navigate("Bookings")} />
+            </View>
+          </HomeSectionErrorBoundary>
+        ) : null}
 
         {/* Fixed, nationwide section -- never filtered by this ZIP's
             bookable_categories, unlike "Services near you" above (see
