@@ -78,6 +78,31 @@ export function CampaignCarousel({ campaigns, mode, onPressCta, isCtaRoutable }:
           // resolveCampaignDeepLink). Everything else stays disabled --
           // a button that invites a tap and goes nowhere is a dead button.
           const ctaEnabled = isCtaRoutable(campaign);
+          // An admin-uploaded banner image is the complete visual on its
+          // own (headline, description and CTA are already part of the
+          // artwork -- see the reference design's banner asset) -- overlaying
+          // the campaign's own title/description text on top of it duplicated
+          // the same message twice on one card. So an image-backed campaign
+          // renders as JUST the image, full-bleed, tappable as a whole; the
+          // text-based layout below is only a fallback for a campaign that
+          // has no artwork at all (never leaves a banner completely blank).
+          if (artwork) {
+            return (
+              <View
+                key={campaign.campaignId}
+                accessibilityRole={ctaEnabled ? "button" : "image"}
+                accessibilityLabel={campaign.title}
+                onTouchEnd={ctaEnabled ? () => onPressCta(campaign) : undefined}
+                style={{ width: CARD_WIDTH, borderRadius: theme.radiusUsage.card, overflow: "hidden" }}
+              >
+                <Image
+                  source={{ uri: artwork }}
+                  style={{ width: "100%", aspectRatio: 343 / 145 }}
+                  resizeMode="cover"
+                />
+              </View>
+            );
+          }
           return (
             <View
               key={campaign.campaignId}
@@ -87,8 +112,7 @@ export function CampaignCarousel({ campaigns, mode, onPressCta, isCtaRoutable }:
                 // The flat tint alone gave the card no edge against the page
                 // background (near-identical luminance in dark mode), so a
                 // promo read as an unstyled block of text. A brand-coloured
-                // leading rule anchors it without needing artwork, which is
-                // optional and usually absent.
+                // leading rule anchors it without needing artwork.
                 borderLeftWidth: 3, borderLeftColor: theme.colors.brandPrimary,
               }}
               accessibilityRole="summary"
@@ -108,14 +132,6 @@ export function CampaignCarousel({ campaigns, mode, onPressCta, isCtaRoutable }:
                 <AppText variant="headingSmall">{campaign.title}</AppText>
                 {campaign.description ? (
                   <AppText variant="bodySmall" color="secondary" style={{ marginTop: theme.spacing.xxs }}>{campaign.description}</AppText>
-                ) : null}
-                {artwork ? (
-                  <Image
-                    source={{ uri: artwork }}
-                    style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: theme.radiusUsage.input, marginTop: theme.spacing.sm }}
-                    resizeMode="cover"
-                    accessibilityElementsHidden
-                  />
                 ) : null}
                 {/* A CTA whose destination isn't available at this ZIP used
                     to render as a greyed-out button with no explanation --

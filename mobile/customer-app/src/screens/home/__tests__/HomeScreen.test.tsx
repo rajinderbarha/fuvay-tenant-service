@@ -160,14 +160,38 @@ describe("HomeScreen", () => {
   it("renders the active booking card using only real returned fields, never a fabricated ETA/technician", () => {
     mockHomeQuery({
       data: baseHome({
-        activeBooking: { bookingId: asServiceBookingId("b-1"), bookingNumber: "SB-2026-01", status: "scheduled", createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt") },
+        activeBooking: {
+          bookingId: asServiceBookingId("b-1"), bookingNumber: "SB-2026-01", status: "scheduled",
+          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
+          assignmentStatus: null, issueSummary: null, preferredDate: null, preferredTimeWindow: null, providerName: null,
+        },
       }),
     });
     const { getByText, queryByText } = renderHome();
     expect(getByText("My Booking")).toBeTruthy();
+    // With no issueSummary, the title falls back to the booking number.
     expect(getByText("SB-2026-01")).toBeTruthy();
     expect(queryByText(/min away/i)).toBeNull();
     expect(queryByText(/Rakesh/i)).toBeNull();
+  });
+
+  it("prefers the real issue summary as the active booking title, with provider/schedule as subtitle", () => {
+    mockHomeQuery({
+      data: baseHome({
+        activeBooking: {
+          bookingId: asServiceBookingId("b-2"), bookingNumber: "SB-2026-02", status: "on_the_way",
+          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
+          assignmentStatus: "assigned", issueSummary: "AC Not Cooling",
+          preferredDate: "2026-08-07", preferredTimeWindow: "10:00 AM - 12:00 PM", providerName: "Guramrit",
+        },
+      }),
+    });
+    const { getByText } = renderHome();
+    expect(getByText("AC Not Cooling")).toBeTruthy();
+    expect(getByText(/Guramrit/)).toBeTruthy();
+    // Compact corner-pill badge copy (design-reference layout), not the
+    // longer prose used elsewhere in the app for the same status.
+    expect(getByText("On the way")).toBeTruthy();
   });
 
   it("renders enabled verticals only (backend already filters disabled ones)", () => {

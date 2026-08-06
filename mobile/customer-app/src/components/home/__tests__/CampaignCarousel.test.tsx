@@ -40,4 +40,31 @@ describe("CampaignCarousel", () => {
     fireEvent.press(getByText("Explore"));
     expect(onPressCta).toHaveBeenCalledWith(routable);
   });
+
+  it("renders an artwork-backed campaign as image-only, with no duplicated title/description text", () => {
+    // The uploaded artwork already has its own headline and CTA baked into
+    // the image itself (see the reference design's banner asset) --
+    // rendering the campaign's separate title/description text on top of it
+    // showed two different headlines on one card. An image-backed campaign
+    // is now just the image; the text/button layout is only a fallback for
+    // a campaign with no artwork (the other tests above).
+    const withArt = { ...campaign, artworkUrlLight: "https://cdn.example/banner.png" };
+    const { queryByText, getByLabelText } = renderWithProviders(
+      <CampaignCarousel campaigns={[withArt]} mode="light" onPressCta={() => {}} isCtaRoutable={() => true} />,
+    );
+    expect(queryByText("Monsoon Home Care")).toBeNull();
+    expect(queryByText("Save more")).toBeNull();
+    expect(queryByText("Explore")).toBeNull();
+    expect(getByLabelText("Monsoon Home Care")).toBeTruthy();
+  });
+
+  it("tapping an image-only banner fires the CTA when its destination is real", () => {
+    const onPressCta = jest.fn();
+    const withArt = { ...campaign, artworkUrlLight: "https://cdn.example/banner.png", ctaDeeplink: "app://category/home-services" };
+    const { getByLabelText } = renderWithProviders(
+      <CampaignCarousel campaigns={[withArt]} mode="light" onPressCta={onPressCta} isCtaRoutable={() => true} />,
+    );
+    fireEvent(getByLabelText("Monsoon Home Care"), "touchEnd");
+    expect(onPressCta).toHaveBeenCalledWith(withArt);
+  });
 });

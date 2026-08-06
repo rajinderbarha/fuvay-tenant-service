@@ -38,6 +38,11 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
           bookingNumber: dto.active_booking.booking_number ?? null,
           status: dto.active_booking.status,
           createdAt: dto.active_booking.created_at ? parseServerTimestamp(dto.active_booking.created_at, "active_booking.created_at") : null,
+          assignmentStatus: dto.active_booking.assignment_status ?? null,
+          issueSummary: dto.active_booking.issue_summary ?? null,
+          preferredDate: dto.active_booking.preferred_date ?? null,
+          preferredTimeWindow: dto.active_booking.preferred_time_window ?? null,
+          providerName: dto.active_booking.provider_name ?? null,
         }
       : null,
     unreadNotificationCount: dto.unread_notification_count,

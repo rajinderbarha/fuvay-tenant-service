@@ -49,6 +49,17 @@ export const homeActiveBookingDtoSchema = z.object({
   booking_number: z.string().nullable().optional(),
   status: z.string(),
   created_at: z.string().nullable().optional(),
+  // Added by the backend (customer_home service.py _get_active_booking_summary)
+  // specifically so this card could show something meaningful beyond a bare
+  // status slug -- this contract previously only declared the 4 fields
+  // above, so these were silently dropped even though the API already sent
+  // them. All still real booking data, never fabricated: nothing here is a
+  // guess at a technician, ETA, or price the backend doesn't have.
+  assignment_status: z.string().nullable().optional(),
+  issue_summary: z.string().nullable().optional(),
+  preferred_date: z.string().nullable().optional(),
+  preferred_time_window: z.string().nullable().optional(),
+  provider_name: z.string().nullable().optional(),
 }).nullable();
 
 export const homeServiceabilityDtoSchema = z.object({

@@ -7,7 +7,7 @@ import { AppScreen, AppText } from "../../components";
 import { OfflineBanner } from "../../components/OfflineBanner";
 import {
   CustomerHeader, ServiceSearch, CampaignCarousel, VerticalSwitcher, HomeServiceCard,
-  AssistantEntryCard, ActiveBookingCard, HomeSkeleton, HomeErrorState,
+  AssistantEntryCard, ActiveBookingCard, TrustBenefitCard, HomeSkeleton, HomeErrorState,
   NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal, GlobalServicesSection,
 } from "../../components/home";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
@@ -19,6 +19,16 @@ import type { HomeCampaign } from "../../domain/customerHome";
 import { HomeCategory } from "../../domain/customerHome";
 import { createServiceCardEntryContext, createAssistantCardEntryContext } from "../../domain/assistantEntry";
 import { CustomerTabsParamList } from "../../navigation/routeTypes";
+
+// Static marketing copy, not backend data. Restored per the reference
+// design's "Why Customers Choose Us" section -- this is the exact content
+// that shipped before, not new copy.
+const TRUST_STRIP_ITEMS = [
+  { key: "verified", label: "Verified experts", icon: "shield-checkmark-outline" as const },
+  { key: "pricing", label: "Clear pricing", icon: "pricetag-outline" as const },
+  { key: "updates", label: "Status updates", icon: "notifications-outline" as const },
+  { key: "support", label: "Support 24/7", icon: "headset-outline" as const },
+];
 
 /**
  * Real Home screen consuming GET /v1/customer/home. Confirmed contract
@@ -341,6 +351,16 @@ export function HomeScreen() {
           </View>
         </HomeSectionErrorBoundary>
 
+        <HomeSectionErrorBoundary sectionLabel="trust">
+          <AppText variant="bodyStrong" style={{ marginTop: theme.spacing.xl, marginBottom: theme.spacing.sm }}>
+            Why customers choose Fuvay
+          </AppText>
+          <View style={{ flexDirection: "row", gap: theme.spacing.sm, flexWrap: "wrap" }}>
+            {TRUST_STRIP_ITEMS.map(item => (
+              <TrustBenefitCard key={item.key} label={item.label} icon={item.icon} />
+            ))}
+          </View>
+        </HomeSectionErrorBoundary>
       </ScrollView>
 
       <LocationPickerModal

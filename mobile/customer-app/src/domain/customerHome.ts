@@ -26,15 +26,22 @@ export interface HomeCategory {
   iconUrl: string | null;
 }
 
-/** Deliberately narrow -- only the fields the real Home aggregation
- * endpoint returns (booking_id, booking_number, status, created_at).
- * No technician, ETA, schedule or rating exist in this payload; do not
- * add them to this type without a confirmed backend field. */
+/** Only fields the real Home aggregation endpoint returns. Extended
+ * 2026-08 to include issue_summary/provider_name/preferred_date/
+ * preferred_time_window/assignment_status, which the backend
+ * (customer_home service.py) already sends -- there is still no
+ * technician identity, live ETA, or rating in this payload; do not add
+ * those without a confirmed backend field. */
 export interface HomeActiveBooking {
   bookingId: ServiceBookingId;
   bookingNumber: string | null;
   status: string;
   createdAt: ServerTimestamp | null;
+  assignmentStatus: string | null;
+  issueSummary: string | null;
+  preferredDate: string | null;
+  preferredTimeWindow: string | null;
+  providerName: string | null;
 }
 
 export interface HomeServiceability {

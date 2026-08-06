@@ -46,13 +46,23 @@ describe("customer home adapter", () => {
     expect(home.bookableCategories[0].name).toBe("AC & Cooling");
   });
 
-  it("never carries a technician/ETA/rating field on active_booking (structurally impossible)", () => {
+  it("never carries a technician identity, live ETA, or rating on active_booking (structurally impossible)", () => {
+    // issue_summary/provider_name/preferred_date/preferred_time_window/
+    // assignment_status were added to the real backend payload (customer_home
+    // service.py) so the Home card could show something more than a bare
+    // status slug -- this is still a closed, known field set, just a wider
+    // one than before. What must never appear here is anything the backend
+    // doesn't send: a technician's name/photo, a live ETA countdown, or a
+    // rating -- none of those are in this DTO's schema at all.
     const home = adaptCustomerHome(parseCustomerHomeDto(rawHome({
       active_booking: { booking_id: "b-1", booking_number: "SB-1", status: "scheduled", created_at: "2026-08-01T09:00:00Z" },
     })));
     expect(home.activeBooking).toEqual({
       bookingId: "b-1", bookingNumber: "SB-1", status: "scheduled", createdAt: "2026-08-01T09:00:00Z",
+      assignmentStatus: null, issueSummary: null, preferredDate: null, preferredTimeWindow: null, providerName: null,
     });
-    expect(Object.keys(home.activeBooking as object)).toEqual(["bookingId", "bookingNumber", "status", "createdAt"]);
+    expect(Object.keys(home.activeBooking as object).sort()).toEqual(
+      ["assignmentStatus", "bookingId", "bookingNumber", "createdAt", "issueSummary", "preferredDate", "preferredTimeWindow", "providerName", "status"],
+    );
   });
 });
