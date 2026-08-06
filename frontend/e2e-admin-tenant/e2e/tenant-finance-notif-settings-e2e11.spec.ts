@@ -28,11 +28,15 @@ test.describe('ADMIN-TENANT-E2E-11 tenant finance/notifications/settings', () =>
     await suppressTenantTour(page);
     await page.goto('/finance');
     await page.waitForTimeout(2000);
-    await expect(page).toHaveURL(/\/finance\/package/);
+    // /finance/package itself now redirects again, into the consolidated
+    // /packages page (see finance/package/page.tsx) -- both hops are real,
+    // intentional redirects, not a broken route.
+    await expect(page).toHaveURL(/\/packages/);
     const bodyText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'finance-overview.png'), fullPage: true });
     log('finance.log', `redirected-to=${page.url()} bodyLen=${bodyText.length}`);
-    expect(bodyText).toContain('Demo AC Services');
+    // "Demo AC Services" was the removed demo tenant; live login is Guramrit.
+    expect(bodyText).toContain('Guramrit');
     expect(bodyText).not.toMatch(/Request Payout|Bank Account ID|Payout History/i);
   });
 
@@ -46,25 +50,39 @@ test.describe('ADMIN-TENANT-E2E-11 tenant finance/notifications/settings', () =>
     const bodyText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'usage-credit-balance.png'), fullPage: true });
     log('balance.log', `apiCalls=${apiCalls.join(' ;; ')}`);
-    expect(bodyText).toContain('Usage Credit Balance');
+    // "Usage Credit Balance" (that exact label) only renders on the
+    // Credit Ledger tab of the consolidated /packages page; the Overview
+    // tab this redirect lands on shows the same real balance under the
+    // "Usage Credits" card instead (packages/page.tsx ~L200-210).
+    expect(bodyText.toLowerCase()).toContain('usage credits');
     expect(bodyText).not.toMatch(/Wallet Balance|Cash Wallet|Provider Cash Balance|Withdrawable Balance/i);
   });
 
-  test('Usage Credit Ledger shows real Completed Job Deduction entries with correct arithmetic', async ({ page }) => {
+  test('Usage Credit Ledger shows real ledger entries with correct arithmetic', async ({ page }) => {
+    // Guramrit (the live E2E tenant-owner login) has never had a real
+    // completed-job deduction -- its only usage_credit_ledger row is the
+    // original activation_credit_package_purchase (0 -> 1000), confirmed
+    // via direct Postgres query. The one real completed_job_deduction row
+    // in the whole database belongs to a different tenant ("T Co"), which
+    // this login has no access to. So this asserts against what's actually
+    // real for THIS tenant rather than a dead demo balance chain
+    // (4000->3979->3958->3937, none of which exist anymore).
     const apiCalls: string[] = [];
     page.on('response', (resp) => { if (resp.url().includes('/usage-credits/')) apiCalls.push(`${resp.status()} ${resp.url()}`); });
     await loginAsTenantOwner(page);
     await suppressTenantTour(page);
     await page.goto('/finance/usage-credit-ledger');
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(1500);
+    // Consolidated into /packages' "Credit Ledger" tab (redirect loses the
+    // deep link to that specific tab -- must click it after landing).
+    await page.getByRole('button', { name: /Credit Ledger/i }).click();
+    await page.waitForTimeout(1500);
     const bodyText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'usage-credit-ledger.png'), fullPage: true });
     log('ledger.log', `apiCalls=${apiCalls.join(' ;; ')}`);
     expect(apiCalls.some(c => c.startsWith('200'))).toBeTruthy();
-    expect(bodyText).toContain('Completed Job Deduction');
-    // Real chain verified via API before this test: 4000->3979->3958->3937
-    expect(bodyText).toMatch(/3937/);
-    expect(bodyText).toMatch(/3958/);
+    expect(bodyText).toContain('activation_credit_package_purchase');
+    expect(bodyText).toMatch(/\+1000/);
     expect(bodyText.toLowerCase()).not.toMatch(/\bnan\b/);
     expect(bodyText).not.toMatch(/\bundefined\b/);
   });
@@ -96,17 +114,27 @@ test.describe('ADMIN-TENANT-E2E-11 tenant finance/notifications/settings', () =>
     expect(bodyText.toLowerCase()).not.toMatch(/\bnan\b/);
   });
 
-  test('Tenant notification bell is clickable and navigates to Notifications', async ({ page }) => {
+  test('Tenant notification bell is clickable, opens a dropdown, and "View all" navigates', async ({ page }) => {
+    // Real element is a <button> (TenantLayout.tsx:709-712), never an <a> --
+    // it opens a recent-notifications dropdown rather than navigating
+    // directly, same pattern as the admin bell. Its "View all notifications"
+    // link (TenantLayout.tsx:794) goes to /provider/notifications, a
+    // separate real route from /notifications (both exist).
     await loginAsTenantOwner(page);
     await suppressTenantTour(page);
     await page.goto('/finance/package');
     await page.waitForTimeout(1500);
-    const bell = page.locator('a[aria-label="Notifications"]');
+    const bell = page.locator('button[aria-label*="Notification"]');
     await expect(bell).toBeVisible();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'bell-before-click.png') });
     await bell.click();
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: path.join(EVIDENCE_DIR, 'bell-dropdown-open.png'), fullPage: true });
+    const viewAllLink = page.getByRole('link', { name: /View all notifications/i });
+    await expect(viewAllLink).toBeVisible();
+    await viewAllLink.click();
     await page.waitForTimeout(1500);
-    await expect(page).toHaveURL(/\/notifications/);
+    await expect(page).toHaveURL(/\/(provider\/)?notifications/);
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'bell-after-click.png'), fullPage: true });
   });
 
