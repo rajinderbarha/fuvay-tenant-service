@@ -141,8 +141,16 @@ class MediaStorageService:
         rel_dir = pathlib.Path(media_context)
         abs_dir = UPLOADS_DIR / rel_dir
         abs_dir.mkdir(parents=True, exist_ok=True)
-        storage_key = str(rel_dir / stored_name)
-        abs_path = UPLOADS_DIR / storage_key
+        # `str(PurePath)` uses the OS separator, so on Windows this produced
+        # storage_key "category_icon\<name>.png" and therefore a public_url
+        # of "/uploads/category_icon\<name>.png" -- a backslash is not a path
+        # separator in a URL, so that value is only usable by accident on a
+        # local dev server and breaks on any real client/CDN (and is stored
+        # in the DB, so it outlives the request). storage_key is a URL/object
+        # key, not a filesystem path: always join it with "/", and keep the
+        # filesystem path a separate, properly-constructed Path.
+        storage_key = f"{media_context}/{stored_name}"
+        abs_path = abs_dir / stored_name
         abs_path.write_bytes(file_bytes)
         public_url = f"/uploads/{storage_key}"
         return StoredFile(
