@@ -100,9 +100,13 @@ describe("HomeScreen", () => {
 
   it("renders only backend-returned bookable categories, with no price label when none is provided", () => {
     mockHomeQuery({ data: baseHome() });
-    const { getByText } = renderHome();
+    const { getByText, queryByText } = renderHome();
     expect(getByText("AC & Cooling")).toBeTruthy();
-    expect(getByText("View details")).toBeTruthy();
+    // The point of this assertion is that a card with no price shows a
+    // neutral action label rather than a fabricated price -- the label
+    // itself changed from "View details" to the more actionable "Book now".
+    expect(getByText("Book now")).toBeTruthy();
+    expect(queryByText(/₹/)).toBeNull();
   });
 
   it("never renders ₹0 for any service", () => {
@@ -150,10 +154,29 @@ describe("HomeScreen", () => {
   });
 
   it("renders enabled verticals only (backend already filters disabled ones)", () => {
-    mockHomeQuery({ data: baseHome() });
+    // Needs TWO verticals to assert anything about the switcher: with a
+    // single vertical it is intentionally hidden (a one-option switcher is
+    // not a switcher -- it rendered as a full-width brand pill that looked
+    // like a primary action but did nothing). Disabled verticals are still
+    // absent because the backend never sends them.
+    mockHomeQuery({
+      data: baseHome({
+        enabledVerticals: [
+          { verticalId: asVerticalId("v-1"), key: "home_services", label: "Home Services", icon: "home-outline" },
+          { verticalId: asVerticalId("v-2"), key: "beauty", label: "Beauty", icon: "sparkles-outline" },
+        ],
+      }),
+    });
     const { getByText, queryByText } = renderHome();
     expect(getByText("Home Services")).toBeTruthy();
+    expect(getByText("Beauty")).toBeTruthy();
     expect(queryByText("Real Estate")).toBeNull();
+  });
+
+  it("hides the vertical switcher entirely when only one vertical is enabled", () => {
+    mockHomeQuery({ data: baseHome() }); // fixture has exactly one vertical
+    const { queryByRole } = renderHome();
+    expect(queryByRole("tablist")).toBeNull();
   });
 
   it("tapping a service card navigates to Assistant carrying real backend context (category, slug, zip) and no customer identity", () => {

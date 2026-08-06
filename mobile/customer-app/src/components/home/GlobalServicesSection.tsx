@@ -5,6 +5,7 @@ import { AppText } from "../AppText";
 import { Icon } from "../Icon";
 import { useGlobalServicesQuery } from "../../api/globalServices/useGlobalServicesQuery";
 import { GlobalService } from "../../domain/globalServices";
+import { resolveGlobalServiceIcon } from "../../domain/globalServiceIcon";
 import { GlobalServiceInquiryModal } from "./GlobalServiceInquiryModal";
 
 export interface GlobalServicesSectionProps {
@@ -34,7 +35,10 @@ export function GlobalServicesSection({ defaultName, defaultZipcode }: GlobalSer
 
   return (
     <View>
-      <AppText variant="bodyStrong" style={{ marginBottom: theme.spacing.sm }}>More from Fuvay</AppText>
+      <AppText variant="headingSmall">More from Fuvay</AppText>
+      <AppText variant="caption" color="tertiary" style={{ marginTop: 2, marginBottom: theme.spacing.sm }}>
+        Available everywhere · we call you back
+      </AppText>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         {services.map(service => (
           <Pressable
@@ -58,7 +62,16 @@ export function GlobalServicesSection({ defaultName, defaultZipcode }: GlobalSer
               {service.iconUrl ? (
                 <Image source={{ uri: service.iconUrl }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
               ) : (
-                <Icon name="call-outline" size="standard" color={theme.colors.iconDefault} decorative />
+                // Was a hardcoded `call-outline` for every card, so a row of
+                // global services was a row of identical grey phone icons.
+                // Admin-uploaded iconUrl still wins; this only varies the
+                // fallback, which today is what every card actually renders.
+                <Icon
+                  name={resolveGlobalServiceIcon(service.name)}
+                  size="standard"
+                  color={theme.colors.brandPrimaryStrong}
+                  decorative
+                />
               )}
             </View>
             <AppText variant="bodyStrong" numberOfLines={2}>{service.name}</AppText>

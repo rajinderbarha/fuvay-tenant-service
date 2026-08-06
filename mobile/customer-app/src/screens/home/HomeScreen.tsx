@@ -7,7 +7,7 @@ import { AppScreen, AppText } from "../../components";
 import { OfflineBanner } from "../../components/OfflineBanner";
 import {
   CustomerHeader, ServiceSearch, CampaignCarousel, VerticalSwitcher, HomeServiceCard,
-  AssistantEntryCard, ActiveBookingCard, TrustBenefitCard, HowItWorksSection, HomeSkeleton, HomeErrorState,
+  AssistantEntryCard, ActiveBookingCard, HomeSkeleton, HomeErrorState,
   NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal, GlobalServicesSection,
 } from "../../components/home";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
@@ -19,13 +19,6 @@ import type { HomeCampaign } from "../../domain/customerHome";
 import { HomeCategory } from "../../domain/customerHome";
 import { createServiceCardEntryContext, createAssistantCardEntryContext } from "../../domain/assistantEntry";
 import { CustomerTabsParamList } from "../../navigation/routeTypes";
-
-const TRUST_STRIP_ITEMS = [
-  { key: "verified", label: "Verified experts", icon: "shield-checkmark-outline" as const },
-  { key: "pricing", label: "Clear pricing", icon: "pricetag-outline" as const },
-  { key: "updates", label: "Status updates", icon: "notifications-outline" as const },
-  { key: "support", label: "Support 24/7", icon: "headset-outline" as const },
-];
 
 /**
  * Real Home screen consuming GET /v1/customer/home. Confirmed contract
@@ -231,6 +224,18 @@ export function HomeScreen() {
           <ServiceSearch value={searchValue} onChangeText={setSearchValue} />
         </View>
 
+        {/* An in-flight job is the single most common reason a customer
+            reopens the app, so it sits directly under the search box
+            instead of below the promo carousel and service grid where it
+            was previously buried. */}
+        {home.activeBooking ? (
+          <HomeSectionErrorBoundary sectionLabel="active booking">
+            <View style={{ marginTop: theme.spacing.lg }}>
+              <ActiveBookingCard booking={home.activeBooking} onPress={() => navigation.navigate("Bookings")} />
+            </View>
+          </HomeSectionErrorBoundary>
+        ) : null}
+
         <HomeSectionErrorBoundary sectionLabel="promotions">
           <View style={{ marginTop: theme.spacing.lg }}>
             {/* CTAs are now live for deep links that resolve to a real
@@ -245,20 +250,29 @@ export function HomeScreen() {
           </View>
         </HomeSectionErrorBoundary>
 
-        <HomeSectionErrorBoundary sectionLabel="verticals">
-          <View style={{ marginTop: theme.spacing.lg }}>
-            <VerticalSwitcher
-              verticals={home.enabledVerticals}
-              selectedVerticalKey={selectedVerticalKey}
-              onSelect={v => setSelectedVerticalKey(v.key)}
-            />
-          </View>
-        </HomeSectionErrorBoundary>
+        {/* The spacer View is inside the length check too: VerticalSwitcher
+            self-hides with one vertical, but an always-rendered wrapper
+            would still contribute its top margin, leaving a phantom gap
+            where the switcher used to be. */}
+        {home.enabledVerticals.length > 1 ? (
+          <HomeSectionErrorBoundary sectionLabel="verticals">
+            <View style={{ marginTop: theme.spacing.lg }}>
+              <VerticalSwitcher
+                verticals={home.enabledVerticals}
+                selectedVerticalKey={selectedVerticalKey}
+                onSelect={v => setSelectedVerticalKey(v.key)}
+              />
+            </View>
+          </HomeSectionErrorBoundary>
+        ) : null}
 
         <HomeSectionErrorBoundary sectionLabel="services">
           <View style={{ marginTop: theme.spacing.xl }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.sm }}>
-              <AppText variant="bodyStrong">Services near you</AppText>
+              {/* Section titles were `bodyStrong` (15px) -- the same weight
+                  as a card title, so nothing signalled the start of a
+                  section and the page read as one undifferentiated column. */}
+              <AppText variant="headingSmall">Services near you</AppText>
               {home.address.zipcode ? (
                 <AppText variant="caption" color="tertiary">{
                   searchValue.trim()
@@ -277,14 +291,28 @@ export function HomeScreen() {
                 {`No services match "${searchValue.trim()}".`}
               </AppText>
             ) : (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
-                {visibleCategories.map(category => (
-                  <HomeServiceCard
-                    key={category.categoryId}
-                    category={category}
-                    onPress={() => navigateToService(category, home.address!.zipcode as string)}
-                  />
-                ))}
+              // Chunked into explicit 2-up rows rather than a wrapping
+              // flex row. With `flexWrap` + `space-between`, a row holding
+              // a single card (any odd count -- and 1 is the common case
+              // for a ZIP served by one provider) left a gaping empty half
+              // row. Padding the last row with a spacer keeps the final
+              // card the same width as every other card.
+              <View style={{ gap: theme.spacing.sm }}>
+                {Array.from({ length: Math.ceil(visibleCategories.length / 2) }).map((_, rowIndex) => {
+                  const row = visibleCategories.slice(rowIndex * 2, rowIndex * 2 + 2);
+                  return (
+                    <View key={rowIndex} style={{ flexDirection: "row", gap: theme.spacing.sm }}>
+                      {row.map(category => (
+                        <HomeServiceCard
+                          key={category.categoryId}
+                          category={category}
+                          onPress={() => navigateToService(category, home.address!.zipcode as string)}
+                        />
+                      ))}
+                      {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
+                    </View>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -295,14 +323,6 @@ export function HomeScreen() {
             <AssistantEntryCard onPress={() => navigateToGenericAssistant(home.address!.zipcode as string)} />
           </View>
         </HomeSectionErrorBoundary>
-
-        {home.activeBooking ? (
-          <HomeSectionErrorBoundary sectionLabel="active booking">
-            <View style={{ marginTop: theme.spacing.xl }}>
-              <ActiveBookingCard booking={home.activeBooking} onPress={() => navigation.navigate("Bookings")} />
-            </View>
-          </HomeSectionErrorBoundary>
-        ) : null}
 
         {/* Fixed, nationwide section -- never filtered by this ZIP's
             bookable_categories, unlike "Services near you" above (see
@@ -316,25 +336,6 @@ export function HomeScreen() {
           </View>
         </HomeSectionErrorBoundary>
 
-        {/* Explains the flow to a first-time customer -- in particular that
-            they see a real slot before committing and are not left waiting
-            for a callback, neither of which is discoverable otherwise. */}
-        <HomeSectionErrorBoundary sectionLabel="how it works">
-          <View style={{ marginTop: theme.spacing.xl }}>
-            <HowItWorksSection />
-          </View>
-        </HomeSectionErrorBoundary>
-
-        <HomeSectionErrorBoundary sectionLabel="trust">
-          <AppText variant="bodyStrong" style={{ marginTop: theme.spacing.xl, marginBottom: theme.spacing.sm }}>
-            Why customers choose Fuvay
-          </AppText>
-          <View style={{ flexDirection: "row", gap: theme.spacing.sm, flexWrap: "wrap" }}>
-            {TRUST_STRIP_ITEMS.map(item => (
-              <TrustBenefitCard key={item.key} label={item.label} icon={item.icon} />
-            ))}
-          </View>
-        </HomeSectionErrorBoundary>
       </ScrollView>
 
       <LocationPickerModal

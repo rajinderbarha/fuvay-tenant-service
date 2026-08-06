@@ -81,7 +81,16 @@ export function CampaignCarousel({ campaigns, mode, onPressCta, isCtaRoutable }:
           return (
             <View
               key={campaign.campaignId}
-              style={{ width: CARD_WIDTH, borderRadius: theme.radiusUsage.card, overflow: "hidden", backgroundColor: theme.colors.campaignBackground }}
+              style={{
+                width: CARD_WIDTH, borderRadius: theme.radiusUsage.card, overflow: "hidden",
+                backgroundColor: theme.colors.campaignBackground,
+                // The flat tint alone gave the card no edge against the page
+                // background (near-identical luminance in dark mode), so a
+                // promo read as an unstyled block of text. A brand-coloured
+                // leading rule anchors it without needing artwork, which is
+                // optional and usually absent.
+                borderLeftWidth: 3, borderLeftColor: theme.colors.brandPrimary,
+              }}
               accessibilityRole="summary"
               accessibilityLabel={`Offer ${i + 1} of ${campaigns.length}. ${campaign.title}. ${campaign.description ?? ""}`}
             >
@@ -108,15 +117,25 @@ export function CampaignCarousel({ campaigns, mode, onPressCta, isCtaRoutable }:
                     accessibilityElementsHidden
                   />
                 ) : null}
-                {campaign.ctaLabel ? (
-                  <View style={{ marginTop: theme.spacing.sm, alignSelf: "flex-start" }}>
+                {/* A CTA whose destination isn't available at this ZIP used
+                    to render as a greyed-out button with no explanation --
+                    permanently dead for that customer, and reading as
+                    "broken app" rather than "not offered here". A campaign
+                    can legitimately target a service the viewer can't book
+                    (e.g. a plumbing promo shown in an AC-only ZIP), so the
+                    honest presentation is to drop the button and say why. */}
+                {campaign.ctaLabel && ctaEnabled ? (
+                  <View style={{ marginTop: theme.spacing.base, alignSelf: "flex-start" }}>
                     <AppButton
                       label={campaign.ctaLabel}
                       onPress={() => onPressCta(campaign)}
-                      disabled={!ctaEnabled}
                       size="compact"
                     />
                   </View>
+                ) : campaign.ctaLabel ? (
+                  <AppText variant="caption" color="tertiary" style={{ marginTop: theme.spacing.sm }}>
+                    Not available at your location yet
+                  </AppText>
                 ) : null}
               </View>
             </View>

@@ -5,6 +5,7 @@ import { AppText } from "../AppText";
 import { Icon } from "../Icon";
 import { HomeCategory } from "../../domain/customerHome";
 import { ServicePriceState, resolveServicePriceDisplay } from "../../domain/servicePricing";
+import { resolveCategoryIcon } from "../../domain/categoryIcon";
 
 export interface HomeServiceCardProps {
   category: HomeCategory;
@@ -28,29 +29,44 @@ export function HomeServiceCard({ category, priceState, onPress }: HomeServiceCa
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${category.name}${price ? `, ${price.label}` : ""}`}
-      style={{
-        width: "48%", padding: theme.spacing.sm, borderRadius: theme.radiusUsage.card,
-        backgroundColor: theme.colors.surfaceDefault, borderWidth: 1, borderColor: theme.colors.borderSubtle,
-        marginBottom: theme.spacing.sm,
-      }}
+      style={({ pressed }) => ({
+        // Width is set by the parent grid, not here. It used to be a
+        // hardcoded "48%", which meant a ZIP with a single bookable
+        // category rendered one half-width tile beside a gaping empty
+        // half-row -- correct data, broken-looking layout.
+        flex: 1,
+        padding: theme.spacing.base,
+        borderRadius: theme.radiusUsage.card,
+        backgroundColor: theme.colors.surfaceDefault,
+        borderWidth: 1,
+        borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle,
+        opacity: pressed ? 0.9 : 1,
+      })}
     >
       <View
         style={{
-          width: 40, height: 40, borderRadius: theme.radiusUsage.input,
-          backgroundColor: theme.colors.surfaceInteractive, alignItems: "center", justifyContent: "center",
+          width: 44, height: 44, borderRadius: theme.radiusUsage.input,
+          backgroundColor: theme.colors.brandPrimaryMuted, alignItems: "center", justifyContent: "center",
           marginBottom: theme.spacing.sm, overflow: "hidden",
         }}
       >
         {category.iconUrl ? (
           <Image source={{ uri: category.iconUrl }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
         ) : (
-          <Icon name="construct-outline" size="standard" color={theme.colors.iconDefault} decorative />
+          // Distinct per-category glyph rather than one generic wrench for
+          // everything -- see domain/categoryIcon.ts.
+          <Icon
+            name={resolveCategoryIcon(category.slug)}
+            size="standard"
+            color={theme.colors.brandPrimaryStrong}
+            decorative
+          />
         )}
       </View>
-      <AppText variant="bodyStrong" numberOfLines={1}>{category.name}</AppText>
+      <AppText variant="bodyStrong" numberOfLines={2}>{category.name}</AppText>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: theme.spacing.xxs }}>
         <AppText variant="bodySmall" color={price?.isNumericPrice ? "secondary" : "tertiary"} numberOfLines={1}>
-          {price?.label ?? "View details"}
+          {price?.label ?? "Book now"}
         </AppText>
         <Icon name="chevron-forward" size="compact" color={theme.colors.iconDefault} decorative />
       </View>

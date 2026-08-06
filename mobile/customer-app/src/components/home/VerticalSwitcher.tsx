@@ -20,7 +20,11 @@ const FALLBACK_ICON: IconProps["name"] = "grid-outline";
 
 export function VerticalSwitcher({ verticals, selectedVerticalKey, onSelect }: VerticalSwitcherProps) {
   const { theme } = useTheme();
-  if (verticals.length === 0) return null;
+  // A switcher with one option is not a switcher -- it rendered as a
+  // full-width brand-coloured pill ("Home Services") that looked like a
+  // primary action but did nothing, directly above the section it was
+  // already filtering. Hidden until there is an actual choice to make.
+  if (verticals.length <= 1) return null;
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityRole="tablist">

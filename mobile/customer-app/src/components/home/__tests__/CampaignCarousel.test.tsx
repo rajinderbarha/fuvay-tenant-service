@@ -16,14 +16,18 @@ describe("CampaignCarousel", () => {
     expect(queryByLabelText(/Promotional offers/)).toBeNull();
   });
 
-  it("keeps a CTA non-interactive when its deep link has no reachable destination", () => {
+  it("replaces the CTA with an explanation when its deep link has no reachable destination", () => {
     // `app://offers` passes the backend allowlist but there is no offers
-    // screen, so the button must stay disabled rather than go nowhere.
+    // screen. This used to render a permanently greyed-out button, which
+    // reads as a broken app rather than "not offered where you are" -- the
+    // button is now dropped entirely in favour of a plain explanation, so
+    // there is nothing left to press and nothing to navigate nowhere.
     const onPressCta = jest.fn();
-    const { getByText } = renderWithProviders(
+    const { queryByText, getByText } = renderWithProviders(
       <CampaignCarousel campaigns={[campaign]} mode="light" onPressCta={onPressCta} isCtaRoutable={() => false} />,
     );
-    fireEvent.press(getByText("Explore"));
+    expect(queryByText("Explore")).toBeNull();
+    expect(getByText("Not available at your location yet")).toBeTruthy();
     expect(onPressCta).not.toHaveBeenCalled();
   });
 
