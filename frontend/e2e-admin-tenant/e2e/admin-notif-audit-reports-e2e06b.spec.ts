@@ -14,15 +14,25 @@ function log(file: string, line: string) {
 test.describe('ADMIN-TENANT-E2E-06B notifications/audit/reports browser', () => {
   test.skip(APP !== 'admin', 'admin-only');
 
-  test('notification bell is visible, clickable, navigates, no fake badge when zero', async ({ page }) => {
+  test('notification bell is visible, clickable, opens a dropdown, "View all" navigates, no fake badge when zero', async ({ page }) => {
+    // Bell no longer navigates directly on click (AdminLayout.tsx:898-904):
+    // it opens a dropdown of recent notifications with a "View all
+    // notifications" link, deliberately so the admin doesn't lose their
+    // place just to peek. Old test assumed direct navigation; that behavior
+    // was intentionally replaced, not broken.
     await loginAsSuperAdmin(page);
-    // Real element is a <button> (components/layout/AdminLayout.tsx:937-939),
-    // never an <a> -- fixed after confirming via source read (Final Phase audit).
     const bell = page.locator('button[aria-label*="Notification"]');
     await expect(bell).toBeVisible();
     const badgeCountBefore = await bell.locator('span').count();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'bell-before-click.png') });
     await bell.click();
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: path.join(EVIDENCE_DIR, 'bell-dropdown-open.png'), fullPage: true });
+    const dropdownBody = await page.locator('body').innerText();
+    expect(dropdownBody).not.toMatch(/undefined|NaN/);
+    const viewAllLink = page.getByRole('link', { name: /View all notifications/i });
+    await expect(viewAllLink).toBeVisible();
+    await viewAllLink.click();
     await page.waitForTimeout(1000);
     await expect(page).toHaveURL(/\/admin\/notifications/);
     const bodyText = await page.locator('body').innerText();
