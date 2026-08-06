@@ -3468,7 +3468,8 @@ export const profilePhotoApi = {
 // picker doesn't re-hit Postgres.
 export type IconLibraryContext =
   | "category_icon" | "service_icon" | "brand_logo"
-  | "issue_icon" | "checklist_icon" | "question_icon" | "global_service_icon";
+  | "issue_icon" | "checklist_icon" | "question_icon" | "global_service_icon"
+  | "banner_artwork";
 
 export const iconLibraryApi = {
   list: (mediaContext: IconLibraryContext) =>

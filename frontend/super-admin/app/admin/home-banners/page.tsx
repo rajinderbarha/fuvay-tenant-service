@@ -26,6 +26,8 @@ import {
 import {
   Card, Badge, Btn, Input, Modal, Spinner, Skeleton, SectionHeader, RowActions,
 } from "../../../components/shared/ui";
+import { IconPicker } from "../../../components/shared/IconPicker";
+import DeeplinkPicker from "./DeeplinkPicker";
 
 type FormState = {
   internal_name: string;
@@ -313,21 +315,28 @@ export default function HomeBannersPage() {
             onChange={v => setForm(f => ({ ...f, description: v }))} />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Input label="Artwork (light mode)" value={form.artwork_url_light}
-              onChange={v => setForm(f => ({ ...f, artwork_url_light: v }))} />
-            <Input label="Artwork (dark mode)" value={form.artwork_url_dark}
-              onChange={v => setForm(f => ({ ...f, artwork_url_dark: v }))} />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Input label="Button label" value={form.cta_label}
-              onChange={v => setForm(f => ({ ...f, cta_label: v }))} />
-            <Input
-              label="Button destination" value={form.cta_deeplink}
-              hint={`Must start with: ${CAMPAIGN_DEEPLINK_PREFIXES.join(", ")}`}
-              onChange={v => setForm(f => ({ ...f, cta_deeplink: v }))}
+            <IconPicker
+              label="Artwork (light mode)" context="banner_artwork" size={88} maxMb={5}
+              value={form.artwork_url_light}
+              onChange={v => setForm(f => ({ ...f, artwork_url_light: v ?? "" }))}
+            />
+            <IconPicker
+              label="Artwork (dark mode)" context="banner_artwork" size={88} maxMb={5}
+              value={form.artwork_url_dark}
+              onChange={v => setForm(f => ({ ...f, artwork_url_dark: v ?? "" }))}
             />
           </div>
+          <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>
+            No artwork? The banner still renders as a clean text card — artwork is optional, not required.
+          </p>
+
+          <Input label="Button label" value={form.cta_label}
+            hint="Leave empty for a plain informational banner with no button."
+            onChange={v => setForm(f => ({ ...f, cta_label: v }))} />
+          <DeeplinkPicker
+            value={form.cta_deeplink}
+            onChange={v => setForm(f => ({ ...f, cta_deeplink: v }))}
+          />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Input label="Priority" type="number" value={form.priority}

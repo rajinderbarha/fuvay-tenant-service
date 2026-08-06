@@ -13,16 +13,20 @@ import { iconLibraryApi, type IconLibraryContext, type MediaAsset } from "../../
 import { useApi } from "../../hooks/useApi";
 
 export function IconPicker({
-  value, onChange, context, label, shape = "square",
+  value, onChange, context, label, shape = "square", size: sizeProp, maxMb = 2,
 }: {
   value: string | null | undefined;
   onChange: (url: string | null) => void;
   context: IconLibraryContext;
   label?: string;
   shape?: "square" | "circle";
+  /** Thumbnail px size. Defaults to 56 (icon use); pass larger for banner artwork previews. */
+  size?: number;
+  /** Must match the backend's per-context cap (app/engines/media/validation.py). Defaults to 2MB. */
+  maxMb?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const size = 56;
+  const size = sizeProp ?? 56;
   const radius = shape === "circle" ? "50%" : "var(--radius-lg)";
 
   return (
@@ -60,6 +64,7 @@ export function IconPicker({
       {open && (
         <IconPickerModal
           context={context}
+          maxMb={maxMb}
           onClose={() => setOpen(false)}
           onSelect={url => { onChange(url); setOpen(false); }}
         />
@@ -69,9 +74,10 @@ export function IconPicker({
 }
 
 function IconPickerModal({
-  context, onClose, onSelect,
+  context, maxMb, onClose, onSelect,
 }: {
   context: IconLibraryContext;
+  maxMb: number;
   onClose: () => void;
   onSelect: (url: string) => void;
 }) {
@@ -91,13 +97,13 @@ function IconPickerModal({
         ))}
       </div>
       {tab === "upload"
-        ? <UploadTab context={context} onSelect={onSelect} />
+        ? <UploadTab context={context} maxMb={maxMb} onSelect={onSelect} />
         : <ExistingTab context={context} onSelect={onSelect} />}
     </Modal>
   );
 }
 
-function UploadTab({ context, onSelect }: { context: IconLibraryContext; onSelect: (url: string) => void }) {
+function UploadTab({ context, maxMb, onSelect }: { context: IconLibraryContext; maxMb: number; onSelect: (url: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -106,7 +112,7 @@ function UploadTab({ context, onSelect }: { context: IconLibraryContext; onSelec
   async function handleFile(file: File) {
     setError(null);
     if (!file.type.startsWith("image/")) { setError("Please choose an image file."); return; }
-    if (file.size > 2 * 1024 * 1024) { setError("Image must be 2 MB or smaller."); return; }
+    if (file.size > maxMb * 1024 * 1024) { setError(`Image must be ${maxMb} MB or smaller.`); return; }
     setUploading(true);
     try {
       const asset: MediaAsset = await iconLibraryApi.upload(file, context);
@@ -141,7 +147,7 @@ function UploadTab({ context, onSelect }: { context: IconLibraryContext; onSelec
         <p style={{ fontSize: 13, fontWeight: 600, margin: "0 0 2px" }}>
           {uploading ? "Uploading…" : "Drag & drop an image, or click to browse"}
         </p>
-        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>PNG, JPG, WEBP or GIF — up to 2 MB</p>
+        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>PNG, JPG, WEBP or GIF — up to {maxMb} MB</p>
         <input
           ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden
           onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}

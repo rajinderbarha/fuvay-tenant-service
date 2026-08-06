@@ -94,6 +94,12 @@ const NAV_GROUPS: NavGroup[] = [
       // nationwide (mobile app's fixed section) -- independent of vertical/
       // category/tenant serviceability, see app/engines/global_services.
       { id: "global-services", href: "/admin/global-services", label: "Global Services", icon: <PhoneCall size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      // Ad banners on the customer app home screen (customer_campaigns
+      // engine: artwork light/dark, CTA deeplink, schedule window, ZIP/city
+      // targeting). The page existed with full CRUD but had NO nav entry,
+      // so admins had no way to reach it -- the whole banner feature was
+      // unusable from the console.
+      { id: "home-banners",  href: "/admin/home-banners",  label: "Home Banners",    icon: <Megaphone size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       // "Notification Settings" folded into Notifications as a "Settings"
       // tab 2026-08-05 at explicit user request -- removed as a separate
