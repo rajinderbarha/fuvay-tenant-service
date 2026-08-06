@@ -511,7 +511,16 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
 
             <Section title="Provider">
               <Field label="Provider" value={providerSnapshot.provider_name} />
-              <Field label="Badges" value={Array.isArray(providerSnapshot.public_badges) ? providerSnapshot.public_badges.join(", ") : "—"} />
+              {/* Real bug fixed here: public_badges is an array of
+                  {name, icon, color} objects (see lib/api.ts
+                  MatchingDiagnosticsBadge), not strings -- .join(", ") on an
+                  array of objects renders "[object Object], [object Object]"
+                  rather than crashing, so this silently showed garbage text
+                  on every job that had a badge instead of erroring visibly. */}
+              <Field label="Badges" value={Array.isArray(providerSnapshot.public_badges)
+                ? providerSnapshot.public_badges.map((b: { name?: string } | string) =>
+                    typeof b === "string" ? b : b?.name ?? "").filter(Boolean).join(", ") || "—"
+                : "—"} />
               <Field label="Tenant ID" value={
                 <span style={{ fontFamily: "monospace", fontSize: 12 }}>{d.tenant_id}</span>
               } />

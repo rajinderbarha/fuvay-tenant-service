@@ -1,18 +1,45 @@
 "use client";
 import React, { useState, useCallback } from "react";
+import { Award, Star, ShieldCheck, UserPlus } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Input, SectionHeader } from "../../../../components/shared/ui";
-import { autoPriceOptionsApi, type MatchingDiagnosticsResult } from "../../../../lib/api";
+import { autoPriceOptionsApi, type MatchingDiagnosticsResult, type MatchingDiagnosticsBadge } from "../../../../lib/api";
 import { useAction } from "../../../../hooks/useApi";
+
+// Matches the backend's PROVIDER_LEVELS icon keys
+// (auto_price_options_router.py) -- one lucide icon per level.
+const LEVEL_ICON: Record<string, React.ComponentType<{ size?: number }>> = {
+  "award": Award, "star": Star, "shield-check": ShieldCheck, "user-plus": UserPlus,
+};
+
+function ProviderLevelBadge({ level }: { level: MatchingDiagnosticsBadge }) {
+  const Icon = LEVEL_ICON[level.icon] ?? ShieldCheck;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600,
+      padding: "3px 10px", borderRadius: 999, color: level.color,
+      background: `${level.color}1a`, border: `1px solid ${level.color}40`,
+    }}>
+      <Icon size={13} />{level.name}
+    </span>
+  );
+}
 import { Search, CheckCircle2, XCircle } from "lucide-react";
 
 const money = (v: number | null | undefined) =>
   v == null ? "—" : `₹${v.toLocaleString("en-IN")}`;
 
+// Was hardcoded to a category_id/master_service_id pair that no longer
+// exists (same class of bug as the usage-credits page's dead demo tenant
+// default). Every admin opening this tool ran diagnostics against nonexistent
+// catalog rows by default -- the "no eligible provider" result looked like a
+// real matching failure rather than an unset/stale form. No correct row to
+// default to, so this now starts genuinely blank; city/zipcode are also
+// cleared since they only made sense paired with the specific service they
+// were chosen to demonstrate.
 const BLANK_FORM = {
-  category_id: "0888d283-9a52-4d7b-8612-9f47fa8357a1",
-  master_service_id: "a96e625a-60e1-46c0-bde4-ccbb88da50a2",
-  city: "Ludhiana", zipcode: "141001", offering_type_id: "", brand_id: "",
+  category_id: "", master_service_id: "",
+  city: "", zipcode: "", offering_type_id: "", brand_id: "",
 };
 
 export default function MatchingDiagnosticsPage() {
@@ -48,7 +75,8 @@ export default function MatchingDiagnosticsPage() {
           <Input label="Type ID (optional)" value={form.offering_type_id} onChange={v => setForm(f => ({ ...f, offering_type_id: v }))}/>
           <Input label="Brand ID (optional)" value={form.brand_id} onChange={v => setForm(f => ({ ...f, brand_id: v }))}/>
         </div>
-        <Btn size="sm" variant="primary" loading={runAction.loading} onClick={handleRun}>
+        <Btn size="sm" variant="primary" loading={runAction.loading} onClick={handleRun}
+          disabled={!form.category_id.trim() || !form.master_service_id.trim() || !form.city.trim() || !form.zipcode.trim()}>
           <Search size={13} style={{ marginRight: 4 }}/>Run Diagnostics
         </Btn>
         {runAction.error && (
@@ -111,7 +139,7 @@ export default function MatchingDiagnosticsPage() {
                     {result.selected_provider.customer_visible_reason}
                   </p>
                   <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                    {result.selected_provider.public_badges.map(b => <Badge key={b} variant="info" size="sm">{b}</Badge>)}
+                    <ProviderLevelBadge level={result.selected_provider.provider_level} />
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
@@ -136,7 +164,10 @@ export default function MatchingDiagnosticsPage() {
               {result.top_candidates.map((c, i) => (
                 <div key={c.tenant_id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0",
                   borderBottom: i < result.top_candidates.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <span style={{ fontSize: 12 }}>{i + 1}. {c.provider_name}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                    {i + 1}. {c.provider_name}
+                    <ProviderLevelBadge level={c.provider_level} />
+                  </span>
                   <span style={{ fontSize: 12, fontWeight: 700 }}>{c.internal_score.toFixed(1)}</span>
                 </div>
               ))}

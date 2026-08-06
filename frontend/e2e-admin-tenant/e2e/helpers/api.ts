@@ -73,7 +73,9 @@ export const SEED = {
   tenantId: '244beeec-fedc-452e-8054-317e45557d4d',
   tenantName: 'Guramrit',
   categorySlug: 'air-conditioning',
+  categoryId: '59d8f3aa-932d-429e-93bd-8d4f2ed615c3', // air-conditioning
   offeringSlug: 'ac-service',
+  masterServiceId: '3c6720b0-9bf6-4dbd-84cc-83d8058e18a2', // ac-service
   // Display name as rendered in the admin catalog UI. Specs used to
   // hardcode 'AC Repair', a master service that no longer exists; the live
   // equivalent carrying the Split AC / LG / AC-Not-Cooling relationships is

@@ -187,9 +187,9 @@ export const authApi = {
   requestPasswordReset: (email: string) =>
     apiFetch<void>("/v1/auth/password/reset/request",
       { method: "POST", body: JSON.stringify({ email }) }, true),
-  confirmPasswordReset: (token: string, new_password: string) =>
+  confirmPasswordReset: (email: string, reset_token: string, new_password: string) =>
     apiFetch<void>("/v1/auth/password/reset/confirm",
-      { method: "POST", body: JSON.stringify({ token, new_password }) }, true),
+      { method: "POST", body: JSON.stringify({ email, reset_token, new_password }) }, true),
 
   // Sessions
   getSessions:   () => apiFetch<UserSessionList>("/v1/auth/sessions"),
@@ -10562,8 +10562,24 @@ export interface PriceExperiencePreviewResult extends AutoPriceOptions {
   customer_max_price?: number;
 }
 
+export interface MatchingDiagnosticsBadge { name: string; icon: string; color: string; }
 export interface MatchingDiagnosticsCandidate {
-  tenant_id: string; provider_name: string; public_badges: string[];
+  tenant_id: string; provider_name: string;
+  // Real bug fixed here: this was typed string[], but the backend
+  // (auto_price_options_router.py) has always returned an object per badge
+  // ({name, icon, color}) -- confirmed live. The page rendered these badges
+  // directly as React children, which crashes ("Objects are not valid as a
+  // React child") the instant a real match returns a provider with any
+  // badge -- i.e. every genuinely successful diagnostics run, masked until
+  // now because the no-match test path never reaches this code.
+  public_badges: MatchingDiagnosticsBadge[];
+  // Single overall level (Matching Diagnostics-only, per explicit request) --
+  // exactly one of "Elite Pro" / "Top Rated Pro" / "Verified Pro" /
+  // "New Partner", the best tier this provider currently qualifies for.
+  // Replaces public_badges for display in this tool; public_badges is left
+  // on the type since the backend still returns it, but the page no longer
+  // renders it directly.
+  provider_level: MatchingDiagnosticsBadge;
   rating: number | null; customer_visible_reason: string;
   internal_score: number; internal_score_breakdown: Record<string, number>;
 }

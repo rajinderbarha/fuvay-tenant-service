@@ -73,6 +73,46 @@ async def get_matching_policy(
 # as Pricing Rules. This platform is provider-set-price.
 
 
+# Single overall provider LEVEL for Matching Diagnostics only (explicit user
+# request, 2026-08-06). Previously this admin tool showed the shared,
+# customer-facing `public_badges` list (0-3 independent achievement badges:
+# Verified/Highly Rated/High Completion) -- the request is a single tier
+# badge instead, so admins can see "which of 4 levels is this provider" at a
+# glance. Deliberately scoped to this endpoint's response only: does not
+# touch matching_engine.build_customer_safe_provider/_public_badges, which
+# other real surfaces (customer_router.py, trust_quality/public_router.py)
+# still read unchanged.
+PROVIDER_LEVELS = [
+    # Highest precedence first -- a provider gets exactly ONE, the best they qualify for.
+    {"name": "Elite Pro",     "icon": "award",       "color": "#7c3aed"},  # best of the best: top-rated AND high completion
+    {"name": "Top Rated Pro", "icon": "star",        "color": "#f59e0b"},  # customers rate them highly
+    {"name": "Verified Pro",  "icon": "shield-check","color": "#3b82f6"},  # platform-vetted, reliable completion history
+    {"name": "New Partner",   "icon": "user-plus",   "color": "#64748b"},  # just joined / not enough signal yet
+]
+
+
+def _resolve_provider_level(rating: float | None, health_score: float | None) -> dict:
+    rating = float(rating) if rating is not None else None
+    health_score = float(health_score) if health_score is not None else None
+    is_top_rated = rating is not None and rating >= 4.5
+    is_high_completion = health_score is not None and health_score >= 90
+    if is_top_rated and is_high_completion:
+        return PROVIDER_LEVELS[0]  # Elite Pro
+    if is_top_rated:
+        return PROVIDER_LEVELS[1]  # Top Rated Pro
+    if is_high_completion:
+        return PROVIDER_LEVELS[2]  # Verified Pro
+    return PROVIDER_LEVELS[3]  # New Partner
+
+
+def _attach_provider_level(provider: dict | None) -> dict | None:
+    if not provider:
+        return provider
+    health_score = (provider.get("internal_score_breakdown") or {}).get("health_score")
+    provider["provider_level"] = _resolve_provider_level(provider.get("rating"), health_score)
+    return provider
+
+
 # ── Admin: Matching Diagnostics ──────────────────────────────────────────────
 
 @admin_router.post("/matching/diagnostics", response_model=ApiResponse[dict],
@@ -119,9 +159,9 @@ async def admin_matching_diagnostics(
 
     if match.get("signals"):
         signals, score = match["signals"], match["score"]
-        result["selected_provider"] = build_admin_provider(signals, score)
+        result["selected_provider"] = _attach_provider_level(build_admin_provider(signals, score))
         result["top_candidates"] = [
-            build_admin_provider(s, sc) for s, sc in match.get("all_scored", [])[:5]
+            _attach_provider_level(build_admin_provider(s, sc)) for s, sc in match.get("all_scored", [])[:5]
         ]
 
         bargain_rule = await db.scalar(
