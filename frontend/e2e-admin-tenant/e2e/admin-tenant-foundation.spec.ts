@@ -119,13 +119,25 @@ test.describe('Tenant Foundation', () => {
     // reject this mutation for an access_scope=customer_support_limited user.
     const before = await apiGet('/v1/provider/business-profile', token);
     const originalName = before.body?.data?.business_name;
+    // Guard: if a previous run already left this corrupted (restore failed
+    // silently), don't compound it by "restoring" to the probe string itself.
+    if (originalName === 'E2E_READONLY_PROBE_DO_NOT_PERSIST') {
+      throw new Error('Tenant business_name is already corrupted to the probe value from a prior run -- fix data before re-running this test.');
+    }
     const res = await apiPut('/v1/provider/business-profile', token, {
       business_name: 'E2E_READONLY_PROBE_DO_NOT_PERSIST',
     });
     fs.writeFileSync(path.join(EVIDENCE_DIR, 'readonly-mutation-attempt.json'), JSON.stringify(res, null, 2));
     if (res.status === 200 && originalName) {
       // Restore immediately — documents the gap without leaving corrupted seed data.
-      await apiPut('/v1/provider/business-profile', token, { business_name: originalName });
+      // Verify the restore itself actually landed rather than trusting a 200
+      // status alone (a prior version of this test did that and the restore
+      // silently didn't stick, leaving the tenant corrupted for hours).
+      const restoreRes = await apiPut('/v1/provider/business-profile', token, { business_name: originalName });
+      const after = await apiGet('/v1/provider/business-profile', token);
+      if (after.body?.data?.business_name !== originalName) {
+        throw new Error(`Restore of business_name failed to stick: restorePutStatus=${restoreRes.status}, expected "${originalName}", got "${after.body?.data?.business_name}"`);
+      }
     }
     // Documented, not asserted strictly pass/fail here — see READONLY_PERMISSION_SMOKE_REPORT.md
   });
