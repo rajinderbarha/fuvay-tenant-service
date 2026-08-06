@@ -152,7 +152,20 @@ class MediaStorageService:
         storage_key = f"{media_context}/{stored_name}"
         abs_path = abs_dir / stored_name
         abs_path.write_bytes(file_bytes)
-        public_url = f"/uploads/{storage_key}"
+        # A bare "/uploads/..." path only resolves for a caller sharing this
+        # server's own origin. It happened to work for nothing so far
+        # because every icon_url in this DB was NULL until this session --
+        # the first real upload immediately exposed it: super-admin's
+        # IconPicker preview (a different origin, the Next.js dev server)
+        # and the mobile app (a different host entirely) would both request
+        # it against THEIR OWN origin and get a 404, not this API's
+        # /uploads route. Cloudinary/S3 never had this problem since they
+        # always return an absolute CDN URL. Same
+        # FILE_STORAGE_PUBLIC_BASE_URL prefix already used by the S3 driver
+        # below, applied here too; falls back to the relative path only if
+        # that setting is genuinely unset.
+        base_url = getattr(self._settings, "FILE_STORAGE_PUBLIC_BASE_URL", "").rstrip("/")
+        public_url = f"{base_url}/uploads/{storage_key}" if base_url else f"/uploads/{storage_key}"
         return StoredFile(
             storage_driver="local",
             storage_key=storage_key,
