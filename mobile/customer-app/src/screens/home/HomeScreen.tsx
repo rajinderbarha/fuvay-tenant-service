@@ -273,7 +273,10 @@ export function HomeScreen() {
                   as a card title, so nothing signalled the start of a
                   section and the page read as one undifferentiated column. */}
               <AppText variant="headingSmall">Services near you</AppText>
-              {home.address.zipcode ? (
+              {home.address.zipcode && (searchValue.trim() || home.bookableCategories.length > 1) ? (
+                // Suppressed for the single-category case: "Services near
+                // you" directly above "1 available in 140412" said the same
+                // thing twice for the single most common ZIP-coverage case.
                 <AppText variant="caption" color="tertiary">{
                   searchValue.trim()
                     ? `${visibleCategories.length} of ${home.bookableCategories.length} in ${home.address.zipcode}`
@@ -291,12 +294,14 @@ export function HomeScreen() {
                 {`No services match "${searchValue.trim()}".`}
               </AppText>
             ) : (
-              // Chunked into explicit 2-up rows rather than a wrapping
-              // flex row. With `flexWrap` + `space-between`, a row holding
-              // a single card (any odd count -- and 1 is the common case
-              // for a ZIP served by one provider) left a gaping empty half
-              // row. Padding the last row with a spacer keeps the final
-              // card the same width as every other card.
+              // Chunked into explicit 2-up rows rather than a wrapping flex
+              // row. A row left holding a single card -- any odd count, and
+              // exactly 1 total is the common case for a ZIP served by only
+              // one provider -- renders with the "wide" horizontal layout
+              // instead of a half-width tile stretched into empty space:
+              // stretching the vertical tile just left a big blank area
+              // beside a small top-left icon rather than actually using the
+              // extra width.
               <View style={{ gap: theme.spacing.sm }}>
                 {Array.from({ length: Math.ceil(visibleCategories.length / 2) }).map((_, rowIndex) => {
                   const row = visibleCategories.slice(rowIndex * 2, rowIndex * 2 + 2);
@@ -306,10 +311,10 @@ export function HomeScreen() {
                         <HomeServiceCard
                           key={category.categoryId}
                           category={category}
+                          layout={row.length === 1 ? "wide" : "grid"}
                           onPress={() => navigateToService(category, home.address!.zipcode as string)}
                         />
                       ))}
-                      {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
                     </View>
                   );
                 })}

@@ -99,14 +99,31 @@ describe("HomeScreen", () => {
   });
 
   it("renders only backend-returned bookable categories, with no price label when none is provided", () => {
+    // The fixture's single category renders via the "wide" single-card
+    // layout (see HomeServiceCard), whose no-price copy is "Tap to book a
+    // visit" rather than the 2-up grid tile's "Book now" -- both assert the
+    // same underlying rule: never fabricate a price, always show a neutral
+    // action label instead.
     mockHomeQuery({ data: baseHome() });
     const { getByText, queryByText } = renderHome();
     expect(getByText("AC & Cooling")).toBeTruthy();
-    // The point of this assertion is that a card with no price shows a
-    // neutral action label rather than a fabricated price -- the label
-    // itself changed from "View details" to the more actionable "Book now".
-    expect(getByText("Book now")).toBeTruthy();
+    expect(getByText("Tap to book a visit")).toBeTruthy();
     expect(queryByText(/₹/)).toBeNull();
+  });
+
+  it("renders the 2-up grid layout with 'Book now' when more than one category is bookable", () => {
+    mockHomeQuery({
+      data: baseHome({
+        bookableCategories: [
+          { categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null },
+          { categoryId: asCategoryId("cat-2"), name: "Plumbing", slug: "plumbing", iconUrl: null },
+        ],
+      }),
+    });
+    const { getByText, getAllByText } = renderHome();
+    expect(getByText("AC & Cooling")).toBeTruthy();
+    expect(getByText("Plumbing")).toBeTruthy();
+    expect(getAllByText("Book now")).toHaveLength(2);
   });
 
   it("never renders ₹0 for any service", () => {
