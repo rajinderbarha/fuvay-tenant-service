@@ -20,12 +20,17 @@ const FORBIDDEN = [
   'Manual Bargain Setup', 'Bargain Rule Builder', 'Bargain Settings', 'Bargain Floor',
 ];
 
-// The real live AC Repair tenant_service_id for Demo AC Services (requires_type=true, draft),
-// discovered via direct psql query against tenant_services for tenant 34b427a7-b2be-496c-b826-6d51bb181248.
-const AC_REPAIR_TENANT_SERVICE_ID = '015efedb-dd92-41f4-97ef-cc2745437760';
-const SPLIT_AC_TYPE_ID = 'c86dfcf3-53bd-4d83-bf0b-51257f382652';
-const WINDOW_AC_TYPE_ID = 'e27f6591-9b8d-4d57-93d0-8ed86c19c8af';
-const LG_BRAND_ID = '64a3b25f-23aa-4639-8baf-f67def0f60db';
+// The removed demo tenant's AC Repair tenant_service_id 404s -- there is no
+// equivalent for it anymore. Repointed to the ONE live tenant_service in the
+// whole database with requires_type=true AND requires_brand=true: Guramrit's
+// "AC Installation" (ae4608e5), which has real Split/Window service_types and
+// LG/Samsung/Voltas brands (verified via direct psql query, 2026-08-06).
+// Guramrit's owner IS the E2E tenant-owner login (SEED.tenantId), so PUT
+// mutations here act on the same tenant already used elsewhere in this suite.
+const AC_INSTALLATION_TENANT_SERVICE_ID = 'ae4608e5-18c8-4d30-a3aa-c7e988fc7b4f';
+const SPLIT_AC_TYPE_ID = '7b4a6a52-3755-46b9-a187-96a89126b0ad';
+const WINDOW_AC_TYPE_ID = '1cbea8f9-4bc7-46dd-a9a4-94dd254f4590';
+const LG_BRAND_ID = 'a8efc47f-d639-4cf6-a2eb-808f73cad28c';
 
 test.describe('ADMIN-TENANT-E2E-09 tenant service setup + coverage', () => {
   test.skip(APP !== 'tenant', 'tenant-only tests');
@@ -55,12 +60,14 @@ test.describe('ADMIN-TENANT-E2E-09 tenant service setup + coverage', () => {
     }
   });
 
-  test('tenant name "Demo AC Services" appears on dashboard and setup pages (real, not placeholder)', async ({ page }) => {
+  test('tenant name "Guramrit" appears on dashboard and setup pages (real, not placeholder)', async ({ page }) => {
+    // "Demo AC Services" was the removed demo tenant; the live E2E
+    // tenant-owner login is SEED.tenantName ("Guramrit").
     await loginAsTenantOwner(page);
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1500);
     const bodyText = await page.locator('body').innerText();
-    expect(bodyText).toContain('Demo AC Services');
+    expect(bodyText).toContain(SEED.tenantName);
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'dashboard-tenant-name.png'), fullPage: true });
   });
 
@@ -78,11 +85,11 @@ test.describe('ADMIN-TENANT-E2E-09 tenant service setup + coverage', () => {
   test('type-specific brand pricing: Split AC+LG and Window AC+LG differ, verified via direct backend API', async () => {
     const token = await login(TENANT_OWNER.email, TENANT_OWNER.password);
     const splitPricing = await apiGet(
-      `/v1/tenant/catalog/enabled-services/${AC_REPAIR_TENANT_SERVICE_ID}/brand-pricing?service_type_id=${SPLIT_AC_TYPE_ID}`,
+      `/v1/tenant/catalog/enabled-services/${AC_INSTALLATION_TENANT_SERVICE_ID}/brand-pricing?service_type_id=${SPLIT_AC_TYPE_ID}`,
       token
     );
     const windowPricing = await apiGet(
-      `/v1/tenant/catalog/enabled-services/${AC_REPAIR_TENANT_SERVICE_ID}/brand-pricing?service_type_id=${WINDOW_AC_TYPE_ID}`,
+      `/v1/tenant/catalog/enabled-services/${AC_INSTALLATION_TENANT_SERVICE_ID}/brand-pricing?service_type_id=${WINDOW_AC_TYPE_ID}`,
       token
     );
     log('type-brand-pricing.log', `split=${JSON.stringify(splitPricing.body)}`);
@@ -104,7 +111,7 @@ test.describe('ADMIN-TENANT-E2E-09 tenant service setup + coverage', () => {
     const token = await login(TENANT_OWNER.email, TENANT_OWNER.password);
     // min > max should be rejected
     const badRange = await apiPut(
-      `/v1/tenant/catalog/enabled-services/${AC_REPAIR_TENANT_SERVICE_ID}/types/${SPLIT_AC_TYPE_ID}/pricing`,
+      `/v1/tenant/catalog/enabled-services/${AC_INSTALLATION_TENANT_SERVICE_ID}/types/${SPLIT_AC_TYPE_ID}/pricing`,
       token, { tenant_min_price: 900, tenant_max_price: 700 }
     );
     log('price-range-validation.log', `min>max -> status=${badRange.status} body=${JSON.stringify(badRange.body)}`);
@@ -112,7 +119,7 @@ test.describe('ADMIN-TENANT-E2E-09 tenant service setup + coverage', () => {
 
     // below admin floor (admin floor confirmed 600 for Split AC + LG range context)
     const belowFloor = await apiPut(
-      `/v1/tenant/catalog/enabled-services/${AC_REPAIR_TENANT_SERVICE_ID}/types/${SPLIT_AC_TYPE_ID}/pricing`,
+      `/v1/tenant/catalog/enabled-services/${AC_INSTALLATION_TENANT_SERVICE_ID}/types/${SPLIT_AC_TYPE_ID}/pricing`,
       token, { tenant_min_price: 100, tenant_max_price: 200 }
     );
     log('price-range-validation.log', `below-floor -> status=${belowFloor.status} body=${JSON.stringify(belowFloor.body)}`);
@@ -124,7 +131,7 @@ test.describe('ADMIN-TENANT-E2E-09 tenant service setup + coverage', () => {
     // Intentionally INVALID payload (would 422 for a permitted user) — proves the 403
     // comes from the authorization layer, not from validation failing first.
     const resp = await apiPut(
-      `/v1/tenant/catalog/enabled-services/${AC_REPAIR_TENANT_SERVICE_ID}/types/${SPLIT_AC_TYPE_ID}/pricing`,
+      `/v1/tenant/catalog/enabled-services/${AC_INSTALLATION_TENANT_SERVICE_ID}/types/${SPLIT_AC_TYPE_ID}/pricing`,
       token, { tenant_min_price: 99999, tenant_max_price: -5 }
     );
     log('readonly-security.log', `tenant.readonly PUT type-pricing (invalid payload) -> status=${resp.status} body=${JSON.stringify(resp.body)}`);
