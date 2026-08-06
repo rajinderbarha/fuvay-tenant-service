@@ -15,13 +15,18 @@ function log(name: string, text: string) {
 test.describe('ADMIN-TENANT-E2E-03 catalog/pricing', () => {
   test.skip(APP !== 'admin', 'admin-only');
 
-  test('route smoke: 4 catalog/pricing pages, no NaN/undefined/raw json', async ({ page }) => {
+  test('route smoke: 3 catalog/pricing pages, no NaN/undefined/raw json', async ({ page }) => {
     await loginAsSuperAdmin(page);
+    // Was 4 routes, asserting status < 400 on each. Dropped
+    // /admin/home-services/service-areas: it 404s by explicit, documented
+    // product decision (AdminLayout.tsx: "Service Areas / Zones" removed --
+    // deprecated city-tier pricing concept, superseded by each provider's own
+    // mandatory Service Area declaration). The sibling 'service areas' test
+    // below already covers that route without asserting a 2xx/3xx status.
     const routes = [
       '/admin/home-services/service-catalog',
       '/admin/home-services/pricing-rules',
       '/admin/home-services/price-experience',
-      '/admin/home-services/service-areas',
     ];
     for (const route of routes) {
       const resp = await page.goto(route);
@@ -36,35 +41,37 @@ test.describe('ADMIN-TENANT-E2E-03 catalog/pricing', () => {
     }
   });
 
-  test('service catalog: open the seed offering, verify Split AC / Window AC / LG / Not Cooling', async ({ page }) => {
+  test('service catalog: open the seed offering, verify problems + type/brand pricing', async ({ page }) => {
+    // Rewritten, not just re-pinned. This test's whole premise was stale:
+    // /admin/home-services/service-catalog is a deliberate redirect (see the
+    // page's own comment) to /admin/catalog-workspace, which replaced the old
+    // "Types" / "Brands" / "Questions / Issues" sub-tabs with "Overview" /
+    // "Problems & Questions" / "Dimensions" / "Options & Add-ons" /
+    // "Checklist" -- confirmed live, no .hsc-tab named "Types" or "Brands"
+    // exists anywhere in the current page. Per-type/brand pricing (Split AC +
+    // LG etc.) now lives on the separate /admin/pricing-rules page, which the
+    // sibling test in this file already exercises and passes. Testing the
+    // OLD tab names here was asserting a UI structure the product
+    // deliberately replaced, not a regression.
     await loginAsSuperAdmin(page);
     await page.goto('/admin/home-services/service-catalog');
-    await page.waitForTimeout(1500);
-    // Was hasText:'AC Repair' -- that master service was removed, so this row
-    // never rendered and the test failed before exercising any UI.
+    await expect(page).toHaveURL(/\/admin\/catalog-workspace/, { timeout: 10000 });
+
     const acRow = page.locator('button', { hasText: SEED.offeringName }).filter({ hasNotText: 'Duplicate' }).first();
     await expect(acRow).toBeVisible({ timeout: 10000 });
     await acRow.click();
-    await page.waitForTimeout(1200);
+    await expect(page.locator('.cw-wtab', { hasText: 'Problems & Questions' })).toBeVisible({ timeout: 10000 });
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'ac-repair-general.png'), fullPage: true });
 
-    await page.locator('.hsc-tab', { hasText: 'Types' }).click();
+    await page.locator('.cw-wtab', { hasText: 'Problems & Questions' }).click();
     await page.waitForTimeout(600);
-    const bodyTypes = await page.locator('body').innerText();
-    log('catalog-content.log', `Types tab contains Split AC: ${bodyTypes.includes('Split AC')}, Window AC: ${bodyTypes.includes('Window AC')}`);
-    await page.screenshot({ path: path.join(EVIDENCE_DIR, 'ac-repair-types.png'), fullPage: true });
-
-    await page.locator('.hsc-tab', { hasText: 'Brands' }).click();
-    await page.waitForTimeout(600);
-    const bodyBrands = await page.locator('body').innerText();
-    log('catalog-content.log', `Brands tab contains LG: ${bodyBrands.includes('LG')}`);
-    await page.screenshot({ path: path.join(EVIDENCE_DIR, 'ac-repair-brands.png'), fullPage: true });
-
-    await page.locator('.hsc-tab', { hasText: 'Questions / Issues' }).click();
-    await page.waitForTimeout(800);
     const bodyIssues = await page.locator('body').innerText();
-    log('catalog-content.log', `Issues tab contains Not Cooling/cooling: ${/not cooling|cooling/i.test(bodyIssues)}`);
+    log('catalog-content.log', `Problems & Questions tab contains cooling: ${/cooling/i.test(bodyIssues)}`);
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'ac-repair-issues.png'), fullPage: true });
+    expect(/cooling/i.test(bodyIssues)).toBeTruthy();
+    // Type/brand pricing (Split AC / Window AC / LG) is covered by the
+    // sibling 'pricing rules' test below, on its real home
+    // (/admin/pricing-rules) -- not re-asserted here.
   });
 
   test('pricing rules: filter, open type-specific LG rules for Split AC and Window AC', async ({ page }) => {
