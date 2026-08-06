@@ -22,7 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger("customer_home.service")
 
-HOME_RESPONSE_VERSION = 1
+# v2 adds `global_services` (always-visible promotional lead-capture cards).
+HOME_RESPONSE_VERSION = 2
 
 
 class CustomerHomeService:
@@ -56,6 +57,12 @@ class CustomerHomeService:
         active_booking = await self._safe_call(self._get_active_booking_summary(customer_id), default=None)
         unread_count = await self._safe_call(self._get_unread_notification_count(customer_id), default=0)
         campaigns = await self._safe_call(self._get_active_campaigns(zipcode), default=[])
+        # Global Services are promotional platform-run offerings shown to
+        # EVERY customer regardless of ZIP/vertical/serviceability -- they are
+        # deliberately not gated like `bookable_categories`, because they are
+        # lead-capture cards (admin calls the customer back), not bookable
+        # catalog entries. See global_services/customer_router.py.
+        global_services = await self._safe_call(self._get_global_services(), default=[])
 
         serviceability_summary = None
         if zipcode:
@@ -80,6 +87,7 @@ class CustomerHomeService:
             "active_booking": active_booking,
             "unread_notification_count": unread_count,
             "campaigns": campaigns,
+            "global_services": global_services,
             "capabilities": {
                 "bargain_available": True,
                 "photo_attach_available": True,
@@ -273,10 +281,20 @@ class CustomerHomeService:
         row = (await self.db.execute(q)).scalars().first()
         if not row:
             return None
+        # The Home card renders this as a live "your job right now" strip, so
+        # it needs enough to be meaningful on its own -- a bare status slug
+        # ("pending_assignment") tells the customer nothing. All of these are
+        # already columns/snapshots on the booking; no extra query.
+        provider = row.provider_snapshot if isinstance(row.provider_snapshot, dict) else {}
         return {
             "booking_id": str(row.id),
             "booking_number": getattr(row, "booking_number", None),
             "status": row.status,
+            "assignment_status": getattr(row, "assignment_status", None),
+            "issue_summary": getattr(row, "issue_summary", None),
+            "preferred_date": row.preferred_date.isoformat() if getattr(row, "preferred_date", None) else None,
+            "preferred_time_window": getattr(row, "preferred_time_window", None),
+            "provider_name": provider.get("business_name") or provider.get("name"),
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
 
@@ -289,3 +307,8 @@ class CustomerHomeService:
         from app.engines.customer_campaigns.service import CampaignService
         svc = CampaignService(db=self.db)
         return await svc.list_active_for_customer(zipcode=zipcode)
+
+    async def _get_global_services(self) -> list[dict]:
+        from app.engines.global_services.service import GlobalServicesService
+        svc = GlobalServicesService(self.db)
+        return await svc.list_services(include_inactive=False)
