@@ -20,7 +20,9 @@ const ADMIN_ROUTES = [
 
 const TENANT_ROUTES = [
   '/dashboard',
-  '/provider/status',
+  // Was /provider/status, which doesn't exist; real route is
+  // /provider/subscription-status (app/(tenant)/provider/subscription-status).
+  '/provider/subscription-status',
   '/tenant/setup/services',
   '/provider/service-coverage',
   '/provider/service-areas',
@@ -78,7 +80,9 @@ test.describe('Tenant Foundation', () => {
       if (req.url().includes('/v1/')) requests.push(`${req.method()} ${req.url()}`);
     });
     await loginAsTenantOwner(page);
-    await expect(page.locator('body')).toContainText('Demo AC Services', { timeout: 10_000 });
+    // "Demo AC Services" was the removed demo tenant. The E2E tenant-owner
+    // login now lands on live tenant "Guramrit" (real dashboard/setup shell).
+    await expect(page.locator('body')).toContainText('Guramrit', { timeout: 10_000 });
     const bodyText = await page.locator('body').innerText();
     expect(bodyText).not.toMatch(/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9/);
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'tenant-login-dashboard.png'), fullPage: true });
