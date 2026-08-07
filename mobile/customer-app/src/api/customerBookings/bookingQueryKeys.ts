@@ -10,6 +10,10 @@
 export interface BookingFilters {
   status?: string;
   page?: number;
+  /** Free-text search term. Part of the key so each distinct search is
+   * cached separately and a stale result can never render under a newer
+   * term. */
+  q?: string;
 }
 
 export const bookingQueryKeys = {

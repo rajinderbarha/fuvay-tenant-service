@@ -5,11 +5,27 @@ import { BookingListFilter } from "../../domain/bookingFilters";
 export interface BookingListEmptyStateProps {
   filter: BookingListFilter;
   hasAnyBookings: boolean;
+  /** The term currently applied to the query, if any. Checked FIRST: with
+   * a search active, an empty list means "nothing matched", not "you have
+   * no bookings" -- telling a customer with 20 bookings that they have
+   * none would be plainly wrong. */
+  searchTerm?: string;
   onStartAssistant: () => void;
   onClearFilter: () => void;
 }
 
-export function BookingListEmptyState({ filter, hasAnyBookings, onStartAssistant, onClearFilter }: BookingListEmptyStateProps) {
+export function BookingListEmptyState({ filter, hasAnyBookings, searchTerm, onStartAssistant, onClearFilter }: BookingListEmptyStateProps) {
+  if (searchTerm && searchTerm.trim()) {
+    return (
+      <EmptyState
+        icon="search-outline"
+        title={`No bookings match "${searchTerm.trim()}"`}
+        message="Try a service name or a booking number."
+        actionLabel="Clear search"
+        onAction={onClearFilter}
+      />
+    );
+  }
   if (!hasAnyBookings) {
     return (
       <EmptyState

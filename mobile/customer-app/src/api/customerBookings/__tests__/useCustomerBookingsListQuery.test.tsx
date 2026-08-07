@@ -39,8 +39,27 @@ describe("useCustomerBookingsListQuery", () => {
     (customerBookingsApi.listMyBookings as jest.Mock).mockResolvedValue(page([bookingDto("b-1")], 1, 0, { active: 1, completed: 4, all: 5 }));
     const { result } = renderHook(() => useCustomerBookingsListQuery("active"), { wrapper });
     await waitFor(() => expect(result.current.items).toHaveLength(1));
-    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("active", 20, 0);
+    // `undefined` search: an empty box must send no `q` at all, not an
+    // empty term the backend would have to special-case.
+    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("active", 20, 0, undefined);
     expect(result.current.counts).toEqual({ active: 1, completed: 4, all: 5 });
+  });
+
+  it("passes a search term to the backend rather than filtering the loaded pages", async () => {
+    // Client-side filtering would only ever search pages already fetched,
+    // silently missing older bookings -- so the term must reach the API.
+    (customerBookingsApi.listMyBookings as jest.Mock).mockResolvedValue(page([bookingDto("b-1")], 1, 0));
+    const { result } = renderHook(() => useCustomerBookingsListQuery("all", "  cooling  "), { wrapper });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    // Trimmed, so " cooling " and "cooling" hit one cache entry.
+    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("all", 20, 0, "cooling");
+  });
+
+  it("treats a whitespace-only search as no search at all", async () => {
+    (customerBookingsApi.listMyBookings as jest.Mock).mockResolvedValue(page([bookingDto("b-1")], 1, 0));
+    const { result } = renderHook(() => useCustomerBookingsListQuery("all", "   "), { wrapper });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("all", 20, 0, undefined);
   });
 
   it("loads a further page via fetchNextPage without duplicating rows", async () => {

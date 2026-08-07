@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_user, UserContext
@@ -137,6 +137,7 @@ async def list_my_bookings(
     r:      Request,
     bucket: str | None = Query(None, description="active | completed | all"),
     status: str | None = Query(None),
+    q:      str | None = Query(None, description="Free-text: service name, booking number, or issue"),
     limit:  int        = Query(20, ge=1, le=100),
     offset: int        = Query(0, ge=0),
     user:   UserContext  = Depends(get_current_user),
@@ -173,30 +174,103 @@ async def list_my_bookings(
             return q.where(ServiceBooking.status == "completed")
         return q  # "all" / unset
 
-    q = select(ServiceBooking).where(mine)
-    q = _bucket_filter(q, bucket)
+    # Free-text search over the three things a customer would actually
+    # type: the booking number they were given, the issue they described,
+    # and the service name. The service name lives in the catalog, not on
+    # the booking, so it is matched via a subquery of matching offering/
+    # category ids rather than a join -- a join would multiply rows and
+    # silently corrupt `total`.
+    def _search_filter(query):
+        # `isinstance` rather than a truthiness check: this endpoint is
+        # also called directly (not through FastAPI) by the unit tests,
+        # where an unpassed parameter is still the `Query(...)` default
+        # object rather than None. Under FastAPI it is always str | None.
+        if not isinstance(q, str) or not q.strip():
+            return query
+        term = f"%{q.strip()}%"
+        from app.engines.admin_catalog.models import MasterService, ServiceCategory
+        offering_ids = select(MasterService.id).where(MasterService.service_name.ilike(term))
+        category_ids = select(ServiceCategory.id).where(ServiceCategory.name.ilike(term))
+        return query.where(or_(
+            ServiceBooking.booking_number.ilike(term),
+            ServiceBooking.issue_summary.ilike(term),
+            ServiceBooking.offering_id.in_(offering_ids),
+            ServiceBooking.category_id.in_(category_ids),
+        ))
+
+    stmt = select(ServiceBooking).where(mine)
+    stmt = _bucket_filter(stmt, bucket)
     # `status` remains supported for any caller that filters on one exact
     # raw status; it narrows further rather than replacing the bucket.
     if status:
-        q = q.where(ServiceBooking.status == status)
-    q = q.order_by(ServiceBooking.created_at.desc(), ServiceBooking.id.desc())
-    rows = (await db.execute(q.limit(limit).offset(offset))).scalars().all()
+        stmt = stmt.where(ServiceBooking.status == status)
+    stmt = _search_filter(stmt)
+    stmt = stmt.order_by(ServiceBooking.created_at.desc(), ServiceBooking.id.desc())
+    rows = (await db.execute(stmt.limit(limit).offset(offset))).scalars().all()
 
     total_q = _bucket_filter(select(func.count()).where(mine), bucket)
     if status:
         total_q = total_q.where(ServiceBooking.status == status)
+    total_q = _search_filter(total_q)
     total = await db.scalar(total_q)
 
-    all_count = await db.scalar(select(func.count()).where(mine))
-    completed_count = await db.scalar(
-        select(func.count()).where(mine, ServiceBooking.status == "completed")
-    )
+    # Order (active, completed, all) is fixed by test_level5_my_bookings_
+    # bucket_counts.py, which drives these through a sequenced mock -- the
+    # three queries are independent, so matching the documented order is
+    # free and keeps that spec honest.
     active_count = await db.scalar(
         select(func.count()).where(mine, ServiceBooking.status.notin_(_TERMINAL_BOOKING_STATUSES))
     )
+    completed_count = await db.scalar(
+        select(func.count()).where(mine, ServiceBooking.status == "completed")
+    )
+    all_count = await db.scalar(select(func.count()).where(mine))
+
+    # Real bug fixed here: list items were returned as bare `to_dict()`,
+    # which carries catalog IDs but no names -- only the DETAIL endpoint
+    # ran `_catalog_labels`. The app's list card renders its title from
+    # `offering_name ?? category_name`, so every card in My Bookings drew
+    # with a blank service name. Resolved in TWO bulk queries for the
+    # whole page (never one per row), then zipped back onto the items.
+    items = [b.to_dict() for b in rows]
+    if rows:
+        from app.engines.admin_catalog.models import MasterService, ServiceCategory, JobTypeDefinition
+
+        async def _names(model, id_column, name_column, ids):
+            if not ids:
+                return {}
+            # Two columns, not whole ORM objects: these are display labels,
+            # and the page can hold up to 100 bookings.
+            return dict((await db.execute(
+                select(id_column, name_column).where(id_column.in_(ids))
+            )).all())
+
+        offerings = await _names(
+            MasterService, MasterService.id, MasterService.service_name,
+            {b.offering_id for b in rows if b.offering_id},
+        )
+        categories = await _names(
+            ServiceCategory, ServiceCategory.id, ServiceCategory.name,
+            {b.category_id for b in rows if b.category_id},
+        )
+        job_types = await _names(
+            JobTypeDefinition, JobTypeDefinition.id, JobTypeDefinition.label,
+            {b.job_type_id for b in rows if b.job_type_id},
+        )
+
+        for item, b in zip(items, rows):
+            # Omitted rather than null when the catalog row is gone, so the
+            # client falls through to the next best label -- same contract
+            # as `_catalog_labels` on the detail endpoint.
+            if b.offering_id in offerings:
+                item["offering_name"] = offerings[b.offering_id]
+            if b.category_id in categories:
+                item["category_name"] = categories[b.category_id]
+            if b.job_type_id in job_types:
+                item["job_type_label"] = job_types[b.job_type_id]
 
     return ok({
-        "items":  [b.to_dict() for b in rows],
+        "items":  items,
         "total":  total or 0,
         "counts": {
             "active":    active_count or 0,

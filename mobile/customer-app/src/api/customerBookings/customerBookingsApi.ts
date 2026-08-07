@@ -3,9 +3,14 @@ import { parseApiSuccess } from "../client/responseParser";
 import { serviceBookingDtoSchema, bookingListResponseSchema } from "../contracts/customerBookings";
 import { BookingListFilter } from "../../domain/bookingFilters";
 
-export async function listMyBookings(bucket: BookingListFilter, limit: number, offset: number) {
+export async function listMyBookings(bucket: BookingListFilter, limit: number, offset: number, q?: string) {
+  // `q` matches the booking number, the issue text, or the service /
+  // category name server-side (final_records/customer_router.py) -- never
+  // filtered client-side, which with pagination would only ever search
+  // the pages already loaded.
+  const search = q && q.trim() ? `&q=${encodeURIComponent(q.trim())}` : "";
   const res = await authenticatedRequest({
-    method: "GET", path: `/v1/customer/my-activity/bookings?bucket=${bucket}&limit=${limit}&offset=${offset}`,
+    method: "GET", path: `/v1/customer/my-activity/bookings?bucket=${bucket}&limit=${limit}&offset=${offset}${search}`,
   });
   return parseApiSuccess(res.json, bookingListResponseSchema);
 }

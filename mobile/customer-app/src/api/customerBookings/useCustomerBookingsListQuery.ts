@@ -18,11 +18,14 @@ const PAGE_SIZE = 20;
  * to render "Active {n}". True incremental pagination via
  * `useInfiniteQuery` (real "load more", not a single giant fetch).
  */
-export function useCustomerBookingsListQuery(bucket: BookingListFilter) {
+export function useCustomerBookingsListQuery(bucket: BookingListFilter, search?: string) {
+  // Normalised once so " ac " and "ac" share a cache entry rather than
+  // refetching the same result under two keys.
+  const q = search?.trim() ? search.trim() : undefined;
   const query = useInfiniteQuery({
-    queryKey: bookingQueryKeys.list({ status: bucket }),
+    queryKey: bookingQueryKeys.list({ status: bucket, q }),
     queryFn: async ({ pageParam }: { pageParam: number }) => {
-      const res = await listMyBookings(bucket, PAGE_SIZE, pageParam);
+      const res = await listMyBookings(bucket, PAGE_SIZE, pageParam, q);
       return adaptBookingListPage(res.data);
     },
     initialPageParam: 0,
@@ -37,7 +40,7 @@ export function useCustomerBookingsListQuery(bucket: BookingListFilter) {
     useCallback(() => {
       query.refetch();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [bucket]),
+    }, [bucket, q]),
   );
 
   const items = useMemo(() => query.data?.pages.flatMap(p => p.items) ?? [], [query.data]);

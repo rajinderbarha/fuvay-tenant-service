@@ -39,7 +39,9 @@ export function NoOtherActiveBookingsCard({ onViewCompleted }: NoOtherActiveBook
               backgroundColor: VIOLET, alignItems: "center", justifyContent: "center",
             }}
           >
-            <Icon name="checkmark-done-outline" size="standard" color="#FFFFFF" decorative />
+            {/* Calendar-with-clock in the design; Ionicons has no combined
+                glyph, so the calendar carries it. */}
+            <Icon name="calendar-outline" size="standard" color="#FFFFFF" decorative />
           </View>
           <View style={{ flex: 1 }}>
             <AppText variant="bodyStrong">No other active bookings</AppText>

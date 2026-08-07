@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, FlatList, RefreshControl, ActivityIndicator } from "react-native";
+import { View, FlatList, RefreshControl, ActivityIndicator, Pressable } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../../design-system/theme";
 import { AppScreen } from "../../components/AppScreen";
@@ -15,6 +15,9 @@ import { BookingListEmptyState } from "../../components/bookings/BookingListEmpt
 import { BookingListFooter } from "../../components/bookings/BookingListFooter";
 import { NewServiceCard } from "../../components/bookings/NewServiceCard";
 import { NoOtherActiveBookingsCard } from "../../components/bookings/NoOtherActiveBookingsCard";
+import { BookingSearchBar } from "../../components/bookings/BookingSearchBar";
+import { Icon } from "../../components/Icon";
+import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { useCustomerBookingsListQuery } from "../../api/customerBookings/useCustomerBookingsListQuery";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
 import { BookingListFilter, isActiveBookingStatus } from "../../domain/bookingFilters";
@@ -33,7 +36,11 @@ export function MyBookingsScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation();
   const [filter, setFilter] = useState<BookingListFilter>("active");
-  const query = useCustomerBookingsListQuery(filter);
+  const [search, setSearch] = useState("");
+  // Debounced so typing does not fire a request per keystroke; the term
+  // itself is applied server-side (see useCustomerBookingsListQuery).
+  const debouncedSearch = useDebouncedValue(search, 350);
+  const query = useCustomerBookingsListQuery(filter, debouncedSearch);
   const { data: home } = useCustomerHomeQuery();
 
   function goToDetails(bookingId: string) {
@@ -45,9 +52,21 @@ export function MyBookingsScreen() {
     (navigation as { navigate: (name: string, params: unknown) => void }).navigate("Assistant", entryContext);
   }
 
+  /** The design's filter control is a single button, not a menu. It steps
+   * through the same three buckets the tabs expose, so it never reaches a
+   * state the tabs cannot show or undo. */
+  function cycleFilter() {
+    const order: BookingListFilter[] = ["active", "completed", "all"];
+    setFilter(order[(order.indexOf(filter) + 1) % order.length]);
+  }
+
+  function goToSupport() {
+    (navigation as { navigate: (name: string, params: unknown) => void }).navigate("BookingSupportEntry", { mode: "help" });
+  }
+
   const renderItem = useCallback(({ item }: { item: CustomerBookingListItem }) => (
     isActiveBookingStatus(item.rawStatus)
-      ? <ActiveBookingCard item={item} onViewDetails={() => goToDetails(item.bookingId)} />
+      ? <ActiveBookingCard item={item} onViewDetails={() => goToDetails(item.bookingId)} onContactSupport={goToSupport} />
       : <CompletedBookingCard item={item} onViewDetails={() => goToDetails(item.bookingId)} />
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ), []);
@@ -74,8 +93,15 @@ export function MyBookingsScreen() {
   return (
     <AppScreen edges={["top", "bottom"]}>
       {isOffline() ? <OfflineBanner /> : null}
-      <View style={{ gap: theme.spacing.base, flex: 1 }}>
+      <View style={{ gap: theme.spacing.sm, flex: 1 }}>
         <BookingsHeader />
+
+        <BookingSearchBar
+          value={search}
+          onChangeText={setSearch}
+          filterActive={filter !== "active"}
+          onPressFilter={cycleFilter}
+        />
 
         <BookingFilterTabs
           selected={filter}
@@ -88,16 +114,31 @@ export function MyBookingsScreen() {
           {/* Never claims "Updated just now" for cached/offline data --
               driven by React Query's real dataUpdatedAt, not a static
               string (spec closure item 4). */}
-          <AppText variant="caption" color="tertiary">{updatedLabel ?? ""}</AppText>
-          <AppText variant="labelStrong" color="link" onPress={() => query.refetch()}>Refresh</AppText>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xs }}>
+            {updatedLabel ? (
+              <Icon name="checkmark-circle-outline" size="compact" color={theme.colors.statusSuccess} decorative />
+            ) : null}
+            <AppText variant="caption" color="tertiary">{updatedLabel ?? ""}</AppText>
+          </View>
+          <Pressable
+            onPress={() => query.refetch()}
+            accessibilityRole="button"
+            accessibilityLabel="Refresh bookings"
+            hitSlop={8}
+            style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xs }}
+          >
+            <AppText variant="labelStrong" color="link">Refresh</AppText>
+            <Icon name="refresh-outline" size="compact" color={theme.colors.brandPrimary} decorative />
+          </Pressable>
         </View>
 
         {query.items.length === 0 ? (
           <BookingListEmptyState
             filter={filter}
             hasAnyBookings={hasAnyBookingsAtAll}
+            searchTerm={debouncedSearch}
             onStartAssistant={startAssistant}
-            onClearFilter={() => setFilter("all")}
+            onClearFilter={() => { setFilter("all"); setSearch(""); }}
           />
         ) : (
           <FlatList

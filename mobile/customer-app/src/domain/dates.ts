@@ -75,6 +75,22 @@ export function formatRelativeServerTime(timestamp: ServerTimestamp, now: number
   return toDisplayDate(timestamp).toLocaleDateString();
 }
 
+/** "Created today, 9:41 AM" / "Created 3 Aug, 9:41 AM" for a booking's
+ * real server `created_at`, per the My Bookings card design. Only the
+ * day-boundary comparison uses the device clock; the instant itself is
+ * always server-authoritative. */
+export function formatCreatedAt(timestamp: ServerTimestamp, now: Date = new Date()): string {
+  const created = toDisplayDate(timestamp);
+  const time = created.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const sameDay =
+    created.getFullYear() === now.getFullYear() &&
+    created.getMonth() === now.getMonth() &&
+    created.getDate() === now.getDate();
+  if (sameDay) return `Created today, ${time}`;
+  const day = created.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return `Created ${day}, ${time}`;
+}
+
 export function formatRelativeUpdateTime(updatedAtMs: number | undefined, now: number = Date.now()): string | null {
   if (!updatedAtMs) return null;
   const diffSeconds = Math.max(0, Math.floor((now - updatedAtMs) / 1000));
