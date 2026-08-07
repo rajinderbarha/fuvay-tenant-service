@@ -6,6 +6,7 @@ import { Icon } from "../Icon";
 import { useGlobalServicesQuery } from "../../api/globalServices/useGlobalServicesQuery";
 import { GlobalService } from "../../domain/globalServices";
 import { resolveGlobalServiceIcon } from "../../domain/globalServiceIcon";
+import { resolveGlobalServiceAccent } from "../../domain/globalServiceAccent";
 import { resolveMediaUrl } from "../../domain/mediaUrl";
 import { GlobalServiceInquiryModal } from "./GlobalServiceInquiryModal";
 
@@ -41,75 +42,86 @@ export function GlobalServicesSection({ defaultName, defaultZipcode }: GlobalSer
         <AppText variant="headingSmall">Build with Fuvay</AppText>
         <AppText variant="caption" color="tertiary" numberOfLines={1}>Global services available</AppText>
       </View>
-      {/* 2-up grid rather than a horizontal rail: these cards carry a
-          description and their own CTA, so a 160px-wide scroller truncated
-          both and hid everything past the second card. Explicit rows keep a
-          trailing odd card the same width as the rest. */}
+      {/* Full-width cards, each in its own brand colour, artwork on the
+          right. Previously a 2-up grid of white cards; the updated design
+          gives every offering its own identity colour and the extra width
+          lets the description breathe instead of wrapping at ~150px.
+          Colours are fixed brand accents rather than theme surfaces -- see
+          domain/globalServiceAccent.ts for why they do not swap per theme. */}
       <View style={{ gap: theme.spacing.sm }}>
-        {Array.from({ length: Math.ceil(services.length / 2) }).map((_, rowIndex) => {
-          const row = services.slice(rowIndex * 2, rowIndex * 2 + 2);
+        {services.map(service => {
+          const accent = resolveGlobalServiceAccent(service.name);
           return (
-            <View key={rowIndex} style={{ flexDirection: "row", gap: theme.spacing.sm }}>
-              {row.map(service => (
-                <Pressable
-                  key={service.id}
-                  onPress={() => setSelected(service)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${service.name}, request a callback`}
-                  style={({ pressed }) => ({
-                    flex: 1, padding: theme.spacing.base,
-                    borderRadius: theme.radiusUsage.card, backgroundColor: theme.colors.surfaceDefault,
-                    borderWidth: 1,
-                    borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle,
-                    opacity: pressed ? 0.9 : 1,
-                  })}
+            <Pressable
+              key={service.id}
+              onPress={() => setSelected(service)}
+              accessibilityRole="button"
+              accessibilityLabel={`${service.name}, request a callback`}
+              style={({ pressed }) => ({
+                flexDirection: "row", alignItems: "center",
+                borderRadius: theme.radiusUsage.card,
+                backgroundColor: accent.background,
+                paddingLeft: theme.spacing.base,
+                paddingVertical: theme.spacing.base,
+                overflow: "hidden",
+                opacity: pressed ? 0.92 : 1,
+              })}
+            >
+              <View style={{ flex: 1, minWidth: 0, paddingRight: theme.spacing.sm }}>
+                <AppText variant="bodyStrong" numberOfLines={1} style={{ color: accent.onBackground }}>
+                  {service.name}
+                </AppText>
+                {service.tagline ? (
+                  <AppText
+                    variant="caption"
+                    numberOfLines={2}
+                    style={{ color: accent.onBackgroundMuted, marginTop: 2 }}
+                  >
+                    {service.tagline}
+                  </AppText>
+                ) : null}
+                <View
+                  style={{
+                    flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start",
+                    marginTop: theme.spacing.sm, paddingHorizontal: theme.spacing.sm, paddingVertical: 5,
+                    borderRadius: theme.radiusUsage.statusPill,
+                    // Translucent white rather than a theme colour: it has to
+                    // sit legibly on six different card backgrounds.
+                    backgroundColor: "rgba(255,255,255,0.18)",
+                    borderWidth: 1, borderColor: "rgba(255,255,255,0.32)",
+                  }}
                 >
-                  <View
-                    style={{
-                      width: 40, height: 40, borderRadius: theme.radius.radiusFull,
-                      alignItems: "center", justifyContent: "center",
-                      marginBottom: theme.spacing.sm, overflow: "hidden",
-                      // The supplied artwork is a full-bleed coloured disc, so
-                      // it needs no tinted plate behind it; the glyph fallback
-                      // does, otherwise it floats on the bare card.
-                      backgroundColor: service.iconUrl ? "transparent" : theme.colors.brandPrimaryMuted,
-                    }}
-                  >
-                    {service.iconUrl ? (
-                      <Image source={{ uri: resolveMediaUrl(service.iconUrl)! }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
-                    ) : (
-                      // Was a hardcoded `call-outline` for every card, so a row of
-                      // global services was a row of identical grey phone icons.
-                      // Admin-uploaded iconUrl still wins; this only varies the
-                      // fallback.
-                      <Icon
-                        name={resolveGlobalServiceIcon(service.name)}
-                        size="standard"
-                        color={theme.colors.brandPrimaryStrong}
-                        decorative
-                      />
-                    )}
-                  </View>
-                  <AppText variant="bodyStrong" numberOfLines={2}>{service.name}</AppText>
-                  {service.tagline ? (
-                    <AppText variant="caption" color="tertiary" numberOfLines={2} style={{ marginTop: theme.spacing.xxs }}>
-                      {service.tagline}
-                    </AppText>
-                  ) : null}
-                  <View
-                    style={{
-                      flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start",
-                      marginTop: theme.spacing.sm, paddingHorizontal: theme.spacing.sm, paddingVertical: 5,
-                      borderRadius: theme.radiusUsage.statusPill, backgroundColor: theme.colors.brandPrimary,
-                    }}
-                  >
-                    <AppText variant="labelStrong" style={{ color: theme.colors.brandOnPrimary }}>Explore Service</AppText>
-                    <Icon name="arrow-forward" size="compact" color={theme.colors.brandOnPrimary} decorative />
-                  </View>
-                </Pressable>
-              ))}
-              {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
-            </View>
+                  <AppText variant="labelStrong" style={{ color: accent.onBackground }}>Explore Service</AppText>
+                  <Icon name="arrow-forward" size="compact" color={accent.onBackground} decorative />
+                </View>
+              </View>
+
+              <View
+                style={{
+                  width: 92, height: 92, alignItems: "center", justifyContent: "center",
+                  flexShrink: 0, marginRight: theme.spacing.sm,
+                }}
+              >
+                {service.iconUrl ? (
+                  <Image
+                    source={{ uri: resolveMediaUrl(service.iconUrl)! }}
+                    style={{ width: "100%", height: "100%" }}
+                    resizeMode="contain"
+                    accessibilityElementsHidden
+                  />
+                ) : (
+                  // Was a hardcoded `call-outline` for every card, so the
+                  // section was a column of identical phone icons. Admin
+                  // artwork still wins; this only varies the fallback.
+                  <Icon
+                    name={resolveGlobalServiceIcon(service.name)}
+                    size="navigation"
+                    color={accent.onBackground}
+                    decorative
+                  />
+                )}
+              </View>
+            </Pressable>
           );
         })}
       </View>
