@@ -153,28 +153,35 @@ export function ActiveBookingCard({ item, onViewDetails, onContactSupport }: Act
         </>
       ) : null}
 
-      {/* Read-only on purpose. The design draws an editable "Type here…"
-          box, but no customer-facing route exists to save a note against
-          a confirmed booking (home_service_assignment/customer_router.py
-          has no update endpoint), so a real input would silently discard
-          what was typed. Shows the customer's own free-text answer when
-          the booking has one. */}
-      {divider}
-      <View>
-        <AppText variant="bodySmall" color="secondary">Additional Detail</AppText>
-        <View
-          style={{
-            marginTop: theme.spacing.xxs, padding: theme.spacing.sm, minHeight: 56,
-            borderRadius: theme.radiusUsage.input,
-            borderWidth: 1, borderColor: theme.colors.borderSubtle,
-            backgroundColor: theme.colors.surfaceDefault,
-          }}
-        >
-          <AppText variant="bodySmall" color={noteField ? "primary" : "tertiary"}>
-            {noteField ? noteField.value : "No additional detail added"}
-          </AppText>
-        </View>
-      </View>
+      {/* The free-text answer the booking assistant collected -- a
+          paragraph the customer typed once, captured into the immutable
+          answer_snapshot at finalize() time. It is display-only by
+          nature: nothing updates it after the booking exists, so the
+          design's "Type here…" input is rendered as the text itself.
+          Omitted entirely when the flow never asked for one, rather than
+          leaving an empty box on the card. */}
+      {noteField ? (
+        <>
+          {divider}
+          <View>
+            {/* The design's fixed heading, not the raw question label --
+                the real catalog question is a full sentence ("Please share
+                any additional details about the issue."), which reads as
+                a prompt rather than a section title on a summary card. */}
+            <AppText variant="bodySmall" color="secondary">Additional Detail</AppText>
+            <View
+              style={{
+                marginTop: theme.spacing.xxs, padding: theme.spacing.sm,
+                borderRadius: theme.radiusUsage.input,
+                borderWidth: 1, borderColor: theme.colors.borderSubtle,
+                backgroundColor: theme.colors.surfaceSecondary,
+              }}
+            >
+              <AppText variant="bodySmall">{noteField.value}</AppText>
+            </View>
+          </View>
+        </>
+      ) : null}
 
       {item.address.formatted ? (
         <>

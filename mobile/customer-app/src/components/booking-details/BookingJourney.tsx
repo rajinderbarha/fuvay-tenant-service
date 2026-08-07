@@ -17,16 +17,16 @@ export interface BookingJourneyProps {
 }
 
 /**
- * Fixed per-step colour and glyph, taken from the design (node 5944-302):
- * indigo check, green assignment, violet schedule.
+ * Per-step colour and glyph from the design (node 5944-302): indigo
+ * check, green assignment, violet schedule.
  *
- * IMPORTANT -- these are NOT progress colours. The reference shows all
- * three steps fully coloured regardless of where the booking actually is,
- * so this row reads as a map of the three stages, not an indicator of
- * which one has been reached. Implemented that way on explicit request
- * ("100% same design"); `resolveTimelineStepState` is still used below,
- * but only for the accessible label, so a screen reader can still say
- * which step is current even though the visuals do not distinguish it.
+ * A step only wears its colour once the booking has actually REACHED it.
+ * The reference frame shows all three filled, but it depicts a single
+ * moment rather than a rule -- rendering it literally would paint
+ * "Schedule" violet on a booking with no visit scheduled, which is the
+ * one thing this row exists to tell the customer. Steps still ahead stay
+ * muted, consistent with bookingStatus.ts's standing rule that a stage is
+ * never shown as reached without backend evidence.
  */
 const STEP_STYLE: ReadonlyArray<{ color: string; icon: IconProps["name"] }> = [
   { color: "#3730A3", icon: "checkmark-circle-outline" },
@@ -54,24 +54,35 @@ export function BookingJourney({ stage, bare = false }: BookingJourneyProps) {
       >
         {RECEIPT_TIMELINE_STEPS.map((step, i) => {
           const state = resolveTimelineStepState(step.key, stage);
+          const reached = state === "complete" || state === "active";
           const isLast = i === RECEIPT_TIMELINE_STEPS.length - 1;
           return (
             <React.Fragment key={step.key}>
               <View
                 style={{ alignItems: "center", width: 72 }}
                 accessible
-                accessibilityLabel={`${step.label}${state === "active" ? ", current step" : state === "complete" ? ", done" : ""}`}
+                accessibilityLabel={`${step.label}${state === "active" ? ", current step" : state === "complete" ? ", done" : ", not yet reached"}`}
               >
                 <View
                   style={{
                     width: 34, height: 34, borderRadius: theme.radius.radiusFull,
-                    backgroundColor: STEP_STYLE[i].color,
+                    backgroundColor: reached ? STEP_STYLE[i].color : theme.colors.surfaceInteractive,
                     alignItems: "center", justifyContent: "center",
                   }}
                 >
-                  <Icon name={STEP_STYLE[i].icon} size="compact" color="#FFFFFF" decorative />
+                  <Icon
+                    name={STEP_STYLE[i].icon}
+                    size="compact"
+                    color={reached ? "#FFFFFF" : theme.colors.textTertiary}
+                    decorative
+                  />
                 </View>
-                <AppText variant="caption" color="secondary" align="center" style={{ marginTop: theme.spacing.xs }}>
+                <AppText
+                  variant="caption"
+                  color={reached ? "secondary" : "tertiary"}
+                  align="center"
+                  style={{ marginTop: theme.spacing.xs }}
+                >
                   {step.label}
                 </AppText>
               </View>
