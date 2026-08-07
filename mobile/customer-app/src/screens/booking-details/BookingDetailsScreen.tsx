@@ -7,6 +7,7 @@ import { LoadingState } from "../../components/LoadingState";
 import { ErrorState } from "../../components/States";
 import { OfflineBanner } from "../../components/OfflineBanner";
 import { BookingDetailsHeader } from "../../components/booking-details/BookingDetailsHeader";
+import { BookingDetailsSearchLauncher } from "../../components/booking-details/BookingDetailsSearchLauncher";
 import { RequestJourneyStepper } from "../../components/booking-details/RequestJourneyStepper";
 import { ServiceOverviewCard } from "../../components/booking-details/ServiceOverviewCard";
 import { AttachmentsSummary } from "../../components/booking-details/AttachmentsSummary";
@@ -222,12 +223,11 @@ export function BookingDetailsScreen() {
           />
         )}
 
-        {/* NOTE: the reference design also shows a "Search by service or
-            booking ID" bar with a filter icon right here. That control
-            searches ACROSS a list; this screen already IS one specific,
-            already-open booking, so there is nothing for it to search --
-            it is not rendered, deliberately, rather than shipped as a
-            control that does nothing. */}
+        {/* This screen is already one specific booking, so the search/
+            filter row cannot search "within" it -- BookingDetailsSearchLauncher
+            hands both actions to My Bookings, the real list they act on,
+            rather than being a control that does nothing here. */}
+        <BookingDetailsSearchLauncher />
 
         {activeStage ? (
           <JobProgressTimeline activeStage={activeStage} />

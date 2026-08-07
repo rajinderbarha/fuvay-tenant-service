@@ -19,7 +19,12 @@ export type CustomerTabName = "Home" | "Bookings" | "Assistant" | "Support" | "P
 
 export type CustomerTabsParamList = {
   Home: undefined;
-  Bookings: undefined;
+  /** Optional entry state from Booking Details' search/filter row (see
+   * RequestJourneyStepper's caller, BookingDetailsScreen) -- lets a tap
+   * there land on My Bookings already searching/filtered, rather than
+   * requiring the customer to redo it. `undefined` is the ordinary tab
+   * tap with no carried state. */
+  Bookings: { initialSearch?: string; openFilter?: boolean } | undefined;
   /** Optional backend context carried from a Home service tap or the
    * "Not sure what to book?" entry card -- see domain/assistantEntry.ts.
    * `undefined` means the customer opened the tab directly (no category
