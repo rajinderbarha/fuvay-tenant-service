@@ -1,5 +1,5 @@
-import React from "react";
-import { View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Animated, AccessibilityInfo } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { Icon } from "../Icon";
@@ -23,49 +23,47 @@ const ICON_SIZE = 72;
  * on the way) still showed a stale label on this card. It now renders the
  * same `statusLabel` the rest of the app already computed.
  *
- * Centered hero layout per the design -- a full-bleed section rather than
- * a bordered card, with a layered icon badge. Colours are the app's own
- * existing brand tokens (brandPrimaryMuted/brandPrimaryStrong), not a new
- * accent introduced for this card. */
+ * Centered hero layout, but the icon itself is the SAME solid
+ * brandPrimaryMuted circle + sparkles glyph used everywhere else the app
+ * represents its own automated matching/assistant activity
+ * (AssistantHeader, TypingBubble) -- not a bespoke ringed badge invented
+ * for this one card. A gentle pulse says "this is actively working",
+ * matching TypingBubble's own animation approach: reduced-motion users
+ * get the icon fully static, and the pulse is purely decorative -- it
+ * never implies a specific ETA or step. */
 export function CurrentStatusCard({ statusLabel, activityText, supportingText, createdAt }: CurrentStatusCardProps) {
   const { theme } = useTheme();
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReducedMotion).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (reducedMotion) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.12, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [reducedMotion, pulse]);
+
   return (
     <View style={{ alignItems: "center" }}>
-      <View style={{ width: ICON_SIZE, height: ICON_SIZE, alignItems: "center", justifyContent: "center" }}>
-        {/* Two faint rings behind the solid icon circle -- purely
-            decorative depth, same brand hue at falling opacity. */}
-        <View
-          style={{
-            position: "absolute", width: ICON_SIZE, height: ICON_SIZE, borderRadius: theme.radius.radiusFull,
-            backgroundColor: theme.colors.brandPrimaryMuted, opacity: 0.4,
-          }}
-        />
-        <View
-          style={{
-            position: "absolute", width: ICON_SIZE * 0.78, height: ICON_SIZE * 0.78, borderRadius: theme.radius.radiusFull,
-            backgroundColor: theme.colors.brandPrimaryMuted, opacity: 0.7,
-          }}
-        />
-        <View
-          style={{
-            width: ICON_SIZE * 0.58, height: ICON_SIZE * 0.58, borderRadius: theme.radius.radiusFull,
-            backgroundColor: theme.colors.brandPrimaryMuted,
-            alignItems: "center", justifyContent: "center",
-          }}
-        >
-          <Icon name="sparkles" size="standard" color={theme.colors.brandPrimaryStrong} decorative />
-        </View>
-        {/* Small solid badge overlapping the ring, same brand colour as
-            the pill below -- ties the icon to the status it represents. */}
-        <View
-          style={{
-            position: "absolute", right: 2, bottom: 2,
-            width: 18, height: 18, borderRadius: theme.radius.radiusFull,
-            backgroundColor: theme.colors.brandPrimary,
-            borderWidth: 2, borderColor: theme.colors.surfaceDefault,
-          }}
-        />
-      </View>
+      <Animated.View
+        style={{
+          width: ICON_SIZE, height: ICON_SIZE, borderRadius: theme.radius.radiusFull,
+          backgroundColor: theme.colors.brandPrimaryMuted,
+          alignItems: "center", justifyContent: "center",
+          transform: [{ scale: reducedMotion ? 1 : pulse }],
+        }}
+      >
+        <Icon name="sparkles" size="navigation" color={theme.colors.brandPrimaryStrong} decorative />
+      </Animated.View>
 
       <AppText variant="headingSmall" align="center" style={{ marginTop: theme.spacing.sm }}>
         {/* When there is no distinct activity line, the pill below already

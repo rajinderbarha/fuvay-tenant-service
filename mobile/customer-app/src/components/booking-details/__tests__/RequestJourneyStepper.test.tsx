@@ -24,9 +24,4 @@ describe("RequestJourneyStepper", () => {
     expect(getByLabelText(/^Provider assignment/).props.accessibilityLabel).toContain("current step");
     expect(getByLabelText(/^Visit scheduling/).props.accessibilityLabel).toContain("not yet reached");
   });
-
-  it("reports progress as a step fraction, not a percentage that implies elapsed time", () => {
-    const { getByLabelText } = renderWithProviders(<RequestJourneyStepper stage="request_confirmed" />);
-    expect(getByLabelText(/^Booking progress/).props.accessibilityLabel).toBe("Booking progress: step 1 of 4");
-  });
 });

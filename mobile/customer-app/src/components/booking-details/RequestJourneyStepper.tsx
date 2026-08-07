@@ -43,35 +43,8 @@ export function RequestJourneyStepper({ stage }: { stage: CustomerBookingStage }
     return key === "service_visit" ? "pending" : resolveTimelineStepState(key, stage);
   }
 
-  // Index of the furthest step this stage has genuinely reached, among
-  // the three real ones -- "Service visit" can never contribute here.
-  const reachedIndex = steps.reduce((acc, step, i) => (stateFor(step.key) !== "pending" ? i : acc), 0);
-  const progressPercent = (reachedIndex / (steps.length - 1)) * 100;
-
   return (
     <View>
-      {/* Overall progress, outside any card per the design -- a plain
-          fraction of steps reached, not a time-based estimate. The small
-          circular knob marks the fill boundary, matching the design's
-          slider-like bar. */}
-      <View
-        style={{ height: 4, justifyContent: "center", marginBottom: theme.spacing.base }}
-        accessibilityRole="progressbar"
-        accessibilityLabel={`Booking progress: step ${reachedIndex + 1} of ${steps.length}`}
-      >
-        <View style={{ height: 4, borderRadius: theme.radius.radiusFull, backgroundColor: theme.colors.borderSubtle, overflow: "hidden" }}>
-          <View style={{ width: `${progressPercent}%`, height: "100%", backgroundColor: theme.colors.brandPrimary }} />
-        </View>
-        <View
-          style={{
-            position: "absolute", left: `${progressPercent}%`, marginLeft: -6,
-            width: 12, height: 12, borderRadius: theme.radius.radiusFull,
-            backgroundColor: theme.colors.brandPrimary,
-            borderWidth: 2, borderColor: theme.colors.surfaceDefault,
-          }}
-        />
-      </View>
-
       <AppCard>
         <AppText variant="labelStrong" color="secondary">Booking journey</AppText>
         <View style={{ flexDirection: "row", alignItems: "flex-start", marginTop: theme.spacing.sm }}>

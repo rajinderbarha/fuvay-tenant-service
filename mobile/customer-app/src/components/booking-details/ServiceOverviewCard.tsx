@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Modal, Pressable } from "react-native";
+import { View, Modal, Pressable, AccessibilityInfo } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { AppCard } from "../AppCard";
@@ -7,9 +8,12 @@ import { AppIconButton } from "../AppIconButton";
 import { Icon } from "../Icon";
 import { CustomerBookingDetails } from "../../domain/customerBookingDetails";
 import { resolveAnswerFieldIcon } from "../../domain/answerFieldIcon";
+import { formatCreatedAt, ServerTimestamp } from "../../domain/dates";
 
 export interface ServiceOverviewCardProps {
   service: CustomerBookingDetails["service"];
+  bookingNumber: string | null;
+  createdAt: ServerTimestamp | null;
 }
 
 const COLUMNS = 2;
@@ -20,16 +24,26 @@ const COLUMNS = 2;
  * a read-only sheet; there is no path back into the editable assistant
  * flow from here.
  *
- * The booking number is NOT repeated here -- BookingDetailsHeader already
- * shows it once, centered under the screen title, so this card only
- * needs the service name and its inspection status.
+ * The booking id + copy action live here rather than in the header --
+ * this is the section actually ABOUT the booked service, so its own
+ * identifier reads more naturally next to the service name than sitting
+ * above the status card.
  *
  * Icons per cell are the same wording-derived glyphs used on the My
  * Bookings list card (answerFieldIcon.ts) -- one icon system, not a
  * second invented for this screen. */
-export function ServiceOverviewCard({ service }: ServiceOverviewCardProps) {
+export function ServiceOverviewCard({ service, bookingNumber, createdAt }: ServiceOverviewCardProps) {
   const { theme } = useTheme();
   const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    if (!bookingNumber) return;
+    await Clipboard.setStringAsync(bookingNumber);
+    setCopied(true);
+    AccessibilityInfo.announceForAccessibility("Booking ID copied");
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   const rows: typeof service.answers[] = [];
   for (let i = 0; i < service.answers.length; i += COLUMNS) {
@@ -38,7 +52,11 @@ export function ServiceOverviewCard({ service }: ServiceOverviewCardProps) {
 
   return (
     <AppCard style={{ padding: 0, overflow: "hidden" }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, padding: theme.spacing.base }}>
+      <View style={{ padding: theme.spacing.base, paddingBottom: theme.spacing.sm }}>
+        <AppText variant="labelStrong" color="secondary">Service overview</AppText>
+      </View>
+
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.sm, paddingHorizontal: theme.spacing.base, paddingBottom: theme.spacing.base }}>
         <View
           style={{
             width: 44, height: 44, borderRadius: theme.radiusUsage.card,
@@ -50,19 +68,35 @@ export function ServiceOverviewCard({ service }: ServiceOverviewCardProps) {
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           {service.name ? <AppText variant="bodyStrong" numberOfLines={1}>{service.name}</AppText> : null}
+          {bookingNumber ? (
+            <Pressable
+              onPress={handleCopy}
+              accessibilityRole="button"
+              accessibilityLabel={`Booking ${bookingNumber}. Copy to clipboard.`}
+              style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs }}
+            >
+              <AppText variant="caption" color="secondary">{bookingNumber} {copied ? "· Copied" : ""}</AppText>
+              <Icon name={copied ? "checkmark" : "copy-outline"} size="compact" color={theme.colors.textSecondary} decorative />
+            </Pressable>
+          ) : null}
           {service.inspectionRequired ? <AppText variant="caption" color="tertiary">Inspection-based service</AppText> : null}
         </View>
-        {service.answers.length > 0 ? (
-          <Pressable
-            onPress={() => setOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="View all answers"
-            style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, flexShrink: 0 }}
-          >
-            <AppText variant="labelStrong" color="link" numberOfLines={1}>View all answers</AppText>
-            <Icon name="chevron-forward" size="compact" color={theme.colors.brandPrimary} decorative />
-          </Pressable>
-        ) : null}
+        <View style={{ alignItems: "flex-end", flexShrink: 0, gap: theme.spacing.xxs }}>
+          {service.answers.length > 0 ? (
+            <Pressable
+              onPress={() => setOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="View all answers"
+              style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs }}
+            >
+              <AppText variant="labelStrong" color="link" numberOfLines={1}>View all answers</AppText>
+              <Icon name="chevron-forward" size="compact" color={theme.colors.brandPrimary} decorative />
+            </Pressable>
+          ) : null}
+          {createdAt ? (
+            <AppText variant="caption" color="tertiary" numberOfLines={1}>{formatCreatedAt(createdAt)}</AppText>
+          ) : null}
+        </View>
       </View>
 
       {rows.length > 0 ? (

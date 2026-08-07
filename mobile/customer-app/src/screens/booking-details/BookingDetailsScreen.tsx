@@ -136,7 +136,6 @@ export function BookingDetailsScreen() {
         <View style={{ gap: theme.spacing.base }}>
           {isOffline() ? <OfflineBanner /> : null}
           <BookingDetailsHeader
-            bookingNumber={details.bookingNumber}
             onBack={() => navigation.goBack()}
             onRefresh={() => query.refetch()}
             refreshing={query.isRefetching}
@@ -160,7 +159,7 @@ export function BookingDetailsScreen() {
               />
             </>
           )}
-          <ServiceOverviewCard service={details.service} />
+          <ServiceOverviewCard service={details.service} bookingNumber={details.bookingNumber} createdAt={details.createdAt} />
           <FinalizedAddressCard address={details.address} />
           <BookingActivity events={details.activity} />
           <BookingDetailsActions
@@ -178,7 +177,6 @@ export function BookingDetailsScreen() {
       <View style={{ gap: theme.spacing.base }}>
         {isOffline() ? <OfflineBanner /> : null}
         <BookingDetailsHeader
-          bookingNumber={details.bookingNumber}
           onBack={() => navigation.goBack()}
           onRefresh={() => query.refetch()}
           refreshing={query.isRefetching}
@@ -231,7 +229,7 @@ export function BookingDetailsScreen() {
           <RequestJourneyStepper stage={details.stage} />
         )}
         {(presentation?.showTechnicianCard || arrivalStage) && technician ? <TechnicianSnapshotCard technician={technician} /> : null}
-        <ServiceOverviewCard service={details.service} />
+        <ServiceOverviewCard service={details.service} bookingNumber={details.bookingNumber} createdAt={details.createdAt} />
         <FinalizedAddressCard address={details.address} />
         <FinalizedPricingCard pricing={details.pricing} />
         <AttachmentsSummary attachments={details.attachments} note={details.note} />
