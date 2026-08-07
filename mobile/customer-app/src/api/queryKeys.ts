@@ -18,6 +18,11 @@ export const queryKeys = {
    * distinct cache entry from any specific ZIP string. */
   home: {
     aggregate: (zipcode?: string) => ["home", "aggregate", zipcode ?? null] as const,
+    /** The search endpoint itself is not ZIP-aware, but results are
+     * reconciled against the ZIP-filtered Home payload, so the same query
+     * text can yield a different answer per location -- the ZIP therefore
+     * belongs in the key. */
+    search: (q: string, zipcode?: string) => ["home", "search", q, zipcode ?? null] as const,
   },
 
   verticals: () => ["verticals", "enabled"] as const,

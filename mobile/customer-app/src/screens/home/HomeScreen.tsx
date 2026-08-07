@@ -9,8 +9,10 @@ import {
   CustomerHeader, ServiceSearch, CampaignCarousel, VerticalSwitcher, HomeServiceCard,
   AssistantEntryCard, ActiveBookingCard, TrustBenefitCard, HomeSkeleton, HomeErrorState,
   NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal, GlobalServicesSection,
+  SearchResultsList,
 } from "../../components/home";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
+import { useCustomerSearchQuery, MIN_QUERY_LENGTH } from "../../api/home/useCustomerSearchQuery";
 import { useCustomerProfileQuery } from "../../api/customer/useCustomerProfileQuery";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { timeSensitiveGreeting } from "../../domain/greeting";
@@ -79,28 +81,28 @@ export function HomeScreen() {
 
   const greeting = useMemo(() => timeSensitiveGreeting(), []);
 
-  // Real bug fixed here: the Home search box stored its text in state but
-  // NOTHING ever read it -- typing filtered nothing and there was no empty
-  // state, so search silently did nothing at all.
-  //
-  // Filtering is deliberately client-side over the categories the backend
-  // already returned for this ZIP: those are exactly the bookable services
-  // here, so a server round-trip would add latency without widening the
-  // result set (and must never widen it -- showing an unbookable service
-  // would be worse than showing none). Matches name or slug, case- and
-  // whitespace-insensitive.
+  // Category ids bookable at this ZIP -- the set the server-side search
+  // results get reconciled against (search itself has no zipcode param).
   //
   // MUST stay above the isPending/isError early returns below: a hook
   // placed after them runs only on some renders, which is exactly the
   // "Rendered more hooks than during the previous render" crash.
-  const visibleCategories = useMemo(() => {
-    const all = homeQuery.data?.bookableCategories ?? [];
-    const q = searchValue.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter(c =>
-      (c.name ?? "").toLowerCase().includes(q) || (c.slug ?? "").toLowerCase().includes(q),
-    );
-  }, [homeQuery.data?.bookableCategories, searchValue]);
+  const bookableCategoryIds = useMemo(
+    () => new Set((homeQuery.data?.bookableCategories ?? []).map(c => String(c.categoryId))),
+    [homeQuery.data?.bookableCategories],
+  );
+
+  // Server-side search, replacing a client-side filter over the already
+  // loaded categories. That filter could only ever match whole category
+  // names, so "gas", "deep clean" or "pipe repair" -- real services people
+  // actually search for -- found nothing. The endpoint searches individual
+  // services too.
+  const searchQuery = useCustomerSearchQuery(
+    searchValue,
+    bookableCategoryIds,
+    homeQuery.data?.address?.zipcode ?? undefined,
+  );
+  const isSearching = searchValue.trim().length >= MIN_QUERY_LENGTH;
   /** The slugs a campaign CTA is allowed to route into. Same source as the
    * service cards: whatever the backend says is bookable at this ZIP. Kept
    * above the early returns for the same Rules-of-Hooks reason as above. */
@@ -296,25 +298,29 @@ export function HomeScreen() {
                 a card title, so nothing signalled the start of a section. */}
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: theme.spacing.sm }}>
               <View style={{ flexDirection: "row", alignItems: "baseline", gap: theme.spacing.xs, flex: 1, minWidth: 0 }}>
-                <AppText variant="headingSmall">Services Nearby</AppText>
+                <AppText variant="headingSmall">{isSearching ? "Results" : "Services Nearby"}</AppText>
                 {home.address.zipcode ? (
                   <AppText variant="caption" color="tertiary" numberOfLines={1}>
-                    {searchValue.trim()
-                      ? `${visibleCategories.length} of ${home.bookableCategories.length}`
+                    {isSearching
+                      ? `for "${searchValue.trim()}"`
                       : `Based on ${home.address.zipcode}`}
                   </AppText>
                 ) : null}
               </View>
             </View>
-            {home.bookableCategories.length === 0 ? (
+            {isSearching ? (
+              <SearchResultsList
+                query={searchValue.trim()}
+                isPending={searchQuery.isPending}
+                isError={searchQuery.isError}
+                results={searchQuery.data?.results ?? []}
+                onPressCategory={categoryId => {
+                  const category = home.bookableCategories.find(c => String(c.categoryId) === String(categoryId));
+                  if (category) navigateToService(category, home.address!.zipcode as string);
+                }}
+              />
+            ) : home.bookableCategories.length === 0 ? (
               <AppText variant="bodySmall" color="secondary">No services are available in your area yet.</AppText>
-            ) : visibleCategories.length === 0 ? (
-              // Real bug fixed here: the search box was purely decorative --
-              // `searchValue` was stored in state but never read by anything,
-              // so typing filtered nothing and there was no empty state either.
-              <AppText variant="bodySmall" color="secondary">
-                {`No services match "${searchValue.trim()}".`}
-              </AppText>
             ) : (
               // Explicit 2-up rows rather than a wrapping flex row: with
               // `flexWrap` + `space-between`, a trailing row holding one
@@ -323,8 +329,8 @@ export function HomeScreen() {
               // padded with an equal-flex spacer to keep every tile the same
               // width as the rows above it.
               <View style={{ gap: theme.spacing.sm }}>
-                {Array.from({ length: Math.ceil(visibleCategories.length / 2) }).map((_, rowIndex) => {
-                  const row = visibleCategories.slice(rowIndex * 2, rowIndex * 2 + 2);
+                {Array.from({ length: Math.ceil(home.bookableCategories.length / 2) }).map((_, rowIndex) => {
+                  const row = home.bookableCategories.slice(rowIndex * 2, rowIndex * 2 + 2);
                   return (
                     <View key={rowIndex} style={{ flexDirection: "row", gap: theme.spacing.sm }}>
                       {row.map(category => (

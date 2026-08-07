@@ -16,3 +16,4 @@ export * from "./HomeSectionErrorBoundary";
 export * from "./LocationPickerModal";
 export * from "./GlobalServicesSection";
 export * from "./GlobalServiceInquiryModal";
+export * from "./SearchResultsList";
