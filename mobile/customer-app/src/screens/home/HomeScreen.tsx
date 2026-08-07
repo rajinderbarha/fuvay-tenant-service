@@ -92,6 +92,13 @@ export function HomeScreen() {
     [homeQuery.data?.bookableCategories],
   );
 
+  /** Names cycled through the search placeholder. Same ZIP-filtered source
+   * as the service grid, so the hint only ever names something bookable. */
+  const searchSuggestions = useMemo(
+    () => (homeQuery.data?.bookableCategories ?? []).map(c => c.name).filter(Boolean),
+    [homeQuery.data?.bookableCategories],
+  );
+
   // Server-side search, replacing a client-side filter over the already
   // loaded categories. That filter could only ever match whole category
   // names, so "gas", "deep clean" or "pipe repair" -- real services people
@@ -252,7 +259,14 @@ export function HomeScreen() {
         </HomeSectionErrorBoundary>
 
         <View style={{ marginTop: theme.spacing.base }}>
-          <ServiceSearch value={searchValue} onChangeText={setSearchValue} />
+          {/* Suggestions are the categories genuinely bookable at this ZIP,
+              so the rotating hint never advertises something the customer
+              cannot actually book here. */}
+          <ServiceSearch
+            value={searchValue}
+            onChangeText={setSearchValue}
+            suggestions={searchSuggestions}
+          />
         </View>
 
         {/* Section order below matches the reference design: verticals,
