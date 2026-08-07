@@ -36,6 +36,15 @@ export type BookingReceiptStage =
  * the allowlist in `interpretBookingStatus` below. */
 const KNOWN_BOOKING_STATUSES = new Set([
   "pending_assignment", "assigned", "accepted", "scheduled", "in_progress", "completed", "cancelled",
+  // Added 2026-08-07 after finding it live in `service_bookings.status`.
+  // Written by the execution engine's workflow (workflows/
+  // workflow_service.py step "on_the_way", reached via the technician's
+  // "Start Travel" transition) and already treated as a real en-route
+  // state elsewhere in the backend -- home_service_assignment/
+  // constants.py lists it in TRACKING_ACTIVE_JOB_STATUSES. It was absent
+  // here purely because final_records/constants.py's older BOOKING_STATUS_*
+  // list never named it, so it fell through to "Status pending".
+  "on_the_way",
 ]);
 
 export interface StatusInterpretation {
@@ -83,10 +92,30 @@ export function interpretBookingStatus(rawStatus: string, assignmentStatus: stri
     };
   }
 
+  // The status IS the evidence, exactly as for `assigned` above: the
+  // execution engine only writes `on_the_way` when a technician has taken
+  // the "Start Travel" transition, so a visit is genuinely underway. No
+  // ETA, technician identity, or arrival time is claimed here -- none of
+  // that is in this payload, and the live tracking screen owns it.
+  if (rawStatus === "on_the_way") {
+    return {
+      stage: "scheduled",
+      statusLabel: "On the way",
+      activityText: "Your technician is on the way",
+      supportingText: "Track the visit for live updates.",
+    };
+  }
+
   // accepted / scheduled / in_progress / completed -- and
   // pending_assignment with any assignment_status other than unassigned
   // -- are real, recognized statuses this phase does not yet own a
   // truthful advanced presentation for. Neutral, never fabricated.
+  //
+  // NOTE (2026-08-07): `accepted` is by far the largest of these in real
+  // data and still renders as "Status pending", which is misleading for a
+  // job a provider has actually accepted. Left alone here deliberately --
+  // promoting it is a product decision about what stage it maps to, not a
+  // mechanical fix like `on_the_way` (whose own status names the state).
   return NEUTRAL_PENDING;
 }
 

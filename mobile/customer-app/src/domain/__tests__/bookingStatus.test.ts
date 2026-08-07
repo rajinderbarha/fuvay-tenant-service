@@ -5,12 +5,15 @@ import { interpretBookingStatus, resolveTimelineStepState, RECEIPT_TIMELINE_STEP
 // 2026-08-01) -- `accepted`/`scheduled` are real JOB_STATUS_* values the
 // job-assignment engine writes directly, not documented in
 // final_records/constants.py alone.
-const ALL_BOOKING_STATUSES = ["pending_assignment", "assigned", "accepted", "scheduled", "in_progress", "completed", "cancelled"] as const;
+const ALL_BOOKING_STATUSES = ["pending_assignment", "assigned", "accepted", "scheduled", "on_the_way", "in_progress", "completed", "cancelled"] as const;
 const ALL_ASSIGNMENT_STATUSES = ["unassigned", "assigned", "accepted", "rejected", "cancelled"] as const;
 
 function expectedStage(status: string, assignmentStatus: string): BookingReceiptStage {
   if (status === "pending_assignment" && assignmentStatus === "unassigned") return "provider_assignment";
   if (status === "assigned") return "provider_assigned";
+  // `on_the_way` is written only by the technician's "Start Travel"
+  // transition, so the status itself proves a visit is underway.
+  if (status === "on_the_way") return "scheduled";
   return "unknown"; // includes cancelled, accepted, scheduled, in_progress, completed, and any other combo
 }
 
@@ -22,6 +25,26 @@ describe("interpretBookingStatus -- complete (booking_status, assignment_status)
       });
     }
   }
+
+  it("names the en-route state instead of falling back to 'Status pending'", () => {
+    // Regression: `on_the_way` is real and live in the data, but was
+    // missing from the known set, so a technician already travelling to
+    // the customer showed as if nothing had happened yet.
+    for (const assignmentStatus of ALL_ASSIGNMENT_STATUSES) {
+      const result = interpretBookingStatus("on_the_way", assignmentStatus);
+      expect(result.stage).toBe("scheduled");
+      expect(result.statusLabel).toBe("On the way");
+      expect(result.activityText).toBe("Your technician is on the way");
+    }
+  });
+
+  it("claims no ETA, arrival time, or technician identity for an en-route booking", () => {
+    // None of that is in this payload; the tracking screen owns it.
+    const result = interpretBookingStatus("on_the_way", "accepted");
+    const copy = `${result.statusLabel} ${result.activityText} ${result.supportingText}`;
+    expect(copy).not.toMatch(/\d+\s*(min|minute|hour|hr)/i);
+    expect(copy).not.toMatch(/arriv(es|ing) at/i);
+  });
 
   it("an unrecognized future booking_status always renders the neutral unknown stage, regardless of assignment_status", () => {
     for (const assignmentStatus of ALL_ASSIGNMENT_STATUSES) {
