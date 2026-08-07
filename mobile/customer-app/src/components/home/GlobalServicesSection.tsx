@@ -6,6 +6,7 @@ import { Icon } from "../Icon";
 import { useGlobalServicesQuery } from "../../api/globalServices/useGlobalServicesQuery";
 import { GlobalService } from "../../domain/globalServices";
 import { resolveGlobalServiceIcon } from "../../domain/globalServiceIcon";
+import { resolveMediaUrl } from "../../domain/mediaUrl";
 import { GlobalServiceInquiryModal } from "./GlobalServiceInquiryModal";
 
 export interface GlobalServicesSectionProps {
@@ -60,7 +61,7 @@ export function GlobalServicesSection({ defaultName, defaultZipcode }: GlobalSer
               }}
             >
               {service.iconUrl ? (
-                <Image source={{ uri: service.iconUrl }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
+                <Image source={{ uri: resolveMediaUrl(service.iconUrl)! }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
               ) : (
                 // Was a hardcoded `call-outline` for every card, so a row of
                 // global services was a row of identical grey phone icons.

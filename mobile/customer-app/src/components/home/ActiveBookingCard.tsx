@@ -4,6 +4,7 @@ import { useTheme } from "../../design-system/theme";
 import { AppText } from "../index";
 import { Icon } from "../Icon";
 import { HomeActiveBooking } from "../../domain/customerHome";
+import { resolveMediaUrl } from "../../domain/mediaUrl";
 
 export interface ActiveBookingCardProps {
   booking: HomeActiveBooking;
@@ -80,7 +81,7 @@ export function ActiveBookingCard({ booking, onPress, iconUrl }: ActiveBookingCa
           }}
         >
           {iconUrl ? (
-            <Image source={{ uri: iconUrl }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
+            <Image source={{ uri: resolveMediaUrl(iconUrl)! }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
           ) : (
             <Icon name="construct-outline" size="navigation" color={theme.colors.brandPrimaryStrong} decorative />
           )}

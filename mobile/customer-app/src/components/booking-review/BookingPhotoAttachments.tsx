@@ -6,7 +6,7 @@ import { AppText } from "../AppText";
 import { AppCard } from "../AppCard";
 import { AppButton } from "../AppButton";
 import { Icon } from "../Icon";
-import { ENV } from "../../config/environment";
+import { resolveMediaUrl } from "../../domain/mediaUrl";
 import {
   MAX_DRAFT_PHOTOS,
   ALLOWED_PHOTO_MIME_TYPES,
@@ -28,10 +28,11 @@ export interface BookingPhotoAttachmentsProps {
 const THUMB = 72;
 
 /** The draft stores a relative media path (`/v1/media/{id}/view`); an
- * <Image> needs an absolute URL. Already-absolute URLs pass through. */
+ * <Image> needs an absolute URL. This lived here as a local helper, so the
+ * rest of the app (category artwork, campaign banners, avatars) kept
+ * hitting the same bug -- it now lives in domain/mediaUrl.ts and is shared. */
 function absoluteUrl(url: string): string {
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${ENV.apiBaseUrl.replace(/\/$/, "")}${url.startsWith("/") ? "" : "/"}${url}`;
+  return resolveMediaUrl(url) ?? url;
 }
 
 /** expo-image-picker gives a `mimeType` on newer SDKs and only a file

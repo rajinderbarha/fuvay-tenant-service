@@ -7,6 +7,7 @@ import { HomeCategory } from "../../domain/customerHome";
 import { ServicePriceState, resolveServicePriceDisplay, classifyRawAmount } from "../../domain/servicePricing";
 import { resolveCategoryIcon } from "../../domain/categoryIcon";
 import { formatMoney } from "../../domain/money";
+import { resolveMediaUrl } from "../../domain/mediaUrl";
 
 export interface HomeServiceCardProps {
   category: HomeCategory;
@@ -44,6 +45,9 @@ export function HomeServiceCard({ category, priceState, onPress }: HomeServiceCa
   const priceLabel = startingState.kind === "valid"
     ? formatMoney(startingState.amount)
     : legacyPrice?.label ?? null;
+  // `icon_url` is server-relative for the local storage driver; RN cannot
+  // load a relative URI, so it must be absolutised (see domain/mediaUrl).
+  const artworkUri = resolveMediaUrl(category.iconUrl);
 
   return (
     <Pressable
@@ -67,9 +71,9 @@ export function HomeServiceCard({ category, priceState, onPress }: HomeServiceCa
       })}
     >
       <View style={{ width: 62, height: 72, alignItems: "center", justifyContent: "flex-end", flexShrink: 0 }}>
-        {category.iconUrl ? (
+        {artworkUri ? (
           <Image
-            source={{ uri: category.iconUrl }}
+            source={{ uri: artworkUri }}
             style={{ width: 62, height: 72 }}
             resizeMode="contain"
             accessibilityElementsHidden

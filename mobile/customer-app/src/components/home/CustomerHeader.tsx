@@ -4,6 +4,7 @@ import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { AppIconButton } from "../AppIconButton";
 import { Icon } from "../Icon";
+import { resolveMediaUrl } from "../../domain/mediaUrl";
 
 export interface CustomerHeaderProps {
   greeting: string;
@@ -76,7 +77,7 @@ export function CustomerHeader({
             }}
           >
             {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={{ width: "100%", height: "100%" }} />
+              <Image source={{ uri: resolveMediaUrl(avatarUrl)! }} style={{ width: "100%", height: "100%" }} />
             ) : (
               <AppText variant="bodyStrong" color="secondary">{customerFirstName.charAt(0).toUpperCase()}</AppText>
             )}

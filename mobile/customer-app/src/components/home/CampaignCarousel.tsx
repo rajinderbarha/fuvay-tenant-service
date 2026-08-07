@@ -3,6 +3,7 @@ import { View, Image, ScrollView, NativeSyntheticEvent, NativeScrollEvent, Dimen
 import { useTheme, useReducedMotion } from "../../design-system/theme";
 import { AppText, AppButton } from "../index";
 import { HomeCampaign } from "../../domain/customerHome";
+import { resolveMediaUrl } from "../../domain/mediaUrl";
 
 export interface CampaignCarouselProps {
   campaigns: HomeCampaign[];
@@ -96,7 +97,7 @@ export function CampaignCarousel({ campaigns, mode, onPressCta, isCtaRoutable }:
                 style={{ width: CARD_WIDTH, borderRadius: theme.radiusUsage.card, overflow: "hidden" }}
               >
                 <Image
-                  source={{ uri: artwork }}
+                  source={{ uri: resolveMediaUrl(artwork)! }}
                   style={{ width: "100%", aspectRatio: 343 / 145 }}
                   resizeMode="cover"
                 />
