@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { BOT } from "./botTheme";
+import { useBotColors } from "./botTheme";
 import { BotCard, BotPrimaryButton } from "./BotPrimitives";
 import { BookingReviewSummary } from "../../domain/bookingReview";
 import { formatMoney } from "../../domain/money";
@@ -24,6 +24,7 @@ export interface PriceProviderCardProps {
  * instead of a fabricated total.
  */
 export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisabledReason }: PriceProviderCardProps) {
+  const BOT = useBotColors();
   const provider = summary.provider;
   return (
     <BotCard>
@@ -87,6 +88,7 @@ export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisab
 }
 
 function Row({ label, value, big, muted }: { label: string; value: string; big?: boolean; muted?: boolean }) {
+  const BOT = useBotColors();
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
       <Text style={{ fontSize: 12, color: BOT.textMuted }}>{label}</Text>

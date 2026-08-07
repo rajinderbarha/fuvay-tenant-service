@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Text, Pressable, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useReducedMotion } from "../../design-system/theme";
-import { BOT } from "./botTheme";
+import { useBotColors } from "./botTheme";
 
 /**
  * Visual primitives for the merged booking chat -- its own dark, animated
@@ -15,6 +15,7 @@ import { BOT } from "./botTheme";
 export type BotStageStatus = "done" | "active" | "pending";
 
 export function BotStageTracker({ stages, activeIndex, allDone }: { stages: string[]; activeIndex: number; allDone: boolean }) {
+  const BOT = useBotColors();
   return (
     <View style={{ flexDirection: "row", alignItems: "center", marginTop: 14 }}>
       {stages.map((s, i) => {
@@ -43,6 +44,7 @@ export function BotStageTracker({ stages, activeIndex, allDone }: { stages: stri
 }
 
 function SpinningIcon() {
+  const BOT = useBotColors();
   const reduced = useReducedMotion();
   const spin = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -62,6 +64,7 @@ function SpinningIcon() {
 /** Three bouncing dots, matching TypingBubble's existing pulse pattern but
  * restyled for this dark surface. */
 export function BotTypingDots() {
+  const BOT = useBotColors();
   const reduced = useReducedMotion();
   const dots = [useRef(new Animated.Value(0.5)).current, useRef(new Animated.Value(0.5)).current, useRef(new Animated.Value(0.5)).current];
   useEffect(() => {
@@ -94,6 +97,7 @@ export function BotTypingDots() {
  * resolving, never a fixed timer -- this component only renders the
  * state it's given. */
 export function BotWorkingStep({ label, status }: { label: string; status: "pending" | "done" }) {
+  const BOT = useBotColors();
   const reduced = useReducedMotion();
   const shimmer = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -123,7 +127,7 @@ export function BotWorkingStep({ label, status }: { label: string; status: "pend
         <Animated.Text
           style={{
             fontSize: 12,
-            color: done ? BOT.textMuted : "#BFD6FF",
+            color: done ? BOT.textMuted : BOT.brandLight,
             opacity: done || reduced ? 1 : shimmer,
           }}
         >
@@ -134,36 +138,57 @@ export function BotWorkingStep({ label, status }: { label: string; status: "pend
   );
 }
 
+/** Fades + slides a turn in on mount, so each new bubble/card arrives as a
+ * visible transition rather than popping in instantly -- respects
+ * reduced-motion by rendering at rest immediately. */
+function useTurnEntrance() {
+  const reduced = useReducedMotion();
+  const progress = useRef(new Animated.Value(reduced ? 1 : 0)).current;
+  useEffect(() => {
+    if (reduced) return;
+    Animated.timing(progress, { toValue: 1, duration: 260, useNativeDriver: true }).start();
+  }, [reduced, progress]);
+  return {
+    opacity: progress,
+    transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+  };
+}
+
 export function BotAssistantBubble({ text, children }: { text?: string; children?: React.ReactNode }) {
+  const BOT = useBotColors();
+  const entrance = useTurnEntrance();
   return (
-    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+    <Animated.View style={[{ flexDirection: "row", alignItems: "flex-start", gap: 8 }, entrance]}>
       <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border, marginTop: 2 }}>
         <Ionicons name="sparkles" size={13} color={BOT.brand} />
       </View>
       {text ? (
         <View style={{ maxWidth: "80%", borderRadius: 16, borderTopLeftRadius: 4, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }}>
-          <Text style={{ fontSize: 13, lineHeight: 19, color: "#E4E8EE" }}>{text}</Text>
+          <Text style={{ fontSize: 13, lineHeight: 19, color: BOT.textPrimary }}>{text}</Text>
         </View>
       ) : (
         <View style={{ flex: 1 }}>{children}</View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
 export function BotUserBubble({ text }: { text: string }) {
+  const BOT = useBotColors();
+  const entrance = useTurnEntrance();
   return (
-    <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+    <Animated.View style={[{ flexDirection: "row", justifyContent: "flex-end" }, entrance]}>
       <View style={{ maxWidth: "78%", borderRadius: 16, borderTopRightRadius: 4, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: BOT.brand }}>
-        <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.bg }}>{text}</Text>
+        <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.bubbleOnBrand }}>{text}</Text>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
 export function BotOptionChips({
   items, selected, disabled, onSelect,
 }: { items: string[]; selected: string | null; disabled?: boolean; onSelect: (label: string) => void }) {
+  const BOT = useBotColors();
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingLeft: 36 }}>
       {items.map(label => {
@@ -184,7 +209,7 @@ export function BotOptionChips({
               opacity: isInactive ? 0.4 : 1,
             }}
           >
-            <Text style={{ fontSize: 12.5, fontWeight: "500", color: isSelected ? BOT.bg : BOT.textSecondary }}>{label}</Text>
+            <Text style={{ fontSize: 12.5, fontWeight: "500", color: isSelected ? BOT.bubbleOnBrand : BOT.textSecondary }}>{label}</Text>
           </Pressable>
         );
       })}
@@ -193,14 +218,17 @@ export function BotOptionChips({
 }
 
 export function BotCard({ children }: { children: React.ReactNode }) {
+  const BOT = useBotColors();
+  const entrance = useTurnEntrance();
   return (
-    <View style={{ marginLeft: 36, borderRadius: 20, padding: 16, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }}>
+    <Animated.View style={[{ marginLeft: 36, borderRadius: 20, padding: 16, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }, entrance]}>
       {children}
-    </View>
+    </Animated.View>
   );
 }
 
 export function BotPrimaryButton({ label, onPress, disabled, loading }: { label: string; onPress: () => void | Promise<void>; disabled?: boolean; loading?: boolean }) {
+  const BOT = useBotColors();
   const [busy, setBusy] = useState(false);
   const isDisabled = disabled || loading || busy;
   async function handlePress() {
@@ -224,7 +252,7 @@ export function BotPrimaryButton({ label, onPress, disabled, loading }: { label:
         opacity: isDisabled && !loading && !busy ? 0.6 : 1,
       }}
     >
-      <Text style={{ fontSize: 13.5, fontWeight: "700", color: isDisabled && !loading && !busy ? BOT.textDim : BOT.bg }}>
+      <Text style={{ fontSize: 13.5, fontWeight: "700", color: isDisabled && !loading && !busy ? BOT.textDim : BOT.bubbleOnBrand }}>
         {loading || busy ? "Working…" : label}
       </Text>
     </Pressable>

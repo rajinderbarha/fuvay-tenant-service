@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, Pressable, TextInput, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { BOT } from "./botTheme";
+import { useBotColors } from "./botTheme";
 import { BotCard, BotPrimaryButton } from "./BotPrimitives";
 import { CustomerSavedAddress } from "../../domain/customerSavedAddress";
 import { AddressCreatePayload } from "../../domain/addressForm";
@@ -28,6 +28,7 @@ export interface AddressTurnProps {
  * the "add new" form's zip field is pre-filled and disabled.
  */
 export function AddressTurn({ zipcode, addresses, loading, submitting, error, onPickExisting, onCreateNew }: AddressTurnProps) {
+  const BOT = useBotColors();
   const [showForm, setShowForm] = useState(false);
   const [line1, setLine1] = useState("");
   const [line2, setLine2] = useState("");

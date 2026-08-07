@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { BOT } from "./botTheme";
+import { useBotColors } from "./botTheme";
 import { BotCard, BotPrimaryButton } from "./BotPrimitives";
 import { AvailableSlot, BookingReviewSummary } from "../../domain/bookingReview";
 
@@ -51,6 +51,7 @@ function dayLabel(dateIso: string, daysAhead: number): string {
 export function SlotPickerCard({
   promisedSlot, priceLabel, availableSlots, slotsLoading, slotSelectionError, onLoadSlots, onSelectSlot, onContinue,
 }: SlotPickerCardProps) {
+  const BOT = useBotColors();
   const [open, setOpen] = useState(false);
   const [emergency, setEmergency] = useState(false);
   const [pickingKey, setPickingKey] = useState<string | null>(null);

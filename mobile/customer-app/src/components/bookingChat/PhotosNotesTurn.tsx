@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { View, Text, Image, Pressable, ActivityIndicator, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { BOT } from "./botTheme";
+import { useBotColors } from "./botTheme";
 import { BotCard, BotPrimaryButton } from "./BotPrimitives";
 import { resolveMediaUrl } from "../../domain/mediaUrl";
 import { MAX_DRAFT_PHOTOS, ALLOWED_PHOTO_MIME_TYPES, type PickedPhoto } from "../../api/bookingPhotos/bookingPhotoApi";
@@ -32,6 +32,7 @@ function resolveMimeType(asset: ImagePicker.ImagePickerAsset): string | null {
  * catalog's own `issue_detail` text question, answered earlier in the
  * normal question loop like any other question. */
 export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContinue }: PhotosNotesTurnProps) {
+  const BOT = useBotColors();
   const [busy, setBusy] = useState(false);
   const atLimit = photoUrls.length >= MAX_DRAFT_PHOTOS;
 

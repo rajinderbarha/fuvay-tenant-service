@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,7 +11,7 @@ import { useAssistantController } from "../assistant/useAssistantController";
 import { useBookingChatAddress } from "./useBookingChatAddress";
 import { ReviewAndConfirmPhase } from "./ReviewAndConfirmPhase";
 import { resolveActivityLabel } from "../../domain/assistantActivity";
-import { BOT } from "../../components/bookingChat/botTheme";
+import { useBotColors } from "../../components/bookingChat/botTheme";
 import {
   BotStageTracker, BotAssistantBubble, BotUserBubble, BotOptionChips, BotWorkingStep, BotTypingDots,
 } from "../../components/bookingChat/BotPrimitives";
@@ -27,6 +27,7 @@ const STAGES = ["Understand", "Match technician", "Confirm & price", "Book"];
  * never a fabricated location) -- only what happens once inside is new.
  */
 export function BookingChatScreen() {
+  const BOT = useBotColors();
   const navigation = useNavigation();
   const route = useRoute<Route>();
   const { data: profile } = useCustomerProfileQuery();
@@ -67,7 +68,7 @@ export function BookingChatScreen() {
             accessibilityLabel="Go to Home"
             style={{ marginTop: 8, height: 40, paddingHorizontal: 20, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand }}
           >
-            <Text style={{ color: BOT.bg, fontSize: 13, fontWeight: "700" }}>Go to Home</Text>
+            <Text style={{ color: BOT.bubbleOnBrand, fontSize: 13, fontWeight: "700" }}>Go to Home</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -86,12 +87,14 @@ export function BookingChatScreen() {
 function BookingChatConversation({
   entryContext, customerId, onClose,
 }: { entryContext: ReturnType<typeof createAssistantCardEntryContext>; customerId: import("../../domain/ids").CustomerId; onClose: () => void }) {
+  const BOT = useBotColors();
   const navigation = useNavigation();
   const c = useAssistantController(entryContext, customerId);
   const zipcode = entryContext.zipcode;
 
   const [selectedIssueLabel, setSelectedIssueLabel] = useState<string | null>(null);
   const [answerDraft, setAnswerDraft] = useState("");
+  const listRef = useRef<FlatList>(null);
 
   const questionsComplete = !!c.envelope?.progress.complete;
   const addressPhaseActive = !!c.draftId && questionsComplete;
@@ -106,6 +109,19 @@ function BookingChatConversation({
 
   const flowDone = !!addr.resolvedAddressId; // review phase mounts and owns everything past this
 
+  // Auto-scroll to the newest turn as the conversation grows -- every state
+  // change below (message count, a new question, address/price turns
+  // mounting) reshapes the single content item, so this covers all of them
+  // without needing a per-turn scroll call.
+  const scrollCue = [
+    c.messages.length, c.envelope?.answeredQuestions.length ?? 0, !!c.envelope?.currentQuestion,
+    c.activityStage, c.uiState, addressPhaseActive, addr.resolvedAddressId,
+  ].join("|");
+  useEffect(() => {
+    const timer = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+    return () => clearTimeout(timer);
+  }, [scrollCue]);
+
   const activeStageIndex = !c.draftId ? 0 : !questionsComplete ? 0 : !addr.resolvedAddressId ? 1 : 2;
 
   function submitFreeText() {
@@ -116,7 +132,10 @@ function BookingChatConversation({
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: BOT.bg }}>
+    // Bottom edge intentionally excluded -- the bottom tab bar already
+    // supplies its own safe-area inset, so including it here left a blank
+    // BOT.bg strip between the composer and the tab bar.
+    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: BOT.bg }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         {/* Header */}
         <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: BOT.borderSubtle }}>
@@ -125,7 +144,7 @@ function BookingChatConversation({
               <Ionicons name="chevron-back" size={17} color={BOT.textTertiary} />
             </Pressable>
             <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand }}>
-              <Ionicons name="sparkles" size={16} color={BOT.bg} />
+              <Ionicons name="sparkles" size={16} color={BOT.bubbleOnBrand} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ fontSize: 14.5, fontWeight: "700", color: BOT.textPrimary }}>Fuvay AI</Text>
@@ -140,6 +159,7 @@ function BookingChatConversation({
 
         {/* Transcript */}
         <FlatList
+          ref={listRef}
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 20, gap: 12 }}
           data={[0]}
@@ -190,7 +210,7 @@ function BookingChatConversation({
                         style={{ flex: 1, height: 40, borderRadius: 20, paddingHorizontal: 14, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.border, color: BOT.textPrimary, fontSize: 12.5 }}
                       />
                       <Pressable onPress={submitFreeText} style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand }}>
-                        <Ionicons name="send" size={15} color={BOT.bg} />
+                        <Ionicons name="send" size={15} color={BOT.bubbleOnBrand} />
                       </Pressable>
                     </View>
                   ) : (
