@@ -16,8 +16,10 @@ import { BookingListFooter } from "../../components/bookings/BookingListFooter";
 import { NewServiceCard } from "../../components/bookings/NewServiceCard";
 import { NoOtherActiveBookingsCard } from "../../components/bookings/NoOtherActiveBookingsCard";
 import { BookingSearchBar } from "../../components/bookings/BookingSearchBar";
+import { BookingFilterSheet } from "../../components/bookings/BookingFilterSheet";
 import { Icon } from "../../components/Icon";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { bookingStatusFilterLabel } from "../../domain/bookingStatusFilter";
 import { useCustomerBookingsListQuery } from "../../api/customerBookings/useCustomerBookingsListQuery";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
 import { BookingListFilter, isActiveBookingStatus } from "../../domain/bookingFilters";
@@ -37,10 +39,12 @@ export function MyBookingsScreen() {
   const navigation = useNavigation();
   const [filter, setFilter] = useState<BookingListFilter>("active");
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   // Debounced so typing does not fire a request per keystroke; the term
   // itself is applied server-side (see useCustomerBookingsListQuery).
   const debouncedSearch = useDebouncedValue(search, 350);
-  const query = useCustomerBookingsListQuery(filter, debouncedSearch);
+  const query = useCustomerBookingsListQuery(filter, debouncedSearch, statusFilter);
   const { data: home } = useCustomerHomeQuery();
 
   function goToDetails(bookingId: string) {
@@ -50,14 +54,6 @@ export function MyBookingsScreen() {
   function startAssistant() {
     const entryContext = createAssistantCardEntryContext({ zipcode: home?.address?.zipcode ?? "" });
     (navigation as { navigate: (name: string, params: unknown) => void }).navigate("Assistant", entryContext);
-  }
-
-  /** The design's filter control is a single button, not a menu. It steps
-   * through the same three buckets the tabs expose, so it never reaches a
-   * state the tabs cannot show or undo. */
-  function cycleFilter() {
-    const order: BookingListFilter[] = ["active", "completed", "all"];
-    setFilter(order[(order.indexOf(filter) + 1) % order.length]);
   }
 
   function goToSupport() {
@@ -99,9 +95,30 @@ export function MyBookingsScreen() {
         <BookingSearchBar
           value={search}
           onChangeText={setSearch}
-          filterActive={filter !== "active"}
-          onPressFilter={cycleFilter}
+          filterActive={statusFilter !== null}
+          onPressFilter={() => setFilterSheetVisible(true)}
         />
+
+        {/* The applied filter stays visible and removable outside the
+            sheet -- a narrowed list that looks identical to an unnarrowed
+            one is how customers conclude their bookings have vanished. */}
+        {statusFilter ? (
+          <Pressable
+            onPress={() => setStatusFilter(null)}
+            accessibilityRole="button"
+            accessibilityLabel={`Filter: ${bookingStatusFilterLabel(statusFilter)}. Tap to clear.`}
+            style={{
+              flexDirection: "row", alignItems: "center", alignSelf: "flex-start",
+              gap: theme.spacing.xxs,
+              paddingVertical: theme.spacing.xxs, paddingHorizontal: theme.spacing.sm,
+              borderRadius: theme.radiusUsage.statusPill,
+              backgroundColor: theme.colors.surfaceInteractive,
+            }}
+          >
+            <AppText variant="caption">{bookingStatusFilterLabel(statusFilter)}</AppText>
+            <Icon name="close-circle" size="compact" color={theme.colors.iconDefault} decorative />
+          </Pressable>
+        ) : null}
 
         <BookingFilterTabs
           selected={filter}
@@ -133,13 +150,19 @@ export function MyBookingsScreen() {
         </View>
 
         {query.items.length === 0 ? (
-          <BookingListEmptyState
-            filter={filter}
-            hasAnyBookings={hasAnyBookingsAtAll}
-            searchTerm={debouncedSearch}
-            onStartAssistant={startAssistant}
-            onClearFilter={() => { setFilter("all"); setSearch(""); }}
-          />
+          // Only the assistant card here -- "No other active bookings"
+          // would be wrong with none at all, since it means "no OTHERS
+          // besides the one above".
+          <View style={{ gap: theme.spacing.base }}>
+            <BookingListEmptyState
+              filter={filter}
+              hasAnyBookings={hasAnyBookingsAtAll}
+              searchTerm={debouncedSearch}
+              onStartAssistant={startAssistant}
+              onClearFilter={() => { setFilter("all"); setSearch(""); setStatusFilter(null); }}
+            />
+            <NewServiceCard onPress={startAssistant} />
+          </View>
         ) : (
           <FlatList
             data={query.items}
@@ -171,6 +194,13 @@ export function MyBookingsScreen() {
           />
         )}
       </View>
+
+      <BookingFilterSheet
+        visible={filterSheetVisible}
+        status={statusFilter}
+        onClose={() => setFilterSheetVisible(false)}
+        onApply={setStatusFilter}
+      />
     </AppScreen>
   );
 }

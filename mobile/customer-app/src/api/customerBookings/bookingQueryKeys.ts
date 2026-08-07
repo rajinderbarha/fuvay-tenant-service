@@ -8,6 +8,10 @@
  * correctly without agreeing on a raw array by convention alone.
  */
 export interface BookingFilters {
+  /** active | completed | all -- which tab is selected. */
+  bucket?: string;
+  /** An exact `ServiceBooking.status` narrowing WITHIN the bucket, set by
+   * the filter sheet. Distinct from `bucket`: the two combine. */
   status?: string;
   page?: number;
   /** Free-text search term. Part of the key so each distinct search is

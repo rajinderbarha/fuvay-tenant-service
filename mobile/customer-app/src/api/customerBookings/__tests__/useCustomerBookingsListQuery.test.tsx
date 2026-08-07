@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { renderHook, waitFor, act } from "@testing-library/react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -41,7 +41,7 @@ describe("useCustomerBookingsListQuery", () => {
     await waitFor(() => expect(result.current.items).toHaveLength(1));
     // `undefined` search: an empty box must send no `q` at all, not an
     // empty term the backend would have to special-case.
-    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("active", 20, 0, undefined);
+    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("active", 20, 0, undefined, undefined);
     expect(result.current.counts).toEqual({ active: 1, completed: 4, all: 5 });
   });
 
@@ -52,14 +52,30 @@ describe("useCustomerBookingsListQuery", () => {
     const { result } = renderHook(() => useCustomerBookingsListQuery("all", "  cooling  "), { wrapper });
     await waitFor(() => expect(result.current.items).toHaveLength(1));
     // Trimmed, so " cooling " and "cooling" hit one cache entry.
-    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("all", 20, 0, "cooling");
+    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("all", 20, 0, "cooling", undefined);
   });
 
   it("treats a whitespace-only search as no search at all", async () => {
     (customerBookingsApi.listMyBookings as jest.Mock).mockResolvedValue(page([bookingDto("b-1")], 1, 0));
     const { result } = renderHook(() => useCustomerBookingsListQuery("all", "   "), { wrapper });
     await waitFor(() => expect(result.current.items).toHaveLength(1));
-    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("all", 20, 0, undefined);
+    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("all", 20, 0, undefined, undefined);
+  });
+
+  it("sends the status filter alongside the bucket rather than instead of it", async () => {
+    // `status` narrows WITHIN the bucket server-side; dropping the bucket
+    // would widen the list the moment a filter was applied.
+    (customerBookingsApi.listMyBookings as jest.Mock).mockResolvedValue(page([bookingDto("b-1")], 1, 0));
+    const { result } = renderHook(() => useCustomerBookingsListQuery("all", "", "completed"), { wrapper });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("all", 20, 0, undefined, "completed");
+  });
+
+  it("sends no status at all when the filter is cleared", async () => {
+    (customerBookingsApi.listMyBookings as jest.Mock).mockResolvedValue(page([bookingDto("b-1")], 1, 0));
+    const { result } = renderHook(() => useCustomerBookingsListQuery("all", "", null), { wrapper });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    expect(customerBookingsApi.listMyBookings).toHaveBeenCalledWith("all", 20, 0, undefined, undefined);
   });
 
   it("loads a further page via fetchNextPage without duplicating rows", async () => {
@@ -85,3 +101,4 @@ describe("useCustomerBookingsListQuery", () => {
     expect(result.current.hasNextPage).toBe(false);
   });
 });
+

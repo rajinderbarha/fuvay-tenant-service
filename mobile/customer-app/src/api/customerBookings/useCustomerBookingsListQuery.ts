@@ -18,14 +18,19 @@ const PAGE_SIZE = 20;
  * to render "Active {n}". True incremental pagination via
  * `useInfiniteQuery` (real "load more", not a single giant fetch).
  */
-export function useCustomerBookingsListQuery(bucket: BookingListFilter, search?: string) {
+export function useCustomerBookingsListQuery(
+  bucket: BookingListFilter,
+  search?: string,
+  statusFilter?: string | null,
+) {
   // Normalised once so " ac " and "ac" share a cache entry rather than
   // refetching the same result under two keys.
   const q = search?.trim() ? search.trim() : undefined;
+  const status = statusFilter ?? undefined;
   const query = useInfiniteQuery({
-    queryKey: bookingQueryKeys.list({ status: bucket, q }),
+    queryKey: bookingQueryKeys.list({ bucket, status, q }),
     queryFn: async ({ pageParam }: { pageParam: number }) => {
-      const res = await listMyBookings(bucket, PAGE_SIZE, pageParam, q);
+      const res = await listMyBookings(bucket, PAGE_SIZE, pageParam, q, status);
       return adaptBookingListPage(res.data);
     },
     initialPageParam: 0,
