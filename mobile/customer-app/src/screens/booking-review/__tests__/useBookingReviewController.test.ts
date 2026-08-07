@@ -232,6 +232,28 @@ describe("useBookingReviewController", () => {
     expect(result.current.blockedReason).toBe("no_provider");
   });
 
+  it("passes the emergency flag through to both the list and select-slot API calls", async () => {
+    (reviewApi.getAvailableSlots as jest.Mock).mockResolvedValue({ data: { slots: [] } });
+    (reviewApi.selectSlot as jest.Mock).mockResolvedValue(summaryDto());
+    const { result } = renderHook(() => useBookingReviewController(draftId));
+    await waitFor(() => expect(result.current.uiState).toBe("ready"));
+
+    await act(async () => { await result.current.loadAvailableSlots(true); });
+    expect(reviewApi.getAvailableSlots).toHaveBeenCalledWith(draftId, true);
+
+    await act(async () => { await result.current.selectSlot("2026-08-10", "10:00-11:00", true); });
+    expect(reviewApi.selectSlot).toHaveBeenCalledWith(draftId, "2026-08-10", "10:00-11:00", true);
+  });
+
+  it("defaults emergency to false when the caller omits it", async () => {
+    (reviewApi.getAvailableSlots as jest.Mock).mockResolvedValue({ data: { slots: [] } });
+    const { result } = renderHook(() => useBookingReviewController(draftId));
+    await waitFor(() => expect(result.current.uiState).toBe("ready"));
+
+    await act(async () => { await result.current.loadAvailableSlots(); });
+    expect(reviewApi.getAvailableSlots).toHaveBeenCalledWith(draftId, false);
+  });
+
   it("maps every load stage to the correct, semantically-accurate activity label (not a reused question-flow label)", async () => {
     const { bookingReviewLoadLabel } = jest.requireActual("../useBookingReviewController");
     expect(bookingReviewLoadLabel("checking_details")).toBe("Checking your booking details…");

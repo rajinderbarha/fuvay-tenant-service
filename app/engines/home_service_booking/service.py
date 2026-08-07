@@ -1410,10 +1410,16 @@ class HomeServiceChatbotBookingService:
     # 11b. AVAILABLE SLOTS — let the customer pick, instead of the system
     # ══════════════════════════════════════════════════════════════════════════
 
-    async def list_available_slots(self, draft_id: uuid.UUID, customer_id: uuid.UUID) -> dict:
+    async def list_available_slots(self, draft_id: uuid.UUID, customer_id: uuid.UUID, emergency: bool = False) -> dict:
         """Every real slot this provider has capacity for, not just the one
         `build_booking_summary` already promised -- lets Review show a
         picker instead of a single system-chosen time.
+
+        `emergency=True` shortens the minimum lead time from 6 hours to 2
+        (product-specified), applied on top of -- never instead of -- the
+        provider's own configured business hours: this still only ever
+        walks the same real availability rules, so it can offer a slot
+        outside the provider's hours no more than the normal path can.
 
         Empty list (never an error) when no provider is assigned yet, or
         when the provider genuinely has no capacity anywhere in the search
@@ -1423,12 +1429,17 @@ class HomeServiceChatbotBookingService:
         draft = await self._require_draft(draft_id, customer_id)
         if not draft.selected_tenant_id:
             return {"slots": []}
-        from app.engines.home_service_booking.provider_slot_service import list_available_slots
-        slots = await list_available_slots(self.db, tenant_id=draft.selected_tenant_id)
+        from app.engines.home_service_booking.provider_slot_service import (
+            list_available_slots, DEFAULT_MIN_LEAD_HOURS, EMERGENCY_MIN_LEAD_HOURS,
+        )
+        slots = await list_available_slots(
+            self.db, tenant_id=draft.selected_tenant_id,
+            min_lead_hours=EMERGENCY_MIN_LEAD_HOURS if emergency else DEFAULT_MIN_LEAD_HOURS,
+        )
         return {"slots": slots}
 
     async def select_promised_slot(
-        self, draft_id: uuid.UUID, customer_id: uuid.UUID, date_iso: str, time_window: str,
+        self, draft_id: uuid.UUID, customer_id: uuid.UUID, date_iso: str, time_window: str, emergency: bool = False,
     ) -> dict:
         """Overwrites the summary's `promised_slot` with the one the
         customer actually picked, in the exact shape `build_booking_summary`
@@ -1444,7 +1455,9 @@ class HomeServiceChatbotBookingService:
         booked anyway.
         """
         import datetime as _dt
-        from app.engines.home_service_booking.provider_slot_service import slot_has_capacity, list_available_slots
+        from app.engines.home_service_booking.provider_slot_service import (
+            slot_has_capacity, list_available_slots, DEFAULT_MIN_LEAD_HOURS, EMERGENCY_MIN_LEAD_HOURS,
+        )
 
         draft = await self._require_draft(draft_id, customer_id)
         if not draft.selected_tenant_id:
@@ -1462,15 +1475,16 @@ class HomeServiceChatbotBookingService:
         # capacity check just above means it genuinely must be in this list.
         now = _dt.datetime.now()
         # Real `now`, not day-midnight, so a same-day window that has
-        # already started is still correctly excluded by the walk's own
-        # "not already begun" rule -- `slot_has_capacity` above checks
-        # capacity only, never whether the slot's start time has passed.
+        # already started, OR falls inside the minimum lead time, is still
+        # correctly excluded by the walk's own rule -- `slot_has_capacity`
+        # above checks capacity only, never timing.
         days_needed = (day - now.date()).days + 1
         if days_needed < 1:
             raise ValueError("SLOT_NO_LONGER_AVAILABLE")  # a past date was requested
         candidates = await list_available_slots(
             self.db, tenant_id=draft.selected_tenant_id,
             from_datetime=now, search_days=days_needed, max_results=200,
+            min_lead_hours=EMERGENCY_MIN_LEAD_HOURS if emergency else DEFAULT_MIN_LEAD_HOURS,
         )
         promised_slot = next(
             (s for s in candidates if s["date"] == day.isoformat() and s["time_window"] == time_window),
@@ -1478,9 +1492,10 @@ class HomeServiceChatbotBookingService:
         )
         if not promised_slot:
             # slot_has_capacity said yes but the walk (which also checks
-            # "not already started") didn't reproduce it -- only possible
-            # if the window passed between the two calls. Same customer-
-            # facing outcome either way: this slot cannot be booked now.
+            # "not already started"/lead-time) didn't reproduce it -- only
+            # possible if the window passed, or fell inside the lead-time
+            # cutoff, between the two calls. Same customer-facing outcome
+            # either way: this slot cannot be booked now.
             raise ValueError("SLOT_NO_LONGER_AVAILABLE")
 
         existing = draft.booking_summary or {}

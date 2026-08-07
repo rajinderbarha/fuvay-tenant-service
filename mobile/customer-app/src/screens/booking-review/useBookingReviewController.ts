@@ -64,12 +64,17 @@ export interface BookingReviewControllerActions {
   removePhoto: (photoUrl: string) => Promise<void>;
   /** Fetches the provider's real, capacity-checked slot list -- called
    * lazily (when the customer opens the picker), not on every load, since
-   * most reviews never need it. */
-  loadAvailableSlots: () => Promise<void>;
+   * most reviews never need it. `emergency` shortens the backend's
+   * minimum lead time from 6 hours to 2 (product-specified), still bound
+   * by the provider's own real configured hours. */
+  loadAvailableSlots: (emergency?: boolean) => Promise<void>;
   /** Overwrites the system-chosen `promisedSlot` with the customer's own
    * pick. Throws (rather than swallowing) a slot that lost capacity in
-   * the meantime, so the picker can show the real reason and refresh. */
-  selectSlot: (dateIso: string, timeWindow: string) => Promise<void>;
+   * the meantime, so the picker can show the real reason and refresh.
+   * `emergency` must match whichever list the picked slot came from --
+   * the backend re-derives the slot under the same lead-time rule it was
+   * offered under. */
+  selectSlot: (dateIso: string, timeWindow: string, emergency?: boolean) => Promise<void>;
 }
 
 /**
@@ -249,11 +254,11 @@ export function useBookingReviewController(draftId: string): BookingReviewContro
     applyPhotoUrls(result.data.photo_urls);
   }, [draftId, applyPhotoUrls]);
 
-  const loadAvailableSlots = useCallback(async () => {
+  const loadAvailableSlots = useCallback(async (emergency: boolean = false) => {
     setSlotsLoading(true);
     setSlotSelectionError(null);
     try {
-      const raw = await reviewApi.getAvailableSlots(draftId);
+      const raw = await reviewApi.getAvailableSlots(draftId, emergency);
       setAvailableSlots(adaptAvailableSlots(parseAvailableSlotsResponse(raw.data)));
     } catch (err) {
       setSlotSelectionError(err instanceof DomainError ? err.diagnostic : "Couldn't load available times.");
@@ -262,10 +267,10 @@ export function useBookingReviewController(draftId: string): BookingReviewContro
     }
   }, [draftId]);
 
-  const selectSlot = useCallback(async (dateIso: string, timeWindow: string) => {
+  const selectSlot = useCallback(async (dateIso: string, timeWindow: string, emergency: boolean = false) => {
     setSlotSelectionError(null);
     try {
-      const raw = await reviewApi.selectSlot(draftId, dateIso, timeWindow);
+      const raw = await reviewApi.selectSlot(draftId, dateIso, timeWindow, emergency);
       const summaryDto = parseSelectSlotResponse(raw.data).booking_summary;
       setSummary(prev => (prev ? applySelectedSlotToSummary(prev, summaryDto) : prev));
     } catch (err) {

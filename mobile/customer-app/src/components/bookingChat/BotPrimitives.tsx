@@ -30,7 +30,7 @@ export function BotStageTracker({ stages, activeIndex, allDone }: { stages: stri
               ) : (
                 <Ionicons name="ellipse-outline" size={11} color={BOT.textFaint} />
               )}
-              <Text style={{ fontSize: 10.5, fontFamily: "monospace", color: done ? BOT.success : active ? BOT.brandLight : BOT.textFaint }}>
+              <Text style={{ fontSize: 10.5, color: done ? BOT.success : active ? BOT.brandLight : BOT.textFaint }}>
                 {s}
               </Text>
             </View>
@@ -122,7 +122,7 @@ export function BotWorkingStep({ label, status }: { label: string; status: "pend
         {done ? <Ionicons name="checkmark-circle" size={14} color={BOT.success} /> : <SpinningIcon />}
         <Animated.Text
           style={{
-            fontSize: 12, fontFamily: "monospace",
+            fontSize: 12,
             color: done ? BOT.textMuted : "#BFD6FF",
             opacity: done || reduced ? 1 : shimmer,
           }}

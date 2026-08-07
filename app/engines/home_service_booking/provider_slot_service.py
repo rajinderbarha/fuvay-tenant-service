@@ -18,6 +18,16 @@ The customer is shown a real, capacity-checked slot BEFORE they confirm
 (today first, then the next day, and so on), so they make the final call
 on a promise the provider can actually keep -- rather than confirming
 blind and waiting to find out.
+
+MINIMUM LEAD TIME (added on explicit product request): a slot must start
+at least `min_lead_hours` from now -- 6 hours for a normal booking, 2
+hours for an emergency one. This is enforced ON TOP of the provider's own
+configured business hours, never instead of them: an emergency request
+still only ever gets a slot the provider's real calendar has room for.
+If nothing qualifies within the provider's hours today, the walk rolls to
+the next open day exactly as it already did -- there is no separate
+"after-hours emergency slot" concept invented here, because the provider
+never configured capacity for one.
 """
 from __future__ import annotations
 import datetime as dt
@@ -36,6 +46,12 @@ FALLBACK_SLOT_MINUTES = 60
 # Used only when a provider has rules but left per-slot capacity unset.
 # 1 is the safe reading of "unconfigured": never silently overbook someone.
 FALLBACK_MAX_PER_SLOT = 1
+
+# Minimum lead time between "now" and a slot's start -- gives the provider
+# real time to prepare/dispatch. Product-specified values: 6 hours for a
+# normal request, 2 hours for an emergency one.
+DEFAULT_MIN_LEAD_HOURS = 6.0
+EMERGENCY_MIN_LEAD_HOURS = 2.0
 
 
 def _parse_hhmm(value) -> dt.time | None:
@@ -118,20 +134,25 @@ async def find_earliest_available_slot(
     tenant_id: uuid.UUID,
     from_datetime: dt.datetime | None = None,
     search_days: int = DEFAULT_SEARCH_DAYS,
+    min_lead_hours: float = DEFAULT_MIN_LEAD_HOURS,
 ) -> dict | None:
-    """First slot this provider genuinely has capacity for.
+    """First slot this provider genuinely has capacity for, at least
+    `min_lead_hours` from now.
 
     Walks forward day by day from `from_datetime` (default: now) and
     returns the first slot whose live booking count is below the
-    provider's own `max_bookings_per_slot`. Slots that already started
-    today are skipped -- a provider cannot honour a window that has
-    passed.
+    provider's own `max_bookings_per_slot`. A slot starting before the
+    lead-time cutoff is skipped even if it technically hasn't started yet
+    -- a provider cannot honour a window with no real time to prepare for
+    it. Once the working day's slots run out, the walk moves to the next
+    day exactly as configured -- there is no after-hours fallback.
 
     Returns None when the provider has no capacity anywhere in the search
     horizon. Callers must treat that as "cannot promise a time", never as
     "book it anyway".
     """
     now = from_datetime or dt.datetime.now()
+    cutoff = now + dt.timedelta(hours=min_lead_hours)
     day = now.date()
 
     for offset in range(search_days):
@@ -149,8 +170,10 @@ async def find_earliest_available_slot(
         for rule in rules:
             cap = rule.get("max_bookings_per_slot") or FALLBACK_MAX_PER_SLOT
             for start, end in _slots_from_rule(rule):
-                # Never offer a window that has already begun today.
-                if offset == 0 and dt.datetime.combine(target, start) <= now:
+                # Never offer a window inside the minimum lead time --
+                # replaces the older "hasn't started yet" check, which
+                # `cutoff >= now` always satisfies too.
+                if dt.datetime.combine(target, start) < cutoff:
                     continue
                 label = _window_label(start, end)
                 if booked.get(label, 0) >= cap:
@@ -177,11 +200,14 @@ async def list_available_slots(
     from_datetime: dt.datetime | None = None,
     search_days: int = DEFAULT_SEARCH_DAYS,
     max_results: int = 8,
+    min_lead_hours: float = DEFAULT_MIN_LEAD_HOURS,
 ) -> list[dict]:
-    """Every genuinely bookable slot for this provider, earliest first --
-    the list form of `find_earliest_available_slot`, sharing its exact
-    capacity logic so a slot offered here is honoured the same way at
-    confirmation (`slot_has_capacity` re-checks the same rules).
+    """Every genuinely bookable slot for this provider, earliest first,
+    each at least `min_lead_hours` from now -- the list form of
+    `find_earliest_available_slot`, sharing its exact capacity and lead-
+    time rules so a slot offered here is honoured the same way at
+    confirmation (`slot_has_capacity` re-checks the same capacity rule;
+    `select_promised_slot` re-derives from this same function).
 
     Lets the customer pick a time rather than being handed the single
     earliest one -- the walk is identical, it just keeps collecting
@@ -189,6 +215,7 @@ async def list_available_slots(
     real slots are found or the search horizon runs out.
     """
     now = from_datetime or dt.datetime.now()
+    cutoff = now + dt.timedelta(hours=min_lead_hours)
     day = now.date()
     results: list[dict] = []
 
@@ -211,7 +238,7 @@ async def list_available_slots(
             for start, end in _slots_from_rule(rule):
                 if len(results) >= max_results:
                     break
-                if offset == 0 and dt.datetime.combine(target, start) <= now:
+                if dt.datetime.combine(target, start) < cutoff:
                     continue
                 label = _window_label(start, end)
                 if booked.get(label, 0) >= cap:
@@ -239,7 +266,10 @@ async def slot_has_capacity(
     The customer may sit on the review screen for a while, and another
     customer can take the last place in the meantime -- so the promise is
     always re-validated before it is committed, never trusted from the
-    earlier offer.
+    earlier offer. Capacity only -- lead time is re-enforced separately by
+    `select_promised_slot`, which re-derives the slot from
+    `list_available_slots` (the same function that applied it when the
+    slot was first offered).
     """
     if await _is_closed(db, tenant_id, day):
         return False

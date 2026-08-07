@@ -90,7 +90,7 @@ function Row({ label, value, big, muted }: { label: string; value: string; big?:
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
       <Text style={{ fontSize: 12, color: BOT.textMuted }}>{label}</Text>
-      <Text style={{ fontSize: big ? 15 : 12, fontFamily: "monospace", fontWeight: big ? "700" : "400", color: muted ? BOT.textSecondary : BOT.brandLight }}>
+      <Text style={{ fontSize: big ? 15 : 12, fontWeight: big ? "700" : "400", color: muted ? BOT.textSecondary : BOT.brandLight }}>
         {value}
       </Text>
     </View>

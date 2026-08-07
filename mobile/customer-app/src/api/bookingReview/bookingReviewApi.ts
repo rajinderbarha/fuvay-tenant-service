@@ -81,18 +81,23 @@ export async function buildBookingSummary(draftId: string) {
  * `build_booking_summary` already promised. Empty list (never an error)
  * when no provider is assigned yet or the provider has no capacity in
  * the search horizon. */
-export async function getAvailableSlots(draftId: string) {
-  const res = await authenticatedRequest({ method: "GET", path: `${base(draftId)}/available-slots` });
+/** `emergency` shortens the backend's minimum lead time from 6 hours to 2
+ * (product-specified) -- applied on top of the provider's own real
+ * configured hours, never instead of them. */
+export async function getAvailableSlots(draftId: string, emergency: boolean = false) {
+  const res = await authenticatedRequest({
+    method: "GET", path: `${base(draftId)}/available-slots${emergency ? "?emergency=true" : ""}`,
+  });
   return parseApiSuccess(res.json, availableSlotsResponseSchema);
 }
 
-/** Re-validated against live capacity server-side, not trusted from the
- * list response the customer may have been looking at for a while -- a
- * slot that lost capacity in the meantime comes back as a 422, not a
- * silent overbook. */
-export async function selectSlot(draftId: string, dateIso: string, timeWindow: string) {
+/** Re-validated against live capacity AND the lead-time rule server-side,
+ * not trusted from the list response the customer may have been looking
+ * at for a while -- a slot that lost capacity, or that the lead-time
+ * cutoff has since passed, comes back as a 422, not a silent overbook. */
+export async function selectSlot(draftId: string, dateIso: string, timeWindow: string, emergency: boolean = false) {
   const res = await authenticatedRequest({
-    method: "POST", path: `${base(draftId)}/select-slot`, body: { date: dateIso, time_window: timeWindow },
+    method: "POST", path: `${base(draftId)}/select-slot`, body: { date: dateIso, time_window: timeWindow, emergency },
   });
   return parseApiSuccess(res.json, selectSlotResponseSchema);
 }

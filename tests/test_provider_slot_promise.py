@@ -22,6 +22,7 @@ import pytest
 from app.engines.home_service_booking.provider_slot_service import (
     find_earliest_available_slot, list_available_slots, slot_has_capacity, _slots_from_rule,
     _window_label, FALLBACK_MAX_PER_SLOT, FALLBACK_SLOT_MINUTES,
+    DEFAULT_MIN_LEAD_HOURS, EMERGENCY_MIN_LEAD_HOURS,
 )
 
 GURAMRIT_TENANT_ID = uuid.UUID("244beeec-fedc-452e-8054-317e45557d4d")
@@ -171,6 +172,83 @@ async def test_a_provider_with_no_availability_rules_gets_no_promise():
         assert slot is None
     finally:
         await db.close()
+
+
+# ── Minimum lead time (6h normal / 2h emergency), on top of real hours ─────
+
+def test_lead_time_defaults_are_the_product_specified_values():
+    assert DEFAULT_MIN_LEAD_HOURS == 6.0
+    assert EMERGENCY_MIN_LEAD_HOURS == 2.0
+
+
+@pytest.mark.asyncio
+async def test_a_slot_inside_the_lead_time_is_never_offered_even_if_technically_unstarted():
+    """A slot 1 hour from now has not started, but 6 hours of lead time is
+    required by default -- it must not be offered."""
+    db = await _get_db()
+    try:
+        now = dt.datetime.now()
+        soon = await find_earliest_available_slot(
+            db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=6.0,
+        )
+        if soon is not None:
+            assert dt.datetime.fromisoformat(soon["starts_at"]) >= now + dt.timedelta(hours=6)
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_emergency_lead_time_can_surface_an_earlier_slot_than_the_default():
+    """2 hours of lead time can only ever admit the SAME slots the 6-hour
+    walk admits, or earlier ones -- never later, never a slot outside the
+    provider's real configured hours."""
+    db = await _get_db()
+    try:
+        now = dt.datetime.now()
+        normal = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=6.0)
+        emergency = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=2.0)
+        assert emergency is not None, "Guramrit has real availability rules configured"
+        assert dt.datetime.fromisoformat(emergency["starts_at"]) >= now + dt.timedelta(hours=2)
+        if normal is not None:
+            assert dt.datetime.fromisoformat(emergency["starts_at"]) <= dt.datetime.fromisoformat(normal["starts_at"])
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_list_available_slots_respects_the_same_lead_time_as_the_single_slot_resolver():
+    db = await _get_db()
+    try:
+        now = dt.datetime.now()
+        slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=6.0)
+        for s in slots:
+            assert dt.datetime.fromisoformat(s["starts_at"]) >= now + dt.timedelta(hours=6)
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_lead_time_never_bypasses_the_providers_real_working_hours():
+    """Emergency shortens the LEAD TIME, not the provider's actual hours --
+    a slot outside the provider's configured business hours must never
+    appear, emergency or not."""
+    db = await _get_db()
+    try:
+        now = dt.datetime.now()
+        emergency_slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=2.0, max_results=20)
+        for s in emergency_slots:
+            day = dt.date.fromisoformat(s["date"])
+            dow = day.isoweekday() % 7
+            rules = await _provider_rules_for_day_helper(db, dow)
+            windows = {_window_label(a, b) for r in rules for a, b in _slots_from_rule(r)}
+            assert s["time_window"] in windows, "an emergency slot must still be one of the provider's real configured windows"
+    finally:
+        await db.close()
+
+
+async def _provider_rules_for_day_helper(db, dow: int) -> list[dict]:
+    from app.engines.home_service_booking.provider_slot_service import _provider_rules_for_day
+    return await _provider_rules_for_day(db, GURAMRIT_TENANT_ID, dow)
 
 
 # ── Letting the customer choose, instead of only seeing the system's pick ──

@@ -407,11 +407,12 @@ async def build_booking_summary(
 async def get_available_slots(
     draft_id: uuid.UUID,
     r: Request,
+    emergency: bool = Query(False, description="Shortens the minimum lead time from 6 hours to 2."),
     svc: HomeServiceChatbotBookingService = Depends(_svc),
     user: UserContext = Depends(get_current_user),
 ):
     customer_id = uuid.UUID(user.user_id)
-    result = await svc.list_available_slots(draft_id=draft_id, customer_id=customer_id)
+    result = await svc.list_available_slots(draft_id=draft_id, customer_id=customer_id, emergency=emergency)
     return ok(result, _rid(r), "home_service_booking")
 
 
@@ -431,12 +432,13 @@ async def select_slot(
 ):
     date_iso = body.get("date")
     time_window = body.get("time_window")
+    emergency = bool(body.get("emergency", False))
     if not date_iso or not time_window:
         raise HTTPException(status_code=422, detail="date and time_window are required.")
     customer_id = uuid.UUID(user.user_id)
     try:
         result = await svc.select_promised_slot(
-            draft_id=draft_id, customer_id=customer_id, date_iso=date_iso, time_window=time_window,
+            draft_id=draft_id, customer_id=customer_id, date_iso=date_iso, time_window=time_window, emergency=emergency,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

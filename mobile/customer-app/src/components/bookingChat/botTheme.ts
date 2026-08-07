@@ -31,12 +31,3 @@ export const BOT = {
   warning: "#FFB020",
   danger: "#F85149",
 };
-
-/** Font families approximate the reference's Sora/Inter/JetBrains Mono --
- * no custom fonts are bundled in this app, so weight + system font is the
- * honest substitute rather than pulling in new font assets for one screen. */
-export const BOT_FONT = {
-  display: undefined, // system font, bold weights below approximate Sora
-  body: undefined,
-  mono: "monospace" as const,
-};

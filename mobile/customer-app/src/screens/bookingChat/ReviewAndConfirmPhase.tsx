@@ -2,13 +2,26 @@ import React, { useState } from "react";
 import { View } from "react-native";
 import { useBookingReviewController, bookingReviewLoadLabel } from "../booking-review/useBookingReviewController";
 import { BotAssistantBubble, BotWorkingStep } from "../../components/bookingChat/BotPrimitives";
+import { SlotPickerCard } from "../../components/bookingChat/SlotPickerCard";
 import { PhotosNotesTurn } from "../../components/bookingChat/PhotosNotesTurn";
 import { PriceProviderCard } from "../../components/bookingChat/PriceProviderCard";
 import { ConfirmCard } from "../../components/bookingChat/ConfirmCard";
+import { formatMoney } from "../../domain/money";
+import { resolveServicePriceDisplay } from "../../domain/servicePricing";
+import { BookingReviewSummary } from "../../domain/bookingReview";
 
 export interface ReviewAndConfirmPhaseProps {
   draftId: string;
   onTrackBooking: (bookingId: string) => void;
+}
+
+/** The one real price the slot picker shows alongside a time -- there is
+ * no per-slot price anywhere in the backend, so this is the same amount
+ * every slot costs, never a fabricated time-of-day figure. */
+function priceLabelFor(summary: BookingReviewSummary): string | null {
+  if (summary.inspection) return `${formatMoney(summary.inspection.visitFee)} inspection visit`;
+  if (summary.priceState.kind === "valid") return formatMoney(summary.priceState.amount);
+  return resolveServicePriceDisplay(summary.priceState).label;
 }
 
 /**
@@ -21,9 +34,13 @@ export interface ReviewAndConfirmPhaseProps {
  * completely unchanged -- only the rendering is the new dark chat shell,
  * every real API call and state machine is the same one Review already
  * used and had tested.
+ *
+ * Three sequential turns once the summary is ready: pick a time (with the
+ * real price shown alongside it) -> optional photos -> provider + confirm.
  */
 export function ReviewAndConfirmPhase({ draftId, onTrackBooking }: ReviewAndConfirmPhaseProps) {
   const c = useBookingReviewController(draftId);
+  const [slotDone, setSlotDone] = useState(false);
   const [photosDone, setPhotosDone] = useState(false);
 
   if (c.uiState === "loading" && c.loadStage) {
@@ -50,7 +67,18 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking }: ReviewAndConf
 
   return (
     <View style={{ gap: 12 }}>
-      {!photosDone ? (
+      {!slotDone ? (
+        <SlotPickerCard
+          promisedSlot={c.summary.promisedSlot}
+          priceLabel={priceLabelFor(c.summary)}
+          availableSlots={c.availableSlots}
+          slotsLoading={c.slotsLoading}
+          slotSelectionError={c.slotSelectionError}
+          onLoadSlots={emergency => c.loadAvailableSlots(emergency)}
+          onSelectSlot={(dateIso, timeWindow, emergency) => c.selectSlot(dateIso, timeWindow, emergency)}
+          onContinue={() => setSlotDone(true)}
+        />
+      ) : !photosDone ? (
         <PhotosNotesTurn
           photoUrls={c.summary.photoUrls}
           onAddPhoto={c.addPhoto}
