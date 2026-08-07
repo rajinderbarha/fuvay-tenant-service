@@ -28,7 +28,7 @@ describe("adaptBookingListItem", () => {
     expect(item.serviceName).toBe("AC Repair");
     expect(item.stage).toBe("provider_assignment");
     expect(item.pricing.inspection?.visitFee).toEqual({ minorUnits: 29900, currency: "INR" });
-    expect(item.summaryFields).toEqual([{ key: "q-1", label: "Brand", value: "LG" }]);
+    expect(item.summaryFields).toEqual([{ key: "q-1", label: "Brand", value: "LG", questionType: "single_select" }]);
   });
 
   it("adapts to a different category's fields without any AC-specific assumption", () => {
@@ -38,6 +38,20 @@ describe("adaptBookingListItem", () => {
     }));
     expect(item.serviceName).toBe("Geyser Repair");
     expect(item.summaryFields[0].value).toBe("15 Litres");
+  });
+
+  it("carries the real input_type through so free-text answers can be told apart from chosen options", () => {
+    const item = adaptBookingListItem(bookingDto({
+      answer_snapshot: {
+        schema_version: 1,
+        answers: [
+          { question_id: "q-1", question_key: "brand", question_label: "Brand", question_type: "single_select", answer_code: "LG", answer_label: "LG", sequence: 1 },
+          { question_id: "q-2", question_key: "notes", question_label: "Additional Detail", question_type: "text", answer_code: null, answer_label: "Leaking near the outdoor unit", sequence: 2 },
+        ],
+      },
+    }));
+    expect(item.summaryFields.find(f => f.key === "q-1")?.questionType).toBe("single_select");
+    expect(item.summaryFields.find(f => f.key === "q-2")?.questionType).toBe("text");
   });
 
   it("never renders a zero finalized price as valid", () => {

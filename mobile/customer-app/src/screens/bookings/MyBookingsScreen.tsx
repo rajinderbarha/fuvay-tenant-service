@@ -14,6 +14,7 @@ import { CompletedBookingCard } from "../../components/bookings/CompletedBooking
 import { BookingListEmptyState } from "../../components/bookings/BookingListEmptyState";
 import { BookingListFooter } from "../../components/bookings/BookingListFooter";
 import { NewServiceCard } from "../../components/bookings/NewServiceCard";
+import { NoOtherActiveBookingsCard } from "../../components/bookings/NoOtherActiveBookingsCard";
 import { useCustomerBookingsListQuery } from "../../api/customerBookings/useCustomerBookingsListQuery";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
 import { BookingListFilter, isActiveBookingStatus } from "../../domain/bookingFilters";
@@ -112,6 +113,14 @@ export function MyBookingsScreen() {
             ListFooterComponent={
               <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
                 {query.isFetchingNextPage ? <ActivityIndicator color={theme.colors.brandPrimaryStrong} /> : null}
+                {/* Authoritative full-set count (never a loaded-page guess,
+                    per BookingFilterTabs' own rule) -- exactly one active
+                    booking is the only case this card is true for: zero
+                    would make "no OTHER" misleading, and two or more means
+                    something else genuinely is active. */}
+                {filter === "active" && query.counts.active === 1 ? (
+                  <NoOtherActiveBookingsCard onViewCompleted={() => setFilter("completed")} />
+                ) : null}
                 {!query.hasNextPage && filter === "active" ? (
                   <BookingListFooter message="Completed requests will appear in the Completed tab." />
                 ) : null}

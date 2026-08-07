@@ -20,6 +20,13 @@ export interface ActiveBookingCardProps {
  * as Booking Details, never re-derived here. */
 export function ActiveBookingCard({ item, onViewDetails }: ActiveBookingCardProps) {
   const { theme } = useTheme();
+  // "text" is the free-text input_type (admin_catalog INPUT_TYPES) --
+  // everything else (single_select, multi_select, boolean, number) reads
+  // as a chosen option, so it renders as a chip. Capped at 4 chips, same
+  // as before, so a long answer list cannot push the card's primary
+  // "View details" action off an average screen.
+  const noteField = item.summaryFields.find(f => f.questionType === "text") ?? null;
+  const chipFields = item.summaryFields.filter(f => f.questionType !== "text").slice(0, 4);
   return (
     <AppCard style={{ gap: theme.spacing.sm }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -45,13 +52,40 @@ export function ActiveBookingCard({ item, onViewDetails }: ActiveBookingCardProp
         </View>
       ) : null}
 
-      <BookingJourney stage={item.stage} />
+      <BookingJourney stage={item.stage} bare />
 
-      {item.summaryFields.length > 0 ? (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.base }}>
-          {item.summaryFields.slice(0, 4).map(f => (
-            <AppText key={f.key} variant="bodySmall" color="secondary">{f.value}</AppText>
+      {/* A free-text answer ("Additional Detail") reads as a note, not a
+          choice, so it gets its own bordered box rather than sitting in
+          the chip row with everything else. */}
+      {chipFields.length > 0 ? (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs }}>
+          {chipFields.map(f => (
+            <View
+              key={f.key}
+              style={{
+                paddingVertical: theme.spacing.xxs, paddingHorizontal: theme.spacing.sm,
+                borderRadius: theme.radiusUsage.statusPill, borderWidth: 1, borderColor: theme.colors.borderSubtle,
+                backgroundColor: theme.colors.surfaceSecondary,
+              }}
+            >
+              <AppText variant="caption" color="secondary">{f.value}</AppText>
+            </View>
           ))}
+        </View>
+      ) : null}
+
+      {noteField ? (
+        <View>
+          <AppText variant="caption" color="tertiary">{noteField.label}</AppText>
+          <View
+            style={{
+              marginTop: theme.spacing.xxs, padding: theme.spacing.sm,
+              borderRadius: theme.radiusUsage.input, borderWidth: 1, borderColor: theme.colors.borderSubtle,
+              backgroundColor: theme.colors.surfaceDefault,
+            }}
+          >
+            <AppText variant="bodySmall">{noteField.value}</AppText>
+          </View>
         </View>
       ) : null}
 

@@ -24,7 +24,7 @@ function adaptSummaryFields(dto: ServiceBookingDto): BookingSummaryField[] {
   if (!dto.answer_snapshot) return [];
   return [...dto.answer_snapshot.answers]
     .sort((a, b) => a.sequence - b.sequence)
-    .map(a => ({ key: a.question_id, label: a.question_label, value: a.answer_label }));
+    .map(a => ({ key: a.question_id, label: a.question_label, value: a.answer_label, questionType: a.question_type }));
 }
 
 export function adaptBookingListItem(dto: ServiceBookingDto): CustomerBookingListItem {

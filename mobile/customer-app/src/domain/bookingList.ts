@@ -6,6 +6,12 @@ export interface BookingSummaryField {
   key: string;
   label: string;
   value: string;
+  /** The question's real `input_type` from the catalog (see
+   * admin_catalog/question_service.py's INPUT_TYPES). Used to tell a
+   * free-text answer -- rendered as its own "Additional Detail" note --
+   * apart from a chosen-option answer, rendered as a chip. Never used to
+   * decide anything backend-authoritative, only display grouping. */
+  questionType: string;
 }
 
 /** One card's worth of real, adapted data -- never raw DTO interpretation
