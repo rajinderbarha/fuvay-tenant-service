@@ -23,11 +23,30 @@ import { CustomerTabsParamList } from "../../navigation/routeTypes";
 // Static marketing copy, not backend data. Restored per the reference
 // design's "Why Customers Choose Us" section -- this is the exact content
 // that shipped before, not new copy.
+/**
+ * Static marketing copy -- there is no backend contract for these, so they
+ * are declared here rather than faked as API data.
+ *
+ * `artworkUrl` points at illustrations uploaded through the admin media
+ * library (the same pipeline as category artwork), so they can be replaced
+ * without a release; each still names a glyph to fall back to if its asset
+ * is ever removed. The set matches the three shown in the design -- the
+ * previous fourth ("Support 24/7") is dropped rather than invented, since
+ * nothing here backs a 24/7 support claim.
+ */
 const TRUST_STRIP_ITEMS = [
-  { key: "verified", label: "Verified experts", icon: "shield-checkmark-outline" as const },
-  { key: "pricing", label: "Clear pricing", icon: "pricetag-outline" as const },
-  { key: "updates", label: "Status updates", icon: "notifications-outline" as const },
-  { key: "support", label: "Support 24/7", icon: "headset-outline" as const },
+  {
+    key: "verified", label: "Verified Expert", icon: "shield-checkmark-outline" as const,
+    artworkUrl: "/uploads/global_service_icon/d0fc7c317ee3c5e7bdb041a8.png",
+  },
+  {
+    key: "pricing", label: "Transparent Pricing", icon: "pricetag-outline" as const,
+    artworkUrl: "/uploads/global_service_icon/f1a056b66f3a0649b062f939.png",
+  },
+  {
+    key: "updates", label: "Status Update", icon: "notifications-outline" as const,
+    artworkUrl: "/uploads/global_service_icon/daf44c94c55cf79bcb7350f6.png",
+  },
 ];
 
 /**
@@ -351,12 +370,12 @@ export function HomeScreen() {
         </HomeSectionErrorBoundary>
 
         <HomeSectionErrorBoundary sectionLabel="trust">
-          <AppText variant="bodyStrong" style={{ marginTop: theme.spacing.xl, marginBottom: theme.spacing.sm }}>
-            Why customers choose Fuvay
+          <AppText variant="headingSmall" style={{ marginTop: theme.spacing.xl, marginBottom: theme.spacing.sm }}>
+            Why Customers Choose Us
           </AppText>
-          <View style={{ flexDirection: "row", gap: theme.spacing.sm, flexWrap: "wrap" }}>
+          <View style={{ flexDirection: "row", gap: theme.spacing.sm }}>
             {TRUST_STRIP_ITEMS.map(item => (
-              <TrustBenefitCard key={item.key} label={item.label} icon={item.icon} />
+              <TrustBenefitCard key={item.key} label={item.label} icon={item.icon} artworkUrl={item.artworkUrl} />
             ))}
           </View>
         </HomeSectionErrorBoundary>

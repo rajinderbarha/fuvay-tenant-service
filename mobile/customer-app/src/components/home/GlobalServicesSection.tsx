@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, ScrollView, Pressable, Image } from "react-native";
+import { View, Pressable, Image } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { Icon } from "../Icon";
@@ -36,54 +36,83 @@ export function GlobalServicesSection({ defaultName, defaultZipcode }: GlobalSer
 
   return (
     <View>
-      <AppText variant="headingSmall">More from Fuvay</AppText>
-      <AppText variant="caption" color="tertiary" style={{ marginTop: 2, marginBottom: theme.spacing.sm }}>
-        Available everywhere · we call you back
-      </AppText>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        {services.map(service => (
-          <Pressable
-            key={service.id}
-            onPress={() => setSelected(service)}
-            accessibilityRole="button"
-            accessibilityLabel={`${service.name}, request a callback`}
-            style={{
-              width: 160, marginRight: theme.spacing.sm, padding: theme.spacing.sm,
-              borderRadius: theme.radiusUsage.card, backgroundColor: theme.colors.surfaceDefault,
-              borderWidth: 1, borderColor: theme.colors.borderSubtle,
-            }}
-          >
-            <View
-              style={{
-                width: 36, height: 36, borderRadius: theme.radiusUsage.input,
-                backgroundColor: theme.colors.surfaceInteractive, alignItems: "center", justifyContent: "center",
-                marginBottom: theme.spacing.sm, overflow: "hidden",
-              }}
-            >
-              {service.iconUrl ? (
-                <Image source={{ uri: resolveMediaUrl(service.iconUrl)! }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
-              ) : (
-                // Was a hardcoded `call-outline` for every card, so a row of
-                // global services was a row of identical grey phone icons.
-                // Admin-uploaded iconUrl still wins; this only varies the
-                // fallback, which today is what every card actually renders.
-                <Icon
-                  name={resolveGlobalServiceIcon(service.name)}
-                  size="standard"
-                  color={theme.colors.brandPrimaryStrong}
-                  decorative
-                />
-              )}
+      {/* Title + inline qualifier, matching the other section headers. */}
+      <View style={{ flexDirection: "row", alignItems: "baseline", gap: theme.spacing.xs, marginBottom: theme.spacing.sm }}>
+        <AppText variant="headingSmall">Build with Fuvay</AppText>
+        <AppText variant="caption" color="tertiary" numberOfLines={1}>Global services available</AppText>
+      </View>
+      {/* 2-up grid rather than a horizontal rail: these cards carry a
+          description and their own CTA, so a 160px-wide scroller truncated
+          both and hid everything past the second card. Explicit rows keep a
+          trailing odd card the same width as the rest. */}
+      <View style={{ gap: theme.spacing.sm }}>
+        {Array.from({ length: Math.ceil(services.length / 2) }).map((_, rowIndex) => {
+          const row = services.slice(rowIndex * 2, rowIndex * 2 + 2);
+          return (
+            <View key={rowIndex} style={{ flexDirection: "row", gap: theme.spacing.sm }}>
+              {row.map(service => (
+                <Pressable
+                  key={service.id}
+                  onPress={() => setSelected(service)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${service.name}, request a callback`}
+                  style={({ pressed }) => ({
+                    flex: 1, padding: theme.spacing.base,
+                    borderRadius: theme.radiusUsage.card, backgroundColor: theme.colors.surfaceDefault,
+                    borderWidth: 1,
+                    borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle,
+                    opacity: pressed ? 0.9 : 1,
+                  })}
+                >
+                  <View
+                    style={{
+                      width: 40, height: 40, borderRadius: theme.radius.radiusFull,
+                      alignItems: "center", justifyContent: "center",
+                      marginBottom: theme.spacing.sm, overflow: "hidden",
+                      // The supplied artwork is a full-bleed coloured disc, so
+                      // it needs no tinted plate behind it; the glyph fallback
+                      // does, otherwise it floats on the bare card.
+                      backgroundColor: service.iconUrl ? "transparent" : theme.colors.brandPrimaryMuted,
+                    }}
+                  >
+                    {service.iconUrl ? (
+                      <Image source={{ uri: resolveMediaUrl(service.iconUrl)! }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
+                    ) : (
+                      // Was a hardcoded `call-outline` for every card, so a row of
+                      // global services was a row of identical grey phone icons.
+                      // Admin-uploaded iconUrl still wins; this only varies the
+                      // fallback.
+                      <Icon
+                        name={resolveGlobalServiceIcon(service.name)}
+                        size="standard"
+                        color={theme.colors.brandPrimaryStrong}
+                        decorative
+                      />
+                    )}
+                  </View>
+                  <AppText variant="bodyStrong" numberOfLines={2}>{service.name}</AppText>
+                  {service.tagline ? (
+                    <AppText variant="caption" color="tertiary" numberOfLines={2} style={{ marginTop: theme.spacing.xxs }}>
+                      {service.tagline}
+                    </AppText>
+                  ) : null}
+                  <View
+                    style={{
+                      flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start",
+                      marginTop: theme.spacing.sm, paddingHorizontal: theme.spacing.sm, paddingVertical: 5,
+                      borderRadius: theme.radiusUsage.statusPill, backgroundColor: theme.colors.brandPrimary,
+                    }}
+                  >
+                    <AppText variant="labelStrong" style={{ color: theme.colors.brandOnPrimary }}>Explore Service</AppText>
+                    <Icon name="arrow-forward" size="compact" color={theme.colors.brandOnPrimary} decorative />
+                  </View>
+                </Pressable>
+              ))}
+              {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
             </View>
-            <AppText variant="bodyStrong" numberOfLines={2}>{service.name}</AppText>
-            {service.tagline ? (
-              <AppText variant="caption" color="tertiary" numberOfLines={2} style={{ marginTop: theme.spacing.xxs }}>
-                {service.tagline}
-              </AppText>
-            ) : null}
-          </Pressable>
-        ))}
-      </ScrollView>
+          );
+        })}
+      </View>
       <GlobalServiceInquiryModal
         service={selected}
         defaultName={defaultName}
