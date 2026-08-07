@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { View, Pressable, Image } from "react-native";
+import React, { useRef, useState } from "react";
+import { View, Pressable, Image, ScrollView, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { Icon } from "../Icon";
@@ -27,13 +27,23 @@ export interface GlobalServicesSectionProps {
  * inquiry form; submitting creates a Lead an admin calls back about --
  * there is no booking, provider match, or price anywhere in this flow.
  */
+/** One card per page, inset by the screen padding on both sides -- matches
+ * the campaign carousel so the two sliders on this screen behave the same. */
+const CARD_WIDTH = Dimensions.get("window").width - 32;
+
 export function GlobalServicesSection({ defaultName, defaultZipcode }: GlobalServicesSectionProps) {
   const { theme } = useTheme();
   const query = useGlobalServicesQuery();
   const [selected, setSelected] = useState<GlobalService | null>(null);
+  const [pageIndex, setPageIndex] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
 
   const services = query.data ?? [];
   if (query.isPending || query.isError || services.length === 0) return null;
+
+  function handleScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    setPageIndex(Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH));
+  }
 
   return (
     <View>
@@ -48,7 +58,14 @@ export function GlobalServicesSection({ defaultName, defaultZipcode }: GlobalSer
           lets the description breathe instead of wrapping at ~150px.
           Colours are fixed brand accents rather than theme surfaces -- see
           domain/globalServiceAccent.ts for why they do not swap per theme. */}
-      <View style={{ gap: theme.spacing.sm }}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={handleScrollEnd}
+        accessibilityLabel={`Global services, ${services.length} available`}
+      >
         {services.map(service => {
           const accent = resolveGlobalServiceAccent(service.name);
           return (
@@ -58,6 +75,7 @@ export function GlobalServicesSection({ defaultName, defaultZipcode }: GlobalSer
               accessibilityRole="button"
               accessibilityLabel={`${service.name}, request a callback`}
               style={({ pressed }) => ({
+                width: CARD_WIDTH,
                 flexDirection: "row", alignItems: "center",
                 borderRadius: theme.radiusUsage.card,
                 backgroundColor: accent.background,
@@ -124,7 +142,27 @@ export function GlobalServicesSection({ defaultName, defaultZipcode }: GlobalSer
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
+      {/* Full-width pages give no visual hint that more cards exist, so the
+          dots carry that affordance (same treatment as the campaign
+          carousel). Hidden for a single card, where there is nothing to
+          page through. */}
+      {services.length > 1 ? (
+        <View
+          accessibilityElementsHidden
+          style={{ flexDirection: "row", justifyContent: "center", gap: theme.spacing.xs, marginTop: theme.spacing.sm }}
+        >
+          {services.map((s, i) => (
+            <View
+              key={s.id}
+              style={{
+                width: i === pageIndex ? 16 : 6, height: 6, borderRadius: theme.radius.radiusFull,
+                backgroundColor: i === pageIndex ? theme.colors.brandPrimary : theme.colors.borderStrong,
+              }}
+            />
+          ))}
+        </View>
+      ) : null}
       <GlobalServiceInquiryModal
         service={selected}
         defaultName={defaultName}
