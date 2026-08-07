@@ -66,8 +66,8 @@ export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContin
 
   return (
     <BotCard>
-      <Text style={{ fontSize: 14, fontWeight: "700", color: BOT.textPrimary }}>Add a photo? (optional)</Text>
-      <Text style={{ fontSize: 11.5, color: BOT.textMuted, marginTop: 2 }}>
+      <Text style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>Add a photo? (optional)</Text>
+      <Text style={{ fontSize: 13, color: BOT.textMuted, marginTop: 2 }}>
         A photo helps your provider bring the right parts.
       </Text>
 
@@ -100,7 +100,7 @@ export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContin
           style={{ height: 36, paddingHorizontal: 14, borderRadius: 18, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.border, opacity: atLimit ? 0.5 : 1 }}
         >
           <Ionicons name="camera-outline" size={15} color={BOT.textSecondary} />
-          <Text style={{ fontSize: 12, color: BOT.textSecondary }}>{photoUrls.length === 0 ? "Add a photo" : "Add another"}</Text>
+          <Text style={{ fontSize: 13, color: BOT.textSecondary }}>{photoUrls.length === 0 ? "Add a photo" : "Add another"}</Text>
         </Pressable>
         {busy ? <ActivityIndicator size="small" color={BOT.brand} /> : null}
       </View>

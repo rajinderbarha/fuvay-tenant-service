@@ -20,14 +20,14 @@ export function ConfirmCard({ bookingNumber, providerName, onTrackBooking }: Con
       <View style={{ width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", marginBottom: 12, backgroundColor: BOT.successTint }}>
         <Ionicons name="checkmark-circle" size={28} color={BOT.success} />
       </View>
-      <Text style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>Booking Confirmed</Text>
-      <Text style={{ fontSize: 11.5, color: BOT.success, marginTop: 4 }}>Booking {bookingNumber}</Text>
+      <Text style={{ fontSize: 18, fontWeight: "700", color: BOT.textPrimary }}>Booking Confirmed</Text>
+      <Text style={{ fontSize: 13, color: BOT.success, marginTop: 4 }}>Booking {bookingNumber}</Text>
       {providerName ? (
-        <Text style={{ fontSize: 12.5, color: BOT.textSecondary, marginTop: 10, textAlign: "center" }}>
+        <Text style={{ fontSize: 15, color: BOT.textSecondary, marginTop: 10, textAlign: "center" }}>
           {providerName} has been notified and will be in touch.
         </Text>
       ) : (
-        <Text style={{ fontSize: 12.5, color: BOT.textSecondary, marginTop: 10, textAlign: "center" }}>
+        <Text style={{ fontSize: 15, color: BOT.textSecondary, marginTop: 10, textAlign: "center" }}>
           We&apos;ll notify you as soon as a professional is assigned.
         </Text>
       )}
@@ -38,7 +38,7 @@ export function ConfirmCard({ bookingNumber, providerName, onTrackBooking }: Con
           accessibilityLabel="Track this booking"
           style={{ height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand }}
         >
-          <Text style={{ fontSize: 12.5, fontWeight: "700", color: BOT.bubbleOnBrand }}>Track Booking</Text>
+          <Text style={{ fontSize: 15, fontWeight: "700", color: BOT.bubbleOnBrand }}>Track Booking</Text>
         </Pressable>
       </View>
     </View>

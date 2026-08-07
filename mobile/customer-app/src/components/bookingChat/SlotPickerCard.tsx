@@ -77,25 +77,25 @@ export function SlotPickerCard({
 
   return (
     <BotCard>
-      <Text style={{ fontSize: 14, fontWeight: "700", color: BOT.textPrimary }}>When should the technician come?</Text>
+      <Text style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>When should the technician come?</Text>
 
       {promisedSlot ? (
         <View style={{ marginTop: 10, gap: 6 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Ionicons name="time-outline" size={15} color={BOT.brand} />
-            <Text style={{ fontSize: 13, color: BOT.textSecondary }}>
+            <Text style={{ fontSize: 15, color: BOT.textSecondary }}>
               {dayLabel(promisedSlot.date, promisedSlot.daysAhead)}, {promisedSlot.timeWindow}
             </Text>
           </View>
           {priceLabel ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <Ionicons name="pricetag-outline" size={15} color={BOT.brand} />
-              <Text style={{ fontSize: 13, color: BOT.textSecondary }}>{priceLabel}</Text>
+              <Text style={{ fontSize: 15, color: BOT.textSecondary }}>{priceLabel}</Text>
             </View>
           ) : null}
         </View>
       ) : (
-        <Text style={{ fontSize: 12.5, color: BOT.textMuted, marginTop: 6 }}>
+        <Text style={{ fontSize: 15, color: BOT.textMuted, marginTop: 6 }}>
           We can&apos;t promise a time right now -- your provider will contact you to arrange one.
         </Text>
       )}
@@ -107,7 +107,7 @@ export function SlotPickerCard({
           accessibilityLabel="Choose a different time"
           style={{ flex: 1, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.border }}
         >
-          <Text style={{ fontSize: 12, color: BOT.textSecondary }}>Choose a time</Text>
+          <Text style={{ fontSize: 13, color: BOT.textSecondary }}>Choose a time</Text>
         </Pressable>
         <Pressable
           onPress={() => openPicker(true)}
@@ -116,7 +116,7 @@ export function SlotPickerCard({
           style={{ flex: 1, height: 36, borderRadius: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: BOT.brandTint, borderWidth: 1, borderColor: BOT.brand }}
         >
           <Ionicons name="flash" size={13} color={BOT.warning} />
-          <Text style={{ fontSize: 12, fontWeight: "600", color: BOT.brandLight }}>Emergency (2h)</Text>
+          <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>Emergency (2h)</Text>
         </Pressable>
       </View>
 
@@ -129,7 +129,7 @@ export function SlotPickerCard({
       {open ? (
         <View style={{ marginTop: 14, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, paddingTop: 14 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Text style={{ fontSize: 12.5, fontWeight: "600", color: BOT.textPrimary }}>
+            <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>
               {emergency ? "Earliest slots (emergency, min. 2h away)" : "Available slots (min. 6h away)"}
             </Text>
             <Pressable onPress={() => setOpen(false)} accessibilityRole="button" accessibilityLabel="Close">
@@ -138,13 +138,13 @@ export function SlotPickerCard({
           </View>
 
           {slotSelectionError ? (
-            <Text style={{ fontSize: 12, color: BOT.danger, marginTop: 8 }}>{slotSelectionError}</Text>
+            <Text style={{ fontSize: 13, color: BOT.danger, marginTop: 8 }}>{slotSelectionError}</Text>
           ) : null}
 
           {slotsLoading && !availableSlots ? (
             <ActivityIndicator color={BOT.brand} style={{ marginTop: 12 }} />
           ) : availableSlots && availableSlots.length === 0 ? (
-            <Text style={{ fontSize: 12.5, color: BOT.textMuted, marginTop: 10 }}>
+            <Text style={{ fontSize: 15, color: BOT.textMuted, marginTop: 10 }}>
               No slots available in the next two weeks{emergency ? " even with emergency lead time" : ""}.
             </Text>
           ) : (
@@ -169,7 +169,7 @@ export function SlotPickerCard({
                         opacity: pickingKey !== null && !isBusy ? 0.5 : 1,
                       }}
                     >
-                      <Text style={{ fontSize: 12.5, color: BOT.textSecondary }}>{dayLabel(s.date, s.daysAhead)}, {s.timeWindow}</Text>
+                      <Text style={{ fontSize: 15, color: BOT.textSecondary }}>{dayLabel(s.date, s.daysAhead)}, {s.timeWindow}</Text>
                       {isBusy ? (
                         <ActivityIndicator size="small" color={BOT.brand} />
                       ) : isCurrent ? (

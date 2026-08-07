@@ -48,7 +48,7 @@ export function BookingChatScreen() {
           style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 8 }}
         >
           <ActivityIndicator color={BOT.brand} size="large" />
-          <Text style={{ color: BOT.textMuted, fontSize: 12.5 }}>Loading your assistant</Text>
+          <Text style={{ color: BOT.textMuted, fontSize: 15 }}>Loading your assistant</Text>
         </View>
       </SafeAreaView>
     );
@@ -59,8 +59,8 @@ export function BookingChatScreen() {
       <SafeAreaView style={{ flex: 1, backgroundColor: BOT.bg }}>
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 32 }}>
           <Ionicons name="location-outline" size={32} color={BOT.textFaint} />
-          <Text style={{ color: BOT.textPrimary, fontSize: 15, fontWeight: "700", textAlign: "center" }}>Choose your location first</Text>
-          <Text style={{ color: BOT.textMuted, fontSize: 12.5, textAlign: "center" }}>
+          <Text style={{ color: BOT.textPrimary, fontSize: 16, fontWeight: "700", textAlign: "center" }}>Choose your location first</Text>
+          <Text style={{ color: BOT.textMuted, fontSize: 15, textAlign: "center" }}>
             Fuvay Assistant needs your service location to check what's available.
           </Text>
           <Pressable
@@ -69,7 +69,7 @@ export function BookingChatScreen() {
             accessibilityLabel="Go to Home"
             style={{ marginTop: 8, height: 40, paddingHorizontal: 20, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand }}
           >
-            <Text style={{ color: BOT.bubbleOnBrand, fontSize: 13, fontWeight: "700" }}>Go to Home</Text>
+            <Text style={{ color: BOT.bubbleOnBrand, fontSize: 15, fontWeight: "700" }}>Go to Home</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -110,12 +110,21 @@ function BookingChatConversation({
 
   const flowDone = !!addr.resolvedAddressId; // review phase mounts and owns everything past this
 
-  // Accumulated trace of the assistant stages that genuinely ran, so
-  // finished steps stay on screen with a check instead of vanishing.
-  const assistantWorking = c.uiState === "assistant_processing" || c.uiState === "submitting_answer";
-  const trace = useWorkingTrace(
-    assistantWorking && c.activityStage ? resolveActivityLabel(c.activityStage, zipcode) : null,
+  // The full running task list for the current operation. The controller
+  // records every stage it genuinely passed through (activityTrace), so
+  // steps that resolve in the same React batch are still shown instead of
+  // collapsing into one flash. Keyed on the live question so each question
+  // gets its own trace rather than one list growing all conversation.
+  const traceLabels = useMemo(
+    () => c.activityTrace.map(stage => resolveActivityLabel(stage, zipcode)),
+    [c.activityTrace, zipcode],
   );
+  const trace = useWorkingTrace(traceLabels, c.activityStage !== null);
+
+  // The next turn waits for the working steps to finish playing, so the
+  // customer sees what was done before being asked the next thing --
+  // options never pop in underneath a still-running trace.
+  const traceBusy = trace.some(e => e.status === "pending");
 
   // Auto-scroll to the newest turn as the conversation grows -- every state
   // change below (message count, a new question, address/price turns
@@ -132,9 +141,15 @@ function BookingChatConversation({
 
   const activeStageIndex = !c.draftId ? 0 : !questionsComplete ? 0 : !addr.resolvedAddressId ? 1 : 2;
 
+  // The composer is a real input only while a free-text question is
+  // genuinely open and not already being submitted.
+  const answerBusy = c.uiState === "submitting_answer" || c.uiState === "refreshing_question_flow";
+  const freeTextActive = !!c.envelope?.currentQuestion?.acceptsFreeText && !questionsComplete && !traceBusy;
+  const canSendAnswer = freeTextActive && answerDraft.trim().length > 0 && !answerBusy;
+
   function submitFreeText() {
+    if (!canSendAnswer || !c.envelope?.currentQuestion) return;
     const text = answerDraft.trim();
-    if (!text || !c.envelope?.currentQuestion) return;
     setAnswerDraft("");
     c.submitAnswer(c.envelope.currentQuestion.questionId, null, text);
   }
@@ -155,10 +170,10 @@ function BookingChatConversation({
               <Ionicons name="sparkles" size={16} color={BOT.bubbleOnBrand} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 14.5, fontWeight: "700", color: BOT.textPrimary }}>Fuvay AI</Text>
+              <Text style={{ fontSize: 17, fontWeight: "700", color: BOT.textPrimary }}>Fuvay AI</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <BotPulseDot color={flowDone ? BOT.success : BOT.brand} />
-                <Text style={{ fontSize: 11, color: BOT.textMuted }}>{flowDone ? "Booking in progress" : "Working on your booking"}</Text>
+                <Text style={{ fontSize: 12, color: BOT.textMuted }}>{flowDone ? "Booking in progress" : "Working on your booking"}</Text>
               </View>
             </View>
           </View>
@@ -169,6 +184,10 @@ function BookingChatConversation({
         <FlatList
           ref={listRef}
           style={{ flex: 1 }}
+          // Content-size driven, so EVERY growth scrolls -- a newly revealed
+          // working step, a new bubble, a card mounting -- without needing a
+          // state key for each one.
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 20, gap: 12 }}
           data={[0]}
           keyExtractor={() => "content"}
@@ -180,9 +199,8 @@ function BookingChatConversation({
               ))}
 
               {(c.uiState === "bootstrapping" || c.uiState === "resolving_session") ? <BotTypingDots /> : null}
-              <BotWorkingTrace entries={trace} />
 
-              {c.offeringChoice && !selectedIssueLabel ? (
+              {c.offeringChoice && !selectedIssueLabel && !traceBusy ? (
                 <BotOptionChips
                   items={c.offeringChoice.offerings.map(o => o.name)}
                   selected={null}
@@ -202,24 +220,20 @@ function BookingChatConversation({
                   <BotUserBubble text={a.answerLabel} />
                 </View>
               ))}
-              {c.envelope?.currentQuestion && !questionsComplete ? (
+
+              {/* Chronological position matters: the steps for the answer
+                  just given belong BELOW that answer and ABOVE the next
+                  question, so the trace reads as new work appended to the
+                  transcript rather than one line mutating in place. */}
+              <BotWorkingTrace entries={trace} />
+
+              {c.envelope?.currentQuestion && !questionsComplete && !traceBusy ? (
                 <View style={{ gap: 8 }}>
                   <BotAssistantBubble text={c.envelope.currentQuestion.text} />
-                  {c.envelope.currentQuestion.acceptsFreeText ? (
-                    <View style={{ marginLeft: 36, flexDirection: "row", gap: 8, alignItems: "center" }}>
-                      <TextInput
-                        value={answerDraft}
-                        onChangeText={setAnswerDraft}
-                        onSubmitEditing={submitFreeText}
-                        placeholder="Type your answer"
-                        placeholderTextColor={BOT.textFaint}
-                        style={{ flex: 1, height: 40, borderRadius: 20, paddingHorizontal: 14, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.border, color: BOT.textPrimary, fontSize: 12.5 }}
-                      />
-                      <Pressable onPress={submitFreeText} style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand }}>
-                        <Ionicons name="send" size={15} color={BOT.bubbleOnBrand} />
-                      </Pressable>
-                    </View>
-                  ) : (
+                  {/* A free-text question is answered in the composer at the
+                      bottom -- one real input, rather than a second one
+                      inline competing with it. */}
+                  {c.envelope.currentQuestion.acceptsFreeText ? null : (
                     <BotOptionChips
                       items={c.envelope.currentQuestion.options.map(o => o.label ?? "").filter(Boolean)}
                       selected={null}
@@ -234,7 +248,7 @@ function BookingChatConversation({
               ) : null}
 
               {/* 3. Address */}
-              {addressPhaseActive && !addr.resolvedAddressId ? (
+              {addressPhaseActive && !addr.resolvedAddressId && !traceBusy ? (
                 <AddressTurn
                   zipcode={zipcode}
                   addresses={addr.addresses}
@@ -260,15 +274,50 @@ function BookingChatConversation({
           )}
         />
 
-        {/* Composer -- decorative once every real turn has its own input;
-            kept for parity with the reference's always-visible bar. */}
+        {/* Composer. Only rendered as a text box when a free-text question
+            is genuinely awaiting an answer -- otherwise it is a plain
+            status strip, so it never looks like an input the customer can
+            type into when nothing would accept the text. */}
         <View style={{ paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, backgroundColor: BOT.bgComposer }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 24, paddingHorizontal: 16, height: 48, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.border }}>
-            <Text style={{ flex: 1, fontSize: 13, color: BOT.textDim }} numberOfLines={1}>
-              Fuvay AI is handling this for you…
-            </Text>
-            <Ionicons name="mic-outline" size={17} color={BOT.textDim} />
-          </View>
+          {freeTextActive ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <TextInput
+                value={answerDraft}
+                onChangeText={setAnswerDraft}
+                onSubmitEditing={submitFreeText}
+                editable={!answerBusy}
+                returnKeyType="send"
+                placeholder="Type your answer"
+                placeholderTextColor={BOT.textTertiary}
+                accessibilityLabel="Type your answer"
+                style={{
+                  flex: 1, minHeight: 48, borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12,
+                  backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.border,
+                  color: BOT.textPrimary, fontSize: 15,
+                }}
+              />
+              <Pressable
+                onPress={submitFreeText}
+                disabled={!canSendAnswer}
+                accessibilityRole="button"
+                accessibilityLabel="Send answer"
+                accessibilityState={{ disabled: !canSendAnswer }}
+                style={{
+                  width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
+                  backgroundColor: canSendAnswer ? BOT.brand : BOT.surfaceRaised,
+                }}
+              >
+                <Ionicons name="send" size={18} color={canSendAnswer ? BOT.bubbleOnBrand : BOT.textDim} />
+              </Pressable>
+            </View>
+          ) : (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 4, minHeight: 24 }}>
+              <Ionicons name="sparkles" size={15} color={BOT.textTertiary} />
+              <Text style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }} numberOfLines={1}>
+                {flowDone ? "Fuvay AI is finishing your booking…" : "Choose an option above to continue"}
+              </Text>
+            </View>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

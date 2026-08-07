@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useBookingReviewController, bookingReviewLoadLabel } from "../booking-review/useBookingReviewController";
-import { BotAssistantBubble, BotWorkingTrace, useWorkingTrace } from "../../components/bookingChat/BotPrimitives";
+import { BotAssistantBubble, BotWorkingTrace, useWorkingTrace, useObservedSequence } from "../../components/bookingChat/BotPrimitives";
 import { SlotPickerCard } from "../../components/bookingChat/SlotPickerCard";
 import { PhotosNotesTurn } from "../../components/bookingChat/PhotosNotesTurn";
 import { PriceProviderCard } from "../../components/bookingChat/PriceProviderCard";
@@ -47,11 +47,11 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking }: ReviewAndConf
   // pricing -> provider -> preparing review) accumulate into a visible
   // checklist. Each line settles only when the controller genuinely
   // advances, so the trace is a readout of real work, not a timed script.
-  const trace = useWorkingTrace(
-    c.uiState === "loading" && c.loadStage ? bookingReviewLoadLabel(c.loadStage) : null,
-  );
+  const loading = c.uiState === "loading";
+  const observed = useObservedSequence(loading && c.loadStage ? bookingReviewLoadLabel(c.loadStage) : null);
+  const trace = useWorkingTrace(observed, loading);
 
-  if (c.uiState === "loading") {
+  if (loading) {
     return <BotWorkingTrace entries={trace} />;
   }
 

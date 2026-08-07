@@ -60,8 +60,8 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
 
   return (
     <BotCard>
-      <Text style={{ fontSize: 14, fontWeight: "700", color: BOT.textPrimary }}>Where should the technician come?</Text>
-      <Text style={{ fontSize: 11.5, color: BOT.textMuted, marginTop: 2 }}>
+      <Text style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>Where should the technician come?</Text>
+      <Text style={{ fontSize: 13, color: BOT.textMuted, marginTop: 2 }}>
         Only addresses in {zipcode} -- the professional matched is local to this zip.
       </Text>
 
@@ -81,8 +81,8 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
             >
               <Ionicons name="home" size={16} color={BOT.brand} style={{ marginTop: 1 }} />
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 12.5, fontWeight: "600", color: BOT.textPrimary }}>{a.label ?? "Address"}</Text>
-                <Text style={{ fontSize: 11.5, color: BOT.textMuted, marginTop: 1 }} numberOfLines={2}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>{a.label ?? "Address"}</Text>
+                <Text style={{ fontSize: 13, color: BOT.textMuted, marginTop: 1 }} numberOfLines={2}>
                   {[a.line1, a.line2, a.city, a.postalCode].filter(Boolean).join(", ")}
                 </Text>
               </View>
@@ -93,17 +93,17 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
       ) : null}
 
       {excludedCount > 0 && matching.length === 0 ? (
-        <Text style={{ fontSize: 11, color: BOT.textDim, marginTop: 10 }}>
+        <Text style={{ fontSize: 12, color: BOT.textDim, marginTop: 10 }}>
           {excludedCount} saved address{excludedCount === 1 ? "" : "es"} outside {zipcode} — not shown here.
         </Text>
       ) : null}
 
-      {error ? <Text style={{ fontSize: 12, color: BOT.danger, marginTop: 10 }}>{error}</Text> : null}
+      {error ? <Text style={{ fontSize: 13, color: BOT.danger, marginTop: 10 }}>{error}</Text> : null}
 
       {!showForm ? (
         <Pressable onPress={() => setShowForm(true)} style={{ marginTop: 12, flexDirection: "row", alignItems: "center", gap: 6 }}>
           <Ionicons name="add-circle-outline" size={16} color={BOT.brandLight} />
-          <Text style={{ fontSize: 12.5, fontWeight: "600", color: BOT.brandLight }}>Add a new address in {zipcode}</Text>
+          <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.brandLight }}>Add a new address in {zipcode}</Text>
         </Pressable>
       ) : (
         <View style={{ marginTop: 14, gap: 8 }}>
@@ -124,13 +124,13 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
               style={{
                 height: 40, borderRadius: 10, paddingHorizontal: 12,
                 backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.borderSubtle,
-                color: BOT.textPrimary, fontSize: 12.5,
+                color: BOT.textPrimary, fontSize: 15,
               }}
             />
           ))}
           {/* Zipcode is shown, never editable -- see component doc. */}
           <View style={{ height: 40, borderRadius: 10, paddingHorizontal: 12, justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border }}>
-            <Text style={{ fontSize: 12.5, color: BOT.textMuted }}>ZIP {zipcode} (fixed to this request)</Text>
+            <Text style={{ fontSize: 15, color: BOT.textMuted }}>ZIP {zipcode} (fixed to this request)</Text>
           </View>
           <View style={{ marginTop: 4 }}>
             <BotPrimaryButton label="Save & use this address" onPress={submitNew} disabled={!canSubmit || submitting} loading={submitting} />

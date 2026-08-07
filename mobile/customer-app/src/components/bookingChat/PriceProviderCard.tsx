@@ -35,16 +35,16 @@ export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisab
               <Ionicons name="construct" size={18} color={BOT.brand} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: BOT.textPrimary }}>{provider.providerName}</Text>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>{provider.providerName}</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
                 {provider.rating != null ? (
                   <>
                     <Ionicons name="star" size={11} color={BOT.warning} />
-                    <Text style={{ fontSize: 11.5, color: BOT.textTertiary }}>{provider.rating.toFixed(1)} · </Text>
+                    <Text style={{ fontSize: 13, color: BOT.textTertiary }}>{provider.rating.toFixed(1)} · </Text>
                   </>
                 ) : null}
                 {provider.publicBadges.slice(0, 2).map((b, i) => (
-                  <Text key={b.name} style={{ fontSize: 11.5, color: BOT.textTertiary }}>
+                  <Text key={b.name} style={{ fontSize: 13, color: BOT.textTertiary }}>
                     {b.name}{i < Math.min(provider.publicBadges.length, 2) - 1 ? " · " : ""}
                   </Text>
                 ))}
@@ -53,7 +53,7 @@ export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisab
           </View>
         </>
       ) : (
-        <Text style={{ fontSize: 13, color: BOT.textMuted }}>Matching you with an eligible professional…</Text>
+        <Text style={{ fontSize: 15, color: BOT.textMuted }}>Matching you with an eligible professional…</Text>
       )}
 
       <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, borderStyle: "dashed" }}>
@@ -66,7 +66,7 @@ export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisab
         ) : summary.priceState.kind === "valid" ? (
           <Row label="Estimated total" value={formatMoney(summary.priceState.amount)} big />
         ) : (
-          <Text style={{ fontSize: 12.5, color: BOT.textMuted }}>
+          <Text style={{ fontSize: 15, color: BOT.textMuted }}>
             {resolveServicePriceDisplay(summary.priceState).label}
           </Text>
         )}
@@ -80,7 +80,7 @@ export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisab
           loading={confirming}
         />
         {confirmDisabledReason ? (
-          <Text style={{ fontSize: 11, color: BOT.textDim, marginTop: 6, textAlign: "center" }}>{confirmDisabledReason}</Text>
+          <Text style={{ fontSize: 12, color: BOT.textDim, marginTop: 6, textAlign: "center" }}>{confirmDisabledReason}</Text>
         ) : null}
       </View>
     </BotCard>
@@ -91,7 +91,7 @@ function Row({ label, value, big, muted }: { label: string; value: string; big?:
   const BOT = useBotColors();
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-      <Text style={{ fontSize: 12, color: BOT.textMuted }}>{label}</Text>
+      <Text style={{ fontSize: 13, color: BOT.textMuted }}>{label}</Text>
       <Text style={{ fontSize: big ? 15 : 12, fontWeight: big ? "700" : "400", color: muted ? BOT.textSecondary : BOT.brandLight }}>
         {value}
       </Text>

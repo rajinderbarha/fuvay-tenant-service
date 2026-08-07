@@ -41,6 +41,7 @@ function baseControllerState(overrides: Partial<ReturnType<typeof controllerModu
   return {
     uiState: "ready" as const,
     activityStage: null,
+    activityTrace: [] as controllerModule.AssistantControllerState["activityTrace"],
     session: {
       id: "sess-1", sessionKey: "key-1", categoryId: "cat-1", language: "en",
       languageOptions: [{ code: "en", label: "English" }], turnCount: 1, isActive: true, workflowStatus: "active",

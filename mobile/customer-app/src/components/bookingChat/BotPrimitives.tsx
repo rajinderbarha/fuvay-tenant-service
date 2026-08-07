@@ -31,7 +31,7 @@ export function BotStageTracker({ stages, activeIndex, allDone }: { stages: stri
               ) : (
                 <Ionicons name="ellipse-outline" size={11} color={BOT.textFaint} />
               )}
-              <Text style={{ fontSize: 10.5, color: done ? BOT.success : active ? BOT.brandLight : BOT.textFaint }}>
+              <Text style={{ fontSize: 12, color: done ? BOT.success : active ? BOT.brandLight : BOT.textFaint }}>
                 {s}
               </Text>
             </View>
@@ -130,19 +130,22 @@ export function BotWorkingStep({ label, status }: { label: string; status: "pend
 
   const done = status === "done";
   return (
-    <Animated.View style={[{ flexDirection: "row", alignItems: "center", paddingLeft: 36 }, entrance]}>
+    <Animated.View style={[{ flexDirection: "row", alignItems: "center", paddingLeft: 36, paddingRight: 8 }, entrance]}>
       <View
         style={{
-          flexDirection: "row", alignItems: "center", gap: 10,
-          paddingLeft: 12, paddingRight: 16, height: 40, borderRadius: 16, minWidth: 200,
+          flex: 1, flexDirection: "row", alignItems: "center", gap: 10,
+          paddingLeft: 14, paddingRight: 16, height: 46, borderRadius: 16,
           backgroundColor: done ? BOT.surfaceSunken : BOT.surfaceActive,
           borderWidth: 1, borderColor: done ? BOT.borderSubtle : BOT.borderActive,
         }}
       >
-        {done ? <Ionicons name="checkmark-circle" size={14} color={BOT.success} /> : <SpinningIcon />}
+        {done ? <Ionicons name="checkmark-circle" size={16} color={BOT.success} /> : <SpinningIcon />}
         <Animated.Text
+          numberOfLines={1}
           style={{
-            fontSize: 12,
+            flex: 1,
+            fontSize: 15,
+            fontWeight: done ? "400" : "600",
             color: done ? BOT.textMuted : BOT.brandLight,
             opacity: done || reduced ? 1 : shimmer,
           }}
@@ -202,49 +205,155 @@ export interface WorkingTraceEntry {
   status: "pending" | "done";
 }
 
-/**
- * Accumulates the stages a real backend sequence has actually passed
- * through, so the chat shows a growing checklist instead of one step that
- * vanishes -- the visual language of the reference bot, but every line is
- * a stage that genuinely ran.
+/** How long each step stays on screen before the next is revealed.
  *
- * The critical difference from the reference: nothing here is on a timer.
- * A line flips to "done" only because the controller genuinely moved to
- * the next stage (or finished), so a slow backend call shimmers for
- * exactly as long as it really takes.
+ * This is a LEGIBILITY FLOOR, not fake work. The stages are real ones the
+ * controller genuinely passed through, but they can resolve in single-digit
+ * milliseconds -- `validating_answer` -> `saving_progress` are set on
+ * consecutive lines around one await, so without a floor the customer sees
+ * a flicker and cannot read either. Holding each real step for ~700ms is
+ * what makes the trace readable. Nothing here invents a step that did not
+ * happen, and a SLOW call still shimmers for its full real duration -- the
+ * floor only ever extends a step, never truncates one. */
+const MIN_STEP_MS = 700;
+
+/**
+ * Accumulates a single changing stage value into the ordered list of stages
+ * observed so far, for controllers that expose only a "current stage" and
+ * change it across real awaits (so each value genuinely gets its own
+ * render). Controllers that set several stages inside ONE synchronous block
+ * must expose an append-only trace instead, since React batches those into
+ * a single observable value -- see `AssistantControllerState.activityTrace`.
  */
-export function useWorkingTrace(currentLabel: string | null): WorkingTraceEntry[] {
-  const [entries, setEntries] = useState<WorkingTraceEntry[]>([]);
+export function useObservedSequence(current: string | null): string[] {
+  const [observed, setObserved] = useState<string[]>([]);
   useEffect(() => {
-    setEntries(prev => {
-      if (currentLabel === null) {
-        // Sequence finished -- settle everything that was still running.
-        return prev.some(e => e.status === "pending")
-          ? prev.map(e => ({ ...e, status: "done" as const }))
-          : prev;
-      }
-      if (prev.length > 0 && prev[prev.length - 1].label === currentLabel) return prev;
-      return [
-        ...prev.map(e => ({ ...e, status: "done" as const })),
-        { label: currentLabel, status: "pending" as const },
-      ];
-    });
-  }, [currentLabel]);
-  return entries;
+    if (current === null) return;
+    setObserved(prev => (prev.length > 0 && prev[prev.length - 1] === current ? prev : [...prev, current]));
+  }, [current]);
+  return observed;
+}
+
+/**
+ * Reveals the stages a real backend sequence passed through one at a time,
+ * so the chat shows a growing checklist -- the reference bot's working-step
+ * language, driven by real events.
+ */
+export function useWorkingTrace(labels: string[], running: boolean): WorkingTraceEntry[] {
+  const [revealed, setRevealed] = useState(0);
+  const [settled, setSettled] = useState(false);
+  const seenRef = useRef<string[]>([]);
+
+  // A continuing operation only ever APPENDS stages; a brand-new operation
+  // replaces the list wholesale. Detecting that here (rather than keying on
+  // something external like the question id) matters: the next question's
+  // envelope lands synchronously, so an external key would wipe the trace
+  // before the customer ever saw the steps that produced it.
+  useEffect(() => {
+    const prev = seenRef.current;
+    const isSameOperation = labels.length >= prev.length && prev.every((l, i) => labels[i] === l);
+    seenRef.current = labels;
+    if (!isSameOperation) {
+      setRevealed(0);
+      setSettled(false);
+    } else if (labels.length > prev.length) {
+      setSettled(false);
+    }
+  }, [labels]);
+
+  // Reveal the recorded stages one at a time, each held long enough to read.
+  useEffect(() => {
+    if (revealed >= labels.length) return;
+    if (revealed === 0) {
+      setRevealed(1);
+      return;
+    }
+    const timer = setTimeout(() => setRevealed(r => r + 1), MIN_STEP_MS);
+    return () => clearTimeout(timer);
+  }, [revealed, labels.length]);
+
+  // Settle the final step once the real work has finished AND that step has
+  // had its readable moment.
+  useEffect(() => {
+    if (running || labels.length === 0 || revealed < labels.length) return;
+    const timer = setTimeout(() => setSettled(true), MIN_STEP_MS);
+    return () => clearTimeout(timer);
+  }, [running, revealed, labels.length]);
+
+  return labels.slice(0, revealed).map((label, i) => ({
+    label,
+    status: i < revealed - 1 || settled ? "done" : "pending",
+  }));
 }
 
 /** The accumulated trace: settled steps stay visible with a check, the
  * live one shimmers under a spinner, and typing dots trail it while work
  * is genuinely still in flight. */
 export function BotWorkingTrace({ entries }: { entries: WorkingTraceEntry[] }) {
-  if (entries.length === 0) return null;
   const running = entries.some(e => e.status === "pending");
+  const elapsed = useElapsedSeconds(running);
+  if (entries.length === 0) return null;
   return (
     <View style={{ gap: 6 }}>
       {entries.map((e, i) => (
         <BotWorkingStep key={`${e.label}-${i}`} label={e.label} status={e.status} />
       ))}
-      {running ? <BotTypingDots /> : null}
+      {running ? <BotWorkingFooter elapsedSeconds={elapsed} stepCount={entries.length} /> : null}
+    </View>
+  );
+}
+
+/** Seconds since the current run began. Real wall-clock elapsed time --
+ * the one "how hard is it working" number this screen can honestly show. */
+function useElapsedSeconds(active: boolean): number {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      setSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const id = setInterval(() => setSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return seconds;
+}
+
+/**
+ * Claude-Code-style running status line: a shimmering "Working…" label with
+ * the live elapsed time and how many steps have run.
+ *
+ * Deliberately NOT a token count. Token usage is real only on the DeepSeek
+ * conversation path (ai_conversation records prompt/completion tokens); the
+ * question flow this trace covers is a deterministic catalog walk that
+ * spends no tokens at all, so any number shown here would be invented.
+ * Elapsed time and step count are both genuinely measured.
+ */
+function BotWorkingFooter({ elapsedSeconds, stepCount }: { elapsedSeconds: number; stepCount: number }) {
+  const BOT = useBotColors();
+  const reduced = useReducedMotion();
+  const shimmer = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (reduced) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, { toValue: 0.65, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 1, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [reduced, shimmer]);
+
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 36, marginTop: 2 }}>
+      <BotPulseDot color={BOT.brand} size={7} />
+      <Animated.Text style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight, opacity: reduced ? 1 : shimmer }}>
+        Working…
+      </Animated.Text>
+      <Text style={{ fontSize: 13, color: BOT.textTertiary }}>
+        ({elapsedSeconds}s · {stepCount} step{stepCount === 1 ? "" : "s"})
+      </Text>
     </View>
   );
 }
@@ -259,7 +368,7 @@ export function BotAssistantBubble({ text, children }: { text?: string; children
       </View>
       {text ? (
         <View style={{ maxWidth: "80%", borderRadius: 16, borderTopLeftRadius: 4, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }}>
-          <Text style={{ fontSize: 13, lineHeight: 19, color: BOT.textPrimary }}>{text}</Text>
+          <Text style={{ fontSize: 15, lineHeight: 19, color: BOT.textPrimary }}>{text}</Text>
         </View>
       ) : (
         <View style={{ flex: 1 }}>{children}</View>
@@ -274,7 +383,7 @@ export function BotUserBubble({ text }: { text: string }) {
   return (
     <Animated.View style={[{ flexDirection: "row", justifyContent: "flex-end" }, entrance]}>
       <View style={{ maxWidth: "78%", borderRadius: 16, borderTopRightRadius: 4, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: BOT.brand }}>
-        <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.bubbleOnBrand }}>{text}</Text>
+        <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.bubbleOnBrand }}>{text}</Text>
       </View>
     </Animated.View>
   );
@@ -323,7 +432,7 @@ function OptionChip({
           opacity: isInactive ? 0.4 : 1,
         }}
       >
-        <Text style={{ fontSize: 12.5, fontWeight: "500", color: isSelected ? BOT.bubbleOnBrand : BOT.textSecondary }}>{label}</Text>
+        <Text style={{ fontSize: 15, fontWeight: "500", color: isSelected ? BOT.bubbleOnBrand : BOT.textSecondary }}>{label}</Text>
       </Pressable>
     </Animated.View>
   );
@@ -364,7 +473,7 @@ export function BotPrimaryButton({ label, onPress, disabled, loading }: { label:
         opacity: isDisabled && !loading && !busy ? 0.6 : 1,
       }}
     >
-      <Text style={{ fontSize: 13.5, fontWeight: "700", color: isDisabled && !loading && !busy ? BOT.textDim : BOT.bubbleOnBrand }}>
+      <Text style={{ fontSize: 15, fontWeight: "700", color: isDisabled && !loading && !busy ? BOT.textDim : BOT.bubbleOnBrand }}>
         {loading || busy ? "Working…" : label}
       </Text>
     </Pressable>

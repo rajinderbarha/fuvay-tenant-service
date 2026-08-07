@@ -51,6 +51,19 @@ export interface AssistantPriceSnapshot {
 export interface AssistantControllerState {
   uiState: AssistantUiState;
   activityStage: AssistantActivityStage | null;
+  /**
+   * Every stage the CURRENT operation has genuinely passed through, in
+   * order, append-only until the next operation starts.
+   *
+   * `activityStage` alone cannot express this: React batches state updates
+   * within one synchronous block, so a sequence like
+   * `validating_answer` -> `saving_progress` -> `preparing_next_question`
+   * (all set around one await) collapses -- a consumer only ever observes
+   * the last value and the real intermediate work is invisible. This array
+   * records each stage as it happens, so the UI can show the full running
+   * task list. It is never populated with a stage that did not run.
+   */
+  activityTrace: AssistantActivityStage[];
   session: AssistantSession | null;
   draftId: string | null;
   envelope: QuestionFlowEnvelope | null;
@@ -115,7 +128,32 @@ export interface AssistantControllerActions {
 export function useAssistantController(entryContext: AssistantEntryContext, customerId: CustomerId): AssistantControllerState & AssistantControllerActions {
   const scopeKey = scopeKeyFor(entryContext);
   const [uiState, setUiStateRaw] = useState<AssistantUiState>("bootstrapping");
-  const [activityStage, setActivityStage] = useState<AssistantActivityStage | null>(null);
+  const [activityStage, setActivityStageRaw] = useState<AssistantActivityStage | null>(null);
+  const [activityTrace, setActivityTrace] = useState<AssistantActivityStage[]>([]);
+  // True once an operation has ended (stage set back to null), so the next
+  // real stage begins a fresh trace instead of appending to the last
+  // operation's list.
+  const traceClosedRef = useRef(true);
+
+  /**
+   * Wraps the raw setter so every existing `setActivityStage(...)` call
+   * site records its stage in `activityTrace` automatically -- no call site
+   * needs to know about the trace, and no stage can be recorded that some
+   * real code path did not actually reach.
+   */
+  const setActivityStage = useCallback((stage: AssistantActivityStage | null) => {
+    setActivityStageRaw(stage);
+    if (stage === null) {
+      traceClosedRef.current = true;
+      return;
+    }
+    if (traceClosedRef.current) {
+      traceClosedRef.current = false;
+      setActivityTrace([stage]);
+      return;
+    }
+    setActivityTrace(prev => (prev.length > 0 && prev[prev.length - 1] === stage ? prev : [...prev, stage]));
+  }, []);
   const [session, setSession] = useState<AssistantSession | null>(null);
   const [draftId, setDraftId] = useState<string | null>(entryContext.existingDraftId);
   const [envelope, setEnvelope] = useState<QuestionFlowEnvelope | null>(null);
@@ -446,8 +484,15 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
       });
       if (isStale(generation)) return;
       setUiState("refreshing_question_flow");
+      // Three genuinely distinct operations, each named for what it is
+      // really doing: the answer was accepted, the returned envelope is
+      // parsed/adapted into local state, and the next question is built
+      // from it. All three ran -- see activityTrace's doc for why they must
+      // be recorded rather than inferred from `activityStage`.
       setActivityStage("saving_progress");
-      setEnvelope(adaptQuestionFlowEnvelope(parseQuestionFlowEnvelope(raw.data)));
+      const nextEnvelope = adaptQuestionFlowEnvelope(parseQuestionFlowEnvelope(raw.data));
+      setActivityStage("preparing_next_question");
+      setEnvelope(nextEnvelope);
       setUiState("ready");
       clearFallbackTimer();
     } catch (err) {
@@ -828,7 +873,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
   }, [bootstrap]);
 
   return {
-    uiState, activityStage, session, draftId, envelope, messages, errorMessage, fallbackOffered,
+    uiState, activityStage, activityTrace, session, draftId, envelope, messages, errorMessage, fallbackOffered,
     offeringChoice, languageChoice, priceSnapshot,
     sendMessage, interpretFreeText, interpretOfferingText, selectOffering,
     submitAnswer, changeLanguage, chooseLanguage, continueWithGuidedFallback, cancelCurrentOperation, retry, restart,
