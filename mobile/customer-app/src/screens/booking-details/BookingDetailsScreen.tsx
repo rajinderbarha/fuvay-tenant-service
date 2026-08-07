@@ -7,7 +7,7 @@ import { LoadingState } from "../../components/LoadingState";
 import { ErrorState } from "../../components/States";
 import { OfflineBanner } from "../../components/OfflineBanner";
 import { BookingDetailsHeader } from "../../components/booking-details/BookingDetailsHeader";
-import { BookingJourney } from "../../components/booking-details/BookingJourney";
+import { RequestJourneyStepper } from "../../components/booking-details/RequestJourneyStepper";
 import { ServiceOverviewCard } from "../../components/booking-details/ServiceOverviewCard";
 import { AttachmentsSummary } from "../../components/booking-details/AttachmentsSummary";
 import { BookingActivity } from "../../components/booking-details/BookingActivity";
@@ -159,7 +159,7 @@ export function BookingDetailsScreen() {
               />
             </>
           )}
-          <ServiceOverviewCard service={details.service} />
+          <ServiceOverviewCard service={details.service} bookingNumber={details.bookingNumber} createdAt={details.createdAt} />
           <FinalizedAddressCard address={details.address} />
           <BookingActivity events={details.activity} />
           <BookingDetailsActions
@@ -214,18 +214,30 @@ export function BookingDetailsScreen() {
             scheduleText={presentation.showSchedule ? formatScheduleWindow(details.job?.scheduledDate ?? null, details.job?.scheduledTimeWindow ?? null) : null}
           />
         ) : (
-          <CurrentStatusCard statusLabel={details.statusLabel} activityText={details.activityText} supportingText={details.supportingText} />
+          <CurrentStatusCard
+            statusLabel={details.statusLabel}
+            activityText={details.activityText}
+            supportingText={details.supportingText}
+            createdAt={details.createdAt}
+          />
         )}
+
+        {/* NOTE: the reference design also shows a "Search by service or
+            booking ID" bar with a filter icon right here. That control
+            searches ACROSS a list; this screen already IS one specific,
+            already-open booking, so there is nothing for it to search --
+            it is not rendered, deliberately, rather than shipped as a
+            control that does nothing. */}
 
         {activeStage ? (
           <JobProgressTimeline activeStage={activeStage} />
         ) : arrivalStage ? (
           <JobProgressTimeline activeStage="arrived" />
         ) : (
-          <BookingJourney stage={details.stage} />
+          <RequestJourneyStepper stage={details.stage} />
         )}
         {(presentation?.showTechnicianCard || arrivalStage) && technician ? <TechnicianSnapshotCard technician={technician} /> : null}
-        <ServiceOverviewCard service={details.service} />
+        <ServiceOverviewCard service={details.service} bookingNumber={details.bookingNumber} createdAt={details.createdAt} />
         <FinalizedAddressCard address={details.address} />
         <FinalizedPricingCard pricing={details.pricing} />
         <AttachmentsSummary attachments={details.attachments} note={details.note} />

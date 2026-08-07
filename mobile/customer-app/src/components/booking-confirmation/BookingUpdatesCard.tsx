@@ -11,12 +11,19 @@ export function BookingUpdatesCard({ capability }: { capability: NotificationCap
   return (
     <AppCard>
       <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm }}>
-        <Icon name="notifications-outline" size="standard" color={theme.colors.textSecondary} decorative />
-        <View style={{ flex: 1 }}>
+        <View
+          style={{
+            width: 40, height: 40, borderRadius: theme.radius.radiusFull,
+            backgroundColor: "#7C3AED", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}
+        >
+          <Icon name="notifications" size="standard" color="#FFFFFF" decorative />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
           {capability.kind === "enabled" ? (
             <>
-              <AppText variant="body">We'll send status updates</AppText>
-              <AppText variant="caption" color="tertiary">Provider assignment and visit scheduling</AppText>
+              <AppText variant="body">Status updates</AppText>
+              <AppText variant="caption" color="tertiary">Refresh anytime or check My Bookings</AppText>
             </>
           ) : capability.kind === "permission_not_granted" ? (
             <>
@@ -30,9 +37,21 @@ export function BookingUpdatesCard({ capability }: { capability: NotificationCap
             </>
           )}
         </View>
-        <AppText variant="labelStrong" color={capability.kind === "enabled" ? "success" : "secondary"}>
-          {capability.kind === "enabled" ? "On" : capability.kind === "permission_not_granted" ? "Enable" : ""}
-        </AppText>
+        {capability.kind === "enabled" ? (
+          <View
+            style={{
+              paddingVertical: theme.spacing.xxs, paddingHorizontal: theme.spacing.sm,
+              borderRadius: theme.radiusUsage.statusPill,
+              borderWidth: 1, borderColor: theme.colors.statusSuccess,
+              backgroundColor: theme.colors.statusSuccessSurface,
+              flexShrink: 0,
+            }}
+          >
+            <AppText variant="caption" style={{ color: theme.colors.statusSuccess }}>Notifications on</AppText>
+          </View>
+        ) : capability.kind === "permission_not_granted" ? (
+          <AppText variant="labelStrong" color="link">Enable</AppText>
+        ) : null}
       </View>
     </AppCard>
   );
