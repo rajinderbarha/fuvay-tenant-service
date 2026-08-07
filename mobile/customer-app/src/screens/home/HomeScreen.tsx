@@ -271,21 +271,21 @@ export function HomeScreen() {
 
         <HomeSectionErrorBoundary sectionLabel="services">
           <View style={{ marginTop: theme.spacing.xl }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.sm }}>
-              {/* Section titles were `bodyStrong` (15px) -- the same weight
-                  as a card title, so nothing signalled the start of a
-                  section and the page read as one undifferentiated column. */}
-              <AppText variant="headingSmall">Services near you</AppText>
-              {home.address.zipcode && (searchValue.trim() || home.bookableCategories.length > 1) ? (
-                // Suppressed for the single-category case: "Services near
-                // you" directly above "1 available in 140412" said the same
-                // thing twice for the single most common ZIP-coverage case.
-                <AppText variant="caption" color="tertiary">{
-                  searchValue.trim()
-                    ? `${visibleCategories.length} of ${home.bookableCategories.length} in ${home.address.zipcode}`
-                    : `${home.bookableCategories.length} available in ${home.address.zipcode}`
-                }</AppText>
-              ) : null}
+            {/* Title + inline qualifier on the left, "See All" on the right,
+                matching the section header treatment used across the design.
+                Section titles were `bodyStrong` (15px) -- the same weight as
+                a card title, so nothing signalled the start of a section. */}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: theme.spacing.sm }}>
+              <View style={{ flexDirection: "row", alignItems: "baseline", gap: theme.spacing.xs, flex: 1, minWidth: 0 }}>
+                <AppText variant="headingSmall">Services Nearby</AppText>
+                {home.address.zipcode ? (
+                  <AppText variant="caption" color="tertiary" numberOfLines={1}>
+                    {searchValue.trim()
+                      ? `${visibleCategories.length} of ${home.bookableCategories.length}`
+                      : `Based on ${home.address.zipcode}`}
+                  </AppText>
+                ) : null}
+              </View>
             </View>
             {home.bookableCategories.length === 0 ? (
               <AppText variant="bodySmall" color="secondary">No services are available in your area yet.</AppText>
@@ -297,14 +297,12 @@ export function HomeScreen() {
                 {`No services match "${searchValue.trim()}".`}
               </AppText>
             ) : (
-              // Chunked into explicit 2-up rows rather than a wrapping flex
-              // row. A row left holding a single card -- any odd count, and
-              // exactly 1 total is the common case for a ZIP served by only
-              // one provider -- renders with the "wide" horizontal layout
-              // instead of a half-width tile stretched into empty space:
-              // stretching the vertical tile just left a big blank area
-              // beside a small top-left icon rather than actually using the
-              // extra width.
+              // Explicit 2-up rows rather than a wrapping flex row: with
+              // `flexWrap` + `space-between`, a trailing row holding one
+              // card stretched it across the full width. The card itself is
+              // horizontal now (artwork left, copy right), so a lone card is
+              // padded with an equal-flex spacer to keep every tile the same
+              // width as the rows above it.
               <View style={{ gap: theme.spacing.sm }}>
                 {Array.from({ length: Math.ceil(visibleCategories.length / 2) }).map((_, rowIndex) => {
                   const row = visibleCategories.slice(rowIndex * 2, rowIndex * 2 + 2);
@@ -314,10 +312,10 @@ export function HomeScreen() {
                         <HomeServiceCard
                           key={category.categoryId}
                           category={category}
-                          layout={row.length === 1 ? "wide" : "grid"}
                           onPress={() => navigateToService(category, home.address!.zipcode as string)}
                         />
                       ))}
+                      {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
                     </View>
                   );
                 })}

@@ -4,107 +4,107 @@ import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { Icon } from "../Icon";
 import { HomeCategory } from "../../domain/customerHome";
-import { ServicePriceState, resolveServicePriceDisplay } from "../../domain/servicePricing";
+import { ServicePriceState, resolveServicePriceDisplay, classifyRawAmount } from "../../domain/servicePricing";
 import { resolveCategoryIcon } from "../../domain/categoryIcon";
+import { formatMoney } from "../../domain/money";
 
 export interface HomeServiceCardProps {
   category: HomeCategory;
-  /** Optional -- Home aggregation currently returns NO price field for
-   * categories (see api/contracts/customerHome.ts), so this is almost
-   * always undefined today. When undefined, no price row renders at all
-   * rather than fabricating one (spec: never infer price from nothing). */
+  /** Legacy per-service pricing hook. The Home payload now carries a real
+   * `startingPrice` per category, which takes precedence; this remains for
+   * callers that resolve a more specific price themselves. */
   priceState?: ServicePriceState;
   onPress: () => void;
-  /**
-   * "grid" (default): vertical tile, icon over text, meant to sit two-up.
-   * "wide": horizontal row, icon-text-chevron, meant to fill a full row on
-   * its own -- used for a row that ends up with exactly one card (most
-   * commonly a ZIP with only one bookable category, since a stretched
-   * "grid" tile just leaves empty space beside a top-left icon instead of
-   * actually using the extra width).
-   */
-  layout?: "grid" | "wide";
 }
 
-/** Never exposes provider names/counts/matching scores/tenant IDs --
+/**
+ * "Services Nearby" card.
+ *
+ * Horizontal by design (illustration left, copy right) to match the
+ * approved Home layout -- it was previously a vertical tile with a small
+ * glyph on top, which is why the grid did not read like the design. The
+ * artwork is deliberately oversized relative to its column and vertically
+ * centred so the mascot fills the left edge the way the comps show.
+ *
+ * Never exposes provider names/counts/matching scores/tenant IDs --
  * `HomeCategory` structurally cannot carry them (see domain/
- * customerHome.ts), so there is nothing to accidentally leak here. */
-export function HomeServiceCard({ category, priceState, onPress, layout = "grid" }: HomeServiceCardProps) {
+ * customerHome.ts), so there is nothing to accidentally leak here.
+ */
+export function HomeServiceCard({ category, priceState, onPress }: HomeServiceCardProps) {
   const { theme } = useTheme();
-  const price = priceState ? resolveServicePriceDisplay(priceState) : null;
-  const iconEl = category.iconUrl ? (
-    <Image source={{ uri: category.iconUrl }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
-  ) : (
-    // Distinct per-category glyph rather than one generic wrench for
-    // everything -- see domain/categoryIcon.ts.
-    <Icon name={resolveCategoryIcon(category.slug)} size="standard" color={theme.colors.brandPrimaryStrong} decorative />
+  const legacyPrice = priceState ? resolveServicePriceDisplay(priceState) : null;
+  // `starting_price` arrives as a major-unit decimal (₹, matching the
+  // backend's Numeric(10,2) columns), so it goes through the same
+  // classify-then-format path as every other price in the app. That path
+  // treats null/0/negative as "no price", which is why a category with
+  // nothing configured renders no price row instead of "₹0".
+  const startingState = classifyRawAmount(
+    category.startingPrice != null ? Math.round(category.startingPrice * 100) : null,
   );
-
-  if (layout === "wide") {
-    return (
-      <Pressable
-        onPress={onPress}
-        accessibilityRole="button"
-        accessibilityLabel={`${category.name}${price ? `, ${price.label}` : ""}`}
-        style={({ pressed }) => ({
-          flexDirection: "row", alignItems: "center", gap: theme.spacing.base,
-          padding: theme.spacing.base, borderRadius: theme.radiusUsage.card,
-          backgroundColor: theme.colors.surfaceDefault, borderWidth: 1,
-          borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle,
-          opacity: pressed ? 0.9 : 1,
-        })}
-      >
-        <View
-          style={{
-            width: 52, height: 52, borderRadius: theme.radiusUsage.input,
-            backgroundColor: theme.colors.brandPrimaryMuted, alignItems: "center", justifyContent: "center",
-            overflow: "hidden", flexShrink: 0,
-          }}
-        >
-          {iconEl}
-        </View>
-        <View style={{ flex: 1 }}>
-          <AppText variant="bodyStrong" numberOfLines={1}>{category.name}</AppText>
-          <AppText variant="bodySmall" color={price?.isNumericPrice ? "secondary" : "tertiary"} numberOfLines={1} style={{ marginTop: 2 }}>
-            {price?.label ?? "Tap to book a visit"}
-          </AppText>
-        </View>
-        <Icon name="chevron-forward" size="compact" color={theme.colors.iconDefault} decorative />
-      </Pressable>
-    );
-  }
+  const priceLabel = startingState.kind === "valid"
+    ? formatMoney(startingState.amount)
+    : legacyPrice?.label ?? null;
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${category.name}${price ? `, ${price.label}` : ""}`}
+      accessibilityLabel={`${category.name}${priceLabel ? `, starting at ${priceLabel}` : ""}`}
       style={({ pressed }) => ({
-        // Width is set by the parent grid, not here.
         flex: 1,
-        padding: theme.spacing.base,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: theme.spacing.xs,
+        paddingVertical: theme.spacing.sm,
+        paddingRight: theme.spacing.sm,
         borderRadius: theme.radiusUsage.card,
         backgroundColor: theme.colors.surfaceDefault,
         borderWidth: 1,
         borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle,
         opacity: pressed ? 0.9 : 1,
+        overflow: "hidden",
+        minHeight: 96,
       })}
     >
-      <View
-        style={{
-          width: 44, height: 44, borderRadius: theme.radiusUsage.input,
-          backgroundColor: theme.colors.brandPrimaryMuted, alignItems: "center", justifyContent: "center",
-          marginBottom: theme.spacing.sm, overflow: "hidden",
-        }}
-      >
-        {iconEl}
+      <View style={{ width: 62, height: 72, alignItems: "center", justifyContent: "flex-end", flexShrink: 0 }}>
+        {category.iconUrl ? (
+          <Image
+            source={{ uri: category.iconUrl }}
+            style={{ width: 62, height: 72 }}
+            resizeMode="contain"
+            accessibilityElementsHidden
+          />
+        ) : (
+          // Distinct per-category glyph rather than one generic wrench for
+          // every card -- see domain/categoryIcon.ts. Only reached until an
+          // admin uploads artwork for the category.
+          <View
+            style={{
+              width: 46, height: 46, borderRadius: theme.radiusUsage.input,
+              backgroundColor: theme.colors.brandPrimaryMuted,
+              alignItems: "center", justifyContent: "center", marginBottom: theme.spacing.xs,
+            }}
+          >
+            <Icon name={resolveCategoryIcon(category.slug)} size="standard" color={theme.colors.brandPrimaryStrong} decorative />
+          </View>
+        )}
       </View>
-      <AppText variant="bodyStrong" numberOfLines={2}>{category.name}</AppText>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: theme.spacing.xxs }}>
-        <AppText variant="bodySmall" color={price?.isNumericPrice ? "secondary" : "tertiary"} numberOfLines={1}>
-          {price?.label ?? "Book now"}
-        </AppText>
-        <Icon name="chevron-forward" size="compact" color={theme.colors.iconDefault} decorative />
+
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <AppText variant="bodyStrong" numberOfLines={1}>{category.name}</AppText>
+        {category.description ? (
+          <AppText variant="caption" color="tertiary" numberOfLines={2} style={{ marginTop: 2 }}>
+            {category.description}
+          </AppText>
+        ) : null}
+        {priceLabel ? (
+          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4, marginTop: theme.spacing.xs }}>
+            <AppText variant="caption" color="tertiary">Starting at</AppText>
+            <AppText variant="bodySmall" style={{ color: theme.colors.brandPrimaryStrong, fontWeight: "700" }}>
+              {priceLabel}
+            </AppText>
+          </View>
+        ) : null}
       </View>
     </Pressable>
   );

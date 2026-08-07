@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { fireEvent } from "@testing-library/react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -37,7 +37,7 @@ function baseHome(overrides: Partial<CustomerHome> = {}): CustomerHome {
     address: { addressId: asAddressId("addr-1"), city: "Ludhiana", zipcode: "141001", isDefault: true },
     serviceability: { zipcode: "141001", checked: true },
     enabledVerticals: [{ verticalId: asVerticalId("v-1"), key: "home_services", label: "Home Services", icon: "home-outline" }],
-    bookableCategories: [{ categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null }],
+    bookableCategories: [{ categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null, description: null, startingPrice: null }],
     activeBooking: null,
     unreadNotificationCount: 0,
     campaigns: [],
@@ -98,38 +98,48 @@ describe("HomeScreen", () => {
     expect(getByText(/Rajinder$/)).toBeTruthy();
   });
 
-  it("renders only backend-returned bookable categories, with no price label when none is provided", () => {
-    // The fixture's single category renders via the "wide" single-card
-    // layout (see HomeServiceCard), whose no-price copy is "Tap to book a
-    // visit" rather than the 2-up grid tile's "Book now" -- both assert the
-    // same underlying rule: never fabricate a price, always show a neutral
-    // action label instead.
+  it("renders only backend-returned bookable categories, with no price row when none is provided", () => {
+    // startingPrice null => the card omits the "Starting at" row entirely
+    // rather than fabricating a figure or rendering a zero.
     mockHomeQuery({ data: baseHome() });
     const { getByText, queryByText } = renderHome();
     expect(getByText("AC & Cooling")).toBeTruthy();
-    expect(getByText("Tap to book a visit")).toBeTruthy();
+    expect(queryByText("Starting at")).toBeNull();
     expect(queryByText(/₹/)).toBeNull();
   });
 
-  it("renders the 2-up grid layout with 'Book now' when more than one category is bookable", () => {
+  it("renders a real 'Starting at' price when the backend provides one", () => {
     mockHomeQuery({
       data: baseHome({
         bookableCategories: [
-          { categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null },
-          { categoryId: asCategoryId("cat-2"), name: "Plumbing", slug: "plumbing", iconUrl: null },
+          { categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null, description: "Service, repair & more", startingPrice: 800 },
+          { categoryId: asCategoryId("cat-2"), name: "Plumbing", slug: "plumbing", iconUrl: null, description: null, startingPrice: null },
         ],
       }),
     });
-    const { getByText, getAllByText } = renderHome();
+    const { getByText, getAllByText, queryByText } = renderHome();
     expect(getByText("AC & Cooling")).toBeTruthy();
     expect(getByText("Plumbing")).toBeTruthy();
-    expect(getAllByText("Book now")).toHaveLength(2);
+    expect(getByText("Service, repair & more")).toBeTruthy();
+    // Only the priced category shows a price row; the unpriced one does not.
+    expect(getAllByText("Starting at")).toHaveLength(1);
+    expect(getByText(/₹\s?800/)).toBeTruthy();
+    expect(queryByText(/₹0\b/)).toBeNull();
   });
 
   it("never renders ₹0 for any service", () => {
-    mockHomeQuery({ data: baseHome() });
+    // A zero price is "not configured", never a real free service -- see
+    // classifyRawAmount, which the card routes every amount through.
+    mockHomeQuery({
+      data: baseHome({
+        bookableCategories: [
+          { categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null, description: null, startingPrice: 0 },
+        ],
+      }),
+    });
     const { queryByText } = renderHome();
     expect(queryByText(/₹0\b/)).toBeNull();
+    expect(queryByText("Starting at")).toBeNull();
   });
 
   it("hides the campaign carousel entirely when there are no campaigns", () => {
@@ -154,7 +164,7 @@ describe("HomeScreen", () => {
   it("does not render the active booking card when there is no active booking", () => {
     mockHomeQuery({ data: baseHome({ activeBooking: null }) });
     const { queryByText } = renderHome();
-    expect(queryByText("My Booking")).toBeNull();
+    expect(queryByText("Active Booking")).toBeNull();
   });
 
   it("renders the active booking card using only real returned fields, never a fabricated ETA/technician", () => {
@@ -168,7 +178,7 @@ describe("HomeScreen", () => {
       }),
     });
     const { getByText, queryByText } = renderHome();
-    expect(getByText("My Booking")).toBeTruthy();
+    expect(getByText("Active Booking")).toBeTruthy();
     // With no issueSummary, the title falls back to the booking number.
     expect(getByText("SB-2026-01")).toBeTruthy();
     expect(queryByText(/min away/i)).toBeNull();
@@ -237,7 +247,7 @@ describe("HomeScreen", () => {
   });
 
   it("does not navigate when a category has no resolvable slug (cannot start a draft without one)", () => {
-    mockHomeQuery({ data: baseHome({ bookableCategories: [{ categoryId: asCategoryId("cat-2"), name: "Unmapped Service", slug: null, iconUrl: null }] }) });
+    mockHomeQuery({ data: baseHome({ bookableCategories: [{ categoryId: asCategoryId("cat-2"), name: "Unmapped Service", slug: null, iconUrl: null, description: null, startingPrice: null }] }) });
     const { getByText } = renderHome();
     fireEvent.press(getByText("Unmapped Service"));
     expect(lastAssistantParams).toBe("not-navigated");

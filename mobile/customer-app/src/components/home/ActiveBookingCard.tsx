@@ -51,7 +51,10 @@ export function ActiveBookingCard({ booking, onPress, iconUrl }: ActiveBookingCa
 
   return (
     <View>
-      <AppText variant="bodyStrong" style={{ marginBottom: theme.spacing.sm }}>My Booking</AppText>
+      {/* "Active Booking" at headingSmall to match the other section
+          headers -- this was "My Booking" at bodyStrong, i.e. the same
+          weight as the card title directly beneath it. */}
+      <AppText variant="headingSmall" style={{ marginBottom: theme.spacing.sm }}>Active Booking</AppText>
       <View
         accessible
         accessibilityRole="button"

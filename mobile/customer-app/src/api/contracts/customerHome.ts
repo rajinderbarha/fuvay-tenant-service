@@ -42,6 +42,13 @@ export const homeCategoryDtoSchema = z.object({
   // which takes `category_slug`, not an id.
   slug: z.string().nullable().optional(),
   icon_url: z.string().nullable().optional(),
+  // Added by the backend (_get_category_meta) so the service card can show
+  // the one-line blurb and "Starting at ₹X" the design calls for. Both stay
+  // optional/nullable: `starting_price` is null when the catalog carries no
+  // configured price for the category at all, and the card then omits the
+  // price row rather than rendering ₹0.
+  description: z.string().nullable().optional(),
+  starting_price: z.number().nullable().optional(),
 });
 
 export const homeActiveBookingDtoSchema = z.object({

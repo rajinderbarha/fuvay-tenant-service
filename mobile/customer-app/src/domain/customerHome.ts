@@ -24,6 +24,14 @@ export interface HomeCategory {
    * category cannot be tapped into the Assistant (see HomeServiceCard). */
   slug: string | null;
   iconUrl: string | null;
+  /** One-line blurb under the name on the service card. Straight from the
+   * catalog row; null when the admin never wrote one. */
+  description: string | null;
+  /** Lowest genuinely-configured price across this category's active
+   * services (see CustomerHomeService._get_category_meta). Null when the
+   * catalog carries no price at all -- the card then omits the price row
+   * rather than showing a fabricated or ₹0 figure. */
+  startingPrice: number | null;
 }
 
 /** Only fields the real Home aggregation endpoint returns. Extended

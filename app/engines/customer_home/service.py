@@ -187,15 +187,65 @@ class CustomerHomeService:
         # `POST /v1/customer/home-services/booking-drafts`
         # (`category_slug`) — a customer tapping a Home service card had
         # no way to actually start a booking draft for it.
+        items = result.get("items", [])
+        meta = await self._get_category_meta([c["id"] for c in items])
         return [
             {
                 "category_id": c["id"],
                 "name": c["name"],
                 "slug": c.get("slug"),
                 "icon_url": c.get("icon_url"),
+                **meta.get(str(c["id"]), {"description": None, "starting_price": None}),
             }
-            for c in result.get("items", [])
+            for c in items
         ]
+
+    async def _get_category_meta(self, category_ids: list) -> dict[str, dict]:
+        """Per-category `description` and a real "starting at" price.
+
+        The Home card shows a one-line description and a "Starting at ₹X"
+        under each service. Neither existed in this payload before, so the
+        app had nothing to render there.
+
+        `starting_price` is the lowest genuinely-configured price across the
+        category's ACTIVE master services -- `min_price` where an admin set
+        one, otherwise `base_price`. Zeroes are treated as "not configured"
+        rather than a real ₹0 (several services carry base_price 0 and price
+        via visit_fee instead). A category with no configured price at all
+        returns None so the card omits the price row entirely rather than
+        inventing or showing ₹0 -- the same rule the rest of this screen
+        already follows.
+        """
+        if not category_ids:
+            return {}
+        from app.engines.admin_catalog.models import MasterService, ServiceCategory
+
+        price_col = func.min(
+            func.coalesce(
+                func.nullif(MasterService.min_price, 0),
+                func.nullif(MasterService.base_price, 0),
+            )
+        )
+        price_rows = (await self.db.execute(
+            select(MasterService.category_id, price_col)
+            .where(MasterService.category_id.in_(category_ids), MasterService.is_active.is_(True))
+            .group_by(MasterService.category_id)
+        )).all()
+        prices = {str(r[0]): (float(r[1]) if r[1] is not None else None) for r in price_rows}
+
+        desc_rows = (await self.db.execute(
+            select(ServiceCategory.id, ServiceCategory.description)
+            .where(ServiceCategory.id.in_(category_ids))
+        )).all()
+        descriptions = {str(r[0]): r[1] for r in desc_rows}
+
+        return {
+            str(cid): {
+                "description": descriptions.get(str(cid)),
+                "starting_price": prices.get(str(cid)),
+            }
+            for cid in category_ids
+        }
 
     async def _category_ids_with_an_eligible_provider(self, zipcode: str | None) -> set[str] | None:
         """Category ids that have at least one bookable provider at this ZIP.

@@ -31,6 +31,7 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
     })),
     bookableCategories: dto.bookable_categories.map(c => ({
       categoryId: asCategoryId(c.category_id), name: c.name, slug: c.slug ?? null, iconUrl: c.icon_url ?? null,
+      description: c.description ?? null, startingPrice: c.starting_price ?? null,
     })),
     activeBooking: dto.active_booking
       ? {
