@@ -6,7 +6,7 @@ import { Icon, IconProps } from "../components/Icon";
 import { useTheme } from "../design-system/theme";
 import { HomeScreen } from "../screens/home/HomeScreen";
 import { MyBookingsScreen } from "../screens/bookings/MyBookingsScreen";
-import { AssistantScreen } from "../screens/assistant/AssistantScreen";
+import { BookingChatScreen } from "../screens/bookingChat/BookingChatScreen";
 import { HelpSupportScreen } from "../screens/support/HelpSupportScreen";
 import { ProfileScreen } from "../screens/profile/ProfileScreen";
 import { saveLastSelectedTab } from "./navigationPersistence";
@@ -105,7 +105,7 @@ export function CustomerTabs() {
       />
       <Tab.Screen
         name="Assistant"
-        component={AssistantScreen}
+        component={BookingChatScreen}
         options={{ tabBarIcon: ({ focused }) => <AssistantTabIcon focused={focused} /> }}
       />
       <Tab.Screen

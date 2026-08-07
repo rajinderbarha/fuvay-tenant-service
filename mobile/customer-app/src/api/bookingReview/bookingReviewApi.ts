@@ -14,6 +14,21 @@ export async function getDraft(draftId: string) {
   return parseApiSuccess(res.json, bookingDraftResponseSchema);
 }
 
+/** Real bug risk documented here rather than fixed silently: the backend
+ * (`update_draft_fields`) sets `draft.zipcode`/`draft.city` FROM the
+ * address record whenever `address_id` is sent -- it does not itself
+ * reject a zip-mismatched address. The zipcode this draft was matched
+ * against must never change (the assigned provider was matched against
+ * it), so the caller MUST only ever pass an address whose own zipcode
+ * already equals the entry zipcode -- enforced in
+ * AddressTurn/useBookingChatController, not here. */
+export async function setDraftAddress(draftId: string, addressId: string) {
+  const res = await authenticatedRequest({
+    method: "PUT", path: base(draftId), body: { address_id: addressId },
+  });
+  return parseApiSuccess(res.json, bookingDraftResponseSchema);
+}
+
 export async function checkServiceability(draftId: string) {
   const res = await authenticatedRequest({ method: "POST", path: `${base(draftId)}/serviceability-check` });
   return parseApiSuccess(res.json, serviceabilityCheckResponseSchema);
