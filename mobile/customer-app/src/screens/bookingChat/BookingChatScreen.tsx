@@ -13,7 +13,8 @@ import { ReviewAndConfirmPhase } from "./ReviewAndConfirmPhase";
 import { resolveActivityLabel } from "../../domain/assistantActivity";
 import { useBotColors } from "../../components/bookingChat/botTheme";
 import {
-  BotStageTracker, BotAssistantBubble, BotUserBubble, BotOptionChips, BotWorkingStep, BotTypingDots,
+  BotStageTracker, BotAssistantBubble, BotUserBubble, BotOptionChips, BotTypingDots,
+  BotWorkingTrace, useWorkingTrace, BotPulseDot,
 } from "../../components/bookingChat/BotPrimitives";
 import { AddressTurn } from "../../components/bookingChat/AddressTurn";
 
@@ -109,13 +110,20 @@ function BookingChatConversation({
 
   const flowDone = !!addr.resolvedAddressId; // review phase mounts and owns everything past this
 
+  // Accumulated trace of the assistant stages that genuinely ran, so
+  // finished steps stay on screen with a check instead of vanishing.
+  const assistantWorking = c.uiState === "assistant_processing" || c.uiState === "submitting_answer";
+  const trace = useWorkingTrace(
+    assistantWorking && c.activityStage ? resolveActivityLabel(c.activityStage, zipcode) : null,
+  );
+
   // Auto-scroll to the newest turn as the conversation grows -- every state
   // change below (message count, a new question, address/price turns
   // mounting) reshapes the single content item, so this covers all of them
   // without needing a per-turn scroll call.
   const scrollCue = [
     c.messages.length, c.envelope?.answeredQuestions.length ?? 0, !!c.envelope?.currentQuestion,
-    c.activityStage, c.uiState, addressPhaseActive, addr.resolvedAddressId,
+    c.activityStage, c.uiState, addressPhaseActive, addr.resolvedAddressId, trace.length,
   ].join("|");
   useEffect(() => {
     const timer = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
@@ -149,7 +157,7 @@ function BookingChatConversation({
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ fontSize: 14.5, fontWeight: "700", color: BOT.textPrimary }}>Fuvay AI</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: flowDone ? BOT.success : BOT.brand }} />
+                <BotPulseDot color={flowDone ? BOT.success : BOT.brand} />
                 <Text style={{ fontSize: 11, color: BOT.textMuted }}>{flowDone ? "Booking in progress" : "Working on your booking"}</Text>
               </View>
             </View>
@@ -172,9 +180,7 @@ function BookingChatConversation({
               ))}
 
               {(c.uiState === "bootstrapping" || c.uiState === "resolving_session") ? <BotTypingDots /> : null}
-              {c.activityStage && (c.uiState === "assistant_processing" || c.uiState === "submitting_answer") ? (
-                <BotWorkingStep label={resolveActivityLabel(c.activityStage, zipcode)} status="pending" />
-              ) : null}
+              <BotWorkingTrace entries={trace} />
 
               {c.offeringChoice && !selectedIssueLabel ? (
                 <BotOptionChips

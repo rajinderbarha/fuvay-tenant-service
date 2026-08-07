@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, Animated } from "react-native";
+import { View, Text, Pressable, Animated, Easing } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useReducedMotion } from "../../design-system/theme";
 import { useBotColors } from "./botTheme";
@@ -61,31 +61,44 @@ function SpinningIcon() {
   );
 }
 
-/** Three bouncing dots, matching TypingBubble's existing pulse pattern but
- * restyled for this dark surface. */
+/** Three bouncing dots. Matches the reference's `bounceDot` keyframe:
+ * translateY 0 -> -3px -> 0 with opacity .5 -> 1 -> .5 over 1.1s, each dot
+ * offset by 150ms. The offset is applied by staggering the loop START (not
+ * by a per-iteration delay), so the dots keep a constant phase difference
+ * instead of drifting apart on every cycle. */
 export function BotTypingDots() {
   const BOT = useBotColors();
   const reduced = useReducedMotion();
-  const dots = [useRef(new Animated.Value(0.5)).current, useRef(new Animated.Value(0.5)).current, useRef(new Animated.Value(0.5)).current];
+  const d0 = useRef(new Animated.Value(0)).current;
+  const d1 = useRef(new Animated.Value(0)).current;
+  const d2 = useRef(new Animated.Value(0)).current;
+  const dots = [d0, d1, d2];
+
   useEffect(() => {
     if (reduced) return;
-    const loops = dots.map((v, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(v, { toValue: 1, duration: 260, delay: i * 130, useNativeDriver: true }),
-          Animated.timing(v, { toValue: 0.5, duration: 260, useNativeDriver: true }),
-        ]),
-      ),
+    const loops = dots.map(v =>
+      Animated.loop(Animated.timing(v, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true })),
     );
-    loops.forEach(l => l.start());
-    return () => loops.forEach(l => l.stop());
+    const timers = loops.map((l, i) => setTimeout(() => l.start(), i * 150));
+    return () => {
+      timers.forEach(clearTimeout);
+      loops.forEach(l => l.stop());
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reduced]);
+
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 36 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, height: 32, borderRadius: 16, backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.borderSubtle }}>
         {dots.map((v, i) => (
-          <Animated.View key={i} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: BOT.textFaint, opacity: reduced ? 0.7 : v }} />
+          <Animated.View
+            key={i}
+            style={{
+              width: 6, height: 6, borderRadius: 3, backgroundColor: BOT.textTertiary,
+              opacity: reduced ? 0.7 : v.interpolate({ inputRange: [0, 0.4, 0.8, 1], outputRange: [0.5, 1, 0.5, 0.5] }),
+              transform: reduced ? undefined : [{ translateY: v.interpolate({ inputRange: [0, 0.4, 0.8, 1], outputRange: [0, -3, 0, 0] }) }],
+            }}
+          />
         ))}
       </View>
     </View>
@@ -99,13 +112,16 @@ export function BotTypingDots() {
 export function BotWorkingStep({ label, status }: { label: string; status: "pending" | "done" }) {
   const BOT = useBotColors();
   const reduced = useReducedMotion();
+  const entrance = useTurnEntrance();
+  // Matches the reference's `shimmerText` keyframe exactly: opacity
+  // .65 <-> 1 over 1.3s, easing in and out.
   const shimmer = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (reduced || status === "done") return;
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(shimmer, { toValue: 0.6, duration: 650, useNativeDriver: true }),
-        Animated.timing(shimmer, { toValue: 1, duration: 650, useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 0.65, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 1, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ]),
     );
     loop.start();
@@ -114,7 +130,7 @@ export function BotWorkingStep({ label, status }: { label: string; status: "pend
 
   const done = status === "done";
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: 36 }}>
+    <Animated.View style={[{ flexDirection: "row", alignItems: "center", paddingLeft: 36 }, entrance]}>
       <View
         style={{
           flexDirection: "row", alignItems: "center", gap: 10,
@@ -134,24 +150,103 @@ export function BotWorkingStep({ label, status }: { label: string; status: "pend
           {label}
         </Animated.Text>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
 /** Fades + slides a turn in on mount, so each new bubble/card arrives as a
  * visible transition rather than popping in instantly -- respects
- * reduced-motion by rendering at rest immediately. */
-function useTurnEntrance() {
+ * reduced-motion by rendering at rest immediately. `delay` staggers
+ * siblings (option chips, trace lines) so a group cascades in. */
+function useTurnEntrance(delay = 0) {
   const reduced = useReducedMotion();
   const progress = useRef(new Animated.Value(reduced ? 1 : 0)).current;
   useEffect(() => {
     if (reduced) return;
-    Animated.timing(progress, { toValue: 1, duration: 260, useNativeDriver: true }).start();
-  }, [reduced, progress]);
+    Animated.timing(progress, { toValue: 1, duration: 300, delay, useNativeDriver: true }).start();
+  }, [reduced, progress, delay]);
   return {
     opacity: progress,
-    transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+    transform: [
+      { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
+      { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }) },
+    ],
   };
+}
+
+/** The header's live status dot -- reference `dotPulse`: opacity .35 <-> 1
+ * over 1.4s, signalling the assistant is actively working. */
+export function BotPulseDot({ color, size = 6 }: { color: string; size?: number }) {
+  const reduced = useReducedMotion();
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (reduced) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.35, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [reduced, pulse]);
+  return (
+    <Animated.View
+      style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: reduced ? 1 : pulse }}
+    />
+  );
+}
+
+export interface WorkingTraceEntry {
+  label: string;
+  status: "pending" | "done";
+}
+
+/**
+ * Accumulates the stages a real backend sequence has actually passed
+ * through, so the chat shows a growing checklist instead of one step that
+ * vanishes -- the visual language of the reference bot, but every line is
+ * a stage that genuinely ran.
+ *
+ * The critical difference from the reference: nothing here is on a timer.
+ * A line flips to "done" only because the controller genuinely moved to
+ * the next stage (or finished), so a slow backend call shimmers for
+ * exactly as long as it really takes.
+ */
+export function useWorkingTrace(currentLabel: string | null): WorkingTraceEntry[] {
+  const [entries, setEntries] = useState<WorkingTraceEntry[]>([]);
+  useEffect(() => {
+    setEntries(prev => {
+      if (currentLabel === null) {
+        // Sequence finished -- settle everything that was still running.
+        return prev.some(e => e.status === "pending")
+          ? prev.map(e => ({ ...e, status: "done" as const }))
+          : prev;
+      }
+      if (prev.length > 0 && prev[prev.length - 1].label === currentLabel) return prev;
+      return [
+        ...prev.map(e => ({ ...e, status: "done" as const })),
+        { label: currentLabel, status: "pending" as const },
+      ];
+    });
+  }, [currentLabel]);
+  return entries;
+}
+
+/** The accumulated trace: settled steps stay visible with a check, the
+ * live one shimmers under a spinner, and typing dots trail it while work
+ * is genuinely still in flight. */
+export function BotWorkingTrace({ entries }: { entries: WorkingTraceEntry[] }) {
+  if (entries.length === 0) return null;
+  const running = entries.some(e => e.status === "pending");
+  return (
+    <View style={{ gap: 6 }}>
+      {entries.map((e, i) => (
+        <BotWorkingStep key={`${e.label}-${i}`} label={e.label} status={e.status} />
+      ))}
+      {running ? <BotTypingDots /> : null}
+    </View>
+  );
 }
 
 export function BotAssistantBubble({ text, children }: { text?: string; children?: React.ReactNode }) {
@@ -191,29 +286,46 @@ export function BotOptionChips({
   const BOT = useBotColors();
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingLeft: 36 }}>
-      {items.map(label => {
-        const isSelected = selected === label;
-        const isInactive = !!selected && !isSelected;
-        return (
-          <Pressable
-            key={label}
-            disabled={disabled || !!selected}
-            onPress={() => onSelect(label)}
-            accessibilityRole="button"
-            accessibilityLabel={label}
-            style={{
-              paddingHorizontal: 14, height: 36, borderRadius: 18,
-              alignItems: "center", justifyContent: "center",
-              backgroundColor: isSelected ? BOT.brand : BOT.surface,
-              borderWidth: 1, borderColor: isSelected ? BOT.brand : BOT.border,
-              opacity: isInactive ? 0.4 : 1,
-            }}
-          >
-            <Text style={{ fontSize: 12.5, fontWeight: "500", color: isSelected ? BOT.bubbleOnBrand : BOT.textSecondary }}>{label}</Text>
-          </Pressable>
-        );
-      })}
+      {items.map((label, i) => (
+        <OptionChip
+          key={label}
+          label={label}
+          index={i}
+          isSelected={selected === label}
+          isInactive={!!selected && selected !== label}
+          disabled={disabled || !!selected}
+          onSelect={onSelect}
+        />
+      ))}
     </View>
+  );
+}
+
+/** Split out so each chip owns its own staggered entrance -- the
+ * reference's `animationDelay: ix * 90ms` cascade. */
+function OptionChip({
+  label, index, isSelected, isInactive, disabled, onSelect,
+}: { label: string; index: number; isSelected: boolean; isInactive: boolean; disabled?: boolean; onSelect: (label: string) => void }) {
+  const BOT = useBotColors();
+  const entrance = useTurnEntrance(index * 90);
+  return (
+    <Animated.View style={entrance}>
+      <Pressable
+        disabled={disabled}
+        onPress={() => onSelect(label)}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        style={{
+          paddingHorizontal: 14, height: 36, borderRadius: 18,
+          alignItems: "center", justifyContent: "center",
+          backgroundColor: isSelected ? BOT.brand : BOT.surface,
+          borderWidth: 1, borderColor: isSelected ? BOT.brand : BOT.border,
+          opacity: isInactive ? 0.4 : 1,
+        }}
+      >
+        <Text style={{ fontSize: 12.5, fontWeight: "500", color: isSelected ? BOT.bubbleOnBrand : BOT.textSecondary }}>{label}</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useBookingReviewController, bookingReviewLoadLabel } from "../booking-review/useBookingReviewController";
-import { BotAssistantBubble, BotWorkingStep } from "../../components/bookingChat/BotPrimitives";
+import { BotAssistantBubble, BotWorkingTrace, useWorkingTrace } from "../../components/bookingChat/BotPrimitives";
 import { SlotPickerCard } from "../../components/bookingChat/SlotPickerCard";
 import { PhotosNotesTurn } from "../../components/bookingChat/PhotosNotesTurn";
 import { PriceProviderCard } from "../../components/bookingChat/PriceProviderCard";
@@ -43,8 +43,16 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking }: ReviewAndConf
   const [slotDone, setSlotDone] = useState(false);
   const [photosDone, setPhotosDone] = useState(false);
 
-  if (c.uiState === "loading" && c.loadStage) {
-    return <BotWorkingStep label={bookingReviewLoadLabel(c.loadStage)} status="pending" />;
+  // The five real load stages (checking details -> serviceability ->
+  // pricing -> provider -> preparing review) accumulate into a visible
+  // checklist. Each line settles only when the controller genuinely
+  // advances, so the trace is a readout of real work, not a timed script.
+  const trace = useWorkingTrace(
+    c.uiState === "loading" && c.loadStage ? bookingReviewLoadLabel(c.loadStage) : null,
+  );
+
+  if (c.uiState === "loading") {
+    return <BotWorkingTrace entries={trace} />;
   }
 
   if (c.uiState === "offline" || c.uiState === "recoverable_error" || c.uiState === "blocked") {
@@ -67,6 +75,9 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking }: ReviewAndConf
 
   return (
     <View style={{ gap: 12 }}>
+      {/* Settled checklist stays on screen -- the customer can still see
+          what was actually checked on their behalf. */}
+      <BotWorkingTrace entries={trace} />
       {!slotDone ? (
         <SlotPickerCard
           promisedSlot={c.summary.promisedSlot}
