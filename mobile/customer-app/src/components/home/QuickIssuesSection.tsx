@@ -39,13 +39,9 @@ export function QuickIssuesSection({ issues, onPressIssue }: QuickIssuesSectionP
 
   return (
     <View>
-      <View style={{ marginBottom: theme.spacing.sm }}>
-        <AppText variant="headingSmall">Book in one tap</AppText>
-        <AppText variant="caption" color="tertiary">
-          Skip the questions — tell us the problem
-        </AppText>
-      </View>
-
+      {/* No section heading by design: the circles are self-explanatory and
+          a title over them made the row read as another content block
+          competing with the banner above it. */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
