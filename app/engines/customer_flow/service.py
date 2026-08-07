@@ -330,11 +330,87 @@ class CustomerCategoryFlowService:
         off_stmt = off_stmt.limit(page_size)
         off_rows = (await self.db.execute(off_stmt)).scalars().all()
 
+        offerings = [self._customer_offering_summary(o, None) for o in off_rows]
+
+        # Real bug fixed here: this searched ONLY `master_offerings`, which is
+        # empty in this deployment (0 rows) -- every bookable service actually
+        # lives in `master_services`. So customer search could never return a
+        # single service: "gas", "installation", "deep", "repair" all came back
+        # with an empty `offerings` array even though AC Gas Refilling, AC
+        # Installation, Full Home Deep Clean and Pipe Repair all exist and are
+        # bookable. Only whole-category names matched, which is strictly less
+        # than the client-side filter the app already had.
+        #
+        # Both tables are searched and merged rather than swapped, so a
+        # deployment that does populate master_offerings keeps working.
+        offerings.extend(await self._search_master_services(q, category_id, page_size))
+
         return {
             "query": q,
             "categories": [self._customer_cat_summary(c, None, 0) for c in cat_rows],
-            "offerings": [self._customer_offering_summary(o, None) for o in off_rows],
+            "offerings": offerings[:page_size],
         }
+
+    async def _search_master_services(
+        self, q: str, category_id: uuid.UUID | None, limit: int
+    ) -> list[dict]:
+        """Search the real service catalog (`master_services`).
+
+        Mapped onto the same customer-facing shape `_customer_offering_summary`
+        produces so a caller cannot tell which table a result came from.
+        `starting_price` follows the same rule used everywhere else on the
+        customer surface: the lowest genuinely-configured amount, treating 0
+        as "not configured" rather than free, and null when nothing is set.
+        """
+        from app.engines.admin_catalog.models import MasterService
+
+        # Joined to the category and gated on the SAME visibility rules the
+        # category search above uses. Without this the results included 8
+        # orphaned "Air Conditioner" rows whose category_id resolves to no
+        # category at all (test leftovers with generated slugs like
+        # "ac-623969"), plus services under an inactive E2E test vertical --
+        # none of which a customer can book. Every result is now guaranteed to
+        # belong to a live, customer-visible category.
+        stmt = (
+            select(MasterService)
+            .join(ServiceCategory, ServiceCategory.id == MasterService.category_id)
+            .where(
+                MasterService.is_active == True,
+                MasterService.service_name.ilike(f"%{q}%"),
+                ServiceCategory.is_active == True,
+                ServiceCategory.is_customer_visible == True,
+            )
+        )
+        if category_id:
+            stmt = stmt.where(MasterService.category_id == category_id)
+        rows = (await self.db.execute(stmt.limit(limit))).scalars().all()
+
+        out: list[dict] = []
+        for s in rows:
+            candidates = [s.min_price, s.base_price, s.visit_fee]
+            priced = [float(c) for c in candidates if c is not None and float(c) > 0]
+            out.append({
+                "id":                    str(s.id),
+                "name":                  s.service_name,
+                "slug":                  s.slug,
+                "description":           s.description,
+                "offering_class":        "service",
+                "customer_flow_type":    "service_booking",
+                "primary_engine_key":    None,
+                "pricing_model":         s.pricing_model,
+                "starting_price":        min(priced) if priced else None,
+                "visit_fee":             float(s.visit_fee or 0),
+                "appointment_fee":       0.0,
+                "requires_type":         s.is_type_required,
+                "requires_brand":        s.is_brand_required,
+                "requires_address":      True,
+                "requires_slot":         True,
+                "requires_photo_upload": False,
+                "is_available":          True,
+                "display_order":         0,
+                "category_id":           str(s.category_id),
+            })
+        return out
 
     # ── Admin: CRUD on CustomerFlowConfig ────────────────────────────────────
     async def admin_get_flow_config(self, category_id: uuid.UUID) -> dict:
