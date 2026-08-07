@@ -14,6 +14,10 @@ export function BookingListEmptyState({ filter, hasAnyBookings, onStartAssistant
     return (
       <EmptyState
         icon="calendar-outline"
+        // Brand violet circle per the design. Only this state gets it: it
+        // is the one a new customer lands on, so it carries the emptiness
+        // rather than reporting a filter result.
+        iconCircleColor="#7C3AED"
         title="No bookings yet"
         message="Start a service request with Fuvay Assistant to see it here."
         actionLabel="Start assistant"

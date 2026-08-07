@@ -18,6 +18,10 @@ export interface AppButtonProps {
   disabledReason?: string;
   fullWidth?: boolean;
   leadingIcon?: React.ReactNode;
+  /** Rendered after the label, e.g. a forward arrow on a "continue"-style
+   * action. Like `leadingIcon`, it is hidden while loading so the button
+   * never shows a spinner and an icon at once. */
+  trailingIcon?: React.ReactNode;
   accessibilityLabel?: string;
   style?: ViewStyle;
 }
@@ -48,7 +52,7 @@ function toneColors(theme: ReturnType<typeof useTheme>["theme"], tone: ButtonTon
  */
 export function AppButton({
   label, onPress, tone = "primary", size = "default", disabled = false, loading = false,
-  disabledReason, fullWidth = false, leadingIcon, accessibilityLabel, style,
+  disabledReason, fullWidth = false, leadingIcon, trailingIcon, accessibilityLabel, style,
 }: AppButtonProps) {
   const { theme } = useTheme();
   const [busy, setBusy] = useState(false);
@@ -108,6 +112,7 @@ export function AppButton({
             <>
               {leadingIcon}
               <AppText variant="button" style={{ color: c.fg }}>{label}</AppText>
+              {trailingIcon}
             </>
           );
         }}
