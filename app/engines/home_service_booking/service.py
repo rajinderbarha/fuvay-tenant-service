@@ -1407,6 +1407,102 @@ class HomeServiceChatbotBookingService:
         return {"booking_summary": summary, "draft_status": draft.status}
 
     # ══════════════════════════════════════════════════════════════════════════
+    # 11b. AVAILABLE SLOTS — let the customer pick, instead of the system
+    # ══════════════════════════════════════════════════════════════════════════
+
+    async def list_available_slots(self, draft_id: uuid.UUID, customer_id: uuid.UUID) -> dict:
+        """Every real slot this provider has capacity for, not just the one
+        `build_booking_summary` already promised -- lets Review show a
+        picker instead of a single system-chosen time.
+
+        Empty list (never an error) when no provider is assigned yet, or
+        when the provider genuinely has no capacity anywhere in the search
+        horizon -- both are real states the customer should see plainly,
+        not a fabricated slot.
+        """
+        draft = await self._require_draft(draft_id, customer_id)
+        if not draft.selected_tenant_id:
+            return {"slots": []}
+        from app.engines.home_service_booking.provider_slot_service import list_available_slots
+        slots = await list_available_slots(self.db, tenant_id=draft.selected_tenant_id)
+        return {"slots": slots}
+
+    async def select_promised_slot(
+        self, draft_id: uuid.UUID, customer_id: uuid.UUID, date_iso: str, time_window: str,
+    ) -> dict:
+        """Overwrites the summary's `promised_slot` with the one the
+        customer actually picked, in the exact shape `build_booking_summary`
+        already produces -- `service_due_at`/`service_sla_minutes` are
+        recomputed from it so every field the confirm step and the Review
+        UI read stays consistent with the new choice.
+
+        Re-validated against live capacity right here, not trusted from the
+        list response the customer may have been looking at for a while --
+        the same discipline `creation_service.py` already applies a second
+        time at confirm. A slot that lost capacity between the list call
+        and this one is rejected with a clear reason rather than silently
+        booked anyway.
+        """
+        import datetime as _dt
+        from app.engines.home_service_booking.provider_slot_service import slot_has_capacity, list_available_slots
+
+        draft = await self._require_draft(draft_id, customer_id)
+        if not draft.selected_tenant_id:
+            raise ValueError("NO_PROVIDER_ASSIGNED_YET")
+
+        day = _dt.date.fromisoformat(date_iso)
+        if not await slot_has_capacity(self.db, tenant_id=draft.selected_tenant_id, day=day, time_window=time_window):
+            raise ValueError("SLOT_NO_LONGER_AVAILABLE")
+
+        # Re-fetch the full slot dict (date/time_window/starts_at/ends_at/
+        # slot_minutes/capacity/already_booked/days_ahead) from the SAME
+        # walk `list_available_slots` uses, rather than reconstructing a
+        # partial shape here by hand -- guarantees this always matches the
+        # exact contract `promised_slot` carries everywhere else, and the
+        # capacity check just above means it genuinely must be in this list.
+        now = _dt.datetime.now()
+        # Real `now`, not day-midnight, so a same-day window that has
+        # already started is still correctly excluded by the walk's own
+        # "not already begun" rule -- `slot_has_capacity` above checks
+        # capacity only, never whether the slot's start time has passed.
+        days_needed = (day - now.date()).days + 1
+        if days_needed < 1:
+            raise ValueError("SLOT_NO_LONGER_AVAILABLE")  # a past date was requested
+        candidates = await list_available_slots(
+            self.db, tenant_id=draft.selected_tenant_id,
+            from_datetime=now, search_days=days_needed, max_results=200,
+        )
+        promised_slot = next(
+            (s for s in candidates if s["date"] == day.isoformat() and s["time_window"] == time_window),
+            None,
+        )
+        if not promised_slot:
+            # slot_has_capacity said yes but the walk (which also checks
+            # "not already started") didn't reproduce it -- only possible
+            # if the window passed between the two calls. Same customer-
+            # facing outcome either way: this slot cannot be booked now.
+            raise ValueError("SLOT_NO_LONGER_AVAILABLE")
+
+        existing = draft.booking_summary or {}
+        summary = {
+            **existing,
+            "promised_slot": promised_slot,
+            "service_sla_minutes": promised_slot.get("slot_minutes") or existing.get("service_sla_minutes"),
+            "service_due_at": promised_slot.get("ends_at") or existing.get("service_due_at"),
+        }
+        draft.booking_summary = summary
+        draft.updated_at = utcnow()
+        await self._emit_event(
+            draft_id=draft.id, actor_type=ACTOR_CUSTOMER,
+            event_type=EVENT_SUMMARY_GENERATED,
+            new_value={"selected_slot": promised_slot},
+            message=f"Customer chose slot {date_iso} {time_window}",
+        )
+        await self.db.commit()
+        await self.db.refresh(draft)
+        return {"booking_summary": summary, "draft_status": draft.status}
+
+    # ══════════════════════════════════════════════════════════════════════════
     # 12. MARK READY FOR CONFIRMATION
     # ══════════════════════════════════════════════════════════════════════════
 

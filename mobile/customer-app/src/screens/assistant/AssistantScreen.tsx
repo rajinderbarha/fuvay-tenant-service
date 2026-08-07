@@ -10,11 +10,9 @@ import { EmptyState, ErrorState } from "../../components/States";
 import { OfflineBanner } from "../../components/OfflineBanner";
 import { AssistantHeader } from "../../components/assistant/AssistantHeader";
 import { AssistantContextStrip } from "../../components/assistant/AssistantContextStrip";
-import { LanguageSelector } from "../../components/assistant/LanguageSelector";
 import { ChatBubble } from "../../components/assistant/ChatBubble";
 import { QuestionCard } from "../../components/assistant/QuestionCard";
 import { OfferingChoiceCard, OfferingChoiceOption } from "../../components/assistant/OfferingChoiceCard";
-import { LanguageChoiceCard } from "../../components/assistant/LanguageChoiceCard";
 import { BookingSummary } from "../../components/assistant/BookingSummary";
 import { AssistantComposer } from "../../components/assistant/AssistantComposer";
 import { AppButton } from "../../components/AppButton";
@@ -261,13 +259,12 @@ function AssistantConversation({
       });
     }
     // Exactly one active interaction at a time, in priority order:
-    // language choice (always first in a fresh request) -> issue/offering
-    // choice -> the current catalog question.
-    const activeCard: TranscriptEntry[] = c.languageChoice && !pendingAnswerLabel
-      ? [{ id: "active-language", kind: "language" }]
-      : questionCardVisible
-        ? [{ id: "active-question", kind: "question" }]
-        : (c.offeringChoice && !pendingAnswerLabel ? [{ id: "active-offering", kind: "offering" }] : []);
+    // issue/offering choice -> the current catalog question. Language
+    // selection was removed -- the offering choice is now always the
+    // first active card in a fresh request.
+    const activeCard: TranscriptEntry[] = questionCardVisible
+      ? [{ id: "active-question", kind: "question" }]
+      : (c.offeringChoice && !pendingAnswerLabel ? [{ id: "active-offering", kind: "offering" }] : []);
     const summaryItem: TranscriptEntry[] = questionsComplete && c.draftId
       ? [{ id: "booking-summary", kind: "summary" }]
       : [];
@@ -302,7 +299,7 @@ function AssistantConversation({
     // chronological interleave, not two separately-ordered blocks.
     const historical = [...answered, ...messages].sort((a, b) => b.seq - a.seq).map(x => x.entry);
     return [...synthetic, ...summaryItem, ...activeCard, ...historical];
-  }, [c.messages, c.envelope?.answeredQuestions, c.offeringChoice, c.languageChoice, c.draftId, questionCardVisible, questionsComplete, isProcessing, pendingAnswerLabel, processingLabel]);
+  }, [c.messages, c.envelope?.answeredQuestions, c.offeringChoice, c.draftId, questionCardVisible, questionsComplete, isProcessing, pendingAnswerLabel, processingLabel]);
 
   // Explicit scroll-to-newest after every transcript change (customer
   // selection appended, typing indicator appended, assistant response
@@ -374,7 +371,7 @@ function AssistantConversation({
   // earlier "type instead of tap an offering" design -- confirmed via
   // physical-device report that a keyboard left open over the issue list
   // covered the lower options and had nothing tap-only about it).
-  const composerAllowed = !c.languageChoice && !c.offeringChoice && !tapOnlyQuestionActive;
+  const composerAllowed = !c.offeringChoice && !tapOnlyQuestionActive;
   // The envelope carries no "already selected" field for the current
   // question (see domain/questionEnvelope.ts) -- a new question always
   // renders unselected until the customer taps an option and the answer
@@ -455,23 +452,8 @@ function AssistantConversation({
           the keyboard rather than being covered by it. */}
       <View style={{ flex: 1, paddingBottom: keyboardPadding }}>
         <View style={{ gap: theme.spacing.base, flex: 1 }}>
-          <AssistantHeader
-            title={title}
-            onClose={onClose}
-            onRestart={c.restart}
-            answeredCount={progress?.answeredCount ?? 0}
-            remainingCount={progress?.remainingCount ?? 0}
-          />
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <View style={{ flex: 1 }}>
-              <AssistantContextStrip entryContext={entryContext} jobTypeLabel={null} />
-            </View>
-            <LanguageSelector
-              options={c.session?.languageOptions ?? []}
-              selected={c.session?.language ?? "en"}
-              onChange={c.changeLanguage}
-            />
-          </View>
+          <AssistantHeader title={title} onClose={onClose} onRestart={c.restart} />
+          <AssistantContextStrip entryContext={entryContext} jobTypeLabel={null} />
 
           {c.uiState === "bootstrapping" || c.uiState === "resolving_session" ? (
             <LoadingState label="Opening your assistant" />
@@ -541,14 +523,6 @@ function AssistantConversation({
                           disabled={c.uiState === "submitting_answer"}
                         />
                       );
-                    case "language":
-                      return c.languageChoice ? (
-                        <LanguageChoiceCard
-                          options={c.languageChoice}
-                          onSelect={c.chooseLanguage}
-                          disabled={isProcessing}
-                        />
-                      ) : null;
                     case "offering":
                       return c.offeringChoice ? (
                         <OfferingChoiceCard

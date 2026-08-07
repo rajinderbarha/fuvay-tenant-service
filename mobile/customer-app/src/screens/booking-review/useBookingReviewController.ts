@@ -8,8 +8,11 @@ import * as reviewApi from "../../api/bookingReview/bookingReviewApi";
 import * as confirmApi from "../../api/bookingConfirmation/bookingConfirmationApi";
 import * as questionFlowApi from "../../api/questionFlow/questionFlowApi";
 import { parseQuestionFlowEnvelope, adaptQuestionFlowEnvelope } from "../../api/adapters/questionFlow";
-import { parseDraftDto, parseBuildBookingSummaryResponse, adaptBookingReviewSummary, adaptBookingConfirmationResult } from "../../api/adapters/bookingReview";
-import { BookingReviewSummary } from "../../domain/bookingReview";
+import {
+  parseDraftDto, parseBuildBookingSummaryResponse, adaptBookingReviewSummary, adaptBookingConfirmationResult,
+  parseAvailableSlotsResponse, adaptAvailableSlots, parseSelectSlotResponse, applySelectedSlotToSummary,
+} from "../../api/adapters/bookingReview";
+import { BookingReviewSummary, AvailableSlot } from "../../domain/bookingReview";
 import { BookingConfirmationResult } from "../../domain/bookingConfirmation";
 import { resolveConfirmationEligibility, ConfirmationEligibility } from "../../domain/confirmationEligibility";
 import { DomainError } from "../../domain/errors";
@@ -33,6 +36,7 @@ export function bookingReviewLoadLabel(stage: BookingReviewLoadStage): string {
   return LOAD_LABELS[stage];
 }
 
+
 export interface BookingReviewControllerState {
   uiState: BookingReviewUiState;
   loadStage: BookingReviewLoadStage | null;
@@ -41,6 +45,12 @@ export interface BookingReviewControllerState {
   errorMessage: string | null;
   blockedReason: string | null;
   confirmation: BookingConfirmationResult | null;
+  /** Null until `loadAvailableSlots` has been called at least once --
+   * distinct from an empty array, which means the call succeeded and the
+   * provider genuinely has no capacity. */
+  availableSlots: AvailableSlot[] | null;
+  slotsLoading: boolean;
+  slotSelectionError: string | null;
 }
 
 export interface BookingReviewControllerActions {
@@ -52,6 +62,14 @@ export interface BookingReviewControllerActions {
    * list, or throws so the caller can surface a retry. */
   addPhoto: (photo: PickedPhoto) => Promise<void>;
   removePhoto: (photoUrl: string) => Promise<void>;
+  /** Fetches the provider's real, capacity-checked slot list -- called
+   * lazily (when the customer opens the picker), not on every load, since
+   * most reviews never need it. */
+  loadAvailableSlots: () => Promise<void>;
+  /** Overwrites the system-chosen `promisedSlot` with the customer's own
+   * pick. Throws (rather than swallowing) a slot that lost capacity in
+   * the meantime, so the picker can show the real reason and refresh. */
+  selectSlot: (dateIso: string, timeWindow: string) => Promise<void>;
 }
 
 /**
@@ -67,6 +85,9 @@ export function useBookingReviewController(draftId: string): BookingReviewContro
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<BookingConfirmationResult | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<AvailableSlot[] | null>(null);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotSelectionError, setSlotSelectionError] = useState<string | null>(null);
 
   const generationRef = useRef(0);
   const busyRef = useRef(false);
@@ -228,8 +249,39 @@ export function useBookingReviewController(draftId: string): BookingReviewContro
     applyPhotoUrls(result.data.photo_urls);
   }, [draftId, applyPhotoUrls]);
 
+  const loadAvailableSlots = useCallback(async () => {
+    setSlotsLoading(true);
+    setSlotSelectionError(null);
+    try {
+      const raw = await reviewApi.getAvailableSlots(draftId);
+      setAvailableSlots(adaptAvailableSlots(parseAvailableSlotsResponse(raw.data)));
+    } catch (err) {
+      setSlotSelectionError(err instanceof DomainError ? err.diagnostic : "Couldn't load available times.");
+    } finally {
+      setSlotsLoading(false);
+    }
+  }, [draftId]);
+
+  const selectSlot = useCallback(async (dateIso: string, timeWindow: string) => {
+    setSlotSelectionError(null);
+    try {
+      const raw = await reviewApi.selectSlot(draftId, dateIso, timeWindow);
+      const summaryDto = parseSelectSlotResponse(raw.data).booking_summary;
+      setSummary(prev => (prev ? applySelectedSlotToSummary(prev, summaryDto) : prev));
+    } catch (err) {
+      // A slot that lost capacity between listing and selecting is a real,
+      // expected outcome (another customer took it) -- surfaced as a
+      // message, not swallowed, so the picker can tell the customer and
+      // refresh the list rather than pretending the pick succeeded.
+      const message = err instanceof DomainError ? err.diagnostic : "That time is no longer available.";
+      setSlotSelectionError(message);
+      throw err;
+    }
+  }, [draftId]);
+
   return {
     uiState, loadStage, summary, eligibility, errorMessage, blockedReason, confirmation,
-    retry: load, confirm, addPhoto, removePhoto,
+    availableSlots, slotsLoading, slotSelectionError,
+    retry: load, confirm, addPhoto, removePhoto, loadAvailableSlots, selectSlot,
   };
 }

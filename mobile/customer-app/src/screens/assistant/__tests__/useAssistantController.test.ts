@@ -103,14 +103,11 @@ describe("useAssistantController", () => {
     expect(assistantBootstrapApi.getAssistantBootstrap).toHaveBeenCalledWith("ac-cooling", "141002");
     expect(result.current.draftId).toBeNull();
     expect(result.current.session?.id).toBe("sess-1");
-    // CUSTOMER-ASSISTANT-UX-04: the LANGUAGE choice is the first
-    // interaction now -- the real backend issue list is fetched but
-    // deliberately withheld until a language is picked, so booking
-    // content never appears in an unchosen language.
-    expect(result.current.languageChoice).toEqual([{ code: "en", label: "English" }, { code: "hi", label: "Hindi" }]);
-    expect(result.current.offeringChoice).toBeNull();
+    // Language selection has been removed -- the real backend issue list
+    // is shown immediately, no gate in front of it.
+    expect(result.current.offeringChoice).not.toBeNull();
     // No artificial "I need help with X" kickoff message -- only the
-    // welcome greeting and the backend-owned language prompt are present.
+    // welcome greeting and the backend-owned offering prompt are present.
     expect(result.current.messages).toHaveLength(2);
     expect(assistantApi.sendAssistantMessage).not.toHaveBeenCalled();
   });
@@ -137,10 +134,9 @@ describe("useAssistantController", () => {
     expect(result.current.draftId).toBeNull();
     expect(result.current.envelope).toBeNull();
     expect("resumableDraft" in result.current).toBe(false);
-    // Language-first: the issue list is withheld behind the language
-    // choice, so the fresh-request guarantee is proven by draftId staying
-    // null and the language prompt (not an old draft) being active.
-    expect(result.current.languageChoice).not.toBeNull();
+    // The fresh-request guarantee is proven by draftId staying null and
+    // the real, backend-owned offering list (not an old draft) being active.
+    expect(result.current.offeringChoice).not.toBeNull();
   });
 
   it("discovers a newly created draft after sending a message and switches into question-flow mode", async () => {
@@ -190,13 +186,9 @@ describe("useAssistantController", () => {
     const { result } = renderHook(() => useAssistantController(entry, customerId));
     // Backend-first: a service tap always shows a fresh issue list (see
     // "old selection showing" fix -- no auto-resume here); selecting the
-    // issue is what actually creates/resolves the draft.
-    // CUSTOMER-ASSISTANT-UX-04: language is the first interaction of every
-    // fresh request -- the issue list only appears once it is chosen.
-    await waitFor(() => expect(result.current.languageChoice).not.toBeNull());
-    await act(async () => {
-      await result.current.chooseLanguage({ code: "en", label: "English" });
-    });
+    // issue is what actually creates/resolves the draft. Language
+    // selection has been removed, so the offering list is the first
+    // active card with no gate in front of it.
     await waitFor(() => expect(result.current.offeringChoice).not.toBeNull());
     await act(async () => {
       await result.current.selectOffering([{ id: "issue-1", slug: "issue-1", name: "AC Repair" }]);
@@ -208,11 +200,11 @@ describe("useAssistantController", () => {
     });
 
     await waitFor(() => expect(result.current.uiState).toBe("ready"));
-    // The chosen conversation language rides along so the NEXT question
-    // (returned in this same response) comes back already presented in it.
+    // Language selection is removed -- no language was ever chosen, so
+    // the language ref stays at its default (null).
     expect(questionFlowApi.submitQuestionFlowAnswer).toHaveBeenCalledWith("draft-1", {
       questionId: "q-1", optionId: "opt-1", value: null, expectedVersion: 1,
-      language: "en", sessionId: "sess-1",
+      language: null, sessionId: "sess-1",
     });
     expect(result.current.envelope?.progress.complete).toBe(true);
   });
@@ -236,12 +228,8 @@ describe("useAssistantController", () => {
       categoryId: asCategoryId("cat-1"), categoryName: "AC & Cooling", categorySlug: "ac-cooling", zipcode: "141002",
     });
     const { result } = renderHook(() => useAssistantController(entry, customerId));
-    // CUSTOMER-ASSISTANT-UX-04: language is the first interaction of every
-    // fresh request -- the issue list only appears once it is chosen.
-    await waitFor(() => expect(result.current.languageChoice).not.toBeNull());
-    await act(async () => {
-      await result.current.chooseLanguage({ code: "en", label: "English" });
-    });
+    // Language selection has been removed -- the offering list is the
+    // first active card with no gate in front of it.
     await waitFor(() => expect(result.current.offeringChoice).not.toBeNull());
     await act(async () => {
       await result.current.selectOffering([{ id: "issue-1", slug: "issue-1", name: "AC Repair" }]);

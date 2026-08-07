@@ -3,6 +3,7 @@ import { parseApiSuccess } from "../client/responseParser";
 import {
   serviceabilityCheckResponseSchema, priceEstimateResponseSchema, matchAndPriceResponseSchema,
   confirmPriceChoiceResponseSchema, buildBookingSummaryResponseSchema,
+  availableSlotsResponseSchema, selectSlotResponseSchema,
 } from "../contracts/bookingReview";
 import { bookingDraftResponseSchema } from "../contracts/bookingDraft";
 
@@ -58,4 +59,25 @@ export async function confirmPriceChoice(draftId: string, tier: "standard" | "lo
 export async function buildBookingSummary(draftId: string) {
   const res = await authenticatedRequest({ method: "POST", path: `${base(draftId)}/summary` });
   return parseApiSuccess(res.json, buildBookingSummaryResponseSchema);
+}
+
+/** Every real, capacity-checked slot the assigned provider can offer --
+ * lets Review show a picker instead of only the single slot
+ * `build_booking_summary` already promised. Empty list (never an error)
+ * when no provider is assigned yet or the provider has no capacity in
+ * the search horizon. */
+export async function getAvailableSlots(draftId: string) {
+  const res = await authenticatedRequest({ method: "GET", path: `${base(draftId)}/available-slots` });
+  return parseApiSuccess(res.json, availableSlotsResponseSchema);
+}
+
+/** Re-validated against live capacity server-side, not trusted from the
+ * list response the customer may have been looking at for a while -- a
+ * slot that lost capacity in the meantime comes back as a 422, not a
+ * silent overbook. */
+export async function selectSlot(draftId: string, dateIso: string, timeWindow: string) {
+  const res = await authenticatedRequest({
+    method: "POST", path: `${base(draftId)}/select-slot`, body: { date: dateIso, time_window: timeWindow },
+  });
+  return parseApiSuccess(res.json, selectSlotResponseSchema);
 }

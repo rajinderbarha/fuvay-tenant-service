@@ -134,7 +134,7 @@ export function BookingReviewScreen() {
   return (
     <AppScreen scroll edges={["top", "bottom"]}>
       <View style={{ gap: theme.spacing.base }}>
-        <ReviewHeader onBack={goBackToAssistant} onClose={goBackToAssistant} step={4} totalSteps={4} />
+        <ReviewHeader onBack={goBackToAssistant} onClose={goBackToAssistant} />
 
         {c.uiState === "loading" && c.loadStage ? (
           <AssistantActivity
@@ -159,6 +159,11 @@ export function BookingReviewScreen() {
             <PromisedSlotCard
               slot={c.summary.promisedSlot}
               slaMinutes={c.summary.serviceSlaMinutes}
+              availableSlots={c.availableSlots}
+              slotsLoading={c.slotsLoading}
+              slotSelectionError={c.slotSelectionError}
+              onOpenPicker={c.loadAvailableSlots}
+              onSelectSlot={c.selectSlot}
             />
             {/* Replaces a read-only "N photos attached" summary whose only
                 action was a link back to the assistant -- there was no way

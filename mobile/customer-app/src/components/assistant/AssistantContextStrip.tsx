@@ -10,45 +10,40 @@ export interface AssistantContextStripProps {
   jobTypeLabel: string | null;
 }
 
-function Pill({ children }: { children: React.ReactNode }) {
-  const { theme } = useTheme();
-  return (
-    <View
-      style={{
-        flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs,
-        paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.xxs,
-        borderRadius: theme.radiusUsage.statusPill, borderWidth: 1, borderColor: theme.colors.borderSubtle,
-        backgroundColor: theme.colors.surfaceDefault,
-      }}
-    >
-      {children}
-    </View>
-  );
-}
-
-/** Read-only strip -- no category-change action here by design (spec:
- * service-card entry preserves its category, it is never re-asked). */
+/**
+ * Same green ribbon treatment as Review's `ReviewStatusStrip` -- one
+ * visual language for "here is the real context this request is
+ * happening in", used at both the start and the end of the same booking
+ * flow. Left side is the service instead of Review's "Details complete"
+ * (there are no details to complete yet at this step); right side is the
+ * identical "Service available in {zip}" copy.
+ *
+ * Read-only -- no category-change action here by design (spec:
+ * service-card entry preserves its category, it is never re-asked).
+ */
 export function AssistantContextStrip({ entryContext, jobTypeLabel }: AssistantContextStripProps) {
   const { theme } = useTheme();
   if (entryContext.source !== "service_card") return null;
+  const serviceLabel = jobTypeLabel ? `${entryContext.categoryName} · ${jobTypeLabel}` : entryContext.categoryName;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: theme.spacing.xs }}>
-      <Pill>
-        <Icon name="construct-outline" size="compact" color={theme.colors.textSecondary} decorative />
-        <AppText variant="labelStrong">{entryContext.categoryName}</AppText>
-      </Pill>
-      {jobTypeLabel ? (
-        <Pill>
-          <AppText variant="labelStrong" color="secondary">{jobTypeLabel}</AppText>
-        </Pill>
-      ) : null}
-      <Pill>
-        <Icon name="location-outline" size="compact" color={theme.colors.textSecondary} decorative />
-        <AppText variant="labelStrong" color="secondary">{entryContext.zipcode}</AppText>
-      </Pill>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs }}>
-        <View style={{ width: 7, height: 7, borderRadius: theme.radius.radiusFull, backgroundColor: theme.colors.statusSuccess }} />
-        <AppText variant="caption" color="secondary">Available here</AppText>
+    <View
+      style={{
+        flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+        padding: theme.spacing.sm, borderRadius: theme.radiusUsage.card,
+        backgroundColor: theme.colors.statusSuccessSurface,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, flexShrink: 1 }}>
+        <Icon name="construct-outline" size="compact" color={theme.colors.statusSuccess} decorative />
+        <AppText variant="labelStrong" numberOfLines={1} style={{ color: theme.colors.statusSuccess }}>
+          {serviceLabel}
+        </AppText>
+      </View>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, flexShrink: 0 }}>
+        <Icon name="location" size="compact" color={theme.colors.statusSuccess} decorative />
+        <AppText variant="labelStrong" style={{ color: theme.colors.statusSuccess }}>
+          Service available in {entryContext.zipcode}
+        </AppText>
       </View>
     </View>
   );

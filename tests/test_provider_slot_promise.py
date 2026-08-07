@@ -20,7 +20,7 @@ import uuid
 import pytest
 
 from app.engines.home_service_booking.provider_slot_service import (
-    find_earliest_available_slot, slot_has_capacity, _slots_from_rule,
+    find_earliest_available_slot, list_available_slots, slot_has_capacity, _slots_from_rule,
     _window_label, FALLBACK_MAX_PER_SLOT, FALLBACK_SLOT_MINUTES,
 )
 
@@ -173,6 +173,64 @@ async def test_a_provider_with_no_availability_rules_gets_no_promise():
         await db.close()
 
 
+# ── Letting the customer choose, instead of only seeing the system's pick ──
+
+@pytest.mark.asyncio
+async def test_list_available_slots_returns_the_same_earliest_slot_first():
+    """The list and the single-slot resolver must agree on what "earliest"
+    means -- they share the exact same walk and capacity rules."""
+    db = await _get_db()
+    try:
+        earliest = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID)
+        slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID)
+        assert earliest is not None
+        assert len(slots) >= 1
+        assert (slots[0]["date"], slots[0]["time_window"]) == (earliest["date"], earliest["time_window"])
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_list_available_slots_respects_max_results():
+    db = await _get_db()
+    try:
+        slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, max_results=3)
+        assert 1 <= len(slots) <= 3
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_list_available_slots_never_offers_a_full_one():
+    """Filling the first slot to capacity must remove it from the list, not
+    just from the single-slot resolver."""
+    db = await _get_db()
+    made = []
+    try:
+        first = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID)
+        assert first is not None
+        day = dt.date.fromisoformat(first["date"])
+        window = first["time_window"]
+        for _ in range(first["capacity"] - first["already_booked"]):
+            made.append(await _insert_live_job(db, GURAMRIT_TENANT_ID, day, window))
+        await db.commit()
+
+        slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID)
+        assert not any((s["date"], s["time_window"]) == (first["date"], window) for s in slots)
+    finally:
+        await _cleanup_jobs(db, made)
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_list_available_slots_empty_for_a_provider_with_no_rules():
+    db = await _get_db()
+    try:
+        assert await list_available_slots(db, tenant_id=uuid.uuid4()) == []
+    finally:
+        await db.close()
+
+
 # ── The promise reaches the customer, and then the job ──────────────────────
 
 @pytest.mark.asyncio
@@ -227,6 +285,139 @@ async def test_booking_summary_carries_the_promised_slot_and_sla():
         assert summary["service_sla_minutes"] > 0
         assert summary["service_due_at"] == slot["ends_at"]
     finally:
+        if draft_id:
+            await db.rollback()
+            async with db.begin():
+                await db.execute(
+                    text("DELETE FROM home_service_booking_drafts WHERE id=:i"), {"i": draft_id})
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_customer_can_choose_a_later_slot_than_the_system_pick():
+    """The whole point: Review no longer has to accept the single
+    system-chosen slot. Selecting a different, still-real slot overwrites
+    `promised_slot` and the dependent SLA/due-at fields consistently."""
+    from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+    from app.engines.home_service_booking.question_flow_service import QuestionFlowService
+    from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
+    from sqlalchemy import text
+
+    CUSTOMER_ID = uuid.UUID("fa198861-455b-43f2-a426-47da0a8811af")
+    db = await _get_db()
+    draft_id = None
+    try:
+        svc = HomeServiceChatbotBookingService(db=db)
+        qf = QuestionFlowService(db=db)
+        issues = (await list_serviceable_issues(db, "air-conditioning", "140412"))["issues"]
+        cooling = next(i for i in issues if i["label"] == "AC Not Cooling")
+        r = await svc.select_issue(
+            customer_id=CUSTOMER_ID, ai_session_id=None,
+            category_slug="air-conditioning", zipcode="140412", issue_id=cooling["id"],
+        )
+        draft_id = uuid.UUID(r["draft_id"])
+        for _ in range(10):
+            env = await qf.get_current_question(draft_id=draft_id, customer_id=CUSTOMER_ID)
+            q = env.get("current_question")
+            if not q:
+                break
+            opts = q.get("options") or []
+            kw = {"option_id": opts[0]["id"]} if opts else {"value": "not cooling"}
+            await qf.submit_answer(
+                draft_id=draft_id, customer_id=CUSTOMER_ID, question_id=q["question_id"],
+                expected_version=env.get("question_flow_version"), **kw,
+            )
+        await svc.check_serviceability(draft_id=draft_id, customer_id=CUSTOMER_ID)
+        await svc.resolve_price_estimate(draft_id=draft_id, customer_id=CUSTOMER_ID)
+        d = await svc.get_booking_draft(draft_id=draft_id, customer_id=CUSTOMER_ID)
+        await svc.match_provider_and_price(
+            category_id=uuid.UUID(d["category_id"]), master_service_id=uuid.UUID(d["offering_id"]),
+            city=d["city"], zipcode=d.get("zipcode"),
+            job_type_id=uuid.UUID(d["job_type_id"]) if d.get("job_type_id") else None,
+            draft_id=draft_id, customer_id=CUSTOMER_ID, reveal_internal_score=False,
+        )
+        await svc.build_booking_summary(draft_id=draft_id, customer_id=CUSTOMER_ID)
+
+        slots = (await svc.list_available_slots(draft_id=draft_id, customer_id=CUSTOMER_ID))["slots"]
+        assert len(slots) >= 1
+        chosen = slots[-1]  # pick something other than the system default (index 0)
+
+        result = await svc.select_promised_slot(
+            draft_id=draft_id, customer_id=CUSTOMER_ID,
+            date_iso=chosen["date"], time_window=chosen["time_window"],
+        )
+        summary = result["booking_summary"]
+        assert summary["promised_slot"]["date"] == chosen["date"]
+        assert summary["promised_slot"]["time_window"] == chosen["time_window"]
+        assert summary["service_due_at"] == summary["promised_slot"]["ends_at"]
+    finally:
+        if draft_id:
+            await db.rollback()
+            async with db.begin():
+                await db.execute(
+                    text("DELETE FROM home_service_booking_drafts WHERE id=:i"), {"i": draft_id})
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_selecting_a_slot_that_lost_capacity_is_rejected_not_silently_booked():
+    """Re-validated at selection time, not trusted from the list response --
+    another customer may have taken the last place in between."""
+    from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+    from app.engines.home_service_booking.question_flow_service import QuestionFlowService
+    from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
+    from sqlalchemy import text
+
+    CUSTOMER_ID = uuid.UUID("fa198861-455b-43f2-a426-47da0a8811af")
+    db = await _get_db()
+    draft_id = None
+    made = []
+    try:
+        svc = HomeServiceChatbotBookingService(db=db)
+        qf = QuestionFlowService(db=db)
+        issues = (await list_serviceable_issues(db, "air-conditioning", "140412"))["issues"]
+        cooling = next(i for i in issues if i["label"] == "AC Not Cooling")
+        r = await svc.select_issue(
+            customer_id=CUSTOMER_ID, ai_session_id=None,
+            category_slug="air-conditioning", zipcode="140412", issue_id=cooling["id"],
+        )
+        draft_id = uuid.UUID(r["draft_id"])
+        for _ in range(10):
+            env = await qf.get_current_question(draft_id=draft_id, customer_id=CUSTOMER_ID)
+            q = env.get("current_question")
+            if not q:
+                break
+            opts = q.get("options") or []
+            kw = {"option_id": opts[0]["id"]} if opts else {"value": "not cooling"}
+            await qf.submit_answer(
+                draft_id=draft_id, customer_id=CUSTOMER_ID, question_id=q["question_id"],
+                expected_version=env.get("question_flow_version"), **kw,
+            )
+        await svc.check_serviceability(draft_id=draft_id, customer_id=CUSTOMER_ID)
+        await svc.resolve_price_estimate(draft_id=draft_id, customer_id=CUSTOMER_ID)
+        d = await svc.get_booking_draft(draft_id=draft_id, customer_id=CUSTOMER_ID)
+        await svc.match_provider_and_price(
+            category_id=uuid.UUID(d["category_id"]), master_service_id=uuid.UUID(d["offering_id"]),
+            city=d["city"], zipcode=d.get("zipcode"),
+            job_type_id=uuid.UUID(d["job_type_id"]) if d.get("job_type_id") else None,
+            draft_id=draft_id, customer_id=CUSTOMER_ID, reveal_internal_score=False,
+        )
+        summary = (await svc.build_booking_summary(draft_id=draft_id, customer_id=CUSTOMER_ID))["booking_summary"]
+        slot = summary["promised_slot"]
+        day = dt.date.fromisoformat(slot["date"])
+        window = slot["time_window"]
+
+        # Fill the slot to capacity behind the customer's back.
+        for _ in range(slot.get("capacity", FALLBACK_MAX_PER_SLOT) or FALLBACK_MAX_PER_SLOT):
+            made.append(await _insert_live_job(db, GURAMRIT_TENANT_ID, day, window))
+        await db.commit()
+
+        with pytest.raises(ValueError):
+            await svc.select_promised_slot(
+                draft_id=draft_id, customer_id=CUSTOMER_ID, date_iso=slot["date"], time_window=window,
+            )
+    finally:
+        await _cleanup_jobs(db, made)
         if draft_id:
             await db.rollback()
             async with db.begin():

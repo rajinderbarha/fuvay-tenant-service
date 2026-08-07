@@ -394,6 +394,55 @@ async def build_booking_summary(
     return ok(result, _rid(r), "home_service_booking")
 
 
+# ── GET /{draft_id}/available-slots ───────────────────────────────────────────
+@router.get(
+    "/{draft_id}/available-slots",
+    response_model=ApiResponse[dict],
+    summary="Real, capacity-checked slots the assigned provider can offer",
+    description=(
+        "Lists every slot the provider genuinely has room for, earliest first -- "
+        "lets the customer choose instead of only seeing the single system-picked slot."
+    ),
+)
+async def get_available_slots(
+    draft_id: uuid.UUID,
+    r: Request,
+    svc: HomeServiceChatbotBookingService = Depends(_svc),
+    user: UserContext = Depends(get_current_user),
+):
+    customer_id = uuid.UUID(user.user_id)
+    result = await svc.list_available_slots(draft_id=draft_id, customer_id=customer_id)
+    return ok(result, _rid(r), "home_service_booking")
+
+
+# ── POST /{draft_id}/select-slot ──────────────────────────────────────────────
+@router.post(
+    "/{draft_id}/select-slot",
+    response_model=ApiResponse[dict],
+    summary="Customer picks which offered slot to book",
+    responses={422: {"description": "Slot no longer has capacity, or no provider assigned yet"}},
+)
+async def select_slot(
+    draft_id: uuid.UUID,
+    body: dict,
+    r: Request,
+    svc: HomeServiceChatbotBookingService = Depends(_svc),
+    user: UserContext = Depends(get_current_user),
+):
+    date_iso = body.get("date")
+    time_window = body.get("time_window")
+    if not date_iso or not time_window:
+        raise HTTPException(status_code=422, detail="date and time_window are required.")
+    customer_id = uuid.UUID(user.user_id)
+    try:
+        result = await svc.select_promised_slot(
+            draft_id=draft_id, customer_id=customer_id, date_iso=date_iso, time_window=time_window,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return ok(result, _rid(r), "home_service_booking")
+
+
 # ── POST /{draft_id}/confirm ──────────────────────────────────────────────────
 @router.post(
     "/{draft_id}/confirm",

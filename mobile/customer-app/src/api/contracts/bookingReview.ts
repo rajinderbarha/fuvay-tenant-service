@@ -109,6 +109,26 @@ export const buildBookingSummaryResponseSchema = z.object({
   draft_status: z.string(),
 }).passthrough();
 
+/** GET /{draft_id}/available-slots. `capacity`/`already_booked` are
+ * omitted here (unlike `promisedSlotDtoSchema`) because
+ * `select_promised_slot` doesn't recompute them when overwriting the
+ * summary -- they were only ever informational, never read by the UI. */
+export const availableSlotsResponseSchema = z.object({
+  slots: z.array(z.object({
+    date: z.string(),
+    time_window: z.string(),
+    starts_at: z.string().nullable().optional(),
+    ends_at: z.string().nullable().optional(),
+    slot_minutes: z.number().nullable().optional(),
+    days_ahead: z.number(),
+  })),
+}).passthrough();
+
+export const selectSlotResponseSchema = z.object({
+  booking_summary: bookingSummaryDtoSchema,
+  draft_status: z.string(),
+}).passthrough();
+
 export const markReadyResponseSchema = z.object({
   draft_status: z.string(),
   ready_for_confirmation: z.boolean(),

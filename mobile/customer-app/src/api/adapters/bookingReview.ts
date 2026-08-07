@@ -1,7 +1,10 @@
 import { z } from "zod";
-import { bookingSummaryDtoSchema, buildBookingSummaryResponseSchema, ConfirmDraftResponseDto } from "../contracts/bookingReview";
+import {
+  bookingSummaryDtoSchema, buildBookingSummaryResponseSchema, ConfirmDraftResponseDto,
+  availableSlotsResponseSchema, selectSlotResponseSchema,
+} from "../contracts/bookingReview";
 import { bookingDraftResponseSchema, BookingDraftResponseDto } from "../contracts/bookingDraft";
-import { BookingReviewSummary } from "../../domain/bookingReview";
+import { BookingReviewSummary, AvailableSlot } from "../../domain/bookingReview";
 import { BookingConfirmationResult } from "../../domain/bookingConfirmation";
 import { classifyReviewPricing } from "../../domain/servicePricing";
 import { asBookingDraftId } from "../../domain/ids";
@@ -91,4 +94,44 @@ export function adaptBookingReviewSummary(
 
 export function adaptBookingConfirmationResult(dto: ConfirmDraftResponseDto): BookingConfirmationResult {
   return { bookingId: dto.booking_id, bookingNumber: dto.booking_number, idempotent: !!dto.idempotent };
+}
+
+export function parseAvailableSlotsResponse(raw: unknown) {
+  const result = availableSlotsResponseSchema.safeParse(raw);
+  if (!result.success) throw new ContractValidationError("AvailableSlotsResponseDto", result.error.issues.map(i => i.message));
+  return result.data;
+}
+
+export function adaptAvailableSlots(dto: z.infer<typeof availableSlotsResponseSchema>): AvailableSlot[] {
+  return dto.slots.map(s => ({ date: s.date, timeWindow: s.time_window, daysAhead: s.days_ahead }));
+}
+
+export function parseSelectSlotResponse(raw: unknown) {
+  const result = selectSlotResponseSchema.safeParse(raw);
+  if (!result.success) throw new ContractValidationError("SelectSlotResponseDto", result.error.issues.map(i => i.message));
+  return result.data;
+}
+
+/** Only the fields a slot change can actually affect -- everything else on
+ * the summary (address, pricing, provider, answers) is untouched by
+ * picking a different time. */
+export function applySelectedSlotToSummary(
+  prev: BookingReviewSummary,
+  summaryDto: z.infer<typeof bookingSummaryDtoSchema>,
+): BookingReviewSummary {
+  return {
+    ...prev,
+    promisedSlot: summaryDto.promised_slot
+      ? {
+          date: summaryDto.promised_slot.date,
+          timeWindow: summaryDto.promised_slot.time_window,
+          startsAt: summaryDto.promised_slot.starts_at,
+          endsAt: summaryDto.promised_slot.ends_at,
+          slotMinutes: summaryDto.promised_slot.slot_minutes,
+          daysAhead: summaryDto.promised_slot.days_ahead,
+        }
+      : null,
+    serviceSlaMinutes: summaryDto.service_sla_minutes ?? null,
+    serviceDueAt: summaryDto.service_due_at ?? null,
+  };
 }

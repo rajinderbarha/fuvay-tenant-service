@@ -170,6 +170,67 @@ async def find_earliest_available_slot(
     return None
 
 
+async def list_available_slots(
+    db: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    from_datetime: dt.datetime | None = None,
+    search_days: int = DEFAULT_SEARCH_DAYS,
+    max_results: int = 8,
+) -> list[dict]:
+    """Every genuinely bookable slot for this provider, earliest first --
+    the list form of `find_earliest_available_slot`, sharing its exact
+    capacity logic so a slot offered here is honoured the same way at
+    confirmation (`slot_has_capacity` re-checks the same rules).
+
+    Lets the customer pick a time rather than being handed the single
+    earliest one -- the walk is identical, it just keeps collecting
+    instead of returning on the first hit, and stops once `max_results`
+    real slots are found or the search horizon runs out.
+    """
+    now = from_datetime or dt.datetime.now()
+    day = now.date()
+    results: list[dict] = []
+
+    for offset in range(search_days):
+        if len(results) >= max_results:
+            break
+        target = day + dt.timedelta(days=offset)
+        if await _is_closed(db, tenant_id, target):
+            continue
+
+        dow = target.isoweekday() % 7  # 0=Sunday, matches provider_availability_rules
+        rules = await _provider_rules_for_day(db, tenant_id, dow)
+        if not rules:
+            continue
+
+        booked = await _booked_counts(db, tenant_id, target)
+
+        for rule in rules:
+            cap = rule.get("max_bookings_per_slot") or FALLBACK_MAX_PER_SLOT
+            for start, end in _slots_from_rule(rule):
+                if len(results) >= max_results:
+                    break
+                if offset == 0 and dt.datetime.combine(target, start) <= now:
+                    continue
+                label = _window_label(start, end)
+                if booked.get(label, 0) >= cap:
+                    continue
+                results.append({
+                    "date": target.isoformat(),
+                    "time_window": label,
+                    "starts_at": dt.datetime.combine(target, start).isoformat(),
+                    "ends_at": dt.datetime.combine(target, end).isoformat(),
+                    "slot_minutes": int(
+                        (dt.datetime.combine(target, end) - dt.datetime.combine(target, start)).total_seconds() // 60
+                    ),
+                    "capacity": cap,
+                    "already_booked": booked.get(label, 0),
+                    "days_ahead": offset,
+                })
+    return results
+
+
 async def slot_has_capacity(
     db: AsyncSession, *, tenant_id: uuid.UUID, day: dt.date, time_window: str,
 ) -> bool:

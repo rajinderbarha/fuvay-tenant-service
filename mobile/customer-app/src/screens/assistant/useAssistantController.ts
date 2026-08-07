@@ -283,30 +283,27 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
         // linger open over it, covering the lower issue options.
         Keyboard.dismiss();
         const categoryName = bootstrap.category.name ?? entryContext.categoryName;
-        // CUSTOMER-ASSISTANT-UX-04 Part 1: language is the FIRST
-        // interaction. The real, backend-owned issue list is fetched here
-        // (one round-trip) but deliberately withheld until the customer
-        // has chosen a language, so booking content never appears in a
-        // language they didn't pick. Options come from the backend's own
-        // ZIP-aware `build_language_options` -- never a hardcoded client
-        // list, and never a "Regional"/"Automatic"/device-language entry.
-        pendingIssuesRef.current = {
+        // Language selection removed by request -- the real, backend-owned
+        // issue list is shown immediately rather than gated behind a
+        // language prompt. `languageRef` stays at its default; every
+        // downstream call already tolerates that (it did before any
+        // language had been chosen too).
+        setOfferingChoice({
           categoryName,
+          categorySlug: entryContext.categorySlug,
           // "offerings" is the field name kept for wire/UI-prop
           // stability -- it carries the real, backend-owned ISSUE list
           // (assistant-bootstrap's `issues`), never bare offerings, per
           // the "Brand appears before any real issue selection" fix.
           offerings: bootstrap.issues.map(i => ({ id: i.id, slug: i.id, name: i.label })),
-        };
-        setOfferingChoice(null);
-        setLanguageChoice(resolvedSession.languageOptions);
+        });
         setMessages([{
           id: `welcome-${resolvedSession.id}`, role: "assistant",
           content: `Hi! I'm your ${categoryName} booking assistant. Let's get this sorted for you.`,
           createdAt: null,
         }, {
-          id: `language-prompt-${resolvedSession.id}`, role: "assistant",
-          content: "Choose your preferred language", createdAt: null,
+          id: `offering-prompt-${resolvedSession.id}`, role: "assistant",
+          content: "What do you need help with?", createdAt: null,
         }]);
         setUiState("ready");
       } else {

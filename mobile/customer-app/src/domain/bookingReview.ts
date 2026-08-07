@@ -71,3 +71,13 @@ export interface BookingReviewSummary {
   readyForConfirmation: boolean;
   missing: string[];
 }
+
+/** One offer from GET /{draft_id}/available-slots -- the same shape
+ * `promisedSlot` uses, minus the two informational-only capacity fields
+ * (`capacity`/`already_booked`) that selecting a slot doesn't carry back
+ * through `select-slot`'s response. */
+export interface AvailableSlot {
+  date: string;
+  timeWindow: string;
+  daysAhead: number;
+}
