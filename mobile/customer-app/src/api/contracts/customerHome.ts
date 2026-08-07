@@ -63,6 +63,18 @@ export const homeQuickIssueDtoSchema = z.object({
   category_name: z.string(),
 });
 
+/** Customer-safe technician identity: name/role/photo only, never a
+ * phone number. `rating`/`review_count` come from the real
+ * staff_rating_summaries table and are null until that technician has
+ * actually been reviewed. */
+export const homeTechnicianDtoSchema = z.object({
+  name: z.string().nullable().optional(),
+  role: z.string().nullable().optional(),
+  photo_url: z.string().nullable().optional(),
+  rating: z.number().nullable().optional(),
+  review_count: z.number().nullable().optional(),
+}).nullable();
+
 export const homeActiveBookingDtoSchema = z.object({
   booking_id: z.string(),
   booking_number: z.string().nullable().optional(),
@@ -79,6 +91,11 @@ export const homeActiveBookingDtoSchema = z.object({
   preferred_date: z.string().nullable().optional(),
   preferred_time_window: z.string().nullable().optional(),
   provider_name: z.string().nullable().optional(),
+  // Added for the Home "My Booking" card: the service actually booked,
+  // resolved from the catalog by id. `issue_summary` above is the
+  // customer's own wording and is not a substitute for it.
+  service_name: z.string().nullable().optional(),
+  technician: homeTechnicianDtoSchema.optional(),
 }).nullable();
 
 export const homeServiceabilityDtoSchema = z.object({

@@ -348,16 +348,89 @@ class CustomerHomeService:
         # ("pending_assignment") tells the customer nothing. All of these are
         # already columns/snapshots on the booking; no extra query.
         provider = row.provider_snapshot if isinstance(row.provider_snapshot, dict) else {}
+
+        # Service name: the card's title. Resolved from the catalog by id,
+        # like the bookings list does -- `issue_summary` is the customer's
+        # own words, not the service they booked.
+        service_name = None
+        from app.engines.admin_catalog.models import MasterService, ServiceCategory
+        if row.offering_id:
+            offering = await self.db.get(MasterService, row.offering_id)
+            service_name = offering.service_name if offering else None
+        if not service_name and row.category_id:
+            category = await self.db.get(ServiceCategory, row.category_id)
+            service_name = category.name if category else None
+
+        technician = await self._get_active_booking_technician(row.id)
+
         return {
             "booking_id": str(row.id),
             "booking_number": getattr(row, "booking_number", None),
             "status": row.status,
             "assignment_status": getattr(row, "assignment_status", None),
             "issue_summary": getattr(row, "issue_summary", None),
+            "service_name": service_name,
             "preferred_date": row.preferred_date.isoformat() if getattr(row, "preferred_date", None) else None,
             "preferred_time_window": getattr(row, "preferred_time_window", None),
             "provider_name": provider.get("business_name") or provider.get("name"),
+            "technician": technician,
             "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+
+    async def _get_active_booking_technician(self, booking_id: uuid.UUID) -> dict | None:
+        """Name, photo and review standing of the technician actually
+        assigned to this booking's job.
+
+        Name/photo/role only -- never a phone number, mirroring
+        `HomeServiceJobAssignmentService._customer_safe_technician`, which
+        is the established customer-safe shape for this data.
+
+        `rating`/`review_count` come from the real `staff_rating_summaries`
+        table and are null when that technician has no reviews yet: a
+        rating is either earned or absent, never defaulted to a flattering
+        number. Returns None entirely when no technician is assigned, so
+        the card omits the row rather than showing a placeholder person.
+        """
+        from app.engines.final_records.models import ServiceJob
+        from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+        from app.engines.customer_reviews.models import StaffRatingSummary
+
+        job = (await self.db.execute(
+            select(ServiceJob).where(ServiceJob.booking_id == booking_id)
+        )).scalars().first()
+        if not job or not job.assigned_staff_id:
+            return None
+
+        staff_id = job.assigned_staff_id
+        name = None
+        role = None
+        photo_url = None
+        member = await self.db.get(ProviderTeamMember, staff_id)
+        if member:
+            name = member.full_name
+            role = member.designation or "Service technician"
+            photo_url = member.profile_photo_url
+        else:
+            # assigned_staff_id may hold a raw users.id depending on which
+            # assignment path wrote it -- the same documented quirk
+            # _customer_safe_technician handles. Fail closed rather than guess.
+            from app.engines.auth.models import User
+            user = await self.db.get(User, staff_id)
+            if not user:
+                return None
+            name = user.full_name
+            role = "Service technician"
+
+        summary = (await self.db.execute(
+            select(StaffRatingSummary).where(StaffRatingSummary.staff_member_id == staff_id)
+        )).scalars().first()
+
+        return {
+            "name": name,
+            "role": role,
+            "photo_url": photo_url,
+            "rating": float(summary.average_rating) if summary and summary.total_reviews else None,
+            "review_count": summary.total_reviews if summary else None,
         }
 
     async def _get_unread_notification_count(self, customer_id: uuid.UUID) -> int:

@@ -7,7 +7,7 @@ import { AppScreen, AppText } from "../../components";
 import { OfflineBanner } from "../../components/OfflineBanner";
 import {
   CustomerHeader, ServiceSearch, CampaignCarousel, VerticalSwitcher, HomeServiceCard,
-  AssistantEntryCard, ActiveBookingCard, TrustBenefitCard, HomeSkeleton, HomeErrorState,
+  AssistantEntryCard, MyBookingSection, TrustBenefitCard, HomeSkeleton, HomeErrorState,
   NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal, GlobalServicesSection,
   SearchResultsList, QuickIssuesSection,
 } from "../../components/home";
@@ -398,9 +398,16 @@ export function HomeScreen() {
         </HomeSectionErrorBoundary>
 
         {home.activeBooking ? (
-          <HomeSectionErrorBoundary sectionLabel="active booking">
+          <HomeSectionErrorBoundary sectionLabel="my booking">
             <View style={{ marginTop: theme.spacing.xl }}>
-              <ActiveBookingCard booking={home.activeBooking} onPress={() => navigation.navigate("Bookings")} />
+              <MyBookingSection
+                booking={home.activeBooking}
+                onPress={() => navigation.navigate("Bookings")}
+                onViewAll={() => navigation.navigate("Bookings")}
+                iconUrl={home.bookableCategories.find(
+                  c => c.name === home.activeBooking?.serviceName,
+                )?.iconUrl ?? null}
+              />
             </View>
           </HomeSectionErrorBoundary>
         ) : null}

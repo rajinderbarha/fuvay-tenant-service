@@ -51,6 +51,16 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
           preferredDate: dto.active_booking.preferred_date ?? null,
           preferredTimeWindow: dto.active_booking.preferred_time_window ?? null,
           providerName: dto.active_booking.provider_name ?? null,
+          serviceName: dto.active_booking.service_name ?? null,
+          technician: dto.active_booking.technician
+            ? {
+                name: dto.active_booking.technician.name ?? null,
+                role: dto.active_booking.technician.role ?? null,
+                photoUrl: dto.active_booking.technician.photo_url ?? null,
+                rating: dto.active_booking.technician.rating ?? null,
+                reviewCount: dto.active_booking.technician.review_count ?? null,
+              }
+            : null,
         }
       : null,
     unreadNotificationCount: dto.unread_notification_count,

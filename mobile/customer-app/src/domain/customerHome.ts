@@ -57,6 +57,17 @@ export interface HomeQuickIssue {
  * (customer_home service.py) already sends -- there is still no
  * technician identity, live ETA, or rating in this payload; do not add
  * those without a confirmed backend field. */
+/** Name/role/photo only -- never a phone number. `rating` is null until
+ * the technician has actually been reviewed; it is never defaulted to a
+ * flattering number, so the card simply omits the star. */
+export interface HomeTechnician {
+  name: string | null;
+  role: string | null;
+  photoUrl: string | null;
+  rating: number | null;
+  reviewCount: number | null;
+}
+
 export interface HomeActiveBooking {
   bookingId: ServiceBookingId;
   bookingNumber: string | null;
@@ -64,9 +75,14 @@ export interface HomeActiveBooking {
   createdAt: ServerTimestamp | null;
   assignmentStatus: string | null;
   issueSummary: string | null;
+  /** The service actually booked, from the catalog. Distinct from
+   * `issueSummary`, which is the customer's own description. */
+  serviceName: string | null;
   preferredDate: string | null;
   preferredTimeWindow: string | null;
   providerName: string | null;
+  /** Null until a technician is assigned to this booking's job. */
+  technician: HomeTechnician | null;
 }
 
 export interface HomeServiceability {

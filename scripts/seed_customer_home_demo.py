@@ -142,6 +142,82 @@ async def main() -> None:
                 """), params)
                 print(f"  booking  {number} created ({status}, {days_ago}d ago)")
 
+        # ── Technician on the in-flight booking ───────────────────────────
+        # The Home "My Booking" card shows the assigned technician and their
+        # earned rating. Both read through the REAL chain the app uses --
+        # service_jobs.assigned_staff_id -> provider_team_members, plus
+        # staff_rating_summaries -- so this seeds the same rows a genuine
+        # assignment would produce, not a shortcut field on the booking.
+        booking_id = (await conn.execute(
+            text("SELECT id FROM service_bookings WHERE booking_number = 'BK-DEMO-0003'"),
+        )).scalar_one_or_none()
+        if booking_id:
+            staff_id = (await conn.execute(text("""
+                SELECT id FROM provider_team_members
+                WHERE tenant_id = :tid AND full_name = 'Rakesh Kumar'
+            """), {"tid": TENANT_ID})).scalar_one_or_none()
+            if not staff_id:
+                staff_id = (await conn.execute(text("""
+                    INSERT INTO provider_team_members
+                        (tenant_id, member_type, full_name, designation, created_at, updated_at)
+                    VALUES (:tid, 'technician', 'Rakesh Kumar', 'Service technician', now(), now())
+                    RETURNING id
+                """), {"tid": TENANT_ID})).scalar_one()
+                print("  staff    Rakesh Kumar created")
+
+            job_id = (await conn.execute(
+                text("SELECT id FROM service_jobs WHERE booking_id = :b"), {"b": booking_id},
+            )).scalar_one_or_none()
+            if job_id:
+                await conn.execute(text("""
+                    UPDATE service_jobs
+                    SET assigned_staff_id = :s, status = 'on_the_way', updated_at = now()
+                    WHERE id = :id
+                """), {"s": staff_id, "id": job_id})
+                print("  job      updated (on_the_way, Rakesh Kumar)")
+            else:
+                await conn.execute(text("""
+                    INSERT INTO service_jobs
+                        (job_number, booking_id, tenant_id, category_id, offering_id,
+                         assigned_staff_id, status, created_at, updated_at)
+                    VALUES ('JOB-DEMO-0003', :b, :tid, :cat, :svc,
+                            :s, 'on_the_way', now(), now())
+                """), {"b": booking_id, "tid": TENANT_ID, "cat": CATEGORY_AC,
+                       "svc": SERVICE_AC, "s": staff_id})
+                print("  job      created (on_the_way, Rakesh Kumar)")
+
+            # A rating only exists once reviews do -- seeded with a real
+            # review count so the star is earned, not decorative.
+            existing_rating = (await conn.execute(text("""
+                SELECT id FROM staff_rating_summaries
+                WHERE tenant_id = :tid AND staff_member_id = :s
+            """), {"tid": TENANT_ID, "s": staff_id})).scalar_one_or_none()
+            if existing_rating:
+                await conn.execute(text("""
+                    UPDATE staff_rating_summaries
+                    SET total_reviews = 34, average_rating = 4.80, updated_at = now()
+                    WHERE id = :id
+                """), {"id": existing_rating})
+                print("  rating   updated (4.80, 34 reviews)")
+            else:
+                await conn.execute(text("""
+                    INSERT INTO staff_rating_summaries
+                        (id, tenant_id, staff_member_id, total_reviews, average_rating, updated_at)
+                    VALUES (gen_random_uuid(), :tid, :s, 34, 4.80, now())
+                """), {"tid": TENANT_ID, "s": staff_id})
+                print("  rating   created (4.80, 34 reviews)")
+
+            # A real scheduled slot so the card's time row has something
+            # genuine to show.
+            await conn.execute(text("""
+                UPDATE service_bookings
+                SET preferred_date = CURRENT_DATE,
+                    preferred_time_window = '10:30 AM',
+                    updated_at = now()
+                WHERE id = :id
+            """), {"id": booking_id})
+            print("  booking  BK-DEMO-0003 scheduled today 10:30 AM")
+
         # ── Service credit ────────────────────────────────────────────────
         existing = (await conn.execute(
             text("SELECT id FROM customer_service_credits WHERE credit_number = :n"),

@@ -4,7 +4,7 @@ export * from "./CampaignCarousel";
 export * from "./VerticalSwitcher";
 export * from "./HomeServiceCard";
 export * from "./AssistantEntryCard";
-export * from "./ActiveBookingCard";
+export * from "./MyBookingSection";
 export * from "./TrustBenefitCard";
 export * from "./HowItWorksSection";
 export * from "./ThemeSelector";

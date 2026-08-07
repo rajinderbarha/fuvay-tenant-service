@@ -68,23 +68,52 @@ describe("customer home adapter", () => {
     expect(home.bookableCategories[0].name).toBe("AC & Cooling");
   });
 
-  it("never carries a technician identity, live ETA, or rating on active_booking (structurally impossible)", () => {
-    // issue_summary/provider_name/preferred_date/preferred_time_window/
-    // assignment_status were added to the real backend payload (customer_home
-    // service.py) so the Home card could show something more than a bare
-    // status slug -- this is still a closed, known field set, just a wider
-    // one than before. What must never appear here is anything the backend
-    // doesn't send: a technician's name/photo, a live ETA countdown, or a
-    // rating -- none of those are in this DTO's schema at all.
+  it("leaves the technician and service name null when the backend sends neither", () => {
+    // `technician` / `service_name` became REAL backend fields when the
+    // Home card was rebuilt as "My Booking" (customer_home service.py
+    // resolves them from service_jobs.assigned_staff_id and the catalog),
+    // so this no longer asserts they are impossible -- it asserts the
+    // adapter never conjures them when they are absent.
     const home = adaptCustomerHome(parseCustomerHomeDto(rawHome({
       active_booking: { booking_id: "b-1", booking_number: "SB-1", status: "scheduled", created_at: "2026-08-01T09:00:00Z" },
     })));
     expect(home.activeBooking).toEqual({
       bookingId: "b-1", bookingNumber: "SB-1", status: "scheduled", createdAt: "2026-08-01T09:00:00Z",
       assignmentStatus: null, issueSummary: null, preferredDate: null, preferredTimeWindow: null, providerName: null,
+      serviceName: null, technician: null,
     });
-    expect(Object.keys(home.activeBooking as object).sort()).toEqual(
-      ["assignmentStatus", "bookingId", "bookingNumber", "createdAt", "issueSummary", "preferredDate", "preferredTimeWindow", "providerName", "status"],
-    );
+  });
+
+  it("carries a real technician through verbatim, without defaulting an unearned rating", () => {
+    const home = adaptCustomerHome(parseCustomerHomeDto(rawHome({
+      active_booking: {
+        booking_id: "b-2", booking_number: "SB-2", status: "on_the_way", created_at: "2026-08-01T09:00:00Z",
+        service_name: "AC Service",
+        technician: { name: "Rakesh Kumar", role: "Service technician", photo_url: null, rating: null, review_count: 0 },
+      },
+    })));
+    expect(home.activeBooking?.serviceName).toBe("AC Service");
+    expect(home.activeBooking?.technician).toEqual({
+      name: "Rakesh Kumar", role: "Service technician", photoUrl: null,
+      // Null, not 0 and not a flattering default: a rating is earned or absent.
+      rating: null, reviewCount: 0,
+    });
+  });
+
+  it("still has no field capable of expressing a live ETA", () => {
+    // The reference design shows "Arriving in 15 MIN". Nothing in this
+    // system computes an ETA, so the contract must offer nowhere to put
+    // one -- that is what keeps a plausible-looking countdown from being
+    // invented later.
+    const home = adaptCustomerHome(parseCustomerHomeDto(rawHome({
+      active_booking: {
+        booking_id: "b-3", booking_number: "SB-3", status: "on_the_way", created_at: "2026-08-01T09:00:00Z",
+        eta_minutes: 15, arriving_in: "15 MIN",
+      },
+    })));
+    const keys = Object.keys(home.activeBooking as object);
+    expect(keys).not.toContain("etaMinutes");
+    expect(keys).not.toContain("arrivingIn");
+    expect(JSON.stringify(home.activeBooking)).not.toContain("15");
   });
 });

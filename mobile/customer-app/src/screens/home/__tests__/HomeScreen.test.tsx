@@ -162,47 +162,71 @@ describe("HomeScreen", () => {
     expect(getByText("Sponsored")).toBeTruthy();
   });
 
-  it("does not render the active booking card when there is no active booking", () => {
+  it("does not render the My Booking section when there is no active booking", () => {
     mockHomeQuery({ data: baseHome({ activeBooking: null }) });
     const { queryByText } = renderHome();
-    expect(queryByText("Active Booking")).toBeNull();
+    expect(queryByText("My Booking")).toBeNull();
   });
 
-  it("renders the active booking card using only real returned fields, never a fabricated ETA/technician", () => {
+  it("renders My Booking from real returned fields, never a fabricated ETA or technician", () => {
     mockHomeQuery({
       data: baseHome({
         activeBooking: {
           bookingId: asServiceBookingId("b-1"), bookingNumber: "SB-2026-01", status: "scheduled",
           createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
-          assignmentStatus: null, issueSummary: null, preferredDate: null, preferredTimeWindow: null, providerName: null,
+          assignmentStatus: null, issueSummary: null, serviceName: null,
+          preferredDate: null, preferredTimeWindow: null, providerName: null, technician: null,
         },
       }),
     });
     const { getByText, queryByText } = renderHome();
-    expect(getByText("Active Booking")).toBeTruthy();
-    // With no issueSummary, the title falls back to the booking number.
+    expect(getByText("My Booking")).toBeTruthy();
+    // With no service name or issue summary, the title falls back to the
+    // booking number rather than inventing one.
     expect(getByText("SB-2026-01")).toBeTruthy();
-    expect(queryByText(/min away/i)).toBeNull();
+    // The reference design shows "Arriving in 15 MIN"; nothing computes an
+    // ETA, so no such claim may appear.
+    expect(queryByText(/min/i)).toBeNull();
+    expect(queryByText(/arriving/i)).toBeNull();
     expect(queryByText(/Rakesh/i)).toBeNull();
   });
 
-  it("prefers the real issue summary as the active booking title, with provider/schedule as subtitle", () => {
+  it("prefers the catalog service name and shows the assigned technician with their earned rating", () => {
     mockHomeQuery({
       data: baseHome({
         activeBooking: {
           bookingId: asServiceBookingId("b-2"), bookingNumber: "SB-2026-02", status: "on_the_way",
           createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
-          assignmentStatus: "assigned", issueSummary: "AC Not Cooling",
-          preferredDate: "2026-08-07", preferredTimeWindow: "10:00 AM - 12:00 PM", providerName: "Guramrit",
+          assignmentStatus: "assigned", issueSummary: "AC Not Cooling", serviceName: "AC Repair",
+          preferredDate: "2026-08-07", preferredTimeWindow: "10:30 AM", providerName: "Guramrit",
+          technician: { name: "Rakesh Kumar", role: "Service technician", photoUrl: null, rating: 4.8, reviewCount: 12 },
         },
       }),
     });
     const { getByText } = renderHome();
-    expect(getByText("AC Not Cooling")).toBeTruthy();
-    expect(getByText(/Guramrit/)).toBeTruthy();
-    // Compact corner-pill badge copy (design-reference layout), not the
-    // longer prose used elsewhere in the app for the same status.
+    expect(getByText("AC Repair")).toBeTruthy();
+    expect(getByText("Rakesh Kumar")).toBeTruthy();
+    expect(getByText("4.8")).toBeTruthy();
     expect(getByText("On the way")).toBeTruthy();
+  });
+
+  it("omits the star when the technician has not been reviewed yet", () => {
+    // staff_rating_summaries returns null until real reviews exist; an
+    // unearned rating is worse than none.
+    mockHomeQuery({
+      data: baseHome({
+        activeBooking: {
+          bookingId: asServiceBookingId("b-3"), bookingNumber: "SB-2026-03", status: "assigned",
+          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
+          assignmentStatus: "assigned", issueSummary: null, serviceName: "Pipe Repair",
+          preferredDate: null, preferredTimeWindow: null, providerName: null,
+          technician: { name: "Dhiman", role: "Service technician", photoUrl: null, rating: null, reviewCount: 0 },
+        },
+      }),
+    });
+    const { getByText, queryByText } = renderHome();
+    expect(getByText("Dhiman")).toBeTruthy();
+    expect(queryByText(/^\d\.\d$/)).toBeNull();
   });
 
   it("renders enabled verticals only (backend already filters disabled ones)", () => {
