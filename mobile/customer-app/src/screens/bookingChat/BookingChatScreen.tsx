@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -108,7 +108,15 @@ function BookingChatConversation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addressPhaseActive]);
 
-  const flowDone = !!addr.resolvedAddressId; // review phase mounts and owns everything past this
+  // Only a real, backend-confirmed booking completes the flow. This used to
+  // be `!!addr.resolvedAddressId`, which ticked every stage green -- "Book"
+  // included -- the moment an address was chosen, telling the customer they
+  // were booked while they were still looking at the Confirm button.
+  const [booked, setBooked] = useState(false);
+  const inReviewPhase = !!addr.resolvedAddressId;
+  // Stable identity: ReviewAndConfirmPhase fires this from an effect, so an
+  // inline arrow would re-run that effect on every render.
+  const onBookingConfirmed = useCallback(() => setBooked(true), []);
 
   // The full running task list for the current operation. The controller
   // records every stage it genuinely passed through (activityTrace), so
@@ -126,20 +134,24 @@ function BookingChatConversation({
   // options never pop in underneath a still-running trace.
   const traceBusy = trace.some(e => e.status === "pending");
 
-  // Auto-scroll to the newest turn as the conversation grows -- every state
-  // change below (message count, a new question, address/price turns
-  // mounting) reshapes the single content item, so this covers all of them
-  // without needing a per-turn scroll call.
-  const scrollCue = [
-    c.messages.length, c.envelope?.answeredQuestions.length ?? 0, !!c.envelope?.currentQuestion,
-    c.activityStage, c.uiState, addressPhaseActive, addr.resolvedAddressId, trace.length,
-  ].join("|");
-  useEffect(() => {
-    const timer = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
-    return () => clearTimeout(timer);
-  }, [scrollCue]);
+  // Which question the running trace belongs to, and the finished trace of
+  // every question answered before it. Without this, past questions lose
+  // their steps and the whole transcript's worth of work piles up in one
+  // block at the bottom instead of sitting with the question that caused it.
+  const [liveTraceQuestionId, setLiveTraceQuestionId] = useState<string | null>(null);
+  const [tracesByQuestion, setTracesByQuestion] = useState<Record<string, string[]>>({});
 
-  const activeStageIndex = !c.draftId ? 0 : !questionsComplete ? 0 : !addr.resolvedAddressId ? 1 : 2;
+  useEffect(() => {
+    if (!liveTraceQuestionId || traceLabels.length === 0) return;
+    setTracesByQuestion(prev => ({ ...prev, [liveTraceQuestionId]: traceLabels }));
+  }, [liveTraceQuestionId, traceLabels]);
+
+  // Auto-scroll is handled by the list's onContentSizeChange (below), which
+  // fires on every real growth. A second state-keyed scroll effect here
+  // would fight it and make the list jitter.
+
+  // Stages: 0 Understand · 1 Match technician · 2 Confirm & price · 3 Book.
+  const activeStageIndex = booked ? 3 : !c.draftId || !questionsComplete ? 0 : !inReviewPhase ? 1 : 2;
 
   // The composer is a real input only while a free-text question is
   // genuinely open and not already being submitted.
@@ -150,8 +162,10 @@ function BookingChatConversation({
   function submitFreeText() {
     if (!canSendAnswer || !c.envelope?.currentQuestion) return;
     const text = answerDraft.trim();
+    const questionId = c.envelope.currentQuestion.questionId;
     setAnswerDraft("");
-    c.submitAnswer(c.envelope.currentQuestion.questionId, null, text);
+    setLiveTraceQuestionId(questionId);
+    c.submitAnswer(questionId, null, text);
   }
 
   return (
@@ -172,12 +186,12 @@ function BookingChatConversation({
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ fontSize: 17, fontWeight: "700", color: BOT.textPrimary }}>Fuvay AI</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <BotPulseDot color={flowDone ? BOT.success : BOT.brand} />
-                <Text style={{ fontSize: 12, color: BOT.textMuted }}>{flowDone ? "Booking in progress" : "Working on your booking"}</Text>
+                <BotPulseDot color={booked ? BOT.success : BOT.brand} />
+                <Text style={{ fontSize: 12, color: BOT.textMuted }}>{booked ? "Booking confirmed" : "Working on your booking"}</Text>
               </View>
             </View>
           </View>
-          <BotStageTracker stages={STAGES} activeIndex={activeStageIndex} allDone={flowDone} />
+          <BotStageTracker stages={STAGES} activeIndex={activeStageIndex} allDone={booked} />
         </View>
 
         {/* Transcript */}
@@ -214,18 +228,31 @@ function BookingChatConversation({
               ) : null}
 
               {/* 2. Question loop -- answered history, then the live question */}
+              {/* Each question keeps the steps that ran for IT, directly
+                  below its answer -- so work stays attached to the question
+                  that caused it instead of piling up in one block. */}
               {c.envelope?.answeredQuestions.map(a => (
                 <View key={a.questionId} style={{ gap: 8 }}>
                   <BotAssistantBubble text={a.questionLabel} />
                   <BotUserBubble text={a.answerLabel} />
+                  {a.questionId === liveTraceQuestionId ? (
+                    <BotWorkingTrace entries={trace} />
+                  ) : tracesByQuestion[a.questionId] ? (
+                    <BotWorkingTrace
+                      entries={tracesByQuestion[a.questionId].map(label => ({ label, status: "done" as const }))}
+                    />
+                  ) : null}
                 </View>
               ))}
 
-              {/* Chronological position matters: the steps for the answer
-                  just given belong BELOW that answer and ABOVE the next
-                  question, so the trace reads as new work appended to the
-                  transcript rather than one line mutating in place. */}
-              <BotWorkingTrace entries={trace} />
+              {/* Work that belongs to no question in the history yet --
+                  bootstrap, picking the issue, or the brief moment before
+                  the answered question lands -- still shows in sequence
+                  here, so a running trace is never rendered nowhere. */}
+              {liveTraceQuestionId === null
+                || !c.envelope?.answeredQuestions.some(a => a.questionId === liveTraceQuestionId)
+                ? <BotWorkingTrace entries={trace} />
+                : null}
 
               {c.envelope?.currentQuestion && !questionsComplete && !traceBusy ? (
                 <View style={{ gap: 8 }}>
@@ -240,7 +267,9 @@ function BookingChatConversation({
                       onSelect={label => {
                         const opt = c.envelope!.currentQuestion!.options.find(o => o.label === label);
                         if (!opt) return;
-                        c.submitAnswer(c.envelope!.currentQuestion!.questionId, opt.id, null);
+                        const questionId = c.envelope!.currentQuestion!.questionId;
+                        setLiveTraceQuestionId(questionId);
+                        c.submitAnswer(questionId, opt.id, null);
                       }}
                     />
                   )}
@@ -266,6 +295,7 @@ function BookingChatConversation({
               {addr.resolvedAddressId && c.draftId ? (
                 <ReviewAndConfirmPhase
                   draftId={c.draftId}
+                  onConfirmed={onBookingConfirmed}
                   onTrackBooking={bookingId => (navigation as unknown as { navigate: (name: string, params: unknown) => void })
                     .navigate("BookingDetails", { bookingId })}
                 />
@@ -314,7 +344,7 @@ function BookingChatConversation({
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 4, minHeight: 24 }}>
               <Ionicons name="sparkles" size={15} color={BOT.textTertiary} />
               <Text style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }} numberOfLines={1}>
-                {flowDone ? "Fuvay AI is finishing your booking…" : "Choose an option above to continue"}
+                {booked ? "Your booking is confirmed" : inReviewPhase ? "Fuvay AI is finishing your booking…" : "Choose an option above to continue"}
               </Text>
             </View>
           )}

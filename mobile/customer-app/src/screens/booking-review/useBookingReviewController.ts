@@ -27,7 +27,8 @@ export type BookingReviewUiState =
 const LOAD_LABELS: Record<BookingReviewLoadStage, string> = {
   checking_details: "Checking your booking details…",
   checking_serviceability: "Confirming service availability…",
-  checking_pricing: "Checking backend pricing…",
+  // Customer-facing copy: never name internal architecture ("backend").
+  checking_pricing: "Checking the price for you…",
   finding_provider: "Finding an eligible professional…",
   preparing_review: "Preparing your review…",
 };

@@ -32,8 +32,11 @@ export function useBotColors() {
     bubbleOnBrand: c.brandOnPrimary,
     success: c.statusSuccess,
     successBg: c.statusSuccessSurface,
-    successBorder: c.statusSuccessSurface,
-    successTint: c.statusSuccessSurface,
+    // These three must NOT all resolve to the same value: the confirmation
+    // card is a success-surface panel, so a success-surface border and a
+    // success-surface icon circle would both be invisible against it.
+    successBorder: c.statusSuccess,
+    successTint: c.surfaceDefault,
     warning: c.statusWarning,
     danger: c.statusDanger,
   };

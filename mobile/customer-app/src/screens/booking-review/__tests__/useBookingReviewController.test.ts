@@ -258,7 +258,9 @@ describe("useBookingReviewController", () => {
     const { bookingReviewLoadLabel } = jest.requireActual("../useBookingReviewController");
     expect(bookingReviewLoadLabel("checking_details")).toBe("Checking your booking details…");
     expect(bookingReviewLoadLabel("checking_serviceability")).toBe("Confirming service availability…");
-    expect(bookingReviewLoadLabel("checking_pricing")).toBe("Checking backend pricing…");
+    // Customer-facing wording -- these labels are shown in the booking chat,
+    // so they must never name internal architecture (was "backend pricing").
+    expect(bookingReviewLoadLabel("checking_pricing")).toBe("Checking the price for you…");
     expect(bookingReviewLoadLabel("finding_provider")).toBe("Finding an eligible professional…");
     expect(bookingReviewLoadLabel("preparing_review")).toBe("Preparing your review…");
   });

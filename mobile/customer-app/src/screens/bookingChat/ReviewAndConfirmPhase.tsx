@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View } from "react-native";
 import { useBookingReviewController, bookingReviewLoadLabel } from "../booking-review/useBookingReviewController";
 import { BotAssistantBubble, BotWorkingTrace, useWorkingTrace, useObservedSequence } from "../../components/bookingChat/BotPrimitives";
@@ -13,6 +13,11 @@ import { BookingReviewSummary } from "../../domain/bookingReview";
 export interface ReviewAndConfirmPhaseProps {
   draftId: string;
   onTrackBooking: (bookingId: string) => void;
+  /** Fires once the booking is genuinely confirmed by the backend, so the
+   * header's stage tracker can tick "Book" only when it has really
+   * happened -- it previously went all-green as soon as the address
+   * resolved, claiming a booking that did not exist yet. */
+  onConfirmed?: () => void;
 }
 
 /** The one real price the slot picker shows alongside a time -- there is
@@ -38,10 +43,15 @@ function priceLabelFor(summary: BookingReviewSummary): string | null {
  * Three sequential turns once the summary is ready: pick a time (with the
  * real price shown alongside it) -> optional photos -> provider + confirm.
  */
-export function ReviewAndConfirmPhase({ draftId, onTrackBooking }: ReviewAndConfirmPhaseProps) {
+export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: ReviewAndConfirmPhaseProps) {
   const c = useBookingReviewController(draftId);
   const [slotDone, setSlotDone] = useState(false);
   const [photosDone, setPhotosDone] = useState(false);
+
+  const confirmed = c.uiState === "confirmed" && !!c.confirmation;
+  useEffect(() => {
+    if (confirmed) onConfirmed?.();
+  }, [confirmed, onConfirmed]);
 
   // The five real load stages (checking details -> serviceability ->
   // pricing -> provider -> preparing review) accumulate into a visible

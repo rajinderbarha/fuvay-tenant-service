@@ -290,16 +290,79 @@ export function useWorkingTrace(labels: string[], running: boolean): WorkingTrac
  * live one shimmers under a spinner, and typing dots trail it while work
  * is genuinely still in flight. */
 export function BotWorkingTrace({ entries }: { entries: WorkingTraceEntry[] }) {
+  const BOT = useBotColors();
   const running = entries.some(e => e.status === "pending");
   const elapsed = useElapsedSeconds(running);
+  const [expanded, setExpanded] = useState(false);
+  const [finalSeconds, setFinalSeconds] = useState<number | null>(null);
+  const startedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (running) {
+      startedAtRef.current = Date.now();
+      setFinalSeconds(null);
+      setExpanded(false);
+    } else if (startedAtRef.current !== null) {
+      setFinalSeconds(Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000)));
+      startedAtRef.current = null;
+    }
+  }, [running]);
+
   if (entries.length === 0) return null;
+
+  // Finished work COLLAPSES to one line. Leaving every completed step
+  // expanded turned the transcript into a wall of grey boxes that crowded
+  // out the actual conversation -- a real assistant shows its work while
+  // working, then gets out of the way. The detail is still one tap away.
+  if (!running && !expanded) {
+    return (
+      <BotTraceSummary
+        stepCount={entries.length}
+        seconds={finalSeconds}
+        onExpand={() => setExpanded(true)}
+      />
+    );
+  }
+
   return (
     <View style={{ gap: 6 }}>
       {entries.map((e, i) => (
         <BotWorkingStep key={`${e.label}-${i}`} label={e.label} status={e.status} />
       ))}
-      {running ? <BotWorkingFooter elapsedSeconds={elapsed} stepCount={entries.length} /> : null}
+      {running ? (
+        <BotWorkingFooter elapsedSeconds={elapsed} stepCount={entries.length} />
+      ) : (
+        <Pressable
+          onPress={() => setExpanded(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Hide the steps"
+          style={{ paddingLeft: 36, paddingTop: 2 }}
+        >
+          <Text style={{ fontSize: 13, color: BOT.textTertiary }}>Hide steps</Text>
+        </Pressable>
+      )}
     </View>
+  );
+}
+
+/** One quiet line standing in for a finished run. */
+function BotTraceSummary({
+  stepCount, seconds, onExpand,
+}: { stepCount: number; seconds: number | null; onExpand: () => void }) {
+  const BOT = useBotColors();
+  return (
+    <Pressable
+      onPress={onExpand}
+      accessibilityRole="button"
+      accessibilityLabel={`Show the ${stepCount} steps that ran`}
+      style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 36, paddingVertical: 2 }}
+    >
+      <Ionicons name="checkmark-circle" size={15} color={BOT.success} />
+      <Text style={{ fontSize: 13, color: BOT.textTertiary }}>
+        Done · {stepCount} step{stepCount === 1 ? "" : "s"}{seconds !== null ? ` · ${seconds}s` : ""}
+      </Text>
+      <Ionicons name="chevron-down" size={13} color={BOT.textTertiary} />
+    </Pressable>
   );
 }
 
