@@ -51,6 +51,18 @@ export const homeCategoryDtoSchema = z.object({
   starting_price: z.number().nullable().optional(),
 });
 
+/** A specific problem the customer can tap straight into, skipping the
+ * category and issue-picker steps. Carries its own category so the
+ * Assistant still receives the full context it needs. */
+export const homeQuickIssueDtoSchema = z.object({
+  issue_id: z.string(),
+  label: z.string(),
+  slug: z.string().nullable().optional(),
+  category_id: z.string(),
+  category_slug: z.string().nullable().optional(),
+  category_name: z.string(),
+});
+
 export const homeActiveBookingDtoSchema = z.object({
   booking_id: z.string(),
   booking_number: z.string().nullable().optional(),
@@ -98,6 +110,7 @@ export const customerHomeResponseSchema = z.object({
   serviceability: homeServiceabilityDtoSchema,
   enabled_verticals: z.array(homeVerticalDtoSchema),
   bookable_categories: z.array(homeCategoryDtoSchema),
+  quick_issues: z.array(homeQuickIssueDtoSchema).optional().default([]),
   active_booking: homeActiveBookingDtoSchema,
   unread_notification_count: z.number(),
   campaigns: z.array(homeCampaignDtoSchema),

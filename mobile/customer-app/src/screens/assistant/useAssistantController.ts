@@ -132,6 +132,9 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
   // language is chosen, so picking a language does NOT cost a second
   // network round-trip before the issue list can appear.
   const pendingIssuesRef = useRef<{ categoryName: string; offerings: AssistantOfferingOption[] } | null>(null);
+  /** Which preselected issue has already been auto-selected, so a
+   * re-render cannot select it a second time. Cleared on scope reset. */
+  const autoSelectedIssueRef = useRef<string | null>(null);
   // The chosen conversation language, mirrored into a ref so the
   // question-flow callbacks can read it without taking `session` as a
   // dependency (which would re-create them on every session update and
@@ -357,6 +360,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     setLanguageChoice(null);
     setPriceSnapshot(null);
     pendingIssuesRef.current = null;
+    autoSelectedIssueRef.current = null;
     languageRef.current = null;
     setErrorMessage(null);
     setFallbackOffered(false);
@@ -695,6 +699,29 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     setUiState("ready");
   }, [session, entryContext, isStale]);
 
+  /**
+   * Quick-issue entry from Home: the customer already named the problem
+   * ("AC Not Cooling"), so showing them the same list again to pick it a
+   * second time is a step with no content.
+   *
+   * This runs through `selectOffering` -- the exact path a tap takes --
+   * rather than a parallel shortcut, so the draft, envelope and session
+   * pointer are all created identically. It fires only once the real
+   * backend issue list has arrived AND contains the id: a stale or
+   * no-longer-serviceable id falls through to the normal picker instead
+   * of erroring, and the ref guard stops a re-render from selecting
+   * twice.
+   */
+  useEffect(() => {
+    const issueId = entryContext.source === "service_card" ? entryContext.preselectedIssueId : null;
+    if (!issueId || !offeringChoice) return;
+    if (autoSelectedIssueRef.current === issueId) return;
+    const match = offeringChoice.offerings.find(o => o.id === issueId);
+    if (!match) return;
+    autoSelectedIssueRef.current = issueId;
+    void selectOffering([match]);
+  }, [entryContext, offeringChoice, selectOffering]);
+
   const continueWithGuidedFallback = useCallback(() => {
     abortControllerRef.current?.abort();
     generationRef.current += 1; // discard whatever conversational request was in flight
@@ -795,6 +822,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     setLanguageChoice(null);
     setPriceSnapshot(null);
     pendingIssuesRef.current = null;
+    autoSelectedIssueRef.current = null;
     languageRef.current = null;
     setErrorMessage(null);
     setFallbackOffered(false);

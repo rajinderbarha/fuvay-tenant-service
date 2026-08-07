@@ -193,7 +193,8 @@ class TestCustomerHomeAggregation:
         monkeypatch.setattr(svc, "_get_active_campaigns", AsyncMock(return_value=[]))
 
         result = await svc.get_home(customer_id=customer_id, zipcode=None)
-        assert result["response_version"] == 1
+        # Bumped to 2 when the payload grew global_services + quick_issues.
+        assert result["response_version"] == 2
         assert result["address"]["zipcode"] == "141002"
         assert result["enabled_verticals"] == [{"key": "home_services"}]
         assert result["bookable_categories"] == [{"name": "AC & Cooling"}]
@@ -238,11 +239,26 @@ class TestCustomerHomeAggregation:
         monkeypatch.setattr(svc, "_get_active_campaigns", AsyncMock(return_value=[]))
 
         result = await svc.get_home(customer_id=_id())
-        assert result["unread_notification_count"] is None  # failed-safe, not a crash
+        # Fails safe to a TYPE-CORRECT default, not None: the response
+        # schema declares this field as a number, so a uniform None (the
+        # original `_fail_safe` behaviour) broke the contract for every
+        # client whenever the notifications lookup errored.
+        assert result["unread_notification_count"] == 0
+        # The rest of the payload still composed -- one dead section must
+        # not take the screen down.
+        assert result["response_version"] == 2
+        assert result["bookable_categories"] == []
 
     async def test_get_home_query_count_is_bounded(self, monkeypatch):
-        """Home aggregation must issue a fixed, bounded number of lookups
-        (6), not N+1 per category/booking/etc."""
+        """Home aggregation must issue a fixed, bounded number of lookups,
+        not N+1 per category/booking/etc.
+
+        Counts only the customer-scoped sections. `_get_global_services`
+        is excluded because it is a fixed platform list, and
+        `_get_quick_issues` because it short-circuits with no query when
+        there are no bookable categories (as here) -- with categories it
+        is still exactly ONE query for all of them, never one per
+        category, which is the property this test exists to protect."""
         from app.engines.customer_home.service import CustomerHomeService
         import app.engines.customer_home.service as home_service_mod
 

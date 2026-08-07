@@ -19,6 +19,28 @@ function rawHome(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+describe("quick issues", () => {
+  it("adapts the shortcut list without inventing a price", () => {
+    // The catalog does link each issue to a priced service, but the final
+    // amount depends on answers the Assistant has not asked yet -- so the
+    // payload carries no price and the domain object must not grow one.
+    const home = adaptCustomerHome(parseCustomerHomeDto(rawHome({
+      quick_issues: [{
+        issue_id: "i-1", label: "AC Not Cooling", slug: "ac-not-cooling",
+        category_id: "cat-1", category_slug: "ac-cooling", category_name: "AC & Cooling",
+      }],
+    })));
+    expect(home.quickIssues).toEqual([{
+      issueId: "i-1", label: "AC Not Cooling",
+      categoryId: "cat-1", categorySlug: "ac-cooling", categoryName: "AC & Cooling",
+    }]);
+  });
+
+  it("treats an older payload with no quick_issues as simply having none", () => {
+    expect(adaptCustomerHome(parseCustomerHomeDto(rawHome())).quickIssues).toEqual([]);
+  });
+});
+
 describe("customer home adapter", () => {
   it("parses a well-formed real-shaped payload", () => {
     const dto = parseCustomerHomeDto(rawHome());

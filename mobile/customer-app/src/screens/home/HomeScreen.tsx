@@ -9,7 +9,7 @@ import {
   CustomerHeader, ServiceSearch, CampaignCarousel, VerticalSwitcher, HomeServiceCard,
   AssistantEntryCard, ActiveBookingCard, TrustBenefitCard, HomeSkeleton, HomeErrorState,
   NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal, GlobalServicesSection,
-  SearchResultsList,
+  SearchResultsList, QuickIssuesSection,
 } from "../../components/home";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
 import { useCustomerSearchQuery, MIN_QUERY_LENGTH } from "../../api/home/useCustomerSearchQuery";
@@ -19,7 +19,8 @@ import { timeSensitiveGreeting } from "../../domain/greeting";
 import { resolveCampaignDeepLink } from "../../domain/campaignDeepLink";
 import type { HomeCampaign } from "../../domain/customerHome";
 import { HomeCategory } from "../../domain/customerHome";
-import { createServiceCardEntryContext, createAssistantCardEntryContext } from "../../domain/assistantEntry";
+import { createServiceCardEntryContext, createAssistantCardEntryContext, createQuickIssueEntryContext } from "../../domain/assistantEntry";
+import type { HomeQuickIssue } from "../../domain/customerHome";
 import { CustomerTabsParamList } from "../../navigation/routeTypes";
 
 // Static marketing copy, not backend data. Restored per the reference
@@ -166,6 +167,20 @@ export function HomeScreen() {
     navigateToService(category, zipcode);
   }
 
+  /** Same destination as a service-card tap, with the issue carried along
+   * so the Assistant can skip its picker. A slug-less issue is dropped by
+   * QuickIssuesSection before it can get here. */
+  function navigateToQuickIssue(issue: HomeQuickIssue, zipcode: string) {
+    if (!issue.categorySlug) return;
+    navigation.navigate("Assistant", createQuickIssueEntryContext({
+      categoryId: issue.categoryId,
+      categoryName: issue.categoryName,
+      categorySlug: issue.categorySlug,
+      zipcode,
+      issueId: issue.issueId,
+    }));
+  }
+
   function navigateToGenericAssistant(zipcode: string) {
     navigation.navigate("Assistant", createAssistantCardEntryContext({ zipcode }));
   }
@@ -300,6 +315,19 @@ export function HomeScreen() {
               mode={mode}
               isCtaRoutable={c => resolveCampaignDeepLink(c.ctaDeeplink, bookableSlugs) !== null}
               onPressCta={handleCampaignCta}
+            />
+          </View>
+        </HomeSectionErrorBoundary>
+
+        {/* Directly below the banner, deliberately ahead of the category
+            grid: this is the shorter route to the same booking, so it
+            should be seen before the longer one. Renders nothing when the
+            ZIP's categories carry no issues. */}
+        <HomeSectionErrorBoundary sectionLabel="quick issues">
+          <View style={{ marginTop: theme.spacing.xl }}>
+            <QuickIssuesSection
+              issues={home.quickIssues}
+              onPressIssue={issue => navigateToQuickIssue(issue, home.address!.zipcode as string)}
             />
           </View>
         </HomeSectionErrorBoundary>

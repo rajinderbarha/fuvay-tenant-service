@@ -38,6 +38,7 @@ function baseHome(overrides: Partial<CustomerHome> = {}): CustomerHome {
     serviceability: { zipcode: "141001", checked: true },
     enabledVerticals: [{ verticalId: asVerticalId("v-1"), key: "home_services", label: "Home Services", icon: "home-outline" }],
     bookableCategories: [{ categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null, description: null, startingPrice: null }],
+    quickIssues: [],
     activeBooking: null,
     unreadNotificationCount: 0,
     campaigns: [],
@@ -224,6 +225,39 @@ describe("HomeScreen", () => {
     expect(queryByText("Real Estate")).toBeNull();
   });
 
+  it("tapping a quick issue carries the issue id so the Assistant can skip its picker", () => {
+    mockHomeQuery({ data: baseHome({
+      quickIssues: [{
+        issueId: "issue-1", label: "AC Not Cooling",
+        categoryId: asCategoryId("cat-1"), categorySlug: "ac-cooling", categoryName: "AC & Cooling",
+      }],
+    }) });
+    const { getByText } = renderHome();
+    fireEvent.press(getByText("AC Not Cooling"));
+    expect(lastAssistantParams).toEqual({
+      source: "service_card",
+      categoryId: "cat-1",
+      categoryName: "AC & Cooling",
+      categorySlug: "ac-cooling",
+      zipcode: "141001",
+      existingDraftId: null,
+      preselectedIssueId: "issue-1",
+    });
+  });
+
+  it("drops a quick issue whose category has no slug rather than rendering a dead chip", () => {
+    // The Assistant is entered by category slug; a chip that cannot open
+    // is worse than an absent one.
+    mockHomeQuery({ data: baseHome({
+      quickIssues: [{
+        issueId: "issue-2", label: "Drain Blocked",
+        categoryId: asCategoryId("cat-9"), categorySlug: null, categoryName: "Plumbing",
+      }],
+    }) });
+    const { queryByText } = renderHome();
+    expect(queryByText("Drain Blocked")).toBeNull();
+  });
+
   it("hides the vertical switcher entirely when only one vertical is enabled", () => {
     mockHomeQuery({ data: baseHome() }); // fixture has exactly one vertical
     const { queryByRole } = renderHome();
@@ -241,6 +275,7 @@ describe("HomeScreen", () => {
       categorySlug: "ac-cooling",
       zipcode: "141001",
       existingDraftId: null,
+      preselectedIssueId: null,
     });
     expect(lastAssistantParams).not.toHaveProperty("customerId");
     expect(lastAssistantParams).not.toHaveProperty("serviceabilityChecked");

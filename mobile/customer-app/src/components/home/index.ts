@@ -17,3 +17,4 @@ export * from "./LocationPickerModal";
 export * from "./GlobalServicesSection";
 export * from "./GlobalServiceInquiryModal";
 export * from "./SearchResultsList";
+export * from "./QuickIssuesSection";

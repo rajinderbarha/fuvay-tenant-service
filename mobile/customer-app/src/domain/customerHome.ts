@@ -34,6 +34,23 @@ export interface HomeCategory {
   startingPrice: number | null;
 }
 
+/** A named problem ("AC Not Cooling", "Drain Blocked") the customer can
+ * tap to jump straight into the Assistant with both the category and the
+ * issue already chosen, skipping the category and issue-picker steps.
+ *
+ * Deliberately carries no price. The backend links each issue to a priced
+ * service, but the final figure depends on answers the Assistant has not
+ * asked yet, so a number here would be a quote the booking flow might not
+ * honour. */
+export interface HomeQuickIssue {
+  issueId: string;
+  label: string;
+  categoryId: CategoryId;
+  /** Null blocks the tap: the Assistant is entered by category slug. */
+  categorySlug: string | null;
+  categoryName: string;
+}
+
 /** Only fields the real Home aggregation endpoint returns. Extended
  * 2026-08 to include issue_summary/provider_name/preferred_date/
  * preferred_time_window/assignment_status, which the backend
@@ -81,6 +98,7 @@ export interface CustomerHome {
   serviceability: HomeServiceability | null;
   enabledVerticals: HomeVertical[];
   bookableCategories: HomeCategory[];
+  quickIssues: HomeQuickIssue[];
   activeBooking: HomeActiveBooking | null;
   unreadNotificationCount: number;
   campaigns: HomeCampaign[];

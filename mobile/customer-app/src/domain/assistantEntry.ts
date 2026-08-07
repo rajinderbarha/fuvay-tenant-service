@@ -20,6 +20,19 @@ export type AssistantEntryContext =
       categorySlug: string;
       zipcode: string;
       existingDraftId: string | null;
+      /**
+       * Set when the customer tapped a named problem on Home ("AC Not
+       * Cooling") rather than the category itself, so the Assistant can
+       * skip the issue picker and go straight to the detail questions.
+       *
+       * Still only a HINT, like everything else here: the Assistant
+       * fetches the real backend issue list on entry and auto-selects
+       * this id ONLY if it appears there. An id that is stale, no longer
+       * active, or not serviceable at this ZIP simply falls back to the
+       * normal picker -- it can never force a selection the backend
+       * would not otherwise offer.
+       */
+      preselectedIssueId: string | null;
     }
   | {
       source: "assistant_card";
@@ -36,6 +49,7 @@ export function createServiceCardEntryContext(input: {
   categorySlug: string;
   zipcode: string;
   existingDraftId?: string | null;
+  preselectedIssueId?: string | null;
 }): AssistantEntryContext {
   return {
     source: "service_card",
@@ -44,7 +58,20 @@ export function createServiceCardEntryContext(input: {
     categorySlug: input.categorySlug,
     zipcode: input.zipcode,
     existingDraftId: input.existingDraftId ?? null,
+    preselectedIssueId: input.preselectedIssueId ?? null,
   };
+}
+
+/** Entry from a quick-issue chip on Home: same service-card entry, plus
+ * the specific problem the customer named. */
+export function createQuickIssueEntryContext(input: {
+  categoryId: CategoryId;
+  categoryName: string;
+  categorySlug: string;
+  zipcode: string;
+  issueId: string;
+}): AssistantEntryContext {
+  return createServiceCardEntryContext({ ...input, preselectedIssueId: input.issueId });
 }
 
 export function createAssistantCardEntryContext(input: {

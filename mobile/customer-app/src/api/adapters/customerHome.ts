@@ -33,6 +33,13 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
       categoryId: asCategoryId(c.category_id), name: c.name, slug: c.slug ?? null, iconUrl: c.icon_url ?? null,
       description: c.description ?? null, startingPrice: c.starting_price ?? null,
     })),
+    quickIssues: dto.quick_issues.map(i => ({
+      issueId: i.issue_id,
+      label: i.label,
+      categoryId: asCategoryId(i.category_id),
+      categorySlug: i.category_slug ?? null,
+      categoryName: i.category_name,
+    })),
     activeBooking: dto.active_booking
       ? {
           bookingId: asServiceBookingId(dto.active_booking.booking_id),

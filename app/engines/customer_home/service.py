@@ -63,6 +63,17 @@ class CustomerHomeService:
         # lead-capture cards (admin calls the customer back), not bookable
         # catalog entries. See global_services/customer_router.py.
         global_services = await self._safe_call(self._get_global_services(), default=[])
+        # Scoped to the categories resolved above, so a shortcut can never
+        # lead somewhere this ZIP cannot book. The id is read with .get():
+        # building the argument list happens OUTSIDE _safe_call, so a
+        # category dict missing the key would crash the entire payload
+        # rather than degrading this one section.
+        quick_issues = await self._safe_call(
+            self._get_quick_issues(
+                [cid for c in (categories or []) if (cid := (c or {}).get("category_id"))]
+            ),
+            default=[],
+        )
 
         serviceability_summary = None
         if zipcode:
@@ -88,6 +99,7 @@ class CustomerHomeService:
             "unread_notification_count": unread_count,
             "campaigns": campaigns,
             "global_services": global_services,
+            "quick_issues": quick_issues,
             "capabilities": {
                 "bargain_available": True,
                 "photo_attach_available": True,
@@ -362,3 +374,46 @@ class CustomerHomeService:
         from app.engines.global_services.service import GlobalServicesService
         svc = GlobalServicesService(self.db)
         return await svc.list_services(include_inactive=False)
+
+    async def _get_quick_issues(self, category_ids: list) -> list[dict]:
+        """Specific problems a customer can tap straight into, e.g.
+        "AC Not Cooling" or "Drain Blocked".
+
+        Today the only way in is category -> issue list -> answer questions.
+        These let Home skip the first two steps: tapping one carries both the
+        category AND the chosen issue into the Assistant, which then goes
+        directly to the brand/detail questions.
+
+        Scoped to the categories already resolved as bookable at this ZIP, so
+        a shortcut can never lead somewhere the customer cannot book. No
+        price is returned: the issue's linked service does carry one, but a
+        single issue can map to different work at different prices once the
+        details are known, so a figure here would set an expectation the
+        booking flow may not honour.
+        """
+        if not category_ids:
+            return []
+        from app.engines.admin_catalog.models import MasterIssueType, ServiceCategory
+
+        rows = (await self.db.execute(
+            select(MasterIssueType, ServiceCategory.slug, ServiceCategory.name)
+            .join(ServiceCategory, ServiceCategory.id == MasterIssueType.category_id)
+            .where(
+                MasterIssueType.category_id.in_(category_ids),
+                MasterIssueType.is_active.is_(True),
+                MasterIssueType.status == "active",
+            )
+            .order_by(MasterIssueType.display_order, MasterIssueType.name)
+        )).all()
+
+        return [
+            {
+                "issue_id": str(issue.id),
+                "label": issue.name,
+                "slug": issue.slug,
+                "category_id": str(issue.category_id),
+                "category_slug": cat_slug,
+                "category_name": cat_name,
+            }
+            for issue, cat_slug, cat_name in rows
+        ]

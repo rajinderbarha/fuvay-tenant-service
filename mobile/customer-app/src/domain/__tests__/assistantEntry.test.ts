@@ -1,4 +1,4 @@
-import { createServiceCardEntryContext, createAssistantCardEntryContext } from "../assistantEntry";
+import { createServiceCardEntryContext, createAssistantCardEntryContext, createQuickIssueEntryContext } from "../assistantEntry";
 import { asCategoryId } from "../ids";
 
 describe("assistant entry context", () => {
@@ -16,6 +16,28 @@ describe("assistant entry context", () => {
       categorySlug: "ac-cooling",
       zipcode: "141001",
       existingDraftId: null,
+      // A plain category tap names no specific problem -- the Assistant
+      // must still show its issue picker.
+      preselectedIssueId: null,
+    });
+  });
+
+  it("quick-issue entry carries the chosen problem alongside the category", () => {
+    const ctx = createQuickIssueEntryContext({
+      categoryId: asCategoryId("cat-1"),
+      categoryName: "AC & Cooling",
+      categorySlug: "ac-cooling",
+      zipcode: "141001",
+      issueId: "issue-7",
+    });
+    expect(ctx).toEqual({
+      source: "service_card",
+      categoryId: "cat-1",
+      categoryName: "AC & Cooling",
+      categorySlug: "ac-cooling",
+      zipcode: "141001",
+      existingDraftId: null,
+      preselectedIssueId: "issue-7",
     });
   });
 
