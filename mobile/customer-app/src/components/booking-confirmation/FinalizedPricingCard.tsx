@@ -3,6 +3,7 @@ import { View } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { AppCard } from "../AppCard";
+import { Icon } from "../Icon";
 import { FinalizedPricingPresentation } from "../../domain/bookingReceipt";
 import { resolveServicePriceDisplay } from "../../domain/servicePricing";
 import { formatMoney } from "../../domain/money";
@@ -45,9 +46,12 @@ export function FinalizedPricingCard({ pricing }: { pricing: FinalizedPricingPre
         >
           <AppText variant="caption" style={{ color: theme.colors.statusSuccess }}>Backend confirmed</AppText>
         </View>
-        <AppText variant="caption" color="tertiary" style={{ marginTop: theme.spacing.xs }}>
-          No online payment has been collected.
-        </AppText>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, marginTop: theme.spacing.xs }}>
+          <Icon name="information-circle-outline" size="compact" color={theme.colors.textTertiary} decorative />
+          <AppText variant="caption" color="tertiary">
+            No online payment has been collected.
+          </AppText>
+        </View>
       </AppCard>
     );
   }

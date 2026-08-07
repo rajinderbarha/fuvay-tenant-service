@@ -14,10 +14,14 @@ describe("RequestJourneyStepper", () => {
     }
   });
 
-  it("marks only the reached step and everything before it as done", () => {
+  it("marks steps before the current one as done, the current one as current, and the rest as not yet reached", () => {
+    // Three real visual states, not two: a step already passed (green,
+    // done) must read differently from the one actually in progress
+    // (brand colour, current) -- collapsing them would make the design's
+    // current-step highlight meaningless.
     const { getByLabelText } = renderWithProviders(<RequestJourneyStepper stage="provider_assignment" />);
     expect(getByLabelText(/^Request confirmed/).props.accessibilityLabel).toContain("done");
-    expect(getByLabelText(/^Provider assignment/).props.accessibilityLabel).toContain("done");
+    expect(getByLabelText(/^Provider assignment/).props.accessibilityLabel).toContain("current step");
     expect(getByLabelText(/^Visit scheduling/).props.accessibilityLabel).toContain("not yet reached");
   });
 

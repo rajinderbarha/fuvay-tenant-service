@@ -7,26 +7,27 @@ import { AppIconButton } from "../AppIconButton";
 import { Icon } from "../Icon";
 import { CustomerBookingDetails } from "../../domain/customerBookingDetails";
 import { resolveAnswerFieldIcon } from "../../domain/answerFieldIcon";
-import { formatCreatedAt, ServerTimestamp } from "../../domain/dates";
 
 export interface ServiceOverviewCardProps {
   service: CustomerBookingDetails["service"];
-  bookingNumber: string | null;
-  createdAt: ServerTimestamp | null;
 }
 
 const COLUMNS = 2;
 
 /** Renders whatever answers the finalized booking actually carries --
  * never a hardcoded AC-only field list (spec section 5: "The screen must
- * support categories with different questions"). Tapping the header's
- * timestamp opens a read-only sheet with every answer; there is no path
- * back into the editable assistant flow from here.
+ * support categories with different questions"). "View all answers" opens
+ * a read-only sheet; there is no path back into the editable assistant
+ * flow from here.
+ *
+ * The booking number is NOT repeated here -- BookingDetailsHeader already
+ * shows it once, centered under the screen title, so this card only
+ * needs the service name and its inspection status.
  *
  * Icons per cell are the same wording-derived glyphs used on the My
  * Bookings list card (answerFieldIcon.ts) -- one icon system, not a
  * second invented for this screen. */
-export function ServiceOverviewCard({ service, bookingNumber, createdAt }: ServiceOverviewCardProps) {
+export function ServiceOverviewCard({ service }: ServiceOverviewCardProps) {
   const { theme } = useTheme();
   const [open, setOpen] = useState(false);
 
@@ -49,29 +50,20 @@ export function ServiceOverviewCard({ service, bookingNumber, createdAt }: Servi
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           {service.name ? <AppText variant="bodyStrong" numberOfLines={1}>{service.name}</AppText> : null}
-          {bookingNumber ? <AppText variant="caption" color="tertiary">{bookingNumber}</AppText> : null}
+          {service.inspectionRequired ? <AppText variant="caption" color="tertiary">Inspection-based service</AppText> : null}
         </View>
-        {createdAt ? (
+        {service.answers.length > 0 ? (
           <Pressable
             onPress={() => setOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel={`Created ${formatCreatedAt(createdAt)}. View all answers.`}
+            accessibilityLabel="View all answers"
             style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, flexShrink: 0 }}
           >
-            <AppText variant="labelStrong" color="link" numberOfLines={1}>{formatCreatedAt(createdAt)}</AppText>
+            <AppText variant="labelStrong" color="link" numberOfLines={1}>View all answers</AppText>
             <Icon name="chevron-forward" size="compact" color={theme.colors.brandPrimary} decorative />
           </Pressable>
-        ) : service.answers.length > 0 ? (
-          <AppText variant="labelStrong" color="link" onPress={() => setOpen(true)}>View all answers</AppText>
         ) : null}
       </View>
-
-      {service.inspectionRequired || service.issueSummary ? (
-        <View style={{ paddingHorizontal: theme.spacing.base, paddingBottom: theme.spacing.sm }}>
-          {service.inspectionRequired ? <AppText variant="bodySmall" color="secondary">Inspection-based service</AppText> : null}
-          {service.issueSummary ? <AppText variant="body">Issue: {service.issueSummary}</AppText> : null}
-        </View>
-      ) : null}
 
       {rows.length > 0 ? (
         <View style={{ borderTopWidth: 1, borderTopColor: theme.colors.borderSubtle }}>

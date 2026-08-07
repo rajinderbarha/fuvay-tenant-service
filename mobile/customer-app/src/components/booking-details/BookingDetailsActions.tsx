@@ -15,11 +15,12 @@ export interface BookingDetailsActionsProps {
  * is the only acknowledgement, never a disabled dead button. */
 export function BookingDetailsActions({ onRefresh, refreshing, onContactSupport }: BookingDetailsActionsProps) {
   const { theme } = useTheme();
+  const pill = { borderRadius: theme.radius.radiusFull };
   return (
     <View style={{ gap: theme.spacing.sm }}>
-      <AppButton label="Refresh status" onPress={onRefresh} loading={refreshing} fullWidth />
+      <AppButton label="Refresh status" onPress={onRefresh} loading={refreshing} fullWidth style={pill} />
       {onContactSupport ? (
-        <AppButton label="Contact support" tone="secondary" onPress={onContactSupport} fullWidth />
+        <AppButton label="Contact support" tone="secondary" onPress={onContactSupport} fullWidth style={pill} />
       ) : null}
       <AppText variant="caption" color="tertiary" align="center">
         Cancellation and rescheduling are not available in the app yet.

@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { View, FlatList, RefreshControl, ActivityIndicator, Pressable } from "react-native";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
-import { CustomerTabsParamList } from "../../navigation/routeTypes";
+import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../../design-system/theme";
 import { AppScreen } from "../../components/AppScreen";
 import { LoadingState } from "../../components/LoadingState";
@@ -38,21 +37,10 @@ import { isOffline } from "../../api/networkState";
 export function MyBookingsScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation();
-  const route = useRoute<RouteProp<CustomerTabsParamList, "Bookings">>();
   const [filter, setFilter] = useState<BookingListFilter>("active");
-  const [search, setSearch] = useState(route.params?.initialSearch ?? "");
+  const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const [filterSheetVisible, setFilterSheetVisible] = useState(!!route.params?.openFilter);
-
-  // Entry state is consumed once, on the tap that carried it -- an
-  // in-place refresh/re-render must not keep reopening the sheet or
-  // re-seeding a search the customer has since changed or cleared.
-  useEffect(() => {
-    if (route.params?.initialSearch || route.params?.openFilter) {
-      navigation.setParams({ initialSearch: undefined, openFilter: undefined } as never);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   // Debounced so typing does not fire a request per keystroke; the term
   // itself is applied server-side (see useCustomerBookingsListQuery).
   const debouncedSearch = useDebouncedValue(search, 350);

@@ -17,11 +17,20 @@ import { formatCreatedAt } from "../../domain/dates";
  * guess: it is the one true description of what this event always is.
  * `event.label` (the backend-derived sentence) is shown as the supporting
  * line beneath it, verbatim. */
-export function BookingActivity({ events }: { events: CustomerBookingEvent[] }) {
+export interface BookingActivityProps {
+  events: CustomerBookingEvent[];
+  /** Skip the surrounding AppCard -- the design shows this section and
+   * BookingUpdatesCard as one continuous card divided by a hairline, so
+   * BookingDetailsScreen wraps both itself rather than each rendering
+   * its own border. */
+  bare?: boolean;
+}
+
+export function BookingActivity({ events, bare = false }: BookingActivityProps) {
   const { theme } = useTheme();
   if (events.length === 0) return null;
-  return (
-    <AppCard>
+  const content = (
+    <>
       <AppText variant="labelStrong" color="secondary">Booking activity</AppText>
       <View style={{ marginTop: theme.spacing.sm }}>
         {events.map((event, i) => (
@@ -48,6 +57,7 @@ export function BookingActivity({ events }: { events: CustomerBookingEvent[] }) 
           </View>
         ))}
       </View>
-    </AppCard>
+    </>
   );
+  return bare ? content : <AppCard>{content}</AppCard>;
 }

@@ -3,11 +3,11 @@ import { View } from "react-native";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import { useTheme } from "../../design-system/theme";
 import { AppScreen } from "../../components/AppScreen";
+import { AppCard } from "../../components/AppCard";
 import { LoadingState } from "../../components/LoadingState";
 import { ErrorState } from "../../components/States";
 import { OfflineBanner } from "../../components/OfflineBanner";
 import { BookingDetailsHeader } from "../../components/booking-details/BookingDetailsHeader";
-import { BookingDetailsSearchLauncher } from "../../components/booking-details/BookingDetailsSearchLauncher";
 import { RequestJourneyStepper } from "../../components/booking-details/RequestJourneyStepper";
 import { ServiceOverviewCard } from "../../components/booking-details/ServiceOverviewCard";
 import { AttachmentsSummary } from "../../components/booking-details/AttachmentsSummary";
@@ -160,7 +160,7 @@ export function BookingDetailsScreen() {
               />
             </>
           )}
-          <ServiceOverviewCard service={details.service} bookingNumber={details.bookingNumber} createdAt={details.createdAt} />
+          <ServiceOverviewCard service={details.service} />
           <FinalizedAddressCard address={details.address} />
           <BookingActivity events={details.activity} />
           <BookingDetailsActions
@@ -223,12 +223,6 @@ export function BookingDetailsScreen() {
           />
         )}
 
-        {/* This screen is already one specific booking, so the search/
-            filter row cannot search "within" it -- BookingDetailsSearchLauncher
-            hands both actions to My Bookings, the real list they act on,
-            rather than being a control that does nothing here. */}
-        <BookingDetailsSearchLauncher />
-
         {activeStage ? (
           <JobProgressTimeline activeStage={activeStage} />
         ) : arrivalStage ? (
@@ -237,12 +231,22 @@ export function BookingDetailsScreen() {
           <RequestJourneyStepper stage={details.stage} />
         )}
         {(presentation?.showTechnicianCard || arrivalStage) && technician ? <TechnicianSnapshotCard technician={technician} /> : null}
-        <ServiceOverviewCard service={details.service} bookingNumber={details.bookingNumber} createdAt={details.createdAt} />
+        <ServiceOverviewCard service={details.service} />
         <FinalizedAddressCard address={details.address} />
         <FinalizedPricingCard pricing={details.pricing} />
         <AttachmentsSummary attachments={details.attachments} note={details.note} />
-        <BookingActivity events={details.activity} />
-        <BookingUpdatesCard capability={details.notifications} />
+        {/* One continuous card, divided by a hairline, per the design --
+            BookingActivity/BookingUpdatesCard each render `bare` (no own
+            border) so this is the only place the two are stitched together. */}
+        {details.activity.length > 0 ? (
+          <AppCard style={{ gap: theme.spacing.sm }}>
+            <BookingActivity events={details.activity} bare />
+            <View style={{ height: 1, backgroundColor: theme.colors.borderSubtle }} />
+            <BookingUpdatesCard capability={details.notifications} bare />
+          </AppCard>
+        ) : (
+          <BookingUpdatesCard capability={details.notifications} />
+        )}
         <BookingDetailsActions
           onRefresh={() => query.refetch()} refreshing={query.isRefetching}
           onContactSupport={() => (navigation as unknown as { navigate: (name: string, params?: object) => void })
