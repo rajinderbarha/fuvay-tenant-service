@@ -18,14 +18,18 @@ export interface HomeServiceCardProps {
   onPress: () => void;
 }
 
+/** Artwork panel height. Tall enough for the mascot illustrations to read at
+ * a two-up column width without the card dominating the screen. */
+const ARTWORK_HEIGHT = 112;
+
 /**
  * "Services Nearby" card.
  *
- * Horizontal by design (illustration left, copy right) to match the
- * approved Home layout -- it was previously a vertical tile with a small
- * glyph on top, which is why the grid did not read like the design. The
- * artwork is deliberately oversized relative to its column and vertically
- * centred so the mascot fills the left edge the way the comps show.
+ * Vertical: a full-width artwork panel on top, then centred name,
+ * description and "Starting at <price>". This replaced a horizontal
+ * variant (artwork left, copy right) -- the updated design puts the
+ * illustration above the text and centres the whole block, which also
+ * gives the mascots noticeably more room at a two-up width.
  *
  * Never exposes provider names/counts/matching scores/tenant IDs --
  * `HomeCategory` structurally cannot carry them (see domain/
@@ -56,25 +60,28 @@ export function HomeServiceCard({ category, priceState, onPress }: HomeServiceCa
       accessibilityLabel={`${category.name}${priceLabel ? `, starting at ${priceLabel}` : ""}`}
       style={({ pressed }) => ({
         flex: 1,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: theme.spacing.xs,
-        paddingVertical: theme.spacing.sm,
-        paddingRight: theme.spacing.sm,
         borderRadius: theme.radiusUsage.card,
         backgroundColor: theme.colors.surfaceDefault,
         borderWidth: 1,
         borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle,
         opacity: pressed ? 0.9 : 1,
         overflow: "hidden",
-        minHeight: 96,
       })}
     >
-      <View style={{ width: 62, height: 72, alignItems: "center", justifyContent: "flex-end", flexShrink: 0 }}>
+      {/* Tinted panel behind the illustration, so a transparent PNG has a
+          consistent backdrop instead of sitting straight on the card. */}
+      <View
+        style={{
+          height: ARTWORK_HEIGHT,
+          backgroundColor: theme.colors.surfaceSecondary,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         {artworkUri ? (
           <Image
             source={{ uri: artworkUri }}
-            style={{ width: 62, height: 72 }}
+            style={{ width: "100%", height: "100%" }}
             resizeMode="contain"
             accessibilityElementsHidden
           />
@@ -82,22 +89,14 @@ export function HomeServiceCard({ category, priceState, onPress }: HomeServiceCa
           // Distinct per-category glyph rather than one generic wrench for
           // every card -- see domain/categoryIcon.ts. Only reached until an
           // admin uploads artwork for the category.
-          <View
-            style={{
-              width: 46, height: 46, borderRadius: theme.radiusUsage.input,
-              backgroundColor: theme.colors.brandPrimaryMuted,
-              alignItems: "center", justifyContent: "center", marginBottom: theme.spacing.xs,
-            }}
-          >
-            <Icon name={resolveCategoryIcon(category.slug)} size="standard" color={theme.colors.brandPrimaryStrong} decorative />
-          </View>
+          <Icon name={resolveCategoryIcon(category.slug)} size="navigation" color={theme.colors.brandPrimaryStrong} decorative />
         )}
       </View>
 
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <AppText variant="bodyStrong" numberOfLines={1}>{category.name}</AppText>
+      <View style={{ padding: theme.spacing.sm, alignItems: "center" }}>
+        <AppText variant="bodyStrong" align="center" numberOfLines={1}>{category.name}</AppText>
         {category.description ? (
-          <AppText variant="caption" color="tertiary" numberOfLines={2} style={{ marginTop: 2 }}>
+          <AppText variant="caption" color="tertiary" align="center" numberOfLines={2} style={{ marginTop: 2 }}>
             {category.description}
           </AppText>
         ) : null}
