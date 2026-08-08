@@ -6,7 +6,11 @@ import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navig
 import { CustomerTabsParamList } from "../../navigation/routeTypes";
 import { useCustomerProfileQuery } from "../../api/customer/useCustomerProfileQuery";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
-import { createAssistantCardEntryContext } from "../../domain/assistantEntry";
+import {
+  createAssistantCardEntryContext, createServiceCardEntryContext,
+} from "../../domain/assistantEntry";
+import type { AssistantEntryContext } from "../../domain/assistantEntry";
+import { CategoryChoiceTurn } from "../../components/bookingChat/CategoryChoiceTurn";
 import { useAssistantController } from "../assistant/useAssistantController";
 import { useBookingChatAddress } from "./useBookingChatAddress";
 import { ReviewAndConfirmPhase } from "./ReviewAndConfirmPhase";
@@ -35,12 +39,21 @@ export function BookingChatScreen() {
   const navigation = useNavigation();
   const route = useRoute<Route>();
   const { data: profile } = useCustomerProfileQuery();
-  const { data: home } = useCustomerHomeQuery();
+  const { data: home, isPending: homePending } = useCustomerHomeQuery();
+
+  /**
+   * A category the customer picked HERE, when they opened the assistant from
+   * the tab bar with no service in mind. Held in state rather than pushed as
+   * route params so backing out of the conversation returns to this picker
+   * instead of leaving the tab.
+   */
+  const [pickedCategory, setPickedCategory] = useState<AssistantEntryContext | null>(null);
 
   const entryContext = useMemo(() => {
     if (route.params) return route.params;
+    if (pickedCategory) return pickedCategory;
     return createAssistantCardEntryContext({ zipcode: home?.address?.zipcode ?? "" });
-  }, [route.params, home?.address?.zipcode]);
+  }, [route.params, pickedCategory, home?.address?.zipcode]);
 
   if (!profile) {
     return (
@@ -79,18 +92,86 @@ export function BookingChatScreen() {
     );
   }
 
+  /**
+   * Opened from the tab with no service chosen: ask which one.
+   *
+   * The controller's category-less branch renders no turn, no options and no
+   * usable composer, so mounting the conversation here would show an empty
+   * chat. Choosing a category upgrades this to exactly the same entry context a
+   * service card on Home produces.
+   */
+  if (entryContext.source === "assistant_card") {
+    return (
+      <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: BOT.bg }}>
+        <AssistantIntroHeader />
+        <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
+          <CategoryChoiceTurn
+            categories={home?.bookableCategories ?? []}
+            loading={homePending}
+            city={home?.address?.city ?? null}
+            onSelect={category => setPickedCategory(createServiceCardEntryContext({
+              categoryId: category.categoryId,
+              categoryName: category.name,
+              // A category with no slug cannot be bootstrapped; the picker only
+              // offers what Home offers, and Home drops slug-less categories
+              // too -- so this fallback is never the path taken in practice.
+              categorySlug: category.slug ?? "",
+              zipcode: entryContext.zipcode,
+            }))}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <BookingChatConversation
       entryContext={entryContext}
       customerId={profile.id}
-      onClose={() => navigation.navigate("Home" as never)}
+      // Backing out of a conversation the customer started from the tab returns
+      // to the service picker rather than throwing them over to Home.
+      onClose={() => {
+        if (pickedCategory && !route.params) {
+          setPickedCategory(null);
+          return;
+        }
+        navigation.navigate("Home" as never);
+      }}
     />
+  );
+}
+
+/** Same identity strip the conversation shows, so the picker reads as the
+ * beginning of that conversation rather than a different screen. */
+function AssistantIntroHeader() {
+  const BOT = useBotColors();
+  return (
+    <View
+      style={{
+        flexDirection: "row", alignItems: "center", gap: 12,
+        paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12,
+        borderBottomWidth: 1, borderBottomColor: BOT.borderSubtle,
+      }}
+    >
+      <View
+        style={{
+          width: 36, height: 36, borderRadius: 18, alignItems: "center",
+          justifyContent: "center", backgroundColor: BOT.brand,
+        }}
+      >
+        <Ionicons name="sparkles" size={16} color={BOT.bubbleOnBrand} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 17, fontWeight: "700", color: BOT.textPrimary }}>Fuvay AI</Text>
+        <Text style={{ fontSize: 12, color: BOT.textMuted }}>Ready when you are</Text>
+      </View>
+    </View>
   );
 }
 
 function BookingChatConversation({
   entryContext, customerId, onClose,
-}: { entryContext: ReturnType<typeof createAssistantCardEntryContext>; customerId: import("../../domain/ids").CustomerId; onClose: () => void }) {
+}: { entryContext: AssistantEntryContext; customerId: import("../../domain/ids").CustomerId; onClose: () => void }) {
   const BOT = useBotColors();
   const navigation = useNavigation();
   const c = useAssistantController(entryContext, customerId);

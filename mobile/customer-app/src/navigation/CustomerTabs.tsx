@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, View, AccessibilityInfo } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { CommonActions } from "@react-navigation/native";
 import { CustomerTabsParamList, CustomerTabName } from "./routeTypes";
 import { Icon, IconProps } from "../components/Icon";
 import { useTheme } from "../design-system/theme";
@@ -103,10 +104,27 @@ export function CustomerTabs() {
         component={MyBookingsScreen}
         options={{ tabBarIcon: ({ color }) => <Icon name={TAB_ICON.Bookings} color={color} size="standard" decorative /> }}
       />
+      {/* A tab keeps the params it was last navigated with. So once a customer
+          had entered the Assistant from a service card on Home, every later tap
+          on the tab itself re-entered with that category still attached -- the
+          assistant opened straight into AC questions for someone who had asked
+          for nothing. Entering from the tab is a category-less start, so the
+          stale params are cleared (merge: false replaces them outright).
+
+          Only when the tab is NOT already focused: tapping the tab you are
+          standing on must not discard a conversation in progress. */}
       <Tab.Screen
         name="Assistant"
         component={BookingChatScreen}
         options={{ tabBarIcon: ({ focused }) => <AssistantTabIcon focused={focused} /> }}
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            if (navigation.isFocused()) return;
+            navigation.dispatch(
+              CommonActions.navigate({ name: "Assistant", params: undefined, merge: false }),
+            );
+          },
+        })}
       />
       <Tab.Screen
         name="Support"
