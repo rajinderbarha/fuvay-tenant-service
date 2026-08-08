@@ -9,6 +9,19 @@ import { BookingConfirmationResult } from "../../domain/bookingConfirmation";
 import { classifyReviewPricing } from "../../domain/servicePricing";
 import { asBookingDraftId } from "../../domain/ids";
 import { ContractValidationError } from "../../domain/errors";
+import { Money } from "../../domain/money";
+
+/** The backend sends the surcharge as a decimal STRING (Numeric column), so
+ * it is parsed here rather than trusted as a number. A non-positive or
+ * unparseable value becomes null -- the UI then shows no surcharge line at
+ * all rather than a misleading zero. */
+function parseSurcharge(raw: string | null | undefined): Money | null {
+  if (raw == null || raw === "") return null;
+  const amount = Number(raw);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return { minorUnits: Math.round(amount * 100), currency: "INR" };
+}
+
 
 export function parseDraftDto(raw: unknown): BookingDraftResponseDto {
   const result = bookingDraftResponseSchema.safeParse(raw);
@@ -35,6 +48,14 @@ export function adaptBookingReviewSummary(
     requiresInspectionEstimate: !!priceEstimate.requires_inspection_estimate,
     visitFeeRaw: priceEstimate.visit_fee ?? null,
     feeAdjustmentNote: priceEstimate.customer_message ?? null,
+    visitFeePolicy: priceEstimate.visit_fee_policy
+      ? {
+          creditedAgainstWork: priceEstimate.visit_fee_policy.credited_against_work,
+          creditedWhen: priceEstimate.visit_fee_policy.credited_when,
+          condition: priceEstimate.visit_fee_policy.condition,
+          ifDeclined: priceEstimate.visit_fee_policy.if_declined,
+        }
+      : null,
     bargainAvailable: !!priceEstimate.bargain_available,
     standardPriceRaw: priceEstimate.standard_price ?? null,
   });
@@ -73,6 +94,8 @@ export function adaptBookingReviewSummary(
       : null,
     serviceSlaMinutes: summaryDto.service_sla_minutes ?? null,
     serviceDueAt: summaryDto.service_due_at ?? null,
+    isEmergency: summaryDto.is_emergency ?? false,
+    emergencySurcharge: parseSurcharge(summaryDto.emergency_surcharge),
     priceState: state,
     inspection,
     bargainAvailable: !!priceEstimate.bargain_available,
@@ -133,5 +156,7 @@ export function applySelectedSlotToSummary(
       : null,
     serviceSlaMinutes: summaryDto.service_sla_minutes ?? null,
     serviceDueAt: summaryDto.service_due_at ?? null,
+    isEmergency: summaryDto.is_emergency ?? false,
+    emergencySurcharge: parseSurcharge(summaryDto.emergency_surcharge),
   };
 }

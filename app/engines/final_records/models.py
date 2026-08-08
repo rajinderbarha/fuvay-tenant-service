@@ -58,6 +58,12 @@ class ServiceBooking(ServiceOSBase):
     # migration 222 BOOKING-DETAILS-CONTRACT-FIXES -- found missing during
     # the "make it 100% working" drift audit.
     answer_snapshot:       Mapped[dict | None]      = mapped_column(JSONB, nullable=True)
+    # ── Urgency ────────────────────────────────────────────────────────────
+    # `emergency_surcharge` is FROZEN at confirmation, not a live read of
+    # tenant_services.tenant_emergency_surcharge -- a tenant changing their
+    # rate later must never alter what an already-confirmed customer owes.
+    is_emergency:          Mapped[bool]             = mapped_column(Boolean, nullable=False, default=False)
+    emergency_surcharge:   Mapped[Decimal | None]   = mapped_column(Numeric(12, 2), nullable=True)
     status:                Mapped[str]              = mapped_column(String(40), nullable=False, default="pending_assignment")
     assignment_status:     Mapped[str]              = mapped_column(String(30), nullable=False, default="unassigned")
     failure_reason:        Mapped[str | None]       = mapped_column(Text(), nullable=True)
@@ -92,6 +98,8 @@ class ServiceBooking(ServiceOSBase):
             # in the payload -- so even once populated it could not reach the
             # client and the section stayed empty.
             "answer_snapshot":       self.answer_snapshot,
+            "is_emergency":          bool(self.is_emergency),
+            "emergency_surcharge":   str(self.emergency_surcharge) if self.emergency_surcharge is not None else None,
             "status":                self.status,
             "assignment_status":     self.assignment_status,
             "failure_reason":        self.failure_reason,
@@ -150,11 +158,15 @@ class ServiceJob(ServiceOSBase):
     # initiated reschedules against this job, capped by MAX_RESCHEDULE_COUNT
     # in home_service_assignment.constants. Never decremented.
     reschedule_count:       Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
+    # Copied from the booking at creation so the provider's dashboard can sort
+    # urgent work first without joining back to the booking on every query.
+    is_emergency:           Mapped[bool]             = mapped_column(Boolean, nullable=False, default=False)
 
     def to_dict(self) -> dict:
         return {
             "id":                    str(self.id),
             "job_number":            self.job_number,
+            "is_emergency":          bool(self.is_emergency),
             "booking_id":            str(self.booking_id),
             "customer_id":           str(self.customer_id) if self.customer_id else None,
             "tenant_id":             str(self.tenant_id)   if self.tenant_id   else None,

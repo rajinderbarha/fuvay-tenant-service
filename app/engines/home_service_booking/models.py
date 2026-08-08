@@ -95,6 +95,12 @@ class HomeServiceBookingDraft(ServiceOSBase):
     offering_type_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     brand_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
+    # ── Urgency ────────────────────────────────────────────────────────────────
+    # Set when the customer picks a slot from the emergency (notice-period
+    # waived) list, so the surcharge and the provider's urgent-first sort have
+    # a real, persisted fact to work from rather than a transient query param.
+    is_emergency: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     # ── Media ──────────────────────────────────────────────────────────────────
     photo_urls: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
@@ -150,6 +156,7 @@ class HomeServiceBookingDraft(ServiceOSBase):
             "issue_details":             self.issue_details,
             "offering_type_id":          str(self.offering_type_id) if self.offering_type_id else None,
             "brand_id":                  str(self.brand_id) if self.brand_id else None,
+            "is_emergency":              bool(self.is_emergency),
             "photo_urls":                self.photo_urls or [],
             "preferred_date":            self.preferred_date.isoformat() if self.preferred_date else None,
             "preferred_time_window":     self.preferred_time_window,

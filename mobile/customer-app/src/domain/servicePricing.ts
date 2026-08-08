@@ -76,6 +76,19 @@ export interface InspectionPricing {
   /** True only when the backend's own snapshot carries fee-adjustment
    * policy wording -- never rendered unless the backend actually said so. */
   feeAdjustmentNote: string | null;
+  /**
+   * The platform's structured guarantee that this visit fee is credited
+   * against the work if the customer goes ahead. Backend-authored (it lives
+   * beside the billing code that honours it), so the app states it as a
+   * promise the system actually keeps rather than as marketing copy. Null
+   * when the backend did not assert it -- the app must then say nothing.
+   */
+  visitFeePolicy: {
+    creditedAgainstWork: boolean;
+    creditedWhen: string;
+    condition: string;
+    ifDeclined: string;
+  } | null;
 }
 
 /**
@@ -96,6 +109,7 @@ export function classifyReviewPricing(input: {
   requiresInspectionEstimate: boolean;
   visitFeeRaw: number | null;
   feeAdjustmentNote: string | null;
+  visitFeePolicy?: InspectionPricing["visitFeePolicy"];
   bargainAvailable: boolean;
   standardPriceRaw: number | null;
   currency?: string;
@@ -108,6 +122,7 @@ export function classifyReviewPricing(input: {
         inspection: {
           visitFee: { minorUnits: Math.round(input.visitFeeRaw * 100), currency },
           feeAdjustmentNote: input.feeAdjustmentNote,
+          visitFeePolicy: input.visitFeePolicy ?? null,
         },
       };
     }

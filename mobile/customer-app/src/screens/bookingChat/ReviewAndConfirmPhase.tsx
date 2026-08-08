@@ -5,6 +5,7 @@ import { BotAssistantBubble, BotWorkingTrace, useWorkingTrace, useObservedSequen
 import { SlotPickerCard } from "../../components/bookingChat/SlotPickerCard";
 import { PhotosNotesTurn } from "../../components/bookingChat/PhotosNotesTurn";
 import { PriceProviderCard } from "../../components/bookingChat/PriceProviderCard";
+import { FeeAssuranceCard } from "../../components/bookingChat/FeeAssuranceCard";
 import { ConfirmCard } from "../../components/bookingChat/ConfirmCard";
 import { formatMoney } from "../../domain/money";
 import { resolveServicePriceDisplay } from "../../domain/servicePricing";
@@ -107,12 +108,21 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: 
           onContinue={() => setPhotosDone(true)}
         />
       ) : (
-        <PriceProviderCard
-          summary={c.summary}
-          confirming={c.uiState === "confirming"}
-          onConfirm={c.confirm}
-          confirmDisabledReason={c.eligibility.allowed ? null : "We can't confirm this request yet -- see the details above."}
-        />
+        <>
+          {/* Money is settled BEFORE the Confirm button, never after it --
+              the customer should have no open question about what they are
+              agreeing to pay. */}
+          <FeeAssuranceCard
+            inspection={c.summary.inspection}
+            emergencySurcharge={c.summary.isEmergency ? c.summary.emergencySurcharge : null}
+          />
+          <PriceProviderCard
+            summary={c.summary}
+            confirming={c.uiState === "confirming"}
+            onConfirm={c.confirm}
+            confirmDisabledReason={c.eligibility.allowed ? null : "We can't confirm this request yet -- see the details above."}
+          />
+        </>
       )}
     </View>
   );

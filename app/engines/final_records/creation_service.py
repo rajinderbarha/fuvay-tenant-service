@@ -22,6 +22,7 @@ Does NOT push notifications or assign technicians (Sprint 20+).
 from __future__ import annotations
 import uuid
 import logging
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -171,6 +172,13 @@ class HomeServiceFinalCreationService:
             # Resolved ONCE here, at finalize, so a later question/option
             # relabel can never change what a historical booking shows.
             answer_snapshot       = await self._build_answer_snapshot(draft),
+            # Urgency carried from the draft, where it was set by the customer
+            # genuinely picking from the emergency slot list. The surcharge is
+            # read from the summary the customer was SHOWN before confirming
+            # and frozen here, so a tenant editing their rate afterwards can
+            # never change what this customer agreed to pay.
+            is_emergency          = bool(getattr(draft, "is_emergency", False)),
+            emergency_surcharge   = self._frozen_emergency_surcharge(draft),
         )
         self.db.add(booking)
         await self.db.flush()
@@ -248,6 +256,7 @@ class HomeServiceFinalCreationService:
             zipcode               = draft.zipcode,
             address_snapshot      = draft.address_snapshot,
             status                = "pending_assignment",
+            is_emergency          = booking.is_emergency,
         )
         self.db.add(job)
         await self.db.flush()
@@ -376,6 +385,27 @@ class HomeServiceFinalCreationService:
             await self.db.flush()
         except Exception as exc:
             log.warning("audit log failed: %s", exc)
+
+    @staticmethod
+    def _frozen_emergency_surcharge(draft):
+        """The emergency surcharge exactly as the customer was shown it.
+
+        Taken from `draft.booking_summary`, which is what the review/chat
+        screen rendered before they pressed Confirm -- deliberately NOT a
+        fresh read of `tenant_services.tenant_emergency_surcharge`. Re-reading
+        it here would let a tenant who edited their rate mid-session bill a
+        customer something they never agreed to.
+        """
+        if not getattr(draft, "is_emergency", False):
+            return None
+        raw = (draft.booking_summary or {}).get("emergency_surcharge")
+        if raw in (None, ""):
+            return None
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        return value if value > 0 else None
 
     async def _build_answer_snapshot(self, draft) -> dict | None:
         """The immutable record of what the customer actually answered.

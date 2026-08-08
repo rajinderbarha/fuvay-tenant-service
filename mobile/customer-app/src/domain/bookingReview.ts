@@ -1,6 +1,7 @@
 import { BookingDraftId } from "./ids";
 import { ServerDate } from "./dates";
 import { ServicePriceState, InspectionPricing } from "./servicePricing";
+import { Money } from "./money";
 
 export interface ReviewProvider {
   tenantId: string;
@@ -68,6 +69,11 @@ export interface BookingReviewSummary {
    * creation -- provider-side allocation delay is never the customer's wait. */
   serviceSlaMinutes: number | null;
   serviceDueAt: string | null;
+  /** True when the customer picked from the emergency (notice-waived) slot
+   * list. `emergencySurcharge` is the provider's own configured rate, shown
+   * before confirmation; null when they charge nothing extra. */
+  isEmergency: boolean;
+  emergencySurcharge: Money | null;
   readyForConfirmation: boolean;
   missing: string[];
 }

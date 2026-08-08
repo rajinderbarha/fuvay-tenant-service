@@ -69,6 +69,9 @@ export function adaptCustomerBookingDetails(dto: ServiceBookingDto): CustomerBoo
     requiresInspectionEstimate: !!priceSnapshot.requires_inspection_estimate,
     visitFeeRaw: typeof priceSnapshot.visit_fee === "number" ? priceSnapshot.visit_fee : null,
     feeAdjustmentNote: typeof priceSnapshot.customer_message === "string" ? priceSnapshot.customer_message : null,
+    // Historical snapshots predate `visit_fee_policy`; asserting the
+    // guarantee here would be claiming something this record never carried.
+    visitFeePolicy: null,
     bargainAvailable: !!priceSnapshot.bargain_available,
     standardPriceRaw: typeof priceSnapshot.standard_price === "number" ? priceSnapshot.standard_price : null,
   });

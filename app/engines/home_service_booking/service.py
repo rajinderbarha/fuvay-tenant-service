@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
-from sqlalchemy import and_, desc, or_, select, update
+from sqlalchemy import and_, desc, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.home_service_booking.constants import (
@@ -1503,24 +1503,62 @@ class HomeServiceChatbotBookingService:
             # either way: this slot cannot be booked now.
             raise ValueError("SLOT_NO_LONGER_AVAILABLE")
 
+        # Persist the urgency. Picking from the emergency list is the only way
+        # a booking becomes an emergency -- it is a real customer choice, so it
+        # is recorded on the draft (and carried to the booking/job at
+        # confirmation) rather than left as a transient request parameter the
+        # provider would never see. Choosing a normal slot clears it again, so
+        # a customer who changes their mind is not silently surcharged.
+        draft.is_emergency = bool(emergency)
+        surcharge = await self._emergency_surcharge_for(draft) if emergency else None
+
         existing = draft.booking_summary or {}
         summary = {
             **existing,
             "promised_slot": promised_slot,
             "service_sla_minutes": promised_slot.get("slot_minutes") or existing.get("service_sla_minutes"),
             "service_due_at": promised_slot.get("ends_at") or existing.get("service_due_at"),
+            "is_emergency": bool(emergency),
+            # Shown to the customer BEFORE they confirm -- an emergency must
+            # never be a surprise line on the final bill.
+            "emergency_surcharge": str(surcharge) if surcharge is not None else None,
         }
         draft.booking_summary = summary
         draft.updated_at = utcnow()
         await self._emit_event(
             draft_id=draft.id, actor_type=ACTOR_CUSTOMER,
             event_type=EVENT_SUMMARY_GENERATED,
-            new_value={"selected_slot": promised_slot},
-            message=f"Customer chose slot {date_iso} {time_window}",
+            new_value={"selected_slot": promised_slot, "is_emergency": bool(emergency)},
+            message=f"Customer chose {'EMERGENCY ' if emergency else ''}slot {date_iso} {time_window}",
         )
         await self.db.commit()
         await self.db.refresh(draft)
         return {"booking_summary": summary, "draft_status": draft.status}
+
+    async def _emergency_surcharge_for(self, draft) -> "Decimal | None":
+        """The tenant's own configured emergency surcharge for this offering.
+
+        Read from `tenant_services.tenant_emergency_surcharge` -- the field
+        that already existed for exactly this and was never used by anything.
+        Returns None when the tenant has not set one, which means an emergency
+        is simply free for them; it NEVER invents a rate or falls back to a
+        platform default, because charging a customer money nobody configured
+        would be indefensible.
+        """
+        if not (draft.selected_tenant_id and draft.offering_id):
+            return None
+        row = (await self.db.execute(text(
+            "SELECT tenant_emergency_surcharge FROM tenant_services "
+            "WHERE tenant_id=:tid AND master_service_id=:sid "
+            "AND is_active=true AND deleted_at IS NULL"
+        ), {"tid": str(draft.selected_tenant_id), "sid": str(draft.offering_id)})).fetchone()
+        if not row:
+            return None
+        value = row._mapping.get("tenant_emergency_surcharge")
+        if value is None:
+            return None
+        surcharge = Decimal(str(value))
+        return surcharge if surcharge > 0 else None
 
     # ══════════════════════════════════════════════════════════════════════════
     # 12. MARK READY FOR CONFIRMATION
@@ -2124,6 +2162,27 @@ class HomeServiceChatbotBookingService:
             # authority for whether work may start).
             "requires_inspection_estimate": requires_inspection_estimate,
             "customer_message": note if requires_inspection_estimate else None,
+            # PLATFORM guarantee about the visit fee, authored here next to
+            # the rule that actually enforces it
+            # (invoice_payment.direct_payments_service._expected_amount:
+            # approving the post-inspection estimate credits the visit fee
+            # against the work; declining leaves only the visit fee payable).
+            #
+            # Emitted as structured data rather than left to a tenant's
+            # free-text `customer_message`, which is what the app used to
+            # render -- so the promise the customer reads can never drift
+            # from the code that honours it, and is never absent just
+            # because a tenant did not type it.
+            #
+            # `condition` states the real limit: the credit applies when the
+            # work amount EXCEEDS the visit fee (the code guards
+            # `work_amount > visit_fee`, so a bill can never go negative).
+            "visit_fee_policy": {
+                "credited_against_work": True,
+                "credited_when":  "customer_approves_estimate",
+                "condition":      "work_amount_exceeds_visit_fee",
+                "if_declined":    "visit_fee_only",
+            } if requires_inspection_estimate and base else None,
             "base_price":      base,          # service price (provider basis)
             "min_price":       min_price,
             "max_price":       max_price,

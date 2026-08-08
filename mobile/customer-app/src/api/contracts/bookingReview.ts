@@ -21,6 +21,15 @@ export const priceSnapshotDtoSchema = z.object({
   requires_inspection_estimate: z.boolean().optional(),
   visit_fee: z.number().nullable().optional(),
   customer_message: z.string().nullable().optional(),
+  /** Platform guarantee about the visit fee, authored server-side next to the
+   * billing rule that enforces it. Absent (or null) means no such guarantee
+   * applies -- never assumed client-side. */
+  visit_fee_policy: z.object({
+    credited_against_work: z.boolean(),
+    credited_when: z.string(),
+    condition: z.string(),
+    if_declined: z.string(),
+  }).passthrough().nullable().optional(),
   pricing_model: z.string().nullable().optional(),
   bargain_available: z.boolean().optional(),
   standard_price: z.number().nullable().optional(),
@@ -87,6 +96,11 @@ export const bookingSummaryDtoSchema = z.object({
   promised_slot: promisedSlotDtoSchema.nullable().optional(),
   service_sla_minutes: z.number().nullable().optional(),
   service_due_at: z.string().nullable().optional(),
+  /** Set when the customer picked from the emergency (notice-waived) slot
+   * list. The surcharge is the tenant's own configured rate, shown before
+   * confirmation and frozen onto the booking at it. */
+  is_emergency: z.boolean().optional(),
+  emergency_surcharge: z.string().nullable().optional(),
   offering_name: z.string(),
   offering_slug: z.string().optional(),
   issue_summary: z.string().nullable(),
