@@ -369,6 +369,59 @@ export interface ServiceRequirements {
   note: string;
 }
 
+
+// ── Checklist selection (tenant picks >= 5 authored points per service) ────
+// The ADMIN authors the checklist library; this provider chooses which of those
+// points its technicians must complete for each service. The minimum and the
+// list of selectable points are both decided by the backend -- this client
+// never computes either, so the rule cannot drift between UI and server.
+export interface SelectableChecklistItem {
+  id: string;
+  label: string;
+  help_text: string | null;
+  item_type: string;
+  is_required: boolean;
+  evidence_required: boolean;
+  section_title: string | null;
+  template_name: string | null;
+  template_purpose: string | null;
+  phase: string | null;
+  checklist_template_version_id: string;
+}
+
+export interface ChecklistSelectionReadiness {
+  master_service_id: string;
+  minimum_required: number;
+  selected_count: number;
+  selectable_total: number;
+  shortfall: number;
+  satisfied: boolean;
+  /** The ADMIN has published no checklist for this service. Distinct from
+   * "tenant has not chosen yet" -- never ask a provider to pick from nothing. */
+  nothing_authored: boolean;
+  /** Fewer points exist than the minimum requires: also an admin gap. */
+  cannot_satisfy: boolean;
+  selected_item_ids: string[];
+}
+
+export const checklistSelectionApi = {
+  listSelectable: (masterServiceId: string) =>
+    apiFetch<{ items: SelectableChecklistItem[]; readiness: ChecklistSelectionReadiness }>(
+      `/v1/tenant/checklist-selection/services/${masterServiceId}/selectable`),
+
+  getReadiness: (masterServiceId: string) =>
+    apiFetch<ChecklistSelectionReadiness>(
+      `/v1/tenant/checklist-selection/services/${masterServiceId}`),
+
+  /** Replaces the selection. The backend rejects fewer than the minimum with
+   * CHECKLIST_SELECTION_TOO_SMALL and an unauthored id with
+   * CHECKLIST_ITEM_NOT_SELECTABLE -- surfaced to the user, not pre-empted here. */
+  setSelection: (masterServiceId: string, checklistItemIds: string[]) =>
+    apiFetch<ChecklistSelectionReadiness>(
+      `/v1/tenant/checklist-selection/services/${masterServiceId}`,
+      { method: "PUT", body: JSON.stringify({ checklist_item_ids: checklistItemIds }) }),
+};
+
 export const masterCatalogApi = {
   listAvailable: () => {
     const tid = getTenantId();

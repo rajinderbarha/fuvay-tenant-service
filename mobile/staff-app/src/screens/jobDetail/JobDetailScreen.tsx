@@ -17,6 +17,7 @@ import { InlineAlert, OfflineBanner } from "../../design-system/components/feedb
 import { ActionSheet } from "../../design-system/components/overlays/ActionSheet";
 import { PrimaryButton, SecondaryButton } from "../../design-system/components/actions/Buttons";
 import { CustomerContactCard } from "./components/CustomerContactCard";
+import { useMaskedCall } from "./useMaskedCall";
 import { JobDetailsGrid } from "./components/JobDetailsGrid";
 import { RequirementsSection } from "./components/RequirementsSection";
 import { VisitFeeBanner } from "./components/VisitFeeBanner";
@@ -45,6 +46,11 @@ export function JobDetailScreen({ route, navigation }: Props) {
     data, isLoading, isError, error, isRefetching, refetch,
     mutating, mutationError, acceptJob, startTravel, markArrived,
   } = useJobDetail(jobId);
+
+  // Masked calling lives beside job detail rather than inside it: calling
+  // capability is owned by its own engine and changes independently of the
+  // job's execution state (a telephony outage must not invalidate job detail).
+  const maskedCall = useMaskedCall(jobId);
 
   const goBack = useCallback(() => {
     if (navigation.canGoBack()) navigation.goBack();
@@ -165,8 +171,13 @@ export function JobDetailScreen({ route, navigation }: Props) {
         <Section>
           <CustomerContactCard
             customer={data.customer}
-            onCallRelay={() => {}}
+            onCallRelay={() => { void maskedCall.placeCall(); }}
             onMessageRelay={() => {}}
+            callAvailable={maskedCall.contact?.can_call}
+            cannotCallReason={maskedCall.contact?.cannot_call_reason ?? null}
+            calling={maskedCall.calling}
+            connectedBefore={maskedCall.contact?.connected_before}
+            callError={maskedCall.error?.safeMessage ?? null}
           />
         </Section>
 

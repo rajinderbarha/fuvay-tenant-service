@@ -13,6 +13,7 @@ import { Card, Badge, Btn, Modal, Input, Skeleton } from "../../../components/sh
 import { catalogApi, masterCatalogApi } from "../../../lib/api";
 import type { ServiceCatalogItem, AdminMasterServiceRow } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
+import { ChecklistSelectionPanel } from "../../../components/checklist/ChecklistSelectionPanel";
 
 const TYPE_LABEL: Record<string, string>  = { repair:"Repair", service:"Service", consultation:"Consultation" };
 const TYPE_COLOR: Record<string, string>  = { repair:"warning", service:"success", consultation:"info" };
@@ -26,7 +27,7 @@ const BLANK: Partial<ServiceCatalogItem> = {
 };
 
 export default function CatalogPage() {
-  const [pageTab, setPageTab] = useState<"admin" | "custom">("admin");
+  const [pageTab, setPageTab] = useState<"admin" | "custom" | "checklists">("admin");
   return (
     <TenantLayout activeNav="catalog">
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
@@ -40,7 +41,7 @@ export default function CatalogPage() {
         </div>
       </div>
       <div style={{ display:"flex", gap:2, borderBottom:"2px solid var(--border)", marginBottom:20 }}>
-        {([["admin","Admin Catalog"],["custom","Custom Services"]] as const).map(([id,label]) => (
+        {([["admin","Admin Catalog"],["custom","Custom Services"],["checklists","Checklists"]] as const).map(([id,label]) => (
           <button key={id} onClick={() => setPageTab(id)}
             style={{ padding:"10px 16px", border:"none", background:"none", cursor:"pointer",
               fontSize:13, fontWeight:pageTab===id?700:500,
@@ -51,7 +52,9 @@ export default function CatalogPage() {
           </button>
         ))}
       </div>
-      {pageTab === "admin" ? <AdminCatalogSection/> : <CustomCatalogSection/>}
+      {pageTab === "admin" ? <AdminCatalogSection/>
+        : pageTab === "custom" ? <CustomCatalogSection/>
+        : <ChecklistsSection/>}
     </TenantLayout>
   );
 }
@@ -350,6 +353,71 @@ function CustomCatalogSection() {
           </div>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+/**
+ * Checklist selection, per enabled service.
+ *
+ * Scoped to ENABLED services only: a provider choosing checklist points for a
+ * service they do not offer would be configuring nothing, and the backend's
+ * selectable list is driven by that service's job types either way.
+ */
+function ChecklistsSection() {
+  const enabled = useApi(useCallback(() => masterCatalogApi.listEnabled(), []));
+  const [openServiceId, setOpenServiceId] = useState<string | null>(null);
+
+  if (enabled.loading) return <Card><Skeleton/><Skeleton/></Card>;
+  if (enabled.error) {
+    return (
+      <Card>
+        <p style={{ fontSize:13, color:"var(--danger)", margin:0 }}>{enabled.error}</p>
+        <div style={{ marginTop:12 }}><Btn variant="secondary" onClick={enabled.refetch}>Try again</Btn></div>
+      </Card>
+    );
+  }
+
+  const services = (enabled.data?.services ?? []).filter(s => s.is_enabled);
+  if (services.length === 0) {
+    return (
+      <Card>
+        <p style={{ fontSize:13, color:"var(--text-secondary)", margin:0 }}>
+          Enable a service from the Admin Catalog first, then choose its checklist points here.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      {services.map(s => {
+        const isOpen = openServiceId === s.master_service_id;
+        const name = s.tenant_display_name || "Service";
+        return (
+          <div key={s.tenant_service_id} style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            <Card>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)" }}>{name}</div>
+                  <div style={{ fontSize:12, color:"var(--text-secondary)", marginTop:2 }}>
+                    Choose the points your technicians must complete on every job.
+                  </div>
+                </div>
+                <Btn
+                  variant={isOpen ? "secondary" : "primary"}
+                  onClick={() => setOpenServiceId(isOpen ? null : s.master_service_id)}
+                >
+                  {isOpen ? "Close" : "Set up checklist"}
+                </Btn>
+              </div>
+            </Card>
+            {isOpen ? (
+              <ChecklistSelectionPanel masterServiceId={s.master_service_id} serviceName={name}/>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
