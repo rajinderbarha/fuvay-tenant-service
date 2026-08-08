@@ -16,6 +16,10 @@ export interface BookingConfirmFlowProps {
   feeCreditedAgainstWork: boolean;
   onTrackBooking: () => void;
   onDone: () => void;
+  /** Starts a brand-new request. Without this, the success screen was a dead end
+   * -- the only exits led away from the tab, and coming back showed the same
+   * stale "You're booked" because the confirmed booking is terminal. */
+  onBookAnother?: () => void;
 }
 
 const CONFETTI_COUNT = 44;
@@ -49,7 +53,7 @@ const STEP_MS = 900;
  */
 export function BookingConfirmFlow({
   phase, bookingNumber, providerName, slotLabel, amountLabel,
-  feeCreditedAgainstWork, onTrackBooking, onDone,
+  feeCreditedAgainstWork, onTrackBooking, onDone, onBookAnother,
 }: BookingConfirmFlowProps) {
   const BOT = useBotColors();
   const reduced = useReducedMotion();
@@ -208,6 +212,23 @@ export function BookingConfirmFlow({
                   Track my booking
                 </Text>
               </Pressable>
+
+              {onBookAnother ? (
+                <Pressable
+                  onPress={onBookAnother}
+                  accessibilityRole="button"
+                  accessibilityLabel="Book another service"
+                  style={{
+                    width: "100%", height: 48, borderRadius: 18, marginTop: 10,
+                    alignItems: "center", justifyContent: "center",
+                    backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: BOT.textPrimary }}>
+                    Book another service
+                  </Text>
+                </Pressable>
+              ) : null}
 
               <Pressable
                 onPress={onDone}

@@ -67,6 +67,23 @@ describe("BookingConfirmFlow", () => {
     expect(screen.getByText(/notify you as soon as a professional is assigned/)).toBeTruthy();
   });
 
+  it("offers a way to start a new request, so success is not a dead end", () => {
+    // A confirmed booking is terminal -- its draft cannot be continued. Without
+    // this the only exits led away from the tab, and returning showed the same
+    // stale "You're booked".
+    const onBookAnother = jest.fn();
+    renderWithProviders(
+      <BookingConfirmFlow {...base} phase="confirmed" onBookAnother={onBookAnother} />,
+    );
+    fireEvent.press(screen.getByLabelText("Book another service"));
+    expect(onBookAnother).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides that option when the screen has nowhere to restart to", () => {
+    renderWithProviders(<BookingConfirmFlow {...base} phase="confirmed" />);
+    expect(screen.queryByLabelText("Book another service")).toBeNull();
+  });
+
   it("lets the customer act on the booking straight away", () => {
     const onTrackBooking = jest.fn();
     renderWithProviders(

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { CustomerTabsParamList } from "../../navigation/routeTypes";
 import { useCustomerProfileQuery } from "../../api/customer/useCustomerProfileQuery";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
@@ -128,6 +128,41 @@ function BookingChatConversation({
     setConfirmPhase(state);
   }, []);
 
+  /**
+   * Begins a brand-new request.
+   *
+   * `c.restart()` resets the controller (session, draft, envelope, messages) but
+   * knows nothing about this screen's own state, so the local turn/trace state
+   * has to be cleared alongside it -- otherwise the fresh conversation inherits
+   * the previous booking's confirmed overlay and answered-question traces.
+   */
+  const startNewBooking = useCallback(() => {
+    setConfirmPhase(null);
+    setBooked(false);
+    setSelectedIssueLabel(null);
+    setAnswerDraft("");
+    setLiveTraceQuestionId(null);
+    setTracesByQuestion({});
+    c.restart();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * A confirmed booking is TERMINAL: its draft cannot be continued or re-booked.
+   * So when this tab regains focus after one, the only sensible state is a fresh
+   * conversation -- previously the screen kept the old success overlay, which
+   * looked like "you are booked" every time the customer came back and gave them
+   * no way to start another request.
+   *
+   * Guarded on `booked` so an in-progress conversation is never wiped by simply
+   * switching tabs and back.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      if (booked) startNewBooking();
+    }, [booked, startNewBooking]),
+  );
+
   // The full running task list for the current operation. The controller
   // records every stage it genuinely passed through (activityTrace), so
   // steps that resolve in the same React batch are still shown instead of
@@ -175,7 +210,7 @@ function BookingChatConversation({
       "This clears your answers and begins a new request. Your current draft will not be booked.",
       [
         { text: "Keep going", style: "cancel" },
-        { text: "Start over", style: "destructive", onPress: () => c.restart() },
+        { text: "Start over", style: "destructive", onPress: startNewBooking },
       ],
     );
   }
@@ -413,6 +448,7 @@ function BookingChatConversation({
               }
             }}
             onDone={onClose}
+            onBookAnother={startNewBooking}
           />
         </View>
       ) : null}
