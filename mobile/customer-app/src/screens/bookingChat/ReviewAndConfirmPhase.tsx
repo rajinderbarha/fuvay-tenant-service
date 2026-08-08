@@ -6,6 +6,8 @@ import { SlotPickerCard } from "../../components/bookingChat/SlotPickerCard";
 import { PhotosNotesTurn } from "../../components/bookingChat/PhotosNotesTurn";
 import { PriceProviderCard } from "../../components/bookingChat/PriceProviderCard";
 import { FeeAssuranceCard } from "../../components/bookingChat/FeeAssuranceCard";
+import { ServiceChecklistCard } from "../../components/bookingChat/ServiceChecklistCard";
+import { useServiceChecklist } from "./useServiceChecklist";
 import { ConfirmCard } from "../../components/bookingChat/ConfirmCard";
 import { formatMoney } from "../../domain/money";
 import { resolveServicePriceDisplay } from "../../domain/servicePricing";
@@ -47,7 +49,12 @@ function priceLabelFor(summary: BookingReviewSummary): string | null {
 export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: ReviewAndConfirmPhaseProps) {
   const c = useBookingReviewController(draftId);
   const [slotDone, setSlotDone] = useState(false);
+  const [checklistDone, setChecklistDone] = useState(false);
   const [photosDone, setPhotosDone] = useState(false);
+
+  // What the technician will actually do. Loaded alongside the review rather
+  // than blocking it: a service with nothing authored simply skips this turn.
+  const checklist = useServiceChecklist(draftId);
 
   const confirmed = c.uiState === "confirmed" && !!c.confirmation;
   useEffect(() => {
@@ -99,6 +106,11 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: 
           onLoadSlots={emergency => c.loadAvailableSlots(emergency)}
           onSelectSlot={(dateIso, timeWindow, emergency) => c.selectSlot(dateIso, timeWindow, emergency)}
           onContinue={() => setSlotDone(true)}
+        />
+      ) : !checklistDone && checklist.checklist && checklist.checklist.totalPoints > 0 ? (
+        <ServiceChecklistCard
+          checklist={checklist.checklist}
+          onContinue={() => setChecklistDone(true)}
         />
       ) : !photosDone ? (
         <PhotosNotesTurn

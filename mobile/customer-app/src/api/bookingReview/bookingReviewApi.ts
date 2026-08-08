@@ -6,6 +6,7 @@ import {
   availableSlotsResponseSchema, selectSlotResponseSchema,
 } from "../contracts/bookingReview";
 import { bookingDraftResponseSchema } from "../contracts/bookingDraft";
+import { serviceChecklistResponseSchema } from "../contracts/serviceChecklist";
 
 const base = (draftId: string) => `/v1/customer/home-services/booking-drafts/${draftId}`;
 
@@ -100,4 +101,18 @@ export async function selectSlot(draftId: string, dateIso: string, timeWindow: s
     method: "POST", path: `${base(draftId)}/select-slot`, body: { date: dateIso, time_window: timeWindow, emergency },
   });
   return parseApiSuccess(res.json, selectSlotResponseSchema);
+}
+
+/**
+ * The real checklist points this booking's technician must complete.
+ *
+ * Shown before confirmation so the customer knows exactly what they are buying.
+ * Every point is authored catalog content the technician is held to -- the app
+ * never adds to it, and renders nothing when the list is empty.
+ */
+export async function getServiceChecklist(draftId: string) {
+  const res = await authenticatedRequest({
+    method: "GET", path: `${base(draftId)}/service-checklist`,
+  });
+  return parseApiSuccess(res.json, serviceChecklistResponseSchema);
 }

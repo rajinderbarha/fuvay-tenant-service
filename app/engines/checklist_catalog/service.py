@@ -710,3 +710,55 @@ async def tenant_selection_readiness(
         "cannot_satisfy": 0 < selectable_total < minimum,
         "selected_item_ids": [str(r.checklist_item_id) for r in selected],
     }
+
+async def customer_checklist_preview(
+    db: AsyncSession, tenant_id: uuid.UUID | None, master_service_id: uuid.UUID,
+) -> dict:
+    """What the customer is told their technician will actually do, BEFORE they
+    confirm the booking.
+
+    This is the same authored content the technician will be held to -- narrowed
+    to the points the assigned provider selected, and filtered to
+    `customer_visible` so an internal-only step is never shown as a promise.
+
+    Deliberately NOT a marketing list: every line here is a real checklist point
+    that exists on the job the technician receives. If nothing is authored, it
+    returns an empty list and the caller shows nothing, rather than inventing
+    reassuring copy the provider is not actually committed to.
+    """
+    authored = await selectable_items_for_service(db, master_service_id)
+
+    selected_ids: set[uuid.UUID] = set()
+    if tenant_id is not None:
+        selected_ids = {
+            row.checklist_item_id
+            for row in await get_tenant_selection(db, tenant_id, master_service_id)
+        }
+
+    # Mirrors _instance_items' fallback: with no selection yet, the technician
+    # gets the full authored list, so that is what the customer is promised.
+    items = [i for i in authored if uuid.UUID(i["id"]) in selected_ids] if selected_ids else authored
+    visible = [i for i in items if i.get("customer_visible")]
+
+    sections: list[dict] = []
+    for item in visible:
+        title = item.get("section_title") or "Service checks"
+        if not sections or sections[-1]["title"] != title:
+            sections.append({"title": title, "points": []})
+        sections[-1]["points"].append({
+            "id": item["id"],
+            "label": item["label"],
+            "help_text": item.get("help_text"),
+            "requires_photo": bool(item.get("evidence_required")),
+        })
+
+    return {
+        "master_service_id": str(master_service_id),
+        "total_points": len(visible),
+        "photo_points": sum(1 for i in visible if i.get("evidence_required")),
+        "sections": sections,
+        # True when these are the provider's own chosen points rather than the
+        # full authored list -- lets the UI word it accurately either way.
+        "provider_selected": bool(selected_ids),
+    }
+

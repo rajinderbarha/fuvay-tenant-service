@@ -394,6 +394,40 @@ async def build_booking_summary(
     return ok(result, _rid(r), "home_service_booking")
 
 
+# ── GET /{draft_id}/service-checklist ─────────────────────────────────────────
+@router.get(
+    "/{draft_id}/service-checklist",
+    response_model=ApiResponse[dict],
+    summary="What the technician will actually do on this visit",
+    description=(
+        "The real, authored checklist points the assigned provider's technician must "
+        "complete for this service -- narrowed to the points that provider selected, "
+        "and only those marked customer_visible. Shown BEFORE confirmation so the "
+        "customer knows exactly what they are buying. Returns an empty list when "
+        "nothing is authored; the app then shows nothing rather than inventing "
+        "reassurance the provider is not committed to."
+    ),
+)
+async def get_service_checklist(
+    draft_id: uuid.UUID,
+    r: Request,
+    svc: HomeServiceChatbotBookingService = Depends(_svc),
+    user: UserContext = Depends(get_current_user),
+):
+    from app.engines.checklist_catalog import service as checklist_svc
+
+    customer_id = uuid.UUID(user.user_id)
+    draft = await svc._require_draft(draft_id, customer_id)
+    if not draft.offering_id:
+        return ok({"master_service_id": None, "total_points": 0, "photo_points": 0,
+                   "sections": [], "provider_selected": False},
+                  _rid(r), "home_service_booking")
+    result = await checklist_svc.customer_checklist_preview(
+        svc.db, draft.selected_tenant_id, draft.offering_id,
+    )
+    return ok(result, _rid(r), "home_service_booking")
+
+
 # ── GET /{draft_id}/available-slots ───────────────────────────────────────────
 @router.get(
     "/{draft_id}/available-slots",
