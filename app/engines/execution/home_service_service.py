@@ -503,18 +503,48 @@ class HomeServiceJobExecutionService:
         Fails closed ONLY when a workflow genuinely resolves AND explicitly
         requires a checklist. A legacy job with no resolvable workflow is
         unaffected, so this can never strand existing in-flight jobs.
+
+        Satisfied by EITHER checklist generation:
+
+        * a canonical `job_checklist_instances` row (checklist_catalog) that is
+          COMPLETED or WAIVED -- what the technician app actually fills in, and
+        * a legacy `quote_checklist.ServiceJobChecklist` row, for jobs from
+          before the canonical engine existed.
+
+        Accepting only the legacy row was a real dead end: the technician's own
+        checklist surface writes canonical instances, so on a job type with
+        checklist_required=True they could complete every point of the real
+        checklist and start-service still answered 409 -- with nothing in any UI
+        able to satisfy it. The gate blocked the work it was meant to certify.
         """
         workflow = await self._resolve_job_type_workflow(db, job)
         if workflow is None or not workflow.checklist_required:
             return
+
+        from app.engines.checklist_catalog import constants as cc
+        from app.engines.checklist_catalog.models import JobChecklistInstance
+        canonical = (await db.execute(
+            select(JobChecklistInstance.state).where(JobChecklistInstance.job_id == job.id)
+        )).scalars().all()
+        if any(state in (cc.INSTANCE_COMPLETED, cc.INSTANCE_WAIVED) for state in canonical):
+            return
+
         from app.engines.quote_checklist.models import ServiceJobChecklist
         exists = (await db.execute(
             select(ServiceJobChecklist.id).where(ServiceJobChecklist.job_id == job.id).limit(1)
         )).scalars().first()
         if not exists:
+            # Distinguish "no checklist has been authored/attached at all" from
+            # "the one on this job is still open", so the technician is told
+            # which of the two it is instead of a dead-end message.
+            detail = (
+                "The checklist on this job must be completed before work can start."
+                if canonical else
+                "A pre-work checklist is required for this job type before work can start."
+            )
             raise ServiceOSException(
                 "CHECKLIST_REQUIRED_BEFORE_WORK_START",
-                "A pre-work checklist is required for this job type before work can start.",
+                detail,
                 status_code=409,
             )
 

@@ -77,6 +77,22 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _policy_source(deduction_source: str | None) -> str:
+    """What actually decided this charge.
+
+    `deduct_for_completed_job` writes one of three shapes:
+    a bare pricing-rule uuid (the legacy flat-credit table),
+    "category_commission:<uuid>", or "monetization_policy:<uuid>". Reporting
+    every non-null value as "platform_pricing_rule" mislabelled the two
+    commission shapes as something they are not -- and the id shown alongside
+    it is not a pricing-rule id at all.
+    """
+    if not deduction_source:
+        return "unresolved_zero_charge"
+    prefix, _, rest = deduction_source.partition(":")
+    return prefix if rest else "platform_pricing_rule"
+
+
 class HomeServicesFinanceService:
     def __init__(self, db: AsyncSession, request_id: str = "—",
                  actor_id: uuid.UUID | None = None, actor_role: str | None = None):
@@ -217,7 +233,7 @@ class HomeServicesFinanceService:
                 "balance_before": str(ledger.balance_before),
                 "balance_after": str(ledger.balance_after),
                 "status": "posted",  # every persisted row is, by construction, a successfully posted charge
-                "policy_source": "platform_pricing_rule" if ledger.deduction_source else "unresolved_zero_charge",
+                "policy_source": _policy_source(ledger.deduction_source),
                 "policy_id": ledger.deduction_source,
                 "idempotency_key": ledger.idempotency_key,
                 "completed_at": job.updated_at.isoformat() if job and job.updated_at else None,
@@ -253,7 +269,7 @@ class HomeServicesFinanceService:
             "balance_before": str(ledger.balance_before),
             "balance_after": str(ledger.balance_after),
             "idempotency_key": ledger.idempotency_key,
-            "policy_source": "platform_pricing_rule" if ledger.deduction_source else "unresolved_zero_charge",
+            "policy_source": _policy_source(ledger.deduction_source),
             "policy_id": ledger.deduction_source,
             "policy_active": rule.is_active if rule else None,
             "request_id": ledger.request_id,

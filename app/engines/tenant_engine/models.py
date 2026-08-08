@@ -182,7 +182,10 @@ class UsageCreditLedger(ServiceOSBase):
     credit_delta:        Mapped[float]            = mapped_column(Numeric(12, 2), nullable=False)
     balance_before:      Mapped[float]            = mapped_column(Numeric(12, 2), nullable=False)
     balance_after:       Mapped[float]            = mapped_column(Numeric(12, 2), nullable=False)
-    deduction_source:    Mapped[str | None]       = mapped_column(String(50), nullable=True)
+    # 100, not 50 (migration 235): the commission path writes a prefixed label
+    # such as "category_commission:<uuid>" (56 chars), which truncated and made
+    # every percentage-commission job completion fail with a 500.
+    deduction_source:    Mapped[str | None]       = mapped_column(String(100), nullable=True)
     service_id:          Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     service_type_id:     Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     brand_id:            Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

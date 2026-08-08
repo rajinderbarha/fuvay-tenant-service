@@ -134,6 +134,13 @@ function BookingChatConversation({
   const [reviewReady, setReviewReady] = useState<ReviewReadyState | null>(null);
   const onReviewReady = useCallback((state: ReviewReadyState | null) => {
     setReviewReady(state);
+    // Leaving the review reopens an earlier turn, which clears the ready state.
+    // Clearing the dismissal here is what lets the sheet come BACK once that
+    // turn is finished again -- while the flag was sticky, finishing the slot
+    // turn a second time rendered nothing at all: the transcript shows no card
+    // (every turn is done) and the sheet was still suppressed, leaving the
+    // customer on an empty chat with no way forward.
+    if (!state) setReviewDismissed(false);
   }, []);
   // Lets the customer step back into the conversation without booking. Reopening
   // the slot turn is the honest "back": there is no earlier state to restore to

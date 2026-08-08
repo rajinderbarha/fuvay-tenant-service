@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react-native";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react-native";
 import { AppProviders } from "../../../providers/AppProviders";
 import { ReviewAndConfirmPhase } from "../ReviewAndConfirmPhase";
 import * as controllerModule from "../../booking-review/useBookingReviewController";
@@ -134,6 +134,42 @@ describe("ReviewAndConfirmPhase — hook order", () => {
         expect.objectContaining({ phase: "confirmed", bookingNumber: "BK-1" }),
       ),
     );
+  });
+
+  it("reopens the slot turn and withdraws the ready state when the customer goes back", async () => {
+    (controllerModule.useBookingReviewController as jest.Mock).mockReturnValue(
+      controllerState({
+        uiState: "ready", loadStage: null,
+        // A slot already chosen, so the turn offers Continue.
+        summary: {
+          ...READY_SUMMARY,
+          promisedSlot: { date: "2026-08-09", daysAhead: 1, timeWindow: "14:00-15:00" },
+        },
+      }),
+    );
+    const onReviewReady = jest.fn();
+    renderPhase({ draftId: "d1", onTrackBooking: jest.fn(), onReviewReady });
+
+    // Walk the turns the way the customer does, so the sheet becomes ready.
+    fireEvent.press(screen.getByLabelText("Continue"));
+    await waitFor(() => expect(screen.getByText("Add a photo? (optional)")).toBeTruthy());
+    fireEvent.press(screen.getByLabelText("Continue"));
+
+    const ready = await waitFor(() => {
+      const state = onReviewReady.mock.calls.map(([s]) => s).filter(Boolean).pop();
+      expect(state).toBeTruthy();
+      return state;
+    });
+
+    onReviewReady.mockClear();
+    // Leaving the review must withdraw the ready state -- the screen clears its
+    // dismissal on that null, which is the only thing that lets the sheet come
+    // back after the turn is finished a second time. Without it the customer was
+    // left on an empty transcript: no card (all turns done) and no sheet.
+    act(() => ready.onEditSlot());
+
+    await waitFor(() => expect(onReviewReady).toHaveBeenCalledWith(null));
+    expect(screen.getByText("When should the technician come?")).toBeTruthy();
   });
 
   it("reports the phase back to null once no longer confirming", async () => {
