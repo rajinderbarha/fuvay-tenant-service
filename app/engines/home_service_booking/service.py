@@ -1429,12 +1429,12 @@ class HomeServiceChatbotBookingService:
         draft = await self._require_draft(draft_id, customer_id)
         if not draft.selected_tenant_id:
             return {"slots": []}
-        from app.engines.home_service_booking.provider_slot_service import (
-            list_available_slots, DEFAULT_MIN_LEAD_HOURS, EMERGENCY_MIN_LEAD_HOURS,
-        )
+        from app.engines.home_service_booking.provider_slot_service import list_available_slots
+        # The notice period, same-day rule, horizon and whether emergency is
+        # permitted at all come from the provider's own booking-window
+        # settings -- see provider_slot_service.booking_window_settings.
         slots = await list_available_slots(
-            self.db, tenant_id=draft.selected_tenant_id,
-            min_lead_hours=EMERGENCY_MIN_LEAD_HOURS if emergency else DEFAULT_MIN_LEAD_HOURS,
+            self.db, tenant_id=draft.selected_tenant_id, emergency=emergency,
         )
         return {"slots": slots}
 
@@ -1456,7 +1456,7 @@ class HomeServiceChatbotBookingService:
         """
         import datetime as _dt
         from app.engines.home_service_booking.provider_slot_service import (
-            slot_has_capacity, list_available_slots, DEFAULT_MIN_LEAD_HOURS, EMERGENCY_MIN_LEAD_HOURS,
+            slot_has_capacity, list_available_slots, booking_window_settings, _tenant_now,
         )
 
         draft = await self._require_draft(draft_id, customer_id)
@@ -1473,11 +1473,12 @@ class HomeServiceChatbotBookingService:
         # partial shape here by hand -- guarantees this always matches the
         # exact contract `promised_slot` carries everywhere else, and the
         # capacity check just above means it genuinely must be in this list.
-        now = _dt.datetime.now()
-        # Real `now`, not day-midnight, so a same-day window that has
-        # already started, OR falls inside the minimum lead time, is still
-        # correctly excluded by the walk's own rule -- `slot_has_capacity`
-        # above checks capacity only, never timing.
+        # Real `now` on the TENANT's clock (not the server's, and not
+        # day-midnight), so a same-day window that has already started, OR
+        # falls inside the provider's notice period, is still correctly
+        # excluded by the walk's own rule -- `slot_has_capacity` above checks
+        # capacity only, never timing.
+        now = _tenant_now(await booking_window_settings(self.db, draft.selected_tenant_id))
         days_needed = (day - now.date()).days + 1
         if days_needed < 1:
             raise ValueError("SLOT_NO_LONGER_AVAILABLE")  # a past date was requested
@@ -1488,7 +1489,7 @@ class HomeServiceChatbotBookingService:
         candidates = await list_available_slots(
             self.db, tenant_id=draft.selected_tenant_id,
             from_datetime=now, search_days=days_needed, max_days=days_needed,
-            min_lead_hours=EMERGENCY_MIN_LEAD_HOURS if emergency else DEFAULT_MIN_LEAD_HOURS,
+            emergency=emergency,
         )
         promised_slot = next(
             (s for s in candidates if s["date"] == day.isoformat() and s["time_window"] == time_window),

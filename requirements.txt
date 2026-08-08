@@ -54,3 +54,11 @@ pytest-asyncio==0.26.0
 # ── Observability ─────────────────────────────────────────────────
 prometheus-fastapi-instrumentator==8.0.0
 sentry-sdk[fastapi]==2.26.0
+
+# ── Timezones ─────────────────────────────────────────────────────
+# `zoneinfo` reads the OS tz database, which Windows does not ship. Slot
+# resolution resolves "now" on the tenant's own timezone
+# (tenant_booking_window_settings.timezone), so without this the walk
+# silently degrades to server-local time -- a 5h30m error for an
+# Asia/Kolkata tenant on a UTC server.
+tzdata==2025.2

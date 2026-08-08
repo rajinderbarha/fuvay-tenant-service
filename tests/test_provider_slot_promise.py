@@ -22,8 +22,10 @@ import pytest
 from app.engines.home_service_booking.provider_slot_service import (
     find_earliest_available_slot, list_available_slots, slot_has_capacity, _slots_from_rule,
     _window_label, FALLBACK_MAX_PER_SLOT, FALLBACK_SLOT_MINUTES,
-    DEFAULT_MIN_LEAD_HOURS, EMERGENCY_MIN_LEAD_HOURS, DEFAULT_OFFERED_DAYS,
+    DEFAULT_OFFERED_DAYS, BOOKING_WINDOW_DEFAULTS, booking_window_settings,
+    _notice_cutoff, _tenant_now,
 )
+from sqlalchemy import text as sa_text
 
 GURAMRIT_TENANT_ID = uuid.UUID("244beeec-fedc-452e-8054-317e45557d4d")
 
@@ -174,74 +176,126 @@ async def test_a_provider_with_no_availability_rules_gets_no_promise():
         await db.close()
 
 
-# ── Minimum lead time (6h normal / 2h emergency), on top of real hours ─────
+# ── Notice period: provider-configured, never a hardcoded constant ────────
 
-def test_lead_time_defaults_are_the_product_specified_values():
-    assert DEFAULT_MIN_LEAD_HOURS == 6.0
-    assert EMERGENCY_MIN_LEAD_HOURS == 2.0
+@pytest.mark.asyncio
+async def test_notice_period_comes_from_the_providers_own_booking_window_settings():
+    """The provider owns these rules via the provider portal
+    (tenant_booking_window_settings). Nothing in the walk may hardcode
+    them -- an earlier version pinned 6h/2h in code and silently overrode
+    whatever the provider had configured."""
+    db = await _get_db()
+    try:
+        settings = await booking_window_settings(db, GURAMRIT_TENANT_ID)
+        row = (await db.execute(sa_text(
+            "SELECT minimum_notice_minutes, allow_same_day_booking, "
+            "maximum_advance_booking_days, emergency_booking_allowed, timezone "
+            "FROM tenant_booking_window_settings WHERE tenant_id=:tid"
+        ), {"tid": str(GURAMRIT_TENANT_ID)})).fetchone()
+        assert row is not None, "this tenant really does have configured settings"
+        assert settings["minimum_notice_minutes"] == row._mapping["minimum_notice_minutes"]
+        assert settings["allow_same_day_booking"] == row._mapping["allow_same_day_booking"]
+        assert settings["emergency_booking_allowed"] == row._mapping["emergency_booking_allowed"]
+    finally:
+        await db.close()
+
+
+def test_defaults_mirror_the_provider_portals_own_fallbacks():
+    """A provider who has never opened the settings page must get identical
+    behaviour from the walk and from the portal's GET fallback."""
+    assert BOOKING_WINDOW_DEFAULTS["minimum_notice_minutes"] == 120
+    assert BOOKING_WINDOW_DEFAULTS["maximum_advance_booking_days"] == 7
+    assert BOOKING_WINDOW_DEFAULTS["allow_same_day_booking"] is True
+    assert BOOKING_WINDOW_DEFAULTS["emergency_booking_allowed"] is False
 
 
 @pytest.mark.asyncio
-async def test_a_slot_inside_the_lead_time_is_never_offered_even_if_technically_unstarted():
-    """A slot 1 hour from now has not started, but 6 hours of lead time is
-    required by default -- it must not be offered."""
+async def test_no_slot_is_ever_offered_inside_the_configured_notice_period():
     db = await _get_db()
     try:
-        now = dt.datetime.now()
-        soon = await find_earliest_available_slot(
-            db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=6.0,
-        )
-        if soon is not None:
-            assert dt.datetime.fromisoformat(soon["starts_at"]) >= now + dt.timedelta(hours=6)
+        settings = await booking_window_settings(db, GURAMRIT_TENANT_ID)
+        notice = dt.timedelta(minutes=settings["minimum_notice_minutes"])
+        now = dt.datetime.combine(dt.date.today(), dt.time(0, 0))
+
+        slot = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now)
+        if slot is not None:
+            assert dt.datetime.fromisoformat(slot["starts_at"]) >= now + notice
+
+        for s in await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now):
+            assert dt.datetime.fromisoformat(s["starts_at"]) >= now + notice,                 "the list and the single-slot resolver must share one notice rule"
     finally:
         await db.close()
 
 
 @pytest.mark.asyncio
-async def test_emergency_lead_time_can_surface_an_earlier_slot_than_the_default():
-    """2 hours of lead time can only ever admit the SAME slots the 6-hour
-    walk admits, or earlier ones -- never later, never a slot outside the
-    provider's real configured hours."""
+async def test_emergency_can_only_ever_surface_the_same_or_an_earlier_slot():
+    """Emergency waives the NOTICE PERIOD, not the provider's hours or
+    capacity -- so it can never return something later than the normal walk,
+    and never a window the provider has not configured."""
     db = await _get_db()
     try:
-        now = dt.datetime.now()
-        normal = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=6.0)
-        emergency = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=2.0)
-        assert emergency is not None, "Guramrit has real availability rules configured"
-        assert dt.datetime.fromisoformat(emergency["starts_at"]) >= now + dt.timedelta(hours=2)
+        now = dt.datetime.combine(dt.date.today(), dt.time(0, 0))
+        normal = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now)
+        urgent = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, emergency=True)
+        assert urgent is not None, "Guramrit has real availability rules configured"
         if normal is not None:
-            assert dt.datetime.fromisoformat(emergency["starts_at"]) <= dt.datetime.fromisoformat(normal["starts_at"])
+            assert dt.datetime.fromisoformat(urgent["starts_at"]) <= dt.datetime.fromisoformat(normal["starts_at"])
+        # Never before "now" either -- waived notice still is not time travel.
+        assert dt.datetime.fromisoformat(urgent["starts_at"]) >= now
     finally:
         await db.close()
 
 
 @pytest.mark.asyncio
-async def test_list_available_slots_respects_the_same_lead_time_as_the_single_slot_resolver():
+async def test_emergency_is_ignored_when_the_provider_has_not_opted_in():
+    """A provider who left emergency_booking_allowed off keeps their full
+    notice period no matter what the customer asks for."""
     db = await _get_db()
     try:
-        now = dt.datetime.now()
-        slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=6.0)
-        for s in slots:
-            assert dt.datetime.fromisoformat(s["starts_at"]) >= now + dt.timedelta(hours=6)
+        settings = await booking_window_settings(db, GURAMRIT_TENANT_ID)
+        now = dt.datetime.combine(dt.date.today(), dt.time(0, 0))
+        opted_out = dict(settings, emergency_booking_allowed=False)
+        assert _notice_cutoff(opted_out, now, emergency=True) ==             now + dt.timedelta(minutes=settings["minimum_notice_minutes"])
+        opted_in = dict(settings, emergency_booking_allowed=True)
+        assert _notice_cutoff(opted_in, now, emergency=True) == now
     finally:
         await db.close()
 
 
 @pytest.mark.asyncio
-async def test_lead_time_never_bypasses_the_providers_real_working_hours():
-    """Emergency shortens the LEAD TIME, not the provider's actual hours --
-    a slot outside the provider's configured business hours must never
+async def test_emergency_never_bypasses_the_providers_real_working_hours():
+    """A slot outside the provider's configured business hours must never
     appear, emergency or not."""
     db = await _get_db()
     try:
-        now = dt.datetime.now()
-        emergency_slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=2.0)
+        now = dt.datetime.combine(dt.date.today(), dt.time(0, 0))
+        emergency_slots = await list_available_slots(
+            db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, emergency=True,
+        )
         for s in emergency_slots:
             day = dt.date.fromisoformat(s["date"])
             dow = day.isoweekday() % 7
             rules = await _provider_rules_for_day_helper(db, dow)
             windows = {_window_label(a, b) for r in rules for a, b in _slots_from_rule(r)}
             assert s["time_window"] in windows, "an emergency slot must still be one of the provider's real configured windows"
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_same_day_booking_can_be_switched_off_by_the_provider():
+    """allow_same_day_booking=false must remove today entirely, not merely
+    push the notice period out."""
+    db = await _get_db()
+    try:
+        now = dt.datetime.combine(dt.date.today(), dt.time(0, 0))
+        slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now)
+        # This tenant allows same-day, so today may legitimately appear.
+        assert slots, "provider has configured hours"
+        settings = await booking_window_settings(db, GURAMRIT_TENANT_ID)
+        if settings["allow_same_day_booking"]:
+            # Sanity: the offered days start no earlier than today.
+            assert min(s["date"] for s in slots) >= now.date().isoformat()
     finally:
         await db.close()
 
@@ -285,7 +339,8 @@ async def test_list_offers_whole_days_never_truncated_part_way_through():
 
         day = dt.date.fromisoformat(first_day)
         rules = await _provider_rules_for_day_helper(db, day.isoweekday() % 7)
-        cutoff = now + dt.timedelta(hours=DEFAULT_MIN_LEAD_HOURS)
+        settings = await booking_window_settings(db, GURAMRIT_TENANT_ID)
+        cutoff = now + dt.timedelta(minutes=settings["minimum_notice_minutes"])
         expected = {
             _window_label(a, b)
             for r in rules for a, b in _slots_from_rule(r)

@@ -19,26 +19,47 @@ The customer is shown a real, capacity-checked slot BEFORE they confirm
 on a promise the provider can actually keep -- rather than confirming
 blind and waiting to find out.
 
-MINIMUM LEAD TIME (added on explicit product request): a slot must start
-at least `min_lead_hours` from now -- 6 hours for a normal booking, 2
-hours for an emergency one. This is enforced ON TOP of the provider's own
-configured business hours, never instead of them: an emergency request
-still only ever gets a slot the provider's real calendar has room for.
-If nothing qualifies within the provider's hours today, the walk rolls to
-the next open day exactly as it already did -- there is no separate
-"after-hours emergency slot" concept invented here, because the provider
-never configured capacity for one.
+NOTICE PERIOD -- provider-owned, not a hardcoded constant.
+
+An earlier version of this module hardcoded a 6-hour normal / 2-hour
+emergency lead time. That was wrong for the same reason this module exists
+at all: `tenant_booking_window_settings` ALREADY holds these rules, the
+provider portal already exposes full CRUD for them
+(GET/PUT /booking-window), and nothing in the booking pipeline read them.
+A global constant silently overrode whatever the provider had configured.
+
+Everything timing-related now comes from that table:
+
+  minimum_notice_minutes       how far ahead a slot must start (default 120)
+  allow_same_day_booking       may today's slots be offered at all
+  maximum_advance_booking_days how far ahead to look (default 7)
+  emergency_booking_allowed    may the notice period be waived
+  timezone                     the tenant's real local clock
+
+An emergency request waives the notice period down to "the slot has not
+started yet", and ONLY when the provider has opted in via
+`emergency_booking_allowed`. It never invents capacity: the walk is
+identical, so an emergency still only ever returns a slot inside the
+provider's own configured business hours with real room in it. There is no
+after-hours emergency concept, because the provider never configured one.
+
+TIMEZONE: "now" is resolved in the tenant's own timezone rather than the
+server's. This matters materially -- a server running in UTC against an
+Asia/Kolkata tenant is 5h30m behind, and would offer slots that had
+already passed in the tenant's actual local day.
 """
 from __future__ import annotations
 import datetime as dt
 import uuid
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# How far ahead to look before giving up. A provider with no configured
+# Hard ceiling on the walk, independent of the provider's own
+# `maximum_advance_booking_days`. A provider with no configured
 # availability at all should fail fast and visibly, not scan forever.
-DEFAULT_SEARCH_DAYS = 14
+MAX_SEARCH_DAYS = 62
 
 # Used only when a provider has rules but left slot length unset.
 FALLBACK_SLOT_MINUTES = 60
@@ -47,17 +68,78 @@ FALLBACK_SLOT_MINUTES = 60
 # 1 is the safe reading of "unconfigured": never silently overbook someone.
 FALLBACK_MAX_PER_SLOT = 1
 
-# Minimum lead time between "now" and a slot's start -- gives the provider
-# real time to prepare/dispatch. Product-specified values: 6 hours for a
-# normal request, 2 hours for an emergency one.
-DEFAULT_MIN_LEAD_HOURS = 6.0
-EMERGENCY_MIN_LEAD_HOURS = 2.0
-
 # How many days that actually HAVE bookable slots to offer the customer.
 # Product rule: today's remaining slots, plus the next open day's -- so a
 # Saturday-evening customer with Sunday closed sees Monday, and a day with
 # nothing left never counts against this.
 DEFAULT_OFFERED_DAYS = 2
+
+# Mirrors the column defaults on `tenant_booking_window_settings`, used only
+# when a tenant has no row there yet. Kept in sync with the provider portal's
+# own fallback block (see provider_portal/router.py get_booking_window) so a
+# provider who has never opened the settings page gets identical behaviour
+# either way.
+BOOKING_WINDOW_DEFAULTS = {
+    "minimum_notice_minutes": 120,
+    "maximum_advance_booking_days": 7,
+    "allow_same_day_booking": True,
+    "emergency_booking_allowed": False,
+    "timezone": "Asia/Kolkata",
+}
+
+
+async def booking_window_settings(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    """The provider's own booking-window rules, or the documented defaults.
+
+    Single source of truth for every timing decision in this module. Read
+    from `tenant_booking_window_settings`, which the provider edits through
+    the provider portal -- never from a constant in here.
+    """
+    row = (await db.execute(text(
+        "SELECT minimum_notice_minutes, maximum_advance_booking_days, "
+        "allow_same_day_booking, emergency_booking_allowed, timezone "
+        "FROM tenant_booking_window_settings WHERE tenant_id=:tid"
+    ), {"tid": str(tenant_id)})).fetchone()
+    if not row:
+        return dict(BOOKING_WINDOW_DEFAULTS)
+    settings = dict(row._mapping)
+    # A NULL in any column falls back rather than crashing the walk.
+    return {k: (settings.get(k) if settings.get(k) is not None else v)
+            for k, v in BOOKING_WINDOW_DEFAULTS.items()}
+
+
+def _tenant_now(settings: dict) -> dt.datetime:
+    """"Now" on the tenant's own clock, as a naive local datetime so it is
+    directly comparable to the naive `start_time`/`end_time` the
+    availability rules store.
+
+    Degrades to server-local time if the timezone cannot be resolved at all
+    -- notably on Windows, where `zoneinfo` has no system tz database and
+    needs the `tzdata` package. A missing tz database must never stop a
+    customer booking; it only costs the UTC-vs-local correction. The default
+    is retried before giving up, in case only the tenant's own value is bad.
+    """
+    for key in (settings.get("timezone"), BOOKING_WINDOW_DEFAULTS["timezone"]):
+        if not key:
+            continue
+        try:
+            return dt.datetime.now(ZoneInfo(str(key))).replace(tzinfo=None)
+        except Exception:  # noqa: BLE001 -- unknown tz / no tz database
+            continue
+    return dt.datetime.now()
+
+
+def _notice_cutoff(settings: dict, now: dt.datetime, emergency: bool) -> dt.datetime:
+    """Earliest moment a slot may start.
+
+    Emergency waives the notice period entirely -- down to "has not started
+    yet" -- but only if the provider opted in. A provider who has not
+    enabled emergency booking keeps their full notice period no matter what
+    the customer asks for.
+    """
+    if emergency and settings.get("emergency_booking_allowed"):
+        return now
+    return now + dt.timedelta(minutes=int(settings["minimum_notice_minutes"]))
 
 
 def _parse_hhmm(value) -> dt.time | None:
@@ -139,30 +221,38 @@ async def find_earliest_available_slot(
     *,
     tenant_id: uuid.UUID,
     from_datetime: dt.datetime | None = None,
-    search_days: int = DEFAULT_SEARCH_DAYS,
-    min_lead_hours: float = DEFAULT_MIN_LEAD_HOURS,
+    search_days: int | None = None,
+    emergency: bool = False,
 ) -> dict | None:
-    """First slot this provider genuinely has capacity for, at least
-    `min_lead_hours` from now.
+    """First slot this provider genuinely has capacity for, respecting their
+    own configured notice period.
 
-    Walks forward day by day from `from_datetime` (default: now) and
-    returns the first slot whose live booking count is below the
-    provider's own `max_bookings_per_slot`. A slot starting before the
-    lead-time cutoff is skipped even if it technically hasn't started yet
+    Walks forward day by day from `from_datetime` (default: now on the
+    tenant's clock) and returns the first slot whose live booking count is
+    below the provider's own `max_bookings_per_slot`. A slot starting inside
+    the notice period is skipped even if it technically hasn't started yet
     -- a provider cannot honour a window with no real time to prepare for
-    it. Once the working day's slots run out, the walk moves to the next
-    day exactly as configured -- there is no after-hours fallback.
+    it. Once the working day's slots run out, the walk moves to the next day
+    exactly as configured -- there is no after-hours fallback.
 
     Returns None when the provider has no capacity anywhere in the search
     horizon. Callers must treat that as "cannot promise a time", never as
     "book it anyway".
     """
-    now = from_datetime or dt.datetime.now()
-    cutoff = now + dt.timedelta(hours=min_lead_hours)
+    settings = await booking_window_settings(db, tenant_id)
+    now = from_datetime or _tenant_now(settings)
+    cutoff = _notice_cutoff(settings, now, emergency)
     day = now.date()
+    horizon = min(
+        search_days if search_days is not None else int(settings["maximum_advance_booking_days"]),
+        MAX_SEARCH_DAYS,
+    )
 
-    for offset in range(search_days):
+    for offset in range(horizon):
         target = day + dt.timedelta(days=offset)
+        # The provider can switch same-day booking off entirely.
+        if offset == 0 and not settings["allow_same_day_booking"]:
+            continue
         if await _is_closed(db, tenant_id, target):
             continue
 
@@ -176,9 +266,9 @@ async def find_earliest_available_slot(
         for rule in rules:
             cap = rule.get("max_bookings_per_slot") or FALLBACK_MAX_PER_SLOT
             for start, end in _slots_from_rule(rule):
-                # Never offer a window inside the minimum lead time --
-                # replaces the older "hasn't started yet" check, which
-                # `cutoff >= now` always satisfies too.
+                # Never offer a window inside the notice period. With
+                # emergency + opted-in this reduces to "has not started yet",
+                # which is still a real constraint.
                 if dt.datetime.combine(target, start) < cutoff:
                     continue
                 label = _window_label(start, end)
@@ -204,15 +294,15 @@ async def list_available_slots(
     *,
     tenant_id: uuid.UUID,
     from_datetime: dt.datetime | None = None,
-    search_days: int = DEFAULT_SEARCH_DAYS,
+    search_days: int | None = None,
     max_days: int = DEFAULT_OFFERED_DAYS,
-    min_lead_hours: float = DEFAULT_MIN_LEAD_HOURS,
+    emergency: bool = False,
 ) -> list[dict]:
-    """Every genuinely bookable slot for this provider, earliest first,
-    each at least `min_lead_hours` from now -- the list form of
-    `find_earliest_available_slot`, sharing its exact capacity and lead-
-    time rules so a slot offered here is honoured the same way at
-    confirmation (`slot_has_capacity` re-checks the same capacity rule;
+    """Every genuinely bookable slot for this provider, earliest first, each
+    outside their configured notice period -- the list form of
+    `find_earliest_available_slot`, sharing its exact capacity and notice
+    rules so a slot offered here is honoured the same way at confirmation
+    (`slot_has_capacity` re-checks the same capacity rule;
     `select_promised_slot` re-derives from this same function).
 
     Offered by WHOLE DAY, never truncated mid-day (product rule): the
@@ -224,19 +314,27 @@ async def list_available_slots(
 
     `max_days` counts only days that actually HAVE bookable slots, so a run
     of closed or fully-booked days never eats into what the customer is
-    shown. `search_days` remains the hard horizon that stops the walk for a
-    provider with no capacity at all.
+    shown. `search_days` overrides the provider's own
+    `maximum_advance_booking_days` horizon when a caller needs to reach a
+    specific day.
     """
-    now = from_datetime or dt.datetime.now()
-    cutoff = now + dt.timedelta(hours=min_lead_hours)
+    settings = await booking_window_settings(db, tenant_id)
+    now = from_datetime or _tenant_now(settings)
+    cutoff = _notice_cutoff(settings, now, emergency)
     day = now.date()
     results: list[dict] = []
     days_with_slots = 0
+    horizon = min(
+        search_days if search_days is not None else int(settings["maximum_advance_booking_days"]),
+        MAX_SEARCH_DAYS,
+    )
 
-    for offset in range(search_days):
+    for offset in range(horizon):
         if days_with_slots >= max_days:
             break
         target = day + dt.timedelta(days=offset)
+        if offset == 0 and not settings["allow_same_day_booking"]:
+            continue
         if await _is_closed(db, tenant_id, target):
             continue
 

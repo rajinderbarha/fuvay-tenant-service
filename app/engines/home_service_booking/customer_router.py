@@ -407,7 +407,12 @@ async def build_booking_summary(
 async def get_available_slots(
     draft_id: uuid.UUID,
     r: Request,
-    emergency: bool = Query(False, description="Shortens the minimum lead time from 6 hours to 2."),
+    emergency: bool = Query(False, description=(
+        "Waives the provider's configured notice period "
+        "(tenant_booking_window_settings.minimum_notice_minutes), but only if "
+        "that provider has emergency_booking_allowed set. Never bypasses their "
+        "working hours or per-slot capacity."
+    )),
     svc: HomeServiceChatbotBookingService = Depends(_svc),
     user: UserContext = Depends(get_current_user),
 ):

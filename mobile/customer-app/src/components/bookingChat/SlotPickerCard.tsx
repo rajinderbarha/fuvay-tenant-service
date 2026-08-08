@@ -34,13 +34,17 @@ function dayLabel(dateIso: string, daysAhead: number): string {
  * (`provider_availability_rules`); this just surfaces exactly what that
  * produces via the real, capacity-checked `list_available_slots` walk.
  *
- * Two real backend rules apply, never simulated client-side:
- *  - a slot must be at least 6 hours out normally, 2 hours for an
- *    "Emergency" request -- both on top of the provider's actual working
- *    hours, never instead of them (an emergency toggle cannot conjure an
- *    after-hours slot the provider never configured).
- *  - once a working day's slots are exhausted, the next options are
- *    tomorrow's -- there is no invented "after hours" slot here either.
+ * Every timing rule lives in the backend, driven by the provider's own
+ * booking-window settings -- nothing here is simulated client-side, and no
+ * specific number of hours is quoted in this UI because the provider owns
+ * that value and can change it:
+ *  - a slot must clear the provider's configured notice period
+ *    (`minimum_notice_minutes`). "Soonest possible" asks the backend to
+ *    waive it, which it does only if that provider enabled
+ *    `emergency_booking_allowed` -- it can never conjure a slot outside
+ *    their real working hours or capacity.
+ *  - once a working day's slots are exhausted, the next options are the
+ *    next OPEN day's; there is no invented "after hours" slot.
  *
  * The service price is shown in the SAME card as the slot list (not a
  * separate step) since the customer should see cost and timing together
@@ -112,11 +116,11 @@ export function SlotPickerCard({
         <Pressable
           onPress={() => openPicker(true)}
           accessibilityRole="button"
-          accessibilityLabel="Emergency, within 2 hours"
+          accessibilityLabel="Soonest possible time"
           style={{ flex: 1, height: 36, borderRadius: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: BOT.brandTint, borderWidth: 1, borderColor: BOT.brand }}
         >
           <Ionicons name="flash" size={13} color={BOT.warning} />
-          <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>Emergency (2h)</Text>
+          <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>Soonest possible</Text>
         </Pressable>
       </View>
 
@@ -130,7 +134,7 @@ export function SlotPickerCard({
         <View style={{ marginTop: 14, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, paddingTop: 14 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>
-              {emergency ? "Earliest slots (emergency, min. 2h away)" : "Available slots (min. 6h away)"}
+              {emergency ? "Soonest the provider can come" : "Available times"}
             </Text>
             <Pressable onPress={() => setOpen(false)} accessibilityRole="button" accessibilityLabel="Close">
               <Ionicons name="close" size={16} color={BOT.textFaint} />
@@ -145,7 +149,7 @@ export function SlotPickerCard({
             <ActivityIndicator color={BOT.brand} style={{ marginTop: 12 }} />
           ) : availableSlots && availableSlots.length === 0 ? (
             <Text style={{ fontSize: 15, color: BOT.textMuted, marginTop: 10 }}>
-              No slots available in the next two weeks{emergency ? " even with emergency lead time" : ""}.
+              No times available{emergency ? " even at the earliest" : ""}. Your provider will contact you to arrange one.
             </Text>
           ) : (
             <ScrollView style={{ maxHeight: 220, marginTop: 10 }}>
