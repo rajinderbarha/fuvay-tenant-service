@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { View, Text, Pressable, ScrollView, Animated, Easing } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useReducedMotion } from "../../design-system/theme";
 import { useBotColors } from "./botTheme";
 import { RequestSummaryCard } from "./RequestSummaryCard";
@@ -40,6 +41,11 @@ export function ReviewSheet({
 }: ReviewSheetProps) {
   const BOT = useBotColors();
   const reduced = useReducedMotion();
+  // This sheet is mounted as a full-screen overlay, so it must clear the status
+  // bar / notch itself. Previously it inherited whatever the host happened to
+  // apply, and the header ended up under the status bar where the back button
+  // could not be tapped at all.
+  const insets = useSafeAreaInsets();
   const rise = useRef(new Animated.Value(reduced ? 1 : 0)).current;
 
   useEffect(() => {
@@ -68,7 +74,11 @@ export function ReviewSheet({
       <View
         style={{
           flexDirection: "row", alignItems: "center", gap: 12,
-          paddingHorizontal: 20, paddingTop: 8, paddingBottom: 14,
+          paddingHorizontal: 20,
+          // A floor of 12 so the header still has breathing room on a device
+          // that reports no top inset at all.
+          paddingTop: Math.max(insets.top, 12) + 8,
+          paddingBottom: 14,
           borderBottomWidth: 1, borderBottomColor: BOT.borderSubtle,
         }}
       >
@@ -154,7 +164,10 @@ export function ReviewSheet({
           however long the details column gets. */}
       <View
         style={{
-          paddingHorizontal: 20, paddingTop: 14, paddingBottom: 16,
+          paddingHorizontal: 20, paddingTop: 14,
+          // Clears the home indicator so the primary action is never half off
+          // the bottom of the screen.
+          paddingBottom: Math.max(insets.bottom, 12) + 8,
           borderTopWidth: 1, borderTopColor: BOT.borderSubtle,
           backgroundColor: BOT.bgComposer,
         }}

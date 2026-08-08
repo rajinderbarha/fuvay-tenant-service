@@ -261,6 +261,11 @@ function BookingChatConversation({
     // Bottom edge intentionally excluded -- the bottom tab bar already
     // supplies its own safe-area inset, so including it here left a blank
     // BOT.bg strip between the composer and the tab bar.
+    // Outer plain View so the full-screen overlays below can sit OUTSIDE the
+    // SafeAreaView's padding. Inside it, an absolutely-positioned overlay
+    // inherits the host's inset handling, which is how the review sheet's header
+    // ended up under the status bar. Each overlay now applies its own insets.
+    <View style={{ flex: 1, backgroundColor: BOT.bg }}>
     <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: BOT.bg }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         {/* Header */}
@@ -462,6 +467,7 @@ function BookingChatConversation({
           )}
         </View>
       </KeyboardAvoidingView>
+    </SafeAreaView>
 
       {/* Full-screen review sheet. Rendered here, not in the transcript, so it
           genuinely fills the screen; dismissing returns to the conversation. */}
@@ -503,6 +509,6 @@ function BookingChatConversation({
           />
         </View>
       ) : null}
-    </SafeAreaView>
+    </View>
   );
 }

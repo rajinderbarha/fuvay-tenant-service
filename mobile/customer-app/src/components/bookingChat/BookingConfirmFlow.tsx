@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, Pressable, Animated, Easing, Dimensions, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useReducedMotion } from "../../design-system/theme";
 import { useBotColors } from "./botTheme";
 
@@ -57,6 +58,9 @@ export function BookingConfirmFlow({
 }: BookingConfirmFlowProps) {
   const BOT = useBotColors();
   const reduced = useReducedMotion();
+  // Full-screen overlay: it owns its own safe-area padding so the Done/Track
+  // actions are never under the home indicator.
+  const insets = useSafeAreaInsets();
   const confirmed = phase === "confirmed";
 
   // 0 = neutral processing background, 1 = success green.
@@ -112,7 +116,9 @@ export function BookingConfirmFlow({
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1, alignItems: "center", justifyContent: "center",
-          paddingHorizontal: 28, paddingVertical: 40,
+          paddingHorizontal: 28,
+          paddingTop: Math.max(insets.top, 12) + 28,
+          paddingBottom: Math.max(insets.bottom, 12) + 28,
         }}
       >
         {!confirmed ? (
