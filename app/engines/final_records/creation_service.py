@@ -61,6 +61,39 @@ def _uuid(val) -> uuid.UUID | None:
     return val if isinstance(val, uuid.UUID) else uuid.UUID(str(val))
 
 
+def _booking_service_amount(price_snapshot: dict | None) -> Decimal:
+    """The service amount a platform fee is calculated against, in major units.
+
+    Read from the booking's own frozen price snapshot, in the order of how
+    specific each value is to what the customer actually agreed to:
+
+      selected_price_amount -> the tier/amount they chose
+      standard_price        -> the single fee-inclusive price they were shown
+      base_price            -> the resolved service price
+      visit_fee             -> inspection mode: the visit is the only amount
+                              agreed up front, the repair is quoted later
+
+    Returns 0 when the snapshot carries no usable amount. That is deliberate and
+    safe: a zero-amount charge row still records the policy and preserves the
+    audit trail, whereas GUESSING a service amount would compute a real fee
+    against a number the customer never saw. An inspection-mode booking's repair
+    fee is charged later from the approved quote (create_charge_for_quote), not
+    here.
+    """
+    snapshot = price_snapshot or {}
+    for key in ("selected_price_amount", "standard_price", "base_price", "visit_fee"):
+        raw = snapshot.get(key)
+        if raw in (None, ""):
+            continue
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, ValueError, TypeError):
+            continue
+        if value > 0:
+            return value
+    return Decimal("0")
+
+
 class HomeServiceFinalCreationService:
     def __init__(self, db: AsyncSession) -> None:
         self.db   = db
@@ -358,11 +391,23 @@ class HomeServiceFinalCreationService:
         # block a booking the customer has already paid for and confirmed.
         # `create_charge_for_booking` is itself idempotent (keyed
         # "booking:{id}") and returns None when the vertical has no policy.
+        # SECOND production gap, found live: the call above was missing three
+        # REQUIRED keyword-only arguments (customer_id, service_amount_major,
+        # source_event), so it raised TypeError on EVERY booking. The broad
+        # `except` -- there so a monetization misconfiguration cannot block a
+        # confirmed booking -- swallowed it into a warning, which meant the fix
+        # described above was never actually in effect: still no charge row for
+        # any booking, ever. Confirmed by the real log line
+        # "monetization.booking_charge_failed ... missing 3 required
+        # keyword-only arguments".
         try:
             from app.engines.vertical_monetization.charge_service import create_charge_for_booking
             await create_charge_for_booking(
                 self.db, vertical_key="home_services",
                 booking_id=booking.id, tenant_id=draft.selected_tenant_id,
+                customer_id=draft.customer_id,
+                service_amount_major=_booking_service_amount(booking_price_snapshot),
+                source_event="booking_confirmed",
             )
         except Exception as exc:  # noqa: BLE001 -- never fail a confirmed booking
             log.warning("monetization.booking_charge_failed booking_id=%s error=%s",

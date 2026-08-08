@@ -2,7 +2,7 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import logging
 from sqlalchemy import select, update
@@ -68,6 +68,27 @@ def _utcnow() -> datetime:
 def _quote_number() -> str:
     suffix = str(uuid.uuid4()).replace("-", "").upper()[:10]
     return f"QT-{suffix}"
+
+
+def _quote_payable_amount(quote) -> Decimal:
+    """What the customer agreed to pay on this approved quote version.
+
+    `customer_payable_amount` is the authoritative figure; `total_amount` is the
+    documented fallback for a quote saved before that column was populated. Zero
+    when neither resolves -- a zero-fee row keeps the audit trail without
+    inventing an amount to charge against.
+    """
+    for attr in ("customer_payable_amount", "total_amount"):
+        raw = getattr(quote, attr, None)
+        if raw in (None, ""):
+            continue
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, ValueError, TypeError):
+            continue
+        if value > 0:
+            return value
+    return Decimal("0")
 
 
 class ServiceJobQuoteService:
@@ -534,11 +555,19 @@ class ServiceJobQuoteService:
         # "quote:{id}:v{version}") and returns None when no policy applies.
         try:
             from app.engines.vertical_monetization.charge_service import create_charge_for_quote
+            # Same defect as the booking-charge call site: three required
+            # keyword-only arguments were missing, so this raised TypeError on
+            # every quote approval and the non-fatal `except` hid it -- no
+            # platform fee was ever charged against an approved quote either.
+            # The amount is the customer-payable total of THIS approved version,
+            # which is the only figure the customer agreed to.
             await create_charge_for_quote(
                 db, vertical_key="home_services",
                 quote_id=q.id, quote_version=q.version_number, is_current=q.is_current,
                 job_id=q.job_id, tenant_id=q.tenant_id,
                 customer_id=uuid.UUID(customer_id) if customer_id else None,
+                customer_payable_amount=_quote_payable_amount(q),
+                source_event="quote_customer_approved",
             )
         except Exception as exc:  # noqa: BLE001 -- never block a quote approval
             _qlog.warning("monetization.quote_charge_failed quote_id=%s error=%s", q.id, exc)

@@ -128,7 +128,22 @@ def _scalars_result(items):
 
 def _mock_db(*execute_results):
     db = MagicMock()
-    db.execute  = AsyncMock(side_effect=list(execute_results))
+
+    # Yields the supplied results in order, then a generic result for any
+    # further query. A bare finite side_effect list raised StopIteration as
+    # soon as the code under test made one more query than the test author
+    # happened to anticipate -- which is how these tests silently depended on
+    # the platform-fee charge call CRASHING before it reached the database.
+    # (It was missing three required arguments; see
+    # tests/test_monetization_charge_wiring.py.) These tests assert that a
+    # query happened, not how many, so tolerating extra ones keeps their real
+    # intent while no longer being coupled to a bug.
+    _pending = list(execute_results)
+
+    async def _execute(*_args, **_kwargs):
+        return _pending.pop(0) if _pending else MagicMock()
+
+    db.execute  = AsyncMock(side_effect=_execute)
     db.flush    = AsyncMock()
     db.commit   = AsyncMock()
     db.refresh  = AsyncMock()
