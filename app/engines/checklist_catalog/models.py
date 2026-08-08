@@ -283,3 +283,47 @@ class JobChecklistResponse(ServiceOSBase):
             "evidence": self.evidence, "validation_result": self.validation_result,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class TenantServiceChecklistItem(ServiceOSBase):
+    """One checklist point a TENANT has chosen to run for one of its services.
+
+    The admin authors the library (ChecklistItem); the tenant picks the subset
+    their technicians must complete -- at least
+    MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE of them per service.
+
+    `checklist_template_version_id` records WHICH authored version the point was
+    chosen from, so a newly published version can be detected as unreviewed
+    rather than silently changing what a tenant's technicians are asked to do.
+
+    Deselection sets `is_active = False` instead of deleting, so support can
+    still explain why a step was not performed on an older job.
+    """
+    __tablename__ = "tenant_service_checklist_items"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "master_service_id", "checklist_item_id",
+                         name="uq_tsci_tenant_service_item"),
+        Index("ix_tsci_tenant_service", "tenant_id", "master_service_id", "is_active"),
+    )
+
+    tenant_id:                     Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    master_service_id:             Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    checklist_item_id:             Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    checklist_template_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    is_active:                     Mapped[bool]             = mapped_column(Boolean, default=True, nullable=False)
+    selected_by_user_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "tenant_id": str(self.tenant_id),
+            "master_service_id": str(self.master_service_id),
+            "checklist_item_id": str(self.checklist_item_id),
+            "checklist_template_version_id": (
+                str(self.checklist_template_version_id) if self.checklist_template_version_id else None
+            ),
+            "is_active": self.is_active,
+            "selected_by_user_id": str(self.selected_by_user_id) if self.selected_by_user_id else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }

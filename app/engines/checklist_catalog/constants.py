@@ -108,3 +108,12 @@ ERR_CHECKLIST_VERSION_NOT_PUBLISHED = "CHECKLIST_VERSION_NOT_PUBLISHED"
 ERR_CHECKLIST_ITEM_VALIDATION_FAILED = "CHECKLIST_ITEM_VALIDATION_FAILED"
 ERR_CHECKLIST_EVIDENCE_REQUIRED = "CHECKLIST_EVIDENCE_REQUIRED"
 ERR_CHECKLIST_ACTOR_NOT_AUTHORIZED = "CHECKLIST_ACTOR_NOT_AUTHORIZED"
+ERR_CHECKLIST_SELECTION_TOO_SMALL = "CHECKLIST_SELECTION_TOO_SMALL"
+ERR_CHECKLIST_ITEM_NOT_SELECTABLE = "CHECKLIST_ITEM_NOT_SELECTABLE"
+
+
+# ── Tenant selection of checklist points per service ─────────────────────
+# Product rule: the admin authors the library, and each tenant must choose at
+# least this many points for a service before their technicians run it. A
+# floor, not a cap -- a tenant may select as many as the admin authored.
+MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE = 5

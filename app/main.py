@@ -701,7 +701,13 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         customer_router as cc_customer_router,
         admin_router as cc_instance_admin_router,
     )
-    for _r in [cc_admin_router, cc_staff_router, cc_tenant_router, cc_customer_router, cc_instance_admin_router]:
+    # Tenant selection of which authored checklist points this provider runs
+    # per service (minimum 5) -- the tenant half of the admin-authors/
+    # tenant-selects rule. Distinct from execution_router's tenant_router,
+    # which serves per-job checklist instance reads.
+    from app.engines.checklist_catalog.tenant_router import router as cc_tenant_selection_router
+    for _r in [cc_admin_router, cc_staff_router, cc_tenant_router, cc_customer_router,
+               cc_instance_admin_router, cc_tenant_selection_router]:
         app.include_router(_r)
 
     # Sprint 23 — Invoice / Payment / Commission / Wallet / Subscription

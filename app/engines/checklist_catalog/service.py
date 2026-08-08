@@ -15,13 +15,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text as _sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.checklist_catalog import constants as c
 from app.engines.checklist_catalog.models import (
     ChecklistTemplate, ChecklistTemplateVersion, ChecklistSection, ChecklistItem,
     JobTypeChecklistMapping, JobChecklistInstance, JobChecklistResponse,
+    TenantServiceChecklistItem,
 )
 from app.exceptions import ServiceOSException
 
@@ -370,6 +371,16 @@ async def ensure_instance(db: AsyncSession, job, mapping: JobTypeChecklistMappin
 
 
 async def _instance_items(db: AsyncSession, instance: JobChecklistInstance) -> list[ChecklistItem]:
+    """The authored items for this instance, narrowed to the points the TENANT
+    actually selected for the service.
+
+    Falls back to the full authored list when the tenant has made no selection
+    for that service. That is deliberate: silently returning an EMPTY checklist
+    for a provider who has not chosen yet would quietly drop a safety/quality
+    step the admin authored, which is far worse than showing them all of it.
+    The tenant portal's readiness check (`tenant_selection_readiness`) is what
+    surfaces the "select at least 5" obligation.
+    """
     sections = (await db.execute(
         select(ChecklistSection)
         .where(ChecklistSection.checklist_template_version_id == instance.checklist_template_version_id)
@@ -380,7 +391,38 @@ async def _instance_items(db: AsyncSession, instance: JobChecklistInstance) -> l
         items.extend((await db.execute(
             select(ChecklistItem).where(ChecklistItem.checklist_section_id == sec.id).order_by(ChecklistItem.display_order)
         )).scalars().all())
-    return items
+
+    selected_ids = await _tenant_selected_item_ids_for_job(db, instance)
+    if not selected_ids:
+        return items
+    narrowed = [i for i in items if i.id in selected_ids]
+    # If the selection somehow matches nothing in this version (e.g. the admin
+    # published a new version with entirely new items), keep the authored list
+    # rather than handing the technician an empty checklist.
+    return narrowed or items
+
+
+async def _tenant_selected_item_ids_for_job(
+    db: AsyncSession, instance: JobChecklistInstance,
+) -> set[uuid.UUID]:
+    """Active selection for the (tenant, service) this job belongs to.
+
+    Resolved from the job rather than passed in, so every existing caller of
+    `_instance_items` gets the narrowing without a signature change.
+    """
+    row = (await db.execute(_sa_text(
+        "SELECT tenant_id, offering_id FROM service_jobs WHERE id=:jid"
+    ), {"jid": str(instance.job_id)})).fetchone()
+    if not row:
+        return set()
+    tenant_id, offering_id = row._mapping["tenant_id"], row._mapping["offering_id"]
+    if not (tenant_id and offering_id):
+        return set()
+    rows = (await db.execute(_sa_text(
+        "SELECT checklist_item_id FROM tenant_service_checklist_items "
+        "WHERE tenant_id=:tid AND master_service_id=:sid AND is_active=true"
+    ), {"tid": str(tenant_id), "sid": str(offering_id)})).fetchall()
+    return {r._mapping["checklist_item_id"] for r in rows}
 
 
 async def save_response(
@@ -484,3 +526,187 @@ async def waive_instance(
     db.add(instance)
     await db.flush()
     return instance
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Tenant selection of checklist points per service
+#
+# Division of responsibility (product rule):
+#   ADMIN  authors the library -- templates, versions, sections, items.
+#   TENANT chooses which of those points its technicians must complete for a
+#          given service, at least MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE.
+#
+# A tenant can only ever choose from what the admin authored AND mapped to
+# that service's job types: `selectable_items_for_service` is the single
+# source of what is offerable, and `set_tenant_selection` validates every
+# submitted id against it. A tenant cannot invent a checklist point, nor
+# select one belonging to a different service.
+# ══════════════════════════════════════════════════════════════════════════
+
+async def selectable_items_for_service(
+    db: AsyncSession, master_service_id: uuid.UUID,
+) -> list[dict]:
+    """Every authored checklist point a tenant may choose for this service.
+
+    Walks the real chain the runtime already uses:
+      master_service -> master_service_job_types -> active job-type mappings
+      -> PUBLISHED template version -> sections -> items
+
+    Only PUBLISHED versions are offerable: letting a tenant select from a
+    DRAFT would let an admin's unfinished edit change what technicians are
+    asked to do in the field.
+    """
+    job_type_ids = [r[0] for r in (await db.execute(_sa_text(
+        "SELECT id FROM master_service_job_types WHERE master_service_id=:sid"
+    ), {"sid": str(master_service_id)})).fetchall()]
+    if not job_type_ids:
+        return []
+
+    mappings = (await db.execute(
+        select(JobTypeChecklistMapping).where(
+            JobTypeChecklistMapping.master_service_job_type_id.in_(job_type_ids),
+            JobTypeChecklistMapping.status == "active",
+        ).order_by(JobTypeChecklistMapping.display_order)
+    )).scalars().all()
+    if not mappings:
+        return []
+
+    out: list[dict] = []
+    seen: set[uuid.UUID] = set()
+    for mapping in mappings:
+        version = await db.get(ChecklistTemplateVersion, mapping.checklist_template_version_id)
+        if not version or version.status != c.VERSION_PUBLISHED:
+            continue
+        template = await db.get(ChecklistTemplate, version.checklist_template_id)
+        sections = (await db.execute(
+            select(ChecklistSection)
+            .where(ChecklistSection.checklist_template_version_id == version.id)
+            .order_by(ChecklistSection.display_order)
+        )).scalars().all()
+        for sec in sections:
+            items = (await db.execute(
+                select(ChecklistItem)
+                .where(ChecklistItem.checklist_section_id == sec.id)
+                .order_by(ChecklistItem.display_order)
+            )).scalars().all()
+            for item in items:
+                if item.id in seen:
+                    continue
+                seen.add(item.id)
+                out.append({
+                    **item.to_dict(),
+                    "section_title": sec.title,
+                    "template_name": template.name if template else None,
+                    "template_purpose": template.purpose if template else None,
+                    "phase": mapping.phase,
+                    "checklist_template_version_id": str(version.id),
+                })
+    return out
+
+
+async def get_tenant_selection(
+    db: AsyncSession, tenant_id: uuid.UUID, master_service_id: uuid.UUID,
+) -> list[TenantServiceChecklistItem]:
+    return list((await db.execute(
+        select(TenantServiceChecklistItem).where(
+            TenantServiceChecklistItem.tenant_id == tenant_id,
+            TenantServiceChecklistItem.master_service_id == master_service_id,
+            TenantServiceChecklistItem.is_active.is_(True),
+        )
+    )).scalars().all())
+
+
+async def set_tenant_selection(
+    db: AsyncSession, tenant_id: uuid.UUID, master_service_id: uuid.UUID,
+    item_ids: list[uuid.UUID], *, selected_by_user_id: uuid.UUID | None,
+) -> dict:
+    """Replace this tenant's selected points for this service.
+
+    Enforces both halves of the product rule:
+      - at least MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE points (a 422 carrying
+        the shortfall, so the portal can say exactly how many more are needed);
+      - every id is genuinely selectable for THIS service.
+
+    Deselection deactivates rather than deletes, and re-selecting a previously
+    deactivated point reactivates the same row -- so a tenant changing their
+    mind can never violate the unique constraint.
+    """
+    unique_ids = list(dict.fromkeys(item_ids))   # de-dupe, preserve order
+    if len(unique_ids) < c.MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE:
+        raise ServiceOSException(
+            c.ERR_CHECKLIST_SELECTION_TOO_SMALL,
+            f"Select at least {c.MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE} checklist points "
+            f"for this service ({len(unique_ids)} selected).",
+            status_code=422,
+        )
+
+    selectable = await selectable_items_for_service(db, master_service_id)
+    version_by_item = {uuid.UUID(i["id"]): i["checklist_template_version_id"] for i in selectable}
+    invalid = [str(i) for i in unique_ids if i not in version_by_item]
+    if invalid:
+        raise ServiceOSException(
+            c.ERR_CHECKLIST_ITEM_NOT_SELECTABLE,
+            "One or more checklist points are not available for this service.",
+            status_code=422,
+        )
+
+    existing = list((await db.execute(
+        select(TenantServiceChecklistItem).where(
+            TenantServiceChecklistItem.tenant_id == tenant_id,
+            TenantServiceChecklistItem.master_service_id == master_service_id,
+        )
+    )).scalars().all())
+    by_item = {row.checklist_item_id: row for row in existing}
+    wanted = set(unique_ids)
+
+    for item_id in unique_ids:
+        row = by_item.get(item_id)
+        if row is None:
+            db.add(TenantServiceChecklistItem(
+                tenant_id=tenant_id, master_service_id=master_service_id,
+                checklist_item_id=item_id,
+                checklist_template_version_id=uuid.UUID(version_by_item[item_id]),
+                is_active=True, selected_by_user_id=selected_by_user_id,
+            ))
+        else:
+            row.is_active = True
+            row.checklist_template_version_id = uuid.UUID(version_by_item[item_id])
+            row.selected_by_user_id = selected_by_user_id
+            row.updated_at = _now()
+
+    for row in existing:
+        if row.checklist_item_id not in wanted and row.is_active:
+            row.is_active = False
+            row.updated_at = _now()
+
+    await db.flush()
+    return await tenant_selection_readiness(db, tenant_id, master_service_id)
+
+
+async def tenant_selection_readiness(
+    db: AsyncSession, tenant_id: uuid.UUID, master_service_id: uuid.UUID,
+) -> dict:
+    """Whether this tenant has satisfied the minimum for this service.
+
+    Read-only and safe on a service with nothing authored yet:
+    `nothing_authored` means the ADMIN has published no checklist for it, which
+    is an admin gap rather than a tenant failure -- reported distinctly so the
+    portal never tells a provider to pick 5 points from an empty list.
+    `cannot_satisfy` covers the case where fewer than the minimum exist at all.
+    """
+    selectable = await selectable_items_for_service(db, master_service_id)
+    selected = await get_tenant_selection(db, tenant_id, master_service_id)
+    minimum = c.MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE
+    selectable_total = len(selectable)
+    selected_count = len(selected)
+    return {
+        "master_service_id": str(master_service_id),
+        "minimum_required": minimum,
+        "selected_count": selected_count,
+        "selectable_total": selectable_total,
+        "shortfall": max(0, minimum - selected_count),
+        "satisfied": selected_count >= minimum,
+        "nothing_authored": selectable_total == 0,
+        "cannot_satisfy": 0 < selectable_total < minimum,
+        "selected_item_ids": [str(r.checklist_item_id) for r in selected],
+    }
