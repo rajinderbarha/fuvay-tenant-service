@@ -24,7 +24,7 @@ import uuid
 import logging
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import select
+from sqlalchemy import select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from datetime import datetime, timezone
@@ -37,6 +37,7 @@ from app.engines.final_records.constants import (
     ERR_DRAFT_NOT_FOUND, ERR_DRAFT_NOT_READY, ERR_ACCESS_DENIED,
     ERR_SLOT_HOLD_MISSING, ERR_SLOT_HOLD_EXPIRED, ERR_SLOT_HOLD_ALREADY_CONVERTED,
 )
+from app.engines.execution.constants import JS_ACCEPTED
 from app.engines.final_records.idempotency import ConfirmationLockService
 from app.engines.final_records.models import (
     ServiceBooking, ServiceJob, CoachingAppointment, RealEstateLead, FinalCreationAuditLog,
@@ -230,6 +231,28 @@ class HomeServiceFinalCreationService:
                     log.warning("booking.promised_slot_revalidate_failed error=%s", exc)
 
         # 4b. Create ServiceJob
+        #
+        # AUTO-ACCEPTANCE (product rule): a provider who is ACTIVE and had real
+        # capacity in the promised slot has already opted in -- they control
+        # whether they receive work by activating/deactivating themselves, so
+        # asking them to "accept" each job again is a redundant gate that just
+        # leaves work sitting idle while the customer waits.
+        #
+        # This also fixes a real defect: `pending_assignment` is not a key in
+        # execution.constants.JOB_TRANSITIONS at all, so it has NO legal
+        # outbound transition -- jobs created there could not be progressed
+        # through the normal status machine (166 such rows exist).
+        #
+        # Falls back to `pending_assignment` when the provider is not active or
+        # no slot could be promised: those are genuinely unresolved states that
+        # a human must look at, and auto-accepting them would be a lie.
+        auto_accept = bool(
+            draft.selected_tenant_id
+            and promised_date is not None
+            and await self._tenant_is_active(draft.selected_tenant_id)
+        )
+        job_status = JS_ACCEPTED if auto_accept else "pending_assignment"
+
         job = ServiceJob(
             job_number            = job_number,
             booking_id            = booking.id,
@@ -255,12 +278,34 @@ class HomeServiceFinalCreationService:
             city                  = draft.city,
             zipcode               = draft.zipcode,
             address_snapshot      = draft.address_snapshot,
-            status                = "pending_assignment",
+            status                = job_status,
             is_emergency          = booking.is_emergency,
         )
         self.db.add(job)
         await self.db.flush()
         await self.db.refresh(job)
+
+        # An auto-accepted job must still leave the same audit trail a manual
+        # acceptance would, so the provider's own timeline/history shows how it
+        # reached `accepted` and nothing downstream has to special-case a job
+        # that "was never accepted by anyone".
+        if auto_accept:
+            from app.engines.execution.constants import EV_JOB_ACCEPTED
+            from app.engines.execution.models import ServiceJobExecutionEvent
+            self.db.add(ServiceJobExecutionEvent(
+                booking_id=booking.id, job_id=job.id, tenant_id=job.tenant_id,
+                staff_member_id=None, actor_user_id=None, actor_role="system",
+                event_type=EV_JOB_ACCEPTED, old_status=None, new_status=JS_ACCEPTED,
+                notes="Auto-accepted: provider is active and had capacity in the promised slot.",
+                event_metadata={
+                    "auto_accepted": True,
+                    "reason": "provider_active_with_capacity",
+                    "promised_date": promised_date.isoformat() if promised_date else None,
+                    "promised_window": promised_window,
+                    "is_emergency": bool(booking.is_emergency),
+                },
+                request_id=request_id,
+            ))
 
         # 5. Confirm draft + emit event
         draft.status = _CONFIRMED
@@ -385,6 +430,26 @@ class HomeServiceFinalCreationService:
             await self.db.flush()
         except Exception as exc:
             log.warning("audit log failed: %s", exc)
+
+    async def _tenant_is_active(self, tenant_id) -> bool:
+        """Whether the provider is currently accepting work.
+
+        Deliberately fails CLOSED: any unexpected state (missing tenant, a
+        status this code does not recognise) means no auto-acceptance, so the
+        job lands in `pending_assignment` for a human rather than being
+        auto-committed to a provider who may be suspended.
+        """
+        row = (await self.db.execute(sa_text(
+            "SELECT status, suspended_at, terminated_at FROM tenants WHERE id=:tid"
+        ), {"tid": str(tenant_id)})).fetchone()
+        if not row:
+            return False
+        m = row._mapping
+        return (
+            str(m.get("status")) == "active"
+            and m.get("suspended_at") is None
+            and m.get("terminated_at") is None
+        )
 
     @staticmethod
     def _frozen_emergency_surcharge(draft):

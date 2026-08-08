@@ -241,27 +241,38 @@ class TestMutationRouteInventoryScript:
             f"decorator removal, found: {sorted(overlaps.keys())}"
         )
 
-    def test_execution_router_has_21_reachable_mutation_routes(self):
+    def test_execution_router_has_22_reachable_mutation_routes(self):
         """Phase 2A Slice 2F-3B regression guard: execution.home_service_router
-        must have exactly 21 mutation routes now that the 2 shadowed
-        accept/reject decorators are removed (23 mounted - 2 shadowed = 21;
-        14 progress + 4 parts + 3 admin = 21, corrected from Slice 2F-3A's
-        arithmetic error which said 20)."""
+        must have exactly 22 mutation routes (23 mounted - 2 shadowed
+        accept/reject decorators = 21, plus the auto-acceptance flow's
+        `POST /{job_id}/customer-contacted`, which records the provider's
+        first task -- calling the customer to confirm requirements -- and is
+        guarded by require_staff_or_above_mutation like its siblings).
+
+        The count is deliberately exact: it is what makes an unguarded route
+        added later impossible to slip in unnoticed."""
         mod = self._load()
         from app.main import app
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] == "app.engines.execution.home_service_router"]
-        assert len(routes) == 21, f"expected 21 mutation routes, found {len(routes)}"
+        assert len(routes) == 22, f"expected 22 mutation routes, found {len(routes)}"
 
     def test_all_three_execution_assignment_modules_have_zero_unverified_routes(self):
-        """Phase 2A Slice 2F-3B closure guard: all 27 reachable mutation
-        routes across execution.home_service_router,
+        """Phase 2A Slice 2F-3B closure guard: every reachable mutation route
+        across execution.home_service_router,
         home_service_assignment.staff_router, and .provider_router must
         show 0 unverified via guard_status -- proving the access-scope
         guard application (require_staff_or_above_mutation /
         require_tenant_owner_mutation) and the 3 pre-existing
         platform-admin-permission-gated exemptions together close this
-        slice's full scope."""
+        slice's full scope.
+
+        Count raised 27 -> 29. This was ALREADY stale at 28 before the
+        auto-acceptance work (a route was added earlier without updating this
+        guard, so it was failing on arrival); 29 is that real 28 plus
+        `POST /{job_id}/customer-contacted`. The `unverified == []` assertion
+        below is the one that actually enforces safety -- it is what proves the
+        new route carries require_staff_or_above_mutation like its siblings."""
         mod = self._load()
         from app.main import app
         modules = {
@@ -271,7 +282,7 @@ class TestMutationRouteInventoryScript:
         }
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] in modules]
-        assert len(routes) == 27, f"expected 27 total reachable mutation routes, found {len(routes)}"
+        assert len(routes) == 29, f"expected 29 total reachable mutation routes, found {len(routes)}"
         exempt = mod.CONFIRMED_FALSE_POSITIVE_ROUTES | mod.CONFIRMED_PLATFORM_ADMIN_PERMISSION_ROUTES
         unverified = [
             r for r in routes

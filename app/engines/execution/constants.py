@@ -48,6 +48,11 @@ JOB_TRANSITIONS: dict[str, set[str]] = {
 
 # ── Home Service execution event types ────────────────────────────────────────
 EV_JOB_ACCEPTED         = "job_accepted"
+# The provider's FIRST task on an auto-accepted job: understand the request by
+# speaking to the customer before travelling. Recorded as an event rather than
+# a new job status so the existing JOB_TRANSITIONS graph stays untouched -- the
+# job is legitimately `accepted` throughout, it just has one action to do first.
+EV_CUSTOMER_CONTACTED   = "customer_contacted"
 EV_JOB_REJECTED         = "job_rejected"
 EV_JOB_SCHEDULED        = "job_scheduled"
 EV_ON_THE_WAY           = "technician_on_the_way"

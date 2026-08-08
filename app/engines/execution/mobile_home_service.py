@@ -36,6 +36,22 @@ _ACTIVE_EXECUTION_STATUSES = {
 _IMMEDIATE_ACTION_STATUSES = {"assigned", "accepted"}
 
 
+async def _customer_already_contacted(db: AsyncSession, job_id: uuid.UUID) -> bool:
+    """Whether the provider has logged the required first customer call.
+
+    Presence of a real `customer_contacted` execution event -- never inferred
+    from status or elapsed time, so the "call the customer first" step can only
+    be satisfied by actually doing it.
+    """
+    from sqlalchemy import text as _sa_text
+    from app.engines.execution.constants import EV_CUSTOMER_CONTACTED
+    row = (await db.execute(_sa_text(
+        "SELECT 1 FROM service_job_execution_events "
+        "WHERE job_id=:jid AND event_type=:et LIMIT 1"
+    ), {"jid": str(job_id), "et": EV_CUSTOMER_CONTACTED})).fetchone()
+    return row is not None
+
+
 def _select_current_job(jobs: list[dict]) -> dict | None:
     """Pure, deterministic selection over already tenant/staff-scoped jobs
     (spec section 5) -- never "first row returned"."""
@@ -145,7 +161,10 @@ class TechnicianMobileHomeService:
 
         job = await db.get(ServiceJob, uuid.UUID(job_row["id"]))
         work_start_status = await HomeServiceJobExecutionService().get_work_start_status(db, job)
-        next_action = _next_required_action(job.status, work_start_status)
+        next_action = _next_required_action(
+            job.status, work_start_status,
+            customer_contacted=await _customer_already_contacted(db, job.id),
+        )
 
         service_label = None
         if job.offering_id:

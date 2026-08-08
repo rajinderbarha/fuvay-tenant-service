@@ -5,12 +5,12 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, text as _sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.execution.constants import (
     JOB_TRANSITIONS,
-    EV_JOB_ACCEPTED, EV_JOB_REJECTED, EV_JOB_SCHEDULED,
+    EV_JOB_ACCEPTED, EV_JOB_REJECTED, EV_JOB_SCHEDULED, EV_CUSTOMER_CONTACTED,
     EV_ON_THE_WAY, EV_REACHED_SITE,
     EV_INSPECTION_STARTED, EV_INSPECTION_COMPLETED,
     EV_SERVICE_STARTED, EV_DIAGNOSIS_ADDED,
@@ -387,6 +387,42 @@ class HomeServiceJobExecutionService:
         await self._set_status(db, job, JS_ON_THE_WAY, EV_ON_THE_WAY, user_id, "staff", request_id=request_id)
         await db.flush()
         return job.to_dict()
+
+    async def log_customer_contacted(
+        self, db, job_id, tenant_id, staff_member_id, user_id,
+        notes: str | None = None, requirements: str | None = None, request_id=None,
+    ):
+        """Records the FIRST task on an auto-accepted job: the provider spoke to
+        the customer, understood the request and captured requirements.
+
+        Deliberately does NOT change job status -- the job is legitimately
+        `accepted` before and after, so the existing JOB_TRANSITIONS graph is
+        untouched. It writes the event that `_next_required_action` looks for,
+        which is what moves the technician's next step on from
+        "Call Customer & Confirm Requirements" to "Start Traveling".
+
+        Idempotent: calling it twice does not stack duplicate events, so a
+        double-tap in the field cannot corrupt the timeline.
+        """
+        job = await self._get_job(db, job_id, tenant_id)
+        self._assert_staff_owns_job(job, staff_member_id)
+
+        existing = (await db.execute(_sa_text(
+            "SELECT 1 FROM service_job_execution_events "
+            "WHERE job_id=:jid AND event_type=:et LIMIT 1"
+        ), {"jid": str(job.id), "et": EV_CUSTOMER_CONTACTED})).fetchone()
+        if existing is None:
+            db.add(ServiceJobExecutionEvent(
+                booking_id=job.booking_id, job_id=job.id, tenant_id=job.tenant_id,
+                staff_member_id=staff_member_id, actor_user_id=user_id, actor_role="staff",
+                event_type=EV_CUSTOMER_CONTACTED,
+                old_status=job.status, new_status=job.status,
+                notes=notes or "Provider contacted the customer to confirm requirements.",
+                event_metadata={"requirements": requirements} if requirements else {},
+                request_id=request_id,
+            ))
+            await db.flush()
+        return {**job.to_dict(), "customer_contacted": True}
 
     async def mark_reached_site(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)

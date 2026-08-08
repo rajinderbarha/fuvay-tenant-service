@@ -1150,10 +1150,27 @@ _NEXT_ACTION_BY_STATUS: dict[str, tuple[str, str] | None] = {
 }
 
 
-def _next_required_action(status: str, work_start_status: dict) -> dict:
+def _next_required_action(
+    status: str, work_start_status: dict, customer_contacted: bool = True,
+) -> dict:
+    """`customer_contacted` defaults True so every existing caller keeps its
+    exact previous behaviour; callers that can determine it pass the real value
+    and get the contact-first step."""
     entry = _NEXT_ACTION_BY_STATUS.get(status)
     if entry is None:
         return {"action_type": None, "action_label": None, "allowed": False, "blocked_message": None}
+
+    # FIRST TASK on a job the provider has not yet spoken to the customer
+    # about: understand the request and confirm requirements by phone. Travel
+    # is not the first action -- a technician arriving without knowing what
+    # they are walking into is the whole problem this prevents.
+    if status in ("accepted", "scheduled") and not customer_contacted:
+        return {
+            "action_type": "call-customer",
+            "action_label": "Call Customer & Confirm Requirements",
+            "allowed": True,
+            "blocked_message": None,
+        }
 
     action_type, action_label = entry
     allowed = True

@@ -134,6 +134,29 @@ async def staff_reject_job(job_id: uuid.UUID, body: RejectBody, r: Request, user
     return ok(result, rid, "staff-exec-reject")
 
 
+@staff_router.post(
+    "/{job_id}/customer-contacted",
+    summary="First task: log that the customer was called and requirements confirmed",
+    description=(
+        "Records the provider's FIRST task on an auto-accepted job -- understand the "
+        "request by speaking to the customer before travelling. Does not change job "
+        "status; it satisfies the 'Call Customer & Confirm Requirements' next-action "
+        "so the technician can then start travelling. Idempotent."
+    ),
+)
+async def staff_customer_contacted(job_id: uuid.UUID, r: Request, body: dict | None = None,
+                                   user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
+    rid = getattr(r.state, "request_id", "—")
+    payload = body or {}
+    result = await _svc.log_customer_contacted(
+        db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)),
+        uuid.UUID(str(user.user_id)),
+        notes=payload.get("notes"), requirements=payload.get("requirements"), request_id=rid,
+    )
+    await db.commit()
+    return ok(result, rid, "staff-exec-customer-contacted")
+
+
 @staff_router.post("/{job_id}/on-the-way")
 async def staff_on_the_way(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
