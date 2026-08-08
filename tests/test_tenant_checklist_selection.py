@@ -132,8 +132,12 @@ async def test_selection_rules_against_a_real_authored_checklist():
         tpl_id, ver_id, map_id = await _author_published_checklist(db, jt)
 
         selectable = await svc.selectable_items_for_service(db, sid)
-        assert len(selectable) == 7, "every authored+published+mapped point must be offerable"
-        ids = [uuid.UUID(i["id"]) for i in selectable]
+        # Assert about THIS fixture's points, not the total: real seeded content
+        # is also legitimately offerable for this service.
+        by_label = {i["label"]: i for i in selectable}
+        for label in ITEM_LABELS:
+            assert label in by_label, f"{label!r} must be offerable once authored+published+mapped"
+        ids = [uuid.UUID(by_label[label]["id"]) for label in ITEM_LABELS]
 
         # Below the minimum is refused, and the message carries the real count.
         with pytest.raises(ServiceOSException) as exc:
@@ -219,8 +223,8 @@ async def test_a_draft_version_is_never_offerable_to_a_tenant():
     try:
         sid, jt = await _ac_service_and_job_type(db)
         tpl_id, ver_id, map_id = await _author_published_checklist(db, jt)
-        before = len(await svc.selectable_items_for_service(db, sid))
-        assert before == 7
+        mine = {i["label"] for i in await svc.selectable_items_for_service(db, sid)}
+        assert set(ITEM_LABELS) <= mine, "this fixture's points start out offerable"
 
         # Force the mapped version back to DRAFT: its items must vanish from
         # the tenant's selectable list.
@@ -228,7 +232,9 @@ async def test_a_draft_version_is_never_offerable_to_a_tenant():
             "UPDATE checklist_template_versions SET status=:s WHERE id=:v"),
             {"s": c.VERSION_DRAFT, "v": str(ver_id)})
         await db.commit()
-        assert await svc.selectable_items_for_service(db, sid) == []
+        after = {i["label"] for i in await svc.selectable_items_for_service(db, sid)}
+        assert not (set(ITEM_LABELS) & after), \
+            "a DRAFT version's points must vanish from the tenant's selectable list"
     finally:
         await _cleanup(db, GURAMRIT_TENANT_ID, tpl_id, ver_id, map_id)
         await db.close()
