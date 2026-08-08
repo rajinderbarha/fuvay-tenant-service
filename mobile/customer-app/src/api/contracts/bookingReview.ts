@@ -61,6 +61,20 @@ export const reviewProviderDtoSchema = z.object({
   }).passthrough()).default([]),
   rating: z.number().nullable().optional(),
   customer_visible_reason: z.string().optional(),
+  /** Real, countable facts about the provider -- backed by approved reviews,
+   * actual verification status and completed-job counts. A field is null when
+   * there is genuinely nothing to show, so the UI stays silent rather than
+   * dressing up an absence. Excludes the internal match score by design. */
+  facts: z.object({
+    verified: z.boolean(),
+    rating: z.number().nullable(),
+    review_count: z.number(),
+    jobs_completed: z.number(),
+    completion_rate: z.number().nullable(),
+    on_platform_since: z.string().nullable(),
+    city: z.string().nullable(),
+    is_new: z.boolean(),
+  }).passthrough().nullable().optional(),
 }).passthrough();
 
 export const matchAndPriceResponseSchema = z.object({

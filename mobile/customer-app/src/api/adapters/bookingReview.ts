@@ -105,6 +105,18 @@ export function adaptBookingReviewSummary(
           providerName: summaryDto.selected_provider.provider_name,
           publicBadges: summaryDto.selected_provider.public_badges,
           rating: summaryDto.selected_provider.rating ?? null,
+          facts: summaryDto.selected_provider.facts
+            ? {
+                verified: summaryDto.selected_provider.facts.verified,
+                rating: summaryDto.selected_provider.facts.rating,
+                reviewCount: summaryDto.selected_provider.facts.review_count,
+                jobsCompleted: summaryDto.selected_provider.facts.jobs_completed,
+                completionRate: summaryDto.selected_provider.facts.completion_rate,
+                onPlatformSince: summaryDto.selected_provider.facts.on_platform_since,
+                city: summaryDto.selected_provider.facts.city,
+                isNew: summaryDto.selected_provider.facts.is_new,
+              }
+            : null,
         }
       : null,
     photoCount: draft.photo_urls?.length ?? 0,

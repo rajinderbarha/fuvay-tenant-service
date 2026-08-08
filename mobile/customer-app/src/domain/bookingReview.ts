@@ -3,13 +3,36 @@ import { ServerDate } from "./dates";
 import { ServicePriceState, InspectionPricing } from "./servicePricing";
 import { Money } from "./money";
 
+/**
+ * Countable facts about a provider, all backend-derived.
+ *
+ * `rating` is null unless real approved reviews exist -- an average over zero
+ * reviews is "no rating yet", never "0 stars". `completionRate` is null until
+ * there is enough finished work for a percentage to mean anything, so the app
+ * cannot show "100%" off a single job.
+ */
+export interface ReviewProviderFacts {
+  verified: boolean;
+  rating: number | null;
+  reviewCount: number;
+  jobsCompleted: number;
+  completionRate: number | null;
+  onPlatformSince: string | null;
+  city: string | null;
+  /** No reviews and no completed jobs -- the card must say so plainly rather
+   * than imply experience the provider does not have. */
+  isNew: boolean;
+}
+
 export interface ReviewProvider {
   tenantId: string;
   providerName: string;
   /** Backend-authored trust chips: `{name, icon?, color?}`. Never
-   * fabricated client-side. */
+   * fabricated client-side, and now empty rather than falsely showing
+   * "Verified" for a provider whose verification never started. */
   publicBadges: { name: string; icon?: string | null; color?: string | null }[];
   rating: number | null;
+  facts: ReviewProviderFacts | null;
 }
 
 export interface ReviewAnswerField {

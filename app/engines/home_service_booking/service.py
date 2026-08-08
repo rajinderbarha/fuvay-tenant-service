@@ -1147,6 +1147,15 @@ class HomeServiceChatbotBookingService:
         )
 
         selected_provider_public = build_customer_safe_provider(signals, score)
+        # Real, countable facts about this provider for the customer's booking
+        # card -- rating backed by approved reviews, actual verification status,
+        # completed-job count. Deliberately excludes the internal score, its
+        # sub-scores (hard gate 9) AND tenants.health_score, which defaults to
+        # 100 and would read to a customer as an earned quality rating.
+        from app.engines.home_service_booking.matching_engine import customer_provider_facts
+        selected_provider_public["facts"] = await customer_provider_facts(
+            self.db, selected_tenant_id,
+        )
         selected_provider_admin = build_admin_provider(signals, score) if reveal_internal_score else None
 
         result = {

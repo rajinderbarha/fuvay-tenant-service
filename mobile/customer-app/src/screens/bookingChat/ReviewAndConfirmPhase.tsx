@@ -8,7 +8,8 @@ import { PriceProviderCard } from "../../components/bookingChat/PriceProviderCar
 import { FeeAssuranceCard } from "../../components/bookingChat/FeeAssuranceCard";
 import { ServiceChecklistCard } from "../../components/bookingChat/ServiceChecklistCard";
 import { useServiceChecklist } from "./useServiceChecklist";
-import { ConfirmCard } from "../../components/bookingChat/ConfirmCard";
+import { BookingConfirmedOverlay } from "../../components/bookingChat/BookingConfirmedOverlay";
+import { ProviderTrustCard } from "../../components/bookingChat/ProviderTrustCard";
 import { formatMoney } from "../../domain/money";
 import { resolveServicePriceDisplay } from "../../domain/servicePricing";
 import { BookingReviewSummary } from "../../domain/bookingReview";
@@ -21,6 +22,16 @@ export interface ReviewAndConfirmPhaseProps {
    * happened -- it previously went all-green as soon as the address
    * resolved, claiming a booking that did not exist yet. */
   onConfirmed?: () => void;
+}
+
+/** "Today" / "Tomorrow" / "Sat 9 Aug" for a promised slot. Mirrors the slot
+ * picker's wording so the confirmation repeats back exactly what was chosen. */
+function slotDayLabel(dateIso: string, daysAhead: number): string {
+  if (daysAhead === 0) return "Today";
+  if (daysAhead === 1) return "Tomorrow";
+  const date = new Date(`${dateIso}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateIso;
+  return date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 }
 
 /** The one real price the slot picker shows alongside a time -- there is
@@ -80,11 +91,19 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: 
   }
 
   if (c.uiState === "confirmed" && c.confirmation) {
+    const slot = c.summary?.promisedSlot ?? null;
+    const inspection = c.summary?.inspection ?? null;
     return (
-      <ConfirmCard
+      <BookingConfirmedOverlay
         bookingNumber={c.confirmation.bookingNumber}
         providerName={c.summary?.provider?.providerName ?? null}
+        slotLabel={slot ? `${slotDayLabel(slot.date, slot.daysAhead)}, ${slot.timeWindow}` : null}
+        amountLabel={inspection ? formatMoney(inspection.visitFee) : null}
+        // Asserted by the backend next to the billing rule that enforces it --
+        // never assumed here.
+        feeCreditedAgainstWork={!!inspection?.visitFeePolicy?.creditedAgainstWork}
         onTrackBooking={() => onTrackBooking(c.confirmation!.bookingId)}
+        onDone={() => onTrackBooking(c.confirmation!.bookingId)}
       />
     );
   }
@@ -124,6 +143,7 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: 
           {/* Money is settled BEFORE the Confirm button, never after it --
               the customer should have no open question about what they are
               agreeing to pay. */}
+          {c.summary.provider ? <ProviderTrustCard provider={c.summary.provider} /> : null}
           <FeeAssuranceCard
             inspection={c.summary.inspection}
             emergencySurcharge={c.summary.isEmergency ? c.summary.emergencySurcharge : null}

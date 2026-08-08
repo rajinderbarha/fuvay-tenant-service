@@ -300,6 +300,13 @@ async def test_same_day_booking_can_be_switched_off_by_the_provider():
         await db.close()
 
 
+async def _booked_counts_helper(db, day) -> dict[str, int]:
+    """Live per-window booking counts for the fixture tenant, mirroring the
+    walk's own capacity source."""
+    from app.engines.home_service_booking.provider_slot_service import _booked_counts
+    return await _booked_counts(db, GURAMRIT_TENANT_ID, day)
+
+
 async def _provider_rules_for_day_helper(db, dow: int) -> list[dict]:
     from app.engines.home_service_booking.provider_slot_service import _provider_rules_for_day
     return await _provider_rules_for_day(db, GURAMRIT_TENANT_ID, dow)
@@ -346,12 +353,21 @@ async def test_list_offers_whole_days_never_truncated_part_way_through():
             for r in rules for a, b in _slots_from_rule(r)
             if dt.datetime.combine(day, a) >= cutoff
         }
-        # Every window the provider really has open that day (and is not
-        # already full) is offered -- no arbitrary truncation.
-        assert expected - offered == set() or all(
-            any(s["time_window"] == w and s["already_booked"] >= s["capacity"] for s in slots)
-            for w in (expected - offered)
-        ), "a day's remaining slots were truncated"
+        # Every window the provider really has open that day is offered UNLESS
+        # it is genuinely at capacity. A full window is absent from the response
+        # entirely, so its capacity has to be checked at source -- looking for it
+        # inside `slots` (as this once did) could never succeed and made the
+        # assertion effectively unfalsifiable in one direction.
+        booked = await _booked_counts_helper(db, day)
+        caps = {_window_label(a, b): (r.get("max_bookings_per_slot") or FALLBACK_MAX_PER_SLOT)
+                for r in rules for a, b in _slots_from_rule(r)}
+        genuinely_missing = {
+            w for w in (expected - offered)
+            if booked.get(w, 0) < caps.get(w, FALLBACK_MAX_PER_SLOT)
+        }
+        assert genuinely_missing == set(), (
+            f"a day's remaining slots were truncated: {sorted(genuinely_missing)}"
+        )
     finally:
         await db.close()
 

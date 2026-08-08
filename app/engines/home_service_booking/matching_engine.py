@@ -795,12 +795,120 @@ async def _public_badges(db: AsyncSession, tenant_id: uuid.UUID, health_score, r
     if earned:
         return [{"name": b["name"], "icon": b.get("icon"), "color": b.get("color")} for b in earned]
 
-    badges = [{"name": "Verified", "icon": "shield-check", "color": "#3b82f6"}]
-    if rating and float(rating) >= 4.5:
+    # INTEGRITY FIX. The previous fallback added "Verified" UNCONDITIONALLY and
+    # "High Completion" from `health_score >= 90` -- but health_score defaults to
+    # 100 for a brand-new tenant with no history at all. Live result: Guramrit
+    # showed a customer "Verified · High Completion" while its
+    # verification_status was 'not_started' and it had completed ZERO jobs.
+    #
+    # A badge is a claim the platform makes on a provider's behalf. Fabricating
+    # one is worse than showing none: it is the assurance a customer relies on
+    # when letting a stranger into their home. Every badge below is now tied to
+    # a fact that can be pointed at in the database.
+    return await _earned_fallback_badges(db, tenant_id, rating)
+
+
+# Enough reviews that an average means something, rather than one happy customer.
+_MIN_REVIEWS_FOR_RATING_BADGE = 3
+# Enough finished work that a completion rate is not noise.
+_MIN_JOBS_FOR_COMPLETION_BADGE = 5
+
+
+async def _earned_fallback_badges(db: AsyncSession, tenant_id: uuid.UUID, rating) -> list[dict]:
+    """Badges derived only from facts, for a provider with no admin-configured
+    ones yet. Returns [] when nothing has genuinely been earned -- the card then
+    says something honest about being new instead of borrowing credibility."""
+    from sqlalchemy import text as _t
+
+    badges: list[dict] = []
+
+    # "Verified" means the platform actually verified them.
+    status = (await db.execute(_t(
+        "SELECT verification_status FROM tenants WHERE id = :tid"
+    ), {"tid": str(tenant_id)})).scalar()
+    if str(status or "").strip().lower() in ("verified", "approved", "completed"):
+        badges.append({"name": "Verified", "icon": "shield-check", "color": "#3b82f6"})
+
+    # "Highly Rated" needs a real average over a meaningful number of reviews.
+    review_row = (await db.execute(_t(
+        "SELECT count(*) AS n, avg(overall_rating) AS avg_rating "
+        "FROM customer_reviews WHERE tenant_id = :tid AND status = 'approved'"
+    ), {"tid": str(tenant_id)})).first()
+    review_count = int(review_row._mapping["n"] or 0) if review_row else 0
+    avg_rating = review_row._mapping["avg_rating"] if review_row else None
+    if review_count >= _MIN_REVIEWS_FOR_RATING_BADGE and avg_rating and float(avg_rating) >= 4.5:
         badges.append({"name": "Highly Rated", "icon": "star", "color": "#f59e0b"})
-    if health_score and float(health_score) >= 90:
+
+    # "High Completion" needs real finished jobs, not a default score.
+    job_row = (await db.execute(_t(
+        "SELECT count(*) FILTER (WHERE status = 'completed') AS done, "
+        "       count(*) FILTER (WHERE status IN ('cancelled','failed')) AS lost "
+        "FROM service_jobs WHERE tenant_id = :tid"
+    ), {"tid": str(tenant_id)})).first()
+    done = int(job_row._mapping["done"] or 0) if job_row else 0
+    lost = int(job_row._mapping["lost"] or 0) if job_row else 0
+    if done >= _MIN_JOBS_FOR_COMPLETION_BADGE and done / max(1, done + lost) >= 0.9:
         badges.append({"name": "High Completion", "icon": "check-circle", "color": "#10b981"})
+
     return badges
+
+
+async def customer_provider_facts(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    """Real, customer-relevant facts about a provider, for the booking card.
+
+    Everything here is a counted or stored fact. Deliberately EXCLUDES the
+    internal score and its sub-scores (hard gate 9) -- and also excludes
+    `tenants.health_score`, which is an internal quality metric that defaults to
+    100 and would read to a customer as an earned rating.
+
+    A field is None/0 when there is genuinely nothing to show, so the UI can
+    stay silent rather than dress up an absence.
+    """
+    from sqlalchemy import text as _t
+
+    row = (await db.execute(_t(
+        "SELECT verification_status, city, created_at, activated_at "
+        "FROM tenants WHERE id = :tid"
+    ), {"tid": str(tenant_id)})).first()
+    m = row._mapping if row else {}
+
+    reviews = (await db.execute(_t(
+        "SELECT count(*) AS n, avg(overall_rating) AS avg_rating "
+        "FROM customer_reviews WHERE tenant_id = :tid AND status = 'approved'"
+    ), {"tid": str(tenant_id)})).first()
+    review_count = int(reviews._mapping["n"] or 0) if reviews else 0
+    avg_rating = reviews._mapping["avg_rating"] if reviews else None
+
+    jobs = (await db.execute(_t(
+        "SELECT count(*) FILTER (WHERE status = 'completed') AS done, "
+        "       count(*) FILTER (WHERE status IN ('cancelled','failed')) AS lost "
+        "FROM service_jobs WHERE tenant_id = :tid"
+    ), {"tid": str(tenant_id)})).first()
+    done = int(jobs._mapping["done"] or 0) if jobs else 0
+    lost = int(jobs._mapping["lost"] or 0) if jobs else 0
+
+    since = m.get("activated_at") or m.get("created_at")
+    verified = str(m.get("verification_status") or "").strip().lower() in (
+        "verified", "approved", "completed")
+
+    return {
+        "verified": verified,
+        # Only a rating backed by real approved reviews. An average of zero
+        # reviews is not "0 stars", it is "no rating yet".
+        "rating": round(float(avg_rating), 1) if (review_count and avg_rating) else None,
+        "review_count": review_count,
+        "jobs_completed": done,
+        # Withheld until there is enough finished work for a percentage to mean
+        # anything, rather than showing "100%" off a single job.
+        "completion_rate": (
+            round(done / (done + lost) * 100) if done + lost >= _MIN_JOBS_FOR_COMPLETION_BADGE else None
+        ),
+        "on_platform_since": since.isoformat() if since else None,
+        "city": m.get("city"),
+        # True when this provider genuinely has no track record yet, so the card
+        # can say so plainly instead of implying experience it does not have.
+        "is_new": review_count == 0 and done == 0,
+    }
 
 
 async def get_area_market_comparison(
