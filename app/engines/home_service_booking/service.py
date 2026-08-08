@@ -1322,11 +1322,18 @@ class HomeServiceChatbotBookingService:
             # still shows it, instead of only new drafts getting it.
             if draft.selected_tenant_id:
                 from app.engines.home_service_booking.matching_engine import (
-                    customer_provider_facts,
+                    customer_provider_facts, _public_badges,
                 )
                 try:
                     customer_safe_provider["facts"] = await customer_provider_facts(
                         self.db, draft.selected_tenant_id, offering_id=draft.offering_id,
+                    )
+                    # Badges too, and for the same reason: an admin awarding or
+                    # revoking one must be reflected on the screen the customer
+                    # decides from, not only on drafts matched afterwards.
+                    customer_safe_provider["public_badges"] = await _public_badges(
+                        self.db, draft.selected_tenant_id,
+                        None, (customer_safe_provider["facts"] or {}).get("rating"),
                     )
                 except Exception as exc:  # noqa: BLE001 -- never block the summary
                     logger.warning("home_service.provider_facts_failed", error=str(exc))
