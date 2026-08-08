@@ -701,6 +701,14 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         customer_router as cc_customer_router,
         admin_router as cc_instance_admin_router,
     )
+    # Masked calling — platform-bridged technician<->customer calls so neither
+    # side ever learns the other's number (off-platform leakage prevention).
+    from app.engines.masked_calling.router import (
+        staff_router as mc_staff_router, webhook_router as mc_webhook_router,
+    )
+    app.include_router(mc_staff_router)
+    app.include_router(mc_webhook_router)
+
     # Tenant selection of which authored checklist points this provider runs
     # per service (minimum 5) -- the tenant half of the admin-authors/
     # tenant-selects rule. Distinct from execution_router's tenant_router,

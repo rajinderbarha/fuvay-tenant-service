@@ -305,8 +305,20 @@ async def get_job_detail(db: AsyncSession, tid: uuid.UUID, job_id: uuid.UUID) ->
         "job_id": str(row.id), "job_number": row.job_number, "status": row.status,
         "pipeline_group": _STATUS_TO_GROUP.get(row.status, row.status),
         "assignment_status": row.assignment_status,
-        "customer_name": row.customer_name, "customer_phone": row.customer_phone,
+        "customer_name": row.customer_name,
+        # MASKED CALLING: the customer's raw number is no longer returned here.
+        # A number handed over once becomes a permanent private channel and the
+        # next job goes off-platform, so calls are bridged by the platform
+        # instead -- see masked_calling.router
+        # (GET /v1/staff/service-jobs/{job_id}/contact, POST .../call).
+        # `customer_phone` is kept as an explicit null rather than dropped, so
+        # any existing client reading the key gets a defined absence instead of
+        # an undefined that might read as "not loaded yet".
+        "customer_phone": None,
+        "customer_contact_mode": "platform_masked_call",
         "service_name": row.service_name,
+        # The technician's own number stays visible to their own provider --
+        # they are that provider's staff, so this is not a cross-party leak.
         "technician_name": row.technician_name, "technician_phone": row.technician_phone,
         "scheduled_date": row.scheduled_date.isoformat() if row.scheduled_date else None,
         "scheduled_time_window": row.scheduled_time_window,

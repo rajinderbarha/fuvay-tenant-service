@@ -67,6 +67,24 @@ class Settings(BaseSettings):
     RAG_CHUNK_OVERLAP: int = 64
     RAG_TOP_K: int = 5
 
+    # ── Masked calling (number privacy / off-platform prevention) ──
+    # Platform-owned telephony account: the platform bridges the two legs of
+    # a call so neither the technician nor the customer ever sees the other's
+    # real number, and the binding dies with the job.
+    #
+    # Empty MASKED_CALLING_PROVIDER means NOT CONFIGURED. In that state the
+    # feature degrades HONESTLY -- the API reports that calling is
+    # unavailable rather than falling back to revealing a real number, which
+    # would silently defeat the entire point.
+    MASKED_CALLING_PROVIDER: str = ""        # "" | "exotel" | "http"
+    MASKED_CALLING_API_BASE: str = ""
+    MASKED_CALLING_API_KEY: str = ""
+    MASKED_CALLING_API_SECRET: str = ""
+    MASKED_CALLING_CALLER_ID: str = ""       # the platform number both legs see
+    # Shared secret the provider echoes back on status webhooks, so a forged
+    # callback cannot mark a call connected or leak a number.
+    MASKED_CALLING_WEBHOOK_SECRET: str = ""
+
     # ── Storage (Cloudinary — direct-upload signed params) ─────────
     CLOUDINARY_CLOUD_NAME: str = ""
     CLOUDINARY_API_KEY: str = ""

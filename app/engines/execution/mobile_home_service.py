@@ -42,6 +42,11 @@ async def _customer_already_contacted(db: AsyncSession, job_id: uuid.UUID) -> bo
     Presence of a real `customer_contacted` execution event -- never inferred
     from status or elapsed time, so the "call the customer first" step can only
     be satisfied by actually doing it.
+
+    Masked calling writes this same event when a bridged call genuinely
+    CONNECTS (see masked_calling.service._record_customer_contacted), so there
+    is one definition of "contacted" shared by the platform call and the manual
+    log-it endpoint -- and a ring-out satisfies neither.
     """
     from sqlalchemy import text as _sa_text
     from app.engines.execution.constants import EV_CUSTOMER_CONTACTED
