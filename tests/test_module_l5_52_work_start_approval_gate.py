@@ -68,11 +68,15 @@ def _mock_link(job_type_id=JOB_TYPE_ID, is_active=True):
     return m
 
 
-def _mock_workflow(quote_approval_required=True):
+def _mock_workflow(quote_approval_required=True, checklist_required=False):
     w = MagicMock()
     w.master_service_id = OFFERING_ID
     w.job_type_id = JOB_TYPE_ID
     w.quote_approval_required = quote_approval_required
+    # Stated rather than left as a MagicMock attribute (which is truthy), so the
+    # separate pre-work checklist gate does not silently enter these
+    # approval-gate tests.
+    w.checklist_required = checklist_required
     return w
 
 

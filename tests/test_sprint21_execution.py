@@ -70,7 +70,15 @@ def _mock_lead(status="new", agent_id=None):
 
 
 def _db_returning(*objs):
-    """Build an AsyncMock db where each execute call returns the next obj (or None)."""
+    """Build an AsyncMock db where each execute call returns the next obj (or None).
+
+    Once the listed objects run out, further queries return an EMPTY result
+    rather than raising StopIteration. A finite side-effect list made these
+    tests depend on the exact NUMBER of queries a service makes, so adding an
+    unrelated lookup (the checklist gate reading canonical instances) broke
+    test_start_service with a StopIteration that said nothing about the
+    behaviour under test.
+    """
     db = AsyncMock()
     db.flush   = AsyncMock()
     db.commit  = AsyncMock()
@@ -79,8 +87,18 @@ def _db_returning(*objs):
     for obj in objs:
         res = MagicMock()
         res.scalars.return_value.first.return_value = obj
+        res.scalars.return_value.all.return_value = [obj] if obj is not None else []
         side_effects.append(res)
-    db.execute = AsyncMock(side_effect=side_effects)
+
+    empty = MagicMock()
+    empty.scalars.return_value.first.return_value = None
+    empty.scalars.return_value.all.return_value = []
+    remaining = iter(side_effects)
+
+    async def execute(*_a, **_kw):
+        return next(remaining, empty)
+
+    db.execute = AsyncMock(side_effect=execute)
     return db
 
 
@@ -274,6 +292,11 @@ class TestHomeServiceExecution:
         db = _db_returning(job, None)
         approval_not_required = MagicMock()
         approval_not_required.quote_approval_required = False
+        # This job type does not demand a pre-work checklist either -- stated
+        # explicitly because a bare MagicMock attribute is truthy, which would
+        # silently put the checklist gate (covered in
+        # test_module_l5_56_completion_gates.py) into this transition test.
+        approval_not_required.checklist_required = False
         with patch.object(svc, "_resolve_job_type_workflow", AsyncMock(return_value=approval_not_required)):
             with patch(
                 "app.engines.checklist_catalog.gate.assert_gate_satisfied",

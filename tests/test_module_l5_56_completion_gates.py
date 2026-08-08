@@ -62,6 +62,28 @@ def test_migration_235_widens_the_column():
     assert "deduction_source" in src and "usage_credit_ledger" in src
 
 
+# ── 1b. A parts request must be possible in every status that advertises it ──
+
+def test_every_parts_eligible_status_can_reach_quote_required():
+    """`create_parts_request` accepts the statuses in
+    PARTS_REQUEST_ALLOWED_JOB_STATUSES and then moves the job to
+    quote_required. From `inspection_started` that edge did not exist, so the
+    endpoint answered 422 "cannot move from inspection_started to
+    quote_required" every single time -- a technician who found a part
+    mid-inspection could not record it, and the error blamed the transition
+    instead of the action. Any future addition to the allowed set fails here
+    unless the graph can actually carry it."""
+    from app.engines.execution.constants import (
+        JOB_TRANSITIONS, JS_QUOTE_REQUIRED, PARTS_REQUEST_ALLOWED_JOB_STATUSES,
+    )
+    for status in PARTS_REQUEST_ALLOWED_JOB_STATUSES:
+        if status == JS_QUOTE_REQUIRED:
+            continue  # already there; no transition is attempted
+        assert JS_QUOTE_REQUIRED in JOB_TRANSITIONS.get(status, set()), (
+            f"parts requests are allowed in '{status}' but the graph cannot move "
+            f"it to '{JS_QUOTE_REQUIRED}'")
+
+
 # ── 2. Finance views must not mislabel a commission charge ───────────────────
 
 def test_policy_source_distinguishes_the_three_shapes():

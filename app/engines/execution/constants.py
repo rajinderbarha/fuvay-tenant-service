@@ -28,7 +28,18 @@ JOB_TRANSITIONS: dict[str, set[str]] = {
     JS_SCHEDULED:          {JS_ON_THE_WAY, JS_CANCELLED, JS_CUSTOMER_NOT_AVAIL},
     JS_ON_THE_WAY:         {JS_REACHED_SITE, JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED},
     JS_REACHED_SITE:       {JS_INSPECTION_STARTED, JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED},
-    JS_INSPECTION_STARTED: {JS_INSPECTION_DONE, JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED},
+    # JS_QUOTE_REQUIRED is reachable from here because both
+    # `create_parts_request` and `mark_parts_required`/`mark_quote_required` are
+    # explicitly available while an inspection is in progress
+    # (PARTS_REQUEST_ALLOWED_JOB_STATUSES below lists JS_INSPECTION_STARTED, and
+    # the refusal message reads "after inspection has started"). Without the edge
+    # those endpoints raised EXECUTION_INVALID_STATUS_TRANSITION every time --
+    # "cannot move from inspection_started to quote_required" -- so a technician
+    # who found a part mid-inspection could not record it at all, and the error
+    # blamed the transition rather than saying the action was unavailable.
+    JS_INSPECTION_STARTED: {
+        JS_INSPECTION_DONE, JS_QUOTE_REQUIRED, JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED,
+    },
     # Phase 2A: JS_SERVICE_STARTED remains a graph-valid target here (an
     # estimate-not-required job must keep working exactly as before) -- the
     # NEW guard (assert_job_can_start_work, called from _set_status) blocks
