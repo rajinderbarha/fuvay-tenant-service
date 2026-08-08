@@ -14,6 +14,38 @@ from structlog.contextvars import merge_contextvars, clear_contextvars, bind_con
 from app.config import get_settings
 
 
+def _utf8_stream(stream):
+    """Return `stream` guaranteed to encode non-ASCII text.
+
+    Real crash this fixes, seen live on Windows: every log line containing a
+    rupee sign raised
+
+        UnicodeEncodeError: 'charmap' codec can't encode character '\u20b9'
+
+    because the console stream defaults to cp1252 there. Prices are logged all
+    over this application, so a single booking produced hundreds of these
+    tracebacks -- drowning the real diagnostics that logging exists to provide,
+    which is how a genuinely broken monetization call sat unnoticed in the noise.
+
+    `reconfigure` is preferred (Python 3.7+, keeps the same stream object). The
+    detach/wrap fallback covers a stream that does not support it. Both use
+    `errors="replace"`, so an unencodable character degrades to a placeholder
+    rather than taking the log record down.
+    """
+    try:
+        stream.reconfigure(encoding="utf-8", errors="replace")
+        return stream
+    except (AttributeError, ValueError):
+        pass
+    try:
+        import io as _io
+        return _io.TextIOWrapper(
+            stream.buffer, encoding="utf-8", errors="replace", line_buffering=True,
+        )
+    except Exception:  # noqa: BLE001 -- logging must never break startup
+        return stream
+
+
 def configure_logging() -> None:
     settings = get_settings()
 
@@ -31,14 +63,14 @@ def configure_logging() -> None:
             mask_pii_processor,
         structlog.processors.JSONRenderer(),
         ]
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(_utf8_stream(sys.stdout))
         handler.setFormatter(logging.Formatter("%(message)s"))
     else:
         # Pretty-print for local development
         processors = shared_processors + [
             structlog.dev.ConsoleRenderer(colors=True),
         ]
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(_utf8_stream(sys.stdout))
 
     # Configure stdlib logging (uvicorn, sqlalchemy, etc.)
     logging.basicConfig(

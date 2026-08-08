@@ -148,19 +148,38 @@ function BookingChatConversation({
   }, []);
 
   /**
-   * A confirmed booking is TERMINAL: its draft cannot be continued or re-booked.
-   * So when this tab regains focus after one, the only sensible state is a fresh
-   * conversation -- previously the screen kept the old success overlay, which
-   * looked like "you are booked" every time the customer came back and gave them
-   * no way to start another request.
+   * A confirmed booking is TERMINAL, so RE-ENTERING the tab after one starts a
+   * fresh conversation rather than showing a stale success screen.
    *
-   * Guarded on `booked` so an in-progress conversation is never wiped by simply
-   * switching tabs and back.
+   * The refs are load-bearing. The first version listed `booked` as a dependency,
+   * which made the focus effect re-run the instant `booked` flipped to true --
+   * WHILE the screen was focused and the success screen was appearing. It reset
+   * immediately, so confirming a booking restarted the chat and the customer
+   * never saw the confirmation or its Track / Book-another / Done actions at all.
+   *
+   * Reading state through refs with an EMPTY dependency list means this runs only
+   * on real focus and blur. `leftSinceBooking` is set on blur, so a reset happens
+   * only after the customer has genuinely navigated away and come back.
    */
+  const bookedRef = useRef(false);
+  const leftSinceBooking = useRef(false);
+  useEffect(() => { bookedRef.current = booked; }, [booked]);
+
+  const startNewBookingRef = useRef(startNewBooking);
+  useEffect(() => { startNewBookingRef.current = startNewBooking; }, [startNewBooking]);
+
   useFocusEffect(
     useCallback(() => {
-      if (booked) startNewBooking();
-    }, [booked, startNewBooking]),
+      if (bookedRef.current && leftSinceBooking.current) {
+        leftSinceBooking.current = false;
+        startNewBookingRef.current();
+      }
+      return () => {
+        // Cleanup runs on blur: remember that we left AFTER a booking, so the
+        // next focus is a genuine return rather than the confirmation render.
+        if (bookedRef.current) leftSinceBooking.current = true;
+      };
+    }, []),
   );
 
   // The full running task list for the current operation. The controller
