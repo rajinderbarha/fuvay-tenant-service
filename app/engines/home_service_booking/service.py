@@ -1154,7 +1154,7 @@ class HomeServiceChatbotBookingService:
         # 100 and would read to a customer as an earned quality rating.
         from app.engines.home_service_booking.matching_engine import customer_provider_facts
         selected_provider_public["facts"] = await customer_provider_facts(
-            self.db, selected_tenant_id,
+            self.db, selected_tenant_id, offering_id=master_service_id,
         )
         selected_provider_admin = build_admin_provider(signals, score) if reveal_internal_score else None
 
@@ -1315,6 +1315,21 @@ class HomeServiceChatbotBookingService:
                 k: v for k, v in draft.selected_provider_snapshot.items()
                 if k not in ("internal_score", "matching_score_snapshot")
             }
+            # Re-read the facts rather than replaying the ones captured at match
+            # time: a rating, review or completed-job count can move between
+            # matching and review, and the review screen is where the customer
+            # decides. It also means a draft matched before a fact was added
+            # still shows it, instead of only new drafts getting it.
+            if draft.selected_tenant_id:
+                from app.engines.home_service_booking.matching_engine import (
+                    customer_provider_facts,
+                )
+                try:
+                    customer_safe_provider["facts"] = await customer_provider_facts(
+                        self.db, draft.selected_tenant_id, offering_id=draft.offering_id,
+                    )
+                except Exception as exc:  # noqa: BLE001 -- never block the summary
+                    logger.warning("home_service.provider_facts_failed", error=str(exc))
 
         existing = draft.booking_summary or {}
         job_type_error = await self._validate_job_type_context(draft)

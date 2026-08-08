@@ -37,6 +37,20 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
   const reviewCount = facts?.reviewCount ?? 0;
   const showHeadlineRating = rating != null && reviewCount >= MIN_REVIEWS_FOR_HEADLINE;
 
+  // Only stars that actually have reviews behind them, highest first. Rendering
+  // all five would show four empty rows for a provider with a single review --
+  // visual bulk standing in for evidence that is not there.
+  const breakdown = facts?.ratingBreakdown ?? {};
+  const breakdownTotal = Object.values(breakdown).reduce((sum, n) => sum + n, 0);
+  // reviewCount is also required: the two come from the same query and cannot
+  // disagree in practice, so a breakdown arriving beside a zero count means a
+  // stale payload, and a stale bar chart is worse than none.
+  const starRows = breakdownTotal > 0 && reviewCount > 0
+    ? [5, 4, 3, 2, 1]
+        .map(star => ({ star, count: breakdown[String(star)] ?? 0 }))
+        .filter(row => row.count > 0)
+    : [];
+
   return (
     <View
       style={
@@ -133,6 +147,12 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
           <Stat BOT={BOT} icon="briefcase-outline"
                 value={String(facts.jobsCompleted)} label="jobs done" />
         ) : null}
+        {/* Experience with the service actually being booked -- a general total
+            says nothing about whether they have done THIS job before. */}
+        {facts?.jobsCompletedForService != null && facts.jobsCompletedForService > 0 ? (
+          <Stat BOT={BOT} icon="build-outline"
+                value={String(facts.jobsCompletedForService)} label="of this service" />
+        ) : null}
         {facts?.completionRate != null ? (
           <Stat BOT={BOT} icon="checkmark-done-outline"
                 value={`${facts.completionRate}%`} label="completed" />
@@ -141,7 +161,68 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
           <Stat BOT={BOT} icon="calendar-outline"
                 value={sinceLabel(facts.onPlatformSince)} label="on Fuvay" />
         ) : null}
+        {facts?.city ? (
+          <Stat BOT={BOT} icon="location-outline" value={facts.city} label="based in" />
+        ) : null}
       </View>
+
+      {/* How the reviews are actually distributed. Counts, not bars invented to
+          look full: a customer reads "9 of 10 gave 5 stars" very differently
+          from a bare average, and this is the same data the average comes
+          from. Hidden entirely when there are no approved reviews. */}
+      {starRows.length > 0 ? (
+        <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, gap: 6 }}>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.3 }}>
+            RATING BREAKDOWN
+          </Text>
+          {starRows.map(({ star, count }) => (
+            <View key={star} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text style={{ fontSize: 12, color: BOT.textTertiary, width: 28 }}>{star}★</Text>
+              <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: BOT.surfaceRaised, overflow: "hidden" }}>
+                <View
+                  style={{
+                    width: `${Math.round((count / breakdownTotal) * 100)}%`,
+                    height: 6, borderRadius: 3, backgroundColor: BOT.warning,
+                  }}
+                />
+              </View>
+              <Text style={{ fontSize: 12, color: BOT.textTertiary, width: 28, textAlign: "right" }}>
+                {count}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {/* Real customer words, in full sentences rather than clipped. No
+          reviewer identity -- the backend never sends one. */}
+      {facts?.recentReviews && facts.recentReviews.length > 0 ? (
+        <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, gap: 10 }}>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.3 }}>
+            WHAT CUSTOMERS SAID
+          </Text>
+          {facts.recentReviews.map((review, index) => (
+            <View key={`${review.createdAt ?? "r"}-${index}`} style={{ gap: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Stars BOT={BOT} rating={review.rating} />
+                {review.createdAt ? (
+                  <Text style={{ fontSize: 12, color: BOT.textTertiary }}>
+                    {sinceLabel(review.createdAt)}
+                  </Text>
+                ) : null}
+              </View>
+              {review.title ? (
+                <Text style={{ fontSize: 14, fontWeight: "600", color: BOT.textPrimary }}>
+                  {review.title}
+                </Text>
+              ) : null}
+              <Text style={{ fontSize: 14, lineHeight: 20, color: BOT.textSecondary }}>
+                {review.text}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <View
         style={{

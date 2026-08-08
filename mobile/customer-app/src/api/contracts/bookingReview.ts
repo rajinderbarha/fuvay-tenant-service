@@ -74,6 +74,19 @@ export const reviewProviderDtoSchema = z.object({
     on_platform_since: z.string().nullable(),
     city: z.string().nullable(),
     is_new: z.boolean(),
+    /** Counts per star, keyed "5".."1". Plain counts -- no weighting. */
+    rating_breakdown: z.record(z.string(), z.number()).nullable().optional(),
+    /** Up to three approved AND publicly visible comments. Never carries the
+     * reviewer's identity: the customer sees what was said, not who said it. */
+    recent_reviews: z.array(z.object({
+      rating: z.number(),
+      title: z.string().nullable().optional(),
+      text: z.string(),
+      created_at: z.string().nullable().optional(),
+    }).passthrough()).nullable().optional(),
+    /** Completed jobs for THIS service. Null when the backend was not asked
+     * about a specific service -- distinct from a real zero. */
+    jobs_completed_for_service: z.number().nullable().optional(),
   }).passthrough().nullable().optional(),
 }).passthrough();
 

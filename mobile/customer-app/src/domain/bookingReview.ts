@@ -22,6 +22,21 @@ export interface ReviewProviderFacts {
   /** No reviews and no completed jobs -- the card must say so plainly rather
    * than imply experience the provider does not have. */
   isNew: boolean;
+  /** Counted approved reviews per star, keyed "5".."1". Empty when there are
+   * none, so the breakdown is simply absent rather than five zero bars. */
+  ratingBreakdown: Record<string, number>;
+  /** Up to three real, publicly visible comments. No reviewer identity. */
+  recentReviews: ReviewProviderComment[];
+  /** Completed jobs for the service being booked. Null when unknown, which is
+   * NOT the same as a counted zero. */
+  jobsCompletedForService: number | null;
+}
+
+export interface ReviewProviderComment {
+  rating: number;
+  title: string | null;
+  text: string;
+  createdAt: string | null;
 }
 
 export interface ReviewProvider {

@@ -14,6 +14,9 @@ function facts(overrides: Partial<ReviewProviderFacts> = {}): ReviewProviderFact
     onPlatformSince: "2025-03-01T00:00:00Z",
     city: "Ludhiana",
     isNew: false,
+    ratingBreakdown: { "5": 36, "4": 4, "3": 1, "2": 0, "1": 1 },
+    recentReviews: [],
+    jobsCompletedForService: 23,
     ...overrides,
   };
 }
@@ -114,5 +117,68 @@ describe("ProviderTrustCard", () => {
       <ProviderTrustCard provider={provider({ rating: null, facts: null })} />,
     );
     expect(screen.getByText(/New on Fuvay — no reviews yet/)).toBeTruthy();
+  });
+
+  it("breaks the rating down by star, skipping stars nobody gave", () => {
+    renderWithProviders(<ProviderTrustCard provider={provider()} />);
+    expect(screen.getByText("RATING BREAKDOWN")).toBeTruthy();
+    expect(screen.getByText("5★")).toBeTruthy();
+    expect(screen.getByText("36")).toBeTruthy();
+    // "2" had no reviews, so it gets no row rather than an empty bar padding
+    // the card out with nothing.
+    expect(screen.queryByText("2★")).toBeNull();
+  });
+
+  it("shows no breakdown for a provider with no approved reviews", () => {
+    renderWithProviders(
+      <ProviderTrustCard
+        provider={provider({
+          rating: null,
+          facts: facts({
+            rating: null, reviewCount: 0, isNew: true,
+            ratingBreakdown: {}, jobsCompleted: 0, completionRate: null,
+            jobsCompletedForService: 0,
+          }),
+        })}
+      />,
+    );
+    expect(screen.queryByText("RATING BREAKDOWN")).toBeNull();
+    expect(screen.queryByText("of this service")).toBeNull();
+  });
+
+  it("quotes real customer comments without naming the reviewer", () => {
+    renderWithProviders(
+      <ProviderTrustCard
+        provider={provider({
+          facts: facts({
+            recentReviews: [
+              { rating: 5, title: "Quick and tidy", text: "Fixed the AC in one visit.", createdAt: "2026-08-05T00:00:00Z" },
+            ],
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText("WHAT CUSTOMERS SAID")).toBeTruthy();
+    expect(screen.getByText("Quick and tidy")).toBeTruthy();
+    expect(screen.getByText("Fixed the AC in one visit.")).toBeTruthy();
+  });
+
+  it("omits the comments section when there are none", () => {
+    renderWithProviders(<ProviderTrustCard provider={provider()} />);
+    expect(screen.queryByText("WHAT CUSTOMERS SAID")).toBeNull();
+  });
+
+  it("shows experience with the service being booked", () => {
+    renderWithProviders(<ProviderTrustCard provider={provider()} />);
+    expect(screen.getByText("23")).toBeTruthy();
+    expect(screen.getByText("of this service")).toBeTruthy();
+  });
+
+  it("stays silent when the backend did not count this service", () => {
+    // null is "not asked", which is NOT the same as a counted zero.
+    renderWithProviders(
+      <ProviderTrustCard provider={provider({ facts: facts({ jobsCompletedForService: null }) })} />,
+    );
+    expect(screen.queryByText("of this service")).toBeNull();
   });
 });

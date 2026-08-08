@@ -116,6 +116,15 @@ export function adaptBookingReviewSummary(
                 onPlatformSince: summaryDto.selected_provider.facts.on_platform_since,
                 city: summaryDto.selected_provider.facts.city,
                 isNew: summaryDto.selected_provider.facts.is_new,
+                ratingBreakdown: summaryDto.selected_provider.facts.rating_breakdown ?? {},
+                recentReviews: (summaryDto.selected_provider.facts.recent_reviews ?? []).map(r => ({
+                  rating: r.rating,
+                  title: r.title ?? null,
+                  text: r.text,
+                  createdAt: r.created_at ?? null,
+                })),
+                jobsCompletedForService:
+                  summaryDto.selected_provider.facts.jobs_completed_for_service ?? null,
               }
             : null,
         }

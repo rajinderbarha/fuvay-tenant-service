@@ -853,7 +853,9 @@ async def _earned_fallback_badges(db: AsyncSession, tenant_id: uuid.UUID, rating
     return badges
 
 
-async def customer_provider_facts(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+async def customer_provider_facts(
+    db: AsyncSession, tenant_id: uuid.UUID, *, offering_id: uuid.UUID | None = None,
+) -> dict:
     """Real, customer-relevant facts about a provider, for the booking card.
 
     Everything here is a counted or stored fact. Deliberately EXCLUDES the
@@ -887,11 +889,58 @@ async def customer_provider_facts(db: AsyncSession, tenant_id: uuid.UUID) -> dic
     done = int(jobs._mapping["done"] or 0) if jobs else 0
     lost = int(jobs._mapping["lost"] or 0) if jobs else 0
 
+    # How the approved reviews are distributed. A customer reads "18 of 20 gave
+    # 5 stars" very differently from a bare 4.6, and it is a plain count -- no
+    # weighting, no scoring.
+    breakdown_rows = (await db.execute(_t(
+        "SELECT overall_rating AS stars, count(*) AS n "
+        "FROM customer_reviews WHERE tenant_id = :tid AND status = 'approved' "
+        "GROUP BY overall_rating"
+    ), {"tid": str(tenant_id)})).all()
+    breakdown = {str(star): 0 for star in range(5, 0, -1)}
+    for row in breakdown_rows:
+        stars = int(row._mapping["stars"] or 0)
+        if 1 <= stars <= 5:
+            breakdown[str(stars)] = int(row._mapping["n"] or 0)
+
+    # A few real, publicly visible comments in the customer's own words. Only
+    # approved AND public (an approved-but-hidden review is not ours to show),
+    # and never the reviewer's identity -- the customer sees what was said, not
+    # who said it.
+    recent_rows = (await db.execute(_t(
+        "SELECT overall_rating AS stars, review_title, review_text, created_at "
+        "FROM customer_reviews "
+        "WHERE tenant_id = :tid AND status = 'approved' AND visibility = 'public' "
+        "  AND review_text IS NOT NULL AND btrim(review_text) <> '' "
+        "ORDER BY created_at DESC LIMIT 3"
+    ), {"tid": str(tenant_id)})).all()
+    recent_reviews = [{
+        "rating": int(r._mapping["stars"] or 0),
+        "title": (r._mapping["review_title"] or None),
+        "text": r._mapping["review_text"].strip(),
+        "created_at": r._mapping["created_at"].isoformat() if r._mapping["created_at"] else None,
+    } for r in recent_rows]
+
+    # Completed jobs for THIS service, which is what the customer is actually
+    # buying -- a general total says nothing about whether they have done this
+    # particular job before. Omitted (None) when no offering was supplied,
+    # rather than silently reported as 0.
+    offering_done = None
+    if offering_id is not None:
+        offering_row = (await db.execute(_t(
+            "SELECT count(*) AS n FROM service_jobs "
+            "WHERE tenant_id = :tid AND offering_id = :oid AND status = 'completed'"
+        ), {"tid": str(tenant_id), "oid": str(offering_id)})).first()
+        offering_done = int(offering_row._mapping["n"] or 0) if offering_row else 0
+
     since = m.get("activated_at") or m.get("created_at")
     verified = str(m.get("verification_status") or "").strip().lower() in (
         "verified", "approved", "completed")
 
     return {
+        "rating_breakdown": breakdown,
+        "recent_reviews": recent_reviews,
+        "jobs_completed_for_service": offering_done,
         "verified": verified,
         # Only a rating backed by real approved reviews. An average of zero
         # reviews is not "0 stars", it is "no rating yet".
