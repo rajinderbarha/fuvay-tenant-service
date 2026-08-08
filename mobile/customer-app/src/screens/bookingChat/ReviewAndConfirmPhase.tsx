@@ -96,22 +96,18 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed, on
   const observed = useObservedSequence(loading && c.loadStage ? bookingReviewLoadLabel(c.loadStage) : null);
   const trace = useWorkingTrace(observed, loading);
 
-  if (loading) {
-    return <BotWorkingTrace entries={trace} />;
-  }
-
-  if (c.uiState === "offline" || c.uiState === "recoverable_error" || c.uiState === "blocked") {
-    return (
-      <BotAssistantBubble text={c.errorMessage ?? "Something went wrong while preparing your booking. Pull to retry from My Bookings, or try again."} />
-    );
-  }
-
   // Committing the booking takes over the WHOLE screen, which this component
   // cannot do from inside the chat transcript -- so the phase is reported up and
   // the screen renders the full-bleed layer. The phase comes from the REAL
   // controller state: it reaches "confirmed" only once the backend has returned
   // a booking number, so a slow call keeps showing progress and a failure can
   // never land on a success screen.
+  //
+  // EVERY HOOK BELONGS ABOVE THE EARLY RETURNS. This effect originally sat
+  // further down, past `if (loading) return ...`, so it was skipped on a loading
+  // render and reached on the next one -- React counts hooks per render and
+  // threw "Rendered more hooks than during the previous render" the moment the
+  // summary finished loading.
   const confirming = c.uiState === "confirming";
   const confirmActive = confirming || (c.uiState === "confirmed" && !!c.confirmation);
   const slotForConfirm = c.summary?.promisedSlot ?? null;
@@ -137,6 +133,18 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed, on
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confirmActive, confirming, c.confirmation, slotForConfirm, inspectionForConfirm]);
+
+  // ── Conditional rendering only from here down: no hooks past this line ────
+
+  if (loading) {
+    return <BotWorkingTrace entries={trace} />;
+  }
+
+  if (c.uiState === "offline" || c.uiState === "recoverable_error" || c.uiState === "blocked") {
+    return (
+      <BotAssistantBubble text={c.errorMessage ?? "Something went wrong while preparing your booking. Pull to retry from My Bookings, or try again."} />
+    );
+  }
 
   // Nothing is rendered in the transcript for these phases -- the screen's
   // overlay is showing instead.
