@@ -132,10 +132,22 @@ export function MyBookingsScreen() {
               driven by React Query's real dataUpdatedAt, not a static
               string (spec closure item 4). */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xs }}>
-            {updatedLabel ? (
-              <Icon name="checkmark-circle-outline" size="compact" color={theme.colors.statusSuccess} decorative />
-            ) : null}
-            <AppText variant="caption" color="tertiary">{updatedLabel ?? ""}</AppText>
+            {/* While a new search term loads, the previous results stay on
+                screen and this one line says so -- the list itself no longer
+                disappears and reappears on every character typed. */}
+            {query.isStale ? (
+              <>
+                <ActivityIndicator size="small" color={theme.colors.brandPrimaryStrong} />
+                <AppText variant="caption" color="tertiary">Updating results…</AppText>
+              </>
+            ) : (
+              <>
+                {updatedLabel ? (
+                  <Icon name="checkmark-circle-outline" size="compact" color={theme.colors.statusSuccess} decorative />
+                ) : null}
+                <AppText variant="caption" color="tertiary">{updatedLabel ?? ""}</AppText>
+              </>
+            )}
           </View>
           <Pressable
             onPress={() => query.refetch()}

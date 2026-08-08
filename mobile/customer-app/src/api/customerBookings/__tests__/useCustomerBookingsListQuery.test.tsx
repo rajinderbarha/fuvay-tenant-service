@@ -94,6 +94,56 @@ describe("useCustomerBookingsListQuery", () => {
     expect(result.current.hasNextPage).toBe(false);
   });
 
+  it("keeps the previous results on screen while a new search term loads", async () => {
+    // The blink this fixes: a new term is a new query key, a new key has no
+    // cached data, so the query returned to `isPending` on every keystroke and
+    // the screen replaced the whole list -- search box included -- with a
+    // loading state, then put it back.
+    (customerBookingsApi.listMyBookings as jest.Mock).mockResolvedValue(page([bookingDto("b-1")], 1, 0));
+    const { result, rerender } = renderHook(
+      ({ term }: { term: string }) => useCustomerBookingsListQuery("all", term),
+      { wrapper, initialProps: { term: "co" } },
+    );
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+    let resolveNext: (value: unknown) => void = () => {};
+    (customerBookingsApi.listMyBookings as jest.Mock).mockReturnValue(
+      new Promise(resolve => { resolveNext = resolve; }),
+    );
+    rerender({ term: "cool" });
+
+    // Mid-flight: still one row, never a pending/empty screen.
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.isStale).toBe(true);
+
+    await act(async () => { resolveNext(page([bookingDto("b-2")], 1, 0)); });
+    await waitFor(() => expect(result.current.isStale).toBe(false));
+    expect(result.current.items.map(i => i.bookingId)).toEqual(["b-2"]);
+  });
+
+  it("does not fire a second request for a term the query key already fetched", async () => {
+    // The focus effect listed [bucket, q], so its callback identity changed with
+    // every debounced term and useFocusEffect re-ran it -- one wasted request
+    // per search on top of the one the key change already made.
+    (customerBookingsApi.listMyBookings as jest.Mock).mockResolvedValue(page([bookingDto("b-1")], 1, 0));
+    const { result, rerender } = renderHook(
+      ({ term }: { term: string }) => useCustomerBookingsListQuery("all", term),
+      { wrapper, initialProps: { term: "co" } },
+    );
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    const afterFirstTerm = (customerBookingsApi.listMyBookings as jest.Mock).mock.calls.length;
+
+    rerender({ term: "cool" });
+    await waitFor(() =>
+      expect((customerBookingsApi.listMyBookings as jest.Mock).mock.calls
+        .some(c => c[3] === "cool")).toBe(true));
+
+    // Exactly one more call: the new key's fetch.
+    expect((customerBookingsApi.listMyBookings as jest.Mock).mock.calls.length)
+      .toBe(afterFirstTerm + 1);
+  });
+
   it("stops pagination on an empty page even if total disagrees (defensive termination)", async () => {
     (customerBookingsApi.listMyBookings as jest.Mock).mockResolvedValue(page([], 999, 0));
     const { result } = renderHook(() => useCustomerBookingsListQuery("all"), { wrapper });

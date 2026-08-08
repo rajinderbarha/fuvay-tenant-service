@@ -1,6 +1,6 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, keepPreviousData } from "@tanstack/react-query";
 import { listMyBookings } from "./customerBookingsApi";
 import { adaptBookingListPage } from "../adapters/bookingList";
 import { BookingListCounts } from "../../domain/bookingList";
@@ -33,6 +33,12 @@ export function useCustomerBookingsListQuery(
       const res = await listMyBookings(bucket, PAGE_SIZE, pageParam, q, status);
       return adaptBookingListPage(res.data);
     },
+    // Typing changes the query KEY (the term is applied server-side), and a new
+    // key has no cached data -- so every keystroke put the query back into
+    // `isPending` and the screen swapped the whole list for a loading state and
+    // back. Keeping the previous page visible while the new term loads is what
+    // stops the list from blinking on each character.
+    placeholderData: keepPreviousData,
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0);
@@ -41,12 +47,16 @@ export function useCustomerBookingsListQuery(
     },
   });
 
-  useFocusEffect(
-    useCallback(() => {
-      query.refetch();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [bucket, q]),
-  );
+  // Refetch when the screen is FOCUSED, and only then.
+  //
+  // This listed [bucket, q] as dependencies, so the callback identity changed
+  // on every debounced search term and useFocusEffect re-ran it -- firing a
+  // second request for a term the query key had already fetched. Changing the
+  // key is what fetches; this effect exists purely to pick up bookings that
+  // changed while the customer was on another screen.
+  const refetchRef = useRef(query.refetch);
+  refetchRef.current = query.refetch;
+  useFocusEffect(useCallback(() => { refetchRef.current(); }, []));
 
   const items = useMemo(() => query.data?.pages.flatMap(p => p.items) ?? [], [query.data]);
   const counts: BookingListCounts = query.data?.pages[query.data.pages.length - 1]?.counts
@@ -56,6 +66,9 @@ export function useCustomerBookingsListQuery(
     items,
     counts,
     isPending: query.isPending,
+    /** Showing the previous term's results while the new ones load. Lets the
+     * screen mark the list as updating instead of tearing it down. */
+    isStale: query.isPlaceholderData,
     isError: query.isError,
     isRefetching: query.isRefetching,
     isFetchingNextPage: query.isFetchingNextPage,
