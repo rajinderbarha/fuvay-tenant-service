@@ -7,8 +7,8 @@ import { resolveMediaUrl } from "../../domain/mediaUrl";
 
 export interface RequestSummaryCardProps {
   summary: BookingReviewSummary;
-  /** Renders without its own card chrome, so ReviewSummaryPanel can present
-   * every section inside ONE box instead of a stack of separate ones. */
+  /** Renders without its own card chrome, so ReviewSheet can present every
+   * section in ONE scrolling column instead of a stack of separate cards. */
   embedded?: boolean;
   /** Formatted "Today, 14:00-15:00" for the chosen slot, or null when the
    * provider could not promise one. */

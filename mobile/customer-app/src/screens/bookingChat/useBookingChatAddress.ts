@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { listMyAddresses, createMyAddress } from "../../api/customerAddresses/customerAddressesApi";
 import { adaptCustomerSavedAddress } from "../../api/adapters/customerAddresses";
 import { setDraftAddress } from "../../api/bookingReview/bookingReviewApi";
@@ -23,6 +23,27 @@ export function useBookingChatAddress(draftId: string | null, zipcode: string) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resolvedAddressId, setResolvedAddressId] = useState<string | null>(null);
+
+  /**
+   * A NEW draft has no address yet, so every piece of this state must be dropped
+   * when `draftId` changes.
+   *
+   * Real bug this fixes: after a completed booking, starting a fresh request kept
+   * the previous draft's `resolvedAddressId`. BookingChatScreen mounts the review
+   * phase as soon as that is truthy, so the review controller began loading
+   * against a brand-new draft that had no address and no answered questions --
+   * its serviceability check failed and the customer saw "Something went wrong
+   * while preparing your booking" sitting under the very first question.
+   *
+   * Keyed on draftId rather than reset by the caller so any future screen gets
+   * the same guarantee without having to remember.
+   */
+  useEffect(() => {
+    setResolvedAddressId(null);
+    setAddresses(null);
+    setError(null);
+    setSubmitting(false);
+  }, [draftId]);
 
   const loadAddresses = useCallback(async () => {
     setLoading(true);

@@ -1,7 +1,7 @@
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react-native";
 import { renderWithProviders } from "../../../testing/renderWithProviders";
-import { ReviewSummaryPanel } from "../ReviewSummaryPanel";
+import { ReviewSheet } from "../ReviewSheet";
 import { BookingReviewSummary } from "../../../domain/bookingReview";
 import { asBookingDraftId } from "../../../domain/ids";
 
@@ -51,34 +51,70 @@ function summary(overrides: Partial<BookingReviewSummary> = {}): BookingReviewSu
   } as BookingReviewSummary;
 }
 
-const handlers = {
-  onConfirm: () => {},
-  onEditSlot: () => {},
-  onEditPhotos: () => {},
+const noop = {
+  onConfirm: () => {}, onEditSlot: () => {}, onEditPhotos: () => {}, onClose: () => {},
 };
 
-describe("ReviewSummaryPanel", () => {
-  it("presents request, technician and money together in one panel", () => {
+describe("ReviewSheet", () => {
+  it("presents the request, technician and money as one document", () => {
     renderWithProviders(
-      <ReviewSummaryPanel
+      <ReviewSheet
         summary={summary()} slotLabel="Today, 14:00-15:00"
-        confirming={false} confirmDisabledReason={null} {...handlers}
+        confirming={false} confirmDisabledReason={null} {...noop}
       />,
     );
+    expect(screen.getByText("Review & confirm")).toBeTruthy();
     expect(screen.getByText("YOUR REQUEST")).toBeTruthy();
     expect(screen.getByText("YOUR TECHNICIAN")).toBeTruthy();
     expect(screen.getByText("What you'll pay")).toBeTruthy();
+  });
+
+  it("pins the amount due beside the single primary action", () => {
+    renderWithProviders(
+      <ReviewSheet
+        summary={summary()} slotLabel="Today, 14:00-15:00"
+        confirming={false} confirmDisabledReason={null} {...noop}
+      />,
+    );
+    expect(screen.getByText("Due at the visit")).toBeTruthy();
     expect(screen.getByLabelText("Confirm and book")).toBeTruthy();
   });
 
-  it("offers a way back to the earlier turns", () => {
+  it("omits the amount row when nothing is payable up front", () => {
+    renderWithProviders(
+      <ReviewSheet
+        summary={summary({ inspection: null })} slotLabel={null}
+        confirming={false} confirmDisabledReason={null} {...noop}
+      />,
+    );
+    expect(screen.queryByText("Due at the visit")).toBeNull();
+    expect(screen.queryByText("What you'll pay")).toBeNull();
+    // The rest of the sheet still renders.
+    expect(screen.getByText("YOUR REQUEST")).toBeTruthy();
+  });
+
+  it("lets the customer leave without booking", () => {
+    const onClose = jest.fn();
+    renderWithProviders(
+      <ReviewSheet
+        summary={summary()} slotLabel={null}
+        confirming={false} confirmDisabledReason={null}
+        onConfirm={() => {}} onEditSlot={() => {}} onEditPhotos={() => {}} onClose={onClose}
+      />,
+    );
+    fireEvent.press(screen.getByLabelText("Back to chat"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers a way back to the slot and photo turns", () => {
     const onEditSlot = jest.fn();
     const onEditPhotos = jest.fn();
     renderWithProviders(
-      <ReviewSummaryPanel
+      <ReviewSheet
         summary={summary()} slotLabel="Today, 14:00-15:00"
         confirming={false} confirmDisabledReason={null}
-        onConfirm={() => {}} onEditSlot={onEditSlot} onEditPhotos={onEditPhotos}
+        onConfirm={() => {}} onClose={() => {}}
+        onEditSlot={onEditSlot} onEditPhotos={onEditPhotos}
       />,
     );
     fireEvent.press(screen.getByLabelText("Change time"));
@@ -87,24 +123,13 @@ describe("ReviewSummaryPanel", () => {
     expect(onEditPhotos).toHaveBeenCalledTimes(1);
   });
 
-  it("invites choosing a time when none has been promised", () => {
-    renderWithProviders(
-      <ReviewSummaryPanel
-        summary={summary()} slotLabel={null}
-        confirming={false} confirmDisabledReason={null} {...handlers}
-      />,
-    );
-    expect(screen.getByLabelText("Choose a time")).toBeTruthy();
-    expect(screen.queryByLabelText("Change time")).toBeNull();
-  });
-
   it("blocks confirmation with the real reason when not eligible", () => {
     const onConfirm = jest.fn();
     renderWithProviders(
-      <ReviewSummaryPanel
+      <ReviewSheet
         summary={summary()} slotLabel={null}
         confirming={false} confirmDisabledReason="Something is still missing."
-        onConfirm={onConfirm} onEditSlot={() => {}} onEditPhotos={() => {}}
+        onConfirm={onConfirm} onEditSlot={() => {}} onEditPhotos={() => {}} onClose={() => {}}
       />,
     );
     expect(screen.getByText("Something is still missing.")).toBeTruthy();
@@ -115,25 +140,23 @@ describe("ReviewSummaryPanel", () => {
   it("cannot be double-submitted while confirming", () => {
     const onConfirm = jest.fn();
     renderWithProviders(
-      <ReviewSummaryPanel
+      <ReviewSheet
         summary={summary()} slotLabel={null}
         confirming confirmDisabledReason={null}
-        onConfirm={onConfirm} onEditSlot={() => {}} onEditPhotos={() => {}}
+        onConfirm={onConfirm} onEditSlot={() => {}} onEditPhotos={() => {}} onClose={() => {}}
       />,
     );
     fireEvent.press(screen.getByLabelText("Confirming"));
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it("omits the money section entirely when there is nothing payable up front", () => {
+  it("shows the free-cancellation reassurance when nothing is blocking", () => {
     renderWithProviders(
-      <ReviewSummaryPanel
-        summary={summary({ inspection: null })} slotLabel={null}
-        confirming={false} confirmDisabledReason={null} {...handlers}
+      <ReviewSheet
+        summary={summary()} slotLabel={null}
+        confirming={false} confirmDisabledReason={null} {...noop}
       />,
     );
-    expect(screen.queryByText("What you'll pay")).toBeNull();
-    // The rest of the panel still renders.
-    expect(screen.getByText("YOUR REQUEST")).toBeTruthy();
+    expect(screen.getByText(/Free cancellation before the technician sets off/)).toBeTruthy();
   });
 });

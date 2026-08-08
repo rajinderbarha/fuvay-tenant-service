@@ -6,7 +6,6 @@ import { SlotPickerCard } from "../../components/bookingChat/SlotPickerCard";
 import { PhotosNotesTurn } from "../../components/bookingChat/PhotosNotesTurn";
 import { ServiceChecklistCard } from "../../components/bookingChat/ServiceChecklistCard";
 import { useServiceChecklist } from "./useServiceChecklist";
-import { ReviewSummaryPanel } from "../../components/bookingChat/ReviewSummaryPanel";
 import { formatMoney } from "../../domain/money";
 import { resolveServicePriceDisplay } from "../../domain/servicePricing";
 import { BookingReviewSummary } from "../../domain/bookingReview";
@@ -28,6 +27,26 @@ export interface ReviewAndConfirmPhaseProps {
    * owns the full-bleed layer; this just tells it what to show.
    */
   onConfirmPhase?: (state: ConfirmPhaseState | null) => void;
+  /**
+   * Reports the ready-to-review state UP, so the screen can present it as a
+   * full-screen sheet. Same reason as `onConfirmPhase`: this component renders
+   * inside the chat transcript and cannot fill the screen from there, and the
+   * final irreversible step should not compete with a scrolling chat log.
+   */
+  onReviewReady?: (state: ReviewReadyState | null) => void;
+}
+
+export interface ReviewReadyState {
+  /** The summary the sheet renders. Carried in this state rather than read
+   * separately by the screen, so the sheet can never show details from a
+   * different render than the actions it was given. */
+  summary: BookingReviewSummary;
+  slotLabel: string | null;
+  confirming: boolean;
+  confirmDisabledReason: string | null;
+  onConfirm: () => void;
+  onEditSlot: () => void;
+  onEditPhotos: () => void;
 }
 
 export interface ConfirmPhaseState {
@@ -73,7 +92,9 @@ function priceLabelFor(summary: BookingReviewSummary): string | null {
  * Three sequential turns once the summary is ready: pick a time (with the
  * real price shown alongside it) -> optional photos -> provider + confirm.
  */
-export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed, onConfirmPhase }: ReviewAndConfirmPhaseProps) {
+export function ReviewAndConfirmPhase({
+  draftId, onTrackBooking, onConfirmed, onConfirmPhase, onReviewReady,
+}: ReviewAndConfirmPhaseProps) {
   const c = useBookingReviewController(draftId);
   const [slotDone, setSlotDone] = useState(false);
   const [checklistDone, setChecklistDone] = useState(false);
@@ -134,6 +155,39 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confirmActive, confirming, c.confirmation, slotForConfirm, inspectionForConfirm]);
 
+  // Ready to review = summary loaded, all earlier turns done, not confirming.
+  // Reported up so the screen can show the full-screen sheet.
+  const reviewReady =
+    !loading
+    && c.uiState !== "offline" && c.uiState !== "recoverable_error" && c.uiState !== "blocked"
+    && !confirmActive
+    && !!c.summary
+    && slotDone
+    && (checklistDone || !checklist.checklist || checklist.checklist.totalPoints === 0)
+    && photosDone;
+
+  const summaryForReview = c.summary;
+  useEffect(() => {
+    if (!onReviewReady) return;
+    if (!reviewReady || !summaryForReview) {
+      onReviewReady(null);
+      return;
+    }
+    const slot = summaryForReview.promisedSlot;
+    onReviewReady({
+      summary: summaryForReview,
+      slotLabel: slot ? `${slotDayLabel(slot.date, slot.daysAhead)}, ${slot.timeWindow}` : null,
+      confirming: c.uiState === "confirming",
+      confirmDisabledReason: c.eligibility.allowed
+        ? null
+        : "We can't confirm this request yet -- see the details above.",
+      onConfirm: c.confirm,
+      onEditSlot: () => setSlotDone(false),
+      onEditPhotos: () => setPhotosDone(false),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewReady, summaryForReview, c.uiState, c.eligibility.allowed]);
+
   // ── Conditional rendering only from here down: no hooks past this line ────
 
   if (loading) {
@@ -186,23 +240,9 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed, on
           onContinue={() => setPhotosDone(true)}
         />
       ) : (
-        // ONE box: request recap, technician, money and Confirm as sections of a
-        // single agreement rather than four unrelated cards stacked down the chat.
-        <ReviewSummaryPanel
-          summary={c.summary}
-          slotLabel={
-            c.summary.promisedSlot
-              ? `${slotDayLabel(c.summary.promisedSlot.date, c.summary.promisedSlot.daysAhead)}, ${c.summary.promisedSlot.timeWindow}`
-              : null
-          }
-          confirming={c.uiState === "confirming"}
-          confirmDisabledReason={c.eligibility.allowed ? null : "We can't confirm this request yet -- see the details above."}
-          onConfirm={c.confirm}
-          // Going back re-opens the earlier turn in place, so a late change of
-          // mind costs a tap rather than restarting the conversation.
-          onEditSlot={() => setSlotDone(false)}
-          onEditPhotos={() => setPhotosDone(false)}
-        />
+        // Nothing in the transcript: the screen is showing the full-screen
+        // review sheet, reported up via onReviewReady.
+        null
       )}
     </View>
   );

@@ -80,4 +80,27 @@ describe("useBookingChatAddress -- zipcode lock", () => {
     expect(result.current.resolvedAddressId).toBeNull();
     expect(result.current.error).toBe("Address not found.");
   });
+
+  it("drops the resolved address when a NEW draft starts", async () => {
+    // Real bug: after a completed booking, starting a fresh request kept the
+    // previous draft's resolvedAddressId. BookingChatScreen mounts the review
+    // phase as soon as that is truthy, so the review controller loaded against a
+    // brand-new draft with no address or answers -- and the customer saw
+    // "Something went wrong while preparing your booking" under question one.
+    (addressesApi.listMyAddresses as jest.Mock).mockResolvedValue({ data: [addressDto()] });
+    (reviewApi.setDraftAddress as jest.Mock).mockResolvedValue({ data: {} });
+
+    const { result, rerender } = renderHook(
+      ({ draftId }: { draftId: string }) => useBookingChatAddress(draftId, "141002"),
+      { initialProps: { draftId: "draft-1" } },
+    );
+
+    await act(async () => { await result.current.pickExisting("addr-1"); });
+    expect(result.current.resolvedAddressId).toBe("addr-1");
+
+    rerender({ draftId: "draft-2" });
+    await waitFor(() => expect(result.current.resolvedAddressId).toBeNull());
+    expect(result.current.addresses).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
 });

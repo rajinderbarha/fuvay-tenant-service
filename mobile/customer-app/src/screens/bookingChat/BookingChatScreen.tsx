@@ -10,7 +10,8 @@ import { createAssistantCardEntryContext } from "../../domain/assistantEntry";
 import { useAssistantController } from "../assistant/useAssistantController";
 import { useBookingChatAddress } from "./useBookingChatAddress";
 import { ReviewAndConfirmPhase } from "./ReviewAndConfirmPhase";
-import type { ConfirmPhaseState } from "./ReviewAndConfirmPhase";
+import type { ConfirmPhaseState, ReviewReadyState } from "./ReviewAndConfirmPhase";
+import { ReviewSheet } from "../../components/bookingChat/ReviewSheet";
 import { BookingConfirmFlow } from "../../components/bookingChat/BookingConfirmFlow";
 import { resolveActivityLabel } from "../../domain/assistantActivity";
 import { useBotColors } from "../../components/bookingChat/botTheme";
@@ -128,6 +129,17 @@ function BookingChatConversation({
     setConfirmPhase(state);
   }, []);
 
+  // The review sheet is also full-screen: confirming is the one irreversible
+  // step and should not compete with a scrolling transcript and composer.
+  const [reviewReady, setReviewReady] = useState<ReviewReadyState | null>(null);
+  const onReviewReady = useCallback((state: ReviewReadyState | null) => {
+    setReviewReady(state);
+  }, []);
+  // Lets the customer step back into the conversation without booking. Reopening
+  // the slot turn is the honest "back": there is no earlier state to restore to
+  // once the review has been reached.
+  const [reviewDismissed, setReviewDismissed] = useState(false);
+
   /**
    * Begins a brand-new request.
    *
@@ -138,6 +150,8 @@ function BookingChatConversation({
    */
   const startNewBooking = useCallback(() => {
     setConfirmPhase(null);
+    setReviewReady(null);
+    setReviewDismissed(false);
     setBooked(false);
     setSelectedIssueLabel(null);
     setAnswerDraft("");
@@ -393,6 +407,7 @@ function BookingChatConversation({
                   draftId={c.draftId}
                   onConfirmed={onBookingConfirmed}
                   onConfirmPhase={onConfirmPhase}
+                  onReviewReady={onReviewReady}
                   onTrackBooking={bookingId => (navigation as unknown as { navigate: (name: string, params: unknown) => void })
                     .navigate("BookingDetails", { bookingId })}
                 />
@@ -447,6 +462,23 @@ function BookingChatConversation({
           )}
         </View>
       </KeyboardAvoidingView>
+
+      {/* Full-screen review sheet. Rendered here, not in the transcript, so it
+          genuinely fills the screen; dismissing returns to the conversation. */}
+      {reviewReady && !confirmPhase && !reviewDismissed ? (
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}>
+          <ReviewSheet
+            summary={reviewReady.summary}
+            slotLabel={reviewReady.slotLabel}
+            confirming={reviewReady.confirming}
+            confirmDisabledReason={reviewReady.confirmDisabledReason}
+            onConfirm={reviewReady.onConfirm}
+            onEditSlot={() => { setReviewDismissed(true); reviewReady.onEditSlot(); }}
+            onEditPhotos={() => { setReviewDismissed(true); reviewReady.onEditPhotos(); }}
+            onClose={() => { setReviewDismissed(true); reviewReady.onEditSlot(); }}
+          />
+        </View>
+      ) : null}
 
       {/* Full-bleed confirm/confirmed layer. Absolutely positioned over the
           transcript AND the composer so nothing of the chat shows through --

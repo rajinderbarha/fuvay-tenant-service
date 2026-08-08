@@ -7,7 +7,7 @@ import { ReviewProvider } from "../../domain/bookingReview";
 export interface ProviderTrustCardProps {
   provider: ReviewProvider;
   /** Renders without its own card chrome so it can sit as a section inside
-   * ReviewSummaryPanel's single box. */
+   * ReviewSheet's single scrolling column. */
   embedded?: boolean;
 }
 
