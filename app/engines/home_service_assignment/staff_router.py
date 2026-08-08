@@ -87,7 +87,15 @@ async def submit_job_location(
     job_id: uuid.UUID,
     body: LocationSubmitRequest,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    # This is a MUTATION (PUT) and was the only one in this router guarded by
+    # `get_current_user` alone -- i.e. any authenticated principal, with no
+    # permission check -- while its siblings (accept/reject) both require
+    # `require_staff_or_above_mutation`. GPS position is real, sensitive
+    # data: a technician's live location, and a false one would mislead a
+    # customer tracking their visit. Aligned with the sibling mutations.
+    # Flagged by tests/test_phase2f_mutation_enforcement.py's own
+    # zero-unverified-routes guard, which had been failing on exactly this.
+    user: UserContext  = Depends(require_staff_or_above_mutation),
     db:   AsyncSession = Depends(get_db),
 ):
     try:
