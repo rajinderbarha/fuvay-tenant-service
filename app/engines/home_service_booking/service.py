@@ -1359,6 +1359,10 @@ class HomeServiceChatbotBookingService:
         if not sla_minutes and promised_slot:
             sla_minutes = promised_slot.get("slot_minutes")
 
+        # Resolved once here rather than inside the dict literal, which would
+        # have run the query twice per summary build.
+        emergency_surcharge_preview = await self._emergency_surcharge_for(draft)
+
         summary = {
             **existing,
             "offering_name":    offering.service_name,
@@ -1393,6 +1397,14 @@ class HomeServiceChatbotBookingService:
             # horizon; the customer is told that rather than being given a
             # date nobody can keep.
             "promised_slot": promised_slot,
+            # The provider's configured emergency surcharge, surfaced BEFORE the
+            # customer opens the emergency option -- so the extra cost is on the
+            # button itself rather than discovered after picking a slot. None
+            # when this provider charges nothing extra, in which case the UI
+            # says so instead of implying a hidden fee.
+            "emergency_surcharge_preview": (
+                str(emergency_surcharge_preview) if emergency_surcharge_preview is not None else None
+            ),
             # What the provider is actually committing to, in customer terms:
             # the service is done by the END of the promised slot. The clock
             # runs from when the booking request is created, not from when a

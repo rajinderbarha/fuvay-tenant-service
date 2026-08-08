@@ -115,6 +115,10 @@ export const bookingSummaryDtoSchema = z.object({
    * confirmation and frozen onto the booking at it. */
   is_emergency: z.boolean().optional(),
   emergency_surcharge: z.string().nullable().optional(),
+  /** The provider's configured emergency surcharge, always present so the
+   * emergency option can state its extra cost BEFORE it is tapped. Null when
+   * that provider charges nothing extra. */
+  emergency_surcharge_preview: z.string().nullable().optional(),
   offering_name: z.string(),
   offering_slug: z.string().optional(),
   issue_summary: z.string().nullable(),

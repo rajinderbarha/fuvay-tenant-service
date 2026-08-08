@@ -97,6 +97,10 @@ export interface BookingReviewSummary {
    * before confirmation; null when they charge nothing extra. */
   isEmergency: boolean;
   emergencySurcharge: Money | null;
+  /** What an emergency visit would cost extra with this provider, known before
+   * the customer opens the option so the price is never a surprise. Null when
+   * they charge nothing extra. */
+  emergencySurchargePreview: Money | null;
   readyForConfirmation: boolean;
   missing: string[];
 }

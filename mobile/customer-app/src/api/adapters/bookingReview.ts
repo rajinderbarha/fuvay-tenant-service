@@ -96,6 +96,7 @@ export function adaptBookingReviewSummary(
     serviceDueAt: summaryDto.service_due_at ?? null,
     isEmergency: summaryDto.is_emergency ?? false,
     emergencySurcharge: parseSurcharge(summaryDto.emergency_surcharge),
+    emergencySurchargePreview: parseSurcharge(summaryDto.emergency_surcharge_preview),
     priceState: state,
     inspection,
     bargainAvailable: !!priceEstimate.bargain_available,
@@ -170,5 +171,6 @@ export function applySelectedSlotToSummary(
     serviceDueAt: summaryDto.service_due_at ?? null,
     isEmergency: summaryDto.is_emergency ?? false,
     emergencySurcharge: parseSurcharge(summaryDto.emergency_surcharge),
+    emergencySurchargePreview: parseSurcharge(summaryDto.emergency_surcharge_preview),
   };
 }

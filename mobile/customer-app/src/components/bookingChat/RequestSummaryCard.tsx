@@ -7,6 +7,9 @@ import { resolveMediaUrl } from "../../domain/mediaUrl";
 
 export interface RequestSummaryCardProps {
   summary: BookingReviewSummary;
+  /** Renders without its own card chrome, so ReviewSummaryPanel can present
+   * every section inside ONE box instead of a stack of separate ones. */
+  embedded?: boolean;
   /** Formatted "Today, 14:00-15:00" for the chosen slot, or null when the
    * provider could not promise one. */
   slotLabel: string | null;
@@ -28,7 +31,7 @@ const THUMB = 52;
  * its data is absent -- an empty "Photos" heading or a blank address line is
  * noise, and inventing a placeholder would be worse.
  */
-export function RequestSummaryCard({ summary, slotLabel }: RequestSummaryCardProps) {
+export function RequestSummaryCard({ summary, slotLabel, embedded }: RequestSummaryCardProps) {
   const BOT = useBotColors();
 
   const addressLines = summary.address.lines.filter(line => !!line && line.trim().length > 0);
@@ -38,10 +41,14 @@ export function RequestSummaryCard({ summary, slotLabel }: RequestSummaryCardPro
 
   return (
     <View
-      style={{
-        marginLeft: 36, borderRadius: 20, padding: 16,
-        backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle,
-      }}
+      style={
+        embedded
+          ? undefined
+          : {
+              marginLeft: 36, borderRadius: 20, padding: 16,
+              backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle,
+            }
+      }
     >
       <Text style={{ fontSize: 13, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.4 }}>
         YOUR REQUEST

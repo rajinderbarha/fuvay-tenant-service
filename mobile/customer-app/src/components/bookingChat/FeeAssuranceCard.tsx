@@ -12,6 +12,9 @@ export interface FeeAssuranceCardProps {
    * urgency is never a surprise line on the final bill. Null when the
    * booking is not an emergency, or the provider charges nothing extra. */
   emergencySurcharge: Money | null;
+  /** Renders without its own card chrome so it can sit as a section inside
+   * ReviewSummaryPanel's single box. */
+  embedded?: boolean;
 }
 
 /**
@@ -34,7 +37,7 @@ export interface FeeAssuranceCardProps {
  * If it did not, this card shows the fee without a promise -- it never
  * invents an assurance the billing code would not honour.
  */
-export function FeeAssuranceCard({ inspection, emergencySurcharge }: FeeAssuranceCardProps) {
+export function FeeAssuranceCard({ inspection, emergencySurcharge, embedded }: FeeAssuranceCardProps) {
   const BOT = useBotColors();
   if (!inspection && !emergencySurcharge) return null;
 
@@ -43,10 +46,14 @@ export function FeeAssuranceCard({ inspection, emergencySurcharge }: FeeAssuranc
 
   return (
     <View
-      style={{
-        marginLeft: 36, borderRadius: 20, padding: 16,
-        backgroundColor: BOT.successBg, borderWidth: 1, borderColor: BOT.successBorder,
-      }}
+      style={
+        embedded
+          ? undefined
+          : {
+              marginLeft: 36, borderRadius: 20, padding: 16,
+              backgroundColor: BOT.successBg, borderWidth: 1, borderColor: BOT.successBorder,
+            }
+      }
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Ionicons name="shield-checkmark" size={18} color={BOT.success} />

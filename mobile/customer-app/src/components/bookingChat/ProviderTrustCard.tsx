@@ -6,6 +6,9 @@ import { ReviewProvider } from "../../domain/bookingReview";
 
 export interface ProviderTrustCardProps {
   provider: ReviewProvider;
+  /** Renders without its own card chrome so it can sit as a section inside
+   * ReviewSummaryPanel's single box. */
+  embedded?: boolean;
 }
 
 /** Enough reviews for an average to mean something. Below this the rating is
@@ -27,7 +30,7 @@ const MIN_REVIEWS_FOR_HEADLINE = 3;
  * borrowed credibility. That is deliberately better for trust overall: a
  * customer who catches one inflated claim stops believing the true ones.
  */
-export function ProviderTrustCard({ provider }: ProviderTrustCardProps) {
+export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps) {
   const BOT = useBotColors();
   const facts = provider.facts;
   const rating = facts?.rating ?? provider.rating ?? null;
@@ -36,10 +39,14 @@ export function ProviderTrustCard({ provider }: ProviderTrustCardProps) {
 
   return (
     <View
-      style={{
-        marginLeft: 36, borderRadius: 20, padding: 16,
-        backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle,
-      }}
+      style={
+        embedded
+          ? undefined
+          : {
+              marginLeft: 36, borderRadius: 20, padding: 16,
+              backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle,
+            }
+      }
     >
       <Text style={{ fontSize: 13, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.4 }}>
         YOUR TECHNICIAN

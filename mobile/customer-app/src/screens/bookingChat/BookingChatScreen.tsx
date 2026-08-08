@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator } from "react-native";
+import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -10,6 +10,8 @@ import { createAssistantCardEntryContext } from "../../domain/assistantEntry";
 import { useAssistantController } from "../assistant/useAssistantController";
 import { useBookingChatAddress } from "./useBookingChatAddress";
 import { ReviewAndConfirmPhase } from "./ReviewAndConfirmPhase";
+import type { ConfirmPhaseState } from "./ReviewAndConfirmPhase";
+import { BookingConfirmFlow } from "../../components/bookingChat/BookingConfirmFlow";
 import { resolveActivityLabel } from "../../domain/assistantActivity";
 import { useBotColors } from "../../components/bookingChat/botTheme";
 import {
@@ -118,6 +120,14 @@ function BookingChatConversation({
   // inline arrow would re-run that effect on every render.
   const onBookingConfirmed = useCallback(() => setBooked(true), []);
 
+  // The confirm/confirmed screen is rendered HERE rather than inside the
+  // transcript, so it genuinely fills the screen. Reported up by
+  // ReviewAndConfirmPhase, which cannot escape its own slot in the list.
+  const [confirmPhase, setConfirmPhase] = useState<ConfirmPhaseState | null>(null);
+  const onConfirmPhase = useCallback((state: ConfirmPhaseState | null) => {
+    setConfirmPhase(state);
+  }, []);
+
   // The full running task list for the current operation. The controller
   // records every stage it genuinely passed through (activityTrace), so
   // steps that resolve in the same React batch are still shown instead of
@@ -159,6 +169,17 @@ function BookingChatConversation({
   const freeTextActive = !!c.envelope?.currentQuestion?.acceptsFreeText && !questionsComplete && !traceBusy;
   const canSendAnswer = freeTextActive && answerDraft.trim().length > 0 && !answerBusy;
 
+  function confirmRestart() {
+    Alert.alert(
+      "Start over?",
+      "This clears your answers and begins a new request. Your current draft will not be booked.",
+      [
+        { text: "Keep going", style: "cancel" },
+        { text: "Start over", style: "destructive", onPress: () => c.restart() },
+      ],
+    );
+  }
+
   function submitFreeText() {
     if (!canSendAnswer || !c.envelope?.currentQuestion) return;
     const text = answerDraft.trim();
@@ -190,6 +211,27 @@ function BookingChatConversation({
                 <Text style={{ fontSize: 12, color: BOT.textMuted }}>{booked ? "Booking confirmed" : "Working on your booking"}</Text>
               </View>
             </View>
+
+            {/* Start over. Deliberately NOT a silent reload: it abandons the
+                current draft and begins a fresh conversation, so it asks first
+                -- a customer who has answered eight questions should not lose
+                them to a mis-tap. Hidden once booked, when there is nothing left
+                to restart. */}
+            {!booked ? (
+              <Pressable
+                onPress={confirmRestart}
+                accessibilityRole="button"
+                accessibilityLabel="Start over"
+                hitSlop={8}
+                style={{
+                  width: 36, height: 36, borderRadius: 18,
+                  alignItems: "center", justifyContent: "center",
+                  backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.border,
+                }}
+              >
+                <Ionicons name="refresh" size={16} color={BOT.textTertiary} />
+              </Pressable>
+            ) : null}
           </View>
           <BotStageTracker stages={STAGES} activeIndex={activeStageIndex} allDone={booked} />
         </View>
@@ -296,6 +338,7 @@ function BookingChatConversation({
                 <ReviewAndConfirmPhase
                   draftId={c.draftId}
                   onConfirmed={onBookingConfirmed}
+                  onConfirmPhase={onConfirmPhase}
                   onTrackBooking={bookingId => (navigation as unknown as { navigate: (name: string, params: unknown) => void })
                     .navigate("BookingDetails", { bookingId })}
                 />
@@ -350,6 +393,29 @@ function BookingChatConversation({
           )}
         </View>
       </KeyboardAvoidingView>
+
+      {/* Full-bleed confirm/confirmed layer. Absolutely positioned over the
+          transcript AND the composer so nothing of the chat shows through --
+          this is the whole point of it not living in the list. */}
+      {confirmPhase ? (
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}>
+          <BookingConfirmFlow
+            phase={confirmPhase.phase}
+            bookingNumber={confirmPhase.bookingNumber}
+            providerName={confirmPhase.providerName}
+            slotLabel={confirmPhase.slotLabel}
+            amountLabel={confirmPhase.amountLabel}
+            feeCreditedAgainstWork={confirmPhase.feeCreditedAgainstWork}
+            onTrackBooking={() => {
+              if (confirmPhase.bookingId) {
+                (navigation as unknown as { navigate: (n: string, p: unknown) => void })
+                  .navigate("BookingDetails", { bookingId: confirmPhase.bookingId });
+              }
+            }}
+            onDone={onClose}
+          />
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }

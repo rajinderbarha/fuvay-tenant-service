@@ -12,6 +12,10 @@ export interface SlotPickerCardProps {
    * this is that one real price, not a per-slot fabrication. Null when
    * pricing hasn't resolved to a displayable value (e.g. bargain mode). */
   priceLabel: string | null;
+  /** What an emergency visit costs extra with this provider, formatted. Shown
+   * ON the emergency option so the extra charge is known before it is tapped,
+   * never discovered after a slot is chosen. Null when there is no surcharge. */
+  emergencySurchargeLabel: string | null;
   availableSlots: AvailableSlot[] | null;
   slotsLoading: boolean;
   slotSelectionError: string | null;
@@ -53,7 +57,8 @@ function dayLabel(dateIso: string, daysAhead: number): string {
  * time-of-day surcharge.
  */
 export function SlotPickerCard({
-  promisedSlot, priceLabel, availableSlots, slotsLoading, slotSelectionError, onLoadSlots, onSelectSlot, onContinue,
+  promisedSlot, priceLabel, emergencySurchargeLabel, availableSlots,
+  slotsLoading, slotSelectionError, onLoadSlots, onSelectSlot, onContinue,
 }: SlotPickerCardProps) {
   const BOT = useBotColors();
   const [open, setOpen] = useState(false);
@@ -120,7 +125,9 @@ export function SlotPickerCard({
           style={{ flex: 1, height: 36, borderRadius: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: BOT.brandTint, borderWidth: 1, borderColor: BOT.brand }}
         >
           <Ionicons name="flash" size={13} color={BOT.warning} />
-          <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>Soonest possible</Text>
+          <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>
+            {emergencySurchargeLabel ? `Soonest (+${emergencySurchargeLabel})` : "Soonest possible"}
+          </Text>
         </Pressable>
       </View>
 
@@ -141,8 +148,43 @@ export function SlotPickerCard({
             </Pressable>
           </View>
 
+          {emergency && emergencySurchargeLabel ? (
+            <View
+              style={{
+                flexDirection: "row", gap: 8, alignItems: "flex-start",
+                marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: BOT.brandTint,
+              }}
+            >
+              <Ionicons name="flash" size={14} color={BOT.warning} style={{ marginTop: 2 }} />
+              <Text style={{ flex: 1, fontSize: 13, lineHeight: 19, color: BOT.textPrimary }}>
+                Coming out at short notice costs{" "}
+                <Text style={{ fontWeight: "700" }}>{emergencySurchargeLabel} extra</Text>. It is
+                added to the total you approve — never charged later.
+              </Text>
+            </View>
+          ) : null}
+
+          {/* A failed load is recoverable: the customer gets the real reason and
+              a way to try again, rather than a dead panel they must close. */}
           {slotSelectionError ? (
-            <Text style={{ fontSize: 13, color: BOT.danger, marginTop: 8 }}>{slotSelectionError}</Text>
+            <View style={{ marginTop: 10 }}>
+              <Text style={{ fontSize: 13, color: BOT.danger }}>{slotSelectionError}</Text>
+              <Pressable
+                onPress={() => onLoadSlots(emergency)}
+                accessibilityRole="button"
+                accessibilityLabel="Try loading times again"
+                style={{
+                  alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6,
+                  marginTop: 8, paddingHorizontal: 12, height: 34, borderRadius: 17,
+                  backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.border,
+                }}
+              >
+                <Ionicons name="refresh" size={13} color={BOT.textSecondary} />
+                <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.textSecondary }}>
+                  Try again
+                </Text>
+              </Pressable>
+            </View>
           ) : null}
 
           {slotsLoading && !availableSlots ? (

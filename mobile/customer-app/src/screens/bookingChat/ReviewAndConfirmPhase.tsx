@@ -4,13 +4,9 @@ import { useBookingReviewController, bookingReviewLoadLabel } from "../booking-r
 import { BotAssistantBubble, BotWorkingTrace, useWorkingTrace, useObservedSequence } from "../../components/bookingChat/BotPrimitives";
 import { SlotPickerCard } from "../../components/bookingChat/SlotPickerCard";
 import { PhotosNotesTurn } from "../../components/bookingChat/PhotosNotesTurn";
-import { PriceProviderCard } from "../../components/bookingChat/PriceProviderCard";
-import { FeeAssuranceCard } from "../../components/bookingChat/FeeAssuranceCard";
 import { ServiceChecklistCard } from "../../components/bookingChat/ServiceChecklistCard";
 import { useServiceChecklist } from "./useServiceChecklist";
-import { BookingConfirmedOverlay } from "../../components/bookingChat/BookingConfirmedOverlay";
-import { ProviderTrustCard } from "../../components/bookingChat/ProviderTrustCard";
-import { RequestSummaryCard } from "../../components/bookingChat/RequestSummaryCard";
+import { ReviewSummaryPanel } from "../../components/bookingChat/ReviewSummaryPanel";
 import { formatMoney } from "../../domain/money";
 import { resolveServicePriceDisplay } from "../../domain/servicePricing";
 import { BookingReviewSummary } from "../../domain/bookingReview";
@@ -23,6 +19,25 @@ export interface ReviewAndConfirmPhaseProps {
    * happened -- it previously went all-green as soon as the address
    * resolved, claiming a booking that did not exist yet. */
   onConfirmed?: () => void;
+  /**
+   * Reports the confirm phase (and the real details) UP to the screen.
+   *
+   * This component renders inside the chat transcript, so a `flex: 1` overlay
+   * here can only ever fill its slot in the list -- which is why the
+   * confirmation looked like another card instead of taking over. The screen
+   * owns the full-bleed layer; this just tells it what to show.
+   */
+  onConfirmPhase?: (state: ConfirmPhaseState | null) => void;
+}
+
+export interface ConfirmPhaseState {
+  phase: "confirming" | "confirmed";
+  bookingId: string | null;
+  bookingNumber: string | null;
+  providerName: string | null;
+  slotLabel: string | null;
+  amountLabel: string | null;
+  feeCreditedAgainstWork: boolean;
 }
 
 /** "Today" / "Tomorrow" / "Sat 9 Aug" for a promised slot. Mirrors the slot
@@ -58,7 +73,7 @@ function priceLabelFor(summary: BookingReviewSummary): string | null {
  * Three sequential turns once the summary is ready: pick a time (with the
  * real price shown alongside it) -> optional photos -> provider + confirm.
  */
-export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: ReviewAndConfirmPhaseProps) {
+export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed, onConfirmPhase }: ReviewAndConfirmPhaseProps) {
   const c = useBookingReviewController(draftId);
   const [slotDone, setSlotDone] = useState(false);
   const [checklistDone, setChecklistDone] = useState(false);
@@ -91,23 +106,41 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: 
     );
   }
 
-  if (c.uiState === "confirmed" && c.confirmation) {
-    const slot = c.summary?.promisedSlot ?? null;
-    const inspection = c.summary?.inspection ?? null;
-    return (
-      <BookingConfirmedOverlay
-        bookingNumber={c.confirmation.bookingNumber}
-        providerName={c.summary?.provider?.providerName ?? null}
-        slotLabel={slot ? `${slotDayLabel(slot.date, slot.daysAhead)}, ${slot.timeWindow}` : null}
-        amountLabel={inspection ? formatMoney(inspection.visitFee) : null}
-        // Asserted by the backend next to the billing rule that enforces it --
-        // never assumed here.
-        feeCreditedAgainstWork={!!inspection?.visitFeePolicy?.creditedAgainstWork}
-        onTrackBooking={() => onTrackBooking(c.confirmation!.bookingId)}
-        onDone={() => onTrackBooking(c.confirmation!.bookingId)}
-      />
-    );
-  }
+  // Committing the booking takes over the WHOLE screen, which this component
+  // cannot do from inside the chat transcript -- so the phase is reported up and
+  // the screen renders the full-bleed layer. The phase comes from the REAL
+  // controller state: it reaches "confirmed" only once the backend has returned
+  // a booking number, so a slow call keeps showing progress and a failure can
+  // never land on a success screen.
+  const confirming = c.uiState === "confirming";
+  const confirmActive = confirming || (c.uiState === "confirmed" && !!c.confirmation);
+  const slotForConfirm = c.summary?.promisedSlot ?? null;
+  const inspectionForConfirm = c.summary?.inspection ?? null;
+
+  useEffect(() => {
+    if (!onConfirmPhase) return;
+    if (!confirmActive) {
+      onConfirmPhase(null);
+      return;
+    }
+    onConfirmPhase({
+      phase: confirming ? "confirming" : "confirmed",
+      bookingId: c.confirmation?.bookingId ?? null,
+      bookingNumber: c.confirmation?.bookingNumber ?? null,
+      providerName: c.summary?.provider?.providerName ?? null,
+      slotLabel: slotForConfirm
+        ? `${slotDayLabel(slotForConfirm.date, slotForConfirm.daysAhead)}, ${slotForConfirm.timeWindow}`
+        : null,
+      amountLabel: inspectionForConfirm ? formatMoney(inspectionForConfirm.visitFee) : null,
+      // Asserted by the backend next to the billing rule that enforces it.
+      feeCreditedAgainstWork: !!inspectionForConfirm?.visitFeePolicy?.creditedAgainstWork,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmActive, confirming, c.confirmation, slotForConfirm, inspectionForConfirm]);
+
+  // Nothing is rendered in the transcript for these phases -- the screen's
+  // overlay is showing instead.
+  if (confirmActive) return null;
 
   if (!c.summary) return null;
 
@@ -120,6 +153,11 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: 
         <SlotPickerCard
           promisedSlot={c.summary.promisedSlot}
           priceLabel={priceLabelFor(c.summary)}
+          emergencySurchargeLabel={
+            c.summary.emergencySurchargePreview
+              ? formatMoney(c.summary.emergencySurchargePreview)
+              : null
+          }
           availableSlots={c.availableSlots}
           slotsLoading={c.slotsLoading}
           slotSelectionError={c.slotSelectionError}
@@ -140,32 +178,23 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: 
           onContinue={() => setPhotosDone(true)}
         />
       ) : (
-        <>
-          {/* Money is settled BEFORE the Confirm button, never after it --
-              the customer should have no open question about what they are
-              agreeing to pay. */}
-          {/* Recap first ("what am I booking"), then who is coming, then the
-              money -- the order a customer actually asks those questions in. */}
-          <RequestSummaryCard
-            summary={c.summary}
-            slotLabel={
-              c.summary.promisedSlot
-                ? `${slotDayLabel(c.summary.promisedSlot.date, c.summary.promisedSlot.daysAhead)}, ${c.summary.promisedSlot.timeWindow}`
-                : null
-            }
-          />
-          {c.summary.provider ? <ProviderTrustCard provider={c.summary.provider} /> : null}
-          <FeeAssuranceCard
-            inspection={c.summary.inspection}
-            emergencySurcharge={c.summary.isEmergency ? c.summary.emergencySurcharge : null}
-          />
-          <PriceProviderCard
-            summary={c.summary}
-            confirming={c.uiState === "confirming"}
-            onConfirm={c.confirm}
-            confirmDisabledReason={c.eligibility.allowed ? null : "We can't confirm this request yet -- see the details above."}
-          />
-        </>
+        // ONE box: request recap, technician, money and Confirm as sections of a
+        // single agreement rather than four unrelated cards stacked down the chat.
+        <ReviewSummaryPanel
+          summary={c.summary}
+          slotLabel={
+            c.summary.promisedSlot
+              ? `${slotDayLabel(c.summary.promisedSlot.date, c.summary.promisedSlot.daysAhead)}, ${c.summary.promisedSlot.timeWindow}`
+              : null
+          }
+          confirming={c.uiState === "confirming"}
+          confirmDisabledReason={c.eligibility.allowed ? null : "We can't confirm this request yet -- see the details above."}
+          onConfirm={c.confirm}
+          // Going back re-opens the earlier turn in place, so a late change of
+          // mind costs a tap rather than restarting the conversation.
+          onEditSlot={() => setSlotDone(false)}
+          onEditPhotos={() => setPhotosDone(false)}
+        />
       )}
     </View>
   );
