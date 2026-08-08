@@ -10,6 +10,7 @@ import { ServiceChecklistCard } from "../../components/bookingChat/ServiceCheckl
 import { useServiceChecklist } from "./useServiceChecklist";
 import { BookingConfirmedOverlay } from "../../components/bookingChat/BookingConfirmedOverlay";
 import { ProviderTrustCard } from "../../components/bookingChat/ProviderTrustCard";
+import { RequestSummaryCard } from "../../components/bookingChat/RequestSummaryCard";
 import { formatMoney } from "../../domain/money";
 import { resolveServicePriceDisplay } from "../../domain/servicePricing";
 import { BookingReviewSummary } from "../../domain/bookingReview";
@@ -143,6 +144,16 @@ export function ReviewAndConfirmPhase({ draftId, onTrackBooking, onConfirmed }: 
           {/* Money is settled BEFORE the Confirm button, never after it --
               the customer should have no open question about what they are
               agreeing to pay. */}
+          {/* Recap first ("what am I booking"), then who is coming, then the
+              money -- the order a customer actually asks those questions in. */}
+          <RequestSummaryCard
+            summary={c.summary}
+            slotLabel={
+              c.summary.promisedSlot
+                ? `${slotDayLabel(c.summary.promisedSlot.date, c.summary.promisedSlot.daysAhead)}, ${c.summary.promisedSlot.timeWindow}`
+                : null
+            }
+          />
           {c.summary.provider ? <ProviderTrustCard provider={c.summary.provider} /> : null}
           <FeeAssuranceCard
             inspection={c.summary.inspection}
