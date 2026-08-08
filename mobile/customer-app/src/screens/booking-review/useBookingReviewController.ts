@@ -258,6 +258,11 @@ export function useBookingReviewController(draftId: string): BookingReviewContro
   const loadAvailableSlots = useCallback(async (emergency: boolean = false) => {
     setSlotsLoading(true);
     setSlotSelectionError(null);
+    // Drop the previous list first. Normal and emergency return DIFFERENT
+    // slots (6h vs 2h lead time), so keeping the old array visible while the
+    // new one loads showed normal slots under the "emergency" heading -- the
+    // customer could pick a time that list never actually offered.
+    setAvailableSlots(null);
     try {
       const raw = await reviewApi.getAvailableSlots(draftId, emergency);
       setAvailableSlots(adaptAvailableSlots(parseAvailableSlotsResponse(raw.data)));

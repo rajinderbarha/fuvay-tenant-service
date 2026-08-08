@@ -22,7 +22,7 @@ import pytest
 from app.engines.home_service_booking.provider_slot_service import (
     find_earliest_available_slot, list_available_slots, slot_has_capacity, _slots_from_rule,
     _window_label, FALLBACK_MAX_PER_SLOT, FALLBACK_SLOT_MINUTES,
-    DEFAULT_MIN_LEAD_HOURS, EMERGENCY_MIN_LEAD_HOURS,
+    DEFAULT_MIN_LEAD_HOURS, EMERGENCY_MIN_LEAD_HOURS, DEFAULT_OFFERED_DAYS,
 )
 
 GURAMRIT_TENANT_ID = uuid.UUID("244beeec-fedc-452e-8054-317e45557d4d")
@@ -235,7 +235,7 @@ async def test_lead_time_never_bypasses_the_providers_real_working_hours():
     db = await _get_db()
     try:
         now = dt.datetime.now()
-        emergency_slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=2.0, max_results=20)
+        emergency_slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now, min_lead_hours=2.0)
         for s in emergency_slots:
             day = dt.date.fromisoformat(s["date"])
             dow = day.isoweekday() % 7
@@ -269,11 +269,58 @@ async def test_list_available_slots_returns_the_same_earliest_slot_first():
 
 
 @pytest.mark.asyncio
-async def test_list_available_slots_respects_max_results():
+async def test_list_offers_whole_days_never_truncated_part_way_through():
+    """Product rule: the customer sees ALL of a day's remaining bookable
+    slots. A day must never be cut off mid-way, which the old flat
+    max_results cap did."""
     db = await _get_db()
     try:
-        slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, max_results=3)
-        assert 1 <= len(slots) <= 3
+        # Start well before opening so today's whole day is offerable.
+        now = dt.datetime.combine(dt.date.today(), dt.time(0, 0))
+        slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now)
+        assert slots, "provider has configured hours, so something must be offerable"
+
+        first_day = slots[0]["date"]
+        offered = {s["time_window"] for s in slots if s["date"] == first_day}
+
+        day = dt.date.fromisoformat(first_day)
+        rules = await _provider_rules_for_day_helper(db, day.isoweekday() % 7)
+        cutoff = now + dt.timedelta(hours=DEFAULT_MIN_LEAD_HOURS)
+        expected = {
+            _window_label(a, b)
+            for r in rules for a, b in _slots_from_rule(r)
+            if dt.datetime.combine(day, a) >= cutoff
+        }
+        # Every window the provider really has open that day (and is not
+        # already full) is offered -- no arbitrary truncation.
+        assert expected - offered == set() or all(
+            any(s["time_window"] == w and s["already_booked"] >= s["capacity"] for s in slots)
+            for w in (expected - offered)
+        ), "a day's remaining slots were truncated"
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_list_spans_to_the_next_open_day_and_skips_closed_ones():
+    """"Today, else tomorrow, else the next OPEN day" -- a closed or empty
+    day must not consume one of the offered days."""
+    db = await _get_db()
+    try:
+        # Late enough that today's lead-time window has largely passed, so
+        # the walk genuinely has to roll forward.
+        now = dt.datetime.combine(dt.date.today(), dt.time(23, 0))
+        slots = await list_available_slots(db, tenant_id=GURAMRIT_TENANT_ID, from_datetime=now)
+        assert slots, "must roll forward to the next open day rather than return nothing"
+
+        distinct_days = sorted({s["date"] for s in slots})
+        assert len(distinct_days) <= DEFAULT_OFFERED_DAYS
+
+        # Every offered day is genuinely one the provider has rules for.
+        for iso in distinct_days:
+            day = dt.date.fromisoformat(iso)
+            rules = await _provider_rules_for_day_helper(db, day.isoweekday() % 7)
+            assert rules, f"{iso} was offered but the provider has no hours configured for it"
     finally:
         await db.close()
 

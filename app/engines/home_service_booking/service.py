@@ -1481,9 +1481,13 @@ class HomeServiceChatbotBookingService:
         days_needed = (day - now.date()).days + 1
         if days_needed < 1:
             raise ValueError("SLOT_NO_LONGER_AVAILABLE")  # a past date was requested
+        # `max_days` must span every day up to the requested one, otherwise
+        # re-deriving a slot the customer legitimately picked on a later day
+        # would fail as "no longer available" purely because the walk stopped
+        # counting days early.
         candidates = await list_available_slots(
             self.db, tenant_id=draft.selected_tenant_id,
-            from_datetime=now, search_days=days_needed, max_results=200,
+            from_datetime=now, search_days=days_needed, max_days=days_needed,
             min_lead_hours=EMERGENCY_MIN_LEAD_HOURS if emergency else DEFAULT_MIN_LEAD_HOURS,
         )
         promised_slot = next(

@@ -53,6 +53,12 @@ FALLBACK_MAX_PER_SLOT = 1
 DEFAULT_MIN_LEAD_HOURS = 6.0
 EMERGENCY_MIN_LEAD_HOURS = 2.0
 
+# How many days that actually HAVE bookable slots to offer the customer.
+# Product rule: today's remaining slots, plus the next open day's -- so a
+# Saturday-evening customer with Sunday closed sees Monday, and a day with
+# nothing left never counts against this.
+DEFAULT_OFFERED_DAYS = 2
+
 
 def _parse_hhmm(value) -> dt.time | None:
     """Rules store times as strings ("09:00" / "09:00:00")."""
@@ -199,7 +205,7 @@ async def list_available_slots(
     tenant_id: uuid.UUID,
     from_datetime: dt.datetime | None = None,
     search_days: int = DEFAULT_SEARCH_DAYS,
-    max_results: int = 8,
+    max_days: int = DEFAULT_OFFERED_DAYS,
     min_lead_hours: float = DEFAULT_MIN_LEAD_HOURS,
 ) -> list[dict]:
     """Every genuinely bookable slot for this provider, earliest first,
@@ -209,18 +215,26 @@ async def list_available_slots(
     confirmation (`slot_has_capacity` re-checks the same capacity rule;
     `select_promised_slot` re-derives from this same function).
 
-    Lets the customer pick a time rather than being handed the single
-    earliest one -- the walk is identical, it just keeps collecting
-    instead of returning on the first hit, and stops once `max_results`
-    real slots are found or the search horizon runs out.
+    Offered by WHOLE DAY, never truncated mid-day (product rule): the
+    customer sees ALL of today's remaining bookable slots; if today has
+    none left, they see the next open day's; and a closed day is skipped
+    entirely rather than counted. So on a Saturday evening with Sunday
+    closed, the list is Monday's full day -- not a handful of slots cut off
+    arbitrarily part-way through.
+
+    `max_days` counts only days that actually HAVE bookable slots, so a run
+    of closed or fully-booked days never eats into what the customer is
+    shown. `search_days` remains the hard horizon that stops the walk for a
+    provider with no capacity at all.
     """
     now = from_datetime or dt.datetime.now()
     cutoff = now + dt.timedelta(hours=min_lead_hours)
     day = now.date()
     results: list[dict] = []
+    days_with_slots = 0
 
     for offset in range(search_days):
-        if len(results) >= max_results:
+        if days_with_slots >= max_days:
             break
         target = day + dt.timedelta(days=offset)
         if await _is_closed(db, tenant_id, target):
@@ -232,17 +246,17 @@ async def list_available_slots(
             continue
 
         booked = await _booked_counts(db, tenant_id, target)
+        found_today = False
 
         for rule in rules:
             cap = rule.get("max_bookings_per_slot") or FALLBACK_MAX_PER_SLOT
             for start, end in _slots_from_rule(rule):
-                if len(results) >= max_results:
-                    break
                 if dt.datetime.combine(target, start) < cutoff:
                     continue
                 label = _window_label(start, end)
                 if booked.get(label, 0) >= cap:
                     continue
+                found_today = True
                 results.append({
                     "date": target.isoformat(),
                     "time_window": label,
@@ -255,6 +269,13 @@ async def list_available_slots(
                     "already_booked": booked.get(label, 0),
                     "days_ahead": offset,
                 })
+
+        # Counted only when the day genuinely yielded something bookable --
+        # a closed or fully-booked day must not consume one of the offered
+        # days and leave the customer with fewer real choices.
+        if found_today:
+            days_with_slots += 1
+
     return results
 
 
