@@ -5,6 +5,8 @@ import { useBotColors } from "./botTheme";
 import { BotCard, BotPrimaryButton } from "./BotPrimitives";
 import { CustomerSavedAddress } from "../../domain/customerSavedAddress";
 import { AddressCreatePayload } from "../../domain/addressForm";
+import { AddressSearchField } from "../AddressSearchField";
+import { useAddressAutocomplete } from "../../hooks/useAddressAutocomplete";
 
 export interface AddressTurnProps {
   zipcode: string;
@@ -36,10 +38,37 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [label, setLabel] = useState("Home");
+  // Coordinates only ever come from a resolved lookup -- never typed, never guessed.
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const autocomplete = useAddressAutocomplete();
 
   const matching = (addresses ?? []).filter(a => a.postalCode === zipcode);
   const excludedCount = (addresses ?? []).length - matching.length;
   const canSubmit = line1.trim().length > 0 && city.trim().length > 0 && state.trim().length > 0;
+
+  function onSearchChange(value: string) {
+    setSearch(value);
+    autocomplete.setQuery(value);
+  }
+
+  async function pickSuggestion(placeId: string) {
+    const resolved = await autocomplete.select(placeId);
+    if (!resolved) return;
+    setSearch(resolved.formattedAddress ?? "");
+    // Each field is filled only if Google actually returned it, so a partial
+    // result never blanks out something the customer already typed.
+    if (resolved.line1) setLine1(resolved.line1);
+    if (resolved.city) setCity(resolved.city);
+    if (resolved.state) setState(resolved.state);
+    // The resolved PIN is deliberately DISCARDED here. This request's zipcode is
+    // fixed to the one the provider was matched against (see component doc); a
+    // Google PIN that disagrees would either be silently ignored or break the
+    // match, so the search is used for street/city/state and coordinates only.
+    setLatitude(resolved.latitude);
+    setLongitude(resolved.longitude);
+  }
 
   function submitNew() {
     if (!canSubmit) return;
@@ -47,6 +76,7 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
       label, name: null,
       address_line_1: line1.trim(), address_line_2: line2.trim() || null, landmark: landmark.trim() || null,
       city: city.trim(), state: state.trim(), zipcode, is_default: matching.length === 0,
+      latitude, longitude,
     });
   }
 
@@ -107,6 +137,19 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
         </Pressable>
       ) : (
         <View style={{ marginTop: 14, gap: 8 }}>
+          <AddressSearchField
+            value={search}
+            onChangeText={onSearchChange}
+            suggestions={autocomplete.suggestions}
+            available={autocomplete.available}
+            searching={autocomplete.searching}
+            resolving={autocomplete.resolving}
+            onSelect={pickSuggestion}
+            palette={{
+              surface: BOT.surfaceSunken, border: BOT.borderSubtle,
+              text: BOT.textPrimary, placeholder: BOT.textFaint, muted: BOT.textMuted,
+            }}
+          />
           {([
             ["Label (Home/Work/Other)", label, setLabel],
             ["Address line 1", line1, setLine1],

@@ -123,6 +123,13 @@ class Settings(BaseSettings):
     # reschedule reason the system cannot see.
     WEATHERAPI_KEY: str = ""
 
+    # ── Google Places ──────────────────────────────────────────────
+    # Address autocomplete for the customer app, PROXIED through
+    # /v1/customer/places -- the key stays server-side, because a key inside a
+    # mobile bundle is extractable and Places is billed per request. Empty means the
+    # address form is typed by hand, exactly as it was before.
+    GOOGLE_PLACES_API_KEY: str = ""
+
     # ── Notifications ──────────────────────────────────────────────
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""

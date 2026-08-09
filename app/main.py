@@ -807,6 +807,10 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.customer_home.section_admin_router import router as home_sections_admin_router
     app.include_router(home_sections_admin_router)
 
+    # Address autocomplete. Proxied so the Places key never ships in the app bundle.
+    from app.engines.places.router import router as places_router
+    app.include_router(places_router)
+
     # Real bug fixed here: the customer_campaigns engine -- which powers the
     # promotional banner carousel on the customer Home screen -- had BOTH of
     # its routers written but NEITHER ever mounted. The carousel still

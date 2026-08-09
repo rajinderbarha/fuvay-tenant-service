@@ -30,7 +30,7 @@ describe("useBookingChatAddress -- zipcode lock", () => {
     await act(async () => {
       await result.current.createNew({
         label: "Home", name: null, address_line_1: "1 Main St", address_line_2: null, landmark: null,
-        city: "Ludhiana", state: "Punjab", zipcode: "999999", is_default: false,
+        city: "Ludhiana", state: "Punjab", zipcode: "999999", is_default: false, latitude: null, longitude: null,
       });
     });
 
@@ -48,7 +48,7 @@ describe("useBookingChatAddress -- zipcode lock", () => {
     await act(async () => {
       await result.current.createNew({
         label: "Home", name: null, address_line_1: "1 Main St", address_line_2: null, landmark: null,
-        city: "Ludhiana", state: "Punjab", zipcode: "141002", is_default: false,
+        city: "Ludhiana", state: "Punjab", zipcode: "141002", is_default: false, latitude: null, longitude: null,
       });
     });
 

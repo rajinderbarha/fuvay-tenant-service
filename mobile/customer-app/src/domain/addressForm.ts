@@ -6,8 +6,10 @@
  *     migration 223 -- distinct from `name`, the recipient's full name).
  *   - `zipcode` must be exactly 6 ASCII digits (backend `_validate_pin`).
  *   - `address_line_1` min 2 / max 300 chars; `city`/`state` required.
- * City/state are never inferred from the PIN client-side -- no confirmed
- * backend geocoding contract exists for customer address entry.
+ * City/state are never inferred from the PIN client-side. They can be FILLED by an
+ * explicit address lookup the customer chose from (`useAddressAutocomplete`), which
+ * is a different thing from inferring them: every filled field stays editable, and
+ * `latitude`/`longitude` stay null unless a lookup actually returned them.
  */
 export const ADDRESS_LABELS = ["Home", "Work", "Other"] as const;
 export type AddressLabel = (typeof ADDRESS_LABELS)[number];
@@ -75,6 +77,9 @@ export interface AddressFormState {
   state: string;
   pinCode: string;
   isDefault: boolean;
+  /** Filled only by an address lookup. Not a form field the customer can type. */
+  latitude: number | null;
+  longitude: number | null;
 }
 
 export interface AddressFormErrors {
@@ -109,6 +114,11 @@ export interface AddressCreatePayload {
   state: string;
   zipcode: string;
   is_default: boolean;
+  /** Only ever set from a resolved address lookup, never typed and never derived
+   * from the PIN. Null means "we don't know", which is what lets weather and
+   * routing fall back to the city instead of trusting a made-up point. */
+  latitude: number | null;
+  longitude: number | null;
 }
 
 export function buildAddressCreatePayload(form: AddressFormState): AddressCreatePayload {
@@ -125,6 +135,8 @@ export function buildAddressCreatePayload(form: AddressFormState): AddressCreate
     state: normalizeAddressText(form.state),
     zipcode: form.pinCode.trim(),
     is_default: form.isDefault,
+    latitude: form.latitude,
+    longitude: form.longitude,
   };
 }
 

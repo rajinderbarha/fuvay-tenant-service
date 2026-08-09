@@ -13,6 +13,8 @@ import { AddressFormFields } from "../../components/address-form/AddressFormFiel
 import { DefaultAddressToggle } from "../../components/address-form/DefaultAddressToggle";
 import { AddressHistoricalNote } from "../../components/address-form/AddressHistoricalNote";
 import { AddressFormFooter } from "../../components/address-form/AddressFormFooter";
+import { AddressSearchField } from "../../components/AddressSearchField";
+import { useAddressAutocomplete } from "../../hooks/useAddressAutocomplete";
 import { useCustomerAddressesQuery } from "../../api/customerAddresses/useCustomerAddressesQuery";
 import { useCustomerAddressDetailQuery } from "../../api/customerAddresses/useCustomerAddressDetailQuery";
 import { useCreateAddressMutation } from "../../api/customerAddresses/useCreateAddressMutation";
@@ -28,7 +30,12 @@ import { DomainError } from "../../domain/errors";
 const EMPTY_FORM: AddressFormState = {
   label: "Home", fullName: "", addressLine1: "", addressLine2: "", landmark: "",
   city: "", state: "", pinCode: "", isDefault: false,
+  latitude: null, longitude: null,
 };
+
+/** Hand-editing any of these means the address now points at a different place than
+ * whatever coordinates are stored against it. */
+const LOCALITY_FIELDS: (keyof AddressFormState)[] = ["city", "state", "pinCode", "addressLine1"];
 
 function toFormState(address: CustomerSavedAddress): AddressFormState {
   return {
@@ -41,6 +48,12 @@ function toFormState(address: CustomerSavedAddress): AddressFormState {
     state: address.state,
     pinCode: address.postalCode,
     isDefault: address.isDefault,
+    // The saved address's stored coordinates are not exposed by the read contract, so
+    // they start unknown on edit. Left null means "unchanged" through the diffing
+    // update payload -- the form never overwrites stored coordinates it can't see,
+    // except when the locality itself was hand-edited (see handleSave).
+    latitude: null,
+    longitude: null,
   };
 }
 
@@ -69,6 +82,8 @@ export function AddressFormScreen() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [interacted, setInteracted] = useState(false);
+  const [search, setSearch] = useState("");
+  const autocomplete = useAddressAutocomplete();
 
   useEffect(() => {
     if (mode === "edit" && detailQuery.data && !loadedOnce) {
@@ -118,6 +133,32 @@ export function AddressFormScreen() {
     setForm(prev => ({ ...prev, [key]: value }));
   }
 
+  function onSearchChange(value: string) {
+    setSearch(value);
+    autocomplete.setQuery(value);
+  }
+
+  async function pickSuggestion(placeId: string) {
+    const resolved = await autocomplete.select(placeId);
+    if (!resolved) return;
+    setInteracted(true);
+    setSearch(resolved.formattedAddress ?? "");
+    setForm(prev => ({
+      ...prev,
+      // Only fields Google actually returned are filled -- a partial result never
+      // blanks out something already entered. The PIN in particular is often absent
+      // for a rural locality, and it decides serviceability, so it is never guessed.
+      addressLine1: resolved.line1 ?? prev.addressLine1,
+      city: resolved.city ?? prev.city,
+      state: resolved.state ?? prev.state,
+      pinCode: resolved.zipcode ?? prev.pinCode,
+      latitude: resolved.latitude,
+      longitude: resolved.longitude,
+    }));
+    // Everything filled is still editable, so surface any resulting error state.
+    setTouched(prev => ({ ...prev, addressLine1: true, city: true, state: true, pinCode: true }));
+  }
+
   function markTouched(key: keyof AddressFormErrors) {
     setTouched(prev => ({ ...prev, [key]: true }));
   }
@@ -144,6 +185,15 @@ export function AddressFormScreen() {
         await createMutation.mutateAsync(payload);
       } else {
         const payload = buildAddressUpdatePayload(form, original);
+        // If the customer retyped the locality by hand rather than picking a
+        // suggestion, whatever coordinates are stored server-side now describe a
+        // different place. Clearing them is honest: the platform then falls back to
+        // the city for weather and routing instead of trusting a stale point.
+        const localityRetyped = LOCALITY_FIELDS.some(key => form[key] !== original[key]);
+        if (localityRetyped && form.latitude === null && form.longitude === null) {
+          payload.latitude = null;
+          payload.longitude = null;
+        }
         await updateMutation.mutateAsync(payload);
       }
       navigation.goBack();
@@ -159,6 +209,16 @@ export function AddressFormScreen() {
       <View style={{ gap: theme.spacing.base }}>
         <AddressFormHeader mode={mode} onBack={() => confirmDiscard(() => navigation.goBack())} />
         <AddressAvailabilityInfo />
+
+        <AddressSearchField
+          value={search}
+          onChangeText={onSearchChange}
+          suggestions={autocomplete.suggestions}
+          available={autocomplete.available}
+          searching={autocomplete.searching}
+          resolving={autocomplete.resolving}
+          onSelect={pickSuggestion}
+        />
 
         <AddressLabelSelector value={form.label} onChange={label => updateField("label", label)} />
 

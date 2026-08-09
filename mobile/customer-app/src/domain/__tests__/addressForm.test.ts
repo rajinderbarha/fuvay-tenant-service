@@ -8,7 +8,7 @@ function form(overrides: Partial<AddressFormState> = {}): AddressFormState {
   return {
     label: "Home", fullName: "Rajinder Singh", addressLine1: "House 24",
     addressLine2: "Model Town", landmark: "", city: "Ludhiana", state: "Punjab",
-    pinCode: "141002", isDefault: false,
+    pinCode: "141002", isDefault: false, latitude: null, longitude: null,
     ...overrides,
   };
 }
@@ -75,6 +75,9 @@ describe("buildAddressCreatePayload", () => {
       label: "Home", name: "Rajinder Singh", address_line_1: "House 24",
       address_line_2: "Model Town", landmark: null, city: "Ludhiana", state: "Punjab",
       zipcode: "141002", is_default: false,
+      // Real backend fields (serviceability AddressCreate). Null unless an address
+      // lookup actually returned them -- never derived from the PIN or the city.
+      latitude: null, longitude: null,
     });
   });
   it("normalizes surrounding whitespace without truncating", () => {
