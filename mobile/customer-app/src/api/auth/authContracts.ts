@@ -45,6 +45,17 @@ export type AuthSessionResponseDto = z.infer<typeof authSessionResponseSchema>;
 export const loginOutcomeSchema = z.union([mfaChallengeResponseSchema, authSessionResponseSchema]);
 export type LoginOutcomeDto = z.infer<typeof loginOutcomeSchema>;
 
+// POST /v1/auth/register/customer -- AuthService.register_customer. Verified live:
+// 201 with these three fields. `otp_hint` is the same DEV-ONLY field as below, and it
+// is scoped to `phone_verification`, which /otp/verify does NOT accept -- so nothing
+// here should try to use it as a login code.
+export const registerCustomerResponseSchema = z.object({
+  user_id: z.string(),
+  message: z.string(),
+  otp_hint: z.string().optional(),
+});
+export type RegisterCustomerResponseDto = z.infer<typeof registerCustomerResponseSchema>;
+
 // POST /v1/auth/otp/send -- app/engines/auth/service.py send_phone_otp.
 // `otp_hint` is a DEV-ONLY field (settings.DEBUG) the backend itself only
 // includes outside production -- this client must never log or persist

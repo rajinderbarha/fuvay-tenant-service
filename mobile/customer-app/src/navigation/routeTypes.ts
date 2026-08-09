@@ -40,6 +40,7 @@ export type CustomerTabsParamList = {
  */
 export type PublicStackParamList = {
   LoginMethod: undefined;
+  Signup: undefined;
   // `devOtpHint` is populated only from the backend's own dev/staging-only
   // `otp_hint` field (never sent in production -- see AuthService.
   // send_phone_otp) and only when EXPO_PUBLIC_ENV is non-production. It

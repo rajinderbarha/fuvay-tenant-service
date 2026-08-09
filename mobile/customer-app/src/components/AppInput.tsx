@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { TextInput, TextInputProps, View } from "react-native";
+import { StyleProp, TextInput, TextInputProps, View, ViewStyle } from "react-native";
 import { useTheme } from "../design-system/theme";
 import { AppText } from "./AppText";
 
@@ -7,6 +7,15 @@ export interface AppInputProps extends TextInputProps {
   label?: string;
   error?: string;
   disabled?: boolean;
+  /**
+   * Style for the WRAPPER, not the field.
+   *
+   * `style` reaches the TextInput itself, which is why `style={{ flex: 1 }}` on a
+   * field inside a row did nothing: the wrapper stayed content-width and the field
+   * could not grow past it. That is what left the login screen's mobile number box
+   * occupying half the row with dead space beside it.
+   */
+  containerStyle?: StyleProp<ViewStyle>;
 }
 
 /** Standard text field: label, themed border (default/focus/error/disabled
@@ -17,7 +26,7 @@ export interface AppInputProps extends TextInputProps {
  * keyboard up when the Modal unmounts, and only blurring the real input releases it
  * (see LocationPickerModal). */
 export const AppInput = React.forwardRef<TextInput, AppInputProps>(function AppInput(
-  { label, error, disabled, style, onFocus, onBlur, ...rest }: AppInputProps,
+  { label, error, disabled, style, containerStyle, onFocus, onBlur, ...rest }: AppInputProps,
   ref,
 ) {
   const { theme } = useTheme();
@@ -30,7 +39,7 @@ export const AppInput = React.forwardRef<TextInput, AppInputProps>(function AppI
     : theme.colors.borderDefault;
 
   return (
-    <View>
+    <View style={containerStyle}>
       {label ? (
         <AppText variant="label" color="secondary" style={{ marginBottom: theme.spacing.xxs }}>
           {label}

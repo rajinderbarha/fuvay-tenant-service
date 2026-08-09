@@ -4,6 +4,7 @@ import { PublicStackParamList } from "./routeTypes";
 import { LoginMethodScreen } from "../screens/auth/LoginMethodScreen";
 import { VerifyLoginOtpScreen } from "../screens/auth/VerifyLoginOtpScreen";
 import { PasswordLoginScreen } from "../screens/auth/PasswordLoginScreen";
+import { SignupScreen } from "../screens/auth/SignupScreen";
 import { MfaChallengeScreen } from "../screens/auth/MfaChallengeScreen";
 import { RecoveryCodeChallengeScreen } from "../screens/auth/RecoveryCodeChallengeScreen";
 import { ForgotPasswordRequestScreen } from "../screens/auth/ForgotPasswordRequestScreen";
@@ -25,6 +26,7 @@ export function PublicNavigator() {
       <Stack.Screen name="LoginMethod" component={LoginMethodScreen} />
       <Stack.Screen name="VerifyLoginOtp" component={VerifyLoginOtpScreen} />
       <Stack.Screen name="PasswordLogin" component={PasswordLoginScreen} />
+      <Stack.Screen name="Signup" component={SignupScreen} />
       <Stack.Screen name="MfaChallenge" component={MfaChallengeScreen} />
       <Stack.Screen name="RecoveryCodeChallenge" component={RecoveryCodeChallengeScreen} />
       <Stack.Screen name="ForgotPasswordRequest" component={ForgotPasswordRequestScreen} />

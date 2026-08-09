@@ -28,6 +28,28 @@ export function copyForAuthError(error: unknown): string {
   return ENUMERATION_SAFE_DEFAULT;
 }
 
+/**
+ * Signup copy, which is deliberately NOT the login copy.
+ *
+ * On login, "no account with that number" must be indistinguishable from "wrong code",
+ * because otherwise anyone can enumerate accounts. Signup is different in the one case
+ * that matters: the customer has just typed their OWN number, the backend already
+ * answers 409 ALREADY_EXISTS with that reason, and hiding it buys no privacy while
+ * leaving them stuck on a failing button. So that case is stated, with the next step.
+ *
+ * Everything else falls back to the same non-committal wording -- and never to the
+ * login sentence, which would be nonsense on a screen nobody is signing in from.
+ */
+export function copyForSignupError(error: unknown): string {
+  if (error instanceof DomainError) {
+    if (error.telemetryMeta?.backendCode === "ALREADY_EXISTS") {
+      return "This mobile number already has an account. Sign in instead.";
+    }
+    return CATEGORY_COPY[error.category] ?? "We couldn't create your account. Please try again.";
+  }
+  return "We couldn't create your account. Please try again.";
+}
+
 export function isRateLimited(error: unknown): error is DomainError {
   return error instanceof DomainError && error.category === "RATE_LIMITED";
 }

@@ -59,7 +59,8 @@ export function PhoneNumberField({
           <AppText variant="body">{countryCode.code}</AppText>
         </View>
         <AppInput
-          style={{ flex: 1 }}
+          // The WRAPPER has to grow, not just the field inside it -- see AppInput.
+          containerStyle={{ flex: 1 }}
           value={nationalNumber}
           onChangeText={raw => onNationalNumberChange(sanitizeNationalNumber(raw))}
           keyboardType="phone-pad"

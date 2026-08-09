@@ -51,52 +51,79 @@ export function PasswordLoginScreen() {
   }
 
   return (
-    <AppScreen scroll style={{ backgroundColor: theme.colors.backgroundSunken }}>
-      <View style={{ alignItems: "center", marginTop: theme.spacing.xxxl, marginBottom: theme.spacing.xxl }}>
-        <FuvayMark />
-      </View>
-      <AppText variant="headingLarge" accessibilityRole="header" color="inverse" align="center">Sign in with password</AppText>
-      <AppText variant="body" color="secondary" align="center" style={{ marginBottom: theme.spacing.xl }}>
-        Use your email or mobile number.
-      </AppText>
+    /**
+     * Laid out exactly like the OTP screen: one centred column, same spacing scale.
+     * The two are the same decision seen twice, so they should not look like two
+     * different products.
+     *
+     * The heading was `color="inverse"` on a `backgroundSunken` screen -- white text
+     * on #EAEFF8 in light mode and near-black on #161618 in dark. The title was
+     * invisible in BOTH themes. It uses the ordinary screen background and default
+     * text colour now, which is legible by construction.
+     */
+    <AppScreen scroll>
+      <View style={{ flex: 1, justifyContent: "center", paddingVertical: theme.spacing.xl }}>
+        <View style={{ alignItems: "center", marginBottom: theme.spacing.xl }}>
+          <FuvayMark />
+        </View>
 
-      {screenError ? <AuthErrorBanner message={screenError} /> : null}
-
-      <AppInput
-        label="Email or mobile"
-        accessibilityLabel="Email or mobile"
-        value={identifier}
-        onChangeText={value => { setIdentifier(value); setScreenError(undefined); }}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="email-address"
-        textContentType="username"
-        autoComplete="username"
-        editable={!submitting}
-        style={{ marginBottom: theme.spacing.base }}
-      />
-      <PasswordField
-        value={password}
-        onChangeText={value => { setPassword(value); setScreenError(undefined); }}
-        disabled={submitting}
-        autoComplete="current-password"
-      />
-
-      <View style={{ alignItems: "flex-end", marginTop: theme.spacing.xs, marginBottom: theme.spacing.xl }}>
-        <AppText variant="bodySmall" color="link" accessibilityRole="link" onPress={() => navigation.navigate("ForgotPasswordRequest")}>
-          Forgot password?
+        <AppText variant="headingLarge" accessibilityRole="header" align="center">
+          Sign in with password
         </AppText>
-      </View>
+        <AppText
+          variant="body"
+          color="secondary"
+          align="center"
+          style={{ marginTop: theme.spacing.xxs, marginBottom: theme.spacing.xl }}
+        >
+          Use your email or mobile number.
+        </AppText>
 
-      <AppButton
-        label="Sign in"
-        onPress={handleSignIn}
-        loading={submitting}
-        disabled={!identifier.trim() || !password}
-        fullWidth
-      />
-      <View style={{ marginTop: theme.spacing.sm }}>
-        <AppButton label="Use phone OTP instead" tone="secondary" onPress={() => navigation.navigate("LoginMethod")} fullWidth />
+        {screenError ? (
+          <View style={{ marginBottom: theme.spacing.base }}>
+            <AuthErrorBanner message={screenError} />
+          </View>
+        ) : null}
+
+        <AppInput
+          label="Email or mobile"
+          accessibilityLabel="Email or mobile"
+          value={identifier}
+          onChangeText={value => { setIdentifier(value); setScreenError(undefined); }}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          textContentType="username"
+          autoComplete="username"
+          editable={!submitting}
+          // The WRAPPER, not the field: `style` reaches the TextInput, so this margin
+          // used to sit inside the box and pushed the error caption around instead of
+          // separating the two fields.
+          containerStyle={{ marginBottom: theme.spacing.base }}
+        />
+        <PasswordField
+          value={password}
+          onChangeText={value => { setPassword(value); setScreenError(undefined); }}
+          disabled={submitting}
+          autoComplete="current-password"
+        />
+
+        <View style={{ alignItems: "flex-end", marginTop: theme.spacing.xs, marginBottom: theme.spacing.lg }}>
+          <AppText variant="bodySmall" color="link" accessibilityRole="link" onPress={() => navigation.navigate("ForgotPasswordRequest")}>
+            Forgot password?
+          </AppText>
+        </View>
+
+        <AppButton
+          label="Sign in"
+          onPress={handleSignIn}
+          loading={submitting}
+          disabled={!identifier.trim() || !password}
+          fullWidth
+        />
+        <View style={{ marginTop: theme.spacing.sm }}>
+          <AppButton label="Use phone OTP instead" tone="secondary" onPress={() => navigation.navigate("LoginMethod")} fullWidth />
+        </View>
       </View>
     </AppScreen>
   );

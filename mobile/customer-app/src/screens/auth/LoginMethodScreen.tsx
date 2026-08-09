@@ -18,16 +18,12 @@ import { ENV } from "../../config/environment";
 type Nav = NativeStackNavigationProp<PublicStackParamList, "LoginMethod">;
 
 /**
- * Primary customer authentication entry (spec section 7). Matches the
- * attached design frame 1. `New customers can continue with OTP` from the
- * design is INTENTIONALLY OMITTED here -- verified this phase that
- * `verify_phone_otp_login` (app/engines/auth/service.py) does NOT create
- * a user; it raises the same enumeration-safe error for an unknown number
- * as for a wrong code. There is no just-in-time customer creation on the
- * OTP-login path; `/v1/auth/register/customer` is a separate, explicit
- * registration call this phase does not wire in (see Phase G report
- * "backend gaps"). Showing that helper text would misrepresent what
- * actually happens for a genuinely new phone number.
+ * Primary customer authentication entry (spec section 7).
+ *
+ * OTP login does NOT create a user: `verify_phone_otp_login` raises the same
+ * enumeration-safe error for an unknown number as for a wrong code. So this screen
+ * must never imply that a new number can just "continue with OTP" -- it links to real
+ * registration (`POST /v1/auth/register/customer`) instead, which is now wired.
  */
 export function LoginMethodScreen() {
   const { theme } = useTheme();
@@ -80,34 +76,74 @@ export function LoginMethodScreen() {
   }
 
   return (
+    /**
+     * Composed as one centred column with the legal note pinned below it, rather than
+     * a stack starting at the top: at this length the old layout left the whole lower
+     * half of the screen empty, so the form read as the top fragment of a page that
+     * had failed to finish loading.
+     *
+     * `scroll` stays for small devices and for when the keyboard is up; AppScreen
+     * already grows its scroll content to fill the viewport, which is what lets the
+     * column below centre when there is room to spare and scroll when there is not.
+     */
     <AppScreen scroll>
-      <View style={{ alignItems: "center", marginTop: theme.spacing.xxxl, marginBottom: theme.spacing.xxl }}>
-        <FuvayMark />
+      <View style={{ flex: 1, justifyContent: "center", paddingVertical: theme.spacing.xl }}>
+        <View style={{ alignItems: "center", marginBottom: theme.spacing.xl }}>
+          <FuvayMark />
+        </View>
+
+        <AppText variant="headingLarge" accessibilityRole="header" align="center">
+          Welcome to Fuvay
+        </AppText>
+        <AppText
+          variant="body"
+          color="secondary"
+          align="center"
+          style={{ marginTop: theme.spacing.xxs, marginBottom: theme.spacing.xl }}
+        >
+          Book trusted services near you.
+        </AppText>
+
+        <LoginMethodSegmentedControl value={method} onChange={handleMethodChange} />
+
+        {/* The banner sits between the control and the field, where it explains the
+            thing directly under it, and takes no space when there is no error. */}
+        {screenError ? (
+          <View style={{ marginTop: theme.spacing.base }}>
+            <AuthErrorBanner message={screenError} />
+          </View>
+        ) : null}
+
+        <View style={{ marginTop: theme.spacing.lg }}>
+          <PhoneNumberField
+            countryCode={countryCode}
+            onCountryCodeChange={setCountryCode}
+            nationalNumber={nationalNumber}
+            onNationalNumberChange={value => { setNationalNumber(value); setFieldError(undefined); }}
+            error={fieldError}
+            disabled={submitting}
+          />
+        </View>
+
+        <View style={{ marginTop: theme.spacing.lg }}>
+          <AppButton label="Continue" onPress={handleContinue} loading={submitting} fullWidth />
+        </View>
+
+        {/* A new number cannot sign itself in here, so the way in has to be visible. */}
+        <View style={{ marginTop: theme.spacing.base, alignItems: "center" }}>
+          <AppText
+            variant="bodySmall"
+            color="link"
+            accessibilityRole="link"
+            accessibilityLabel="New to Fuvay? Create an account"
+            onPress={() => navigation.navigate("Signup")}
+          >
+            New to Fuvay? Create an account
+          </AppText>
+        </View>
       </View>
-      <AppText variant="headingLarge" accessibilityRole="header" align="center">Welcome to Fuvay</AppText>
-      <AppText variant="body" color="secondary" align="center" style={{ marginBottom: theme.spacing.xl }}>
-        Book trusted services near you.
-      </AppText>
 
-      <LoginMethodSegmentedControl value={method} onChange={handleMethodChange} />
-
-      <View style={{ marginTop: theme.spacing.xl }}>
-        {screenError ? <AuthErrorBanner message={screenError} /> : null}
-        <PhoneNumberField
-          countryCode={countryCode}
-          onCountryCodeChange={setCountryCode}
-          nationalNumber={nationalNumber}
-          onNationalNumberChange={value => { setNationalNumber(value); setFieldError(undefined); }}
-          error={fieldError}
-          disabled={submitting}
-        />
-      </View>
-
-      <View style={{ marginTop: theme.spacing.xl }}>
-        <AppButton label="Continue" onPress={handleContinue} loading={submitting} fullWidth />
-      </View>
-
-      <View style={{ marginTop: theme.spacing.xxl, alignItems: "center", gap: theme.spacing.lg }}>
+      <View style={{ alignItems: "center", paddingBottom: theme.spacing.base }}>
         <LegalLinksFooter />
       </View>
     </AppScreen>

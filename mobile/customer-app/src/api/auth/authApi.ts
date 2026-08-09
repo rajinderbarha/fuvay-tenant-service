@@ -3,6 +3,7 @@ import { parseApiSuccess } from "../client/responseParser";
 import {
   loginOutcomeSchema, otpSendResponseSchema, refreshResponseSchema, logoutResponseSchema,
   accessContextResponseSchema, passwordResetRequestResponseSchema, passwordResetConfirmResponseSchema,
+  registerCustomerResponseSchema,
 } from "./authContracts";
 
 /**
@@ -40,6 +41,42 @@ export async function loginWithPassword(input: LoginWithPasswordInput) {
     },
   });
   return parseApiSuccess(res.json, loginOutcomeSchema);
+}
+
+export interface RegisterCustomerInput {
+  fullName: string;
+  phone: string;
+  /** Optional at the backend too. Omitted rather than sent empty: the service
+   * generates an internal placeholder address when there is none, and an empty
+   * string is not a valid email. */
+  email?: string;
+}
+
+/**
+ * Creates a customer account.
+ *
+ * Real gap this closes: the app had no signup at all. OTP login does NOT create a
+ * user -- `verify_phone_otp_login` raises the same enumeration-safe error for an
+ * unknown number as for a wrong code -- so a new customer could install the app and
+ * had literally no way in.
+ *
+ * The account starts unverified and the registration response's own OTP is scoped to
+ * `phone_verification`, which `/otp/verify` does not accept (confirmed live: it
+ * answers "Incorrect OTP"). So the caller sends a normal login OTP afterwards and the
+ * customer verifies through the SAME screen a returning customer uses -- one
+ * verification implementation, not two.
+ */
+export async function registerCustomer(input: RegisterCustomerInput) {
+  const res = await request({
+    method: "POST",
+    path: "/v1/auth/register/customer",
+    body: {
+      full_name: input.fullName,
+      phone: input.phone,
+      ...(input.email ? { email: input.email } : {}),
+    },
+  });
+  return parseApiSuccess(res.json, registerCustomerResponseSchema);
 }
 
 export interface RequestLoginOtpInput {
