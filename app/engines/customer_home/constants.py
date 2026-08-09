@@ -22,6 +22,10 @@ HOME_SECTION_KEYS = (
     "campaign_after_services",
     "assistant_entry",
     "campaign_mid",
+    # A second, larger problem surface in circles (migration 238). Distinct from
+    # `quick_problems` so admin can order, rename or switch off either one on its
+    # own -- they draw from the same list but are different sections.
+    "problem_circles",
     "global_services",
     "how_it_works",
     "trust_benefits",

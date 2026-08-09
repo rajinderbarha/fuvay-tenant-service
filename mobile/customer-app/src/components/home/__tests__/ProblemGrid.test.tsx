@@ -36,33 +36,20 @@ describe("ProblemGrid", () => {
     expect(onPressIssue).toHaveBeenCalledWith(SEVEN[2]);
   });
 
-  it("offers the overflow behind a More tile that states how many are left", () => {
-    // "More" with no count gives no sense of whether one thing or thirty is
-    // behind it.
+
+  it("shows exactly what it is given, with no See-all and no More tile", () => {
+    // Both were removed by request: the caller decides how many (selectProblems)
+    // and the circles section further down carries a different selection, so
+    // browsing happens in the page rather than behind a sheet.
     const many = [...SEVEN, issue("Thermostat Faulty"), issue("Drain Blocked", "Plumbing")];
     renderWithProviders(<ProblemGrid issues={many} onPressIssue={() => {}} />);
-    expect(screen.getByText("+2 more")).toBeTruthy();
-    expect(screen.getByLabelText("See all problems, 2 more")).toBeTruthy();
-  });
-
-  it("has no overflow affordance when everything already fits", () => {
-    renderWithProviders(<ProblemGrid issues={SEVEN} onPressIssue={() => {}} />);
     expect(screen.queryByText(/more$/)).toBeNull();
-    expect(screen.queryByLabelText("See all problems")).toBeNull();
+    expect(screen.queryByText("See all")).toBeNull();
+    // Every one it was handed is rendered -- nothing is hidden behind an
+    // affordance that no longer exists.
+    for (const i of many) expect(screen.getByText(i.label)).toBeTruthy();
   });
 
-  it("opens the full list from More, and books straight from it", () => {
-    const onPressIssue = jest.fn();
-    const many = [...SEVEN, issue("Drain Blocked", "Plumbing")];
-    renderWithProviders(<ProblemGrid issues={many} onPressIssue={onPressIssue} />);
-
-    fireEvent.press(screen.getByLabelText("See all problems, 1 more"));
-    expect(screen.getByText("What do you need fixed?")).toBeTruthy();
-    // The point of the sheet: reach a problem that was not in the top row
-    // WITHOUT going back to pick a service first.
-    fireEvent.press(screen.getByLabelText("Drain Blocked, Plumbing"));
-    expect(onPressIssue).toHaveBeenCalledWith(many[7]);
-  });
 
   it("drops a problem that cannot open the assistant rather than rendering a dead tile", () => {
     const broken = { ...issue("Unroutable"), categorySlug: null };

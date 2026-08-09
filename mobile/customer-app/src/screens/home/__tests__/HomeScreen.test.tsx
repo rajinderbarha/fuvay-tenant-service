@@ -349,8 +349,12 @@ describe("HomeScreen", () => {
         categoryId: asCategoryId("cat-1"), categorySlug: "ac-cooling", categoryName: "AC & Cooling", iconUrl: null,
       }],
     }) });
-    const { getByText } = renderHome();
-    fireEvent.press(getByText("AC Not Cooling"));
+    const { getAllByText } = renderHome();
+    // Two problem sections now draw from the same list, and with a single problem
+    // authored the circles section wraps round to it rather than rendering short
+    // -- so this label legitimately appears twice. Either tile books the same
+    // thing; pressing the first is the tile grid.
+    fireEvent.press(getAllByText("AC Not Cooling")[0]);
     expect(lastAssistantParams).toEqual({
       source: "service_card",
       categoryId: "cat-1",

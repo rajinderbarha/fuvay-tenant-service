@@ -15,6 +15,8 @@ import {
 // backend asked for, per placement.
 import { CampaignSlot } from "../../components/home/CampaignSlot";
 import { ProblemGrid } from "../../components/home/ProblemGrid";
+import { ProblemCircles } from "../../components/home/ProblemCircles";
+import { selectProblems } from "../../domain/problemSelection";
 import { MyBookingsStrip } from "../../components/home/MyBookingsStrip";
 import { AssuranceSection } from "../../components/home/AssuranceSection";
 import { HowItWorksSection } from "../../components/home/HowItWorksSection";
@@ -30,6 +32,10 @@ import { createServiceCardEntryContext, createAssistantCardEntryContext, createQ
 import type { HomeQuickIssue } from "../../domain/customerHome";
 import { CustomerTabsParamList } from "../../navigation/routeTypes";
 
+/** Two rows of four in the tile grid, three rows of four in the circles. */
+const PROBLEM_TILE_COUNT = 8;
+const PROBLEM_CIRCLE_COUNT = 12;
+
 /** The order this build ships. Used ONLY when the backend sends no sections --
  * an older backend, or a failed section lookup. Intent first: what is already
  * happening to the customer, then the fastest way to book, then everything that
@@ -43,6 +49,7 @@ const DEFAULT_SECTION_ORDER: { key: string; order: number; title: string | null 
   { key: "campaign_after_services", order: 50, title: null },
   { key: "assistant_entry", order: 60, title: null },
   { key: "campaign_mid", order: 70, title: null },
+  { key: "problem_circles", order: 75, title: null },
   { key: "global_services", order: 80, title: null },
   // how_it_works and trust_benefits are NOT in the shipped order: both are
   // switched off in the layout settings, and this fallback should match what a
@@ -253,6 +260,11 @@ export function HomeScreen() {
 
   const zipcode = home.address.zipcode as string;
 
+  /** Which problems each of the two sections shows. Shuffled once per payload
+   * rather than per render -- see selectProblems -- so tiles do not move under a
+   * finger mid-tap, and the two sections do not show the same problem twice. */
+  const problems = selectProblems(home.quickIssues, PROBLEM_TILE_COUNT, PROBLEM_CIRCLE_COUNT);
+
   function sectionTitle(key: string): string | null {
     return home!.sections.find(s => s.key === key)?.title ?? null;
   }
@@ -365,8 +377,20 @@ export function HomeScreen() {
     quick_problems: (
       <HomeSectionErrorBoundary sectionLabel="quick issues">
         <ProblemGrid
-          issues={home.quickIssues}
+          issues={problems.tiles}
           title={sectionTitle("quick_problems")}
+          onPressIssue={issue => navigateToQuickIssue(issue, zipcode)}
+        />
+      </HomeSectionErrorBoundary>
+    ),
+
+    // A second, larger pass at the same real list -- a different selection, in
+    // circles, for the customer who did not find their fault in the shortlist.
+    problem_circles: (
+      <HomeSectionErrorBoundary sectionLabel="problem circles">
+        <ProblemCircles
+          issues={problems.circles}
+          title={sectionTitle("problem_circles")}
           onPressIssue={issue => navigateToQuickIssue(issue, zipcode)}
         />
       </HomeSectionErrorBoundary>
