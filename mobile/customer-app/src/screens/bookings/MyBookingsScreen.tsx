@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from "react";
-import { View, FlatList, RefreshControl, ActivityIndicator, Pressable } from "react-native";
+import React, { useCallback, useRef, useState } from "react";
+import { View, FlatList, RefreshControl, ActivityIndicator, Pressable, Animated } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../../design-system/theme";
 import { AppScreen } from "../../components/AppScreen";
@@ -34,6 +34,12 @@ import { isOffline } from "../../api/networkState";
  * own authoritative `counts` (spec closure item 1), never a partial-page
  * guess.
  */
+/** Measured height of the title + subtitle block. */
+const HEADER_HEIGHT = 52;
+/** Scroll distance over which it folds away. Short enough that the space is
+ * reclaimed almost immediately, long enough not to snap. */
+const HEADER_COLLAPSE_DISTANCE = 60;
+
 export function MyBookingsScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation();
@@ -41,6 +47,33 @@ export function MyBookingsScreen() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
+  /**
+   * Drives the collapsing title block.
+   *
+   * The title and its subtitle are worth ~64px, which is a lot of a phone screen
+   * spent restating the tab the customer is already on. They now fold away as the
+   * list scrolls, while the search box and the tab filters stay pinned -- those
+   * are controls, and a control that scrolls out of reach is worse than a title
+   * that does.
+   *
+   * `useNativeDriver` is off because the collapse animates HEIGHT: translating
+   * instead would slide the title behind the search box and leave its space
+   * behind, which is the gap this is meant to reclaim. One small view on the JS
+   * driver is not a scroll-performance problem.
+   */
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerHeight = scrollY.interpolate({
+    inputRange: [0, HEADER_COLLAPSE_DISTANCE],
+    outputRange: [HEADER_HEIGHT, 0],
+    extrapolate: "clamp",
+  });
+  const headerOpacity = scrollY.interpolate({
+    // Fades out over the first half of the travel, so the text is gone before
+    // the box is, rather than being clipped mid-letter.
+    inputRange: [0, HEADER_COLLAPSE_DISTANCE / 2],
+    outputRange: [1, 0],
+    extrapolate: "clamp",
+  });
   // Debounced so typing does not fire a request per keystroke; the term
   // itself is applied server-side (see useCustomerBookingsListQuery).
   const debouncedSearch = useDebouncedValue(search, 350);
@@ -87,10 +120,15 @@ export function MyBookingsScreen() {
   const hasAnyBookingsAtAll = query.counts.all > 0;
 
   return (
-    <AppScreen edges={["top", "bottom"]}>
+    // Bottom edge deliberately excluded: the bottom tab bar already applies its
+    // own safe-area inset, so asking for it here too left a blank strip of
+    // background between the last card and the tab bar.
+    <AppScreen edges={["top"]}>
       {isOffline() ? <OfflineBanner /> : null}
       <View style={{ gap: theme.spacing.sm, flex: 1 }}>
-        <BookingsHeader />
+        <Animated.View style={{ height: headerHeight, opacity: headerOpacity, overflow: "hidden" }}>
+          <BookingsHeader />
+        </Animated.View>
 
         <BookingSearchBar
           value={search}
@@ -180,6 +218,11 @@ export function MyBookingsScreen() {
             data={query.items}
             keyExtractor={item => item.bookingId}
             renderItem={renderItem}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+              { useNativeDriver: false },
+            )}
+            scrollEventThrottle={16}
             refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
             onEndReachedThreshold={0.4}
             onEndReached={() => {
