@@ -11453,6 +11453,25 @@ export const CAMPAIGN_DEEPLINK_PREFIXES = [
   "app://offers",
 ] as const;
 
+/** How a banner is drawn. The customer app ships one renderer per style, so the
+ * backend refuses anything outside this list -- a saved banner it cannot draw
+ * would read as a broken feature rather than a rejected input. */
+export const CAMPAIGN_STYLES = [
+  { value: "hero", label: "Hero — artwork-led card" },
+  { value: "festival", label: "Festival — accent colour, badge, end date" },
+  { value: "strip", label: "Strip — one quiet tappable line" },
+] as const;
+
+/** Where on Home it appears. Each slot is also a Home section, so it can be
+ * re-ordered or switched off entirely on the Home Layout page. */
+export const CAMPAIGN_PLACEMENTS = [
+  { value: "campaign_top", label: "Top — above the services" },
+  { value: "campaign_after_problems", label: "Under the problem grid" },
+  { value: "campaign_after_services", label: "Under the services" },
+  { value: "campaign_mid", label: "Middle — below the assistant card" },
+  { value: "campaign_bottom", label: "Bottom — end of the screen" },
+] as const;
+
 export interface CustomerCampaign {
   campaign_id: string;
   /** Operator-facing name; never shown to customers. */
@@ -11464,6 +11483,14 @@ export interface CustomerCampaign {
   artwork_url_dark: string | null;
   cta_label: string | null;
   cta_deeplink: string | null;
+  /** One of CAMPAIGN_STYLES. */
+  display_style: string;
+  /** One of CAMPAIGN_PLACEMENTS. Several banners in one slot become a carousel. */
+  placement: string;
+  /** Festival treatment only: the colour the card is painted in, and the small
+   * badge above the title. Null renders the ordinary theme. */
+  accent_color: string | null;
+  badge_text: string | null;
   is_enabled: boolean;
   /** Lower shows first. */
   priority: number;
@@ -11480,6 +11507,32 @@ export interface CustomerCampaign {
 
 export type CustomerCampaignPayload = Partial<Omit<CustomerCampaign,
   "campaign_id" | "created_at" | "updated_at">>;
+
+/** One section of the customer Home screen. The key vocabulary is closed: the
+ * app ships a renderer per key, so admin re-orders, renames and hides them but
+ * cannot invent one -- a key with no renderer would be a row that does nothing. */
+export interface HomeSectionSetting {
+  section_key: string;
+  is_enabled: boolean;
+  display_order: number;
+  /** Null means the app uses the wording it ships with. */
+  title_override: string | null;
+  updated_at: string | null;
+}
+
+const HOME_SECTIONS = "/v1/admin/home-sections";
+
+export const homeSectionApi = {
+  list: () => apiFetch<{ items: HomeSectionSetting[]; total: number; known_keys: string[] }>(HOME_SECTIONS),
+  update: (key: string, payload: Partial<Pick<HomeSectionSetting, "is_enabled" | "display_order" | "title_override">>) =>
+    apiFetch<HomeSectionSetting>(`${HOME_SECTIONS}/${key}`, { method: "PUT", body: JSON.stringify(payload) }),
+  /** Sets the whole order in one call. The server validates every key before
+   * writing any of them, so a bad list cannot half-reorder the screen. */
+  reorder: (orderedKeys: string[]) =>
+    apiFetch<{ items: HomeSectionSetting[]; total: number }>(`${HOME_SECTIONS}/reorder`, {
+      method: "POST", body: JSON.stringify({ ordered_keys: orderedKeys }),
+    }),
+};
 
 const CUSTOMER_CAMPAIGNS = "/v1/admin/customer-campaigns";
 

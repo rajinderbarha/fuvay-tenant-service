@@ -20,11 +20,13 @@ import { useApi, useAction } from "../../../hooks/useApi";
 import {
   customerCampaignApi,
   CAMPAIGN_DEEPLINK_PREFIXES,
+  CAMPAIGN_STYLES,
+  CAMPAIGN_PLACEMENTS,
   type CustomerCampaign,
   type CustomerCampaignPayload,
 } from "../../../lib/api";
 import {
-  Card, Badge, Btn, Input, Modal, Spinner, Skeleton, SectionHeader, RowActions,
+  Card, Badge, Btn, Input, Select, Modal, Spinner, Skeleton, SectionHeader, RowActions,
 } from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import DeeplinkPicker from "./DeeplinkPicker";
@@ -38,6 +40,10 @@ type FormState = {
   artwork_url_dark: string;
   cta_label: string;
   cta_deeplink: string;
+  display_style: string;
+  placement: string;
+  accent_color: string;
+  badge_text: string;
   priority: string;
   starts_at: string;
   ends_at: string;
@@ -48,8 +54,28 @@ const EMPTY_FORM: FormState = {
   internal_name: "", eyebrow: "", title: "", description: "",
   artwork_url_light: "", artwork_url_dark: "",
   cta_label: "", cta_deeplink: "",
+  display_style: "hero", placement: "campaign_top",
+  accent_color: "", badge_text: "",
   priority: "100", starts_at: "", ends_at: "", target_zipcodes: "",
 };
+
+/** Labels for the table, keyed off the same lists the form offers so the two
+ * cannot describe a banner differently. */
+const STYLE_LABEL: Record<string, string> = {
+  hero: "Hero", festival: "Festival", strip: "Strip",
+};
+const SLOT_LABEL: Record<string, string> = {
+  campaign_top: "Top",
+  campaign_after_problems: "Under problems",
+  campaign_after_services: "Under services",
+  campaign_mid: "Middle",
+  campaign_bottom: "Bottom",
+};
+
+/** #rgb or #rrggbb. Checked before saving because the customer app derives the
+ * label colour from this value, and an unparseable one would silently fall back
+ * to white text -- which is unreadable on a light accent. */
+const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 /** `datetime-local` needs `YYYY-MM-DDTHH:mm`; the API speaks ISO-8601. */
 function isoToLocalInput(iso: string | null): string {
@@ -76,6 +102,10 @@ function formFrom(c: CustomerCampaign): FormState {
     artwork_url_dark: c.artwork_url_dark ?? "",
     cta_label: c.cta_label ?? "",
     cta_deeplink: c.cta_deeplink ?? "",
+    display_style: c.display_style || "hero",
+    placement: c.placement || "campaign_top",
+    accent_color: c.accent_color ?? "",
+    badge_text: c.badge_text ?? "",
     priority: String(c.priority),
     starts_at: isoToLocalInput(c.starts_at),
     ends_at: isoToLocalInput(c.ends_at),
@@ -113,6 +143,17 @@ export default function HomeBannersPage() {
     () => campaigns.filter(c => visibility(c).label === "Live").length,
     [campaigns],
   );
+  /** How many LIVE banners share each slot. Several in one slot become a
+   * carousel on Home, which is worth showing here: it is the difference between
+   * a banner customers see and one they have to swipe to. */
+  const slotCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of campaigns) {
+      if (visibility(c).label !== "Live") continue;
+      counts[c.placement] = (counts[c.placement] ?? 0) + 1;
+    }
+    return counts;
+  }, [campaigns]);
 
   const closeModal = useCallback(() => {
     setEditing(null); setCreating(false); setForm(EMPTY_FORM); setFormError(null);
@@ -135,6 +176,18 @@ export default function HomeBannersPage() {
       return null;
     }
 
+    const accent = form.accent_color.trim();
+    if (accent && !HEX.test(accent)) {
+      setFormError("Accent colour must be a hex value such as #f59e0b.");
+      return null;
+    }
+    // Stated rather than silently ignored: a badge on a hero card would be
+    // saved and never drawn, which looks like the field is broken.
+    if (form.badge_text.trim() && form.display_style !== "festival") {
+      setFormError("A badge only appears on the Festival style. Switch the style, or clear the badge.");
+      return null;
+    }
+
     const startsAt = localInputToIso(form.starts_at);
     const endsAt = localInputToIso(form.ends_at);
     if (startsAt && endsAt && new Date(startsAt) > new Date(endsAt)) {
@@ -152,6 +205,10 @@ export default function HomeBannersPage() {
       artwork_url_dark: form.artwork_url_dark.trim() || null,
       cta_label: form.cta_label.trim() || null,
       cta_deeplink: deeplink || null,
+      display_style: form.display_style,
+      placement: form.placement,
+      accent_color: accent || null,
+      badge_text: form.badge_text.trim() || null,
       priority: Number(form.priority) || 100,
       starts_at: startsAt,
       ends_at: endsAt,
@@ -219,6 +276,7 @@ export default function HomeBannersPage() {
                 <tr style={{ textAlign: "left", color: "var(--text-tertiary)", fontSize: 11.5 }}>
                   <th style={{ padding: "10px 14px" }}>Priority</th>
                   <th style={{ padding: "10px 14px" }}>Banner</th>
+                  <th style={{ padding: "10px 14px" }}>Style &amp; slot</th>
                   <th style={{ padding: "10px 14px" }}>Button</th>
                   <th style={{ padding: "10px 14px" }}>Targeting</th>
                   <th style={{ padding: "10px 14px" }}>Schedule</th>
@@ -250,6 +308,24 @@ export default function HomeBannersPage() {
                             <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{c.title}</div>
                             <div style={{ fontSize: 11.5, color: "var(--text-tertiary)" }}>{c.internal_name}</div>
                           </div>
+                        </div>
+                      </td>
+                      <td style={{ padding: "12px 14px", fontSize: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {c.accent_color ? (
+                            <span
+                              title={c.accent_color}
+                              style={{ width: 12, height: 12, borderRadius: 3, flexShrink: 0,
+                                background: c.accent_color, border: "1px solid var(--border)" }}
+                            />
+                          ) : null}
+                          <span style={{ color: "var(--text-primary)" }}>
+                            {STYLE_LABEL[c.display_style] ?? c.display_style}
+                          </span>
+                        </div>
+                        <div style={{ color: "var(--text-tertiary)", fontSize: 11 }}>
+                          {SLOT_LABEL[c.placement] ?? c.placement}
+                          {slotCounts[c.placement] > 1 ? ` · carousel of ${slotCounts[c.placement]}` : ""}
                         </div>
                       </td>
                       <td style={{ padding: "12px 14px", color: "var(--text-secondary)", fontSize: 12 }}>
@@ -313,6 +389,46 @@ export default function HomeBannersPage() {
             onChange={v => setForm(f => ({ ...f, title: v }))} />
           <Input label="Description" value={form.description}
             onChange={v => setForm(f => ({ ...f, description: v }))} />
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Select
+              label="Style" value={form.display_style}
+              options={CAMPAIGN_STYLES.map(o => ({ value: o.value, label: o.label }))}
+              onChange={v => setForm(f => ({ ...f, display_style: v }))}
+            />
+            <Select
+              label="Slot on Home" value={form.placement}
+              options={CAMPAIGN_PLACEMENTS.map(o => ({ value: o.value, label: o.label }))}
+              onChange={v => setForm(f => ({ ...f, placement: v }))}
+            />
+          </div>
+          <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>
+            {slotCounts[form.placement] > 0
+              ? `${slotCounts[form.placement]} live banner(s) already in this slot — they become a swipeable carousel.`
+              : "This slot is empty, so the banner will show on its own."}
+            {" Slots can be re-ordered or switched off on the Home Layout page."}
+          </p>
+
+          {form.display_style === "festival" ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Input
+                label="Badge" value={form.badge_text}
+                hint="Small pill above the title, e.g. Diwali Special."
+                onChange={v => setForm(f => ({ ...f, badge_text: v }))}
+              />
+              <Input
+                label="Accent colour" value={form.accent_color} placeholder="#f59e0b"
+                hint="Hex. The card, badge and button are painted in it; the app picks a readable label colour automatically."
+                onChange={v => setForm(f => ({ ...f, accent_color: v }))}
+              />
+            </div>
+          ) : form.display_style === "strip" ? (
+            <Input
+              label="Accent colour" value={form.accent_color} placeholder="#0ea5e9"
+              hint="Hex. Tints the strip and its icon."
+              onChange={v => setForm(f => ({ ...f, accent_color: v }))}
+            />
+          ) : null}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <IconPicker

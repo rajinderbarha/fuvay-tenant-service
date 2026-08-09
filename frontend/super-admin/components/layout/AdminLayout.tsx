@@ -100,6 +100,10 @@ const NAV_GROUPS: NavGroup[] = [
       // so admins had no way to reach it -- the whole banner feature was
       // unusable from the console.
       { id: "home-banners",  href: "/admin/home-banners",  label: "Home Banners",    icon: <Megaphone size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      // Order and visibility of every section on the customer Home screen
+      // (home_section_settings, migration 236/237). Without a nav entry the
+      // layout could only be changed by raw API calls.
+      { id: "home-layout",   href: "/admin/home-layout",   label: "Home Layout",     icon: <LayoutGrid size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       // "Notification Settings" folded into Notifications as a "Settings"
       // tab 2026-08-05 at explicit user request -- removed as a separate

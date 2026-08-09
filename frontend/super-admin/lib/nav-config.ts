@@ -119,6 +119,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "marketing",     label: "Marketing",      href: "/admin/marketing",     icon: "📣", group: "engagement" },
       { id: "home-banners",  label: "Home Banners",   href: "/admin/home-banners",  icon: "🖼️", group: "engagement" },
+      { id: "home-layout",   label: "Home Layout",    href: "/admin/home-layout",   icon: "🧩", group: "engagement" },
       { id: "notifications", label: "Notifications",  href: "/admin/notifications", icon: "🔔", group: "engagement" },
       { id: "reviews",       label: "Reviews",        href: "/admin/reviews",       icon: "⭐", group: "engagement" },
       { id: "complaints",    label: "Complaints",     href: "/admin/complaints",    icon: "⚠️", group: "engagement" },
@@ -193,6 +194,7 @@ export const ADMIN_PATH_TO_NAV_ID: Record<string, string> = {
   "ai-chat":              "ai-chat",
   marketing:              "marketing",
   "home-banners":         "home-banners",
+  "home-layout":          "home-layout",
   notifications:          "notifications",
   "notification-templates": "notifications",
   "notification-outbox":    "notifications",

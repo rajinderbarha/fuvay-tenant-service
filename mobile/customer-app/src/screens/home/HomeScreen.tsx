@@ -43,9 +43,12 @@ const DEFAULT_SECTION_ORDER: { key: string; order: number; title: string | null 
   { key: "assistant_entry", order: 60, title: null },
   { key: "campaign_mid", order: 70, title: null },
   { key: "global_services", order: 80, title: null },
-  { key: "how_it_works", order: 90, title: null },
-  { key: "trust_benefits", order: 100, title: null },
-  { key: "campaign_bottom", order: 110, title: null },
+  // how_it_works and trust_benefits are NOT in the shipped order: both are
+  // switched off in the layout settings, and this fallback should match what a
+  // customer actually sees rather than reintroducing them on any build that
+  // reaches an older backend. Their renderers stay wired, so turning either back
+  // on from Home Layout needs no release.
+  { key: "campaign_bottom", order: 90, title: null },
 ];
 
 

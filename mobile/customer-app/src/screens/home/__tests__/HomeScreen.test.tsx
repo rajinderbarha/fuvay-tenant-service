@@ -357,9 +357,14 @@ describe("HomeScreen", () => {
     // An empty list is "no instruction" from an older backend -- never an
     // instruction to draw nothing.
     mockHomeQuery({ data: baseHome({ sections: [] }) });
-    const { getByText } = renderHome();
+    const { getByText, queryByText } = renderHome();
     expect(getByText("Services Nearby")).toBeTruthy();
-    expect(getByText("What you're promised")).toBeTruthy();
+    expect(getByText("Not sure what to book?")).toBeTruthy();
+    // The shipped order matches what customers actually see: both of these are
+    // switched off in the layout settings, so the fallback must not reintroduce
+    // them. Their renderers stay wired for turning back on from admin.
+    expect(queryByText("What you're promised")).toBeNull();
+    expect(queryByText(/How it works/i)).toBeNull();
   });
 
   it("skips a section key this build has no renderer for", () => {
