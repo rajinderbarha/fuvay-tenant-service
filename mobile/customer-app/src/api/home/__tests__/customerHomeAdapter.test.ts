@@ -81,6 +81,9 @@ describe("customer home adapter", () => {
       bookingId: "b-1", bookingNumber: "SB-1", status: "scheduled", createdAt: "2026-08-01T09:00:00Z",
       assignmentStatus: null, issueSummary: null, preferredDate: null, preferredTimeWindow: null, providerName: null,
       serviceName: null, technician: null,
+      // A committed slot and a provider block are absent here, so they must be
+      // null rather than reconstructed from the requested date or the snapshot.
+      scheduledDate: null, scheduledTimeWindow: null, provider: null,
     });
   });
 
@@ -97,6 +100,39 @@ describe("customer home adapter", () => {
       name: "Rakesh Kumar", role: "Service technician", photoUrl: null,
       // Null, not 0 and not a flattering default: a rating is earned or absent.
       rating: null, reviewCount: 0,
+    });
+  });
+
+  it("carries the provider's earned facts and badges through as sent", () => {
+    // Same two backend functions the booking-review card reads, so the app must
+    // not re-derive or embellish any of it here.
+    const home = adaptCustomerHome(parseCustomerHomeDto(rawHome({
+      active_booking: {
+        booking_id: "b-5", booking_number: "SB-5", status: "on_the_way", created_at: "2026-08-01T09:00:00Z",
+        scheduled_date: "2026-08-10", scheduled_time_window: "13:00-14:00",
+        provider: {
+          name: "Guramrit", verified: true, rating: 5, review_count: 1,
+          badges: [{ name: "AC Specialist", icon: "snow", color: "#0ea5e9" }],
+        },
+      },
+    })));
+    expect(home.activeBooking?.scheduledDate).toBe("2026-08-10");
+    expect(home.activeBooking?.scheduledTimeWindow).toBe("13:00-14:00");
+    expect(home.activeBooking?.provider).toEqual({
+      name: "Guramrit", verified: true, rating: 5, reviewCount: 1,
+      badges: [{ name: "AC Specialist", icon: "snow", color: "#0ea5e9" }],
+    });
+  });
+
+  it("reports an unverified, unrated provider as exactly that", () => {
+    const home = adaptCustomerHome(parseCustomerHomeDto(rawHome({
+      active_booking: {
+        booking_id: "b-6", booking_number: "SB-6", status: "pending_assignment", created_at: "2026-08-01T09:00:00Z",
+        provider: { name: "New Provider", verified: false, rating: null, review_count: 0, badges: [] },
+      },
+    })));
+    expect(home.activeBooking?.provider).toEqual({
+      name: "New Provider", verified: false, rating: null, reviewCount: 0, badges: [],
     });
   });
 

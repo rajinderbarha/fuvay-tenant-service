@@ -176,6 +176,7 @@ describe("HomeScreen", () => {
           createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
           assignmentStatus: null, issueSummary: null, serviceName: null,
           preferredDate: null, preferredTimeWindow: null, providerName: null, technician: null,
+          scheduledDate: null, scheduledTimeWindow: null, provider: null,
         },
       }),
     });
@@ -191,23 +192,62 @@ describe("HomeScreen", () => {
     expect(queryByText(/Rakesh/i)).toBeNull();
   });
 
-  it("prefers the catalog service name and shows the assigned technician with their earned rating", () => {
+  it("names the provider with its verification, rating, badges and the committed slot", () => {
     mockHomeQuery({
       data: baseHome({
         activeBooking: {
           bookingId: asServiceBookingId("b-2"), bookingNumber: "SB-2026-02", status: "on_the_way",
           createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
           assignmentStatus: "assigned", issueSummary: "AC Not Cooling", serviceName: "AC Repair",
-          preferredDate: "2026-08-07", preferredTimeWindow: "10:30 AM", providerName: "Guramrit",
-          technician: { name: "Rakesh Kumar", role: "Service technician", photoUrl: null, rating: 4.8, reviewCount: 12 },
+          preferredDate: null, preferredTimeWindow: null, providerName: "Guramrit",
+          scheduledDate: "2026-08-07", scheduledTimeWindow: "10:30-11:30",
+          provider: {
+            name: "Guramrit", verified: true, rating: 4.8, reviewCount: 12,
+            badges: [{ name: "Verified Business", icon: null, color: null }],
+          },
+          technician: { name: "Rakesh Kumar", role: "Service technician", photoUrl: null, rating: 4.6, reviewCount: 12 },
         },
       }),
     });
-    const { getByText } = renderHome();
+    const { getByText, queryByText } = renderHome();
     expect(getByText("AC Repair")).toBeTruthy();
-    expect(getByText("Rakesh Kumar")).toBeTruthy();
+    expect(getByText("Guramrit")).toBeTruthy();
+    // The provider's rating, not the technician's -- the card leads with who
+    // the customer booked.
     expect(getByText("4.8")).toBeTruthy();
+    expect(getByText("Verified Business")).toBeTruthy();
+    expect(getByText("· Rakesh Kumar")).toBeTruthy();
+    // The COMMITTED slot, not the requested one.
+    expect(getByText("7 Aug 10:30-11:30")).toBeTruthy();
     expect(getByText("On the way")).toBeTruthy();
+    // Still no invented ETA.
+    expect(queryByText(/arriving/i)).toBeNull();
+  });
+
+  it("shows a requested window only as such, never as a committed slot", () => {
+    // preferred_* is what the customer ASKED for. Rendering it identically to a
+    // scheduled slot would present a request as the provider's promise.
+    mockHomeQuery({
+      data: baseHome({
+        activeBooking: {
+          bookingId: asServiceBookingId("b-4"), bookingNumber: "SB-2026-04", status: "pending_assignment",
+          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
+          assignmentStatus: "unassigned", issueSummary: null, serviceName: "AC Service",
+          preferredDate: "2026-08-12", preferredTimeWindow: "14:00-15:00",
+          scheduledDate: null, scheduledTimeWindow: null,
+          provider: { name: "Guramrit", verified: false, rating: null, reviewCount: 0, badges: [] },
+          providerName: "Guramrit", technician: null,
+        },
+      }),
+    });
+    const { getByText, queryByText } = renderHome();
+    expect(getByText("Guramrit")).toBeTruthy();
+    // No rating, no badges, no verified tick: none of them are earned here.
+    expect(queryByText(/^\d\.\d$/)).toBeNull();
+    // A fixed future date, not "today": the label collapses to "Today" for
+    // the current date, which would make this assertion pass or fail
+    // depending on the day the suite runs.
+    expect(getByText("12 Aug 14:00-15:00")).toBeTruthy();
   });
 
   it("omits the star when the technician has not been reviewed yet", () => {
@@ -220,6 +260,7 @@ describe("HomeScreen", () => {
           createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
           assignmentStatus: "assigned", issueSummary: null, serviceName: "Pipe Repair",
           preferredDate: null, preferredTimeWindow: null, providerName: null,
+          scheduledDate: null, scheduledTimeWindow: null, provider: null,
           technician: { name: "Dhiman", role: "Service technician", photoUrl: null, rating: null, reviewCount: 0 },
         },
       }),

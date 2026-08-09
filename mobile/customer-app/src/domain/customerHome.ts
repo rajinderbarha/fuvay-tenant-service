@@ -81,8 +81,25 @@ export interface HomeActiveBooking {
   preferredDate: string | null;
   preferredTimeWindow: string | null;
   providerName: string | null;
+  /** The slot the provider committed to. Null until one is scheduled --
+   * distinct from `preferredDate`/`preferredTimeWindow`, which are only what
+   * the customer asked for and must never be shown as an appointment. */
+  scheduledDate: string | null;
+  scheduledTimeWindow: string | null;
+  /** The provider behind the booking. Same earned facts and badges as the
+   * booking-review card, from the same backend functions. */
+  provider: HomeBookingProvider | null;
   /** Null until a technician is assigned to this booking's job. */
   technician: HomeTechnician | null;
+}
+
+export interface HomeBookingProvider {
+  name: string | null;
+  verified: boolean;
+  rating: number | null;
+  reviewCount: number;
+  /** Backend-authored trust chips. Empty is a valid, honest state. */
+  badges: { name: string; icon?: string | null; color?: string | null }[];
 }
 
 export interface HomeServiceability {

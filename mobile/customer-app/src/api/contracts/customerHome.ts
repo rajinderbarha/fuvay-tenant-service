@@ -96,6 +96,24 @@ export const homeActiveBookingDtoSchema = z.object({
   // customer's own wording and is not a substitute for it.
   service_name: z.string().nullable().optional(),
   technician: homeTechnicianDtoSchema.optional(),
+  // The slot the provider COMMITTED to, off the job. Distinct from the
+  // preferred_* fields above, which are only what the customer asked for.
+  scheduled_date: z.string().nullable().optional(),
+  scheduled_time_window: z.string().nullable().optional(),
+  // The provider behind the booking, with the same earned facts and badges the
+  // booking-review card shows -- from the same two backend functions, so a
+  // provider cannot read one way while being booked and another way once live.
+  provider: z.object({
+    name: z.string().nullable().optional(),
+    verified: z.boolean(),
+    rating: z.number().nullable(),
+    review_count: z.number(),
+    badges: z.array(z.object({
+      name: z.string(),
+      icon: z.string().nullable().optional(),
+      color: z.string().nullable().optional(),
+    }).passthrough()).default([]),
+  }).passthrough().nullable().optional(),
 }).nullable();
 
 export const homeServiceabilityDtoSchema = z.object({

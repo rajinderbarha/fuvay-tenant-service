@@ -21,6 +21,12 @@ export interface MyBookingSectionProps {
  * "My Booking" strip on Home: the one live job, with a "View All" link
  * into the bookings tab.
  *
+ * Shows who is doing the work -- the provider, their verification tick, their
+ * earned rating and their awarded badges -- plus the slot they committed to.
+ * The provider comes from the same two backend functions the booking-review
+ * card uses, so a provider cannot read one way while being booked and another
+ * way once the job is live.
+ *
  * Every line is real backend data (see HomeActiveBooking). Two things the
  * reference design shows are NOT rendered, because nothing in this system
  * produces them:
@@ -45,8 +51,20 @@ export function MyBookingSection({ booking, onPress, onViewAll, iconUrl }: MyBoo
   const { statusLabel } = interpretBookingStatus(booking.status, booking.assignmentStatus ?? "");
   const title = booking.serviceName || booking.issueSummary || booking.bookingNumber || "Your booking";
 
-  const scheduleLabel = formatSchedule(booking.preferredDate, booking.preferredTimeWindow);
+  // The COMMITTED slot when there is one, falling back to what the customer
+  // asked for. Never mixed: `scheduledFor` says which of the two this is, so
+  // "Requested" is never shown as though the provider had agreed to it.
+  const scheduled = booking.scheduledDate || booking.scheduledTimeWindow;
+  const scheduleLabel = scheduled
+    ? formatSchedule(booking.scheduledDate, booking.scheduledTimeWindow)
+    : formatSchedule(booking.preferredDate, booking.preferredTimeWindow);
   const technician = booking.technician;
+  const provider = booking.provider;
+  const providerName = provider?.name ?? booking.providerName ?? null;
+  const providerRating = provider?.rating ?? null;
+  // Two at most: a third chip wraps the row on a narrow phone and pushes the
+  // slot line out of the card.
+  const badges = (provider?.badges ?? []).slice(0, 2);
 
   return (
     <View>
@@ -67,7 +85,12 @@ export function MyBookingSection({ booking, onPress, onViewAll, iconUrl }: MyBoo
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={`${title}, ${statusLabel}${technician?.name ? `, technician ${technician.name}` : ""}`}
+        accessibilityLabel={[
+          title, statusLabel,
+          providerName ? `provider ${providerName}` : null,
+          technician?.name ? `technician ${technician.name}` : null,
+          scheduleLabel,
+        ].filter(Boolean).join(", ")}
         style={({ pressed }) => ({
           flexDirection: "row", gap: theme.spacing.sm,
           padding: theme.spacing.base,
@@ -96,7 +119,27 @@ export function MyBookingSection({ booking, onPress, onViewAll, iconUrl }: MyBoo
         <View style={{ flex: 1, minWidth: 0, gap: theme.spacing.xxs }}>
           <AppText variant="bodyStrong" numberOfLines={1}>{title}</AppText>
 
-          {technician?.name ? (
+          {/* Who is doing the work: the provider, with their verification and
+              earned rating. The technician is named alongside once one is
+              actually assigned -- before that the provider is the only real
+              answer to "who". */}
+          {providerName ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, flexWrap: "wrap" }}>
+              <AppText variant="caption" color="secondary" numberOfLines={1}>{providerName}</AppText>
+              {provider?.verified ? (
+                <Icon name="checkmark-circle" size="compact" color={theme.colors.brandPrimary} decorative />
+              ) : null}
+              {providerRating != null ? (
+                <>
+                  <Icon name="star" size="compact" color={theme.colors.statusWarning} decorative />
+                  <AppText variant="caption" color="secondary">{providerRating.toFixed(1)}</AppText>
+                </>
+              ) : null}
+              {technician?.name ? (
+                <AppText variant="caption" color="tertiary" numberOfLines={1}>· {technician.name}</AppText>
+              ) : null}
+            </View>
+          ) : technician?.name ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs }}>
               <AppText variant="caption" color="secondary" numberOfLines={1}>{technician.name}</AppText>
               {technician.rating != null ? (
@@ -105,6 +148,25 @@ export function MyBookingSection({ booking, onPress, onViewAll, iconUrl }: MyBoo
                   <AppText variant="caption" color="secondary">{technician.rating.toFixed(1)}</AppText>
                 </>
               ) : null}
+            </View>
+          ) : null}
+
+          {/* Backend-awarded badges only, capped at two so the row stays one
+              line on a narrow phone. Empty renders nothing. */}
+          {badges.length > 0 ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, flexWrap: "wrap" }}>
+              {badges.map(badge => (
+                <View
+                  key={badge.name}
+                  style={{
+                    paddingVertical: 2, paddingHorizontal: theme.spacing.xs,
+                    borderRadius: theme.radiusUsage.statusPill,
+                    backgroundColor: theme.colors.surfaceInteractive,
+                  }}
+                >
+                  <AppText variant="caption" color="link" numberOfLines={1}>{badge.name}</AppText>
+                </View>
+              ))}
             </View>
           ) : null}
 

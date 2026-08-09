@@ -52,6 +52,19 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
           preferredTimeWindow: dto.active_booking.preferred_time_window ?? null,
           providerName: dto.active_booking.provider_name ?? null,
           serviceName: dto.active_booking.service_name ?? null,
+          scheduledDate: dto.active_booking.scheduled_date ?? null,
+          scheduledTimeWindow: dto.active_booking.scheduled_time_window ?? null,
+          provider: dto.active_booking.provider
+            ? {
+                name: dto.active_booking.provider.name ?? null,
+                verified: dto.active_booking.provider.verified,
+                rating: dto.active_booking.provider.rating,
+                reviewCount: dto.active_booking.provider.review_count,
+                badges: dto.active_booking.provider.badges.map(b => ({
+                  name: b.name, icon: b.icon ?? null, color: b.color ?? null,
+                })),
+              }
+            : null,
           technician: dto.active_booking.technician
             ? {
                 name: dto.active_booking.technician.name ?? null,

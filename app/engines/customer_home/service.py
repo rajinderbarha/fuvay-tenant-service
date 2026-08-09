@@ -361,7 +361,15 @@ class CustomerHomeService:
             category = await self.db.get(ServiceCategory, row.category_id)
             service_name = category.name if category else None
 
-        technician = await self._get_active_booking_technician(row.id)
+        from app.engines.final_records.models import ServiceJob
+        job = (await self.db.execute(
+            select(ServiceJob).where(ServiceJob.booking_id == row.id)
+        )).scalars().first()
+
+        technician = await self._get_active_booking_technician(job)
+        provider_block = await self._get_active_booking_provider(
+            row.tenant_id, provider, row.offering_id,
+        )
 
         return {
             "booking_id": str(row.id),
@@ -372,12 +380,64 @@ class CustomerHomeService:
             "service_name": service_name,
             "preferred_date": row.preferred_date.isoformat() if getattr(row, "preferred_date", None) else None,
             "preferred_time_window": getattr(row, "preferred_time_window", None),
-            "provider_name": provider.get("business_name") or provider.get("name"),
+            # The slot the provider actually COMMITTED to, from the job. The
+            # preferred_* fields above are what the customer asked for; showing
+            # those as "your appointment" would present a request as a promise.
+            # Null until a slot is scheduled, so the card can stay quiet.
+            "scheduled_date": (
+                job.scheduled_date.isoformat() if job and job.scheduled_date else None
+            ),
+            "scheduled_time_window": job.scheduled_time_window if job else None,
+            "provider": provider_block,
+            # Kept for older clients; same resolution as provider.name above, so
+            # the two can never disagree.
+            "provider_name": (provider_block or {}).get("name"),
             "technician": technician,
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
 
-    async def _get_active_booking_technician(self, booking_id: uuid.UUID) -> dict | None:
+    async def _get_active_booking_provider(
+        self, tenant_id, provider_snapshot: dict, offering_id,
+    ) -> dict | None:
+        """The provider behind this booking, with the same earned facts and
+        badges the booking-review card shows.
+
+        Deliberately the SAME two functions the review screen uses
+        (`customer_provider_facts`, `_public_badges`) rather than a second
+        derivation: a provider that reads "Verified, 4.8" while being booked
+        must not read differently once the job is live. Read fresh rather than
+        from `provider_snapshot`, which was frozen at match time.
+        """
+        # `provider_name` is the key the customer-safe matching snapshot actually
+        # writes (build_customer_safe_provider); reading only business_name/name
+        # left the card with no provider at all on every real booking.
+        name = (
+            provider_snapshot.get("business_name")
+            or provider_snapshot.get("name")
+            or provider_snapshot.get("provider_name")
+        )
+        if not tenant_id:
+            return {"name": name, "verified": False, "rating": None,
+                    "review_count": 0, "badges": []} if name else None
+        if not name:
+            # The tenant row is authoritative when the snapshot predates that key.
+            from app.engines.tenant_engine.models import Tenant
+            tenant = await self.db.get(Tenant, tenant_id)
+            name = tenant.business_name if tenant else None
+        from app.engines.home_service_booking.matching_engine import (
+            customer_provider_facts, _public_badges,
+        )
+        facts = await customer_provider_facts(self.db, tenant_id, offering_id=offering_id)
+        badges = await _public_badges(self.db, tenant_id, None, facts.get("rating"))
+        return {
+            "name": name,
+            "verified": facts["verified"],
+            "rating": facts["rating"],
+            "review_count": facts["review_count"],
+            "badges": badges,
+        }
+
+    async def _get_active_booking_technician(self, job) -> dict | None:
         """Name, photo and review standing of the technician actually
         assigned to this booking's job.
 
@@ -391,13 +451,9 @@ class CustomerHomeService:
         number. Returns None entirely when no technician is assigned, so
         the card omits the row rather than showing a placeholder person.
         """
-        from app.engines.final_records.models import ServiceJob
         from app.engines.home_service_assignment.staff_model import ProviderTeamMember
         from app.engines.customer_reviews.models import StaffRatingSummary
 
-        job = (await self.db.execute(
-            select(ServiceJob).where(ServiceJob.booking_id == booking_id)
-        )).scalars().first()
         if not job or not job.assigned_staff_id:
             return None
 
