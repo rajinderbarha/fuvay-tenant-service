@@ -26,6 +26,11 @@ logger = structlog.get_logger("customer_home.service")
 HOME_RESPONSE_VERSION = 2
 
 
+# How many live bookings the Home strip carries. Three fits the slider without
+# turning Home into a second Bookings tab.
+MAX_HOME_ACTIVE_BOOKINGS = 3
+
+
 class CustomerHomeService:
     def __init__(self, db: AsyncSession, request_id: str = "—"):
         self.db = db
@@ -54,7 +59,13 @@ class CustomerHomeService:
         categories = await self._safe_call(
             self._get_bookable_categories(effective_zip), default=[],
         )
-        active_booking = await self._safe_call(self._get_active_booking_summary(customer_id), default=None)
+        # Several, not one. A customer with three live jobs saw only the newest
+        # and had no way to tell the card was hiding the others.
+        active_bookings = await self._safe_call(
+            self._get_active_booking_summaries(customer_id), default=[])
+        active_booking = active_bookings[0] if active_bookings else None
+        active_booking_total = await self._safe_call(
+            self._count_active_bookings(customer_id), default=len(active_bookings or []))
         unread_count = await self._safe_call(self._get_unread_notification_count(customer_id), default=0)
         campaigns = await self._safe_call(self._get_active_campaigns(zipcode), default=[])
         # Global Services are promotional platform-run offerings shown to
@@ -102,7 +113,14 @@ class CustomerHomeService:
             "serviceability": serviceability_summary,
             "enabled_verticals": verticals,
             "bookable_categories": categories,
+            # Kept for older clients: the first of the list below, never a
+            # separately-derived record, so the two cannot disagree.
             "active_booking": active_booking,
+            "active_bookings": active_bookings,
+            # The REAL total, which can exceed what is returned -- that is what
+            # decides whether the app offers "View all", so it must not be
+            # inferred from the length of a capped list.
+            "active_booking_total": active_booking_total,
             "unread_notification_count": unread_count,
             "campaigns": campaigns,
             "global_services": global_services,
@@ -335,19 +353,54 @@ class CustomerHomeService:
                 bookable.add(str(r.category_id))
         return bookable
 
-    async def _get_active_booking_summary(self, customer_id: uuid.UUID) -> dict | None:
+    async def _count_active_bookings(self, customer_id: uuid.UUID) -> int:
+        """How many live bookings there really are.
+
+        Counted separately from the returned list because the list is capped:
+        deciding "is there more than this?" from the length of a capped list
+        would make the app's "View all" appear exactly when it is least needed.
+        """
+        from sqlalchemy import func
         from app.engines.final_records.models import ServiceBooking
         from app.engines.final_records.constants import (
             BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED,
         )
         terminal = {BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED}
-        q = (
+        return int((await self.db.execute(
+            select(func.count()).select_from(ServiceBooking).where(
+                ServiceBooking.customer_id == customer_id,
+                ServiceBooking.status.notin_(terminal),
+            )
+        )).scalar() or 0)
+
+    async def _get_active_booking_summaries(self, customer_id: uuid.UUID) -> list[dict]:
+        """The customer's live bookings, newest first, capped.
+
+        The cap exists because each summary resolves a service name, a provider's
+        facts and badges and an assigned technician -- worth doing for the few the
+        Home card can show, not for an unbounded history. Anything beyond it lives
+        on the Bookings tab, which is paginated.
+        """
+        from app.engines.final_records.models import ServiceBooking
+        from app.engines.final_records.constants import (
+            BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED,
+        )
+        terminal = {BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED}
+        rows = (await self.db.execute(
             select(ServiceBooking)
             .where(ServiceBooking.customer_id == customer_id, ServiceBooking.status.notin_(terminal))
             .order_by(ServiceBooking.created_at.desc())
-            .limit(1)
-        )
-        row = (await self.db.execute(q)).scalars().first()
+            .limit(MAX_HOME_ACTIVE_BOOKINGS)
+        )).scalars().all()
+        summaries = []
+        for row in rows:
+            # One failing booking must not empty the whole strip.
+            summary = await self._safe_call(self._summarise_booking(row), default=None)
+            if summary:
+                summaries.append(summary)
+        return summaries
+
+    async def _summarise_booking(self, row) -> dict | None:
         if not row:
             return None
         # The Home card renders this as a live "your job right now" strip, so

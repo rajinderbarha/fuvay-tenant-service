@@ -7,7 +7,7 @@ import { AppScreen, AppText } from "../../components";
 import { OfflineBanner } from "../../components/OfflineBanner";
 import {
   CustomerHeader, ServiceSearch, VerticalSwitcher, HomeServiceCard,
-  AssistantEntryCard, MyBookingSection, HomeSkeleton, HomeErrorState,
+  AssistantEntryCard, HomeSkeleton, HomeErrorState,
   NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal, GlobalServicesSection,
   SearchResultsList,
 } from "../../components/home";
@@ -15,6 +15,7 @@ import {
 // backend asked for, per placement.
 import { CampaignSlot } from "../../components/home/CampaignSlot";
 import { ProblemGrid } from "../../components/home/ProblemGrid";
+import { MyBookingsStrip } from "../../components/home/MyBookingsStrip";
 import { AssuranceSection } from "../../components/home/AssuranceSection";
 import { HowItWorksSection } from "../../components/home/HowItWorksSection";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
@@ -328,15 +329,15 @@ export function HomeScreen() {
    * A section with nothing real to show resolves to null and is skipped, so it
    * contributes no heading and no blank space. */
   const sectionNodes: Record<string, React.ReactNode> = {
-    active_booking: home.activeBooking ? (
+    active_booking: home.activeBookings.length > 0 ? (
       <HomeSectionErrorBoundary sectionLabel="my booking">
-        <MyBookingSection
-          booking={home.activeBooking}
-          onPress={() => navigation.navigate("Bookings")}
+        <MyBookingsStrip
+          bookings={home.activeBookings}
+          total={home.activeBookingTotal}
+          categories={home.bookableCategories}
+          title={sectionTitle("active_booking")}
+          onPressBooking={() => navigation.navigate("Bookings")}
           onViewAll={() => navigation.navigate("Bookings")}
-          iconUrl={home.bookableCategories.find(
-            c => c.name === home.activeBooking?.serviceName,
-          )?.iconUrl ?? null}
         />
       </HomeSectionErrorBoundary>
     ) : null,

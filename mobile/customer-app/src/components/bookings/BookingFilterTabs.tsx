@@ -51,7 +51,11 @@ export function BookingFilterTabs({ selected, onSelect, activeCount, completedCo
               flex: 1,
               flexDirection: "row", alignItems: "center", justifyContent: "center",
               gap: theme.spacing.xs,
-              minHeight: theme.touchTargets.minimum,
+              // 40, below the 48pt minimum token, because the SEGMENT is not the
+              // target -- the row is: three segments side by side each span a
+              // third of the screen width, so the tap area is far larger than
+              // any minimum even at this height.
+              minHeight: 40,
               paddingHorizontal: theme.spacing.xs,
               borderRadius: theme.radiusUsage.input,
               // The divider belongs between unselected segments only --
@@ -71,7 +75,7 @@ export function BookingFilterTabs({ selected, onSelect, activeCount, completedCo
             {tab.count != null ? (
               <View
                 style={{
-                  minWidth: 20, height: 20, borderRadius: theme.radius.radiusFull,
+                  minWidth: 18, height: 18, borderRadius: theme.radius.radiusFull,
                   alignItems: "center", justifyContent: "center", paddingHorizontal: 5,
                   backgroundColor: isSelected ? theme.colors.brandOnPrimary : theme.colors.brandPrimary,
                 }}

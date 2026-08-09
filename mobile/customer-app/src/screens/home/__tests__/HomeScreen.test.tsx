@@ -40,6 +40,8 @@ function baseHome(overrides: Partial<CustomerHome> = {}): CustomerHome {
     bookableCategories: [{ categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null, description: null, startingPrice: null }],
     quickIssues: [],
     activeBooking: null,
+    activeBookings: [],
+    activeBookingTotal: 0,
     unreadNotificationCount: 0,
     campaigns: [],
     sections: [],
@@ -173,6 +175,15 @@ describe("HomeScreen", () => {
   it("renders My Booking from real returned fields, never a fabricated ETA or technician", () => {
     mockHomeQuery({
       data: baseHome({
+        // Mirrored into both, exactly as the adapter does: `activeBooking` is
+        // always `activeBookings[0]`.
+        activeBookings: [{
+          bookingId: asServiceBookingId("b-1"), bookingNumber: "SB-2026-01", status: "scheduled",
+          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
+          assignmentStatus: null, issueSummary: null, serviceName: null,
+          preferredDate: null, preferredTimeWindow: null, providerName: null, technician: null,
+          scheduledDate: null, scheduledTimeWindow: null, provider: null,
+        }],
         activeBooking: {
           bookingId: asServiceBookingId("b-1"), bookingNumber: "SB-2026-01", status: "scheduled",
           createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
@@ -180,6 +191,7 @@ describe("HomeScreen", () => {
           preferredDate: null, preferredTimeWindow: null, providerName: null, technician: null,
           scheduledDate: null, scheduledTimeWindow: null, provider: null,
         },
+        activeBookingTotal: 1,
       }),
     });
     const { getByText, queryByText } = renderHome();
@@ -197,6 +209,20 @@ describe("HomeScreen", () => {
   it("names the provider with its verification, rating, badges and the committed slot", () => {
     mockHomeQuery({
       data: baseHome({
+        // Mirrored into both, exactly as the adapter does: `activeBooking` is
+        // always `activeBookings[0]`.
+        activeBookings: [{
+          bookingId: asServiceBookingId("b-2"), bookingNumber: "SB-2026-02", status: "on_the_way",
+          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
+          assignmentStatus: "assigned", issueSummary: "AC Not Cooling", serviceName: "AC Repair",
+          preferredDate: null, preferredTimeWindow: null, providerName: "Guramrit",
+          scheduledDate: "2026-08-07", scheduledTimeWindow: "10:30-11:30",
+          provider: {
+            name: "Guramrit", verified: true, rating: 4.8, reviewCount: 12,
+            badges: [{ name: "Verified Business", icon: null, color: null }],
+          },
+          technician: { name: "Rakesh Kumar", role: "Service technician", photoUrl: null, rating: 4.6, reviewCount: 12 },
+        }],
         activeBooking: {
           bookingId: asServiceBookingId("b-2"), bookingNumber: "SB-2026-02", status: "on_the_way",
           createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
@@ -209,6 +235,7 @@ describe("HomeScreen", () => {
           },
           technician: { name: "Rakesh Kumar", role: "Service technician", photoUrl: null, rating: 4.6, reviewCount: 12 },
         },
+        activeBookingTotal: 1,
       }),
     });
     const { getByText, queryByText } = renderHome();
@@ -231,6 +258,17 @@ describe("HomeScreen", () => {
     // scheduled slot would present a request as the provider's promise.
     mockHomeQuery({
       data: baseHome({
+        // Mirrored into both, exactly as the adapter does: `activeBooking` is
+        // always `activeBookings[0]`.
+        activeBookings: [{
+          bookingId: asServiceBookingId("b-4"), bookingNumber: "SB-2026-04", status: "pending_assignment",
+          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
+          assignmentStatus: "unassigned", issueSummary: null, serviceName: "AC Service",
+          preferredDate: "2026-08-12", preferredTimeWindow: "14:00-15:00",
+          scheduledDate: null, scheduledTimeWindow: null,
+          provider: { name: "Guramrit", verified: false, rating: null, reviewCount: 0, badges: [] },
+          providerName: "Guramrit", technician: null,
+        }],
         activeBooking: {
           bookingId: asServiceBookingId("b-4"), bookingNumber: "SB-2026-04", status: "pending_assignment",
           createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
@@ -240,6 +278,7 @@ describe("HomeScreen", () => {
           provider: { name: "Guramrit", verified: false, rating: null, reviewCount: 0, badges: [] },
           providerName: "Guramrit", technician: null,
         },
+        activeBookingTotal: 1,
       }),
     });
     const { getByText, queryByText } = renderHome();
@@ -257,6 +296,16 @@ describe("HomeScreen", () => {
     // unearned rating is worse than none.
     mockHomeQuery({
       data: baseHome({
+        // Mirrored into both, exactly as the adapter does: `activeBooking` is
+        // always `activeBookings[0]`.
+        activeBookings: [{
+          bookingId: asServiceBookingId("b-3"), bookingNumber: "SB-2026-03", status: "assigned",
+          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
+          assignmentStatus: "assigned", issueSummary: null, serviceName: "Pipe Repair",
+          preferredDate: null, preferredTimeWindow: null, providerName: null,
+          scheduledDate: null, scheduledTimeWindow: null, provider: null,
+          technician: { name: "Dhiman", role: "Service technician", photoUrl: null, rating: null, reviewCount: 0 },
+        }],
         activeBooking: {
           bookingId: asServiceBookingId("b-3"), bookingNumber: "SB-2026-03", status: "assigned",
           createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
@@ -265,6 +314,7 @@ describe("HomeScreen", () => {
           scheduledDate: null, scheduledTimeWindow: null, provider: null,
           technician: { name: "Dhiman", role: "Service technician", photoUrl: null, rating: null, reviewCount: 0 },
         },
+        activeBookingTotal: 1,
       }),
     });
     const { getByText, queryByText } = renderHome();

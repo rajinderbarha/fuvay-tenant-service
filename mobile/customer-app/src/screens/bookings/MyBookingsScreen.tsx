@@ -34,8 +34,9 @@ import { isOffline } from "../../api/networkState";
  * own authoritative `counts` (spec closure item 1), never a partial-page
  * guess.
  */
-/** Measured height of the title + subtitle block. */
-const HEADER_HEIGHT = 52;
+/** Measured height of the title + subtitle block, at the smaller type it now
+ * uses (headingSmall + caption rather than headingLarge + bodySmall). */
+const HEADER_HEIGHT = 40;
 /** Scroll distance over which it folds away. Short enough that the space is
  * reclaimed almost immediately, long enough not to snap. */
 const HEADER_COLLAPSE_DISTANCE = 60;

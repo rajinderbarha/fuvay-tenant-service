@@ -121,7 +121,11 @@ export const homeActiveBookingDtoSchema = z.object({
       color: z.string().nullable().optional(),
     }).passthrough()).default([]),
   }).passthrough().nullable().optional(),
-}).nullable();
+});
+
+/** Nullability belongs at the FIELD, not in the shape: baking it into the schema
+ * made every element of `active_bookings` nullable as well. */
+export const homeActiveBookingDtoNullableSchema = homeActiveBookingDtoSchema.nullable();
 
 export const homeServiceabilityDtoSchema = z.object({
   zipcode: z.string(),
@@ -172,12 +176,19 @@ export const customerHomeResponseSchema = z.object({
   // being required: the app then draws its own shipped layout, which is a
   // working screen -- not a blank one.
   sections: z.array(homeSectionDtoSchema).optional().default([]),
+  /** Up to three live bookings, newest first. Empty on an older backend, which
+   * the adapter then fills from the single `active_booking` below. */
+  active_bookings: z.array(homeActiveBookingDtoSchema).optional().default([]),
+  /** The REAL number of live bookings, which can exceed the list above -- it is
+   * what decides whether "View all" is offered, so it must not be inferred from
+   * the length of a capped list. */
+  active_booking_total: z.number().optional(),
   address: homeAddressDtoSchema,
   serviceability: homeServiceabilityDtoSchema,
   enabled_verticals: z.array(homeVerticalDtoSchema),
   bookable_categories: z.array(homeCategoryDtoSchema),
   quick_issues: z.array(homeQuickIssueDtoSchema).optional().default([]),
-  active_booking: homeActiveBookingDtoSchema,
+  active_booking: homeActiveBookingDtoNullableSchema,
   unread_notification_count: z.number(),
   campaigns: z.array(homeCampaignDtoSchema),
   capabilities: homeCapabilitiesDtoSchema,

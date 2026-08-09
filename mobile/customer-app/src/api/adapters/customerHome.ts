@@ -39,6 +39,54 @@ export function parseCustomerHomeDto(raw: unknown): CustomerHomeResponseDto {
  * summary only needs a display-safe string, so an unrecognized value is
  * shown as-is rather than throwing and breaking the whole Home screen
  * over one unfamiliar status on a secondary field. */
+type ActiveBookingDto = NonNullable<CustomerHomeResponseDto["active_booking"]>;
+
+function adaptActiveBooking(dto: ActiveBookingDto) {
+  return {
+    bookingId: asServiceBookingId(dto.booking_id),
+    bookingNumber: dto.booking_number ?? null,
+    status: dto.status,
+    createdAt: dto.created_at ? parseServerTimestamp(dto.created_at, "active_booking.created_at") : null,
+    assignmentStatus: dto.assignment_status ?? null,
+    issueSummary: dto.issue_summary ?? null,
+    preferredDate: dto.preferred_date ?? null,
+    preferredTimeWindow: dto.preferred_time_window ?? null,
+    providerName: dto.provider_name ?? null,
+    serviceName: dto.service_name ?? null,
+    scheduledDate: dto.scheduled_date ?? null,
+    scheduledTimeWindow: dto.scheduled_time_window ?? null,
+    provider: dto.provider
+      ? {
+          name: dto.provider.name ?? null,
+          verified: dto.provider.verified,
+          rating: dto.provider.rating,
+          reviewCount: dto.provider.review_count,
+          badges: dto.provider.badges.map(b => ({
+            name: b.name, icon: b.icon ?? null, color: b.color ?? null,
+          })),
+        }
+      : null,
+    technician: dto.technician
+      ? {
+          name: dto.technician.name ?? null,
+          role: dto.technician.role ?? null,
+          photoUrl: dto.technician.photo_url ?? null,
+          rating: dto.technician.rating ?? null,
+          reviewCount: dto.technician.review_count ?? null,
+        }
+      : null,
+  };
+}
+
+/** The live bookings, newest first.
+ *
+ * Falls back to the single `active_booking` for an older backend that predates
+ * the list -- so one live booking still shows rather than the strip vanishing. */
+function activeBookings(dto: CustomerHomeResponseDto) {
+  if (dto.active_bookings.length > 0) return dto.active_bookings.map(adaptActiveBooking);
+  return dto.active_booking ? [adaptActiveBooking(dto.active_booking)] : [];
+}
+
 export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
   return {
     responseVersion: dto.response_version,
@@ -61,42 +109,12 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
       categoryName: i.category_name,
       iconUrl: i.icon_url ?? null,
     })),
-    activeBooking: dto.active_booking
-      ? {
-          bookingId: asServiceBookingId(dto.active_booking.booking_id),
-          bookingNumber: dto.active_booking.booking_number ?? null,
-          status: dto.active_booking.status,
-          createdAt: dto.active_booking.created_at ? parseServerTimestamp(dto.active_booking.created_at, "active_booking.created_at") : null,
-          assignmentStatus: dto.active_booking.assignment_status ?? null,
-          issueSummary: dto.active_booking.issue_summary ?? null,
-          preferredDate: dto.active_booking.preferred_date ?? null,
-          preferredTimeWindow: dto.active_booking.preferred_time_window ?? null,
-          providerName: dto.active_booking.provider_name ?? null,
-          serviceName: dto.active_booking.service_name ?? null,
-          scheduledDate: dto.active_booking.scheduled_date ?? null,
-          scheduledTimeWindow: dto.active_booking.scheduled_time_window ?? null,
-          provider: dto.active_booking.provider
-            ? {
-                name: dto.active_booking.provider.name ?? null,
-                verified: dto.active_booking.provider.verified,
-                rating: dto.active_booking.provider.rating,
-                reviewCount: dto.active_booking.provider.review_count,
-                badges: dto.active_booking.provider.badges.map(b => ({
-                  name: b.name, icon: b.icon ?? null, color: b.color ?? null,
-                })),
-              }
-            : null,
-          technician: dto.active_booking.technician
-            ? {
-                name: dto.active_booking.technician.name ?? null,
-                role: dto.active_booking.technician.role ?? null,
-                photoUrl: dto.active_booking.technician.photo_url ?? null,
-                rating: dto.active_booking.technician.rating ?? null,
-                reviewCount: dto.active_booking.technician.review_count ?? null,
-              }
-            : null,
-        }
-      : null,
+    // Adapted ONCE, then the single `activeBooking` is taken from the list --
+    // deriving them separately is how the card and the strip end up disagreeing
+    // about which booking is newest.
+    activeBookings: activeBookings(dto),
+    activeBooking: activeBookings(dto)[0] ?? null,
+    activeBookingTotal: dto.active_booking_total ?? activeBookings(dto).length,
     unreadNotificationCount: dto.unread_notification_count,
     // An unrecognised style or placement means a backend newer than this build.
     // Such a banner is DROPPED rather than coerced into the nearest layout: a

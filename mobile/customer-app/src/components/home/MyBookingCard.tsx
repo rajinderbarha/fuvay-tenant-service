@@ -7,53 +7,39 @@ import { HomeActiveBooking } from "../../domain/customerHome";
 import { resolveMediaUrl } from "../../domain/mediaUrl";
 import { interpretBookingStatus } from "../../domain/bookingStatus";
 
-export interface MyBookingSectionProps {
+export interface MyBookingCardProps {
   booking: HomeActiveBooking;
-  onPress: () => void;
-  onViewAll: () => void;
-  /** Category mascot for this booking, if one can be resolved from
-   * `bookableCategories` by name -- purely cosmetic, never changes what
-   * data is shown. */
+  /** Category mascot, if one resolves from `bookableCategories` by name --
+   * purely cosmetic, never changes what data is shown. */
   iconUrl?: string | null;
+  onPress: () => void;
 }
 
 /**
- * "My Booking" strip on Home: the one live job, with a "View All" link
- * into the bookings tab.
+ * One live booking: who is doing the work, their standing, and the slot they
+ * committed to.
  *
- * Shows who is doing the work -- the provider, their verification tick, their
- * earned rating and their awarded badges -- plus the slot they committed to.
- * The provider comes from the same two backend functions the booking-review
- * card uses, so a provider cannot read one way while being booked and another
- * way once the job is live.
+ * Extracted from MyBookingSection so several can be paged side by side (see
+ * MyBookingsStrip) -- the section used to own both the heading and the single
+ * card, which is why only the newest booking could ever be shown.
  *
- * Every line is real backend data (see HomeActiveBooking). Two things the
- * reference design shows are NOT rendered, because nothing in this system
- * produces them:
- *
- *  - a live ETA ("Arriving in 15 MIN"). Technician coordinates and the
- *    destination both exist on the tracking endpoint, but no ETA is ever
- *    computed from them; deriving one here from an assumed travel speed
- *    would be a number the app invented and the customer would plan
- *    around.
- *  - a star rating when the technician has none. The rating is real
- *    (staff_rating_summaries) but null until they have actually been
- *    reviewed, and an unearned star is worse than no star.
- *
- * Each row is omitted when its data is absent rather than filled with a
- * placeholder, so the card shrinks to what is genuinely known.
+ * Every line is real backend data, and each row is omitted when its data is
+ * absent rather than filled with a placeholder. Two things the reference design
+ * shows are NOT rendered because nothing in this system produces them: a live
+ * ETA (no arrival time is ever computed, and deriving one from an assumed travel
+ * speed would be a number the app invented and the customer would plan around),
+ * and a star for a technician who has not been reviewed.
  */
-export function MyBookingSection({ booking, onPress, onViewAll, iconUrl }: MyBookingSectionProps) {
+export function MyBookingCard({ booking, iconUrl, onPress }: MyBookingCardProps) {
   const { theme } = useTheme();
 
-  // Same adapter the bookings list uses, so a status never reads one way
-  // on Home and another way on the Bookings tab.
+  // Same adapter the bookings list uses, so a status never reads one way here
+  // and another way on the Bookings tab.
   const { statusLabel } = interpretBookingStatus(booking.status, booking.assignmentStatus ?? "");
   const title = booking.serviceName || booking.issueSummary || booking.bookingNumber || "Your booking";
 
   // The COMMITTED slot when there is one, falling back to what the customer
-  // asked for. Never mixed: `scheduledFor` says which of the two this is, so
-  // "Requested" is never shown as though the provider had agreed to it.
+  // asked for -- never mixed, so a request is not shown as a promise.
   const scheduled = booking.scheduledDate || booking.scheduledTimeWindow;
   const scheduleLabel = scheduled
     ? formatSchedule(booking.scheduledDate, booking.scheduledTimeWindow)
@@ -62,26 +48,9 @@ export function MyBookingSection({ booking, onPress, onViewAll, iconUrl }: MyBoo
   const provider = booking.provider;
   const providerName = provider?.name ?? booking.providerName ?? null;
   const providerRating = provider?.rating ?? null;
-  // Two at most: a third chip wraps the row on a narrow phone and pushes the
-  // slot line out of the card.
   const badges = (provider?.badges ?? []).slice(0, 2);
 
   return (
-    <View>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: theme.spacing.sm }}>
-        <AppText variant="headingSmall">My Booking</AppText>
-        <Pressable
-          onPress={onViewAll}
-          accessibilityRole="button"
-          accessibilityLabel="View all bookings"
-          hitSlop={8}
-          style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs }}
-        >
-          <AppText variant="labelStrong" color="link">View All</AppText>
-          <Icon name="arrow-forward" size="compact" color={theme.colors.brandPrimary} decorative />
-        </Pressable>
-      </View>
-
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
@@ -191,7 +160,6 @@ export function MyBookingSection({ booking, onPress, onViewAll, iconUrl }: MyBoo
           </View>
         </View>
       </Pressable>
-    </View>
   );
 }
 

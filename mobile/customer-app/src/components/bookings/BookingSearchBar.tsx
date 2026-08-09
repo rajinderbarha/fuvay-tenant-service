@@ -27,8 +27,11 @@ export function BookingSearchBar({ value, onChangeText, filterActive = false, on
       <View
         style={{
           flex: 1, flexDirection: "row", alignItems: "center", gap: theme.spacing.sm,
-          minHeight: theme.touchTargets.comfortable,
-          paddingHorizontal: theme.spacing.base,
+          // `minimum`, not `comfortable`: still a legal 44pt target, but the
+          // comfortable size made a secondary control the tallest thing on the
+          // screen after the title.
+          minHeight: theme.touchTargets.minimum,
+          paddingHorizontal: theme.spacing.sm,
           borderRadius: theme.radiusUsage.input,
           backgroundColor: theme.colors.surfaceSecondary,
         }}
@@ -62,7 +65,7 @@ export function BookingSearchBar({ value, onChangeText, filterActive = false, on
         accessibilityLabel="Filter bookings"
         accessibilityState={{ selected: filterActive }}
         style={({ pressed }) => ({
-          width: theme.touchTargets.comfortable, height: theme.touchTargets.comfortable,
+          width: theme.touchTargets.minimum, height: theme.touchTargets.minimum,
           alignItems: "center", justifyContent: "center",
           borderRadius: theme.radiusUsage.input,
           borderWidth: 1,

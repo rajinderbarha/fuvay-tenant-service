@@ -12,9 +12,12 @@ import { AppText } from "../AppText";
  */
 export function BookingsHeader() {
   return (
+    // headingSmall, not headingLarge, and a caption subtitle: the tab bar already
+    // says where the customer is, so restating it at display size spent a
+    // disproportionate part of a phone screen on a label.
     <View>
-      <AppText variant="headingLarge" accessibilityRole="header">My Bookings</AppText>
-      <AppText variant="bodySmall" color="secondary">Track and review your service requests</AppText>
+      <AppText variant="headingSmall" accessibilityRole="header">My Bookings</AppText>
+      <AppText variant="caption" color="secondary">Track and review your service requests</AppText>
     </View>
   );
 }

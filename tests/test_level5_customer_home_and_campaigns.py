@@ -188,7 +188,8 @@ class TestCustomerHomeAggregation:
         monkeypatch.setattr(svc, "_get_default_address", AsyncMock(return_value={"zipcode": "141002"}))
         monkeypatch.setattr(svc, "_get_enabled_verticals", AsyncMock(return_value=[{"key": "home_services"}]))
         monkeypatch.setattr(svc, "_get_bookable_categories", AsyncMock(return_value=[{"name": "AC & Cooling"}]))
-        monkeypatch.setattr(svc, "_get_active_booking_summary", AsyncMock(return_value=None))
+        monkeypatch.setattr(svc, "_get_active_booking_summaries", AsyncMock(return_value=[]))
+        monkeypatch.setattr(svc, "_count_active_bookings", AsyncMock(return_value=0))
         monkeypatch.setattr(svc, "_get_unread_notification_count", AsyncMock(return_value=3))
         monkeypatch.setattr(svc, "_get_active_campaigns", AsyncMock(return_value=[]))
 
@@ -213,7 +214,8 @@ class TestCustomerHomeAggregation:
         monkeypatch.setattr(svc, "_get_default_address", AsyncMock(return_value=None))
         monkeypatch.setattr(svc, "_get_enabled_verticals", AsyncMock(return_value=[]))
         monkeypatch.setattr(svc, "_get_bookable_categories", AsyncMock(return_value=[]))
-        monkeypatch.setattr(svc, "_get_active_booking_summary", AsyncMock(return_value=None))
+        monkeypatch.setattr(svc, "_get_active_booking_summaries", AsyncMock(return_value=[]))
+        monkeypatch.setattr(svc, "_count_active_bookings", AsyncMock(return_value=0))
         monkeypatch.setattr(svc, "_get_unread_notification_count", AsyncMock(return_value=0))
         monkeypatch.setattr(svc, "_get_active_campaigns", AsyncMock(return_value=[]))
 
@@ -234,7 +236,8 @@ class TestCustomerHomeAggregation:
         monkeypatch.setattr(svc, "_get_default_address", AsyncMock(return_value=None))
         monkeypatch.setattr(svc, "_get_enabled_verticals", AsyncMock(return_value=[]))
         monkeypatch.setattr(svc, "_get_bookable_categories", AsyncMock(return_value=[]))
-        monkeypatch.setattr(svc, "_get_active_booking_summary", AsyncMock(return_value=None))
+        monkeypatch.setattr(svc, "_get_active_booking_summaries", AsyncMock(return_value=[]))
+        monkeypatch.setattr(svc, "_count_active_bookings", AsyncMock(return_value=0))
         monkeypatch.setattr(svc, "_get_unread_notification_count", AsyncMock(side_effect=RuntimeError("boom")))
         monkeypatch.setattr(svc, "_get_active_campaigns", AsyncMock(return_value=[]))
 
@@ -271,9 +274,13 @@ class TestCustomerHomeAggregation:
         svc = CustomerHomeService(db=db, request_id="test-req")
         for method in (
             "_get_default_address", "_get_enabled_verticals", "_get_bookable_categories",
-            "_get_active_booking_summary", "_get_unread_notification_count", "_get_active_campaigns",
+            # The live-booking lookup is now a list plus its own count: the count
+            # is deliberately separate, because deciding "is there more than this?"
+            # from the length of a CAPPED list would be wrong.
+            "_get_active_booking_summaries", "_count_active_bookings",
+            "_get_unread_notification_count", "_get_active_campaigns",
         ):
             monkeypatch.setattr(svc, method, counted)
 
         await svc.get_home(customer_id=_id())
-        assert call_count["n"] == 6
+        assert call_count["n"] == 7

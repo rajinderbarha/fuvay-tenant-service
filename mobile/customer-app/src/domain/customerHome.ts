@@ -163,6 +163,12 @@ export interface CustomerHome {
   enabledVerticals: HomeVertical[];
   bookableCategories: HomeCategory[];
   quickIssues: HomeQuickIssue[];
+  /** Up to three live bookings, newest first. */
+  activeBookings: HomeActiveBooking[];
+  /** How many live bookings there really are -- can exceed `activeBookings`. */
+  activeBookingTotal: number;
+  /** The newest one. Always `activeBookings[0]`, kept for callers that only ever
+   * needed the one. */
   activeBooking: HomeActiveBooking | null;
   unreadNotificationCount: number;
   campaigns: HomeCampaign[];
