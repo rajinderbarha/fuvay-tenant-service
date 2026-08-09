@@ -13,6 +13,7 @@ function issue(n: number, slug: string | null = "air-conditioning"): HomeQuickIs
     categorySlug: slug,
     categoryName: "Air Conditioning",
     iconUrl: null,
+    intent: "repair" as const,
   };
 }
 

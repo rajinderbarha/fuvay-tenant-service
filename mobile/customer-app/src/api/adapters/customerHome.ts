@@ -11,7 +11,7 @@ import { ContractValidationError } from "../../domain/errors";
 const KNOWN_STYLES: readonly string[] = ["hero", "festival", "strip"];
 const KNOWN_PLACEMENTS: readonly string[] = [
   "campaign_top", "campaign_after_problems", "campaign_after_services",
-  "campaign_mid", "campaign_bottom",
+  "campaign_mid", "campaign_after_circles", "campaign_bottom",
 ];
 
 function isKnownStyle(style: string | undefined): boolean {
@@ -108,6 +108,9 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
       categorySlug: i.category_slug ?? null,
       categoryName: i.category_name,
       iconUrl: i.icon_url ?? null,
+      // Only the two intents this build renders sections for; anything else from
+      // a newer backend is treated as unclassified rather than mis-grouped.
+      intent: i.intent === "repair" || i.intent === "consult" ? i.intent : null,
     })),
     // Adapted ONCE, then the single `activeBooking` is taken from the list --
     // deriving them separately is how the card and the strip end up disagreeing
@@ -115,6 +118,8 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
     activeBookings: activeBookings(dto),
     activeBooking: activeBookings(dto)[0] ?? null,
     activeBookingTotal: dto.active_booking_total ?? activeBookings(dto).length,
+    season: dto.season ?? null,
+    seasonLabel: dto.season_label ?? null,
     unreadNotificationCount: dto.unread_notification_count,
     // An unrecognised style or placement means a backend newer than this build.
     // Such a banner is DROPPED rather than coerced into the nearest layout: a

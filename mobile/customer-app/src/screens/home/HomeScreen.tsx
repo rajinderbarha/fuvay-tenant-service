@@ -35,6 +35,9 @@ import { CustomerTabsParamList } from "../../navigation/routeTypes";
 /** Two rows of four in the tile grid, three rows of four in the circles. */
 const PROBLEM_TILE_COUNT = 8;
 const PROBLEM_CIRCLE_COUNT = 12;
+/** Two rows in each intent section: enough to be useful, short enough that the
+ * two do not turn the screen into four versions of the same list. */
+const INTENT_COUNT = 8;
 
 /** The order this build ships. Used ONLY when the backend sends no sections --
  * an older backend, or a failed section lookup. Intent first: what is already
@@ -50,6 +53,9 @@ const DEFAULT_SECTION_ORDER: { key: string; order: number; title: string | null 
   { key: "assistant_entry", order: 60, title: null },
   { key: "campaign_mid", order: 70, title: null },
   { key: "problem_circles", order: 75, title: null },
+  { key: "repair_intent", order: 76, title: null },
+  { key: "consult_intent", order: 77, title: null },
+  { key: "campaign_after_circles", order: 78, title: null },
   { key: "global_services", order: 80, title: null },
   // how_it_works and trust_benefits are NOT in the shipped order: both are
   // switched off in the layout settings, and this fallback should match what a
@@ -264,6 +270,11 @@ export function HomeScreen() {
    * rather than per render -- see selectProblems -- so tiles do not move under a
    * finger mid-tap, and the two sections do not show the same problem twice. */
   const problems = selectProblems(home.quickIssues, PROBLEM_TILE_COUNT, PROBLEM_CIRCLE_COUNT);
+  /** Grouped by what the customer is trying to DO, from the backend's own
+   * classification -- the app never re-derives it from the wording. An empty
+   * group renders nothing rather than an empty heading. */
+  const repairIssues = home.quickIssues.filter(i => i.intent === "repair").slice(0, INTENT_COUNT);
+  const consultIssues = home.quickIssues.filter(i => i.intent === "consult").slice(0, INTENT_COUNT);
 
   function sectionTitle(key: string): string | null {
     return home!.sections.find(s => s.key === key)?.title ?? null;
@@ -361,6 +372,7 @@ export function HomeScreen() {
     campaign_after_problems: renderCampaignSlot("campaign_after_problems"),
     campaign_after_services: renderCampaignSlot("campaign_after_services"),
     campaign_mid: renderCampaignSlot("campaign_mid"),
+    campaign_after_circles: renderCampaignSlot("campaign_after_circles"),
     campaign_bottom: renderCampaignSlot("campaign_bottom"),
 
     // Was in the backend's section vocabulary with nothing wired to draw it, so
@@ -386,6 +398,26 @@ export function HomeScreen() {
 
     // A second, larger pass at the same real list -- a different selection, in
     // circles, for the customer who did not find their fault in the shortlist.
+    repair_intent: (
+      <HomeSectionErrorBoundary sectionLabel="repair intent">
+        <ProblemGrid
+          issues={repairIssues}
+          title={sectionTitle("repair_intent") || "Something to repair"}
+          onPressIssue={issue => navigateToQuickIssue(issue, zipcode)}
+        />
+      </HomeSectionErrorBoundary>
+    ),
+
+    consult_intent: (
+      <HomeSectionErrorBoundary sectionLabel="consult intent">
+        <ProblemGrid
+          issues={consultIssues}
+          title={sectionTitle("consult_intent") || "Get advice or a quote"}
+          onPressIssue={issue => navigateToQuickIssue(issue, zipcode)}
+        />
+      </HomeSectionErrorBoundary>
+    ),
+
     problem_circles: (
       <HomeSectionErrorBoundary sectionLabel="problem circles">
         <ProblemCircles

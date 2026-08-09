@@ -26,6 +26,12 @@ HOME_SECTION_KEYS = (
     # `quick_problems` so admin can order, rename or switch off either one on its
     # own -- they draw from the same list but are different sections.
     "problem_circles",
+    # Grouped by what the customer is trying to do rather than by service (see
+    # intent.py). Either renders nothing when the catalogue has no items of that
+    # kind, which is why both are separate switchable sections.
+    "repair_intent",
+    "consult_intent",
+    "campaign_after_circles",
     "global_services",
     "how_it_works",
     "trust_benefits",

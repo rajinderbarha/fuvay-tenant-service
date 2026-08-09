@@ -68,6 +68,10 @@ export const homeQuickIssueDtoSchema = z.object({
    * already knows how bad their problem is, and a red "critical" chip on their
    * own fault would read as alarm rather than information. */
   severity: z.string().nullable().optional(),
+  /** "repair" | "consult" | null -- what the customer is trying to do. Null when
+   * the wording says neither, in which case the item belongs to no intent
+   * section and appears only in the general grids. */
+  intent: z.string().nullable().optional(),
 });
 
 /** Customer-safe technician identity: name/role/photo only, never a
@@ -183,6 +187,10 @@ export const customerHomeResponseSchema = z.object({
    * what decides whether "View all" is offered, so it must not be inferred from
    * the length of a capped list. */
   active_booking_total: z.number().optional(),
+  /** Which season the backend ordered this payload for, and how to say so. The
+   * app does not compute the season itself: one source of that decision. */
+  season: z.string().optional(),
+  season_label: z.string().nullable().optional(),
   address: homeAddressDtoSchema,
   serviceability: homeServiceabilityDtoSchema,
   enabled_verticals: z.array(homeVerticalDtoSchema),

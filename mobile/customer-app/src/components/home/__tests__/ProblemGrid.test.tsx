@@ -13,6 +13,7 @@ function issue(label: string, category = "Air Conditioning"): HomeQuickIssue {
     categorySlug: "air-conditioning",
     categoryName: category,
     iconUrl: null,
+    intent: "repair" as const,
   };
 }
 

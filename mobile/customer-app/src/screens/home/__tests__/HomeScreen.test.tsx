@@ -45,6 +45,8 @@ function baseHome(overrides: Partial<CustomerHome> = {}): CustomerHome {
     unreadNotificationCount: 0,
     campaigns: [],
     sections: [],
+    season: null,
+    seasonLabel: null,
     capabilities: { bargainAvailable: true, photoAttachAvailable: true, chatbotLanguageSelectable: true },
     ...overrides,
   };
@@ -346,7 +348,7 @@ describe("HomeScreen", () => {
     mockHomeQuery({ data: baseHome({
       quickIssues: [{
         issueId: "issue-1", label: "AC Not Cooling",
-        categoryId: asCategoryId("cat-1"), categorySlug: "ac-cooling", categoryName: "AC & Cooling", iconUrl: null,
+        categoryId: asCategoryId("cat-1"), categorySlug: "ac-cooling", categoryName: "AC & Cooling", iconUrl: null, intent: "repair" as const,
       }],
     }) });
     const { getAllByText } = renderHome();
@@ -372,7 +374,7 @@ describe("HomeScreen", () => {
     mockHomeQuery({ data: baseHome({
       quickIssues: [{
         issueId: "issue-2", label: "Drain Blocked",
-        categoryId: asCategoryId("cat-9"), categorySlug: null, iconUrl: null, categoryName: "Plumbing",
+        categoryId: asCategoryId("cat-9"), categorySlug: null, iconUrl: null, intent: null, categoryName: "Plumbing",
       }],
     }) });
     const { queryByText } = renderHome();

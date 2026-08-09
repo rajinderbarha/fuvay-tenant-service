@@ -51,7 +51,13 @@ export interface HomeQuickIssue {
   categoryName: string;
   /** Admin-set artwork. Null falls back to a wording-derived glyph. */
   iconUrl: string | null;
+  /** What the customer is trying to do: fix a fault, or get something scoped and
+   * quoted. Null when the wording says neither -- such an item is shown in the
+   * general grids and in no intent section, rather than forced into one. */
+  intent: HomeProblemIntent;
 }
+
+export type HomeProblemIntent = "repair" | "consult" | null;
 
 /** Only fields the real Home aggregation endpoint returns. Extended
  * 2026-08 to include issue_summary/provider_name/preferred_date/
@@ -120,6 +126,7 @@ export type HomeCampaignPlacement =
   | "campaign_after_problems"
   | "campaign_after_services"
   | "campaign_mid"
+  | "campaign_after_circles"
   | "campaign_bottom";
 
 export interface HomeCampaign {
@@ -175,5 +182,10 @@ export interface CustomerHome {
   /** Empty on an older backend, in which case the app draws its shipped
    * layout -- an empty list is "no instruction", never "no sections". */
   sections: HomeSection[];
+  /** The season the backend ordered this payload for ("monsoon"), and the
+   * customer-facing way to say it ("Monsoon picks"). Null on an older backend,
+   * in which case the app shows no seasonal wording rather than guessing. */
+  season: string | null;
+  seasonLabel: string | null;
   capabilities: HomeCapabilities;
 }

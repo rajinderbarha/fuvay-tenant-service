@@ -36,6 +36,9 @@ describe("quick issues", () => {
       // No admin artwork on this problem; the tile falls back to a
       // wording-derived glyph rather than showing a blank square.
       iconUrl: null,
+      // The backend sent no intent, so the problem belongs to neither intent
+      // section -- the app must not guess one from the wording.
+      intent: null,
     }]);
   });
 

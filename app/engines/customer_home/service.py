@@ -20,6 +20,11 @@ import structlog
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.customer_home.intent import classify_intent
+from app.engines.customer_home.seasonality import (
+    SEASON_LABELS, current_season, sort_by_season,
+)
+
 logger = structlog.get_logger("customer_home.service")
 
 # v2 adds `global_services` (always-visible promotional lead-capture cards).
@@ -86,6 +91,14 @@ class CustomerHomeService:
             default=[],
         )
 
+        # Seasonal ordering, applied to BOTH surfaces so the screen is coherent:
+        # what a household needs in Ludhiana in January is not what it needs in
+        # May. Only reorders -- nothing is hidden, and an unrecognised service
+        # stays where the catalogue put it. See seasonality.py.
+        season = current_season()
+        categories = sort_by_season(list(categories or []), name_key="name", season=season)
+        quick_issues = sort_by_season(list(quick_issues or []), name_key="label", season=season)
+
         serviceability_summary = None
         if zipcode:
             serviceability_summary = {
@@ -109,6 +122,10 @@ class CustomerHomeService:
         return {
             "response_version": HOME_RESPONSE_VERSION,
             "sections": sections,
+            # Named so the app can say WHY the order is what it is ("Monsoon
+            # picks") rather than silently rearranging the screen each quarter.
+            "season": season,
+            "season_label": SEASON_LABELS[season],
             "address": address,
             "serviceability": serviceability_summary,
             "enabled_verticals": verticals,
@@ -612,6 +629,11 @@ class CustomerHomeService:
                 # never rendered as a blank tile waiting for an upload.
                 "icon_url": issue.icon_url,
                 "severity": issue.severity,
+                # "repair" / "consult" / null. Lets Home group by what the
+                # customer is trying to DO; null means the wording says neither,
+                # and the item simply appears in the general grids instead of
+                # being forced into the wrong group.
+                "intent": classify_intent(issue.name),
             }
             for issue, cat_slug, cat_name in rows
         ]
