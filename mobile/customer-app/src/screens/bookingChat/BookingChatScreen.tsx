@@ -319,11 +319,47 @@ function BookingChatConversation({
   // Stages: 0 Understand · 1 Match technician · 2 Confirm & price · 3 Book.
   const activeStageIndex = booked ? 3 : !c.draftId || !questionsComplete ? 0 : !inReviewPhase ? 1 : 2;
 
-  // The composer is a real input only while a free-text question is
-  // genuinely open and not already being submitted.
-  const answerBusy = c.uiState === "submitting_answer" || c.uiState === "refreshing_question_flow";
-  const freeTextActive = !!c.envelope?.currentQuestion?.acceptsFreeText && !questionsComplete && !traceBusy;
-  const canSendAnswer = freeTextActive && answerDraft.trim().length > 0 && !answerBusy;
+  const answerBusy =
+    c.uiState === "submitting_answer"
+    || c.uiState === "refreshing_question_flow"
+    || c.uiState === "assistant_processing";
+
+  /**
+   * Where a typed message goes. Three genuinely different destinations, which is
+   * why this is resolved once here rather than branched inside the send handler:
+   *
+   *  - "answer"    a question with NO options: the text IS the answer, so it goes
+   *                straight down the canonical submit path. DeepSeek is not
+   *                consulted -- there is nothing to match it against, and an
+   *                earlier version that did ask rejected every answer and
+   *                re-asked the same question.
+   *  - "interpret" a question WITH options: DeepSeek matches the words against
+   *                those real options and either submits the canonical one or
+   *                replies asking again, with the same question still active. It
+   *                can never invent an option or choose the next question.
+   *  - "issue"     no draft yet, still choosing the problem: the same constrained
+   *                matching against the real backend issue list.
+   *
+   * This is the connection that was missing. Both interpreters existed, were
+   * reachable and worked; the live screen simply never called either, so typing
+   * was only possible on free-text questions and DeepSeek was never involved in a
+   * booking at all.
+   */
+  const currentQuestion = c.envelope?.currentQuestion ?? null;
+  const composerTarget: "answer" | "interpret" | "issue" | null =
+    traceBusy ? null
+      : currentQuestion && !questionsComplete
+        ? ((currentQuestion.options?.length ?? 0) > 0 ? "interpret" : "answer")
+        : c.offeringChoice && !c.draftId ? "issue"
+          : null;
+  const composerActive = composerTarget !== null;
+  /** Says what typing will do here. "Type your answer" over the issue picker
+   * asked for an answer to a question that had not been asked yet. */
+  const composerPlaceholder =
+    composerTarget === "issue" ? "Describe the problem"
+      : composerTarget === "interpret" ? "Type or tap an option above"
+        : "Type your answer";
+  const canSendAnswer = composerActive && answerDraft.trim().length > 0 && !answerBusy;
 
   function confirmRestart() {
     Alert.alert(
@@ -337,12 +373,24 @@ function BookingChatConversation({
   }
 
   function submitFreeText() {
-    if (!canSendAnswer || !c.envelope?.currentQuestion) return;
+    if (!canSendAnswer) return;
     const text = answerDraft.trim();
-    const questionId = c.envelope.currentQuestion.questionId;
     setAnswerDraft("");
-    setLiveTraceQuestionId(questionId);
-    c.submitAnswer(questionId, null, text);
+
+    if (composerTarget === "issue") {
+      c.interpretOfferingText(text);
+      return;
+    }
+    if (!currentQuestion) return;
+    setLiveTraceQuestionId(currentQuestion.questionId);
+    if (composerTarget === "interpret") {
+      // Constrained matching against this question's own options. The response
+      // carries the authoritative envelope, so nothing here infers what to show
+      // next from the reply text.
+      c.interpretFreeText(text);
+      return;
+    }
+    c.submitAnswer(currentQuestion.questionId, null, text);
   }
 
   return (
@@ -509,12 +557,12 @@ function BookingChatConversation({
           )}
         />
 
-        {/* Composer. Only rendered as a text box when a free-text question
-            is genuinely awaiting an answer -- otherwise it is a plain
-            status strip, so it never looks like an input the customer can
-            type into when nothing would accept the text. */}
+        {/* Composer. A real input whenever something would genuinely accept the
+            text -- a question (with or without options) or the issue choice --
+            and a plain status strip otherwise, so it never invites typing that
+            nothing would read. */}
         <View style={{ paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, backgroundColor: BOT.bgComposer }}>
-          {freeTextActive ? (
+          {composerActive ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <TextInput
                 value={answerDraft}
@@ -522,9 +570,9 @@ function BookingChatConversation({
                 onSubmitEditing={submitFreeText}
                 editable={!answerBusy}
                 returnKeyType="send"
-                placeholder="Type your answer"
+                placeholder={composerPlaceholder}
                 placeholderTextColor={BOT.textTertiary}
-                accessibilityLabel="Type your answer"
+                accessibilityLabel={composerPlaceholder}
                 style={{
                   flex: 1, minHeight: 48, borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12,
                   backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.border,
@@ -549,7 +597,11 @@ function BookingChatConversation({
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 4, minHeight: 24 }}>
               <Ionicons name="sparkles" size={15} color={BOT.textTertiary} />
               <Text style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }} numberOfLines={1}>
-                {booked ? "Your booking is confirmed" : inReviewPhase ? "Fuvay AI is finishing your booking…" : "Choose an option above to continue"}
+                {booked
+                  ? "Your booking is confirmed"
+                  : inReviewPhase
+                    ? "Fuvay AI is finishing your booking…"
+                    : "Choose an option above to continue"}
               </Text>
             </View>
           )}
