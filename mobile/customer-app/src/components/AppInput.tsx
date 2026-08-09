@@ -10,8 +10,16 @@ export interface AppInputProps extends TextInputProps {
 }
 
 /** Standard text field: label, themed border (default/focus/error/disabled
- * states), and an error caption. */
-export function AppInput({ label, error, disabled, style, onFocus, onBlur, ...rest }: AppInputProps) {
+ * states), and an error caption.
+ *
+ * Forwards its ref to the underlying TextInput, so a caller can `blur()` the field
+ * itself. That is not a convenience: a focused input inside a Modal keeps the
+ * keyboard up when the Modal unmounts, and only blurring the real input releases it
+ * (see LocationPickerModal). */
+export const AppInput = React.forwardRef<TextInput, AppInputProps>(function AppInput(
+  { label, error, disabled, style, onFocus, onBlur, ...rest }: AppInputProps,
+  ref,
+) {
   const { theme } = useTheme();
   const [focused, setFocused] = useState(false);
 
@@ -29,6 +37,7 @@ export function AppInput({ label, error, disabled, style, onFocus, onBlur, ...re
         </AppText>
       ) : null}
       <TextInput
+        ref={ref}
         editable={!disabled}
         placeholderTextColor={theme.colors.textTertiary}
         onFocus={e => { setFocused(true); onFocus?.(e); }}
@@ -56,4 +65,4 @@ export function AppInput({ label, error, disabled, style, onFocus, onBlur, ...re
       ) : null}
     </View>
   );
-}
+});

@@ -6,6 +6,7 @@ import { Icon } from "../Icon";
 import { HomeActiveBooking } from "../../domain/customerHome";
 import { resolveMediaUrl } from "../../domain/mediaUrl";
 import { interpretBookingStatus } from "../../domain/bookingStatus";
+import { distinctBadges } from "../../domain/providerBadges";
 
 export interface MyBookingCardProps {
   booking: HomeActiveBooking;
@@ -48,7 +49,9 @@ export function MyBookingCard({ booking, iconUrl, onPress }: MyBookingCardProps)
   const provider = booking.provider;
   const providerName = provider?.name ?? booking.providerName ?? null;
   const providerRating = provider?.rating ?? null;
-  const badges = (provider?.badges ?? []).slice(0, 2);
+  // Deduped before slicing: two of the same label would otherwise fill both
+  // slots with one claim and collide as list keys.
+  const badges = distinctBadges(provider?.badges ?? []).slice(0, 2);
 
   return (
       <Pressable

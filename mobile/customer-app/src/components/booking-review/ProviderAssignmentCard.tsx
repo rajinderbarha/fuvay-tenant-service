@@ -6,6 +6,7 @@ import { AppCard } from "../AppCard";
 import { AppBadge } from "../AppBadge";
 import { Icon } from "../Icon";
 import { ReviewProvider } from "../../domain/bookingReview";
+import { distinctBadges } from "../../domain/providerBadges";
 
 export interface ProviderAssignmentCardProps {
   provider: ReviewProvider | null;
@@ -35,9 +36,11 @@ export function ProviderAssignmentCard({ provider }: ProviderAssignmentCardProps
           <AppText variant="caption" color="tertiary" style={{ marginTop: theme.spacing.xxs }}>
             Based on service availability, coverage and provider readiness.
           </AppText>
-          {provider && provider.publicBadges.length > 0 ? (
+          {provider && distinctBadges(provider.publicBadges).length > 0 ? (
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xxs, marginTop: theme.spacing.sm }}>
-              {provider.publicBadges.map(badge => <AppBadge key={badge.name} label={badge.name} tone="success" />)}
+              {distinctBadges(provider.publicBadges).map(badge => (
+                <AppBadge key={badge.name} label={badge.name} tone="success" />
+              ))}
             </View>
           ) : null}
         </View>

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react-native";
+import { render, screen, fireEvent } from "@testing-library/react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { AppProviders } from "../../../providers/AppProviders";
 import { MyBookingsScreen } from "../MyBookingsScreen";
@@ -47,12 +47,41 @@ describe("MyBookingsScreen chrome", () => {
     expect(safeArea.props.edges).toEqual(["top"]);
   });
 
-  it("keeps the search box and filters pinned while the title can fold away", () => {
-    // A title restating the tab is worth reclaiming on scroll; a CONTROL that
-    // scrolls out of reach is worse than the title that does.
+  it("keeps search off screen until asked for, and the tabs always reachable", () => {
+    // Search and filtering used to hold a permanent row above the tabs. Most visits
+    // are here to look at the list, so the controls are now opened from the tab row
+    // -- but the affordance itself stays pinned, because a CONTROL that scrolls out
+    // of reach is worse than the title that does.
     renderScreen();
+    expect(screen.queryByLabelText("Search bookings")).toBeNull();
+    expect(screen.queryByLabelText("Filter bookings")).toBeNull();
+    expect(screen.getByLabelText("Search and filter bookings")).toBeTruthy();
+    expect(screen.getByText("My Bookings")).toBeTruthy();
+  });
+
+  it("opens the search box and the filter control together on demand", () => {
+    // Filtering lives inside the search row, so revealing one has to reveal both --
+    // otherwise the filter becomes unreachable.
+    renderScreen();
+    fireEvent.press(screen.getByLabelText("Search and filter bookings"));
     expect(screen.getByLabelText("Search bookings")).toBeTruthy();
     expect(screen.getByLabelText("Filter bookings")).toBeTruthy();
-    expect(screen.getByText("My Bookings")).toBeTruthy();
+  });
+
+  it("refuses to hide the search row while a term is applied", () => {
+    // A narrowed list whose controls are hidden reads as missing bookings.
+    renderScreen();
+    fireEvent.press(screen.getByLabelText("Search and filter bookings"));
+    fireEvent.changeText(screen.getByLabelText("Search bookings"), "geyser");
+    expect(screen.queryByLabelText("Close search")).toBeNull();
+    expect(screen.getByLabelText("Search bookings")).toBeTruthy();
+  });
+
+  it("closes an empty search row when the customer dismisses it", () => {
+    renderScreen();
+    fireEvent.press(screen.getByLabelText("Search and filter bookings"));
+    fireEvent.press(screen.getByLabelText("Close search"));
+    expect(screen.queryByLabelText("Search bookings")).toBeNull();
+    expect(screen.getByLabelText("Search and filter bookings")).toBeTruthy();
   });
 });

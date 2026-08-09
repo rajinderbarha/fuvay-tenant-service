@@ -49,6 +49,15 @@ export function MyBookingsScreen() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   /**
+   * Search and the filter control are OFF by default and opened from the tab row.
+   *
+   * They used to sit permanently above the tabs, spending a fixed slice of a phone
+   * screen on controls most visits never touch -- the list itself is what the
+   * customer came for. Opened on demand, and it stays open while a term is applied
+   * (see `searchOpen` below) so a narrowed list always shows why.
+   */
+  const [searchRequested, setSearchRequested] = useState(false);
+  /**
    * Drives the collapsing title block.
    *
    * The title and its subtitle are worth ~64px, which is a lot of a phone screen
@@ -77,6 +86,14 @@ export function MyBookingsScreen() {
   });
   // Debounced so typing does not fire a request per keystroke; the term
   // itself is applied server-side (see useCustomerBookingsListQuery).
+  /**
+   * Open when the customer asked for it, and also whenever a term or status filter is
+   * applied -- including one that survived a re-mount. A narrowed list with its
+   * controls hidden looks like missing bookings, which is the more expensive mistake
+   * than an extra row on screen.
+   */
+  const searchOpen = searchRequested || search.length > 0 || statusFilter !== null;
+
   const debouncedSearch = useDebouncedValue(search, 350);
   const query = useCustomerBookingsListQuery(filter, debouncedSearch, statusFilter);
   const { data: home } = useCustomerHomeQuery();
@@ -131,12 +148,18 @@ export function MyBookingsScreen() {
           <BookingsHeader />
         </Animated.View>
 
-        <BookingSearchBar
-          value={search}
-          onChangeText={setSearch}
-          filterActive={statusFilter !== null}
-          onPressFilter={() => setFilterSheetVisible(true)}
-        />
+        {searchOpen ? (
+          <BookingSearchBar
+            value={search}
+            onChangeText={setSearch}
+            filterActive={statusFilter !== null}
+            onPressFilter={() => setFilterSheetVisible(true)}
+            autoFocus={searchRequested}
+            // Not closeable while a term is applied -- the bar IS the explanation
+            // for a shorter list.
+            onClose={search.length === 0 ? () => setSearchRequested(false) : undefined}
+          />
+        ) : null}
 
         {/* The applied filter stays visible and removable outside the
             sheet -- a narrowed list that looks identical to an unnarrowed
@@ -159,12 +182,35 @@ export function MyBookingsScreen() {
           </Pressable>
         ) : null}
 
-        <BookingFilterTabs
-          selected={filter}
-          onSelect={setFilter}
-          activeCount={query.counts.active}
-          completedCount={query.counts.completed}
-        />
+        {/* The tabs are what customers actually use to switch views, so the search
+            affordance rides alongside them rather than taking a row of its own. */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm }}>
+          <View style={{ flex: 1 }}>
+            <BookingFilterTabs
+              selected={filter}
+              onSelect={setFilter}
+              activeCount={query.counts.active}
+              completedCount={query.counts.completed}
+            />
+          </View>
+          {!searchOpen ? (
+            <Pressable
+              onPress={() => setSearchRequested(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Search and filter bookings"
+              hitSlop={8}
+              style={({ pressed }) => ({
+                width: theme.touchTargets.minimum, height: theme.touchTargets.minimum,
+                alignItems: "center", justifyContent: "center",
+                borderRadius: theme.radiusUsage.input,
+                backgroundColor: theme.colors.surfaceSecondary,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Icon name="search-outline" size="standard" color={theme.colors.iconDefault} decorative />
+            </Pressable>
+          ) : null}
+        </View>
 
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           {/* Never claims "Updated just now" for cached/offline data --

@@ -785,6 +785,17 @@ async def _public_badges(db: AsyncSession, tenant_id: uuid.UUID, health_score, r
     Prefers the provider's real, admin-configured trust_quality badges (with the
     icon/colour the admin set). Falls back to computed signals only when the
     provider has not earned any configured badge yet, so a card is never empty.
+
+    Collapsed by DISPLAY NAME, not by badge key. `list_earned_badges` already
+    dedupes by key, which is right for an admin view -- two definitions are two
+    records. To a customer they are one claim, and the same word repeated is not
+    five reasons to trust someone. Live case this fixes: Guramrit held five
+    separately-keyed definitions all named "L5 Cfg Badge", so the booking card
+    printed that label five times in a row (and, keyed on the name, collided in
+    the app's list rendering).
+
+    The first of a repeated name wins, so the icon/colour stay those of the
+    most-recently-earned one -- `list_earned_badges` returns newest first.
     """
     from app.engines.trust_quality.service import TrustQualityService
     try:
@@ -793,7 +804,15 @@ async def _public_badges(db: AsyncSession, tenant_id: uuid.UUID, health_score, r
     except Exception:  # badge lookup must never break provider matching
         earned = []
     if earned:
-        return [{"name": b["name"], "icon": b.get("icon"), "color": b.get("color")} for b in earned]
+        by_name: dict[str, dict] = {}
+        for b in earned:
+            name = (b.get("name") or "").strip()
+            # An unnamed badge has nothing to show a customer.
+            if not name or name in by_name:
+                continue
+            by_name[name] = {"name": name, "icon": b.get("icon"), "color": b.get("color")}
+        if by_name:
+            return list(by_name.values())[:MAX_PUBLIC_BADGES]
 
     # INTEGRITY FIX. The previous fallback added "Verified" UNCONDITIONALLY and
     # "High Completion" from `health_score >= 90` -- but health_score defaults to
@@ -807,6 +826,10 @@ async def _public_badges(db: AsyncSession, tenant_id: uuid.UUID, health_score, r
     # a fact that can be pointed at in the database.
     return await _earned_fallback_badges(db, tenant_id, rating)
 
+
+# A card shows a handful of claims, not a wall of them. Beyond this the badges stop
+# distinguishing one provider from another and start reading as decoration.
+MAX_PUBLIC_BADGES = 3
 
 # Enough reviews that an average means something, rather than one happy customer.
 _MIN_REVIEWS_FOR_RATING_BADGE = 3
@@ -850,7 +873,7 @@ async def _earned_fallback_badges(db: AsyncSession, tenant_id: uuid.UUID, rating
     if done >= _MIN_JOBS_FOR_COMPLETION_BADGE and done / max(1, done + lost) >= 0.9:
         badges.append({"name": "High Completion", "icon": "check-circle", "color": "#10b981"})
 
-    return badges
+    return badges[:MAX_PUBLIC_BADGES]
 
 
 async def customer_provider_facts(

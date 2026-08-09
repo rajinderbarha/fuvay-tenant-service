@@ -1,6 +1,6 @@
 import React from "react";
 import { Keyboard } from "react-native";
-import { fireEvent } from "@testing-library/react-native";
+import { fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithProviders } from "../../../testing/renderWithProviders";
 import { LocationPickerModal } from "../LocationPickerModal";
 
@@ -26,7 +26,9 @@ describe("LocationPickerModal", () => {
     fireEvent.changeText(getByLabelText("ZIP code"), "141001");
     fireEvent.press(getByText("Confirm location"));
     expect(onConfirm).toHaveBeenCalledWith("141001");
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // Closing is deferred one frame so the blur is processed before the Modal
+    // unmounts -- otherwise the keyboard is left behind (see the component).
+    return waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
   it("puts the number pad away on confirm, not just the sheet", () => {
@@ -51,8 +53,9 @@ describe("LocationPickerModal", () => {
     );
     fireEvent.press(getByLabelText("Close"));
     expect(dismiss).toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalledTimes(1);
-    dismiss.mockRestore();
+    return waitFor(() => expect(onClose).toHaveBeenCalledTimes(1)).then(() => {
+      dismiss.mockRestore();
+    });
   });
 
   it("pre-fills the current ZIP when reopened", () => {

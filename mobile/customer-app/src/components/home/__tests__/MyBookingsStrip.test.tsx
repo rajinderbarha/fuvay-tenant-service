@@ -97,4 +97,35 @@ describe("MyBookingsStrip", () => {
     expect(screen.getByText("Your job today")).toBeTruthy();
     expect(screen.queryByText("My Booking")).toBeNull();
   });
+
+  it("shows a repeated badge name once, and without a duplicate React key", () => {
+    // Live case: Guramrit held five separately-keyed badge definitions all named
+    // "L5 Cfg Badge". The card keyed its pills on the name, so React errored with
+    // "two children with the same key" -- and five identical pills is not five
+    // reasons to trust a provider anyway.
+    const errors: string[] = [];
+    const spy = jest.spyOn(console, "error").mockImplementation((...args) => {
+      errors.push(args.map(String).join(" "));
+    });
+
+    renderWithProviders(
+      <MyBookingsStrip
+        bookings={[booking(1, {
+          provider: {
+            name: "Guramrit", verified: true, rating: 5, reviewCount: 3,
+            badges: [
+              { name: "L5 Cfg Badge" }, { name: "L5 Cfg Badge" }, { name: "L5 Cfg Badge" },
+              { name: "AC Specialist" },
+            ],
+          },
+        } as Partial<HomeActiveBooking>)]}
+        total={1}
+        {...noop}
+      />,
+    );
+
+    spy.mockRestore();
+    expect(errors.filter(e => /same key|unique "key"/i.test(e))).toEqual([]);
+    expect(screen.getAllByText("L5 Cfg Badge")).toHaveLength(1);
+  });
 });

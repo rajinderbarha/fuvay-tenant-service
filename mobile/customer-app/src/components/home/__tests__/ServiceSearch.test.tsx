@@ -25,10 +25,33 @@ const HIDDEN = { includeHiddenElements: true } as const;
  */
 describe("ServiceSearch rotating placeholder", () => {
   it("shows a real bookable service as the hint", () => {
+    const { getByText, getAllByText } = renderWithProviders(
+      <ServiceSearch value="" onChangeText={() => {}} suggestions={SUGGESTIONS} />,
+    );
+    // Two nodes, deliberately: "Search" is fixed and only the service name scrolls,
+    // so the box still reads as a search box at every frame of the animation.
+    expect(getByText("Search", HIDDEN)).toBeTruthy();
+    expect(getAllByText("Air Conditioning…", HIDDEN).length).toBeGreaterThan(0);
+  });
+
+  it("repeats the first service at the end of the strip so the loop has no seam", () => {
+    // The scroll runs to a pixel-identical copy of the first word and snaps back
+    // there, which is what makes the wrap invisible. Without the copy the strip
+    // has to jump from the last word to the first, and that jump is visible.
+    const { getAllByText } = renderWithProviders(
+      <ServiceSearch value="" onChangeText={() => {}} suggestions={SUGGESTIONS} />,
+    );
+    expect(getAllByText("Air Conditioning…", HIDDEN)).toHaveLength(2);
+    expect(getAllByText("Electrical…", HIDDEN)).toHaveLength(1);
+  });
+
+  it("stages the NEXT service below the current one, ready to scroll up into place", () => {
+    // The whole effect: the words move vertically like a list rather than
+    // cross-fading, which needs both rendered inside the clipped one-line strip.
     const { getByText } = renderWithProviders(
       <ServiceSearch value="" onChangeText={() => {}} suggestions={SUGGESTIONS} />,
     );
-    expect(getByText("Search Air Conditioning…", HIDDEN)).toBeTruthy();
+    expect(getByText("Plumbing…", HIDDEN)).toBeTruthy();
   });
 
   it("suppresses the hint once the field has text", () => {
@@ -36,7 +59,7 @@ describe("ServiceSearch rotating placeholder", () => {
     const { queryByText } = renderWithProviders(
       <ServiceSearch value="ac" onChangeText={() => {}} suggestions={SUGGESTIONS} />,
     );
-    expect(queryByText(/^Search Air Conditioning/, HIDDEN)).toBeNull();
+    expect(queryByText("Air Conditioning…", HIDDEN)).toBeNull();
   });
 
   it("suppresses the hint while the field is focused", () => {
@@ -44,7 +67,7 @@ describe("ServiceSearch rotating placeholder", () => {
       <ServiceSearch value="" onChangeText={() => {}} suggestions={SUGGESTIONS} />,
     );
     fireEvent(getByLabelText("Search services"), "focus");
-    expect(queryByText(/^Search Air Conditioning/, HIDDEN)).toBeNull();
+    expect(queryByText("Air Conditioning…", HIDDEN)).toBeNull();
   });
 
   it("falls back to the static placeholder when there is nothing bookable", () => {
@@ -53,7 +76,7 @@ describe("ServiceSearch rotating placeholder", () => {
     const { queryByText, getByLabelText } = renderWithProviders(
       <ServiceSearch value="" onChangeText={() => {}} suggestions={[]} />,
     );
-    expect(queryByText(/^Search Air Conditioning/, HIDDEN)).toBeNull();
+    expect(queryByText("Air Conditioning…", HIDDEN)).toBeNull();
     expect(getByLabelText("Search services").props.placeholder)
       .toBe("Search AC repair, plumbing, cleaning…");
   });

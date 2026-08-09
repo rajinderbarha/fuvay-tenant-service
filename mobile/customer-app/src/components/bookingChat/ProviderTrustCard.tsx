@@ -3,6 +3,7 @@ import { View, Text } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
 import { ReviewProvider } from "../../domain/bookingReview";
+import { distinctBadges } from "../../domain/providerBadges";
 
 export interface ProviderTrustCardProps {
   provider: ReviewProvider;
@@ -121,9 +122,9 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
       </View>
 
       {/* Backend-authored badges only. Empty is a valid, honest state. */}
-      {provider.publicBadges.length > 0 ? (
+      {distinctBadges(provider.publicBadges).length > 0 ? (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
-          {provider.publicBadges.map(badge => (
+          {distinctBadges(provider.publicBadges).map(badge => (
             <View
               key={badge.name}
               style={{

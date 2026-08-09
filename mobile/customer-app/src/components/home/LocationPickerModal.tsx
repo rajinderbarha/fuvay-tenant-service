@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Keyboard, Modal, View } from "react-native";
+import React, { useRef, useState } from "react";
+import { Keyboard, Modal, TextInput, View } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText, AppButton, AppInput, AppIconButton } from "../index";
 
@@ -24,6 +24,7 @@ const ZIPCODE_PATTERN = /^\d{6}$/;
 export function LocationPickerModal({ visible, currentZipcode, onClose, onConfirm }: LocationPickerModalProps) {
   const { theme } = useTheme();
   const [value, setValue] = useState(currentZipcode ?? "");
+  const inputRef = useRef<TextInput>(null);
   const [error, setError] = useState<string | undefined>();
 
   React.useEffect(() => {
@@ -36,17 +37,29 @@ export function LocationPickerModal({ visible, currentZipcode, onClose, onConfir
   /**
    * Closes the sheet with the number pad put away.
    *
-   * Real bug this fixes: the ZIP field lives inside a Modal, and unmounting a focused
-   * TextInput with the keyboard up leaves the keyboard on screen. The customer changed
-   * their ZIP and was left with a number pad covering the bottom half of Home, with
-   * nothing left focused to dismiss it by tapping.
+   * Real bug this fixes: the customer changed their ZIP and was left with a number
+   * pad covering the bottom half of Home, with nothing focused to dismiss it by
+   * tapping.
+   *
+   * All three steps are load-bearing, which is why this is not simply
+   * `Keyboard.dismiss()`:
+   *
+   *  1. Blur the field ITSELF. It lives inside a Modal, which hosts its own view
+   *     hierarchy; the input stays first responder there, and `Keyboard.dismiss()`
+   *     alone does not always take it away.
+   *  2. Dismiss the keyboard, for the case where focus sits somewhere this ref does
+   *     not cover.
+   *  3. Close on the NEXT frame rather than this one. Unmounting the Modal in the
+   *     same frame as the blur tears down the hierarchy before the blur is
+   *     processed, and the keyboard is left behind with nothing to dismiss it.
    *
    * Every exit routes through here -- confirm, the close button, and the hardware/
    * gesture back -- because it only takes one path that does not to reproduce it.
    */
   function dismissAndClose() {
+    inputRef.current?.blur();
     Keyboard.dismiss();
-    onClose();
+    requestAnimationFrame(() => onClose());
   }
 
   function handleConfirm() {
@@ -72,6 +85,7 @@ export function LocationPickerModal({ visible, currentZipcode, onClose, onConfir
             <AppIconButton name="close" accessibilityLabel="Close" onPress={dismissAndClose} />
           </View>
           <AppInput
+            ref={inputRef}
             label="ZIP code"
             accessibilityLabel="ZIP code"
             value={value}

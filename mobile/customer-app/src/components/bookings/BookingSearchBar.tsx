@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { View, TextInput, Pressable } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { Icon } from "../Icon";
@@ -10,18 +10,36 @@ export interface BookingSearchBarProps {
    * shows that the list is narrowed rather than hiding it. */
   filterActive?: boolean;
   onPressFilter: () => void;
+  /** Focus the field as soon as it appears. Set when the bar was opened by the
+   * customer tapping search, so the keyboard is already up and they can type -- an
+   * empty box they then have to tap again is a wasted step. */
+  autoFocus?: boolean;
+  /** Collapses the bar. Absent when the bar cannot be closed, which is the case
+   * while a term is applied: hiding the reason a list is narrowed is how customers
+   * conclude their bookings have vanished. */
+  onClose?: () => void;
 }
 
 /**
- * Search + filter row above the booking tabs.
+ * Search + filter row above the booking tabs. Shown ON DEMAND -- it used to occupy
+ * the top of the screen permanently, spending a fixed slice of a phone on a control
+ * most visits never touch.
  *
  * The term is sent to the backend (`q` on
  * /v1/customer/my-activity/bookings), never applied client-side: the list
  * is paginated, so filtering locally would only ever search the pages
  * already loaded and quietly miss older bookings.
  */
-export function BookingSearchBar({ value, onChangeText, filterActive = false, onPressFilter }: BookingSearchBarProps) {
+export function BookingSearchBar({
+  value, onChangeText, filterActive = false, onPressFilter, autoFocus = false, onClose,
+}: BookingSearchBarProps) {
   const { theme } = useTheme();
+  const inputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
+
   return (
     <View style={{ flexDirection: "row", gap: theme.spacing.sm }}>
       <View
@@ -38,6 +56,7 @@ export function BookingSearchBar({ value, onChangeText, filterActive = false, on
       >
         <Icon name="search-outline" size="standard" color={theme.colors.iconDefault} decorative />
         <TextInput
+          ref={inputRef}
           value={value}
           onChangeText={onChangeText}
           placeholder="Search by service or booking ID"
@@ -55,6 +74,17 @@ export function BookingSearchBar({ value, onChangeText, filterActive = false, on
             hitSlop={8}
           >
             <Icon name="close-circle" size="compact" color={theme.colors.iconDefault} decorative />
+          </Pressable>
+        ) : onClose ? (
+          // Only offered with the field empty: with a term applied, closing would
+          // leave a narrowed list and no visible reason for it.
+          <Pressable
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close search"
+            hitSlop={8}
+          >
+            <Icon name="close" size="compact" color={theme.colors.iconDefault} decorative />
           </Pressable>
         ) : null}
       </View>
