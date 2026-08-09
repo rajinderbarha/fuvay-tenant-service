@@ -120,6 +120,15 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
     activeBookingTotal: dto.active_booking_total ?? activeBookings(dto).length,
     season: dto.season ?? null,
     seasonLabel: dto.season_label ?? null,
+    weather: dto.weather
+      ? {
+          observedAt: dto.weather.observed_at,
+          temperatureC: dto.weather.temperature_c,
+          condition: dto.weather.condition ?? null,
+          rainMm: dto.weather.rain_mm,
+          windKmh: dto.weather.wind_kmh,
+        }
+      : null,
     unreadNotificationCount: dto.unread_notification_count,
     // An unrecognised style or placement means a backend newer than this build.
     // Such a banner is DROPPED rather than coerced into the nearest layout: a

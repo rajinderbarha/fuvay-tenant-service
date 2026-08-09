@@ -68,6 +68,9 @@ class CancelAssignmentRequest(BaseModel):
 class ScheduleRequest(BaseModel):
     scheduled_date:        date
     scheduled_time_window: str
+    # "weather" is checked against a real reading before it is accepted -- see the
+    # endpoint. Any other reason is recorded as given.
+    reason:                str | None = None
 
 
 @router.get("/assignable", response_model=ApiResponse,
@@ -195,6 +198,34 @@ async def cancel_assignment(
     return ok({"success": True, "data": result}, _RID(r), "assignment")
 
 
+@router.get("/{job_id}/weather-reschedule-eligibility", response_model=ApiResponse,
+            summary="Whether weather is an available reason to move this job")
+async def get_weather_reschedule_eligibility(
+    job_id: uuid.UUID,
+    r:      Request      = ...,
+    user:   UserContext  = Depends(get_current_user),
+    db:     AsyncSession = Depends(get_db),
+):
+    """Rescheduling for weather exists for TECHNICIAN SAFETY, so it is gated on a
+    real reading rather than a claim: without a weather source, or without a reading
+    for that slot's hour, weather is not an available reason. The provider can still
+    move the job -- they give the actual reason instead, which is what keeps the
+    record of why visits move worth reading.
+    """
+    from app.engines.weather.scheduling import weather_reschedule_permitted
+    from app.engines.weather.slots import slot_start
+    tenant_id = uuid.UUID(user.tenant_id)
+    svc = HomeServiceJobAssignmentService(db)
+    job = await svc._load_job(job_id)
+    if not job or str(job.tenant_id) != str(tenant_id):
+        return ok(_err("JOB_NOT_FOUND"), _RID(r), "assignment")
+    verdict = await weather_reschedule_permitted(
+        db, place=job.zipcode,
+        slot_at=slot_start(job.scheduled_date, job.scheduled_time_window),
+    )
+    return ok(verdict, _RID(r), "assignment")
+
+
 @router.post("/{job_id}/schedule", response_model=ApiResponse,
              summary="Schedule the job with a date and time window")
 async def schedule_job(
@@ -206,6 +237,27 @@ async def schedule_job(
 ):
     tenant_id = uuid.UUID(user.tenant_id)  # HS8 fix: was user_id, never matched any real job's tenant_id
     svc = HomeServiceJobAssignmentService(db)
+
+    # A weather reason has to be backed by weather. Refused rather than silently
+    # recorded, so the reschedule log never contains a cause nobody can check.
+    if (body.reason or "").strip().lower() == "weather":
+        from app.engines.weather.scheduling import weather_reschedule_permitted
+        from app.engines.weather.slots import slot_start
+        current = await svc._load_job(job_id)
+        if not current or str(current.tenant_id) != str(tenant_id):
+            return ok(_err("JOB_NOT_FOUND"), _RID(r), "assignment")
+        # Checked against the slot the job is being moved TO, not the one it is
+        # leaving: the safety question is about the visit that will actually happen.
+        verdict = await weather_reschedule_permitted(
+            db, place=current.zipcode,
+            slot_at=slot_start(body.scheduled_date, body.scheduled_time_window),
+        )
+        if not verdict["permitted"]:
+            return ok(
+                {"success": False, "error_code": "WEATHER_REASON_UNSUPPORTED",
+                 "message": verdict["detail"], "weather": verdict},
+                _RID(r), "assignment",
+            )
     try:
         result = await svc.schedule_job(
             job_id=job_id, tenant_id=tenant_id,

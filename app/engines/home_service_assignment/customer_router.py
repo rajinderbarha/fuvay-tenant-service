@@ -125,6 +125,19 @@ async def get_booking(
         data["scheduled_date"]        = job.scheduled_date.isoformat() if job.scheduled_date else None
         data["scheduled_time_window"] = job.scheduled_time_window
 
+        # Weather at the SLOT, when the slot is close enough to forecast and a
+        # weather source is configured. Null in every other case, including
+        # ordinary weather -- there is nothing honest to say then, and a
+        # "conditions look fine" line backed by no reading is exactly what this
+        # must not produce. It only ever WARNS: nothing is moved here.
+        from app.engines.weather.scheduling import slot_advisory
+        from app.engines.weather.slots import slot_start
+        data["weather_advisory"] = await slot_advisory(
+            db,
+            place=job.zipcode or booking.zipcode,
+            slot_at=slot_start(job.scheduled_date, job.scheduled_time_window),
+        )
+
     return ok(data, _RID(r), "assignment")
 
 

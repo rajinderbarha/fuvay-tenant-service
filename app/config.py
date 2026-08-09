@@ -116,6 +116,13 @@ class Settings(BaseSettings):
     # ── AI (backend-only — never sent to any frontend/mobile client) ─
     DEEPSEEK_API_KEY: str = ""
 
+    # ── Weather ────────────────────────────────────────────────────
+    # weatherapi.com. Empty means no weather source, and every dependent feature
+    # degrades honestly rather than guessing: the Home widget hides itself, slot
+    # advisories are not raised, and a provider cannot claim weather as a
+    # reschedule reason the system cannot see.
+    WEATHERAPI_KEY: str = ""
+
     # ── Notifications ──────────────────────────────────────────────
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
