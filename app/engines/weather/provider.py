@@ -130,9 +130,25 @@ class WeatherApiProvider:
             logger.warning("weather.unexpected_body", error=str(exc))
             return None
 
+    @staticmethod
+    def _in_expected_country(body: dict, place: str) -> bool:
+        """Whether the provider resolved somewhere we actually serve.
+
+        Found live: `q=Bassi Pathana` returns a perfectly valid 200 for Pathana in
+        Uva, SRI LANKA. Nothing about that response looks wrong -- it would simply
+        have shown a Punjab customer Sri Lankan weather. A coordinate query cannot
+        drift like that, but a name query can, so the answer is checked.
+        """
+        from app.engines.weather.place import COUNTRY
+        country = ((body.get("location") or {}).get("country") or "").strip()
+        if country and country.lower() != COUNTRY.lower():
+            logger.warning("weather.wrong_country", place=place, resolved_country=country)
+            return False
+        return True
+
     async def current(self, *, place: str) -> WeatherReading | None:
         body = await self._get("/current.json", {"q": place, "aqi": "no"})
-        if not body:
+        if not body or not self._in_expected_country(body, place):
             return None
         current = body.get("current") or {}
         epoch = current.get("last_updated_epoch")
@@ -152,7 +168,7 @@ class WeatherApiProvider:
         target = when.astimezone(dt.timezone.utc)
         days = max(1, min(3, (target.date() - dt.datetime.now(dt.timezone.utc).date()).days + 1))
         body = await self._get("/forecast.json", {"q": place, "days": days, "aqi": "no", "alerts": "no"})
-        if not body:
+        if not body or not self._in_expected_country(body, place):
             return None
         hours = [
             hour

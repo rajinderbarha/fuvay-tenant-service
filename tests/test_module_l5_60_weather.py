@@ -37,12 +37,26 @@ def _reading(**overrides) -> WeatherReading:
 
 # ── Honest absence ───────────────────────────────────────────────────────────
 
-def test_the_default_provider_is_the_null_one():
-    # No key configured on this deployment, so nothing must claim to know the
-    # weather.
-    provider = resolve_weather_provider()
-    assert isinstance(provider, NullWeatherProvider)
-    assert provider.configured is False
+def test_no_key_means_the_null_provider_and_a_key_means_the_real_one():
+    """Asserted by CONTROLLING the setting, not by reading whatever this machine
+    happens to have: an earlier version passed only because no key was configured,
+    and started failing the moment one was -- testing the environment, not the code.
+    """
+    from app.engines.weather import provider as provider_module
+
+    class _Settings:
+        def __init__(self, key):
+            self.WEATHERAPI_KEY = key
+
+    with patch.object(provider_module, "get_settings", lambda: _Settings("")):
+        empty = resolve_weather_provider()
+    assert isinstance(empty, NullWeatherProvider)
+    assert empty.configured is False
+
+    with patch.object(provider_module, "get_settings", lambda: _Settings("  a-real-key  ")):
+        configured = resolve_weather_provider()
+    assert isinstance(configured, WeatherApiProvider)
+    assert configured.configured is True
 
 
 @pytest.mark.asyncio
@@ -258,6 +272,72 @@ async def test_the_http_provider_rejects_a_forecast_for_the_wrong_hour():
     ]}]}}
     with patch.object(provider, "_get", AsyncMock(return_value=body)):
         assert await provider.at(place="140412", when=target) is None
+
+
+# ── Two bugs found the moment a real API key was added ───────────────────────
+
+def test_an_indian_pin_code_is_not_treated_as_a_location():
+    """Live: `q=140412` answers `1006 No matching location found` -- postcode lookup
+    covers US/UK/Canada, not India. A PIN on its own must resolve to nothing rather
+    than being sent and silently failing."""
+    from app.engines.weather.place import resolve_place
+    assert resolve_place(zipcode="140412") is None
+
+
+def test_a_city_is_always_qualified_with_its_state_and_country():
+    """Live, and the more dangerous of the two: `q=Bassi Pathana` returned a valid
+    200 for Pathana in Uva, SRI LANKA -- real weather from the wrong country, with
+    nothing about the response looking wrong."""
+    from app.engines.weather.place import COUNTRY, resolve_place
+    place = resolve_place(city="Bassi Pathana", state="Punjab", zipcode="140412")
+    assert place == f"Bassi Pathana,Punjab,{COUNTRY}"
+
+
+def test_coordinates_win_when_the_address_has_them():
+    # Exact, and immune to the wrong-country problem entirely.
+    from app.engines.weather.place import resolve_place
+    assert resolve_place(city="Bassi Pathana", state="Punjab", latitude=30.45, longitude=76.36) == "30.45,76.36"
+
+
+def test_a_reading_from_another_country_is_discarded():
+    provider = WeatherApiProvider("test-key")
+    body = {"location": {"country": "Sri Lanka"}, "current": {"temp_c": 27}}
+    assert provider._in_expected_country(body, "Bassi Pathana") is False
+    assert provider._in_expected_country({"location": {"country": "India"}}, "Ludhiana") is True
+
+
+@pytest.mark.asyncio
+async def test_a_forecast_hour_is_truncated_in_local_time_not_utc():
+    """Real bug: India is +05:30, so a local hour boundary lands on :30 in UTC.
+    Truncating the UTC timestamp to :00 moved every lookup back half an hour, into
+    the PREVIOUS hourly block -- a 10:00 slot consulted the 09:00 forecast. Nothing
+    errored; the answer was just quietly for the wrong hour."""
+    from app.engines.weather.service import WeatherService
+
+    asked = {}
+
+    class Provider:
+        configured = True
+
+        async def current(self, *, place):
+            return None
+
+        async def at(self, *, place, when):
+            asked["when"] = when
+            return _reading()
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(scalars=lambda: MagicMock(first=lambda: None)))
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+
+    slot = dt.datetime(2026, 8, 11, 10, 0, tzinfo=IST)
+    await WeatherService(db, provider=Provider()).at("30.4,76.4", slot)
+
+    # The hour the provider is asked about must still BE 10:00 local, which is
+    # 04:30 UTC -- not 04:00, which is 09:30 local and the wrong block.
+    assert asked["when"].astimezone(IST).hour == 10
+    assert asked["when"].astimezone(dt.timezone.utc).minute == 30
 
 
 def test_a_reading_reports_its_own_observation_time():

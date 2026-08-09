@@ -65,6 +65,24 @@ class CancelAssignmentRequest(BaseModel):
     reason: str
 
 
+def _job_place(job) -> str | None:
+    """A weather-resolvable location for a job.
+
+    Prefers the coordinates on its address snapshot; a PIN alone is not a location
+    this provider can resolve in India, and a bare city name can resolve to another
+    country (see weather/place.py).
+    """
+    from app.engines.weather.place import resolve_place
+    snapshot = job.address_snapshot if isinstance(job.address_snapshot, dict) else {}
+    return resolve_place(
+        city=snapshot.get("city") or job.city,
+        state=snapshot.get("state"),
+        zipcode=snapshot.get("zipcode") or job.zipcode,
+        latitude=snapshot.get("latitude"),
+        longitude=snapshot.get("longitude"),
+    )
+
+
 class ScheduleRequest(BaseModel):
     scheduled_date:        date
     scheduled_time_window: str
@@ -212,6 +230,7 @@ async def get_weather_reschedule_eligibility(
     move the job -- they give the actual reason instead, which is what keeps the
     record of why visits move worth reading.
     """
+    from app.engines.weather.place import resolve_place
     from app.engines.weather.scheduling import weather_reschedule_permitted
     from app.engines.weather.slots import slot_start
     tenant_id = uuid.UUID(user.tenant_id)
@@ -220,7 +239,7 @@ async def get_weather_reschedule_eligibility(
     if not job or str(job.tenant_id) != str(tenant_id):
         return ok(_err("JOB_NOT_FOUND"), _RID(r), "assignment")
     verdict = await weather_reschedule_permitted(
-        db, place=job.zipcode,
+        db, place=_job_place(job),
         slot_at=slot_start(job.scheduled_date, job.scheduled_time_window),
     )
     return ok(verdict, _RID(r), "assignment")
@@ -249,7 +268,7 @@ async def schedule_job(
         # Checked against the slot the job is being moved TO, not the one it is
         # leaving: the safety question is about the visit that will actually happen.
         verdict = await weather_reschedule_permitted(
-            db, place=current.zipcode,
+            db, place=_job_place(current),
             slot_at=slot_start(body.scheduled_date, body.scheduled_time_window),
         )
         if not verdict["permitted"]:

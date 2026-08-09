@@ -130,11 +130,22 @@ async def get_booking(
         # ordinary weather -- there is nothing honest to say then, and a
         # "conditions look fine" line backed by no reading is exactly what this
         # must not produce. It only ever WARNS: nothing is moved here.
+        from app.engines.weather.place import resolve_place
         from app.engines.weather.scheduling import slot_advisory
         from app.engines.weather.slots import slot_start
+        # The booking's own address snapshot carries coordinates when the customer
+        # picked a saved address; the city falls back on the booking. A PIN alone is
+        # not a location this provider can resolve in India (see weather/place.py).
+        snapshot = booking.address_snapshot if isinstance(booking.address_snapshot, dict) else {}
         data["weather_advisory"] = await slot_advisory(
             db,
-            place=job.zipcode or booking.zipcode,
+            place=resolve_place(
+                city=snapshot.get("city") or booking.city or job.city,
+                state=snapshot.get("state"),
+                zipcode=snapshot.get("zipcode") or booking.zipcode or job.zipcode,
+                latitude=snapshot.get("latitude"),
+                longitude=snapshot.get("longitude"),
+            ),
             slot_at=slot_start(job.scheduled_date, job.scheduled_time_window),
         )
 

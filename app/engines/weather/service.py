@@ -19,6 +19,9 @@ from app.engines.weather.provider import (
 
 logger = structlog.get_logger("weather.service")
 
+# Slot times are stored and read as Indian local time; see weather/slots.py.
+_IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
+
 
 def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
@@ -45,7 +48,15 @@ class WeatherService:
     async def at(self, place: str | None, when: dt.datetime | None) -> WeatherReading | None:
         if not place or not when or not self.configured:
             return None
-        hour = when.astimezone(dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
+        # Truncated in IST, NOT in UTC.
+        #
+        # Real bug fixed here: India is +05:30, so a local hour boundary lands on
+        # :30 in UTC. Truncating the UTC timestamp to :00 moved every lookup back
+        # half an hour, which lands in the PREVIOUS hourly forecast block -- a 10:00
+        # slot was consulting the 09:00 forecast. Nothing errored; the answer was
+        # just quietly for the wrong hour, which is the failure this whole module is
+        # supposed to refuse.
+        hour = when.astimezone(_IST).replace(minute=0, second=0, microsecond=0)
         return await self._cached(place=place, kind=KIND_FORECAST, target_hour=hour)
 
     async def _cached(

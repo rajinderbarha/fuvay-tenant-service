@@ -111,8 +111,7 @@ class CustomerHomeService:
         # its widget. Never a placeholder temperature: the whole value of this data
         # is deciding whether it is safe to send someone out, and a comfortable
         # guess is the wrong answer to that question.
-        weather = await self._safe_call(
-            self._get_weather(effective_zip or (address or {}).get("zipcode")), default=None)
+        weather = await self._safe_call(self._get_weather(address), default=None)
         season = current_season(
             region=region,
             temperature_c=(weather or {}).get("temperature_c"),
@@ -204,6 +203,11 @@ class CustomerHomeService:
             # Carried for the seasonal region resolution (a city name alone is
             # often ambiguous), not for display -- the app shows city + PIN.
             "state": getattr(row, "state", None),
+            # Coordinates are carried for the weather lookup, which needs an exact
+            # point: this provider cannot resolve an Indian PIN, and a bare city name
+            # can resolve to another country entirely.
+            "latitude": float(row.latitude) if getattr(row, "latitude", None) is not None else None,
+            "longitude": float(row.longitude) if getattr(row, "longitude", None) is not None else None,
             "zipcode": row.zipcode,
             "is_default": row.is_default,
         }
@@ -599,15 +603,29 @@ class CustomerHomeService:
         svc = NotificationService()
         return await svc.get_unread_count(self.db, customer_id)
 
-    async def _get_weather(self, place: str | None) -> dict | None:
-        """The current reading for the customer's PIN, or None.
+    async def _get_weather(self, address: dict | None) -> dict | None:
+        """The current reading for the customer's address, or None.
+
+        Built from COORDINATES when the address has them, and a state-qualified city
+        otherwise -- never the PIN alone, which this provider cannot resolve at all
+        in India, and never a bare city, which silently resolved "Bassi Pathana" to
+        Sri Lanka. See weather/place.py.
 
         Read through the cache, so a screen refresh does not spend an API call and a
         provider outage falls back to the last known reading rather than a blank.
         """
+        from app.engines.weather.place import resolve_place
+        from app.engines.weather.service import WeatherService
+
+        place = resolve_place(
+            city=(address or {}).get("city"),
+            state=(address or {}).get("state"),
+            zipcode=(address or {}).get("zipcode"),
+            latitude=(address or {}).get("latitude"),
+            longitude=(address or {}).get("longitude"),
+        )
         if not place:
             return None
-        from app.engines.weather.service import WeatherService
         reading = await WeatherService(self.db).current(place)
         return reading.to_dict() if reading else None
 
