@@ -135,20 +135,25 @@ def test_customer_projection_carries_the_presentation_fields():
 
 # ── Section vocabulary ───────────────────────────────────────────────────────
 
-def test_migration_seeds_exactly_the_known_section_keys():
+def test_every_known_section_key_is_seeded_by_some_migration():
+    """Every renderable key must be seeded somewhere, or it is invisible to admin
+    until someone edits the database by hand. Reads the whole migration
+    directory rather than one file, so adding a section in a later migration
+    (as 237 does for the new carousel slots) satisfies this without the test
+    needing to know which file did it."""
+    import glob
     import os
-    path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        "alembic", "versions", "236_home_presentation_control.py",
-    )
-    with open(path, encoding="utf-8") as f:
-        src = f.read()
-    assert 'revision = "236"' in src and 'down_revision = "235"' in src
-    # Every seeded key must be one the app can render, or admin gets rows that
-    # do nothing; every renderable key must be seeded, or it is invisible to
-    # admin until someone edits the database.
+    versions = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "alembic", "versions", "*.py")
+    seeded = ""
+    for path in glob.glob(versions):
+        with open(path, encoding="utf-8") as f:
+            src = f.read()
+        if "home_section_settings" in src:
+            seeded += src
+    assert seeded, "no migration seeds home_section_settings at all"
     for key in HOME_SECTION_KEYS:
-        assert f'"{key}"' in src, f"section {key} is not seeded by migration 236"
+        assert f'"{key}"' in seeded, f"section {key} is never seeded by a migration"
 
 
 def test_unknown_section_key_is_refused_by_the_service():

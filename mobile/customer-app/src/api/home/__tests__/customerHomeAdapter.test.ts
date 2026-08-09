@@ -33,6 +33,9 @@ describe("quick issues", () => {
     expect(home.quickIssues).toEqual([{
       issueId: "i-1", label: "AC Not Cooling",
       categoryId: "cat-1", categorySlug: "ac-cooling", categoryName: "AC & Cooling",
+      // No admin artwork on this problem; the tile falls back to a
+      // wording-derived glyph rather than showing a blank square.
+      iconUrl: null,
     }]);
   });
 

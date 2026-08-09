@@ -42,6 +42,7 @@ function baseHome(overrides: Partial<CustomerHome> = {}): CustomerHome {
     activeBooking: null,
     unreadNotificationCount: 0,
     campaigns: [],
+    sections: [],
     capabilities: { bargainAvailable: true, photoAttachAvailable: true, chatbotLanguageSelectable: true },
     ...overrides,
   };
@@ -153,7 +154,8 @@ describe("HomeScreen", () => {
     mockHomeQuery({
       data: baseHome({
         campaigns: [
-          { campaignId: "c-1", eyebrow: "Sponsored", title: "Monsoon Home Care", description: "Get ready", artworkUrlLight: null, artworkUrlDark: null, ctaLabel: "Explore", ctaDeeplink: "app://offers", priority: 1 },
+          { campaignId: "c-1", eyebrow: "Sponsored", title: "Monsoon Home Care", description: "Get ready", artworkUrlLight: null, artworkUrlDark: null, ctaLabel: "Explore", ctaDeeplink: "app://offers", priority: 1,
+            style: "hero" as const, placement: "campaign_top" as const, accentColor: null, badgeText: null, endsAt: null },
         ],
       }),
     });
@@ -294,7 +296,7 @@ describe("HomeScreen", () => {
     mockHomeQuery({ data: baseHome({
       quickIssues: [{
         issueId: "issue-1", label: "AC Not Cooling",
-        categoryId: asCategoryId("cat-1"), categorySlug: "ac-cooling", categoryName: "AC & Cooling",
+        categoryId: asCategoryId("cat-1"), categorySlug: "ac-cooling", categoryName: "AC & Cooling", iconUrl: null,
       }],
     }) });
     const { getByText } = renderHome();
@@ -316,11 +318,63 @@ describe("HomeScreen", () => {
     mockHomeQuery({ data: baseHome({
       quickIssues: [{
         issueId: "issue-2", label: "Drain Blocked",
-        categoryId: asCategoryId("cat-9"), categorySlug: null, categoryName: "Plumbing",
+        categoryId: asCategoryId("cat-9"), categorySlug: null, iconUrl: null, categoryName: "Plumbing",
       }],
     }) });
     const { queryByText } = renderHome();
     expect(queryByText("Drain Blocked")).toBeNull();
+  });
+
+  it("renders the sections the backend enabled, in the backend's order", () => {
+    // Re-ordering Home or hiding a section used to need an app release.
+    mockHomeQuery({
+      data: baseHome({
+        sections: [
+          { key: "trust_benefits", order: 10, title: null },
+          { key: "service_grid", order: 20, title: null },
+        ],
+      }),
+    });
+    const { getByText, queryByText } = renderHome();
+    expect(getByText("What you're promised")).toBeTruthy();
+    expect(getByText("Services Nearby")).toBeTruthy();
+    // Not listed by the backend, so not drawn -- even though this build can.
+    expect(queryByText("Not sure what to book?")).toBeNull();
+  });
+
+  it("honours an admin's section heading override", () => {
+    mockHomeQuery({
+      data: baseHome({
+        sections: [{ key: "service_grid", order: 10, title: "Services in Ludhiana" }],
+      }),
+    });
+    const { getByText, queryByText } = renderHome();
+    expect(getByText("Services in Ludhiana")).toBeTruthy();
+    expect(queryByText("Services Nearby")).toBeNull();
+  });
+
+  it("falls back to its shipped layout when the backend sends no sections", () => {
+    // An empty list is "no instruction" from an older backend -- never an
+    // instruction to draw nothing.
+    mockHomeQuery({ data: baseHome({ sections: [] }) });
+    const { getByText } = renderHome();
+    expect(getByText("Services Nearby")).toBeTruthy();
+    expect(getByText("What you're promised")).toBeTruthy();
+  });
+
+  it("skips a section key this build has no renderer for", () => {
+    mockHomeQuery({
+      data: baseHome({
+        sections: [
+          { key: "loyalty_points_widget", order: 10, title: null },
+          { key: "service_grid", order: 20, title: null },
+        ],
+      }),
+    });
+    const { getByText } = renderHome();
+    // The unknown key is ignored rather than crashing the screen, so a newer
+    // backend can add sections ahead of an app release.
+    expect(getByText("Services Nearby")).toBeTruthy();
   });
 
   it("hides the vertical switcher entirely when only one vertical is enabled", () => {
@@ -353,10 +407,12 @@ describe("HomeScreen", () => {
     expect(lastAssistantParams).toBe("not-navigated");
   });
 
-  it("tapping 'Start chat' navigates to Assistant with no category pre-selected", () => {
+  it("tapping the assistant card navigates to Assistant with no category pre-selected", () => {
     mockHomeQuery({ data: baseHome() });
     const { getByLabelText } = renderHome();
-    fireEvent.press(getByLabelText("Not sure what to book? Tell Fuvay Assistant what's wrong. Start chat."));
+    fireEvent.press(getByLabelText(
+      "Not sure what to book? Describe the problem and Fuvay Assistant takes it from there.",
+    ));
     expect(lastAssistantParams).toMatchObject({ source: "assistant_card", categoryId: null, categoryName: null });
   });
 

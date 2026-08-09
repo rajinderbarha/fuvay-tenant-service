@@ -12,11 +12,16 @@ from __future__ import annotations
 
 HOME_SECTION_KEYS = (
     "active_booking",
-    "campaign_top",
     "quick_problems",
+    # Five banner slots (migration 237). Each is a section in its own right, so
+    # admin can re-order, rename or switch off any one of them, and each renders
+    # as a swipeable carousel once it holds more than one banner.
+    "campaign_top",
+    "campaign_after_problems",
     "service_grid",
-    "campaign_mid",
+    "campaign_after_services",
     "assistant_entry",
+    "campaign_mid",
     "global_services",
     "how_it_works",
     "trust_benefits",

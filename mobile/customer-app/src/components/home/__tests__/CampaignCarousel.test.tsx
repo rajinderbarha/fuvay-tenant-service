@@ -3,9 +3,12 @@ import { fireEvent } from "@testing-library/react-native";
 import { renderWithProviders } from "../../../testing/renderWithProviders";
 import { CampaignCarousel } from "../CampaignCarousel";
 
-const campaign = {
+import { HomeCampaign } from "../../../domain/customerHome";
+
+const campaign: HomeCampaign = {
   campaignId: "c-1", eyebrow: "Sponsored", title: "Monsoon Home Care", description: "Save more",
   artworkUrlLight: null, artworkUrlDark: null, ctaLabel: "Explore", ctaDeeplink: "app://offers", priority: 1,
+  style: "hero", placement: "campaign_top", accentColor: null, badgeText: null, endsAt: null,
 };
 
 describe("CampaignCarousel", () => {

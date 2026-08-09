@@ -6,51 +6,48 @@ import { useTheme } from "../../design-system/theme";
 import { AppScreen, AppText } from "../../components";
 import { OfflineBanner } from "../../components/OfflineBanner";
 import {
-  CustomerHeader, ServiceSearch, CampaignCarousel, VerticalSwitcher, HomeServiceCard,
-  AssistantEntryCard, MyBookingSection, TrustBenefitCard, HomeSkeleton, HomeErrorState,
+  CustomerHeader, ServiceSearch, VerticalSwitcher, HomeServiceCard,
+  AssistantEntryCard, MyBookingSection, HomeSkeleton, HomeErrorState,
   NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal, GlobalServicesSection,
-  SearchResultsList, QuickIssuesSection,
+  SearchResultsList,
 } from "../../components/home";
+// Each banner style is its own component; CampaignSlot picks the one the
+// backend asked for, per placement.
+import { CampaignSlot } from "../../components/home/CampaignSlot";
+import { ProblemGrid } from "../../components/home/ProblemGrid";
+import { AssuranceSection } from "../../components/home/AssuranceSection";
+import { HowItWorksSection } from "../../components/home/HowItWorksSection";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
 import { useCustomerSearchQuery, MIN_QUERY_LENGTH } from "../../api/home/useCustomerSearchQuery";
 import { useCustomerProfileQuery } from "../../api/customer/useCustomerProfileQuery";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { timeSensitiveGreeting } from "../../domain/greeting";
 import { resolveCampaignDeepLink } from "../../domain/campaignDeepLink";
-import type { HomeCampaign } from "../../domain/customerHome";
+import type { HomeCampaign, HomeCampaignPlacement } from "../../domain/customerHome";
 import { HomeCategory } from "../../domain/customerHome";
 import { createServiceCardEntryContext, createAssistantCardEntryContext, createQuickIssueEntryContext } from "../../domain/assistantEntry";
 import type { HomeQuickIssue } from "../../domain/customerHome";
 import { CustomerTabsParamList } from "../../navigation/routeTypes";
 
-// Static marketing copy, not backend data. Restored per the reference
-// design's "Why Customers Choose Us" section -- this is the exact content
-// that shipped before, not new copy.
-/**
- * Static marketing copy -- there is no backend contract for these, so they
- * are declared here rather than faked as API data.
- *
- * `artworkUrl` points at illustrations uploaded through the admin media
- * library (the same pipeline as category artwork), so they can be replaced
- * without a release; each still names a glyph to fall back to if its asset
- * is ever removed. The set matches the three shown in the design -- the
- * previous fourth ("Support 24/7") is dropped rather than invented, since
- * nothing here backs a 24/7 support claim.
- */
-const TRUST_STRIP_ITEMS = [
-  {
-    key: "verified", label: "Verified Expert", icon: "shield-checkmark-outline" as const,
-    artworkUrl: "/uploads/global_service_icon/d0fc7c317ee3c5e7bdb041a8.png",
-  },
-  {
-    key: "pricing", label: "Transparent Pricing", icon: "pricetag-outline" as const,
-    artworkUrl: "/uploads/global_service_icon/f1a056b66f3a0649b062f939.png",
-  },
-  {
-    key: "updates", label: "Status Update", icon: "notifications-outline" as const,
-    artworkUrl: "/uploads/global_service_icon/daf44c94c55cf79bcb7350f6.png",
-  },
+/** The order this build ships. Used ONLY when the backend sends no sections --
+ * an older backend, or a failed section lookup. Intent first: what is already
+ * happening to the customer, then the fastest way to book, then everything that
+ * merely helps them decide. */
+const DEFAULT_SECTION_ORDER: { key: string; order: number; title: string | null }[] = [
+  { key: "verticals", order: 5, title: null },
+  { key: "active_booking", order: 10, title: null },
+  { key: "quick_problems", order: 20, title: null },
+  { key: "campaign_top", order: 30, title: null },
+  { key: "service_grid", order: 40, title: null },
+  { key: "campaign_after_services", order: 50, title: null },
+  { key: "assistant_entry", order: 60, title: null },
+  { key: "campaign_mid", order: 70, title: null },
+  { key: "global_services", order: 80, title: null },
+  { key: "how_it_works", order: 90, title: null },
+  { key: "trust_benefits", order: 100, title: null },
+  { key: "campaign_bottom", order: 110, title: null },
 ];
+
 
 /**
  * Real Home screen consuming GET /v1/customer/home. Confirmed contract
@@ -250,6 +247,168 @@ export function HomeScreen() {
     );
   }
 
+  const zipcode = home.address.zipcode as string;
+
+  function sectionTitle(key: string): string | null {
+    return home!.sections.find(s => s.key === key)?.title ?? null;
+  }
+
+  function renderServiceGrid() {
+    return (
+      <View>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: theme.spacing.sm }}>
+          <View style={{ flexDirection: "row", alignItems: "baseline", gap: theme.spacing.xs, flex: 1, minWidth: 0 }}>
+            <AppText variant="headingSmall">
+              {isSearching ? "Results" : sectionTitle("service_grid") || "Services Nearby"}
+            </AppText>
+            {home!.address?.zipcode ? (
+              <AppText variant="caption" color="tertiary" numberOfLines={1}>
+                {isSearching ? `for "${searchValue.trim()}"` : `Based on ${home!.address.zipcode}`}
+              </AppText>
+            ) : null}
+          </View>
+        </View>
+        {isSearching ? (
+          <SearchResultsList
+            query={searchValue.trim()}
+            isPending={searchQuery.isPending}
+            isError={searchQuery.isError}
+            results={searchQuery.data?.results ?? []}
+            onPressCategory={categoryId => {
+              const category = home!.bookableCategories.find(c => String(c.categoryId) === String(categoryId));
+              if (category) navigateToService(category, zipcode);
+            }}
+          />
+        ) : home!.bookableCategories.length === 0 ? (
+          <AppText variant="bodySmall" color="secondary">No services are available in your area yet.</AppText>
+        ) : (
+          // Explicit 2-up rows rather than a wrapping flex row: with `flexWrap`
+          // plus `space-between`, a trailing row holding one card stretched it
+          // across the full width.
+          <View style={{ gap: theme.spacing.sm }}>
+            {Array.from({ length: Math.ceil(home!.bookableCategories.length / 2) }).map((_, rowIndex) => {
+              const row = home!.bookableCategories.slice(rowIndex * 2, rowIndex * 2 + 2);
+              return (
+                <View key={rowIndex} style={{ flexDirection: "row", gap: theme.spacing.sm }}>
+                  {row.map(category => (
+                    <HomeServiceCard
+                      key={category.categoryId}
+                      category={category}
+                      onPress={() => navigateToService(category, zipcode)}
+                    />
+                  ))}
+                  {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  function renderCampaignSlot(placement: HomeCampaignPlacement) {
+    return (
+      <HomeSectionErrorBoundary sectionLabel="promotions">
+        <CampaignSlot
+          placement={placement}
+          campaigns={home!.campaigns}
+          mode={mode}
+          isCtaRoutable={c => resolveCampaignDeepLink(c.ctaDeeplink, bookableSlugs) !== null}
+          onPressCta={handleCampaignCta}
+        />
+      </HomeSectionErrorBoundary>
+    );
+  }
+
+  /** Every section this build can draw, keyed the way the backend names them.
+   * A section with nothing real to show resolves to null and is skipped, so it
+   * contributes no heading and no blank space. */
+  const sectionNodes: Record<string, React.ReactNode> = {
+    active_booking: home.activeBooking ? (
+      <HomeSectionErrorBoundary sectionLabel="my booking">
+        <MyBookingSection
+          booking={home.activeBooking}
+          onPress={() => navigation.navigate("Bookings")}
+          onViewAll={() => navigation.navigate("Bookings")}
+          iconUrl={home.bookableCategories.find(
+            c => c.name === home.activeBooking?.serviceName,
+          )?.iconUrl ?? null}
+        />
+      </HomeSectionErrorBoundary>
+    ) : null,
+
+    // Five banner slots, each its own section so admin can move, rename or
+    // switch any of them off. Each renders as a carousel once it holds more
+    // than one banner.
+    campaign_top: renderCampaignSlot("campaign_top"),
+    campaign_after_problems: renderCampaignSlot("campaign_after_problems"),
+    campaign_after_services: renderCampaignSlot("campaign_after_services"),
+    campaign_mid: renderCampaignSlot("campaign_mid"),
+    campaign_bottom: renderCampaignSlot("campaign_bottom"),
+
+    // Was in the backend's section vocabulary with nothing wired to draw it, so
+    // the payload named a key this screen silently skipped.
+    how_it_works: (
+      <HomeSectionErrorBoundary sectionLabel="how it works">
+        <HowItWorksSection />
+      </HomeSectionErrorBoundary>
+    ),
+
+    // The shortest route to a booking, which is why it belongs above the
+    // category grid: a named problem skips both the category and the
+    // issue-picker step.
+    quick_problems: (
+      <HomeSectionErrorBoundary sectionLabel="quick issues">
+        <ProblemGrid
+          issues={home.quickIssues}
+          title={sectionTitle("quick_problems")}
+          onPressIssue={issue => navigateToQuickIssue(issue, zipcode)}
+        />
+      </HomeSectionErrorBoundary>
+    ),
+
+    service_grid: (
+      <HomeSectionErrorBoundary sectionLabel="services">
+        {renderServiceGrid()}
+      </HomeSectionErrorBoundary>
+    ),
+
+    assistant_entry: (
+      <HomeSectionErrorBoundary sectionLabel="assistant">
+        <AssistantEntryCard onPress={() => navigateToGenericAssistant(zipcode)} />
+      </HomeSectionErrorBoundary>
+    ),
+
+    global_services: (
+      <HomeSectionErrorBoundary sectionLabel="global services">
+        <GlobalServicesSection
+          defaultName={customerFirstName !== "there" ? customerFirstName : undefined}
+          defaultZipcode={home.address.zipcode}
+          title={sectionTitle("global_services")}
+        />
+      </HomeSectionErrorBoundary>
+    ),
+
+    trust_benefits: (
+      <HomeSectionErrorBoundary sectionLabel="trust">
+        <AssuranceSection title={sectionTitle("trust_benefits")} />
+      </HomeSectionErrorBoundary>
+    ),
+
+    // Self-hiding: a one-option switcher is not a switcher, so with a single
+    // vertical this contributes no node and therefore no spacing either.
+    verticals: home.enabledVerticals.length > 1 ? (
+      <HomeSectionErrorBoundary sectionLabel="verticals">
+        <VerticalSwitcher
+          verticals={home.enabledVerticals}
+          selectedVerticalKey={selectedVerticalKey}
+          onSelect={v => setSelectedVerticalKey(v.key)}
+        />
+      </HomeSectionErrorBoundary>
+    ) : null,
+  };
+
   const locationLabel = home.address.city && home.address.zipcode ? `${home.address.city} · ${home.address.zipcode}` : home.address.zipcode;
 
   return (
@@ -284,156 +443,24 @@ export function HomeScreen() {
           />
         </View>
 
-        {/* Section order below matches the reference design: verticals,
-            then the promo banner, then Services Nearby, then Active
-            Booking, then Global Services, then the trust strip. (An
-            earlier pass here moved Active Booking above the banner for a
-            UX reason -- reverted so the app matches the design the way it
-            was actually asked for.) The spacer-avoidance comment on
-            VerticalSwitcher still applies: it self-hides with one
-            vertical, so its wrapper is conditionally rendered too rather
-            than always contributing a top margin. */}
-        {home.enabledVerticals.length > 1 ? (
-          <HomeSectionErrorBoundary sectionLabel="verticals">
-            <View style={{ marginTop: theme.spacing.lg }}>
-              <VerticalSwitcher
-                verticals={home.enabledVerticals}
-                selectedVerticalKey={selectedVerticalKey}
-                onSelect={v => setSelectedVerticalKey(v.key)}
-              />
+        {/* Section ORDER AND VISIBILITY ARE BACKEND-CONTROLLED (migration 236).
+            The layout was fixed here, so re-ordering Home or hiding a section
+            needed an app release. `home.sections` is the admin's order; an empty
+            list means an older backend sent no instruction, in which case the
+            shipped order below is used -- empty is never read as "draw nothing".
+
+            A key this build has no node for is skipped, so a newer backend can
+            add a section without breaking this screen. */}
+        {(home.sections.length > 0 ? home.sections : DEFAULT_SECTION_ORDER).map(section => {
+          const node = sectionNodes[section.key];
+          if (!node) return null;
+          return (
+            <View key={section.key} style={{ marginTop: theme.spacing.xl }}>
+              {node}
             </View>
-          </HomeSectionErrorBoundary>
-        ) : null}
+          );
+        })}
 
-        <HomeSectionErrorBoundary sectionLabel="promotions">
-          <View style={{ marginTop: theme.spacing.lg }}>
-            {/* CTAs are now live for deep links that resolve to a real
-             * destination for THIS customer; the rest stay disabled
-             * rather than becoming dead buttons. */}
-            <CampaignCarousel
-              campaigns={home.campaigns}
-              mode={mode}
-              isCtaRoutable={c => resolveCampaignDeepLink(c.ctaDeeplink, bookableSlugs) !== null}
-              onPressCta={handleCampaignCta}
-            />
-          </View>
-        </HomeSectionErrorBoundary>
-
-        {/* Directly below the banner, deliberately ahead of the category
-            grid: this is the shorter route to the same booking, so it
-            should be seen before the longer one. Renders nothing when the
-            ZIP's categories carry no issues. */}
-        <HomeSectionErrorBoundary sectionLabel="quick issues">
-          <View style={{ marginTop: theme.spacing.xl }}>
-            <QuickIssuesSection
-              issues={home.quickIssues}
-              onPressIssue={issue => navigateToQuickIssue(issue, home.address!.zipcode as string)}
-            />
-          </View>
-        </HomeSectionErrorBoundary>
-
-        <HomeSectionErrorBoundary sectionLabel="services">
-          <View style={{ marginTop: theme.spacing.xl }}>
-            {/* Title + inline qualifier on the left, "See All" on the right,
-                matching the section header treatment used across the design.
-                Section titles were `bodyStrong` (15px) -- the same weight as
-                a card title, so nothing signalled the start of a section. */}
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: theme.spacing.sm }}>
-              <View style={{ flexDirection: "row", alignItems: "baseline", gap: theme.spacing.xs, flex: 1, minWidth: 0 }}>
-                <AppText variant="headingSmall">{isSearching ? "Results" : "Services Nearby"}</AppText>
-                {home.address.zipcode ? (
-                  <AppText variant="caption" color="tertiary" numberOfLines={1}>
-                    {isSearching
-                      ? `for "${searchValue.trim()}"`
-                      : `Based on ${home.address.zipcode}`}
-                  </AppText>
-                ) : null}
-              </View>
-            </View>
-            {isSearching ? (
-              <SearchResultsList
-                query={searchValue.trim()}
-                isPending={searchQuery.isPending}
-                isError={searchQuery.isError}
-                results={searchQuery.data?.results ?? []}
-                onPressCategory={categoryId => {
-                  const category = home.bookableCategories.find(c => String(c.categoryId) === String(categoryId));
-                  if (category) navigateToService(category, home.address!.zipcode as string);
-                }}
-              />
-            ) : home.bookableCategories.length === 0 ? (
-              <AppText variant="bodySmall" color="secondary">No services are available in your area yet.</AppText>
-            ) : (
-              // Explicit 2-up rows rather than a wrapping flex row: with
-              // `flexWrap` + `space-between`, a trailing row holding one
-              // card stretched it across the full width. The card itself is
-              // horizontal now (artwork left, copy right), so a lone card is
-              // padded with an equal-flex spacer to keep every tile the same
-              // width as the rows above it.
-              <View style={{ gap: theme.spacing.sm }}>
-                {Array.from({ length: Math.ceil(home.bookableCategories.length / 2) }).map((_, rowIndex) => {
-                  const row = home.bookableCategories.slice(rowIndex * 2, rowIndex * 2 + 2);
-                  return (
-                    <View key={rowIndex} style={{ flexDirection: "row", gap: theme.spacing.sm }}>
-                      {row.map(category => (
-                        <HomeServiceCard
-                          key={category.categoryId}
-                          category={category}
-                          onPress={() => navigateToService(category, home.address!.zipcode as string)}
-                        />
-                      ))}
-                      {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        </HomeSectionErrorBoundary>
-
-        <HomeSectionErrorBoundary sectionLabel="assistant">
-          <View style={{ marginTop: theme.spacing.lg }}>
-            <AssistantEntryCard onPress={() => navigateToGenericAssistant(home.address!.zipcode as string)} />
-          </View>
-        </HomeSectionErrorBoundary>
-
-        {home.activeBooking ? (
-          <HomeSectionErrorBoundary sectionLabel="my booking">
-            <View style={{ marginTop: theme.spacing.xl }}>
-              <MyBookingSection
-                booking={home.activeBooking}
-                onPress={() => navigation.navigate("Bookings")}
-                onViewAll={() => navigation.navigate("Bookings")}
-                iconUrl={home.bookableCategories.find(
-                  c => c.name === home.activeBooking?.serviceName,
-                )?.iconUrl ?? null}
-              />
-            </View>
-          </HomeSectionErrorBoundary>
-        ) : null}
-
-        {/* Fixed, nationwide section -- never filtered by this ZIP's
-            bookable_categories, unlike "Services near you" above (see
-            GlobalServicesSection). */}
-        <HomeSectionErrorBoundary sectionLabel="global services">
-          <View style={{ marginTop: theme.spacing.xl }}>
-            <GlobalServicesSection
-              defaultName={customerFirstName !== "there" ? customerFirstName : undefined}
-              defaultZipcode={home.address.zipcode}
-            />
-          </View>
-        </HomeSectionErrorBoundary>
-
-        <HomeSectionErrorBoundary sectionLabel="trust">
-          <AppText variant="headingSmall" style={{ marginTop: theme.spacing.xl, marginBottom: theme.spacing.sm }}>
-            Why Customers Choose Us
-          </AppText>
-          <View style={{ flexDirection: "row", gap: theme.spacing.sm }}>
-            {TRUST_STRIP_ITEMS.map(item => (
-              <TrustBenefitCard key={item.key} label={item.label} icon={item.icon} artworkUrl={item.artworkUrl} />
-            ))}
-          </View>
-        </HomeSectionErrorBoundary>
       </ScrollView>
 
       <LocationPickerModal

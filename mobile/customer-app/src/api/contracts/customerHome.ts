@@ -61,6 +61,13 @@ export const homeQuickIssueDtoSchema = z.object({
   category_id: z.string(),
   category_slug: z.string().nullable().optional(),
   category_name: z.string(),
+  /** Admin-set artwork for this problem. Null is normal -- the app falls back
+   * to a wording-derived glyph rather than showing a blank tile. */
+  icon_url: z.string().nullable().optional(),
+  /** Dispatch's own urgency grading. Carried but NOT rendered: the customer
+   * already knows how bad their problem is, and a red "critical" chip on their
+   * own fault would read as alarm rather than information. */
+  severity: z.string().nullable().optional(),
 });
 
 /** Customer-safe technician identity: name/role/photo only, never a
@@ -131,6 +138,26 @@ export const homeCampaignDtoSchema = z.object({
   cta_label: z.string().nullable().optional(),
   cta_deeplink: z.string().nullable().optional(),
   priority: z.number(),
+  /** How to draw it and where it belongs. The backend validates both against
+   * the vocabulary this app ships renderers and slots for, so an unknown value
+   * means a newer backend than this build -- the app skips it rather than
+   * guessing a layout. */
+  display_style: z.string().optional(),
+  placement: z.string().optional(),
+  /** Festival treatment: the accent the card is painted in and the small badge
+   * above the title. */
+  accent_color: z.string().nullable().optional(),
+  badge_text: z.string().nullable().optional(),
+  /** A real end date for a limited run, never a manufactured countdown. */
+  ends_at: z.string().nullable().optional(),
+});
+
+/** One section of the Home layout, in the order the backend wants it drawn.
+ * `title` is an admin override; null means the app uses its own wording. */
+export const homeSectionDtoSchema = z.object({
+  key: z.string(),
+  order: z.number(),
+  title: z.string().nullable().optional(),
 });
 
 export const homeCapabilitiesDtoSchema = z.object({
@@ -141,6 +168,10 @@ export const homeCapabilitiesDtoSchema = z.object({
 
 export const customerHomeResponseSchema = z.object({
   response_version: z.number(),
+  // Absent on an older backend, which is why it defaults to empty rather than
+  // being required: the app then draws its own shipped layout, which is a
+  // working screen -- not a blank one.
+  sections: z.array(homeSectionDtoSchema).optional().default([]),
   address: homeAddressDtoSchema,
   serviceability: homeServiceabilityDtoSchema,
   enabled_verticals: z.array(homeVerticalDtoSchema),

@@ -49,6 +49,8 @@ export interface HomeQuickIssue {
   /** Null blocks the tap: the Assistant is entered by category slug. */
   categorySlug: string | null;
   categoryName: string;
+  /** Admin-set artwork. Null falls back to a wording-derived glyph. */
+  iconUrl: string | null;
 }
 
 /** Only fields the real Home aggregation endpoint returns. Extended
@@ -107,6 +109,19 @@ export interface HomeServiceability {
   checked: boolean;
 }
 
+/** The banner layouts this build can draw. An unrecognised style from a newer
+ * backend is skipped rather than guessed at. */
+export type HomeCampaignStyle = "hero" | "festival" | "strip";
+
+/** Where a banner sits. These are also Home section keys, so a whole slot can
+ * be switched off from admin. */
+export type HomeCampaignPlacement =
+  | "campaign_top"
+  | "campaign_after_problems"
+  | "campaign_after_services"
+  | "campaign_mid"
+  | "campaign_bottom";
+
 export interface HomeCampaign {
   campaignId: string;
   eyebrow: string | null;
@@ -117,6 +132,22 @@ export interface HomeCampaign {
   ctaLabel: string | null;
   ctaDeeplink: string | null;
   priority: number;
+  style: HomeCampaignStyle;
+  placement: HomeCampaignPlacement;
+  /** Festival treatment only. Null renders the ordinary theme. */
+  accentColor: string | null;
+  badgeText: string | null;
+  /** A real end date for a limited run. Null means open-ended -- never a
+   * countdown the app made up to create urgency. */
+  endsAt: string | null;
+}
+
+/** One Home section, in the order the backend wants it drawn. */
+export interface HomeSection {
+  key: string;
+  order: number;
+  /** Admin override; null means the app uses its own wording. */
+  title: string | null;
 }
 
 export interface HomeCapabilities {
@@ -135,5 +166,8 @@ export interface CustomerHome {
   activeBooking: HomeActiveBooking | null;
   unreadNotificationCount: number;
   campaigns: HomeCampaign[];
+  /** Empty on an older backend, in which case the app draws its shipped
+   * layout -- an empty list is "no instruction", never "no sections". */
+  sections: HomeSection[];
   capabilities: HomeCapabilities;
 }
