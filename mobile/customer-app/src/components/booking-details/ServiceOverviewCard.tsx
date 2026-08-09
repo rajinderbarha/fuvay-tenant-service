@@ -8,7 +8,6 @@ import { AppCard } from "../AppCard";
 import { AppIconButton } from "../AppIconButton";
 import { Icon } from "../Icon";
 import { CustomerBookingDetails } from "../../domain/customerBookingDetails";
-import { resolveAnswerFieldIcon } from "../../domain/answerFieldIcon";
 import { formatCreatedAt, ServerTimestamp } from "../../domain/dates";
 
 export interface ServiceOverviewCardProps {
@@ -30,9 +29,10 @@ const COLUMNS = 2;
  * identifier reads more naturally next to the service name than sitting
  * above the status card.
  *
- * Icons per cell are the same wording-derived glyphs used on the My
- * Bookings list card (answerFieldIcon.ts) -- one icon system, not a
- * second invented for this screen. */
+ * NO ICONS on answer rows. They were wording-derived glyphs, which meant a
+ * different icon for the same field depending on how it was phrased -- and they
+ * decorated text the customer wrote themselves. Dropping them also removes a
+ * per-row glyph resolution from a list that can be long. */
 export function ServiceOverviewCard({ service, bookingNumber, createdAt }: ServiceOverviewCardProps) {
   const { theme } = useTheme();
   // The sheet is a Modal, so it sits outside any screen-level safe area and has
@@ -125,7 +125,6 @@ export function ServiceOverviewCard({ service, bookingNumber, createdAt }: Servi
                     borderLeftColor: theme.colors.borderSubtle,
                   }}
                 >
-                  <Icon name={resolveAnswerFieldIcon(a.value, a.label)} size="compact" color={theme.colors.iconDefault} decorative />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <AppText variant="caption" color="tertiary" numberOfLines={1}>{a.label}</AppText>
                     <AppText variant="bodySmall" numberOfLines={1}>{a.value}</AppText>
@@ -198,12 +197,6 @@ export function ServiceOverviewCard({ service, bookingNumber, createdAt }: Servi
                     borderTopColor: theme.colors.borderSubtle,
                   }}
                 >
-                  <Icon
-                    name={resolveAnswerFieldIcon(a.value, a.label)}
-                    size="compact"
-                    color={theme.colors.iconDefault}
-                    decorative
-                  />
                   {/* minWidth: 0 is what actually lets long text wrap inside a
                       row instead of overflowing it. */}
                   <View style={{ flex: 1, minWidth: 0, gap: 2 }}>

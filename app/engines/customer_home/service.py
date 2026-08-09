@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.customer_home.intent import classify_intent
 from app.engines.customer_home.seasonality import (
-    SEASON_LABELS, current_season, sort_by_season,
+    SEASON_LABELS, current_season, resolve_region, sort_by_season,
 )
 
 logger = structlog.get_logger("customer_home.service")
@@ -95,7 +95,18 @@ class CustomerHomeService:
         # what a household needs in Ludhiana in January is not what it needs in
         # May. Only reorders -- nothing is hidden, and an unrecognised service
         # stays where the catalogue put it. See seasonality.py.
-        season = current_season()
+        # Region from the customer's OWN address, not a platform default: January
+        # in Ludhiana genuinely needs a geyser and January in Chennai does not, so
+        # a single national calendar gets one of them wrong every winter.
+        #
+        # `temperature_c` is left unset because no weather source is configured on
+        # this deployment -- see seasonality.current_season, which degrades to
+        # climatology rather than guessing. Passing a live reading here is the only
+        # change needed to make the ordering respond to an actual cold snap.
+        region = resolve_region(
+            city=(address or {}).get("city"), state=(address or {}).get("state"),
+        )
+        season = current_season(region=region)
         categories = sort_by_season(list(categories or []), name_key="name", season=season)
         quick_issues = sort_by_season(list(quick_issues or []), name_key="label", season=season)
 
@@ -126,6 +137,7 @@ class CustomerHomeService:
             # picks") rather than silently rearranging the screen each quarter.
             "season": season,
             "season_label": SEASON_LABELS[season],
+            "season_region": region,
             "address": address,
             "serviceability": serviceability_summary,
             "enabled_verticals": verticals,
@@ -176,6 +188,9 @@ class CustomerHomeService:
         return {
             "address_id": str(row.id),
             "city": row.city,
+            # Carried for the seasonal region resolution (a city name alone is
+            # often ambiguous), not for display -- the app shows city + PIN.
+            "state": getattr(row, "state", None),
             "zipcode": row.zipcode,
             "is_default": row.is_default,
         }

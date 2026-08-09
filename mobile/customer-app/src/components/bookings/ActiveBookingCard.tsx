@@ -8,7 +8,6 @@ import { Icon } from "../Icon";
 import { CustomerBookingListItem } from "../../domain/bookingList";
 import { BookingJourney } from "../booking-details/BookingJourney";
 import { formatMoney } from "../../domain/money";
-import { resolveAnswerFieldIcon } from "../../domain/answerFieldIcon";
 import { formatCreatedAt } from "../../domain/dates";
 
 export interface ActiveBookingCardProps {
@@ -134,12 +133,6 @@ export function ActiveBookingCard({ item, onViewDetails, onContactSupport }: Act
                       borderLeftColor: theme.colors.borderSubtle,
                     }}
                   >
-                    <Icon
-                      name={resolveAnswerFieldIcon(f.value, f.label)}
-                      size="compact"
-                      color={theme.colors.iconDefault}
-                      decorative
-                    />
                     <AppText variant="caption" numberOfLines={1} style={{ flex: 1 }}>{f.value}</AppText>
                   </View>
                 ))}

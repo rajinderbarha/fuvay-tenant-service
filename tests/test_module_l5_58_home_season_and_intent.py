@@ -12,9 +12,9 @@ from app.engines.customer_home.intent import (
     INTENT_CONSULT, INTENT_REPAIR, classify_intent,
 )
 from app.engines.customer_home.seasonality import (
-    RANK_IN_SEASON, RANK_NEUTRAL, RANK_OUT_OF_SEASON, SEASON_FESTIVE, SEASON_LABELS,
-    SEASON_MONSOON, SEASON_SUMMER, SEASON_WINTER, SEASONS, current_season,
-    season_rank, sort_by_season,
+    RANK_IN_SEASON, RANK_NEUTRAL, RANK_OUT_OF_SEASON, REGION_NORTH, REGION_SOUTH,
+    SEASON_FESTIVE, SEASON_LABELS, SEASON_MONSOON, SEASON_SUMMER, SEASON_WINTER,
+    SEASONS, current_season, resolve_region, season_rank, sort_by_season,
 )
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
@@ -141,11 +141,69 @@ def test_a_fault_wins_when_both_readings_are_possible():
     assert classify_intent("Low Cooling / Gas Refill Needed") == INTENT_REPAIR
 
 
-def test_wording_that_says_neither_is_left_unclassified():
-    # It still appears in the general problem grids; being put in the WRONG
-    # section is worse than being in neither.
-    for name in ("Annual Maintenance", "Chimney", "", None):
-        assert classify_intent(name) is None
+def test_unrecognised_wording_falls_back_to_repair_never_to_nothing():
+    """Every problem belongs to exactly one intent section.
+
+    `master_issue_types` is a catalogue of FAULTS by its own definition, so a fault
+    is the right prior for wording nobody's keywords recognise. Leaving these null
+    meant a real, bookable problem appeared in NEITHER section -- worse than being
+    one row down in the more likely of the two.
+    """
+    for name in ("Annual Maintenance", "Chimney", "Cooling Low", "", None):
+        assert classify_intent(name) == INTENT_REPAIR
+
+
+def test_no_problem_is_ever_unclassified():
+    for name in ("AC Not Cooling", "New AC Installation", "", None, "??"):
+        assert classify_intent(name) in (INTENT_REPAIR, INTENT_CONSULT)
+
+
+# ── Region ───────────────────────────────────────────────────────────────────
+
+def test_northern_january_is_winter_and_southern_january_is_not():
+    """The calendar alone gets one of these wrong every year: January in Ludhiana
+    genuinely needs a geyser; January in Chennai does not."""
+    north = resolve_region("Ludhiana", "Punjab")
+    south = resolve_region("Chennai", "Tamil Nadu")
+    assert current_season(_at(1), region=north) == SEASON_WINTER
+    assert current_season(_at(1), region=south) != SEASON_WINTER
+
+
+def test_region_defaults_to_north_when_the_address_says_nothing():
+    # The north has the strongest swing, so it is where a wrong order costs most.
+    assert resolve_region(None, None) == REGION_NORTH
+    assert resolve_region("", "") == REGION_NORTH
+
+
+def test_region_is_read_from_either_city_or_state():
+    assert resolve_region("Kochi", None) == REGION_SOUTH
+    assert resolve_region(None, "Kerala") == REGION_SOUTH
+    assert resolve_region("Amritsar", "Punjab") == REGION_NORTH
+
+
+# ── Live weather ─────────────────────────────────────────────────────────────
+
+def test_a_real_cold_snap_beats_the_calendar():
+    # An unseasonably cold northern March: what a household needs today is hot
+    # water, whatever the month says.
+    assert current_season(_at(3), region=REGION_NORTH, temperature_c=12) == SEASON_WINTER
+
+
+def test_a_real_hot_spell_beats_the_calendar():
+    assert current_season(_at(11), region=REGION_NORTH, temperature_c=34) == SEASON_SUMMER
+
+
+def test_ordinary_temperatures_leave_the_calendar_alone():
+    # Only the extremes override, so day-to-day variation does not reshuffle the
+    # screen -- and the calendar keeps the things temperature cannot tell you,
+    # like the monsoon and the festive season.
+    assert current_season(_at(8), region=REGION_NORTH, temperature_c=27) == SEASON_MONSOON
+    assert current_season(_at(10), region=REGION_NORTH, temperature_c=25) == SEASON_FESTIVE
+
+
+def test_no_weather_reading_degrades_to_climatology_rather_than_guessing():
+    # No deployment is blocked on a weather integration.
+    assert current_season(_at(1), region=REGION_NORTH, temperature_c=None) == SEASON_WINTER
 
 
 def test_generic_category_names_are_seasonal_too():

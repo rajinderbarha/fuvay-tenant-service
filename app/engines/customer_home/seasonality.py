@@ -39,6 +39,39 @@ SEASON_FESTIVE = "festive"
 
 SEASONS = (SEASON_WINTER, SEASON_SUMMER, SEASON_MONSOON, SEASON_FESTIVE)
 
+# ── Region ───────────────────────────────────────────────────────────────────
+# India is not one climate, and the calendar alone gets this badly wrong: January
+# in Ludhiana genuinely needs a geyser, January in Chennai does not, and putting
+# water heating first for a Chennai customer is the same mistake as leading with
+# AC in a Punjab December -- just in the other direction.
+REGION_NORTH = "north"      # Punjab, Delhi, UP, Rajasthan, Himachal... real winter
+REGION_SOUTH = "south"      # TN, Kerala, Karnataka, coastal AP... barely a winter
+REGION_DEFAULT = REGION_NORTH
+
+# Matched against the customer's city/state as stored on their address. States are
+# listed because that is what `tenants.state` and address records carry; a few
+# major cities are included because a customer's city is often all we have.
+_SOUTH_MARKERS = (
+    "tamil nadu", "kerala", "karnataka", "andhra", "telangana", "puducherry",
+    "goa", "chennai", "bengaluru", "bangalore", "kochi", "cochin", "hyderabad",
+    "coimbatore", "madurai", "mysore", "mangalore", "trivandrum",
+    "thiruvananthapuram", "vijayawada", "visakhapatnam", "mumbai", "pune",
+)
+
+
+def resolve_region(city: str | None = None, state: str | None = None) -> str:
+    """Which climate the customer is in.
+
+    Defaults to NORTH when unknown: the north is where the seasonal swing is
+    strongest, so it is the case where getting the order right matters most, and
+    an unknown location is more likely to be a northern one on this platform's
+    current footprint (Punjab).
+    """
+    text = " ".join(part for part in (city, state) if part).strip().lower()
+    if not text:
+        return REGION_DEFAULT
+    return REGION_SOUTH if any(marker in text for marker in _SOUTH_MARKERS) else REGION_DEFAULT
+
 # Month (1-12) -> season. Explicit rather than computed from ranges so the
 # boundaries are impossible to misread.
 _MONTH_SEASON = {
@@ -47,6 +80,15 @@ _MONTH_SEASON = {
     7: SEASON_MONSOON, 8: SEASON_MONSOON, 9: SEASON_MONSOON,
     10: SEASON_FESTIVE, 11: SEASON_FESTIVE,
     12: SEASON_WINTER,
+}
+
+# The south's winter is mild enough that water heating never leads, and its hot
+# season runs longer. Only the months that genuinely differ are overridden.
+_SOUTH_MONTH_SEASON = {
+    **{m: SEASON_SUMMER for m in (1, 2, 3, 4, 5)},   # no heating season worth leading with
+    6: SEASON_MONSOON, 7: SEASON_MONSOON, 8: SEASON_MONSOON, 9: SEASON_MONSOON,
+    10: SEASON_MONSOON,   # the north-east monsoon is the south's wettest stretch
+    11: SEASON_FESTIVE, 12: SEASON_FESTIVE,
 }
 
 SEASON_LABELS = {
@@ -98,20 +140,54 @@ RANK_IN_SEASON = 0
 RANK_NEUTRAL = 1
 RANK_OUT_OF_SEASON = 2
 
+# Live-weather thresholds, in Celsius. Deliberately far apart: only a genuinely
+# cold or genuinely hot day overrides the calendar, so ordinary variation does not
+# reshuffle the screen day to day.
+COLD_THRESHOLD_C = 18.0
+HOT_THRESHOLD_C = 32.0
+
 # India-wide. The platform is single-country today; when that changes this becomes
 # a per-tenant timezone read rather than a constant.
 _IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 
 
-def current_season(now: dt.datetime | None = None) -> str:
-    """The season in India right now.
+def current_season(
+    now: dt.datetime | None = None,
+    *,
+    region: str = REGION_DEFAULT,
+    temperature_c: float | None = None,
+) -> str:
+    """The season for this customer, by region and -- when known -- real weather.
 
-    Evaluated in IST rather than the server's timezone: a server in UTC is
-    already the previous day for five and a half hours every night, which would
-    flip the season a day early on 1 March and 1 December.
+    Evaluated in IST rather than the server's timezone: a server in UTC is already
+    the previous day for five and a half hours every night, which would flip the
+    season a day early on 1 March and 1 December.
+
+    `temperature_c` is a live reading if the deployment has a weather source
+    configured. It OVERRIDES the calendar at the two extremes only, because those
+    are the cases where the calendar is most obviously wrong to a customer: an
+    unseasonal cold snap in a northern March, or a hot spell in a mild November.
+    The middle of the range is left to the calendar, which knows about monsoon and
+    the festive season -- things temperature cannot tell you.
+
+    With no reading it degrades to climatology, which is a real answer rather than
+    a guess: no deployment is ever blocked on a weather integration.
     """
     moment = (now or dt.datetime.now(dt.timezone.utc)).astimezone(_IST)
-    return _MONTH_SEASON[moment.month]
+    calendar = (
+        _SOUTH_MONTH_SEASON[moment.month] if region == REGION_SOUTH
+        else _MONTH_SEASON[moment.month]
+    )
+
+    if temperature_c is None:
+        return calendar
+    if temperature_c <= COLD_THRESHOLD_C:
+        # Cold enough that water heating is what a household actually needs today,
+        # whatever the month says.
+        return SEASON_WINTER
+    if temperature_c >= HOT_THRESHOLD_C:
+        return SEASON_SUMMER
+    return calendar
 
 
 def _matches(patterns: tuple[str, ...], text: str) -> bool:

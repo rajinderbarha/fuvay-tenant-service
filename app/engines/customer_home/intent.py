@@ -18,7 +18,6 @@ import re
 
 INTENT_REPAIR = "repair"
 INTENT_CONSULT = "consult"
-INTENT_NONE = None
 
 # A fault: something already broken, leaking, tripping or not working.
 _REPAIR_PATTERNS = (
@@ -43,18 +42,25 @@ def _matches(patterns: tuple[str, ...], text: str) -> bool:
     return any(re.search(p, text) for p in patterns)
 
 
-def classify_intent(name: str | None) -> str | None:
-    """"repair", "consult", or None when the wording says neither.
+def classify_intent(name: str | None) -> str:
+    """"repair" or "consult". Never null.
 
     REPAIR is tested first: "Low Cooling / Gas Refill Needed" ends in "Needed",
     which the consult list would otherwise claim, but a gas refill is plainly a
-    fix. When both could match, the fault wins -- it is the more specific reading.
+    fix. When both readings are possible, the fault wins -- it is the more
+    specific one.
+
+    Unmatched wording falls back to REPAIR rather than staying unclassified. This
+    table is `master_issue_types` -- a catalogue of PROBLEMS/FAULTS by its own
+    definition -- so a fault is the correct prior for an entry nobody's keywords
+    recognise. Leaving them null meant a real, bookable problem appeared in
+    neither intent section, which is a worse outcome than being one row down in
+    the more likely of the two.
+
+    An empty name is still repair rather than an error: there is nothing to read,
+    and every entry belongs to exactly one section.
     """
     text = (name or "").strip().lower()
-    if not text:
-        return INTENT_NONE
-    if _matches(_REPAIR_PATTERNS, text):
-        return INTENT_REPAIR
-    if _matches(_CONSULT_PATTERNS, text):
+    if _matches(_CONSULT_PATTERNS, text) and not _matches(_REPAIR_PATTERNS, text):
         return INTENT_CONSULT
-    return INTENT_NONE
+    return INTENT_REPAIR
