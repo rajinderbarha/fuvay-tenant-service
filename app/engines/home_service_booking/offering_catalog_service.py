@@ -203,3 +203,56 @@ async def list_serviceable_issues(
         "category": cat.name, "category_slug": cat.slug, "category_id": str(cat.id),
         "issues": issues, "total": len(issues),
     }
+
+
+async def list_serviceable_issues_across_categories(
+    db: AsyncSession, zipcode: str | None, *, limit_per_category: int | None = None,
+) -> dict:
+    """Every issue bookable at this zipcode, in ANY customer-visible category.
+
+    Why this exists: the assistant's DeepSeek interpreter was given one category's
+    issue list, so a customer who typed "my tap is leaking" while the conversation
+    happened to be scoped to Air Conditioning could only ever be matched against AC
+    problems -- the model was not at fault, it was never shown the rest of the
+    catalogue. Confirmed live: every interpretation came back AC-shaped.
+
+    Reuses `list_serviceable_issues` per category rather than writing a second,
+    wider query. That matters: the serviceability rules (active mapping, active
+    master service, a publisher whose real service area covers this exact zipcode)
+    are the whole point of that function, and a parallel query would be a second
+    place for them to drift -- which is exactly the leak it was written to prevent.
+
+    Each issue carries its own category, so a match outside the conversation's
+    current category can still be acted on: the caller knows which category to
+    start the draft in.
+    """
+    from app.engines.admin_catalog.models import ServiceCategory
+
+    categories = (await db.execute(
+        select(ServiceCategory)
+        .where(
+            ServiceCategory.is_active == True,  # noqa: E712
+            ServiceCategory.is_customer_visible == True,  # noqa: E712
+        )
+        .order_by(ServiceCategory.display_order, ServiceCategory.name)
+    )).scalars().all()
+
+    issues: list[dict] = []
+    for cat in categories:
+        if not cat.slug:
+            # Without a slug the assistant cannot be entered for this category, so
+            # offering its issues would produce a match nothing could act on.
+            continue
+        catalog = await list_serviceable_issues(db, cat.slug, zipcode)
+        found = catalog.get("issues") or []
+        if limit_per_category is not None:
+            found = found[:limit_per_category]
+        for issue in found:
+            issues.append({
+                **issue,
+                "category_id": catalog.get("category_id"),
+                "category_slug": catalog.get("category_slug"),
+                "category_name": catalog.get("category"),
+            })
+
+    return {"issues": issues, "total": len(issues)}

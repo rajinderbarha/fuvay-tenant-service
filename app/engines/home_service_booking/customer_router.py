@@ -83,10 +83,27 @@ async def interpret_assistant_bootstrap_text(
     text = (body.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=422, detail="text is required.")
-    result = await oi.interpret(
-        category_slug=body["category_slug"], zipcode=body.get("zipcode"),
-        text=text, session_id=body.get("session_id"),
-    )
+    # `category_slug` is now OPTIONAL, and omitting it is the better call.
+    #
+    # Real bug this fixes: the interpreter was always given ONE category's issue
+    # list, so a customer who typed "my tap is leaking" in a conversation that
+    # happened to start from an AC service card could not be matched to anything --
+    # every answer came back AC-shaped. The model was never shown the rest of the
+    # catalogue. Without a slug it now sees every issue bookable at this zipcode,
+    # in any category, and its match carries the category it belongs to.
+    #
+    # A slug still scopes it, because entering from a service card is a real signal
+    # about what the customer came for.
+    category_slug = (body.get("category_slug") or "").strip()
+    if category_slug:
+        result = await oi.interpret(
+            category_slug=category_slug, zipcode=body.get("zipcode"),
+            text=text, session_id=body.get("session_id"),
+        )
+    else:
+        result = await oi.interpret_across_categories(
+            zipcode=body.get("zipcode"), text=text, session_id=body.get("session_id"),
+        )
     return ok(result, _rid(r), "home_service_booking")
 
 

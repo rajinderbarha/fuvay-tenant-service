@@ -36,7 +36,18 @@ export type AssistantBootstrapResponseDto = z.infer<typeof assistantBootstrapRes
 export const interpretOfferingSelectionResponseSchema = z.object({
   action: z.enum(["match_option", "ask_clarification", "answer_and_repeat_options", "out_of_scope", "cannot_answer"]),
   reply: z.string(),
-  matched_offering: z.object({ id: z.string(), name: z.string() }).nullable(),
+  /** The matched problem, plus the CATEGORY it belongs to. Present when the
+   * backend interpreted across every category bookable at the ZIP (no
+   * `category_slug` sent) -- a match can then legitimately land outside the
+   * category the conversation started in, so the caller has to know which one to
+   * start the draft in. */
+  matched_offering: z.object({
+    id: z.string(),
+    name: z.string(),
+    category_slug: z.string().nullable().optional(),
+    category_name: z.string().nullable().optional(),
+    category_id: z.string().nullable().optional(),
+  }).nullable(),
   offerings: z.array(z.object({ id: z.string(), name: z.string() })),
 }).passthrough();
 export type InterpretOfferingSelectionResponseDto = z.infer<typeof interpretOfferingSelectionResponseSchema>;

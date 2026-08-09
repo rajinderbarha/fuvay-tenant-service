@@ -101,7 +101,12 @@ export interface AssistantControllerActions {
    * once (spec: "add multiple problem") -- the first is canonical for
    * job-type resolution, the rest are stored alongside it; issues
    * spanning different services are rejected by the backend. */
-  selectOffering: (offerings: AssistantOfferingOption[]) => Promise<void>;
+  /** `categorySlugOverride` starts the draft in a category other than the one the
+   * conversation entered with -- needed when the interpreter matches a problem
+   * across categories ("my tap is leaking" in an AC-entered chat). */
+  selectOffering: (
+    offerings: AssistantOfferingOption[], categorySlugOverride?: string | null,
+  ) => Promise<void>;
   submitAnswer: (questionId: string, optionId: string | null, value: string | null) => Promise<void>;
   changeLanguage: (code: string) => Promise<void>;
   /** The first interaction of a fresh request: persists the chatbot
@@ -528,7 +533,19 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
   // never involved in this call at all; issues spanning genuinely
   // different services are rejected by the backend, never silently
   // merged or dropped.
-  const selectOffering = useCallback(async (offerings: AssistantOfferingOption[]) => {
+  /**
+   * `categorySlugOverride` exists for a cross-category match.
+   *
+   * The interpreter can now match a problem in ANY category bookable at the ZIP,
+   * so "my tap is leaking" in an AC-entered conversation legitimately resolves to
+   * Plumbing. The draft has to be started in the matched problem's OWN category --
+   * passed as an argument rather than by updating `offeringChoice` first, because
+   * setState is asynchronous and this function would still read the old slug from
+   * its closure.
+   */
+  const selectOffering = useCallback(async (
+    offerings: AssistantOfferingOption[], categorySlugOverride?: string | null,
+  ) => {
     if (busyRef.current || !offeringChoice || offerings.length === 0) return;
     Keyboard.dismiss();
     busyRef.current = true;
@@ -540,7 +557,8 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     try {
       const [primary, ...rest] = offerings;
       const raw = await assistantBootstrapApi.selectAssistantBootstrapIssue(
-        offeringChoice.categorySlug, entryContext.source === "service_card" ? entryContext.zipcode : null,
+        categorySlugOverride || offeringChoice.categorySlug,
+        entryContext.source === "service_card" ? entryContext.zipcode : null,
         primary.id, session?.id ?? null, rest.map(o => o.id), languageRef.current,
       );
       if (isStale(generation)) return;
@@ -583,8 +601,12 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     setActivityStage("understanding_request");
     armFallbackTimer();
     try {
+      // NO category slug: the interpreter searches every category bookable at this
+      // ZIP. Scoping it to the conversation's own category is what made every
+      // answer come back shaped like that category -- a customer describing a
+      // leaking tap in an AC-entered chat had nothing real to be matched against.
       const raw = await assistantBootstrapApi.interpretOfferingSelectionText(
-        offeringChoice.categorySlug, entryContext.source === "service_card" ? entryContext.zipcode : null,
+        null, entryContext.source === "service_card" ? entryContext.zipcode : null,
         text, session?.id ?? null,
       );
       if (isStale(generation)) return;
@@ -600,7 +622,20 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
       setActivityStage(null);
       setUiState("ready");
       if (action === "match_option" && matchedOffering) {
-        await selectOffering([{ id: matchedOffering.id, slug: matchedOffering.id, name: matchedOffering.name }]);
+        // The match carries its own category, which may not be the one this
+        // conversation started in.
+        const matchedCategory = matchedOffering.category_slug ?? null;
+        if (matchedCategory && matchedCategory !== offeringChoice.categorySlug) {
+          setOfferingChoice(prev => (prev ? {
+            ...prev,
+            categorySlug: matchedCategory,
+            categoryName: matchedOffering.category_name ?? prev.categoryName,
+          } : prev));
+        }
+        await selectOffering(
+          [{ id: matchedOffering.id, slug: matchedOffering.id, name: matchedOffering.name }],
+          matchedCategory,
+        );
       }
       return;
     } catch (err) {

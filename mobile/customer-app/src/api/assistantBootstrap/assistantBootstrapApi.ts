@@ -21,13 +21,27 @@ export async function getAssistantBootstrap(categorySlug: string, zipcode: strin
  * only match one of the REAL serviceable issues passed to it server-side;
  * it never creates a draft itself (see
  * OfferingInterpretationService.interpret). */
+/**
+ * `categorySlug` is optional, and OMITTING it is usually right.
+ *
+ * With a slug the backend matches within that one category. Without it, it matches
+ * across every category bookable at the ZIP -- which is what a customer typing "my
+ * tap is leaking" needs, and what the assistant could not do before: the
+ * interpreter was only ever shown one category's problems, so every answer came
+ * back shaped like that category.
+ */
 export async function interpretOfferingSelectionText(
-  categorySlug: string, zipcode: string | null, text: string, sessionId?: string | null,
+  categorySlug: string | null, zipcode: string | null, text: string, sessionId?: string | null,
 ) {
   const res = await authenticatedRequest({
     method: "POST",
     path: `${BASE}/interpret`,
-    body: { category_slug: categorySlug, zipcode: zipcode ?? undefined, text, session_id: sessionId ?? undefined },
+    body: {
+      category_slug: categorySlug ?? undefined,
+      zipcode: zipcode ?? undefined,
+      text,
+      session_id: sessionId ?? undefined,
+    },
   });
   return parseApiSuccess(res.json, interpretOfferingSelectionResponseSchema);
 }
