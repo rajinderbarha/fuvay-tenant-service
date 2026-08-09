@@ -16,7 +16,6 @@ import {
 import { CampaignSlot } from "../../components/home/CampaignSlot";
 import { ProblemGrid } from "../../components/home/ProblemGrid";
 import { ProblemCircles } from "../../components/home/ProblemCircles";
-import { WeatherWidget } from "../../components/home/WeatherWidget";
 import { selectProblems } from "../../domain/problemSelection";
 import { MyBookingsStrip } from "../../components/home/MyBookingsStrip";
 import { AssuranceSection } from "../../components/home/AssuranceSection";
@@ -491,18 +490,6 @@ export function HomeScreen() {
               (navigation.getParent()?.navigate as ((name: string) => void) | undefined)?.("Notifications")
             }
           />
-        </HomeSectionErrorBoundary>
-
-        {/* Renders nothing without a real reading, so a deployment with no weather
-            source simply has no widget here. */}
-        <HomeSectionErrorBoundary sectionLabel="weather">
-          <View style={{ marginTop: theme.spacing.base }}>
-            <WeatherWidget
-              weather={home.weather}
-              city={home.address.city}
-              seasonLabel={home.seasonLabel}
-            />
-          </View>
         </HomeSectionErrorBoundary>
 
         <View style={{ marginTop: theme.spacing.base }}>

@@ -20,7 +20,6 @@ export * from "./SearchResultsList";
 export * from "./QuickIssuesSection";
 export * from "./ProblemGrid";
 export * from "./ProblemCircles";
-export * from "./WeatherWidget";
 export * from "./AssuranceSection";
 export * from "./CampaignSlot";
 export * from "./HeroBanner";

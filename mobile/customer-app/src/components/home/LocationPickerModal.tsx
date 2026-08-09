@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Modal, View } from "react-native";
+import { Keyboard, Modal, View } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText, AppButton, AppInput, AppIconButton } from "../index";
 
@@ -33,17 +33,33 @@ export function LocationPickerModal({ visible, currentZipcode, onClose, onConfir
     }
   }, [visible, currentZipcode]);
 
+  /**
+   * Closes the sheet with the number pad put away.
+   *
+   * Real bug this fixes: the ZIP field lives inside a Modal, and unmounting a focused
+   * TextInput with the keyboard up leaves the keyboard on screen. The customer changed
+   * their ZIP and was left with a number pad covering the bottom half of Home, with
+   * nothing left focused to dismiss it by tapping.
+   *
+   * Every exit routes through here -- confirm, the close button, and the hardware/
+   * gesture back -- because it only takes one path that does not to reproduce it.
+   */
+  function dismissAndClose() {
+    Keyboard.dismiss();
+    onClose();
+  }
+
   function handleConfirm() {
     if (!ZIPCODE_PATTERN.test(value)) {
       setError("Enter a valid 6-digit ZIP code");
       return;
     }
     onConfirm(value);
-    onClose();
+    dismissAndClose();
   }
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={dismissAndClose}>
       <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: theme.colors.backgroundOverlay }}>
         <View
           style={{
@@ -53,7 +69,7 @@ export function LocationPickerModal({ visible, currentZipcode, onClose, onConfir
         >
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.base }}>
             <AppText variant="headingSmall" accessibilityRole="header">Change location</AppText>
-            <AppIconButton name="close" accessibilityLabel="Close" onPress={onClose} />
+            <AppIconButton name="close" accessibilityLabel="Close" onPress={dismissAndClose} />
           </View>
           <AppInput
             label="ZIP code"

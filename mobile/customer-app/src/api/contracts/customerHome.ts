@@ -191,18 +191,6 @@ export const customerHomeResponseSchema = z.object({
    * app does not compute the season itself: one source of that decision. */
   season: z.string().optional(),
   season_label: z.string().nullable().optional(),
-  /** A real reading, or absent. There is no placeholder shape: a deployment with
-   * no weather source sends nothing and the app renders no widget, because a
-   * comfortable-looking invented temperature would undermine every real figure
-   * beside it. */
-  weather: z.object({
-    observed_at: z.string(),
-    temperature_c: z.number(),
-    condition: z.string().nullable().optional(),
-    rain_mm: z.number(),
-    wind_kmh: z.number(),
-    is_day: z.boolean().optional(),
-  }).passthrough().nullable().optional(),
   address: homeAddressDtoSchema,
   serviceability: homeServiceabilityDtoSchema,
   enabled_verticals: z.array(homeVerticalDtoSchema),

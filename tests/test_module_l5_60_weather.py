@@ -13,14 +13,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.engines.weather.constants import (
-    ADVISORY_HORIZON_HOURS, RAIN_MM_ADVISORY, RAIN_MM_SEVERE, RISK_ADVISORY,
+    RAIN_MM_ADVISORY, RAIN_MM_SEVERE, RISK_ADVISORY,
     RISK_NONE, RISK_SEVERE, WIND_KMH_SEVERE,
 )
 from app.engines.weather.provider import (
     NullWeatherProvider, WeatherApiProvider, WeatherReading, resolve_weather_provider,
 )
-from app.engines.weather.scheduling import slot_advisory, weather_reschedule_permitted
-from app.engines.weather.service import assess_risk, within_advisory_horizon
+from app.engines.weather.scheduling import weather_reschedule_permitted
+from app.engines.weather.service import assess_risk
 from app.engines.weather.slots import slot_start
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
@@ -102,18 +102,6 @@ def test_the_verdict_names_the_dominant_factor():
     assert assess_risk(_reading())["reason"] == "clear"
 
 
-# ── The advisory horizon ─────────────────────────────────────────────────────
-
-def test_only_slots_close_enough_to_forecast_are_warned_about():
-    now = dt.datetime(2026, 8, 12, 9, tzinfo=dt.timezone.utc)
-    assert within_advisory_horizon(now + dt.timedelta(hours=3), now) is True
-    # A forecast a week out is not worth the anxiety it would cause.
-    assert within_advisory_horizon(now + dt.timedelta(hours=ADVISORY_HORIZON_HOURS + 1), now) is False
-    # A warning about a visit that already happened is noise.
-    assert within_advisory_horizon(now - dt.timedelta(hours=1), now) is False
-    assert within_advisory_horizon(None, now) is False
-
-
 # ── Slot arithmetic ──────────────────────────────────────────────────────────
 
 def test_a_slot_window_is_read_as_local_time():
@@ -134,7 +122,11 @@ def test_a_date_with_no_window_uses_a_stated_default():
     assert slot_start(dt.date(2026, 8, 12), None) == dt.datetime(2026, 8, 12, 9, tzinfo=IST)
 
 
-# ── Customer advisory ────────────────────────────────────────────────────────
+# ── The provider safety gate ────────────────────────────────────────
+
+# The gate is the platform's ONLY weather caller: a provider picking weather as the
+# reason is the one thing that spends a lookup. The customer-facing slot advisory that
+# also lived here was removed along with the Home widget.
 
 def _service(configured: bool, reading: WeatherReading | None):
     service = MagicMock()
@@ -142,59 +134,6 @@ def _service(configured: bool, reading: WeatherReading | None):
     service.at = AsyncMock(return_value=reading)
     return service
 
-
-@pytest.mark.asyncio
-async def test_no_weather_source_means_no_advisory_at_all():
-    with patch("app.engines.weather.service.WeatherService", return_value=_service(False, None)):
-        result = await slot_advisory(
-            AsyncMock(), place="140412",
-            slot_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=3),
-        )
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_ordinary_weather_produces_no_advisory():
-    # Silence, not reassurance: a "conditions look fine" line is a claim, and this
-    # feature only speaks when it has something real to warn about.
-    with patch("app.engines.weather.service.WeatherService", return_value=_service(True, _reading())):
-        result = await slot_advisory(
-            AsyncMock(), place="140412",
-            slot_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=3),
-        )
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_heavy_rain_near_a_slot_warns_that_the_visit_may_run_late():
-    reading = _reading(rain_mm=RAIN_MM_ADVISORY + 1)
-    with patch("app.engines.weather.service.WeatherService", return_value=_service(True, reading)):
-        result = await slot_advisory(
-            AsyncMock(), place="140412",
-            slot_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=3),
-        )
-    assert result["level"] == RISK_ADVISORY
-    assert result["reason"] == "heavy_rain"
-    assert "run late" in result["message"]
-    # The reading travels with it so support can see what the customer was told.
-    assert result["reading"]["rain_mm"] > RAIN_MM_ADVISORY
-
-
-@pytest.mark.asyncio
-async def test_severe_weather_says_the_provider_may_move_it_for_technician_safety():
-    reading = _reading(rain_mm=RAIN_MM_SEVERE + 5)
-    with patch("app.engines.weather.service.WeatherService", return_value=_service(True, reading)):
-        result = await slot_advisory(
-            AsyncMock(), place="140412",
-            slot_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=2),
-        )
-    assert result["level"] == RISK_SEVERE
-    assert "safety" in result["message"]
-    # It warns; it does not claim the visit HAS been moved.
-    assert "moved" not in result["message"].lower() or "may need to move" in result["message"]
-
-
-# ── The provider safety gate ─────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_weather_is_not_an_available_reason_without_a_weather_source():
@@ -344,3 +283,95 @@ def test_a_reading_reports_its_own_observation_time():
     # A cached reading carries its age rather than pretending to be current.
     reading = _reading()
     assert reading.to_dict()["observed_at"].startswith("2026-08-12T14:00")
+
+
+# ── The one place a screen triggers a weather lookup ─────────────────────────
+
+class TestEligibilityEndpoint:
+    """`GET .../weather-reschedule-eligibility` is the only screen-driven weather
+    caller in the platform, and it runs because a provider explicitly picked weather
+    as the reason for moving a visit."""
+
+    @staticmethod
+    def _request():
+        return type("R", (), {"state": type("S", (), {"request_id": "req-1"})()})()
+
+    @staticmethod
+    def _job():
+        job = MagicMock()
+        job.tenant_id = "11111111-1111-1111-1111-111111111111"
+        job.scheduled_date = dt.date(2026, 8, 12)
+        job.scheduled_time_window = "09:00-10:00"
+        job.address_snapshot = {"city": "Ludhiana", "state": "Punjab",
+                                "latitude": 30.9, "longitude": 75.85}
+        job.city = "Ludhiana"
+        job.zipcode = "141002"
+        return job
+
+    async def _call(self, **kwargs):
+        import uuid as _uuid
+        from app.engines.home_service_assignment import provider_router as pr
+
+        captured = {}
+
+        async def fake_permitted(db, *, place, slot_at):
+            captured["slot_at"] = slot_at
+            captured["place"] = place
+            return {"permitted": True, "level": RISK_SEVERE, "reason": "heavy_rain",
+                    "reading": None, "detail": "ok"}
+
+        svc = MagicMock()
+        svc._load_job = AsyncMock(return_value=self._job())
+        user = MagicMock()
+        user.tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        with patch.object(pr, "HomeServiceJobAssignmentService", return_value=svc), \
+             patch("app.engines.weather.scheduling.weather_reschedule_permitted",
+                   side_effect=fake_permitted):
+            response = await pr.get_weather_reschedule_eligibility(
+                job_id=_uuid.uuid4(), r=self._request(), user=user, db=AsyncMock(),
+                **kwargs,
+            )
+        return response, captured
+
+    @pytest.mark.asyncio
+    async def test_checks_the_slot_being_moved_TO_when_one_is_given(self):
+        # The gate on POST /schedule checks the target slot. If this endpoint answered
+        # about the CURRENT slot, a provider would be told "weather reschedule allowed"
+        # and then refused on save -- for a slot whose forecast was never examined.
+        _, captured = await self._call(
+            scheduled_date=dt.date(2026, 8, 14), scheduled_time_window="16:00-17:00",
+        )
+        assert captured["slot_at"] == dt.datetime(2026, 8, 14, 16, tzinfo=IST)
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_the_jobs_current_slot(self):
+        _, captured = await self._call(scheduled_date=None, scheduled_time_window=None)
+        assert captured["slot_at"] == dt.datetime(2026, 8, 12, 9, tzinfo=IST)
+
+    @pytest.mark.asyncio
+    async def test_asks_about_the_jobs_coordinates_rather_than_its_pin(self):
+        # A bare Indian PIN is not resolvable by this provider, and a bare city name
+        # once resolved "Bassi Pathana" to Sri Lanka.
+        _, captured = await self._call(scheduled_date=None, scheduled_time_window=None)
+        assert captured["place"] == "30.9,75.85"
+
+    @pytest.mark.asyncio
+    async def test_a_job_from_another_tenant_is_never_checked(self):
+        import uuid as _uuid
+        from app.engines.home_service_assignment import provider_router as pr
+
+        job = self._job()
+        job.tenant_id = "22222222-2222-2222-2222-222222222222"
+        svc = MagicMock()
+        svc._load_job = AsyncMock(return_value=job)
+        user = MagicMock()
+        user.tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        with patch.object(pr, "HomeServiceJobAssignmentService", return_value=svc), \
+             patch("app.engines.weather.scheduling.weather_reschedule_permitted") as permitted:
+            response = await pr.get_weather_reschedule_eligibility(
+                job_id=_uuid.uuid4(), r=self._request(), user=user, db=AsyncMock(),
+            )
+        permitted.assert_not_called()
+        assert response.data["success"] is False

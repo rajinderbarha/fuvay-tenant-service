@@ -125,29 +125,12 @@ async def get_booking(
         data["scheduled_date"]        = job.scheduled_date.isoformat() if job.scheduled_date else None
         data["scheduled_time_window"] = job.scheduled_time_window
 
-        # Weather at the SLOT, when the slot is close enough to forecast and a
-        # weather source is configured. Null in every other case, including
-        # ordinary weather -- there is nothing honest to say then, and a
-        # "conditions look fine" line backed by no reading is exactly what this
-        # must not produce. It only ever WARNS: nothing is moved here.
-        from app.engines.weather.place import resolve_place
-        from app.engines.weather.scheduling import slot_advisory
-        from app.engines.weather.slots import slot_start
-        # The booking's own address snapshot carries coordinates when the customer
-        # picked a saved address; the city falls back on the booking. A PIN alone is
-        # not a location this provider can resolve in India (see weather/place.py).
-        snapshot = booking.address_snapshot if isinstance(booking.address_snapshot, dict) else {}
-        data["weather_advisory"] = await slot_advisory(
-            db,
-            place=resolve_place(
-                city=snapshot.get("city") or booking.city or job.city,
-                state=snapshot.get("state"),
-                zipcode=snapshot.get("zipcode") or booking.zipcode or job.zipcode,
-                latitude=snapshot.get("latitude"),
-                longitude=snapshot.get("longitude"),
-            ),
-            slot_at=slot_start(job.scheduled_date, job.scheduled_time_window),
-        )
+        # No weather advisory here, by product decision: the weather API is called
+        # only when a provider or staff member picks weather as a reschedule reason.
+        # This endpoint is polled while a customer watches a booking, so an advisory
+        # here would have been the bulk of all weather calls -- and when conditions
+        # really are bad, the provider moving the slot is what the customer is told
+        # about, through the reschedule notification that already exists.
 
     return ok(data, _RID(r), "assignment")
 

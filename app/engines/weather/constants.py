@@ -29,13 +29,8 @@ COLD_C_SEVERE = 2.0
 
 # ── Risk levels ──────────────────────────────────────────────────────────────
 RISK_NONE = "none"
-RISK_ADVISORY = "advisory"   # tell the customer it may run late
+RISK_ADVISORY = "advisory"   # disruptive: a weather reschedule is defensible
 RISK_SEVERE = "severe"       # unsafe: rescheduling is the right call
 RISK_LEVELS = (RISK_NONE, RISK_ADVISORY, RISK_SEVERE)
-
-# How close a slot has to be before a customer is warned about it. Beyond this the
-# forecast is not worth acting on and a warning would only create anxiety about
-# weather that may not arrive.
-ADVISORY_HORIZON_HOURS = 24
 
 ERR_WEATHER_UNAVAILABLE = "WEATHER_UNAVAILABLE"

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.weather.constants import (
-    ADVISORY_HORIZON_HOURS, CACHE_TTL_MINUTES, COLD_C_SEVERE, HEAT_C_SEVERE,
+    CACHE_TTL_MINUTES, COLD_C_SEVERE, HEAT_C_SEVERE,
     RAIN_MM_ADVISORY, RAIN_MM_SEVERE, RISK_ADVISORY, RISK_NONE, RISK_SEVERE,
     WIND_KMH_ADVISORY, WIND_KMH_SEVERE,
 )
@@ -155,17 +155,3 @@ def _reason(reading: WeatherReading) -> str:
     if reading.temperature_c <= COLD_C_SEVERE:
         return "extreme_cold"
     return "clear"
-
-
-def within_advisory_horizon(slot_at: dt.datetime | None, now: dt.datetime | None = None) -> bool:
-    """Whether a slot is close enough to warn about.
-
-    Past slots are excluded as well as distant ones: a warning about a visit that
-    has already happened is noise, and a forecast a week out is not worth the
-    anxiety it would cause.
-    """
-    if slot_at is None:
-        return False
-    moment = now or _now()
-    delta = slot_at.astimezone(dt.timezone.utc) - moment
-    return dt.timedelta(0) <= delta <= dt.timedelta(hours=ADVISORY_HORIZON_HOURS)

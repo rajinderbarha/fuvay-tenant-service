@@ -1021,6 +1021,11 @@ class HomeServiceJobAssignmentService:
         scheduled_time_window: str,
         actor_user_id:       uuid.UUID | None = None,
         request_id:          str | None       = None,
+        # Recorded on the timeline event. Worth recording precisely because
+        # "weather" is verified against a real reading before it can be given (see
+        # the provider router's gate) -- an unverifiable reason ends up explaining
+        # every moved visit, and then the record explains nothing.
+        reason:              str | None       = None,
     ) -> dict:
         job = await self._load_job(job_id)
         if not job:
@@ -1052,6 +1057,7 @@ class HomeServiceJobAssignmentService:
             new_value={"scheduled_date": scheduled_date.isoformat(),
                        "scheduled_time_window": scheduled_time_window,
                        "status": JOB_STATUS_SCHEDULED},
+            reason=(reason or None),
             request_id=request_id,
         )
 

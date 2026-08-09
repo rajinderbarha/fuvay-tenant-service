@@ -3325,6 +3325,26 @@ export interface AssignmentEventRecord {
   created_at: string | null;
 }
 
+/** The answer to "may this job be moved for weather?".
+ *
+ * `permitted` is backed by a real reading for the target slot's hour. False can mean
+ * three different things -- no weather source, no reading for that slot, or a forecast
+ * that simply is not disruptive -- so `detail` is what to show, never a generic
+ * refusal. */
+export interface WeatherRescheduleVerdict {
+  permitted: boolean;
+  level: "none" | "advisory" | "severe";
+  reason: string;
+  detail: string;
+  reading: {
+    observed_at: string;
+    temperature_c: number;
+    condition: string | null;
+    rain_mm: number;
+    wind_kmh: number;
+  } | null;
+}
+
 export interface EligibleStaffRecord {
   staff_member_id: string;
   name: string;
@@ -3373,10 +3393,21 @@ export const serviceJobAssignmentApi = {
       `/v1/provider/service-jobs/${jobId}/cancel-assignment`,
       { method: "POST", body: JSON.stringify({ reason }) }
     ),
-  schedule: (jobId: string, payload: { scheduled_date: string; scheduled_time_window: string }) =>
-    apiFetch<{ success: boolean; data: Record<string, unknown> }>(
+  schedule: (jobId: string, payload: { scheduled_date: string; scheduled_time_window: string; reason?: string }) =>
+    apiFetch<{ success: boolean; data: Record<string, unknown>; error_code?: string; message?: string }>(
       `/v1/provider/service-jobs/${jobId}/schedule`,
       { method: "POST", body: JSON.stringify(payload) }
+    ),
+  /** Whether "weather" is an available reason for moving this job to `date`/`window`.
+   *
+   * This is the ONE call that spends a weather API request, and only because a
+   * provider picked weather as the reason. Asked about the TARGET slot, because that
+   * is what POST /schedule enforces. */
+  weatherRescheduleEligibility: (jobId: string, date: string, window: string) =>
+    apiFetch<WeatherRescheduleVerdict>(
+      `/v1/provider/service-jobs/${jobId}/weather-reschedule-eligibility`
+      + `?scheduled_date=${encodeURIComponent(date)}`
+      + `&scheduled_time_window=${encodeURIComponent(window)}`
     ),
   getTimeline: (jobId: string) =>
     apiFetch<{ job_id: string; events: AssignmentEventRecord[] }>(

@@ -220,6 +220,8 @@ async def cancel_assignment(
             summary="Whether weather is an available reason to move this job")
 async def get_weather_reschedule_eligibility(
     job_id: uuid.UUID,
+    scheduled_date:        date | None = None,
+    scheduled_time_window: str | None  = None,
     r:      Request      = ...,
     user:   UserContext  = Depends(get_current_user),
     db:     AsyncSession = Depends(get_db),
@@ -229,6 +231,15 @@ async def get_weather_reschedule_eligibility(
     for that slot's hour, weather is not an available reason. The provider can still
     move the job -- they give the actual reason instead, which is what keeps the
     record of why visits move worth reading.
+
+    This is also the ONLY place a weather lookup is triggered by an ordinary screen,
+    and it happens because a provider explicitly picked weather as the reason. Nothing
+    a customer opens calls the weather API.
+
+    `scheduled_date`/`scheduled_time_window` are the slot being considered. They
+    default to the job's current slot, but the UI passes the target slot, because that
+    is what POST /schedule enforces -- an eligibility answer about a different slot
+    than the one being saved is how a provider gets told "yes" and then refused.
     """
     from app.engines.weather.place import resolve_place
     from app.engines.weather.scheduling import weather_reschedule_permitted
@@ -240,7 +251,10 @@ async def get_weather_reschedule_eligibility(
         return ok(_err("JOB_NOT_FOUND"), _RID(r), "assignment")
     verdict = await weather_reschedule_permitted(
         db, place=_job_place(job),
-        slot_at=slot_start(job.scheduled_date, job.scheduled_time_window),
+        slot_at=slot_start(
+            scheduled_date or job.scheduled_date,
+            scheduled_time_window or job.scheduled_time_window,
+        ),
     )
     return ok(verdict, _RID(r), "assignment")
 
@@ -282,6 +296,7 @@ async def schedule_job(
             job_id=job_id, tenant_id=tenant_id,
             scheduled_date=body.scheduled_date,
             scheduled_time_window=body.scheduled_time_window,
+            reason=(body.reason or "").strip() or None,
             actor_user_id=uuid.UUID(user.user_id), request_id=_RID(r),
         )
         await db.commit()

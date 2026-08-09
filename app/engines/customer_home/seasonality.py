@@ -163,8 +163,13 @@ def current_season(
     the previous day for five and a half hours every night, which would flip the
     season a day early on 1 March and 1 December.
 
-    `temperature_c` is a live reading if the deployment has a weather source
-    configured. It OVERRIDES the calendar at the two extremes only, because those
+    `temperature_c` is a live reading, and NOTHING passes it today: the weather API
+    is called only when a provider picks weather as a reschedule reason, never on a
+    customer screen, so Home orders itself on climatology alone. The parameter and
+    its logic are kept because supplying it is the single change that makes the
+    ordering respond to a real cold snap again.
+
+    When given, it OVERRIDES the calendar at the two extremes only, because those
     are the cases where the calendar is most obviously wrong to a customer: an
     unseasonal cold snap in a northern March, or a hot spell in a mild November.
     The middle of the range is left to the calendar, which knows about monsoon and

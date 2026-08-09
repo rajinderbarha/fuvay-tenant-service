@@ -2,7 +2,7 @@
 import React, { useCallback, useState } from "react";
 import { Card, Btn, Badge, Modal, Input, Skeleton, StarRating } from "../../../../components/shared/ui";
 import { serviceJobAssignmentApi, reviewsApi } from "../../../../lib/api";
-import type { EligibleStaffRecord } from "../../../../lib/api";
+import type { EligibleStaffRecord, WeatherRescheduleVerdict } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { CheckCircle, XCircle, Clock, RefreshCw, Users, Calendar } from "lucide-react";
 
@@ -26,6 +26,101 @@ const EVENT_LABELS: Record<string, string> = {
   job_scheduled:         "Visit scheduled",
 };
 
+/** Why a visit is being moved. `weather` is deliberately last: it is the only one the
+ * system verifies, and it should not read as the easiest option to reach for. */
+const SCHEDULE_REASONS = [
+  { value: "customer_request",       label: "Customer requested a different time" },
+  { value: "technician_unavailable", label: "Technician unavailable" },
+  { value: "parts_delay",            label: "Waiting on parts" },
+  { value: "weather",                label: "Weather (checked for technician safety)" },
+] as const;
+
+const REASON_LABELS: Record<string, string> = Object.fromEntries(
+  SCHEDULE_REASONS.map(r => [r.value, r.label]),
+);
+
+/**
+ * Verifies a weather reschedule against a real reading for the TARGET slot.
+ *
+ * The whole reason this component exists rather than a checkbox: weather rescheduling
+ * exists for technician safety, and a reason nobody can check is a reason that ends up
+ * explaining every moved visit. So the answer comes from the forecast for the slot the
+ * job is being moved to -- the same slot the backend enforces, so the provider is never
+ * told "yes" here and refused on save.
+ *
+ * A refusal is never a dead end: the provider picks the actual reason and moves the job.
+ */
+function WeatherReasonCheck({
+  jobId, date, window: slotWindow, onVerdict,
+}: {
+  jobId: string;
+  date: string;
+  window: string;
+  onVerdict: (verdict: WeatherRescheduleVerdict | null) => void;
+}) {
+  const check = useApi(useCallback(
+    () => (date && slotWindow
+      ? serviceJobAssignmentApi.weatherRescheduleEligibility(jobId, date, slotWindow)
+      // Nothing to check yet. Resolved rather than errored: an empty date is the
+      // provider mid-entry, not a failure.
+      : Promise.resolve(null)),
+    [jobId, date, slotWindow],
+  ));
+
+  const verdict = check.data ?? null;
+  React.useEffect(() => { onVerdict(verdict); }, [verdict, onVerdict]);
+
+  if (!date || !slotWindow) {
+    return (
+      <p style={{ fontSize: 13, color: "#6b7280" }}>
+        Enter the new date and time window to check the forecast for that slot.
+      </p>
+    );
+  }
+  if (check.loading) return <Skeleton height={64} />;
+  if (check.error) {
+    // An unavailable check is NOT an approval. Weather stays unusable as a reason.
+    return (
+      <p style={{ fontSize: 13, color: "var(--danger)" }}>
+        Couldn&apos;t check the forecast for that slot, so weather can&apos;t be used as the
+        reason. Pick the actual reason to move this visit.
+      </p>
+    );
+  }
+  if (!verdict) return null;
+
+  const reading = verdict.reading;
+  return (
+    <div style={{
+      border: "1px solid " + (verdict.permitted ? "var(--success)" : "#d1d5db"),
+      borderRadius: "var(--radius-md)", padding: 12, fontSize: 13,
+      background: verdict.permitted ? "rgba(16,185,129,0.06)" : "#f9fafb",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+        {verdict.permitted
+          ? <CheckCircle size={15} color="var(--success)" />
+          : <XCircle size={15} color="#6b7280" />}
+        <span>{verdict.permitted ? "Weather reschedule allowed" : "Weather isn't an available reason"}</span>
+      </div>
+      <p style={{ color: "#4b5563", marginTop: 6 }}>{verdict.detail}</p>
+      {/* The reading itself, so the decision is auditable rather than a verdict the
+          provider has to take on faith. Shown only when there IS one. */}
+      {reading && (
+        <p style={{ color: "#6b7280", marginTop: 6 }}>
+          {reading.condition ? reading.condition + ", " : ""}
+          {reading.temperature_c}&deg;C &middot; rain {reading.rain_mm}mm &middot; wind {reading.wind_kmh}km/h
+          {" "}(measured {new Date(reading.observed_at).toLocaleString()})
+        </p>
+      )}
+      {!verdict.permitted && (
+        <p style={{ color: "#4b5563", marginTop: 6 }}>
+          You can still move this visit — choose the reason that actually applies.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function ServiceJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
 
@@ -41,10 +136,14 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
   const [schedWindow,  setSchedWindow]  = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [notes,        setNotes]        = useState("");
+  const [schedReason,  setSchedReason]  = useState("");
+  // Null until a real check answers. Null is NOT permission -- the Schedule button
+  // stays disabled while weather is the chosen reason and nothing has verified it.
+  const [weatherVerdict, setWeatherVerdict] = useState<WeatherRescheduleVerdict | null>(null);
 
   const doAssign   = useAction(serviceJobAssignmentApi.assign,   { onSuccess: () => { setShowAssign(false);   ctx.refetch(); timeline.refetch(); } });
   const doCancel   = useAction(serviceJobAssignmentApi.cancelAssignment, { onSuccess: () => { setShowCancel(false);   ctx.refetch(); timeline.refetch(); } });
-  const doSchedule = useAction(serviceJobAssignmentApi.schedule, { onSuccess: () => { setShowSchedule(false); ctx.refetch(); } });
+  const doSchedule = useAction(serviceJobAssignmentApi.schedule, { onSuccess: () => { setShowSchedule(false); ctx.refetch(); timeline.refetch(); } });
 
   const job        = ctx.data?.job;
   const assignment = ctx.data?.current_assignment;
@@ -251,7 +350,13 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                     </time>
                   </div>
                   {ev.actor_role && <p style={{ fontSize: 12, color: "#6b7280", margin: "2px 0 0" }}>by {ev.actor_role}</p>}
-                  {ev.reason && <p style={{ fontSize: 12, color: "var(--danger)", margin: "2px 0 0" }}>Reason: {ev.reason}</p>}
+                  {ev.reason && (
+                    <p style={{ fontSize: 12, color: "var(--danger)", margin: "2px 0 0" }}>
+                      {/* Falls back to the stored value: a reason recorded by an older
+                          build, or by another surface, is still worth reading. */}
+                      Reason: {REASON_LABELS[ev.reason] ?? ev.reason}
+                    </p>
+                  )}
                 </li>
               ))}
             </ol>
@@ -313,12 +418,46 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
           <Input label="Date" type="date" value={schedDate} onChange={(v) => setSchedDate(v)} />
           <Input label="Time Window" placeholder="e.g. 10:00-12:00"
                  value={schedWindow} onChange={(v) => setSchedWindow(v)} />
+
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 500, color: "#374151", display: "block", marginBottom: 4 }}>
+              Reason (optional)
+            </label>
+            <select
+              style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: "var(--radius-md)", padding: "8px 12px", fontSize: 13 }}
+              value={schedReason}
+              onChange={(e) => setSchedReason(e.target.value)}
+            >
+              <option value="">— No reason given —</option>
+              {SCHEDULE_REASONS.map(r => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+            <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+              Recorded on this job&apos;s timeline.
+            </p>
+          </div>
+
+          {/* Weather is the one reason that is CHECKED rather than taken on trust: it
+              exists for technician safety, so it is verified against a real reading for
+              the slot being moved to. The lookup runs only when weather is picked --
+              nowhere else in the platform calls the weather service. */}
+          {schedReason === "weather" && (
+            <WeatherReasonCheck jobId={id} date={schedDate} window={schedWindow} onVerdict={setWeatherVerdict} />
+          )}
+
           {doSchedule.error && <p style={{ color: "var(--danger)", fontSize: 13 }}>{doSchedule.error}</p>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Btn variant="ghost" onClick={() => setShowSchedule(false)}>Cancel</Btn>
             <Btn variant="primary" loading={doSchedule.loading}
-                 disabled={!schedDate || !schedWindow}
-                 onClick={() => doSchedule.execute(id, { scheduled_date: schedDate, scheduled_time_window: schedWindow })}>
+                 // Blocked only for an unverified WEATHER reason -- the visit can always
+                 // be moved for the real reason instead, which is the point of the gate.
+                 disabled={!schedDate || !schedWindow || (schedReason === "weather" && !weatherVerdict?.permitted)}
+                 onClick={() => doSchedule.execute(id, {
+                   scheduled_date: schedDate,
+                   scheduled_time_window: schedWindow,
+                   reason: schedReason || undefined,
+                 })}>
               Schedule
             </Btn>
           </div>

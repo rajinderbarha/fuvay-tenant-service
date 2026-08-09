@@ -99,23 +99,21 @@ class CustomerHomeService:
         # in Ludhiana genuinely needs a geyser and January in Chennai does not, so
         # a single national calendar gets one of them wrong every winter.
         #
-        # `temperature_c` is left unset because no weather source is configured on
-        # this deployment -- see seasonality.current_season, which degrades to
-        # climatology rather than guessing. Passing a live reading here is the only
-        # change needed to make the ordering respond to an actual cold snap.
         region = resolve_region(
             city=(address or {}).get("city"), state=(address or {}).get("state"),
         )
-        # A live reading when a weather source is configured, and None otherwise --
-        # at which point the ordering falls back to climatology and the app hides
-        # its widget. Never a placeholder temperature: the whole value of this data
-        # is deciding whether it is safe to send someone out, and a comfortable
-        # guess is the wrong answer to that question.
-        weather = await self._safe_call(self._get_weather(address), default=None)
-        season = current_season(
-            region=region,
-            temperature_c=(weather or {}).get("temperature_c"),
-        )
+        # Deliberately NO live reading here, by product decision: the weather API is
+        # called only when a provider or staff member picks weather as a reschedule
+        # reason, where the answer decides whether a technician is sent out into it.
+        # Home is the single highest-traffic screen in the platform, so a lookup here
+        # would have been the overwhelming majority of all weather calls while
+        # changing nothing but the order of a list.
+        #
+        # `current_season` therefore runs on climatology alone (month + region),
+        # which is what it already falls back to on any deployment without a weather
+        # source. The ordering no longer responds to a short cold snap; passing
+        # `temperature_c=` is the one change that would restore that.
+        season = current_season(region=region)
         categories = sort_by_season(list(categories or []), name_key="name", season=season)
         quick_issues = sort_by_season(list(quick_issues or []), name_key="label", season=season)
 
@@ -147,9 +145,6 @@ class CustomerHomeService:
             "season": season,
             "season_label": SEASON_LABELS[season],
             "season_region": region,
-            # Null when no weather source is configured. The app renders no widget
-            # rather than an empty or invented one.
-            "weather": weather,
             "address": address,
             "serviceability": serviceability_summary,
             "enabled_verticals": verticals,
@@ -203,11 +198,10 @@ class CustomerHomeService:
             # Carried for the seasonal region resolution (a city name alone is
             # often ambiguous), not for display -- the app shows city + PIN.
             "state": getattr(row, "state", None),
-            # Coordinates are carried for the weather lookup, which needs an exact
-            # point: this provider cannot resolve an Indian PIN, and a bare city name
-            # can resolve to another country entirely.
-            "latitude": float(row.latitude) if getattr(row, "latitude", None) is not None else None,
-            "longitude": float(row.longitude) if getattr(row, "longitude", None) is not None else None,
+            # Coordinates are deliberately NOT sent. They were here only for the home
+            # weather lookup, which no longer happens; the app never displayed them,
+            # and a home response is not the place to hand out a customer's exact
+            # location to every client that loads a screen.
             "zipcode": row.zipcode,
             "is_default": row.is_default,
         }
@@ -602,32 +596,6 @@ class CustomerHomeService:
         from app.engines.platform_notifications.notification_service import NotificationService
         svc = NotificationService()
         return await svc.get_unread_count(self.db, customer_id)
-
-    async def _get_weather(self, address: dict | None) -> dict | None:
-        """The current reading for the customer's address, or None.
-
-        Built from COORDINATES when the address has them, and a state-qualified city
-        otherwise -- never the PIN alone, which this provider cannot resolve at all
-        in India, and never a bare city, which silently resolved "Bassi Pathana" to
-        Sri Lanka. See weather/place.py.
-
-        Read through the cache, so a screen refresh does not spend an API call and a
-        provider outage falls back to the last known reading rather than a blank.
-        """
-        from app.engines.weather.place import resolve_place
-        from app.engines.weather.service import WeatherService
-
-        place = resolve_place(
-            city=(address or {}).get("city"),
-            state=(address or {}).get("state"),
-            zipcode=(address or {}).get("zipcode"),
-            latitude=(address or {}).get("latitude"),
-            longitude=(address or {}).get("longitude"),
-        )
-        if not place:
-            return None
-        reading = await WeatherService(self.db).current(place)
-        return reading.to_dict() if reading else None
 
     async def _get_home_sections(self) -> list[dict]:
         from app.engines.customer_home.section_service import HomeSectionService

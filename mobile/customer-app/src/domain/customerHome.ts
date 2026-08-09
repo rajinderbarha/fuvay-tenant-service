@@ -149,18 +149,6 @@ export interface HomeCampaign {
   endsAt: string | null;
 }
 
-/** A real weather reading for the customer's area. */
-export interface HomeWeather {
-  /** When the weather was MEASURED, not when we fetched it -- a cached reading
-   * carries its own age rather than pretending to be current. */
-  observedAt: string;
-  temperatureC: number;
-  /** The provider's own words for the sky. Null when it sent none. */
-  condition: string | null;
-  rainMm: number;
-  windKmh: number;
-}
-
 /** One Home section, in the order the backend wants it drawn. */
 export interface HomeSection {
   key: string;
@@ -199,9 +187,5 @@ export interface CustomerHome {
    * in which case the app shows no seasonal wording rather than guessing. */
   season: string | null;
   seasonLabel: string | null;
-  /** Null when no weather source is configured, or when the lookup failed and
-   * there was no cached reading to fall back on. Null means "we do not know",
-   * never "the weather is fine". */
-  weather: HomeWeather | null;
   capabilities: HomeCapabilities;
 }

@@ -47,7 +47,6 @@ function baseHome(overrides: Partial<CustomerHome> = {}): CustomerHome {
     sections: [],
     season: null,
     seasonLabel: null,
-    weather: null,
     capabilities: { bargainAvailable: true, photoAttachAvailable: true, chatbotLanguageSelectable: true },
     ...overrides,
   };
