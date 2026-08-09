@@ -89,8 +89,15 @@ class CustomerHomeService:
         elif address and address.get("zipcode"):
             serviceability_summary = {"zipcode": address["zipcode"], "checked": True}
 
+        # Which sections the app should draw, and in what order. Falls back to
+        # an empty list rather than a guessed order: the app then renders its own
+        # shipped layout, which is a working screen -- a half-invented order
+        # would silently move things around for every customer.
+        sections = await self._safe_call(self._get_home_sections(), default=[])
+
         return {
             "response_version": HOME_RESPONSE_VERSION,
+            "sections": sections,
             "address": address,
             "serviceability": serviceability_summary,
             "enabled_verticals": verticals,
@@ -494,6 +501,10 @@ class CustomerHomeService:
         svc = NotificationService()
         return await svc.get_unread_count(self.db, customer_id)
 
+    async def _get_home_sections(self) -> list[dict]:
+        from app.engines.customer_home.section_service import HomeSectionService
+        return await HomeSectionService(self.db).customer_sections()
+
     async def _get_active_campaigns(self, zipcode: str | None) -> list[dict]:
         from app.engines.customer_campaigns.service import CampaignService
         svc = CampaignService(db=self.db)
@@ -543,6 +554,11 @@ class CustomerHomeService:
                 "category_id": str(issue.category_id),
                 "category_slug": cat_slug,
                 "category_name": cat_name,
+                # The admin-set artwork for this problem. Null is normal and the
+                # app falls back to a wording-derived glyph, so a problem is
+                # never rendered as a blank tile waiting for an upload.
+                "icon_url": issue.icon_url,
+                "severity": issue.severity,
             }
             for issue, cat_slug, cat_name in rows
         ]

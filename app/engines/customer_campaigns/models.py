@@ -38,6 +38,17 @@ class CustomerCampaign(ServiceOSBase):
     # Validated against ALLOWED_DEEPLINK_PREFIXES in service.py before save.
     cta_deeplink: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
+    # Presentation, admin-chosen (migration 236). Both are fixed vocabularies --
+    # see constants.CAMPAIGN_STYLES / CAMPAIGN_PLACEMENTS -- because the app
+    # ships one renderer per style and one slot per placement; free text here
+    # would let admin save a banner that renders as nothing.
+    display_style: Mapped[str] = mapped_column(String(30), nullable=False, default="hero")
+    placement: Mapped[str] = mapped_column(String(30), nullable=False, default="campaign_top")
+    # Festival treatment only: the accent the card is painted in, and the small
+    # badge above the title ("Diwali offer"). Null renders the ordinary theme.
+    accent_color: Mapped[str | None] = mapped_column(String(9), nullable=True)
+    badge_text: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
 
@@ -66,6 +77,13 @@ class CustomerCampaign(ServiceOSBase):
             "cta_label": self.cta_label,
             "cta_deeplink": self.cta_deeplink,
             "priority": self.priority,
+            "display_style": self.display_style,
+            "placement": self.placement,
+            "accent_color": self.accent_color,
+            "badge_text": self.badge_text,
+            # The window is customer-visible for the festival style, which says
+            # "ends 5 Nov" -- a real end date, never a manufactured countdown.
+            "ends_at": self.ends_at.isoformat() if self.ends_at else None,
         }
 
     def to_admin_dict(self) -> dict:
@@ -79,6 +97,10 @@ class CustomerCampaign(ServiceOSBase):
             "artwork_url_dark": self.artwork_url_dark,
             "cta_label": self.cta_label,
             "cta_deeplink": self.cta_deeplink,
+            "display_style": self.display_style,
+            "placement": self.placement,
+            "accent_color": self.accent_color,
+            "badge_text": self.badge_text,
             "is_enabled": self.is_enabled,
             "priority": self.priority,
             "starts_at": self.starts_at.isoformat() if self.starts_at else None,

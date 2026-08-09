@@ -801,6 +801,12 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.customer_home.router import router as customer_home_router
     app.include_router(customer_home_router)
 
+    # Admin control of the Home layout (migration 236). Which sections appear
+    # and in what order was hardcoded in the app, so re-ordering Home or hiding
+    # a section needed an app release.
+    from app.engines.customer_home.section_admin_router import router as home_sections_admin_router
+    app.include_router(home_sections_admin_router)
+
     # Real bug fixed here: the customer_campaigns engine -- which powers the
     # promotional banner carousel on the customer Home screen -- had BOTH of
     # its routers written but NEITHER ever mounted. The carousel still
