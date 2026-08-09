@@ -1,4 +1,4 @@
-import { distinctBadges } from "../providerBadges";
+import { distinctBadges, standingBadge } from "../providerBadges";
 
 describe("distinctBadges", () => {
   it("collapses badges that share a display name", () => {
@@ -42,5 +42,40 @@ describe("distinctBadges", () => {
 
   it("returns an empty list unchanged", () => {
     expect(distinctBadges([])).toEqual([]);
+  });
+});
+
+describe("standingBadge", () => {
+  it("finds the badge carrying a level, wherever it sits in the list", () => {
+    // Identified by the level, not by position, so the card does not depend on the
+    // backend's ordering.
+    const badge = standingBadge([
+      { name: "AC Specialist" },
+      { name: "Bronze Partner", icon: "medal", level: 1 },
+    ]);
+    expect(badge?.name).toBe("Bronze Partner");
+  });
+
+  it("returns null when no level has been earned", () => {
+    // The card then shows nothing rather than promoting an independent badge into a
+    // standing it does not represent.
+    expect(standingBadge([{ name: "AC Specialist" }, { name: "Verified Business" }])).toBeNull();
+  });
+
+  it("keeps the highest level if a payload carries more than one", () => {
+    const badge = standingBadge([
+      { name: "Bronze Partner", level: 1 },
+      { name: "Gold Partner", level: 3 },
+      { name: "Silver Partner", level: 2 },
+    ]);
+    expect(badge?.name).toBe("Gold Partner");
+  });
+
+  it("ignores a zero or null level", () => {
+    expect(standingBadge([{ name: "Nothing", level: 0 }, { name: "Also", level: null }])).toBeNull();
+  });
+
+  it("returns null for an empty list", () => {
+    expect(standingBadge([])).toBeNull();
   });
 });

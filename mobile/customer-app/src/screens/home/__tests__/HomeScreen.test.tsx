@@ -221,7 +221,12 @@ describe("HomeScreen", () => {
           scheduledDate: "2026-08-07", scheduledTimeWindow: "10:30-11:30",
           provider: {
             name: "Guramrit", verified: true, rating: 4.8, reviewCount: 12,
-            badges: [{ name: "Verified Business", icon: null, color: null }],
+            badges: [
+              // Standing (level) is the only badge the compact card shows; the
+              // independent ones live on the fuller provider surfaces.
+              { name: "Bronze Partner", icon: "medal", color: null, level: 1 },
+              { name: "Verified Business", icon: null, color: null },
+            ],
           },
           technician: { name: "Rakesh Kumar", role: "Service technician", photoUrl: null, rating: 4.6, reviewCount: 12 },
         }],
@@ -233,7 +238,12 @@ describe("HomeScreen", () => {
           scheduledDate: "2026-08-07", scheduledTimeWindow: "10:30-11:30",
           provider: {
             name: "Guramrit", verified: true, rating: 4.8, reviewCount: 12,
-            badges: [{ name: "Verified Business", icon: null, color: null }],
+            badges: [
+              // Standing (level) is the only badge the compact card shows; the
+              // independent ones live on the fuller provider surfaces.
+              { name: "Bronze Partner", icon: "medal", color: null, level: 1 },
+              { name: "Verified Business", icon: null, color: null },
+            ],
           },
           technician: { name: "Rakesh Kumar", role: "Service technician", photoUrl: null, rating: 4.6, reviewCount: 12 },
         },
@@ -246,8 +256,12 @@ describe("HomeScreen", () => {
     // The provider's rating, not the technician's -- the card leads with who
     // the customer booked.
     expect(getByText("4.8")).toBeTruthy();
-    expect(getByText("Verified Business")).toBeTruthy();
-    expect(getByText("· Rakesh Kumar")).toBeTruthy();
+    expect(getByText("Bronze Partner")).toBeTruthy();
+    // An independent badge is NOT promoted onto this card -- one claim, not a row.
+    expect(queryByText("Verified Business")).toBeNull();
+    // The technician's name moved off this card with the decongestion; the provider
+    // is who the customer booked, and the technician is named on the detail screen.
+    expect(queryByText("· Rakesh Kumar")).toBeNull();
     // The COMMITTED slot, not the requested one.
     expect(getByText("7 Aug 10:30-11:30")).toBeTruthy();
     expect(getByText("On the way")).toBeTruthy();
@@ -509,5 +523,36 @@ describe("HomeScreen", () => {
     // No outer stack is mounted in this render, so navigation.getParent()
     // is undefined -- the handler's optional chaining must not throw.
     expect(() => fireEvent.press(getByLabelText("Notifications, unread"))).not.toThrow();
+  });
+
+  it("shows and books against the ZIP the payload was computed for, not the saved address", () => {
+    // Real bug: "Change location" set an override the backend honoured -- it
+    // recomputed serviceability and the catalogue -- but `address` always reports the
+    // saved default address. Home read its ZIP for the header AND for navigation, so
+    // changing location looked like nothing happened, and a tap afterwards carried the
+    // OLD ZIP into the booking: browse one city, get matched in another.
+    mockHomeQuery({
+      data: baseHome({
+        address: { addressId: asAddressId("addr-1"), city: "Ludhiana", zipcode: "141001", isDefault: true },
+        serviceability: { zipcode: "110001", checked: true },
+      }),
+    });
+    const { getByLabelText, queryByText } = renderHome();
+
+    // The browsed ZIP alone: the saved address's city is a different place, and no
+    // city is guessed from a PIN the app cannot resolve.
+    expect(getByLabelText(/110001/)).toBeTruthy();
+    expect(queryByText("Ludhiana · 141001")).toBeNull();
+  });
+
+  it("keeps the saved address's city when that is what is being shown", () => {
+    mockHomeQuery({
+      data: baseHome({
+        address: { addressId: asAddressId("addr-1"), city: "Ludhiana", zipcode: "141001", isDefault: true },
+        serviceability: { zipcode: "141001", checked: true },
+      }),
+    });
+    const { getByLabelText } = renderHome();
+    expect(getByLabelText(/Ludhiana/)).toBeTruthy();
   });
 });

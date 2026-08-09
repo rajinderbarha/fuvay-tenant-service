@@ -23,8 +23,22 @@ export const customerAddressDtoSchema = z.object({
   state: z.string(),
   country: z.string(),
   zipcode: z.string(),
-  latitude: z.number().nullable(),
-  longitude: z.number().nullable(),
+  /**
+   * Sent as a STRING, not a number: these are NUMERIC columns, and the serializer
+   * renders a Decimal as `"30.6861187"` to avoid float rounding.
+   *
+   * Real bug this fixes: the schema said `z.number()`, so the whole saved-address
+   * screen failed to parse -- and only once addresses actually HAD coordinates, which
+   * the Google Places lookup started doing. Every address had null here before, and
+   * null satisfies a nullable number, so the mismatch sat dormant until real data
+   * arrived.
+   *
+   * Coerced rather than kept as text because the app treats these as coordinates. A
+   * value that is not a real number becomes null instead of NaN -- an unparseable
+   * coordinate is "we do not know", never a point on the map.
+   */
+  latitude: z.coerce.number().nullable().catch(null),
+  longitude: z.coerce.number().nullable().catch(null),
   is_default: z.boolean(),
   is_active: z.boolean(),
   created_at: z.string(),

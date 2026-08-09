@@ -796,15 +796,24 @@ async def _public_badges(db: AsyncSession, tenant_id: uuid.UUID, health_score, r
 
     The first of a repeated name wins, so the icon/colour stay those of the
     most-recently-earned one -- `list_earned_badges` returns newest first.
+
+    The provider's STANDING leads the list when they have earned a level (see
+    provider_standing). It is the one claim compact surfaces show on its own, so it
+    must never be the entry that falls off the end of the cap.
     """
     from app.engines.trust_quality.service import TrustQualityService
+    from app.engines.trust_quality.provider_standing import resolve_standing_badge
+
+    standing = await resolve_standing_badge(db, tenant_id)
     try:
         earned = await TrustQualityService(db, None, "public").list_earned_badges(
             "tenant", tenant_id, "customer")
     except Exception:  # badge lookup must never break provider matching
         earned = []
-    if earned:
+    if standing or earned:
         by_name: dict[str, dict] = {}
+        if standing:
+            by_name[standing["name"]] = standing
         for b in earned:
             name = (b.get("name") or "").strip()
             # An unnamed badge has nothing to show a customer.

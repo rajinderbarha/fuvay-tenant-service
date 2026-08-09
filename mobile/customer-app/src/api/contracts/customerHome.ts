@@ -123,6 +123,11 @@ export const homeActiveBookingDtoSchema = z.object({
       name: z.string(),
       icon: z.string().nullable().optional(),
       color: z.string().nullable().optional(),
+      /** Present only on the provider's STANDING badge (their earned level). The
+       * first badge in the list is the standing one when they have a level at all,
+       * and it is the single badge compact surfaces show. Absent on the independent
+       * badges, which have no level. */
+      level: z.number().nullable().optional(),
     }).passthrough()).default([]),
   }).passthrough().nullable().optional(),
 });

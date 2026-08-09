@@ -6,7 +6,8 @@ import { Icon } from "../Icon";
 import { HomeActiveBooking } from "../../domain/customerHome";
 import { resolveMediaUrl } from "../../domain/mediaUrl";
 import { interpretBookingStatus } from "../../domain/bookingStatus";
-import { distinctBadges } from "../../domain/providerBadges";
+import { standingBadge } from "../../domain/providerBadges";
+import { resolveBadgeIcon } from "../../domain/badgeIcon";
 
 export interface MyBookingCardProps {
   booking: HomeActiveBooking;
@@ -36,7 +37,15 @@ export function MyBookingCard({ booking, iconUrl, onPress }: MyBookingCardProps)
 
   // Same adapter the bookings list uses, so a status never reads one way here
   // and another way on the Bookings tab.
-  const { statusLabel } = interpretBookingStatus(booking.status, booking.assignmentStatus ?? "");
+  const { statusLabel, stage } = interpretBookingStatus(booking.status, booking.assignmentStatus ?? "");
+  // A pill painted success-green whatever the status told the customer everything was
+  // fine, including on a cancelled booking. Tone follows the real stage; anything the
+  // adapter cannot place reads neutral rather than reassuring.
+  const statusTone = stage === "scheduled"
+    ? { text: theme.colors.statusSuccess, surface: theme.colors.statusSuccessSurface }
+    : stage === "unknown"
+    ? { text: theme.colors.textSecondary, surface: theme.colors.surfaceSecondary }
+    : { text: theme.colors.statusInfo, surface: theme.colors.statusInfoSurface };
   const title = booking.serviceName || booking.issueSummary || booking.bookingNumber || "Your booking";
 
   // The COMMITTED slot when there is one, falling back to what the customer
@@ -49,9 +58,10 @@ export function MyBookingCard({ booking, iconUrl, onPress }: MyBookingCardProps)
   const provider = booking.provider;
   const providerName = provider?.name ?? booking.providerName ?? null;
   const providerRating = provider?.rating ?? null;
-  // Deduped before slicing: two of the same label would otherwise fill both
-  // slots with one claim and collide as list keys.
-  const badges = distinctBadges(provider?.badges ?? []).slice(0, 2);
+  // ONE badge: the provider's earned standing. Independent badges are shown on the
+  // fuller provider surfaces, not here -- a row of pills on a card this size is what
+  // made it unreadable, and a customer reads several pills as several endorsements.
+  const standing = standingBadge(provider?.badges ?? []);
 
   return (
       <Pressable
@@ -88,16 +98,32 @@ export function MyBookingCard({ booking, iconUrl, onPress }: MyBookingCardProps)
           )}
         </View>
 
-        <View style={{ flex: 1, minWidth: 0, gap: theme.spacing.xxs }}>
-          <AppText variant="bodyStrong" numberOfLines={1}>{title}</AppText>
+        <View style={{ flex: 1, minWidth: 0, gap: theme.spacing.xs }}>
+          {/* Title and status share the top line. They used to sit in separate
+              columns, which squeezed the title into a narrow strip and pushed
+              everything else into its own cramped row. */}
+          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.xs }}>
+            <AppText variant="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>{title}</AppText>
+            <View
+              style={{
+                paddingVertical: 2, paddingHorizontal: theme.spacing.xs,
+                borderRadius: theme.radiusUsage.statusPill,
+                backgroundColor: statusTone.surface,
+                flexShrink: 0,
+              }}
+            >
+              <AppText variant="caption" style={{ color: statusTone.text }}>{statusLabel}</AppText>
+            </View>
+          </View>
 
-          {/* Who is doing the work: the provider, with their verification and
-              earned rating. The technician is named alongside once one is
-              actually assigned -- before that the provider is the only real
-              answer to "who". */}
+          {/* One line for WHO, one for WHEN. The previous version stacked provider,
+              rating, technician, a badge row and the slot as five separate rows in a
+              52pt-tall card, which is what made it unreadable. */}
           {providerName ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, flexWrap: "wrap" }}>
-              <AppText variant="caption" color="secondary" numberOfLines={1}>{providerName}</AppText>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs }}>
+              <AppText variant="caption" color="secondary" numberOfLines={1} style={{ flexShrink: 1 }}>
+                {providerName}
+              </AppText>
               {provider?.verified ? (
                 <Icon name="checkmark-circle" size="compact" color={theme.colors.brandPrimary} decorative />
               ) : null}
@@ -106,9 +132,6 @@ export function MyBookingCard({ booking, iconUrl, onPress }: MyBookingCardProps)
                   <Icon name="star" size="compact" color={theme.colors.statusWarning} decorative />
                   <AppText variant="caption" color="secondary">{providerRating.toFixed(1)}</AppText>
                 </>
-              ) : null}
-              {technician?.name ? (
-                <AppText variant="caption" color="tertiary" numberOfLines={1}>· {technician.name}</AppText>
               ) : null}
             </View>
           ) : technician?.name ? (
@@ -123,45 +146,50 @@ export function MyBookingCard({ booking, iconUrl, onPress }: MyBookingCardProps)
             </View>
           ) : null}
 
-          {/* Backend-awarded badges only, capped at two so the row stays one
-              line on a narrow phone. Empty renders nothing. */}
-          {badges.length > 0 ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, flexWrap: "wrap" }}>
-              {badges.map(badge => (
+          {/* Standing and slot share the last line: each is short, and giving them a
+              row apiece is what turned four facts into a wall. Either side is omitted
+              when there is nothing real to put there. */}
+          {standing || scheduleLabel ? (
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.xs }}>
+              {standing ? (
                 <View
-                  key={badge.name}
                   style={{
+                    flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs,
                     paddingVertical: 2, paddingHorizontal: theme.spacing.xs,
                     borderRadius: theme.radiusUsage.statusPill,
                     backgroundColor: theme.colors.surfaceInteractive,
+                    flexShrink: 1,
                   }}
                 >
-                  <AppText variant="caption" color="link" numberOfLines={1}>{badge.name}</AppText>
+                  {/* WITH its icon -- which never rendered before, because badge icon
+                      names ("shield-check", "crown") are not Ionicons names and an
+                      unknown name draws nothing at all. */}
+                  <Icon
+                    name={resolveBadgeIcon(standing.icon)}
+                    size="compact"
+                    color={standing.color ?? theme.colors.brandPrimaryStrong}
+                    decorative
+                  />
+                  <AppText
+                    variant="caption"
+                    numberOfLines={1}
+                    style={{ color: standing.color ?? theme.colors.textLink }}
+                  >
+                    {standing.name}
+                  </AppText>
                 </View>
-              ))}
-            </View>
-          ) : null}
+              ) : <View />}
 
-          {scheduleLabel ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs }}>
-              <Icon name="time-outline" size="compact" color={theme.colors.textTertiary} decorative />
-              <AppText variant="caption" color="secondary" numberOfLines={1}>{scheduleLabel}</AppText>
+              {scheduleLabel ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, flexShrink: 0 }}>
+                  <Icon name="time-outline" size="compact" color={theme.colors.textTertiary} decorative />
+                  <AppText variant="caption" color="secondary" numberOfLines={1}>{scheduleLabel}</AppText>
+                </View>
+              ) : null}
             </View>
           ) : null}
         </View>
 
-        <View style={{ alignItems: "flex-end", flexShrink: 0 }}>
-          <View
-            style={{
-              paddingVertical: theme.spacing.xxs, paddingHorizontal: theme.spacing.sm,
-              borderRadius: theme.radiusUsage.statusPill,
-              borderWidth: 1, borderColor: theme.colors.statusSuccess,
-              backgroundColor: theme.colors.statusSuccessSurface,
-            }}
-          >
-            <AppText variant="caption" style={{ color: theme.colors.statusSuccess }}>{statusLabel}</AppText>
-          </View>
-        </View>
       </Pressable>
   );
 }

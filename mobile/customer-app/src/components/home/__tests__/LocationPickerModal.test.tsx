@@ -64,4 +64,29 @@ describe("LocationPickerModal", () => {
     );
     expect(getByLabelText("ZIP code").props.value).toBe("141001");
   });
+
+  it("dismisses when the backdrop is tapped", () => {
+    // The sheet is a full-screen overlay whose only other exit is a button the
+    // keyboard can cover -- without this the customer is stuck on a screen that
+    // accepts no input and offers no way back.
+    const onClose = jest.fn();
+    const { getByLabelText } = renderWithProviders(
+      <LocationPickerModal visible currentZipcode={null} onClose={onClose} onConfirm={() => {}} />,
+    );
+    fireEvent.press(getByLabelText("Close change location"));
+    return waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it("confirms from the keyboard's done key", () => {
+    // With the sheet lifted above the keyboard the Confirm button is reachable, but
+    // the done key is the shorter path once six digits are in.
+    const onConfirm = jest.fn();
+    const { getByLabelText } = renderWithProviders(
+      <LocationPickerModal visible currentZipcode={null} onClose={() => {}} onConfirm={onConfirm} />,
+    );
+    const field = getByLabelText("ZIP code");
+    fireEvent.changeText(field, "141001");
+    fireEvent(field, "submitEditing");
+    expect(onConfirm).toHaveBeenCalledWith("141001");
+  });
 });

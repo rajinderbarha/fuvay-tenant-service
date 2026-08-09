@@ -186,3 +186,55 @@ describe("BookingChatScreen — where a typed message goes", () => {
     expect(interpretFreeText).not.toHaveBeenCalled();
   });
 });
+
+describe("an empty issue list", () => {
+  it("says so instead of leaving a dead screen after the greeting", () => {
+    // Real bug: the bot greeted the customer, asked "What do you need help with?",
+    // and then rendered a chip row with no chips -- nothing after the animated text,
+    // no explanation, no way forward. A category genuinely can have nothing bookable
+    // at a ZIP, so it has to say that.
+    renderChat({
+      offeringChoice: {
+        categoryName: "Air Conditioning",
+        categorySlug: "air-conditioning",
+        offerings: [],
+      },
+    });
+    expect(screen.getByText("Nothing to book here yet")).toBeTruthy();
+    expect(screen.getByText(/No Air Conditioning problems are available in 141001/)).toBeTruthy();
+    expect(screen.getByText("Choose another service")).toBeTruthy();
+  });
+
+  it("still shows the real issues when there are any", () => {
+    renderChat({
+      offeringChoice: {
+        categoryName: "Air Conditioning",
+        categorySlug: "air-conditioning",
+        offerings: [{ id: "i-1", slug: "i-1", name: "AC Not Cooling" }],
+      },
+    });
+    expect(screen.getByText("AC Not Cooling")).toBeTruthy();
+    expect(screen.queryByText("Nothing to book here yet")).toBeNull();
+  });
+});
+
+describe("a failure the customer can see", () => {
+  it("shows the controller's error with a way to retry", () => {
+    // Real bug: `errorMessage` was set on every failure path -- a failed bootstrap, a
+    // rejected answer, a dead session -- and NOTHING rendered it. The typing dots
+    // stopped and the conversation ended: nothing after the animated text, no reason,
+    // no retry. A booking flow cannot afford a silent failure; the customer's only
+    // remaining move is to assume the app is broken.
+    const retry = jest.fn();
+    renderChat({ errorMessage: "We couldn't reach the booking service.", retry });
+
+    expect(screen.getByText("We couldn't reach the booking service.")).toBeTruthy();
+    fireEvent.press(screen.getByText("Try again"));
+    expect(retry).toHaveBeenCalled();
+  });
+
+  it("shows no error card when nothing has failed", () => {
+    renderChat({});
+    expect(screen.queryByText("Try again")).toBeNull();
+  });
+});

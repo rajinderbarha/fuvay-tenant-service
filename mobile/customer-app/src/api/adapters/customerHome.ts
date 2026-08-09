@@ -63,6 +63,7 @@ function adaptActiveBooking(dto: ActiveBookingDto) {
           reviewCount: dto.provider.review_count,
           badges: dto.provider.badges.map(b => ({
             name: b.name, icon: b.icon ?? null, color: b.color ?? null,
+            level: b.level ?? null,
           })),
         }
       : null,

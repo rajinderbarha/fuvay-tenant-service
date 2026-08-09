@@ -24,6 +24,7 @@ import {
   BotWorkingTrace, useWorkingTrace, BotPulseDot,
 } from "../../components/bookingChat/BotPrimitives";
 import { AddressTurn } from "../../components/bookingChat/AddressTurn";
+import { BotCard, BotPrimaryButton } from "../../components/bookingChat/BotPrimitives";
 
 type Route = RouteProp<CustomerTabsParamList, "Assistant">;
 
@@ -465,17 +466,65 @@ function BookingChatConversation({
 
               {(c.uiState === "bootstrapping" || c.uiState === "resolving_session") ? <BotTypingDots /> : null}
 
+              {/* The controller's error, which this screen never rendered.
+               *
+               * Real bug this fixes: `errorMessage` was set on every failure path --
+               * a failed bootstrap, a rejected answer, a dead session -- and NOTHING
+               * displayed it. The typing dots stopped and the conversation simply
+               * ended: nothing after the animated text, no reason, no retry. A silent
+               * failure is the one outcome a booking flow cannot afford, because the
+               * customer's only remaining move is to assume the app is broken. */}
+              {c.errorMessage ? (
+                <BotCard>
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                    <Ionicons name="alert-circle" size={16} color={BOT.danger} style={{ marginTop: 2 }} />
+                    <Text style={{ flex: 1, fontSize: 13, color: BOT.textPrimary }}>{c.errorMessage}</Text>
+                  </View>
+                  {/* Retry only. Starting over already has its own control in the
+                      header, and a second one with the same label here would be two
+                      different affordances answering to one name. */}
+                  <View style={{ marginTop: 12 }}>
+                    <BotPrimaryButton label="Try again" onPress={() => c.retry()} />
+                  </View>
+                </BotCard>
+              ) : null}
+
               {c.offeringChoice && !selectedIssueLabel && !traceBusy ? (
-                <BotOptionChips
-                  items={c.offeringChoice.offerings.map(o => o.name)}
-                  selected={null}
-                  onSelect={label => {
-                    const offering = c.offeringChoice!.offerings.find(o => o.name === label);
-                    if (!offering) return;
-                    setSelectedIssueLabel(label);
-                    c.selectOffering([offering]);
-                  }}
-                />
+                c.offeringChoice.offerings.length > 0 ? (
+                  <BotOptionChips
+                    items={c.offeringChoice.offerings.map(o => o.name)}
+                    selected={null}
+                    onSelect={label => {
+                      const offering = c.offeringChoice!.offerings.find(o => o.name === label);
+                      if (!offering) return;
+                      setSelectedIssueLabel(label);
+                      c.selectOffering([offering]);
+                    }}
+                  />
+                ) : (
+                  /* The issue list came back EMPTY.
+                   *
+                   * Real bug this fixes: the bot greeted the customer, asked "What do
+                   * you need help with?", and then rendered a chip row with no chips --
+                   * a dead screen with no explanation and no way forward. A category can
+                   * genuinely have nothing bookable at a given ZIP, so this has to say
+                   * so and offer the two things that can actually change the answer.
+                   *
+                   * It does NOT fall back to another category's issues or to a generic
+                   * "describe your problem" box, because the assistant's later steps
+                   * (pricing, matching) are scoped to a real issue at a real ZIP. */
+                  <BotCard>
+                    <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>
+                      Nothing to book here yet
+                    </Text>
+                    <Text style={{ fontSize: 13, color: BOT.textMuted, marginTop: 4 }}>
+                      {`No ${c.offeringChoice.categoryName} problems are available in ${entryContext.zipcode} right now.`}
+                    </Text>
+                    <View style={{ marginTop: 12 }}>
+                      <BotPrimaryButton label="Choose another service" onPress={() => navigation.goBack()} />
+                    </View>
+                  </BotCard>
+                )
               ) : null}
 
               {/* 2. Question loop -- answered history, then the live question */}

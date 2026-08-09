@@ -18,6 +18,31 @@ export interface BadgeLike {
   name: string;
 }
 
+/** A customer-visible provider badge, as the backend sends it. */
+export interface ProviderBadge {
+  name: string;
+  icon?: string | null;
+  color?: string | null;
+  /** Set only on the STANDING badge -- the provider's earned level. Higher levels
+   * replace lower ones rather than stacking, so there is never more than one. */
+  level?: number | null;
+}
+
+/**
+ * The provider's standing badge: the one claim a compact surface shows.
+ *
+ * Identified by carrying a `level`, not by position, so the surface does not depend
+ * on the backend's ordering. Null when the provider has earned no level -- and then
+ * the surface shows NO badge, rather than promoting an independent badge into a
+ * standing it does not represent.
+ */
+export function standingBadge(badges: readonly ProviderBadge[]): ProviderBadge | null {
+  const withLevel = badges.filter(b => typeof b.level === "number" && b.level > 0);
+  if (withLevel.length === 0) return null;
+  // Highest wins if a payload ever carries more than one -- the ladder supersedes.
+  return withLevel.reduce((best, b) => ((b.level ?? 0) > (best.level ?? 0) ? b : best));
+}
+
 /** Distinct badges in their original order, first occurrence of a name winning.
  *
  * Order is preserved rather than sorted because the backend sends these

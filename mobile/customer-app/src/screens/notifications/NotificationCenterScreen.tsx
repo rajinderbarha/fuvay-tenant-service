@@ -147,10 +147,13 @@ export function NotificationCenterScreen() {
               <View
                 style={{
                   paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.xxs,
-                  borderRadius: theme.radiusUsage.statusPill, backgroundColor: theme.colors.statusWarningSurface,
+                  // Brand, not warning: unread mail is not a fault, and the amber
+                  // read as an alert about the notifications rather than a count of
+                  // them.
+                  borderRadius: theme.radiusUsage.statusPill, backgroundColor: theme.colors.brandPrimaryMuted,
                 }}
               >
-                <AppText variant="labelStrong" style={{ color: theme.colors.statusWarning }}>
+                <AppText variant="labelStrong" style={{ color: theme.colors.brandPrimaryStrong }}>
                   {formatUnreadCount(unreadCount)}
                 </AppText>
               </View>
@@ -194,9 +197,18 @@ export function NotificationCenterScreen() {
           onEndReached={() => {
             if (query.hasNextPage && !query.isFetchingNextPage) query.fetchNextPage();
           }}
-          renderItem={({ item }) =>
+          renderItem={({ item, index }) =>
             item.kind === "group" ? (
-              <AppText variant="labelStrong" color="secondary" style={{ marginTop: theme.spacing.base, marginBottom: theme.spacing.xs }}>
+              // Extra air above a day heading, none above the first -- the list used
+              // to run day into day with nothing separating them.
+              <AppText
+                variant="labelStrong"
+                color="secondary"
+                style={{
+                  marginTop: index === 0 ? theme.spacing.xs : theme.spacing.lg,
+                  marginBottom: theme.spacing.xs,
+                }}
+              >
                 {item.label}
               </AppText>
             ) : (
@@ -276,24 +288,42 @@ function NotificationRow({ notification, onPress }: { notification: CustomerNoti
       onPress={interactive ? onPress : undefined}
       accessibilityRole={interactive ? "button" : undefined}
       accessibilityLabel={`${visual.accessibilityStateLabel}. ${notification.title}. ${notification.body}`}
-      style={{
+      style={({ pressed }) => ({
         flexDirection: "row", gap: theme.spacing.sm, alignItems: "flex-start",
-        paddingVertical: theme.spacing.sm, paddingHorizontal: theme.spacing.sm,
+        padding: theme.spacing.base,
         borderRadius: theme.radiusUsage.card,
-        backgroundColor: visual.unread ? theme.colors.statusWarningSurface : "transparent",
-        borderBottomWidth: 1, borderBottomColor: theme.colors.borderSubtle,
+        // A card, not a table row. It had a card's rounded corners AND a bottom rule,
+        // which drew a line across the curve of the row below it -- that is what made
+        // the list look like overlapping boxes with no gaps.
+        marginBottom: theme.spacing.sm,
+        // Unread is not a WARNING. The amber fill it used made every unread item read
+        // as a problem, and in dark mode a saturated amber block behind grey text was
+        // the worst-looking thing on the screen. A brand tint plus the dot and the
+        // bolder title carry "new" without shouting.
+        backgroundColor: visual.unread ? theme.colors.brandPrimaryMuted : theme.colors.surfaceDefault,
+        borderWidth: 1,
+        borderColor: visual.unread ? theme.colors.brandPrimary : theme.colors.borderSubtle,
         minHeight: 44,
-      }}
+        opacity: pressed && interactive ? 0.85 : 1,
+      })}
     >
       <View
         style={{
-          width: 40, height: 40, borderRadius: theme.radius.radiusFull, alignItems: "center", justifyContent: "center",
-          backgroundColor: theme.colors.surfaceInteractive,
+          width: 40, height: 40, borderRadius: theme.radius.radiusFull,
+          alignItems: "center", justifyContent: "center", flexShrink: 0,
+          // Tinted from the same family as the row, so the circle does not vanish
+          // into an unread background or float on a read one.
+          backgroundColor: visual.unread ? theme.colors.surfaceDefault : theme.colors.surfaceInteractive,
         }}
       >
-        <Icon name={typePresentation.icon} size="standard" color={theme.colors.textSecondary} decorative />
+        <Icon
+          name={typePresentation.icon}
+          size="standard"
+          color={visual.unread ? theme.colors.brandPrimaryStrong : theme.colors.textSecondary}
+          decorative
+        />
       </View>
-      <View style={{ flex: 1, gap: 2 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: theme.spacing.xxs }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs }}>
           {visual.unread ? (
             <View
@@ -304,7 +334,7 @@ function NotificationRow({ notification, onPress }: { notification: CustomerNoti
           <AppText variant={visual.titleWeight === "strong" ? "bodyStrong" : "bodySmall"} style={{ flex: 1 }}>
             {notification.title}
           </AppText>
-          <AppText variant="caption" color="tertiary">
+          <AppText variant="caption" color="tertiary" style={{ flexShrink: 0 }}>
             {isToday ? formatTime(notification.createdAt) : formatEarlierDate(notification.createdAt)}
           </AppText>
         </View>

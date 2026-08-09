@@ -118,7 +118,12 @@ describe("customer home adapter", () => {
         scheduled_date: "2026-08-10", scheduled_time_window: "13:00-14:00",
         provider: {
           name: "Guramrit", verified: true, rating: 5, review_count: 1,
-          badges: [{ name: "AC Specialist", icon: "snow", color: "#0ea5e9" }],
+          badges: [
+            // The STANDING badge carries a level; the independent ones do not, and
+            // that is how the app tells them apart (see providerBadges.standingBadge).
+            { name: "Bronze Partner", icon: "medal", color: "#b45309", level: 1 },
+            { name: "AC Specialist", icon: "snow", color: "#0ea5e9" },
+          ],
         },
       },
     })));
@@ -126,7 +131,10 @@ describe("customer home adapter", () => {
     expect(home.activeBooking?.scheduledTimeWindow).toBe("13:00-14:00");
     expect(home.activeBooking?.provider).toEqual({
       name: "Guramrit", verified: true, rating: 5, reviewCount: 1,
-      badges: [{ name: "AC Specialist", icon: "snow", color: "#0ea5e9" }],
+      badges: [
+        { name: "Bronze Partner", icon: "medal", color: "#b45309", level: 1 },
+        { name: "AC Specialist", icon: "snow", color: "#0ea5e9", level: null },
+      ],
     });
   });
 

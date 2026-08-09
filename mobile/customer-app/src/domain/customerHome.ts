@@ -1,6 +1,7 @@
 import { AddressId, CategoryId, ServiceBookingId, VerticalId } from "./ids";
 import { VerticalKey } from "./catalog";
 import { ServerTimestamp } from "./dates";
+import { ProviderBadge } from "./providerBadges";
 
 export interface HomeAddressSummary {
   addressId: AddressId;
@@ -107,7 +108,9 @@ export interface HomeBookingProvider {
   rating: number | null;
   reviewCount: number;
   /** Backend-authored trust chips. Empty is a valid, honest state. */
-  badges: { name: string; icon?: string | null; color?: string | null }[];
+  /** Earned badges, standing FIRST when the provider has a level. `level` is set
+   * only on that standing badge -- see providerBadges.standingBadge. */
+  badges: ProviderBadge[];
 }
 
 export interface HomeServiceability {

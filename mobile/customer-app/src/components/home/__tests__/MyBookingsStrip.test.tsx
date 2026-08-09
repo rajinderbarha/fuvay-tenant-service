@@ -98,11 +98,11 @@ describe("MyBookingsStrip", () => {
     expect(screen.queryByText("My Booking")).toBeNull();
   });
 
-  it("shows a repeated badge name once, and without a duplicate React key", () => {
-    // Live case: Guramrit held five separately-keyed badge definitions all named
-    // "L5 Cfg Badge". The card keyed its pills on the name, so React errored with
-    // "two children with the same key" -- and five identical pills is not five
-    // reasons to trust a provider anyway.
+  it("shows only the provider's standing badge, not a row of pills", () => {
+    // Live case: a provider held five separately-keyed badge definitions all named
+    // "L5 Cfg Badge" plus two others. A card this size cannot carry that, and a
+    // customer reads several pills as several endorsements when they may be one fact
+    // counted several times. Independent badges live on the fuller provider surfaces.
     const errors: string[] = [];
     const spy = jest.spyOn(console, "error").mockImplementation((...args) => {
       errors.push(args.map(String).join(" "));
@@ -114,8 +114,9 @@ describe("MyBookingsStrip", () => {
           provider: {
             name: "Guramrit", verified: true, rating: 5, reviewCount: 3,
             badges: [
-              { name: "L5 Cfg Badge" }, { name: "L5 Cfg Badge" }, { name: "L5 Cfg Badge" },
-              { name: "AC Specialist" },
+              { name: "Bronze Partner", icon: "medal", color: "#b45309", level: 1 },
+              { name: "L5 Cfg Badge" }, { name: "L5 Cfg Badge" },
+              { name: "AC Specialist", icon: "snow" },
             ],
           },
         } as Partial<HomeActiveBooking>)]}
@@ -126,6 +127,46 @@ describe("MyBookingsStrip", () => {
 
     spy.mockRestore();
     expect(errors.filter(e => /same key|unique "key"/i.test(e))).toEqual([]);
-    expect(screen.getAllByText("L5 Cfg Badge")).toHaveLength(1);
+    expect(screen.getAllByText("Bronze Partner")).toHaveLength(1);
+    expect(screen.queryByText("L5 Cfg Badge")).toBeNull();
+    expect(screen.queryByText("AC Specialist")).toBeNull();
+  });
+
+  it("shows no badge at all for a provider who has earned no level", () => {
+    // Silence, not a starter badge: one nobody earned devalues the ones that were.
+    renderWithProviders(
+      <MyBookingsStrip
+        bookings={[booking(1, {
+          provider: {
+            name: "Guramrit", verified: true, rating: null, reviewCount: 0,
+            badges: [{ name: "AC Specialist", icon: "snow" }],
+          },
+        } as Partial<HomeActiveBooking>)]}
+        total={1}
+        {...noop}
+      />,
+    );
+    expect(screen.queryByText("AC Specialist")).toBeNull();
+  });
+
+  it("keeps the highest level when a payload somehow carries two", () => {
+    // The ladder supersedes; it never accumulates.
+    renderWithProviders(
+      <MyBookingsStrip
+        bookings={[booking(1, {
+          provider: {
+            name: "Guramrit", verified: true, rating: 5, reviewCount: 40,
+            badges: [
+              { name: "Bronze Partner", icon: "medal", level: 1 },
+              { name: "Gold Partner", icon: "trophy", level: 3 },
+            ],
+          },
+        } as Partial<HomeActiveBooking>)]}
+        total={1}
+        {...noop}
+      />,
+    );
+    expect(screen.getByText("Gold Partner")).toBeTruthy();
+    expect(screen.queryByText("Bronze Partner")).toBeNull();
   });
 });

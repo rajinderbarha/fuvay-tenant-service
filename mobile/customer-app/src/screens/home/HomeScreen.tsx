@@ -168,7 +168,8 @@ export function HomeScreen() {
    * rather than trusted so the two can never drift apart. */
   function handleCampaignCta(campaign: HomeCampaign) {
     const home = homeQuery.data;
-    const zipcode = home?.address?.zipcode;
+    // Same rule as the render path: the ZIP the payload was computed for.
+    const zipcode = home?.serviceability?.zipcode ?? home?.address?.zipcode;
     if (!home || !zipcode) return;
 
     const target = resolveCampaignDeepLink(campaign.ctaDeeplink, bookableSlugs);
@@ -264,7 +265,18 @@ export function HomeScreen() {
     );
   }
 
-  const zipcode = home.address.zipcode as string;
+  /**
+   * The ZIP this payload was actually computed FOR, which is not always the saved
+   * address's.
+   *
+   * Real bug this fixes: "Change location" set an override that the backend honoured
+   * -- it recomputed serviceability and the bookable catalogue -- but `address` always
+   * reports the customer's saved default address, and Home read its ZIP for both the
+   * header and every navigation. So changing location looked like it did nothing, and
+   * worse, tapping a service afterwards carried the OLD ZIP into the booking: browse
+   * one city, get matched in another.
+   */
+  const zipcode = (home.serviceability?.zipcode ?? home.address.zipcode) as string;
 
   /** Which problems each of the two sections shows. Shuffled once per payload
    * rather than per render -- see selectProblems -- so tiles do not move under a
@@ -469,7 +481,20 @@ export function HomeScreen() {
     ) : null,
   };
 
-  const locationLabel = home.address.city && home.address.zipcode ? `${home.address.city} · ${home.address.zipcode}` : home.address.zipcode;
+  /**
+   * What the header says the customer is looking at.
+   *
+   * While browsing another ZIP it shows that ZIP alone -- NOT the saved address's
+   * city, which would be a different place, and not a city guessed from the PIN,
+   * which the app has no way to resolve. The saved address keeps its city because
+   * that one is known.
+   */
+  const browsingElsewhere = zipcode !== home.address.zipcode;
+  const locationLabel = browsingElsewhere
+    ? zipcode
+    : home.address.city && home.address.zipcode
+    ? `${home.address.city} · ${home.address.zipcode}`
+    : home.address.zipcode;
 
   return (
     <AppScreen style={{ paddingHorizontal: 0 }}>
@@ -525,7 +550,7 @@ export function HomeScreen() {
 
       <LocationPickerModal
         visible={locationPickerVisible}
-        currentZipcode={home.address.zipcode}
+        currentZipcode={zipcode}
         onClose={() => setLocationPickerVisible(false)}
         onConfirm={handleConfirmLocation}
       />
