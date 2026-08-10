@@ -21,7 +21,20 @@ export interface BookingUrgencyGroup {
  * told "Today" for a job the provider already calls overdue is worse than no grouping
  * at all.
  */
-const ORDER: BookingUrgency[] = ["late", "today", "upcoming", "unscheduled"];
+
+/**
+ * Today first, then what was missed.
+ *
+ * Late led this list at first, which buried everything else: with 29 overdue bookings on a
+ * real account, today's visits started at card 30 and a booking just made was unfindable --
+ * which is exactly how it was reported ("new booked job not showing"). It was there, 29
+ * cards down.
+ *
+ * Lateness is not hidden by this: the red summary line above the tabs states the count
+ * before any scrolling, and the group keeps its own heading and colour. What changes is
+ * that a long backlog no longer pushes the present out of view.
+ */
+const ORDER: BookingUrgency[] = ["today", "late", "upcoming", "unscheduled"];
 
 const HEADINGS: Record<BookingUrgency, { title: string; subtitle: string | null }> = {
   // Named for what happened, not for blame: the slot passed. Whether that is the

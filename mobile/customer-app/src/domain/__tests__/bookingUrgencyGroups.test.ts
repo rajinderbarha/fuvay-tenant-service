@@ -14,23 +14,24 @@ function booking(id: string, urgency: BookingUrgency | null): CustomerBookingLis
 }
 
 describe("groupByUrgency", () => {
-  it("puts what is past its slot first, whatever order the list arrived in", () => {
-    // The list was strictly newest-first, so a six-day-overdue visit sat wherever its
-    // booking date put it -- often below something scheduled for next week. Finding the
-    // late ones meant reading every card.
+  it("leads with today, then what was missed, whatever order the list arrived in", () => {
+    // Late led this at first, which buried the present: with 29 overdue bookings on a real
+    // account, today's visits began at card 30 and a booking just made was unfindable.
+    // The late count is still stated above the tabs before any scrolling.
     const { groups } = groupByUrgency([
       booking("upcoming-1", "upcoming"),
       booking("late-1", "late"),
       booking("today-1", "today"),
     ]);
-    expect(groups.map(g => g.urgency)).toEqual(["late", "today", "upcoming"]);
+    expect(groups.map(g => g.urgency)).toEqual(["today", "late", "upcoming"]);
   });
 
   it("keeps each group in the order the server sent it", () => {
     const { groups } = groupByUrgency([
       booking("late-1", "late"), booking("late-2", "late"), booking("today-1", "today"),
     ]);
-    expect(groups[0].items.map(i => i.bookingId)).toEqual(["late-1", "late-2"]);
+    const late = groups.find(g => g.urgency === "late");
+    expect(late?.items.map(i => i.bookingId)).toEqual(["late-1", "late-2"]);
   });
 
   it("omits groups with nothing in them", () => {

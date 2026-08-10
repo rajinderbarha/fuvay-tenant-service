@@ -113,7 +113,7 @@ describe("MyBookingsScreen: finding what is late", () => {
     };
   }
 
-  it("heads each group and counts it, late first", () => {
+  it("heads each group and counts it, today before the backlog", () => {
     // The whole complaint: with one newest-first list, a six-day-overdue visit sat below
     // something scheduled for next week and could only be found by reading every card.
     withItems([item("a", "upcoming"), item("b", "late"), item("c", "today")]);
