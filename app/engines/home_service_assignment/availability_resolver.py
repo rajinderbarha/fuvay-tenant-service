@@ -37,6 +37,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 R_BUSINESS_CLOSED = "BUSINESS_CLOSED"
 R_STAFF_INACTIVE = "STAFF_INACTIVE"
 R_STAFF_SETUP_INCOMPLETE = "STAFF_SETUP_INCOMPLETE"
+# Distinct reasons on purpose: "on leave" and "not working that day" look the same on a
+# grid but mean different things to whoever is trying to staff the job.
+R_STAFF_TIME_OFF = "STAFF_TIME_OFF"
+R_STAFF_OFF_DAY = "STAFF_DATE_OVERRIDE_CLOSED"
 R_OUTSIDE_WORKING_HOURS = "OUTSIDE_WORKING_HOURS"
 R_DATE_OVERRIDE_BLOCKED = "DATE_OVERRIDE_BLOCKED"
 R_ON_TIME_OFF = "ON_TIME_OFF"
@@ -129,6 +133,33 @@ async def _fetch_approved_time_off(
     }
 
 
+async def _staff_time_off(db: AsyncSession, tenant_id, staff_id, day: dt.date) -> dict | None:
+    """Approved leave covering this date, or None.
+
+    An inclusive range, so a single day is start == end and a week is one row -- the
+    board asks the same question either way.
+    """
+    row = (await db.execute(text(
+        "SELECT id, start_date, end_date, all_day, start_time, end_time, reason "
+        "FROM staff_time_off "
+        "WHERE tenant_id = CAST(:tid AS uuid) AND staff_member_id = CAST(:sid AS uuid) "
+        "  AND status = 'approved' AND :d BETWEEN start_date AND end_date "
+        "ORDER BY all_day DESC LIMIT 1"
+    ), {"tid": str(tenant_id), "sid": str(staff_id), "d": day})).fetchone()
+    return dict(row._mapping) if row else None
+
+
+async def _staff_override(db: AsyncSession, tenant_id, staff_id, day: dt.date) -> dict | None:
+    """This technician's hours for this specific date, replacing the weekly pattern."""
+    row = (await db.execute(text(
+        "SELECT start_time, end_time, full_day_closed, reason "
+        "FROM staff_availability_overrides "
+        "WHERE tenant_id = CAST(:tid AS uuid) AND staff_member_id = CAST(:sid AS uuid) "
+        "  AND override_date = :d"
+    ), {"tid": str(tenant_id), "sid": str(staff_id), "d": day})).fetchone()
+    return dict(row._mapping) if row else None
+
+
 async def resolve_staff_day(
     db: AsyncSession,
     tenant_id: uuid.UUID,
@@ -155,10 +186,14 @@ async def resolve_staff_day(
         "daily_capacity": None,
         "concurrent_capacity": None,
         "assignments_today": [],
+        # Both are real now (migration 242). They were declared False while the tables
+        # did not exist, so the board could say so instead of rendering empty cells.
         "capability_flags": {
-            "time_off_supported": False,
-            "date_override_supported_per_staff": False,
+            "time_off_supported": True,
+            "date_override_supported_per_staff": True,
         },
+        "time_off": None,
+        "date_override": None,
     }
 
     # Step 2 — business operating hours (tenant-wide exception first, then weekly rule).
@@ -200,6 +235,45 @@ async def resolve_staff_day(
         result["reasons"] = reasons
         return result
     result["working_hours"] = {"start": _time_str(pattern["start_time"]), "end": _time_str(pattern["end_time"])}
+
+    # Step 5a — this technician's own date override REPLACES the weekly pattern. A
+    # provider who set 10:00-16:00 for one Wednesday meant that Wednesday, not a change
+    # to every Wednesday.
+    override = await _staff_override(db, tenant_id, staff_id, target_date)
+    if override:
+        result["date_override"] = {
+            "start": _time_str(override["start_time"]),
+            "end": _time_str(override["end_time"]),
+            "full_day_closed": bool(override["full_day_closed"]),
+            "reason": override.get("reason"),
+        }
+        if override["full_day_closed"]:
+            reasons.append(R_STAFF_OFF_DAY)
+            result["reasons"] = reasons
+            return result
+        result["working_hours"] = {
+            "start": _time_str(override["start_time"]),
+            "end": _time_str(override["end_time"]),
+        }
+
+    # Step 5b — approved leave. Checked AFTER the override so the board can still show
+    # what the day would have been, and last among the schedule steps because leave beats
+    # any hours: a technician on holiday is not working the override either.
+    time_off = await _staff_time_off(db, tenant_id, staff_id, target_date)
+    if time_off:
+        result["time_off"] = {
+            "id": str(time_off["id"]),
+            "all_day": bool(time_off["all_day"]),
+            "start": _time_str(time_off["start_time"]),
+            "end": _time_str(time_off["end_time"]),
+            "reason": time_off.get("reason"),
+        }
+        if time_off["all_day"]:
+            reasons.append(R_STAFF_TIME_OFF)
+            result["reasons"] = reasons
+            return result
+        # A part-day absence leaves the rest of the day workable, so the day is NOT
+        # closed -- the board draws the blocked hours and the technician keeps the rest.
     result["daily_capacity"] = {"limit": pattern.get("max_jobs_per_day")}
     if pattern.get("timezone"):
         result["timezone"] = pattern["timezone"]
