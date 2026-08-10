@@ -3375,6 +3375,26 @@ export interface DashboardAlerts {
   notifications_raised?: number;
 }
 
+/** One bookable slot, as the availability engine describes it. */
+/** As `provider_slot_service.list_available_slots` really returns it -- verified live:
+ * every field below comes back populated, and "remaining" is `capacity - already_booked`
+ * rather than a field the engine sends. */
+export interface ProviderSlot {
+  date: string;
+  time_window: string;
+  starts_at?: string;
+  ends_at?: string;
+  slot_minutes?: number;
+  capacity?: number;
+  already_booked?: number;
+  days_ahead?: number;
+}
+
+export interface JobAvailableSlots {
+  slots: ProviderSlot[];
+  current: { scheduled_date: string | null; scheduled_time_window: string | null };
+}
+
 export interface EligibleStaffRecord {
   staff_member_id: string;
   name: string;
@@ -3427,6 +3447,14 @@ export const serviceJobAssignmentApi = {
     apiFetch<{ success: boolean; data: Record<string, unknown>; error_code?: string; message?: string }>(
       `/v1/provider/service-jobs/${jobId}/schedule`,
       { method: "POST", body: JSON.stringify(payload) }
+    ),
+  /** Slots this provider can genuinely take, from the same engine the customer booking
+   * flow offers and `slot_has_capacity` re-checks at confirmation. An empty list means no
+   * availability is configured -- the caller falls back to free text rather than showing
+   * invented windows. */
+  availableSlots: (jobId: string, emergency = false) =>
+    apiFetch<JobAvailableSlots>(
+      `/v1/provider/service-jobs/${jobId}/available-slots${emergency ? "?emergency=true" : ""}`
     ),
   /** New and delayed jobs for the dashboard, each carrying its own tone.
    *

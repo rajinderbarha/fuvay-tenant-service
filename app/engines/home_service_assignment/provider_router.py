@@ -260,6 +260,49 @@ async def get_dashboard_alerts(
     return ok(alerts, _RID(r), "assignment")
 
 
+@router.get("/{job_id}/available-slots", response_model=ApiResponse,
+            summary="Slots this provider can actually take, for scheduling this job")
+async def get_job_available_slots(
+    job_id: uuid.UUID,
+    emergency: bool = False,
+    r:    Request      = ...,
+    user: UserContext  = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+):
+    """The provider's own bookable slots, so scheduling is a choice rather than typing.
+
+    Reuses `provider_slot_service.list_available_slots` -- the SAME function the customer
+    booking flow offers slots from, and the same one `slot_has_capacity` re-checks at
+    confirmation. That matters more than the convenience: a second implementation here
+    would eventually offer a window the provider's own working hours, notice period or
+    per-slot capacity do not allow, and the booking would then be refused after the
+    provider had already told the customer a time.
+
+    Nothing is invented when the provider has no availability configured -- the list comes
+    back empty and the caller falls back to free text rather than showing made-up windows.
+    """
+    from app.engines.home_service_booking import provider_slot_service
+
+    tenant_id = uuid.UUID(user.tenant_id)
+    svc = HomeServiceJobAssignmentService(db)
+    job = await svc._load_job(job_id)
+    if not job or str(job.tenant_id) != str(tenant_id):
+        return ok(_err("JOB_NOT_FOUND"), _RID(r), "assignment")
+
+    slots = await provider_slot_service.list_available_slots(
+        db, tenant_id=tenant_id, emergency=bool(emergency),
+    )
+    return ok({
+        "slots": slots,
+        # Echoed back so a caller can show the job's existing commitment as selected
+        # rather than looking like nothing was ever agreed.
+        "current": {
+            "scheduled_date": job.scheduled_date.isoformat() if job.scheduled_date else None,
+            "scheduled_time_window": job.scheduled_time_window,
+        },
+    }, _RID(r), "assignment")
+
+
 @router.get("/{job_id}/weather-reschedule-eligibility", response_model=ApiResponse,
             summary="Whether weather is an available reason to move this job")
 async def get_weather_reschedule_eligibility(

@@ -4,6 +4,7 @@ import { Card, Btn, Badge, Modal, Input, Skeleton, StarRating } from "../../../.
 import { serviceJobAssignmentApi, reviewsApi } from "../../../../lib/api";
 import type { EligibleStaffRecord, WeatherRescheduleVerdict } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
+import { SlotPicker } from "../../../../components/dashboard/SlotPicker";
 import { CheckCircle, XCircle, Clock, RefreshCw, Users, Calendar } from "lucide-react";
 
 type AssignVariant = "default"|"success"|"warning"|"danger"|"info"|"muted";
@@ -199,8 +200,21 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
             <p style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 2 }}>{job.city || "No city"}</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <Badge variant={assignVariant(job.assignment_status)}>{job.assignment_status}</Badge>
-            <Badge variant="muted">{job.status}</Badge>
+            {/* Two unlabelled pills reading "assigned assigned" is what this was: the
+                job's status and its assignment status are often the same word, and
+                nothing said which was which. One pill when they agree; when they differ
+                -- "scheduled" work whose assignment was "cancelled", say -- both are
+                shown and both are named, because that difference is the whole point. */}
+            {job.status === job.assignment_status ? (
+              <Badge variant={assignVariant(job.assignment_status)}>{job.status}</Badge>
+            ) : (
+              <>
+                <Badge variant="muted">{`Job: ${job.status}`}</Badge>
+                <Badge variant={assignVariant(job.assignment_status)}>
+                  {`Assignment: ${job.assignment_status}`}
+                </Badge>
+              </>
+            )}
           </div>
         </div>
 
@@ -435,6 +449,15 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
       {/* Schedule Modal */}
       <Modal open={showSchedule} onClose={() => setShowSchedule(false)} title="Schedule Visit">
         <div style={{ display: "flex", flexDirection: "column" as const, gap: 16 }}>
+          {/* The provider's own bookable windows, from the availability engine. Typing a
+              time that falls outside their working hours, notice period or per-slot
+              capacity gets the booking refused after a customer has been told it. */}
+          <SlotPicker
+            jobId={id}
+            date={schedDate}
+            window={schedWindow}
+            onChange={({ date, window }) => { setSchedDate(date); setSchedWindow(window); }}
+          />
           <Input label="Date" type="date" value={schedDate} onChange={(v) => setSchedDate(v)} />
           <Input label="Time Window" placeholder="e.g. 10:00-12:00"
                  value={schedWindow} onChange={(v) => setSchedWindow(v)} />
