@@ -114,6 +114,48 @@ class HomeServiceJobAssignmentService:
                 raise ValueError(ERR_JOB_CANCELLED)
             raise ValueError(ERR_JOB_COMPLETED)
 
+    async def _availability_block_reasons(self, job, staff_member_id: uuid.UUID) -> list[str]:
+        """Why the availability resolver says this technician cannot work this job's date.
+
+        Dispatch did not ask this question at all. Eligibility was tenant + active +
+        designation, none of which involve a date, so booking a technician off on the
+        availability board changed the board and changed nothing else: the same
+        technician stayed in the eligible list and could still be assigned the day they
+        were on leave. The board was writing rows nobody read.
+
+        Deliberately narrow about when it applies:
+
+        * No `scheduled_date` on the job means there is no date to be unavailable ON.
+          Blocking would refuse assignment for unscheduled work, which is the normal way
+          jobs are triaged here.
+        * The resolver reads `provider_team_members`. Some tenants' technicians are User
+          rows instead (see `_load_staff`), and for those the resolver has nothing to look
+          up and would report STAFF_INACTIVE for everyone. So this runs only when the id
+          is a real team-member row, and otherwise returns nothing rather than blocking
+          the whole roster on a lookup that was never going to succeed.
+        * Capacity reasons do NOT block. Being full is a judgement the dispatcher is
+          allowed to override -- they can see the count and decide. Being on leave or
+          outside working hours is not a judgement call, it is a fact about the day.
+        """
+        scheduled = getattr(job, "scheduled_date", None)
+        if not scheduled:
+            return []
+
+        from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+        row = (await self.db.execute(
+            select(ProviderTeamMember.id).where(ProviderTeamMember.id == staff_member_id)
+        )).first()
+        if not row:
+            return []
+
+        from app.engines.home_service_assignment.availability_resolver import (
+            resolve_staff_day, R_DAILY_CAPACITY_EXCEEDED, R_CONCURRENT_CAPACITY_EXCEEDED,
+            R_SCHEDULE_CONFLICT,
+        )
+        day = await resolve_staff_day(self.db, job.tenant_id, staff_member_id, scheduled)
+        advisory = {R_DAILY_CAPACITY_EXCEEDED, R_CONCURRENT_CAPACITY_EXCEEDED, R_SCHEDULE_CONFLICT}
+        return [r.lower() for r in day.get("reasons", []) if r not in advisory]
+
     async def validate_staff_eligibility(
         self, job, staff_member_id: uuid.UUID
     ) -> tuple[Any, list[str]]:
@@ -144,6 +186,8 @@ class HomeServiceJobAssignmentService:
 
         if designation and designation not in ELIGIBLE_DESIGNATIONS:
             blocked.append("role_not_allowed")
+
+        blocked.extend(await self._availability_block_reasons(job, staff_member_id))
         return staff, blocked
 
     # ── Phase 4 methods ───────────────────────────────────────────────────────
@@ -269,6 +313,11 @@ class HomeServiceJobAssignmentService:
                 name = s.full_name
             if designation and designation not in ELIGIBLE_DESIGNATIONS:
                 reasons.append("role_not_allowed")
+
+            # Same availability question the assign path now asks, asked here too so the
+            # dispatcher sees a technician on leave as blocked in the list instead of
+            # picking them and being refused at the point of assignment.
+            reasons.extend(await self._availability_block_reasons(job, s.id))
 
             base = {
                 "staff_member_id": str(s.id),

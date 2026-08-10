@@ -28,6 +28,7 @@ see `docs` note at bottom of file).
 from __future__ import annotations
 
 import datetime as dt
+import re
 import uuid
 
 from sqlalchemy import select, text
@@ -46,6 +47,8 @@ R_DATE_OVERRIDE_BLOCKED = "DATE_OVERRIDE_BLOCKED"
 R_ON_TIME_OFF = "ON_TIME_OFF"
 R_DURING_BREAK = "DURING_BREAK"
 R_SCHEDULE_CONFLICT = "SCHEDULE_CONFLICT"
+# Either origin means the same thing to a summary count: this person is not working today.
+LEAVE_REASONS = {R_STAFF_TIME_OFF, R_ON_TIME_OFF}
 R_DAILY_CAPACITY_EXCEEDED = "DAILY_CAPACITY_EXCEEDED"
 R_CONCURRENT_CAPACITY_EXCEEDED = "CONCURRENT_CAPACITY_EXCEEDED"
 R_TIMEZONE_CONTEXT_INVALID = "TIMEZONE_CONTEXT_INVALID"
@@ -94,9 +97,24 @@ async def _fetch_staff(db: AsyncSession, tenant_id: uuid.UUID, staff_id: uuid.UU
 
 async def _fetch_assignments(db: AsyncSession, tenant_id: uuid.UUID, staff_id: uuid.UUID,
                               target_date: dt.date) -> list[dict]:
+    """This technician's jobs on this date, with the service each one is for.
+
+    The board draws a job as "10:00-12:00 / AC Repair". It only had the job number, so
+    every cell read as an opaque code and a provider scanning the week could not tell an
+    AC install from a drain callout without opening each one.
+
+    `offering_id` points at either a tenant's own service row or straight at the master
+    service depending on how the job was created, so the join follows both and prefers
+    the tenant's display name where one exists -- that is the name the provider gave the
+    service, and the master name is the fallback, not the other way round.
+    """
     rows = (await db.execute(text(
-        "SELECT id, job_number, status, scheduled_time_window FROM service_jobs "
-        "WHERE tenant_id=:tid AND assigned_staff_id=:sid AND scheduled_date=:d"
+        "SELECT j.id, j.job_number, j.status, j.scheduled_time_window, "
+        "       COALESCE(ts.tenant_display_name, ms.service_name) AS service_name "
+        "FROM service_jobs j "
+        "LEFT JOIN tenant_services ts ON ts.id = j.offering_id "
+        "LEFT JOIN master_services ms ON ms.id = COALESCE(ts.master_service_id, j.offering_id) "
+        "WHERE j.tenant_id=:tid AND j.assigned_staff_id=:sid AND j.scheduled_date=:d"
     ), {"tid": str(tenant_id), "sid": str(staff_id), "d": target_date})).fetchall()
     return [dict(r._mapping) for r in rows]
 
@@ -107,46 +125,73 @@ def _time_str(v) -> str | None:
     return str(v)[:5]
 
 
-async def _fetch_approved_time_off(
-    db: AsyncSession, tenant_id: uuid.UUID, staff_id: uuid.UUID, target_date: dt.date,
-) -> dict | None:
-    """Approved, non-cancelled leave covering `target_date`, if any."""
-    from app.engines.home_service_assignment.schedule_models import StaffTimeOffRequest
-    row = (await db.execute(
-        select(StaffTimeOffRequest).where(
-            StaffTimeOffRequest.tenant_id == tenant_id,
-            StaffTimeOffRequest.staff_member_id == staff_id,
-            StaffTimeOffRequest.status == "approved",
-            StaffTimeOffRequest.cancelled_at.is_(None),
-            StaffTimeOffRequest.start_date <= target_date,
-            StaffTimeOffRequest.end_date >= target_date,
-        ).limit(1)
-    )).scalars().first()
-    if not row:
-        return None
-    return {
-        "id": str(row.id),
-        "is_full_day": row.is_full_day,
-        "start_time": row.start_time.strftime("%H:%M") if row.start_time else None,
-        "end_time": row.end_time.strftime("%H:%M") if row.end_time else None,
-        "reason_category": row.reason_category,
-    }
-
-
 async def _staff_time_off(db: AsyncSession, tenant_id, staff_id, day: dt.date) -> dict | None:
-    """Approved leave covering this date, or None.
+    """Approved leave covering this date, from EITHER leave store, or None.
 
-    An inclusive range, so a single day is start == end and a week is one row -- the
-    board asks the same question either way.
+    There are two, and both are real. `staff_time_off` (migration 242) is leave the owner
+    books against a technician from the availability board. `staff_time_off_requests` is
+    leave the technician submits from the staff app and the owner approves. They record
+    the same fact — this person is not working — arrived at two different ways, so the
+    resolver has to consult both or a technician is unavailable in one surface and bookable
+    in the other.
+
+    They are returned in ONE shape. The two tables disagree on column names
+    (`all_day`/`start_time` vs `is_full_day`/`start_time`, `reason` vs `reason_category`),
+    and leaking that split to the board would make every consumer branch on which table
+    happened to answer. `source` is kept because "the owner booked this" and "the
+    technician asked for this" are different answers to "why", even though the day is
+    blocked either way.
+
+    Full-day leave wins the ordering: if someone has both a half day and a full day
+    recorded over one date, the full day is the stronger claim and blocks it.
     """
-    row = (await db.execute(text(
-        "SELECT id, start_date, end_date, all_day, start_time, end_time, reason "
+    owner_booked = (await db.execute(text(
+        "SELECT id, all_day, start_time, end_time, reason "
         "FROM staff_time_off "
         "WHERE tenant_id = CAST(:tid AS uuid) AND staff_member_id = CAST(:sid AS uuid) "
         "  AND status = 'approved' AND :d BETWEEN start_date AND end_date "
         "ORDER BY all_day DESC LIMIT 1"
     ), {"tid": str(tenant_id), "sid": str(staff_id), "d": day})).fetchone()
-    return dict(row._mapping) if row else None
+
+    candidates: list[dict] = []
+    if owner_booked:
+        m = dict(owner_booked._mapping)
+        candidates.append({
+            "id": str(m["id"]),
+            "all_day": bool(m["all_day"]),
+            "start": _time_str(m["start_time"]),
+            "end": _time_str(m["end_time"]),
+            "reason": m.get("reason"),
+            "source": "owner_booked",
+        })
+
+    from app.engines.home_service_assignment.schedule_models import StaffTimeOffRequest
+    requested = (await db.execute(
+        select(StaffTimeOffRequest).where(
+            StaffTimeOffRequest.tenant_id == tenant_id,
+            StaffTimeOffRequest.staff_member_id == staff_id,
+            # Only approved and not-cancelled leave blocks. A pending request must never
+            # quietly remove someone from the roster before their tenant has decided.
+            StaffTimeOffRequest.status == "approved",
+            StaffTimeOffRequest.cancelled_at.is_(None),
+            StaffTimeOffRequest.start_date <= day,
+            StaffTimeOffRequest.end_date >= day,
+        ).limit(1)
+    )).scalars().first()
+    if requested:
+        candidates.append({
+            "id": str(requested.id),
+            "all_day": bool(requested.is_full_day),
+            "start": requested.start_time.strftime("%H:%M") if requested.start_time else None,
+            "end": requested.end_time.strftime("%H:%M") if requested.end_time else None,
+            "reason": requested.reason_category,
+            "source": "requested",
+        })
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: not c["all_day"])
+    return candidates[0]
 
 
 async def _staff_override(db: AsyncSession, tenant_id, staff_id, day: dt.date) -> dict | None:
@@ -158,6 +203,62 @@ async def _staff_override(db: AsyncSession, tenant_id, staff_id, day: dt.date) -
         "  AND override_date = :d"
     ), {"tid": str(tenant_id), "sid": str(staff_id), "d": day})).fetchone()
     return dict(row._mapping) if row else None
+
+
+_WINDOW_RE = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})\s*$")
+
+
+def _parse_window(label: str | None) -> tuple[int, int] | None:
+    """`scheduled_time_window` as minutes-from-midnight, or None if it isn't a range.
+
+    The column is free text and holds all three of "14:30-16:30", "morning", and NULL.
+    Anything that is not an explicit range returns None and is treated as unprovable
+    rather than assumed: a job labelled "morning" cannot be shown to overlap another job,
+    and inventing a window for it would let the board accuse a provider of a clash that
+    the data does not support.
+    """
+    if not label:
+        return None
+    m = _WINDOW_RE.match(label)
+    if not m:
+        return None
+    sh, sm, eh, em = (int(g) for g in m.groups())
+    if sh > 23 or eh > 24 or sm > 59 or em > 59:
+        return None
+    start, end = sh * 60 + sm, eh * 60 + em
+    return (start, end) if end > start else None
+
+
+def _peak_overlap(assignments: list[dict]) -> tuple[int, list[str]]:
+    """Most jobs running at once, and the job numbers involved in that peak.
+
+    A sweep over the window edges rather than pairwise comparison, so three jobs
+    overlapping the same hour count as three at one instant and not as three separate
+    pairs -- "how many at once" is the question `max_concurrent_jobs` actually asks.
+
+    Jobs without a parseable window are excluded from the peak but still consume daily
+    volume. They are counted in `unscheduled` by the caller so the board can say how much
+    of the day it could not reason about, instead of quietly reporting a peak of 0 for a
+    technician whose whole day is untimed.
+    """
+    timed = [(w, a["job_number"]) for a in assignments if (w := _parse_window(a.get("time_window") or a.get("scheduled_time_window"))) ]
+    if not timed:
+        return 0, []
+    events: list[tuple[int, int]] = []
+    for (start, end), _ in timed:
+        events.append((start, 1))
+        events.append((end, -1))
+    # Ends before starts at the same minute: a job finishing at 12:00 and one beginning
+    # at 12:00 are consecutive, not concurrent.
+    events.sort(key=lambda e: (e[0], e[1]))
+    running = peak = 0
+    peak_at = None
+    for minute, delta in events:
+        running += delta
+        if running > peak:
+            peak, peak_at = running, minute
+    involved = [jn for (s, e), jn in timed if peak_at is not None and s <= peak_at < e]
+    return peak, involved
 
 
 async def resolve_staff_day(
@@ -194,6 +295,11 @@ async def resolve_staff_day(
         },
         "time_off": None,
         "date_override": None,
+        "tenant_exception": None,
+        # Present on every response, including the early returns above, so the board never
+        # has to distinguish "no conflict" from "this key is missing on days that ended
+        # early" -- a closed day has no overlapping jobs, and says so.
+        "overlapping_jobs": [],
     }
 
     # Step 2 — business operating hours (tenant-wide exception first, then weekly rule).
@@ -226,7 +332,12 @@ async def resolve_staff_day(
         return result
 
     concurrent_cap = staff.get("max_concurrent_jobs")
-    result["concurrent_capacity"] = {"limit": concurrent_cap}
+    # Same keys the fully-resolved result carries, so a caller reading `used` does not
+    # have to know whether the day happened to end early.
+    result["concurrent_capacity"] = {
+        "limit": concurrent_cap, "used": 0, "remaining": concurrent_cap,
+        "untimed_assignments": 0,
+    }
 
     # Step 5 — weekly working pattern (per-technician; scope_type='staff_member').
     pattern = await _fetch_staff_pattern(db, tenant_id, staff_id, dow)
@@ -261,58 +372,49 @@ async def resolve_staff_day(
     # any hours: a technician on holiday is not working the override either.
     time_off = await _staff_time_off(db, tenant_id, staff_id, target_date)
     if time_off:
-        result["time_off"] = {
-            "id": str(time_off["id"]),
-            "all_day": bool(time_off["all_day"]),
-            "start": _time_str(time_off["start_time"]),
-            "end": _time_str(time_off["end_time"]),
-            "reason": time_off.get("reason"),
-        }
+        result["time_off"] = time_off
         if time_off["all_day"]:
-            reasons.append(R_STAFF_TIME_OFF)
+            # Two codes for two origins. On a grid they look identical -- nobody
+            # available -- but to whoever is trying to staff the job, "the owner booked
+            # this person off" and "this person asked for leave and it was approved" are
+            # different answers, and collapsing them would lose that.
+            reasons.append(R_ON_TIME_OFF if time_off["source"] == "requested" else R_STAFF_TIME_OFF)
             result["reasons"] = reasons
             return result
         # A part-day absence leaves the rest of the day workable, so the day is NOT
         # closed -- the board draws the blocked hours and the technician keeps the rest.
-    result["daily_capacity"] = {"limit": pattern.get("max_jobs_per_day")}
+        result["time_off_window"] = {"start": time_off["start"], "end": time_off["end"]}
+
     if pattern.get("timezone"):
         result["timezone"] = pattern["timezone"]
 
-    # Step 6 — date override. GAP: no per-staff override table exists yet
-    # (confirmed: provider_schedule_overrides does not exist). Tenant-wide
-    # partial-day exception is the closest real analog available today.
+    # Step 6 — tenant-wide partial-day exception ("we close early on the 31st").
+    #
+    # This narrows the day for the WHOLE business, so it applies on top of whatever hours
+    # this technician ended up with, rather than replacing them. It used to overwrite
+    # working_hours outright, which silently threw away a per-staff override set for the
+    # same date: a technician given 10:00-16:00 for one Wednesday would show the tenant's
+    # hours instead, and the override the provider had just saved would vanish from the
+    # board with nothing to say it had been ignored.
+    #
+    # Intersecting is the honest answer -- the business being shut at 17:00 cannot make a
+    # technician available until 18:00, and a technician starting at 10:00 is not made to
+    # start at 09:00 because the business opens then.
     if exc and not exc.get("full_day_closed") and exc.get("start_time") and exc.get("end_time"):
-        result["working_hours"] = {"start": _time_str(exc["start_time"]), "end": _time_str(exc["end_time"])}
-        result["capability_flags"]["date_override_supported_per_staff"] = False
-        # Recorded as an override-narrowed window, not a hard block (spec 6:
-        # override REPLACES weekly hours; block-worthy scenario would be a
-        # zero-width window, which _validate_exception_payload already prevents).
-
-    # Step 7 — time off (approved leave).
-    #
-    # This was a documented GAP ("no staff_time_off table exists yet"), but
-    # `staff_time_off_requests` HAS since been created
-    # (schedule_models.StaffTimeOffRequest) -- the resolver was simply never
-    # updated to consult it, so it kept reporting `time_off_supported: False`
-    # and a technician on APPROVED leave still resolved as available and
-    # could be handed work.
-    #
-    # Only `approved` and not-cancelled rows block: a pending request must
-    # never silently remove someone from the roster before their tenant has
-    # actually decided.
-    time_off = await _fetch_approved_time_off(db, tenant_id, staff_id, target_date)
-    result["capability_flags"]["time_off_supported"] = True
-    if time_off:
-        result["time_off"] = time_off
-        if time_off.get("is_full_day"):
-            reasons.append(R_ON_TIME_OFF)
+        exc_start, exc_end = _time_str(exc["start_time"]), _time_str(exc["end_time"])
+        cur = result["working_hours"] or {"start": None, "end": None}
+        start = max(s for s in (cur["start"], exc_start) if s) if (cur["start"] or exc_start) else exc_start
+        end = min(e for e in (cur["end"], exc_end) if e) if (cur["end"] or exc_end) else exc_end
+        result["tenant_exception"] = {"start": exc_start, "end": exc_end}
+        if start and end and start >= end:
+            # The intersection is empty: the business is only open at hours this
+            # technician does not work. Nobody can be booked into a zero-width window,
+            # so say so rather than rendering a backwards range.
+            result["working_hours"] = {"start": start, "end": end}
+            reasons.append(R_OUTSIDE_WORKING_HOURS)
             result["reasons"] = reasons
             return result
-        # Partial-day leave narrows the working window rather than removing
-        # the day entirely; the caller's slot search subtracts it.
-        result["time_off_window"] = {
-            "start": time_off.get("start_time"), "end": time_off.get("end_time"),
-        }
+        result["working_hours"] = {"start": start, "end": end}
 
     # Step 8 — break.
     break_start, break_end = _time_str(pattern.get("break_start_time")), _time_str(pattern.get("break_end_time"))
@@ -323,23 +425,46 @@ async def resolve_staff_day(
     assignments = await _fetch_assignments(db, tenant_id, staff_id, target_date)
     active_assignments = [a for a in assignments if a["status"] not in _TERMINAL_STATUSES]
     result["assignments_today"] = [
-        {"job_number": a["job_number"], "status": a["status"], "time_window": a["scheduled_time_window"]}
+        {"job_number": a["job_number"], "status": a["status"],
+         "time_window": a["scheduled_time_window"], "service_name": a.get("service_name")}
         for a in assignments
     ]
 
-    # Step 10 — concurrent capacity.
-    if concurrent_cap is not None and len(active_assignments) >= concurrent_cap:
+    # Step 10 — concurrent capacity, measured as jobs actually running AT ONCE.
+    #
+    # This compared the day's TOTAL job count against max_concurrent_jobs, which is the
+    # daily-volume question, not the concurrency one: a technician allowed 2 jobs at a
+    # time was reported over capacity the moment they had a third job anywhere in the day,
+    # even at 09:00, 13:00 and 17:00 with nothing overlapping. That both hid real clashes
+    # and manufactured false ones, and it is why the board's Conflicts tile had nothing
+    # trustworthy behind it.
+    peak, peak_jobs = _peak_overlap(active_assignments)
+    untimed = [a for a in active_assignments if not _parse_window(a["scheduled_time_window"])]
+    if concurrent_cap is not None and peak > concurrent_cap:
         reasons.append(R_CONCURRENT_CAPACITY_EXCEEDED)
+        # A distinct fact from "this technician is full": these particular jobs were
+        # booked over each other and someone has to move one. The board draws the jobs in
+        # `overlapping_jobs` red and says which day.
+        reasons.append(R_SCHEDULE_CONFLICT)
 
-    # Step 11 — daily capacity.
+    # Step 11 — daily capacity (volume across the whole day, timed or not).
     daily_cap = pattern.get("max_jobs_per_day")
     if daily_cap is not None and len(active_assignments) >= daily_cap:
         reasons.append(R_DAILY_CAPACITY_EXCEEDED)
 
     result["daily_capacity"] = {"limit": daily_cap, "used": len(active_assignments),
                                  "remaining": (max(daily_cap - len(active_assignments), 0) if daily_cap is not None else None)}
-    result["concurrent_capacity"] = {"limit": concurrent_cap, "used": len(active_assignments),
-                                      "remaining": (max(concurrent_cap - len(active_assignments), 0) if concurrent_cap is not None else None)}
+    result["concurrent_capacity"] = {
+        "limit": concurrent_cap,
+        "used": peak,
+        "remaining": (max(concurrent_cap - peak, 0) if concurrent_cap is not None else None),
+        # Surfaced, not swallowed: jobs with no parseable window ("morning", or nothing at
+        # all) cannot be placed on a timeline, so the peak above is a floor rather than a
+        # measurement. The board says how many it could not read instead of implying the
+        # day is emptier than it is.
+        "untimed_assignments": len(untimed),
+    }
+    result["overlapping_jobs"] = peak_jobs if R_SCHEDULE_CONFLICT in reasons else []
 
     result["reasons"] = reasons
     result["available"] = len(reasons) == 0
@@ -471,18 +596,30 @@ async def resolve_tenant_week(
         for s in staff_list:
             day = await resolve_staff_day(db, tenant_id, s["id"], d)
             schedules.append(day)
-            if R_SCHEDULE_CONFLICT in day["reasons"] or R_DAILY_CAPACITY_EXCEEDED in day["reasons"] \
-               or R_CONCURRENT_CAPACITY_EXCEEDED in day["reasons"]:
-                conflicts.append({"staff_id": str(s["id"]), "date": d.isoformat(), "reasons": day["reasons"]})
+            # Only genuine overlap counts as a conflict. A technician who has hit their
+            # daily limit is FULL, which is a normal, intended end state and needs no
+            # review -- counting it here put a permanent non-zero number on the Conflicts
+            # tile and next to "Review conflicts", training the provider to ignore both.
+            if R_SCHEDULE_CONFLICT in day["reasons"]:
+                conflicts.append({
+                    "staff_id": str(s["id"]),
+                    "date": d.isoformat(),
+                    "reasons": day["reasons"],
+                    "overlapping_jobs": day.get("overlapping_jobs", []),
+                    "concurrent_limit": (day.get("concurrent_capacity") or {}).get("limit"),
+                    "peak_concurrent": (day.get("concurrent_capacity") or {}).get("used"),
+                })
         d += dt.timedelta(days=1)
 
     today_iso = dt.date.today().isoformat()
     available_today = sum(1 for sc in schedules if sc["date"] == today_iso and sc["available"])
-    # Real count now that `staff_time_off_requests` is consulted by
-    # resolve_staff_day -- this used to be hardcoded 0 with a GAP note.
+    # Both leave codes count. This looked only for ON_TIME_OFF, the code raised by
+    # technician-submitted requests, so leave the owner booked from this very board
+    # (STAFF_TIME_OFF, migration 242) left the On leave tile reading 0 while the grid
+    # showed the person greyed out -- the board contradicting itself on one screen.
     on_leave_today = sum(
         1 for sc in schedules
-        if sc["date"] == today_iso and R_ON_TIME_OFF in sc.get("reasons", [])
+        if sc["date"] == today_iso and LEAVE_REASONS & set(sc.get("reasons", []))
     )
 
     return {
@@ -500,9 +637,18 @@ async def resolve_tenant_week(
         "technicians": staff_list,
         "effective_schedules": schedules,
         "conflicts": conflicts,
+        # Migration 242 gave both of these real tables, and resolve_staff_day above reads
+        # them. This block still said date overrides were unsupported, and the board reads
+        # THIS copy, not the per-day one -- so the page kept rendering its "not configured
+        # in this system yet" disclosure over data that was by then real.
+        #
+        # Conflicts are derived from overlapping assignment windows rather than stored, so
+        # that flag stays false and means what it says: there is no conflict table, and
+        # a conflict is a live reading of the jobs on the day.
         "capability_flags": {
             "time_off_supported": True,
-            "date_override_supported_per_staff": False,
+            "date_override_supported_per_staff": True,
             "schedule_conflict_table_supported": False,
+            "schedule_conflict_derived": True,
         },
     }

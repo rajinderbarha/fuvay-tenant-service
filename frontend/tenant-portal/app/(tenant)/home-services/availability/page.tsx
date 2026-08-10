@@ -15,12 +15,22 @@
  * exactly, replacing the generic @serviceos/design-system PageHeader/Card/
  * Button primitives used in the first pass.
  *
- * Genuine, stated gaps (rendered as honest disclosures, never fabricated):
- * no per-staff date-override table, no per-staff time-off table, no
- * dedicated schedule-conflict table -- see availability_resolver.py's own
- * capability_flags, which this page reads and displays truthfully.
+ * Per-technician date overrides and time off are REAL as of migration 242
+ * and are read/written here:
+ *   GET/PUT/DELETE /v1/provider/team/{staff_id}/overrides
+ *   GET/POST/DELETE /v1/provider/team/{staff_id}/time-off
+ * The page used to carry disclosures saying neither table existed. They do
+ * now, the resolver reads them, and the disclosures have been removed
+ * rather than left to contradict the data on screen.
+ *
+ * Conflicts are DERIVED, not stored: the resolver reports the peak number
+ * of assignment windows running at once against the technician's
+ * max_concurrent_jobs, and the jobs involved. There is still no conflict
+ * table, which is what capability_flags.schedule_conflict_table_supported
+ * continues to say.
  */
 import React, { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Skeleton, Btn, Card } from "../../../../components/shared/ui";
 import { apiFetch } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
@@ -30,7 +40,11 @@ import { AvailabilityFilters } from "../../../../components/availability/Availab
 import { TeamRoster, type RosterRow } from "../../../../components/availability/TeamRoster";
 import { WeeklyGrid } from "../../../../components/availability/WeeklyGrid";
 import { AvailabilityLegend } from "../../../../components/availability/AvailabilityLegend";
-import { ScheduleDetailPanel, type WeeklyPatternLine } from "../../../../components/availability/ScheduleDetailPanel";
+import {
+  ScheduleDetailPanel, to12h,
+  type WeeklyPatternLine, type DateOverride, type TimeOffEntry, type ConflictDetail,
+  type ReadinessState,
+} from "../../../../components/availability/ScheduleDetailPanel";
 
 // ── Types (mirror the real backend response shapes exactly) ─────────────────
 interface Technician {
@@ -44,9 +58,17 @@ interface EffectiveSchedule {
   working_hours: { start: string | null; end: string | null } | null;
   break: { start: string; end: string } | null;
   daily_capacity: { limit: number | null; used?: number; remaining?: number | null } | null;
-  concurrent_capacity: { limit: number | null; used?: number; remaining?: number | null } | null;
-  assignments_today: { job_number: string; status: string; time_window: string | null }[];
+  concurrent_capacity: {
+    limit: number | null; used?: number; remaining?: number | null;
+    untimed_assignments?: number;
+  } | null;
+  assignments_today: {
+    job_number: string; status: string; time_window: string | null; service_name: string | null;
+  }[];
   capability_flags: { time_off_supported: boolean; date_override_supported_per_staff: boolean };
+  date_override: { start: string | null; end: string | null; full_day_closed: boolean; reason: string | null } | null;
+  time_off: { id: string; all_day: boolean; start: string | null; end: string | null; reason: string | null; source: string } | null;
+  overlapping_jobs: string[];
 }
 interface PlannerResponse {
   generated_at: string; timezone: string; from: string; to: string;
@@ -56,16 +78,23 @@ interface PlannerResponse {
   };
   technicians: Technician[];
   effective_schedules: EffectiveSchedule[];
-  conflicts: { staff_id: string; date: string; reasons: string[] }[];
+  conflicts: {
+    staff_id: string; date: string; reasons: string[];
+    overlapping_jobs: string[]; concurrent_limit: number | null; peak_concurrent: number | null;
+  }[];
   capability_flags: {
     time_off_supported: boolean;
     date_override_supported_per_staff: boolean;
     schedule_conflict_table_supported: boolean;
+    schedule_conflict_derived: boolean;
   };
 }
 interface StaffDetail extends EffectiveSchedule {}
 interface TeamOverview {
-  supported_services: string[];
+  // Objects, not strings. This was typed `string[]`, so the capability filter used each
+  // entry as a React key and rendered every option as "[object Object]" -- masked until
+  // now only because the fetch that populates it never actually ran.
+  supported_services: { id: string; name: string }[];
   schedule_conflicts: number;
 }
 
@@ -102,7 +131,11 @@ function summarizeWeeklyPattern(days: string[], schedules: EffectiveSchedule[], 
   const dayName = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short" });
   const values = days.map(d => {
     const s = schedules.find(x => x.staff_id === staffId && x.date === d);
-    return s?.working_hours?.start && s?.working_hours?.end ? `${s.working_hours.start} – ${s.working_hours.end}` : "Off";
+    // The panel writes hours out the way a person would ("9:00 AM – 6:00 PM"); the grid
+    // keeps 24-hour because its cells have no room for the suffix.
+    return s?.working_hours?.start && s?.working_hours?.end
+      ? `${to12h(s.working_hours.start)} – ${to12h(s.working_hours.end)}`
+      : "Off";
   });
   const lines: WeeklyPatternLine[] = [];
   let i = 0;
@@ -116,20 +149,158 @@ function summarizeWeeklyPattern(days: string[], schedules: EffectiveSchedule[], 
   return lines;
 }
 
+/** Books a technician off for a date or a range.
+ *
+ * Writes to POST /v1/provider/team/{id}/time-off, which records it approved -- the owner
+ * is entering it, so there is nobody left to approve it. The resolver picks it up on the
+ * next read, which is why this closes and refetches rather than patching local state:
+ * whether a day actually went unavailable is the resolver's answer, not this form's. */
+function AddTimeOffModal({ staffId, staffName, defaultDate, onClose, onSaved }: {
+  staffId: string; staffName: string; defaultDate: string;
+  onClose: () => void; onSaved: () => void;
+}) {
+  const [startDate, setStartDate] = useState(defaultDate);
+  const [endDate, setEndDate] = useState(defaultDate);
+  const [allDay, setAllDay] = useState(true);
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("13:00");
+  const [reason, setReason] = useState("");
+
+  const save = useAction(useCallback(async () => {
+    return await apiFetch<{ id: string }>(`/v1/provider/team/${staffId}/time-off`, {
+      method: "POST",
+      body: JSON.stringify({
+        start_date: startDate,
+        // A single day is start == end, the same shape the range uses -- the backend
+        // treats the range as inclusive.
+        end_date: endDate < startDate ? startDate : endDate,
+        all_day: allDay,
+        start_time: allDay ? null : startTime,
+        end_time: allDay ? null : endTime,
+        reason: reason.trim() || null,
+      }),
+    });
+  }, [staffId, startDate, endDate, allDay, startTime, endTime, reason]));
+
+  const handleSave = async () => {
+    const res = await save.execute();
+    if (res) { onSaved(); onClose(); }
+  };
+
+  const input: React.CSSProperties = {
+    width: "100%", boxSizing: "border-box", padding: "6px 8px", borderRadius: 6,
+    border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)",
+  };
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 959 }}/>
+      <div role="dialog" aria-label="Add time off" style={{
+        position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+        width: 380, maxWidth: "92vw", background: "var(--surface)", border: "1px solid var(--border)",
+        borderRadius: 14, boxShadow: "0 12px 40px rgba(0,0,0,0.4)", zIndex: 960, padding: 20,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <strong style={{ fontSize: 14, color: "var(--text-primary)" }}>Add time off</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer" }}>✕</button>
+        </div>
+        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 16px" }}>{staffName}</p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 12 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>From</label>
+              <input type="date" value={startDate} style={input}
+                onChange={e => {
+                  setStartDate(e.target.value);
+                  // Keeps the range valid as you type instead of waiting for the server
+                  // to reject end-before-start.
+                  if (endDate < e.target.value) setEndDate(e.target.value);
+                }}/>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>To</label>
+              <input type="date" value={endDate} min={startDate} style={input}
+                onChange={e => setEndDate(e.target.value)}/>
+            </div>
+          </div>
+
+          <label style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--text-secondary)" }}>
+            <input type="checkbox" checked={allDay} onChange={e => setAllDay(e.target.checked)}/>
+            All day
+          </label>
+
+          {!allDay && (
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Start</label>
+                <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={input}/>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>End</label>
+                <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={input}/>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Reason (optional)</label>
+            <input type="text" value={reason} maxLength={300} placeholder="Annual leave, sick, training…"
+              onChange={e => setReason(e.target.value)} style={input}/>
+          </div>
+
+          <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
+            A part-day absence blocks only those hours — the technician stays bookable for the rest of the day.
+          </p>
+
+          {save.error && (
+            <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--danger-bg)",
+              border: "1px solid var(--danger-border)", color: "var(--danger-text)" }}>{save.error}</div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <Btn variant="primary" size="sm" onClick={handleSave} loading={save.loading}>Book time off</Btn>
+            <Btn variant="secondary" size="sm" onClick={onClose}>Cancel</Btn>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function EditAvailabilityDrawer({
-  staffId, staffName, dayOfWeek, dayLabel, initial, onClose, onSaved,
+  staffId, staffName, dayOfWeek, dayLabel, weekdayLabel, initial, onClose, onSaved,
 }: {
-  staffId: string; staffName: string; dayOfWeek: number; dayLabel: string;
+  staffId: string; staffName: string; dayOfWeek: number; dayLabel: string; weekdayLabel: string;
   initial: { start: string | null; end: string | null; breakStart: string | null; breakEnd: string | null; dailyCapacity: number | null };
   onClose: () => void; onSaved: () => void;
 }) {
+  // Which question the provider is answering. These are genuinely different edits and
+  // conflating them is how a one-off "he's in at 10 on Wednesday" silently becomes
+  // "he's in at 10 every Wednesday" -- so the form makes you say which one you mean.
+  const [scope, setScope] = useState<"pattern" | "date">("pattern");
   const [startTime, setStartTime] = useState(initial.start ?? "09:00");
   const [endTime, setEndTime] = useState(initial.end ?? "18:00");
   const [breakStart, setBreakStart] = useState(initial.breakStart ?? "");
   const [breakEnd, setBreakEnd] = useState(initial.breakEnd ?? "");
   const [dailyCapacity, setDailyCapacity] = useState(initial.dailyCapacity != null ? String(initial.dailyCapacity) : "");
+  const [closed, setClosed] = useState(false);
+  const [reason, setReason] = useState("");
   const [preview, setPreview] = useState<ImpactPreview | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const saveOverride = useAction(useCallback(async () => {
+    return await apiFetch<Record<string, unknown>>(`/v1/provider/team/${staffId}/overrides`, {
+      method: "PUT",
+      body: JSON.stringify({
+        override_date: dayLabel,
+        start_time: closed ? null : startTime,
+        end_time: closed ? null : endTime,
+        full_day_closed: closed,
+        reason: reason.trim() || null,
+      }),
+    });
+  }, [staffId, dayLabel, closed, startTime, endTime, reason]));
 
   const previewAction = useAction(useCallback(async () => {
     return await apiFetch<ImpactPreview>("/v1/tenant/home-services/availability/preview-change", {
@@ -157,6 +328,14 @@ function EditAvailabilityDrawer({
 
   const handleSaveClick = async () => {
     setSaved(false);
+    // A single-date override touches one day. The impact preview answers a
+    // weekly-pattern question ("every Wednesday for the next 60 days"), so running it
+    // here would report jobs on dates this edit does not touch.
+    if (scope === "date") {
+      const res = await saveOverride.execute();
+      if (res) { setSaved(true); onSaved(); }
+      return;
+    }
     if (!preview) {
       const p = await previewAction.execute();
       if (p) setPreview(p);
@@ -165,6 +344,8 @@ function EditAvailabilityDrawer({
     const res = await saveAction.execute(preview.requires_confirmation);
     if (res) { setSaved(true); onSaved(); }
   };
+
+  const dirty = () => { setPreview(null); setSaved(false); };
 
   return (
     <>
@@ -184,6 +365,32 @@ function EditAvailabilityDrawer({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 12 }}>
         <div>
+          <label style={{ display: "block", marginBottom: 6, color: "var(--text-tertiary)" }}>Apply to</label>
+          <div style={{ display: "flex", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, padding: 3 }}>
+            {([["pattern", `Every ${weekdayLabel}`], ["date", "This date only"]] as const).map(([v, label]) => (
+              <button key={v} onClick={() => { setScope(v); dirty(); }}
+                style={{ flex: 1, padding: "6px 8px", fontSize: 11.5, fontWeight: 600, borderRadius: 6, border: "none", cursor: "pointer",
+                  background: scope === v ? "var(--brand)" : "transparent",
+                  color: scope === v ? "var(--text-on-brand)" : "var(--text-secondary)" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+            {scope === "pattern"
+              ? "Changes this technician's recurring weekly hours."
+              : `Overrides ${dayLabel} only. The weekly pattern is untouched.`}
+          </p>
+        </div>
+
+        {scope === "date" && (
+          <label style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--text-secondary)" }}>
+            <input type="checkbox" checked={closed} onChange={e => { setClosed(e.target.checked); dirty(); }}/>
+            Not working this day
+          </label>
+        )}
+
+        <div style={{ display: closed && scope === "date" ? "none" : "block" }}>
           <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Working hours</label>
           <div style={{ display: "flex", gap: 8 }}>
             <input type="time" value={startTime} onChange={e => { setStartTime(e.target.value); setPreview(null); setSaved(false); }}
@@ -192,30 +399,41 @@ function EditAvailabilityDrawer({
               style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }} />
           </div>
         </div>
-        <div>
-          <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Break (optional)</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input type="time" value={breakStart} onChange={e => { setBreakStart(e.target.value); setPreview(null); setSaved(false); }}
-              style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }} />
-            <input type="time" value={breakEnd} onChange={e => { setBreakEnd(e.target.value); setPreview(null); setSaved(false); }}
-              style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }} />
+        {/* Break and daily capacity belong to the weekly pattern. An override records
+            hours for one date and has no columns for either, so offering them here
+            would accept input the save silently drops. */}
+        {scope === "pattern" && (
+          <>
+            <div>
+              <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Break (optional)</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input type="time" value={breakStart} onChange={e => { setBreakStart(e.target.value); dirty(); }}
+                  style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }} />
+                <input type="time" value={breakEnd} onChange={e => { setBreakEnd(e.target.value); dirty(); }}
+                  style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }} />
+              </div>
+            </div>
+            <div>
+              <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Daily job capacity</label>
+              <input type="number" min={0} value={dailyCapacity}
+                onChange={e => { setDailyCapacity(e.target.value); dirty(); }}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", boxSizing: "border-box" }} />
+            </div>
+          </>
+        )}
+
+        {scope === "date" && (
+          <div>
+            <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Reason (optional)</label>
+            <input type="text" value={reason} maxLength={300} placeholder="Late start, half day, training…"
+              onChange={e => setReason(e.target.value)}
+              style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", boxSizing: "border-box" }} />
           </div>
-        </div>
-        <div>
-          <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Daily job capacity</label>
-          <input type="number" min={0} value={dailyCapacity}
-            onChange={e => { setDailyCapacity(e.target.value); setPreview(null); setSaved(false); }}
-            style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", boxSizing: "border-box" }} />
-        </div>
+        )}
 
-        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-          Date overrides, time off, and concurrent-capacity editing are not available here yet — those tables /
-          endpoints do not exist in this system.
-        </div>
-
-        {(previewAction.error || saveAction.error) && (
+        {(previewAction.error || saveAction.error || saveOverride.error) && (
           <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)" }}>
-            {previewAction.error || saveAction.error}
+            {previewAction.error || saveAction.error || saveOverride.error}
           </div>
         )}
 
@@ -240,8 +458,12 @@ function EditAvailabilityDrawer({
         )}
 
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-          <Btn variant="primary" size="sm" onClick={handleSaveClick} loading={previewAction.loading || saveAction.loading}>
-            {!preview ? "Check impact & save" : preview.requires_confirmation ? "Confirm and save" : "Save"}
+          <Btn variant="primary" size="sm" onClick={handleSaveClick}
+            loading={previewAction.loading || saveAction.loading || saveOverride.loading}>
+            {scope === "date"
+              ? "Save override"
+              : !preview ? "Check impact & save"
+              : preview.requires_confirmation ? "Confirm and save" : "Save"}
           </Btn>
           <Btn variant="secondary" size="sm" onClick={onClose}>Cancel</Btn>
         </div>
@@ -252,6 +474,7 @@ function EditAvailabilityDrawer({
 }
 
 export default function AvailabilityCapacityPlannerPage() {
+  const router = useRouter();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(toISODate(new Date())));
   const weekEnd = addDays(weekStart, 6);
   const [view, setView] = useState<"week" | "day">("week");
@@ -262,25 +485,62 @@ export default function AvailabilityCapacityPlannerPage() {
   const [capabilityFilter, setCapabilityFilter] = useState("");
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [addingTimeOffFor, setAddingTimeOffFor] = useState<string | null>(null);
+  // Bumped after any write. Every read that a write can invalidate depends on it, so the
+  // board, the grid cells and the drawer lists all re-resolve together -- a technician
+  // booked off must not stay green in the grid because only the drawer refetched.
+  const [mutationSeq, setMutationSeq] = useState(0);
+  const bumpMutation = useCallback(() => setMutationSeq(n => n + 1), []);
 
   const rangeFrom = view === "day" ? selectedDate : weekStart;
   const rangeTo = view === "day" ? selectedDate : weekEnd;
 
+  // Every useApi here passes its deps TWICE on purpose: once to useCallback and once to
+  // useApi. useApi memoizes its effect on the second argument and ignores the fetcher's
+  // own identity, so omitting it -- as this page previously did -- meant the week arrows
+  // and technician selection changed the closure and never re-ran the fetch. The
+  // technician drawer in particular then rendered "no upcoming time off" for a
+  // technician the grid was simultaneously showing on leave.
   const planner = useApi(useCallback(async () => {
     const qs = new URLSearchParams({ from: rangeFrom, to: rangeTo });
     return await apiFetch<PlannerResponse>(`/v1/tenant/home-services/availability?${qs}`);
-  }, [rangeFrom, rangeTo]));
+  }, [rangeFrom, rangeTo, mutationSeq]), [rangeFrom, rangeTo, mutationSeq]);
 
   const detail = useApi(useCallback(async () => {
     if (!selectedStaffId) return null;
     const qs = new URLSearchParams({ date: selectedDate });
     return await apiFetch<StaffDetail>(`/v1/tenant/home-services/availability/staff/${selectedStaffId}?${qs}`);
-  }, [selectedStaffId, selectedDate]));
+  }, [selectedStaffId, selectedDate, mutationSeq]), [selectedStaffId, selectedDate, mutationSeq]);
 
   const overview = useApi(useCallback(async () => {
     if (!selectedStaffId) return null;
     return await apiFetch<TeamOverview>(`/v1/tenant/home-services/team/${selectedStaffId}/overview`);
-  }, [selectedStaffId]));
+  }, [selectedStaffId]), [selectedStaffId]);
+
+  // Fetched per selected technician rather than for the whole roster: the list endpoints
+  // are per-staff, and pulling them for everyone to fill one drawer would be N+1 requests
+  // for data only the open drawer shows.
+  const overridesQ = useApi(useCallback(async () => {
+    if (!selectedStaffId) return null;
+    const res = await apiFetch<{ overrides: DateOverride[] }>(
+      `/v1/provider/team/${selectedStaffId}/overrides?from_date=${weekStart}`);
+    return res.overrides;
+  }, [selectedStaffId, weekStart, mutationSeq]), [selectedStaffId, weekStart, mutationSeq]);
+
+  const timeOffQ = useApi(useCallback(async () => {
+    if (!selectedStaffId) return null;
+    const res = await apiFetch<{ time_off: TimeOffEntry[] }>(
+      `/v1/provider/team/${selectedStaffId}/time-off?upcoming_only=true`);
+    return res.time_off;
+  }, [selectedStaffId, mutationSeq]), [selectedStaffId, mutationSeq]);
+
+  const cancelTimeOff = useAction(useCallback(async (id: string) => {
+    await apiFetch(`/v1/provider/team/${selectedStaffId}/time-off/${id}`, { method: "DELETE" });
+  }, [selectedStaffId]), { onSuccess: () => bumpMutation() });
+
+  const removeOverride = useAction(useCallback(async (date: string) => {
+    await apiFetch(`/v1/provider/team/${selectedStaffId}/overrides/${date}`, { method: "DELETE" });
+  }, [selectedStaffId]), { onSuccess: () => bumpMutation() });
 
   const technicians = planner.data?.technicians ?? [];
   const schedules = planner.data?.effective_schedules ?? [];
@@ -313,7 +573,7 @@ export default function AvailabilityCapacityPlannerPage() {
   }, [technicians, schedules, search, roleFilter, availFilter, selectedDate]);
 
   const roles = useMemo(() => Array.from(new Set(technicians.map(t => t.designation).filter(Boolean))) as string[], [technicians]);
-  const capabilities = overview.data?.supported_services ?? [];
+  const capabilities = (overview.data?.supported_services ?? []).map(s => s.name);
 
   const scheduleFor = useCallback((staffId: string, date: string) => schedules.find(s => s.staff_id === staffId && s.date === date), [schedules]);
 
@@ -322,14 +582,28 @@ export default function AvailabilityCapacityPlannerPage() {
 
   const rosterRows: RosterRow[] = filteredTechnicians.map(t => {
     const s = scheduleFor(t.id, selectedDate);
-    const hasConflict = s?.reasons.some(r => r.toLowerCase() === "schedule_conflict") ?? false;
-    const setupIncomplete = s?.reasons.some(r => r.toLowerCase() === "staff_setup_incomplete") ?? false;
+    const codes = (s?.reasons ?? []).map(r => r.toLowerCase());
+    const hasConflict = codes.includes("schedule_conflict");
+    const setupIncomplete = codes.includes("staff_setup_incomplete");
+    // Either leave code. The two record who entered it, not a different kind of absence.
+    const onLeave = codes.includes("on_time_off") || codes.includes("staff_time_off");
+    const full = codes.includes("daily_capacity_exceeded") || codes.includes("concurrent_capacity_exceeded");
     const statusLabel: RosterRow["statusLabel"] = hasConflict ? "Conflict"
+      : onLeave ? "On leave"
       : setupIncomplete ? "Setup incomplete"
-      : s?.available ? "Available" : "Unavailable";
+      : s?.available ? "Available"
+      // Checked after the hard blocks: a technician on leave is not "fully booked",
+      // even though the resolver marks both unavailable.
+      : full ? "Fully booked" : "Unavailable";
     return {
       id: t.id, name: t.full_name, designation: t.designation,
-      jobsToday: s?.assignments_today.length ?? 0, maxConcurrent: t.max_concurrent_jobs,
+      jobsToday: s?.assignments_today.length ?? 0,
+      // The day's job COUNT over the day's LIMIT. This divided the count by
+      // max_concurrent_jobs instead, so a technician allowed 4 jobs a day but only 1 at
+      // a time read "4/1 jobs" -- a ratio of two different things, and one that looks
+      // like a technician 400% over capacity when they are exactly full.
+      dailyLimit: s?.daily_capacity?.limit ?? null,
+      photoUrl: t.profile_photo_url,
       statusLabel,
     };
   });
@@ -337,9 +611,45 @@ export default function AvailabilityCapacityPlannerPage() {
   const selectedTech = technicians.find(t => t.id === selectedStaffId) ?? null;
   const selectedSchedule = selectedStaffId ? scheduleFor(selectedStaffId, selectedDate) : undefined;
   const weeklyPattern = selectedStaffId ? summarizeWeeklyPattern(days.length === 7 ? days : Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), schedules, selectedStaffId) : [];
-  const staffConflict = selectedStaffId && selectedSchedule?.reasons.some(r => r.toLowerCase() === "schedule_conflict")
-    ? { dateLabel: new Date(selectedDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short" }) }
-    : null;
+  // The panel reports the technician's NEXT conflict anywhere in the visible range, not
+  // just on the selected date. A provider who lands on the board with "Conflicts 1" and
+  // clicks the flagged technician should be told which day it is -- requiring them to
+  // first guess the date defeats the tile.
+  const staffConflict: ConflictDetail | null = useMemo(() => {
+    if (!selectedStaffId) return null;
+    const all = planner.data?.conflicts ?? [];
+    const mine = all.filter(c => c.staff_id === selectedStaffId);
+    if (mine.length === 0) return null;
+    const c = mine.find(x => x.date === selectedDate) ?? mine[0];
+    return {
+      dateLabel: new Date(c.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short" }),
+      jobNumbers: c.overlapping_jobs ?? [],
+      peak: c.peak_concurrent ?? null,
+      limit: c.concurrent_limit ?? null,
+      dispatchHref: `/home-services/dispatch?date=${c.date}&staff_id=${selectedStaffId}`,
+    };
+  }, [selectedStaffId, selectedDate, planner.data]);
+
+  const conflictCount = planner.data?.conflicts.length ?? 0;
+
+  // The line under the drawer's title. Read off the resolver's own reasons for the
+  // selected date rather than a stored "status" -- what the provider wants to know is
+  // whether this person can take work right now, which no column records.
+  const readiness: ReadinessState = useMemo(() => {
+    if (!selectedSchedule) return { label: "No schedule resolved", tone: "muted" };
+    const codes = selectedSchedule.reasons.map(r => r.toLowerCase());
+    if (codes.includes("schedule_conflict")) return { label: "Has a conflict", tone: "bad" };
+    if (codes.some(c => ["on_time_off", "staff_time_off"].includes(c))) return { label: "On leave", tone: "muted" };
+    if (codes.includes("staff_date_override_closed")) return { label: "Not working this day", tone: "muted" };
+    if (codes.includes("staff_setup_incomplete")) return { label: "Weekly pattern not set", tone: "warn" };
+    if (codes.includes("staff_inactive")) return { label: "Inactive", tone: "muted" };
+    if (codes.includes("business_closed")) return { label: "Business closed", tone: "muted" };
+    if (codes.some(c => ["daily_capacity_exceeded", "concurrent_capacity_exceeded"].includes(c)))
+      return { label: "Fully booked", tone: "warn" };
+    return selectedSchedule.available
+      ? { label: "Ready", tone: "ok" }
+      : { label: "Unavailable", tone: "muted" };
+  }, [selectedSchedule]);
 
   return (
     <div>
@@ -368,6 +678,20 @@ export default function AvailabilityCapacityPlannerPage() {
           <span title="Not available yet — no weekly-pattern copy endpoint exists.">
             <Btn variant="secondary" disabled>Copy previous week</Btn>
           </span>
+          {/* Jumps to the first overlapping-assignment conflict in the visible range and
+              opens that technician's panel, where the day and the jobs are named. */}
+          <Btn
+            variant="secondary"
+            disabled={conflictCount === 0}
+            onClick={() => {
+              const first = planner.data?.conflicts[0];
+              if (!first) return;
+              setSelectedStaffId(first.staff_id);
+              setSelectedDate(first.date);
+            }}
+          >
+            Review conflicts {conflictCount > 0 ? conflictCount : ""}
+          </Btn>
           <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={planner.refetch}>Refresh</Btn>
           <span title="Select a technician on a conflicted day, then use Edit availability.">
             <Btn variant="primary" disabled={!selectedStaffId} onClick={() => selectedStaffId && setEditingStaffId(selectedStaffId)}>
@@ -381,21 +705,24 @@ export default function AvailabilityCapacityPlannerPage() {
         <div style={{ display: "flex", gap: 14, margin: "20px 0" }}>
           {[0, 1, 2, 3, 4, 5].map(i => <Skeleton key={i} height={90} style={{ flex: 1 }}/>)}
         </div>
-      ) : summary && (
-        <AvailabilityKpis values={{
-          availableToday: summary.available_today,
-          onLeave: summary.on_leave_today,
-          totalCapacity: summary.total_capacity,
-          assigned: schedules.filter(s => s.date === selectedDate).reduce((n, s) => n + s.assignments_today.length, 0),
-          remaining: schedules.filter(s => s.date === selectedDate).reduce((n, s) => n + (s.concurrent_capacity?.remaining ?? 0), 0),
-          conflicts: summary.conflicts,
-        }}/>
-      )}
-      {!planner.loading && capFlags && !capFlags.time_off_supported && (
-        <div style={{ padding: "10px 14px", borderRadius: 10, background: "var(--surface-sunken)", border: "1px solid var(--border)", marginBottom: 16, fontSize: 12, color: "var(--text-tertiary)" }}>
-          Time off and per-technician date overrides are not configured in this system yet — those sections are intentionally omitted rather than shown as empty-but-supported.
-        </div>
-      )}
+      ) : summary && (() => {
+        const today = schedules.filter(s => s.date === selectedDate);
+        const assigned = today.reduce((n, s) => n + s.assignments_today.length, 0);
+        return (
+          <AvailabilityKpis values={{
+            availableToday: summary.available_today,
+            onLeave: summary.on_leave_today,
+            totalCapacity: summary.total_capacity,
+            assigned,
+            // Deliberately Total minus Assigned rather than a sum of per-technician
+            // concurrent remainders. Those two answer different questions, and showing
+            // the second under a tile sitting between Total and Assigned invited the
+            // provider to read three numbers that did not add up.
+            remaining: Math.max(summary.total_capacity - assigned, 0),
+            conflicts: summary.conflicts,
+          }}/>
+        );
+      })()}
 
       {planner.error && (
         <div role="alert" style={{ display: "flex", gap: 8, padding: "12px 14px", borderRadius: 10, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 13, marginBottom: 16 }}>
@@ -423,33 +750,71 @@ export default function AvailabilityCapacityPlannerPage() {
         </Card>
       ) : (
         <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-          <TeamRoster rows={rosterRows} selectedId={selectedStaffId} onSelect={setSelectedStaffId}/>
+          <TeamRoster
+            rows={rosterRows}
+            selectedId={selectedStaffId}
+            onSelect={setSelectedStaffId}
+            onManageTeam={() => router.push("/home-services/team")}
+          />
+          {/* The legend belongs to the grid, so it lives in the grid's column and lines
+              up with its left edge. Rendered as a page-level sibling it started under
+              the roster instead, reading as a footer for the whole page. */}
+          <div style={{ flex: 1, minWidth: 0 }}>
           <WeeklyGrid
-            technicians={filteredTechnicians.map(t => ({ id: t.id, name: t.full_name }))}
+            technicians={filteredTechnicians.map(t => {
+              const s = scheduleFor(t.id, selectedDate);
+              const cap = s?.daily_capacity?.limit;
+              return {
+                id: t.id,
+                name: t.full_name,
+                // Mirrors the roster's "2/4 jobs" so the two panels read as one row.
+                subtitle: cap != null ? `${s?.assignments_today.length ?? 0}/${cap} jobs` : "—",
+              };
+            })}
             days={days} scheduleFor={scheduleFor}
             selectedStaffId={selectedStaffId} onSelectStaff={setSelectedStaffId}
             todayISO={toISODate(new Date())}
           />
+          <AvailabilityLegend
+            timezone={planner.data?.timezone ?? null}
+            // Named from the selected technician's actual break, not a hardcoded
+            // "13:00-14:00" -- the design's label is that tenant's break, not a constant.
+            breakLabel={selectedSchedule?.break
+              ? `${selectedSchedule.break.start}–${selectedSchedule.break.end}`
+              : null}
+          />
+          </div>
           {selectedStaffId && selectedTech && (
             <ScheduleDetailPanel
               staffName={selectedTech.full_name}
               isActive={selectedTech.status === "active"}
+              readiness={readiness}
               weeklyPattern={weeklyPattern}
-              breakLine={selectedSchedule?.break ? `${selectedSchedule.break.start} – ${selectedSchedule.break.end}` : null}
+              breakLine={selectedSchedule?.break
+                ? `${to12h(selectedSchedule.break.start)} – ${to12h(selectedSchedule.break.end)}`
+                : null}
               maxJobsPerDay={selectedSchedule?.daily_capacity?.limit ?? null}
               maxConcurrentJobs={selectedTech.max_concurrent_jobs}
-              serviceCapability={overview.data?.supported_services ?? null}
+              serviceCapability={overview.data ? overview.data.supported_services.map(s => s.name) : null}
               capabilityLoading={overview.loading}
               conflict={staffConflict}
               generatedAt={planner.data?.generated_at ?? null}
               onClose={() => setSelectedStaffId(null)}
               onEditAvailability={() => setEditingStaffId(selectedStaffId)}
+              overrides={overridesQ.data}
+              overridesLoading={overridesQ.loading}
+              overridesError={overridesQ.error}
+              timeOff={timeOffQ.data}
+              timeOffLoading={timeOffQ.loading}
+              timeOffError={timeOffQ.error}
+              onAddTimeOff={() => setAddingTimeOffFor(selectedStaffId)}
+              onCancelTimeOff={id => cancelTimeOff.execute(id)}
+              onRemoveOverride={date => removeOverride.execute(date)}
+              mutating={cancelTimeOff.loading || removeOverride.loading}
             />
           )}
         </div>
       )}
-
-      <AvailabilityLegend/>
 
       {editingStaffId && (() => {
         const staff = technicians.find(t => t.id === editingStaffId);
@@ -459,16 +824,27 @@ export default function AvailabilityCapacityPlannerPage() {
           <EditAvailabilityDrawer
             staffId={editingStaffId} staffName={staff?.full_name ?? "Technician"}
             dayOfWeek={dow} dayLabel={selectedDate}
+            weekdayLabel={new Date(selectedDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long" })}
             initial={{
               start: d?.working_hours?.start ?? null, end: d?.working_hours?.end ?? null,
               breakStart: d?.break?.start ?? null, breakEnd: d?.break?.end ?? null,
               dailyCapacity: d?.daily_capacity?.limit ?? null,
             }}
             onClose={() => setEditingStaffId(null)}
-            onSaved={() => { planner.refetch(); detail.refetch(); }}
+            onSaved={() => { bumpMutation(); detail.refetch(); }}
           />
         );
       })()}
+
+      {addingTimeOffFor && (
+        <AddTimeOffModal
+          staffId={addingTimeOffFor}
+          staffName={technicians.find(t => t.id === addingTimeOffFor)?.full_name ?? "Technician"}
+          defaultDate={selectedDate}
+          onClose={() => setAddingTimeOffFor(null)}
+          onSaved={() => { bumpMutation(); detail.refetch(); }}
+        />
+      )}
     </div>
   );
 }
