@@ -482,6 +482,51 @@ async def list_availability(
     return ok({"rules": rows, "count": len(rows)}, request_id=rid)
 
 
+async def _validate_slot_capacity(db, tenant_id, max_bookings_per_slot) -> None:
+    """A provider cannot promise more simultaneous visits than it has people.
+
+    Refused on SAVE, not quietly clamped at booking time. The engine already caps the
+    effective number, but a form that stores 5 while 2 is enforced shows the provider a
+    figure that is not in force -- and they plan around the number they can see.
+
+    Fewer than the team is always allowed: choosing to run one visit at a time with four
+    technicians is a legitimate way to work.
+
+    The count comes from `provider_slot_service.assignable_technician_count`, the same
+    function the booking engine caps with, so the limit stated here and the limit applied
+    there can never drift apart.
+    """
+    if max_bookings_per_slot is None:
+        return
+    try:
+        requested = int(max_bookings_per_slot)
+    except (TypeError, ValueError):
+        raise ServiceOSException(
+            "INVALID_MAX_BOOKINGS_PER_SLOT",
+            "max_bookings_per_slot must be a whole number.", status_code=422)
+    if requested <= 0:
+        raise ServiceOSException(
+            "INVALID_MAX_BOOKINGS_PER_SLOT",
+            "max_bookings_per_slot must be at least 1.", status_code=422)
+
+    from app.engines.home_service_booking.provider_slot_service import (
+        assignable_technician_count,
+    )
+    technicians = await assignable_technician_count(db, tenant_id)
+    # -1 means the team could not be read. The rule stands rather than blocking a save on
+    # a failed query -- the booking engine makes the same choice for the same reason.
+    if technicians < 0:
+        return
+    if requested > technicians:
+        raise ServiceOSException(
+            "CAPACITY_EXCEEDS_TEAM",
+            (f"You have {technicians} technician(s) who can take assignments, so a slot "
+             f"cannot hold {requested} bookings."),
+            status_code=422,
+            resolution="Add technicians to your team, or lower the bookings per slot.",
+        )
+
+
 @router.post("/availability", status_code=201)
 async def create_availability(
     payload: dict, request: Request,
@@ -496,6 +541,7 @@ async def create_availability(
     _validate_break_time(start_time, end_time, break_start, break_end)
     if payload.get("max_jobs_per_day") is not None and payload["max_jobs_per_day"] <= 0:
         raise ServiceOSException("INVALID_MAX_JOBS_PER_DAY", "max_jobs_per_day must be positive.", status_code=422)
+    await _validate_slot_capacity(db, tid, payload.get("max_bookings_per_slot"))
     new_id = str(uuid.uuid4())
     await db.execute(text("""
         INSERT INTO provider_availability_rules
@@ -551,6 +597,11 @@ async def update_availability(
     allowed = {"scope_type", "scope_id", "day_of_week", "start_time", "end_time", "slot_duration_minutes",
                "max_bookings_per_slot", "is_active", "break_start_time", "break_end_time",
                "max_jobs_per_day", "timezone", "emergency_available"}
+    # Same ceiling on edit as on create: raising an existing rule past the team is the
+    # likelier route to an impossible promise, since the rule already exists and looks
+    # settled.
+    if "max_bookings_per_slot" in payload:
+        await _validate_slot_capacity(db, tid, payload.get("max_bookings_per_slot"))
     if payload.keys() & {"start_time", "end_time", "break_start_time", "break_end_time"}:
         existing_row = (await db.execute(
             text("SELECT start_time, end_time, break_start_time, break_end_time "

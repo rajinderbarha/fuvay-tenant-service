@@ -76,7 +76,9 @@ interface ValidationIssue {
   cta: string;
 }
 
-function detectIssues(rules: ProviderAvailabilityRule[]): ValidationIssue[] {
+/** `technicianCount` is how many people can actually take an assignment; 0 means "not
+ * known yet", and the team check is skipped rather than guessed at. */
+function detectIssues(rules: ProviderAvailabilityRule[], technicianCount = 0): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const active = rules.filter(r => r.is_active);
   if (active.length === 0) {
@@ -108,6 +110,18 @@ function detectIssues(rules: ProviderAvailabilityRule[]): ValidationIssue[] {
       issues.push({ severity: "danger", code: "max_bookings_missing",
         title: "Invalid Max Bookings",
         reason: `${DAY_NAMES[r.day_of_week]} rule: max bookings per slot must be at least 1.`,
+        cta: "Edit Rule" });
+    }
+    // A rule promising more simultaneous visits than there are people to send. Reported
+    // for rules SAVED BEFORE this limit existed -- the booking engine already caps them
+    // in practice, so the number on screen is not the number in force until it is fixed.
+    if (technicianCount > 0 && r.max_bookings_per_slot !== null
+        && r.max_bookings_per_slot > technicianCount) {
+      issues.push({ severity: "warning", code: "max_bookings_exceeds_team",
+        title: "More Bookings Than Technicians",
+        reason: `${DAY_NAMES[r.day_of_week]} rule allows ${r.max_bookings_per_slot} bookings per slot, `
+          + `but only ${technicianCount} technician(s) can take assignments. `
+          + `Bookings are limited to ${technicianCount}.`,
         cta: "Edit Rule" });
     }
     if ((r.scope_type === "offering" || r.scope_type === "staff_member" || r.scope_type === "service_area") && !r.scope_id) {
@@ -1171,7 +1185,19 @@ export default function BusinessHoursPage() {
   const activeRules = list.filter(r => r.is_active);
   const openDays = [...new Set(activeRules.map(r => r.day_of_week))];
   const closedDays = [0,1,2,3,4,5,6].filter(d => !openDays.includes(d));
-  const issues = detectIssues(list);
+  /**
+   * How many technicians can actually take an assignment.
+   *
+   * Reuses the `staffApi` this page already loads for its scope picker rather than
+   * adding a second fetch of the same team -- one source, so the limit shown here cannot
+   * disagree with the limit the booking engine applies.
+   */
+  const technicianCount = (staffApi.data?.members ?? []).filter(
+    (m: { status?: string; can_receive_assignment?: boolean }) =>
+      (m.status ?? "active") === "active" && m.can_receive_assignment !== false,
+  ).length;
+
+  const issues = detectIssues(list, technicianCount);
   const configuredStatus = activeRules.length > 0 && issues.filter(i=>i.severity==="danger").length === 0;
 
   const staffOptions = (staffApi.data?.members ?? []).map(m => ({
