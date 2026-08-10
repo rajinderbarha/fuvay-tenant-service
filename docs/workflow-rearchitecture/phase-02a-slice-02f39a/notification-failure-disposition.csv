@@ -1,3 +1,0 @@
-node_id,disposition,evidence
-tests/test_sprint27_notifications.py::test_chat_thread_customer_cannot_access_other_customer,TEST_DEFECT_FIXED,notification-chat-access-investigation.md
-tests/test_sprint27_notifications.py::test_chat_thread_provider_cannot_access_other_tenant,TEST_DEFECT_FIXED,notification-chat-access-investigation.md

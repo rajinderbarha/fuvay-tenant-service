@@ -21,7 +21,9 @@ export function NoAddressState({ onAddAddress }: { onAddAddress: () => void }) {
   const { theme } = useTheme();
 
   return (
-    <View style={{ paddingHorizontal: theme.layout.screenHorizontalPadding, alignItems: "center" }}>
+    // No horizontal padding of its own: the screen that hosts it already pads, and
+    // doubling it made the copy a narrow column in the middle of the page.
+    <View style={{ alignItems: "center" }}>
       <View
         style={{
           width: 72, height: 72, borderRadius: theme.radius.radiusFull,

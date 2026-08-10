@@ -1,6 +1,0 @@
-metric,before_2f24,after_2f25,new,resolved,unchanged,attribution
-failing node IDs,86,7,0,79,7,"ZERO new. The 79 resolved are ENVIRONMENTAL (live stack came up), not this slice."
-error node IDs,111,0,0,111,0,ZERO new. All 111 resolved environmentally (DB fixtures now succeed).
-passed,11192,11424,-,-,-,+232 = 49 new tests + 183 previously failing/erroring tests now running live
-skipped,14,21,-,-,-,+7 -- tests that skip when a real DB is present
-duration,686.56s,966.93s,-,-,-,longer: live DB/HTTP work now actually executes

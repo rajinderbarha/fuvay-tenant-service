@@ -1,9 +1,0 @@
-route,scenario,expected,verified_by
-update_job_checklist_item,mutate after CHECKLIST_COMPLETE,422 CHECKLIST_NOT_ACTIVE,test_cannot_mutate_item_after_checklist_complete (2F-14, re-verified this slice via full regression)
-update_job_checklist_item,mutate after WORK_COMPLETE,422 CHECKLIST_NOT_ACTIVE,test_cannot_mutate_item_after_job_moved_past_checklist (2F-14, re-verified)
-update_job_checklist_item,mutate while CHECKLIST_STARTED,200 legal transition,test_mutation_allowed_while_checklist_started (2F-14, re-verified)
-update_job_checklist_item,foreign job item,404 CHECKLIST_ITEM_NOT_FOUND,test_foreign_job_item_rejected (2F-14, re-verified)
-void_job,void a TERMINAL-status job,409 CONFLICT (no lifecycle mutation),existing pre-2F-14A behavior, re-confirmed via code inspection (TERMINAL_STATUSES guard unchanged)
-void_job,void a LOCKED-status job (work in progress),409 CONFLICT (no lifecycle mutation),existing pre-2F-14A behavior, re-confirmed via code inspection (LOCKED_STATUSES guard unchanged)
-void_job,cross-tenant void attempt,404 JOB_NOT_FOUND -- no status change,test_cross_tenant_owner_denied_void (this slice)
-legacy update_checklist,write to Job.checklist then attempt WORK_COMPLETE without CHECKLIST_COMPLETE,422 CHECKLIST_REQUIRED_BEFORE_WORK_COMPLETE (legacy write does not satisfy the gate),alternate-job-completion-route-audit.md (2F-14) + legacy-job-checklist-disposition.md (2F-14A), code-inspection verified (no dedicated new test needed -- gate reads JobChecklistItem, never Job.checklist)

@@ -1,3 +1,0 @@
-router_module,domain,total_endpoints,fully_protected,permission_only,pct,change,applied
-app.engines.webhook.router,Webhook endpoints (integration),1,0,1,0%,MODULE_ROW_ADDED,YES
-app.engines.geo.router,Geo service zones,1,0,1,0%,MODULE_ROW_ADDED,YES

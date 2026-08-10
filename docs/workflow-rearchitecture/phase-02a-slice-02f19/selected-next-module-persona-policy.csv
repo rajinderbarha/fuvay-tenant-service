@@ -1,7 +1,0 @@
-route_function,final_capability,canonical_persona,justification
-withdraw_consent,DPDP_CONSENT_WITHDRAW,TENANT_OWNER_ONLY,self-identity-scoped regulatory action; no request_id to broaden to staff without a product decision
-customer_tenant_response,DPDP_CUSTOMER_REQUEST_RESPONSE,TENANT_OWNER_ONLY,tenant-side response to a customer's DPDP request; regulatory correspondence
-create_my_request,DPDP_REQUEST_CREATE,TENANT_OWNER_ONLY,creates a new regulatory data-subject request on the tenant's own behalf
-cancel_my_request,DPDP_REQUEST_CANCEL,TENANT_OWNER_ONLY,cancels the tenant's own regulatory request; legal-state-sensitive
-generate_export,DPDP_EXPORT_GENERATE,TENANT_OWNER_ONLY,queues generation of a PII export; highest-sensitivity capability in this module
-staff_tenant_response,DPDP_STAFF_REQUEST_RESPONSE,TENANT_OWNER_ONLY,tenant-side response to a staff member's DPDP request; regulatory correspondence

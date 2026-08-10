@@ -1,7 +1,0 @@
-# Product Decisions Required
-
-1. **Truly legacy Bookings with no recorded creation-actor role.** If any Booking row in production predates `BookingStatusHistory` being written at creation (i.e. has no `from_status IS NULL` history row at all), the new provenance check treats it identically to a provider-created Booking (fails the `changed_by_role == "customer"` match) and requires independent evidence. Whether such rows exist, and if so whether they should be manually backfilled/audited, is a data question this slice did not investigate (no migration or data audit was in scope).
-
-2. **Phone-order / assisted-booking-only customers with no other relationship evidence.** A tenant legitimately taking a booking over the phone for a brand-new customer who has never interacted with the app before has, by definition, no independent relationship evidence and no customer-originated Booking. Under the current policy this customer's FIRST assisted booking is rejected. This exact tension was already flagged in 2F-14E's manual-customer-authority investigation and remains unresolved by design — closing it would require either (a) an onboarding/invitation flow (explicitly out of scope this slice), or (b) a deliberate first-booking exception carved out by product policy, which this slice did not have authority to invent.
-
-Both items are carried forward as open product-policy questions, not security gaps in the code as it exists today.

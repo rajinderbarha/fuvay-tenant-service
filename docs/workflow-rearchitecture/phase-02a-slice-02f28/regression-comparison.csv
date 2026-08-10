@@ -1,6 +1,0 @@
-suite,result,note
-tests/test_phase2f28_module_selection.py,see test-report,
-verify_selection_2f28.py,20/20 PASS,canonical + matrix unchanged
-verify_selection_2f28.py --selftest,exit 0,all fixtures fire
-canonical hash,e7a89231207221aa,unchanged
-matrix hash,ee6011f6ce6a97ab,unchanged

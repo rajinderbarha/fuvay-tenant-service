@@ -1,3 +1,0 @@
-method,path,mounted,guard,side_effect,persona,tenant_direction,ownership_evidence,proposed_guard_status,applied,blocking_condition
-DELETE,/v1/webhooks/endpoints/{endpoint_id},yes,require_permission(P.TENANT_UPDATE),DATABASE_MUTATION,TENANT_PROVIDER_MUTATION,CLIENT_ASSERTED_TARGET_TENANT,no own-tenant assertion found in handler,UNPROTECTED,NO,N09 fresh-holdout agreement 19/24 (required 24/24)
-DELETE,/v1/geo/zones/{zone_id},yes,require_permission(P.TENANT_UPDATE),DATABASE_MUTATION,TENANT_PROVIDER_MUTATION,OBJECT_DERIVED_TENANT,no own-tenant assertion found in handler,UNPROTECTED,NO,N09 fresh-holdout agreement 19/24 (required 24/24)

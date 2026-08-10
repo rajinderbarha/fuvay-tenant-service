@@ -1,9 +1,0 @@
-source_status,result_status,acting_persona,tenant_ownership_required,subject_ownership_required,assignment_required,reason_evidence_required,audit_event,worker_export_side_effect,notification_side_effect,reversible,final_state_behavior
-n/a (create),submitted,tenant_owner (mutation-scope),yes,n/a (subject established at create),no,reason required (existing check preserved),yes,no,no,n/a,no
-submitted,cancelled,tenant_owner (mutation-scope),yes,yes (parent request),no,no,yes,no,no,no (terminal),cancelled requests remain readable but cannot transition further via these 6 routes
-identity_verification_pending,cancelled,tenant_owner (mutation-scope),yes,yes,no,no,yes,no,no,no (terminal),same as above
-any OTHER status,cancelled,REJECTED,n/a,n/a,n/a,n/a,no (rejected before mutation),no,no,n/a,INVALID_STATE error raised before any write (existing check preserved, re-verified)
-approved,export queued (ComplianceExport.status=processing),tenant_owner (mutation-scope),yes,yes,no,no (request_type must contain "export"; existing check preserved),yes,NONE -- no worker exists to advance it further (see compliance-export-worker-discovery.md),no,n/a (export row itself is not the request's state),export row remains stuck at "processing" indefinitely -- domain-integrity gap, see approval-gate.md
-completed,export queued (ComplianceExport.status=processing),tenant_owner (mutation-scope),yes,yes,no,no,yes,NONE,no,n/a,same as above
-any OTHER status,export queued,REJECTED,n/a,n/a,n/a,n/a,no,no,no,n/a,INVALID_STATE error raised before any write (existing check preserved, re-verified)
-n/a (request creation, subject_type=customer or staff-linked),tenant_responses appended,tenant_owner (mutation-scope),yes,yes,no,no,yes (both response routes DO call _audit -- confirmed by direct code read, corrects an earlier draft of this row),no,no,yes (repeated responses append, not overwrite),no state transition -- commentary channel only, any status

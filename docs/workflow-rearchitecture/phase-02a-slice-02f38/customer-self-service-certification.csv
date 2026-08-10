@@ -1,9 +1,0 @@
-check,result,note
-customer_identity_required,PARTIAL,"91 auto-detected CUSTOMER_MUTATION routes; 31 flagged CUSTOMER_ROLE_ONLY_NOT_TENANT_SCOPED by the heuristic classifier -- not individually re-verified this slice"
-customer_owned_object_enforced,NOT_VERIFIED_THIS_SLICE,
-no_arbitrary_customer_id,NOT_VERIFIED_THIS_SLICE,
-no_arbitrary_tenant_id,NOT_VERIFIED_THIS_SLICE,
-parent_booking_job_ownership,PARTIAL,"proven for the specific customer-facing canonical routes already in the 313 set (warranty/claims etc via verify_2f37.py R10); not proven for the other 91"
-non_oracular_response,NOT_VERIFIED_THIS_SLICE,
-no_provider_admin_escalation,NOT_VERIFIED_THIS_SLICE,
-correct_booking_pipeline,PARTIAL,"Booking->field_ops.Job vs ServiceBooking->ServiceJob separation preserved per known-limitations.md; not re-derived from scratch"

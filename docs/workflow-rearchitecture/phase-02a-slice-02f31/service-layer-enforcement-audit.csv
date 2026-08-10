@@ -1,7 +1,0 @@
-service_method,requires_tenant_context,db_scoped,trusts_dto,fails_closed,in_scope,evidence
-MediaAssetService.set_tenant_business_logo,yes,yes (actor.tenant_id),no,yes,Set A - unchanged,tenant derived from self.actor.tenant_id
-MediaAssetService.set_user_profile_photo,n/a (self),yes (actor.user_id),no,yes,Set A - unchanged,acts on the authenticated user only
-MediaAssetService.replace_asset,object-scoped,yes via assert_can_replace,no,yes,Set A - unchanged,ownership check precedes the write
-MediaService.initiate_upload,yes,NO -- trusts body.tenant_id,YES,partial,Set B - NOT remediated (out of allow-list),tenant_id parameter comes directly from request body
-MediaService.confirm_upload,implicit via session,NO principal check,partial,partial,Set B - NOT remediated (out of allow-list),no actor/tenant parameter accepted at all
-MediaService.delete_file,yes,yes at query level,YES (tenant_id parameter),yes for the query,Set B - NOT remediated (out of allow-list),caller (router) never verifies the tenant_id parameter against the principal

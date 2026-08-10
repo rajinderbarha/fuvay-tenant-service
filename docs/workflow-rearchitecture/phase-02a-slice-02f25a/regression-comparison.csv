@@ -1,9 +1,0 @@
-metric,baseline_2f25,run_1,run_2,new,resolved,unchanged,verdict
-failing node IDs,7,7,7,0,0,7,IDENTICAL across baseline and both runs
-error node IDs,0,0,0,0,0,0,IDENTICAL
-passed,11424,11460,11460,-,-,-,+36 = exactly the 36 new tests
-skipped,21,22,22,-,-,-,+1 = the docs-guard test (see regression-report.md)
-duration,966.93s,731.91s,639.80s,-,-,-,stable environment; no error-path retries
-api :8000,REACHABLE,REACHABLE,REACHABLE,-,-,-,stable across the slice
-postgres :5432,REACHABLE,REACHABLE,REACHABLE,-,-,-,stable
-redis :6379,REACHABLE,REACHABLE,REACHABLE,-,-,-,stable

@@ -1,6 +1,0 @@
-{
-  "bookings": {"engine": "booking", "model_file": "app/engines/booking/models.py", "purpose": "generic cross-vertical booking-request table", "links_to_service_jobs": false, "row_count": 5},
-  "service_bookings": {"engine": "final_records", "model_file": "app/engines/final_records/models.py", "purpose": "Home Services execution projection", "links_to_service_jobs": true, "write_path": "final_records/creation_service.py::confirm_home_service_draft", "customer_api_consumer": "home_service_assignment/customer_router.py", "row_count_after_fix": 5},
-  "decision": "A - service_bookings is canonical for Home Services",
-  "evidence": "app/engines/final_records/creation_service.py:150 - ServiceJob(booking_id=booking.id) where booking is ServiceBooking"
-}

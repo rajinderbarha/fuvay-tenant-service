@@ -1,9 +1,0 @@
-method,path,endpoint,module,final_classification,evidence
-POST,/v1/security/activity/record,record_activity,security.router,CANONICAL_TENANT_PROVIDER_MUTATION,"FIXED this slice -- _require_trusted_tenant added. See six-defect-remediation-report.md item 1."
-POST,/v1/security/audit-log,write_audit,security.router,CANONICAL_TENANT_PROVIDER_MUTATION,"FIXED this slice. See item 2."
-POST,/v1/security/sessions,create_session,security.router,CANONICAL_TENANT_PROVIDER_MUTATION,"FIXED this slice -- actor_id ownership check added. See item 3."
-DELETE,/v1/security/sessions/{session_id},revoke_session,security.router,CANONICAL_TENANT_PROVIDER_MUTATION,"FIXED this slice (HIGH severity) -- session ownership check added, non-oracular foreign-session response. See item 4."
-POST,/v1/pricing/tenants/{tenant_id}/rules/{rule_id}/activate,activate_rule,pricing.router,CANONICAL_TENANT_PROVIDER_MUTATION,"FIXED this slice -- was zero tenant scoping at all, now matches update_rule/delete_rule's pattern. See item 5."
-PATCH,/v1/pricing/tenants/{tenant_id}/rules/{rule_id}/deactivate,deactivate_rule,pricing.router,CANONICAL_TENANT_PROVIDER_MUTATION,"FIXED this slice. See item 6."
-GET,/v1/security/api-keys/tenants/{tenant_id},list_api_keys,security.router,PRODUCT_DECISION_REQUIRED,"NEW finding this slice: read-path cross-tenant privacy gap (client tenant_id, no cross-check). Not a mutation defect. Not fixed -- see known-limitations.md."
-GET,/v1/security/api-keys/{key_id},get_api_key,security.router,PRODUCT_DECISION_REQUIRED,"Same read-path gap as list_api_keys."

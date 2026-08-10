@@ -1,8 +1,0 @@
-check,result,note
-correct_canonical_admin_subrole,PARTIAL,"638 auto-detected PLATFORM_ADMIN_MUTATION routes; not individually re-verified per-route this slice"
-correct_platform_permission,PARTIAL,"guard_status breakdown shows 487 PLATFORM_ADMIN_ONLY -- consistent with expectation, not row-by-row confirmed"
-correct_access_scope,NOT_VERIFIED_THIS_SLICE,
-tenant_targeting_governance,NOT_VERIFIED_THIS_SLICE,
-audit_actor_server_derived,NOT_VERIFIED_THIS_SLICE,"reviewed only for the 313 canonical routes via 2F-35/36/37 audits"
-no_tenant_role_access,NOT_VERIFIED_THIS_SLICE,
-sensitive_data_restrictions,NOT_VERIFIED_THIS_SLICE,

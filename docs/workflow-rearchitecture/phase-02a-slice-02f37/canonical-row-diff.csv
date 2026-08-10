@@ -1,6 +1,0 @@
-change_type,count,detail
-guard_status_updated,3,Set A rows: PERMISSION_ONLY_NOT_SCOPE_AWARE -> TENANT_MUTATION_PERMISSION_SCOPE_AWARE
-rows_added,16,Set B canonical additions, all TENANT_MUTATION_PERMISSION_SCOPE_AWARE or TENANT_MUTATION_ROLE_SCOPE_AWARE (all newly protected in the same slice)
-rows_unchanged,294,every other canonical row (all prior closures through Slice 2F-36) byte-identical
-total_before,297,
-total_after,313,

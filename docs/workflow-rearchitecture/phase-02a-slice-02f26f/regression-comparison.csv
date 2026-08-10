@@ -1,8 +1,0 @@
-suite,result,note
-tests/test_phase2f26f_alias_actor_scope.py,41 passed,
-all phase-2F suites (17A/26/26B/26C/26D/26E/26F),"202 passed, 0 failed, 0 errors",zero regressions
-verify_foundation_2f26f.py,exit 1 on N09 + N32,honest gate failure
-verify_foundation_2f26f.py --selftest,exit 0 -- 33/33 fixtures fire,clean state restored
-burned corpus 1 (2F-26D),persona 24/24 direction 24/24,development evidence only
-burned corpus 2 (2F-26E),persona 24/24 direction 24/24,development evidence only
-third holdout,21/24 all-field,required 24/24 -- BLOCKED

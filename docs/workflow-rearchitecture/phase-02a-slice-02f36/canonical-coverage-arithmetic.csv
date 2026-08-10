@@ -1,5 +1,0 @@
-metric,starting,delta,final,formula
-protected,252,+42,294,"252 + c(18) + h(24) = 294"
-denominator,273,+24,297,"273 + a(24) = 297"
-unprotected,21,-18,3,"297 - 294 = 3"
-pending_held,45,-28,17,"45 - r(28) = 17"

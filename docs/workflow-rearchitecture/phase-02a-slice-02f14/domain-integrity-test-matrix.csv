@@ -1,9 +1,0 @@
-rule,test,result
-job-type CONSULTATION cannot reach WORK_STARTED,pre-existing test suite (test_step8/test_job_type),PASS (unchanged, re-verified)
-SERVICE cannot reach ASSESSMENT_STARTED without emergency_assessment,pre-existing test suite,PASS (unchanged, re-verified)
-REPAIR requires QUOTE_APPROVED before WORK_STARTED when quote_required,pre-existing test suite,PASS (unchanged, re-verified)
-SERVICE requires CHECKLIST_COMPLETE before WORK_COMPLETE when checklist_required,pre-existing test suite,PASS (unchanged, re-verified)
-complete_job_checklist requires CHECKLIST_STARTED + all required items complete,test_phase2f14 + test_step8_quote_checklist,PASS
-update_job_checklist_item rejects mutation outside CHECKLIST_STARTED (new gate),test_phase2f14 TestChecklistItemCompletionGateIntegrity,PASS
-_provision_job_checklist_items idempotent (no duplicate rows on repeat start),existing pre-slice behavior, re-confirmed by code inspection,PASS (not independently re-tested with a new DB-level test this slice)
-legacy Job.checklist JSONB does not influence CHECKLIST_COMPLETE transition,code inspection (alternate-job-completion-route-audit.md),PASS (confirmed via source read, not a new executable test)

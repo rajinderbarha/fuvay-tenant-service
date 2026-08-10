@@ -1,6 +1,0 @@
-service,method,trusted_context_required,missing_context_rejected,client_tenant_rejected,internal_callers_checked
-PricingService,"set_tenant_price, set_brand_adjustment, create_zone, update_zone, delete_zone, create_rule, update_rule, delete_rule",YES,YES,YES,YES (no internal callers outside app/engines/pricing/ for these methods; booking/service.py calls only compute_and_snapshot, unaffected)
-PaymentService,request_payout,YES,YES,YES,YES (finance_hub/service.py constructs PaymentService but never calls request_payout)
-SubscriptionService,update_plan,YES,YES,YES,YES (public_registration/router.py calls only create_subscription, unaffected)
-CommerceService,"initiate_purchase, submit_claim, recalculate_badges",YES (via existing _assert_owns_tenant_deposit, now called),YES,YES,YES (no internal callers outside app/engines/platform_commerce/)
-ComplianceService,"request_deletion, request_export",N/A (self-only check at router layer, not service layer),N/A,N/A,YES (no internal callers found)

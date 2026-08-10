@@ -1,8 +1,0 @@
-suite,result,note
-tests/test_phase2f26h_tokenized_action.py,pending,
-all phase-2F suites,pending,
-verify_action_2f26h.py,exit 1 on N09 only,honest gate failure
-verify_action_2f26h.py --selftest,"exit 0, all fixtures fire",
-burned 26D/26E persona+dir,24/24 each,stable
-burned 26F/26G persona+dir+family+side_effect,24/24 (26E se 23/24 known manual error),action diverges by design (D-09 semantic change)
-fifth holdout,22/24,BLOCKED -- final holdout

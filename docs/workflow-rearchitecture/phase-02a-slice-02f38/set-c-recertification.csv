@@ -1,6 +1,0 @@
-check,result,evidence
-Set A/B/C frozen hashes unchanged since 2F-37,PASS,"verify_2f37.py R01, re-run fresh in this worktree"
-No Set C route newly protected by 2F-37/2F-37R/2F-37R-A/2F-38,PASS,"verify_2f37.py R16, re-run fresh"
-All 17 Set B routes have a final disposition,PASS,"verify_2f37.py R03"
-Set C exclusion count remains 20,NOT INDEPENDENTLY RECOUNTED THIS SLICE,"relies on R01's hash-match rather than a fresh per-route re-derivation; no from-scratch Set-C recount script exists (see known-limitations.md, carried from 2F-37R-A)"
-Per-route Set C safety-in-own-category review (20 routes individually),NOT PERFORMED THIS SLICE,"would require reading each of the 20 routes' current handler/service code; not completed given session scope -- carried forward as an open item, not asserted safe"

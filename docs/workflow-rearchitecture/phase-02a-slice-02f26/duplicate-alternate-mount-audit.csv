@@ -1,6 +1,0 @@
-finding,count,disposition,evidence
-"duplicate (method,path) in the collected route set",16,DEDUPLICATED IN EXPORT -- 2315 APIRoute objects collapse to 2299 unique keys,same route reachable through more than one included-router path; not independently reachable capabilities
-duplicate canonical route keys,0,NONE,verifier check `no duplicate canonical route keys`
-path-form aliasing (/v1 prefix omitted on child routes),present,"NORMALIZED, NOT DEDUPLICATED",child routers report route.path without the parent /v1 prefix; normalization applied at every comparison site
-duplicate OpenAPI operation IDs,present (pre-existing),OUT OF SCOPE -- warning only,service_setup templates_router emits duplicate operation-id warnings during OpenAPI generation
-deprecated + canonical routes on one model,1 family,ADJUDICATED IN 2F-25/2F-25A,"legacy review engine vs customer_reviews -- distinct tables, both retained"

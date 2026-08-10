@@ -1,7 +1,0 @@
-capability,execution.real_estate_router,real_estate_lead,model_overlap,disposition
-Lead creation/intake,not present (execution router never creates a RealEstateLead -- confirmed no POST-create route),start_lead_draft (customer_router),none -- RealEstateLeadDraft vs RealEstateLead,DISTINCT_MODEL_DISTINCT_CAPABILITY
-Lead requirement editing,not present,update_draft (PUT) + several action routes,none,DISTINCT_MODEL_DISTINCT_CAPABILITY
-Lead lifecycle execution (accept/reject/contact/qualify/convert/close-lost),agent_router (11 mutations, now require_owner_or_office_staff_mutation),not present (no equivalent action exists on RealEstateLeadDraft),none,SAME_PRODUCT_CONCEPT stage-wise (pre- vs post-confirmation) but DISTINCT_MODEL_DISTINCT_CAPABILITY
-Timeline/notes read,agent_router/provider_router (now require_owner_or_office_staff_read),RealEstateLeadDraftEvent exists as a model but no dedicated read route was found exposing it to staff/provider in this audit,none (different event table),DISTINCT_MODEL_DISTINCT_CAPABILITY
-Customer tracking,customer_router (customer_tracking, require_customer),customer_router's own GET /{draft_id} (draft status read),none (different table; draft-stage vs execution-stage tracking),DISTINCT_MODEL_DISTINCT_CAPABILITY
-Admin oversight,admin_router (2 routes, require_super_admin),admin_router (10 routes, require_super_admin),none (different table),DISTINCT_MODEL_DISTINCT_CAPABILITY -- both correctly platform-only

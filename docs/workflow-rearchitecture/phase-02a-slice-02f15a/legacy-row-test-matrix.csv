@@ -1,7 +1,0 @@
-scenario,action,expected_result,test
-customer-created qualifying Booking,field_ops relationship check (create_job standalone),relationship established,test_customer_created_qualifying_booking_still_qualifies
-provider-created qualifying Booking (no independent evidence),field_ops relationship check (create_job standalone),CUSTOMER_TENANT_RELATIONSHIP_REQUIRED; db.add not called,test_provider_created_qualifying_booking_no_longer_qualifies
-provider-created Booking (no independent evidence),Booking.convert_to_job,CUSTOMER_TENANT_RELATIONSHIP_REQUIRED; db.add not called,test_provider_created_booking_without_independent_evidence_rejected
-customer-created Booking,Booking.convert_to_job,succeeds,test_customer_created_booking_converts_normally
-provider-created Booking WITH independent evidence,Booking.convert_to_job,gate passes (proceeds past provenance check),test_provider_created_booking_with_independent_evidence_passes_gate
-chain of provider-created bookings (no independent evidence),BookingService.create_booking (assisted path),CUSTOMER_TENANT_RELATIONSHIP_REQUIRED; db.add not called,test_chain_of_provider_created_bookings_cannot_bootstrap

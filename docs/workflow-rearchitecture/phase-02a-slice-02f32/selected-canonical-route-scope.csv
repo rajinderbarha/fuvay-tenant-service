@@ -1,2 +1,0 @@
-method,path,endpoint,repository_boundary,reason_for_inclusion
-DELETE,/v1/geo/zones/{zone_id},delete_zone,app.engines.geo.router + GeoService,"Selected module (geo_zone_management). Highest-severity route among the 24: zero tenant predicate anywhere in the route or service (directly inspected). Sole canonical route in this module."

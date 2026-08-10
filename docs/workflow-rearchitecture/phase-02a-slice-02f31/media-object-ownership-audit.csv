@@ -1,7 +1,0 @@
-route,object_lookup,tenant_scoped,parent_scoped,foreign_object_behavior,status
-DELETE /v1/provider/profile/logo,Tenant row via actor.tenant_id,yes,n/a,N/A (no client id),CONFIRMED
-DELETE /v1/staff/profile/photo,User row via actor.user_id,yes (self),n/a,N/A (no client id),CONFIRMED
-POST /v1/media/{media_id}/replace,MediaAsset via media_id,MediaAccessService.assert_can_replace,n/a,403/404 via access policy,CONFIRMED (unchanged)
-DELETE /v1/media/tenants/{tenant_id}/files/{file_id},MediaFile via id AND tenant_id in WHERE,YES at query level,n/a,NotFoundException (no oracle),CONFIRMED AT QUERY LEVEL -- but the tenant used is client-asserted, not principal-verified
-POST /v1/media/upload/initiate,creates new row,NO principal check,n/a,n/a (create),GAP -- documented, not fixed (out of allow-list)
-POST /v1/media/upload/{session_id}/confirm,MediaUploadSession via id,NO principal check,n/a,NotFoundException on missing session only,GAP -- documented, not fixed (out of allow-list)

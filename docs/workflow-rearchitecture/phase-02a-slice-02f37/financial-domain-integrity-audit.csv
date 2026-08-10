@@ -1,9 +1,0 @@
-rule,status,note
-Package credits are not customer job payments,PRESERVED,unchanged this slice -- no code path conflates the two
-Commission deducted from tenant credit per policy,PRESERVED,unchanged this slice -- not touched
-Security deposit separate from wallet,PRESERVED,confirmed: SecurityDeposit and TenantWallet remain distinct models/tables, unchanged
-Ordinary customer job payment occurs on-site,PRESERVED,unchanged this slice -- not touched
-No invented payout/withdrawal behavior,PRESERVED,request_payout's amount-validation gap explicitly left open rather than inventing a balance-check policy
-Idempotency preserved,PRESERVED,initiate_purchase/submit_claim/request_payout/update_plan idempotency behavior unchanged by this slice's guard/ownership additions
-Duplicate deduction,NOT_APPLICABLE,no deduction logic was added or modified this slice
-Currency consistency,PRESERVED,unchanged -- all touched routes use existing INR-denominated fields, none altered

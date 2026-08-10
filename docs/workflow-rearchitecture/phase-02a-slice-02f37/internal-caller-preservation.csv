@@ -1,4 +1,0 @@
-service,internal_caller,method_called,affected_by_this_slice,action
-PricingService,app/engines/booking/service.py,compute_and_snapshot,NO (different method than the 8 touched),none needed
-PaymentService,app/engines/finance_hub/service.py,(constructs PaymentService, calls no touched method),NO,none needed
-SubscriptionService,app/engines/public_registration/router.py,create_subscription,NO (different method than update_plan),none needed

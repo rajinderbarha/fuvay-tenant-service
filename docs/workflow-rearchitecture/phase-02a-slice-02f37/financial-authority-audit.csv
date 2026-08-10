@@ -1,7 +1,0 @@
-route,monetary_field,server_derived,client_supplied,finding
-POST /v1/pricing/tenants/{tenant_id}/prices/set,base_price,NO (client-set, validated against city floor),YES,"Intentional: tenant sets its own price, floor-validated server-side. Not a trust violation -- this is the product's purpose."
-PUT /v1/pricing/tenants/{tenant_id}/brand-adjustment,adjustment_pct,NO (client-set, capped at MAX_BRAND_ADJUSTMENT_PCT server-side),YES,"Intentional, capped server-side."
-POST /v1/commerce/tenants/{tenant_id}/wallet/purchase/initiate,price,YES (from CreditPackage row, not request body),NO,"Correct -- price comes from the server-side package record, never the client."
-POST /v1/commerce/warranty/claims,amount_requested,NO,YES,"Client-supplied claim amount; approval remains a separate super_admin-only step (approve_claim) that independently sets amount_approved -- the requested amount alone has no financial effect until admin approval, consistent with a claims-intake pattern (not itself a fund movement)."
-POST /v1/payments/tenants/{tenant_id}/payout,amount,NO,YES,"OPEN GAP: no authoritative payout-eligible-balance ledger exists anywhere in the codebase to validate this amount against. Not remediated this slice per the mission's canonical rule against inventing payout/withdrawal behavior. See known-limitations.md."
-PUT /v1/subscriptions/tenants/{tenant_id}/plan,amount,YES (PLAN_PRICES lookup table),NO,"Correct -- new_amount is a server-side lookup, not client-trusted."

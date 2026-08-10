@@ -1,7 +1,0 @@
-persona,staff_router_access,field_ops_router_execution_alternates_access,tenant_wide_ops_access,notes
-technician,allowed (own assigned jobs only),allowed (own assigned jobs only),denied,real seeded role; require_staff_or_technician_only admits this role
-staff,allowed (own assigned jobs only),allowed (own assigned jobs only),denied,legacy role name; kept for compatibility, not the real seeded role
-tenant_owner,denied (require_staff_or_technician_only excludes),denied (require_staff_or_technician_only excludes),allowed (assign_job/update_status via require_tenant_mutation_permission),verified via test_tenant_owner_denied_from_execution_alternates
-super_admin,denied (require_staff_or_technician_only excludes),denied (require_staff_or_technician_only excludes),allowed (platform-wide, existing behavior preserved),unchanged this slice
-customer,denied,denied,denied,unchanged; customer has no field_ops mutation access
-guest,denied,denied,denied,unchanged

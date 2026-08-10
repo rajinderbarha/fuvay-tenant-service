@@ -1,9 +1,0 @@
-scenario,job_created,customer_data_exposed,customer_history_affected,notification_emitted,audit_created,no_partial_persistence,evidence
-Tenant A creates Job for its known customer (prior Booking/Job with Tenant A),yes,no (only linkage created, no read of other data),yes (new Job row only),job.created domain event only,yes (JobStatusHistory),n/a (success path),existing booking/parent cross-check tests
-Tenant A creates Job for customer with prior Tenant A Booking (booking_id supplied),yes,no,yes,job.created,yes,n/a,test_confirmed_booking_accepted
-Tenant A creates Job for customer with prior Tenant A Job (parent_job_id supplied),yes,no,yes,job.created,yes,n/a,test_quote_approved_consultation_accepted_as_repair_source
-Tenant A creates Job for a customer associated only with Tenant B (no booking/parent reference, customer_id supplied directly),yes -- ALLOWED by current policy (PROVIDER_SELECTED_EXISTING_CUSTOMER),no (customer's OTHER tenant data is never read or exposed -- only role=='customer' existence is checked),yes (new Job row is created under Tenant A referencing this customer),job.created,yes,n/a,manual-customer-authority.md (PRODUCT_DECISION_REQUIRED, not a defect)
-Tenant A creates Job for a completely unrelated customer,same as above -- ALLOWED by current policy,no,yes,job.created,yes,n/a,manual-customer-authority.md
-Tenant A creates Job for another tenant's staff user (non-customer role),rejected,no,no,no,no,yes (db.add not called),test_foreign_customer_rejected (2F-14C, re-verified)
-Tenant A creates Job for a guest/unauthenticated identifier,rejected (FOREIGN_CUSTOMER -- no such User row or role mismatch),no,no,no,no,yes,test_missing_customer_rejected (2F-14C, re-verified)
-Cross-tenant actor (not Tenant A) attempts any of the above,rejected at router (require_tenant_mutation_permission denies non-principal-tenant mutation),no,no,no,no,yes,Slice 2F-14B authorization suite, re-verified

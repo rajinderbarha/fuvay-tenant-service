@@ -1,3 +1,0 @@
-method,path,held_module,shares_router,shares_service,shares_model,in_scope_for_M01,reason
-POST,/v1/security/api-keys/{key_id}/rotate,security,no (app.engines.security.router),no (SecurityService),no (APIKey -> tenant_api_keys),NO,"distinct API-key subsystem: auth uses ApiKey->api_keys, security uses APIKey->tenant_api_keys; different router, service and table"
-POST,/v1/security/api-keys/{key_id}/revoke,security,no (app.engines.security.router),no (SecurityService),no (APIKey -> tenant_api_keys),NO,"distinct API-key subsystem: auth uses ApiKey->api_keys, security uses APIKey->tenant_api_keys; different router, service and table"

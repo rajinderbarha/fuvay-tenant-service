@@ -1,9 +1,0 @@
-method,path,cause_2f26d,avoidable,repair,abstains_now
-GET,/v1/ds/tenants/{tenant_id}/churn/score,guard alias / capability not derived,YES -- resolver failed to use information it already had,unified record: capability+direction derived from the same resolved guard,no
-POST,/v1/geo/tenants/{tenant_id}/staff/{staff_id}/location,tenant direction not propagated to persona,YES -- resolver failed to use information it already had,unified record: capability+direction derived from the same resolved guard,no
-POST,/v1/auth/mfa/setup,self-scope not modelled as a direction,YES -- resolver failed to use information it already had,unified record: capability+direction derived from the same resolved guard,no
-POST,/v1/compliance/consent,client-asserted tenant not derived from body,YES -- resolver failed to use information it already had,unified record: capability+direction derived from the same resolved guard,no
-POST,/v1/pricing/compute,client-asserted tenant not derived from body model,YES -- resolver failed to use information it already had,unified record: capability+direction derived from the same resolved guard,no
-POST,/v1/security/audit-log,client-asserted tenant not derived from body,YES -- resolver failed to use information it already had,unified record: capability+direction derived from the same resolved guard,no
-GET,/v1/auth/login-history,self-scope not modelled as a direction,YES -- resolver failed to use information it already had,unified record: capability+direction derived from the same resolved guard,no
-GET,/v1/enterprise/exports/{export_id}/download,self-scope not modelled as a direction,YES -- resolver failed to use information it already had,unified record: capability+direction derived from the same resolved guard,no

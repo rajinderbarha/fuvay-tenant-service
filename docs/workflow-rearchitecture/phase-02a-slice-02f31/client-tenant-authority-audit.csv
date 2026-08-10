@@ -1,7 +1,0 @@
-route,tenant_field,classification,evidence
-POST /v1/provider/profile/logo,none,N/A,tenant derived from actor.tenant_id inside MediaAssetService
-POST /v1/media/upload,body owner_id/entity_id (not tenant),optional filter,"tenant_id/customer_id extracted from JWT per docstring; not client-controlled for the tenant dimension"
-POST /v1/media/{media_id}/replace,none,N/A,object addressed by id; ownership via assert_can_replace
-POST /v1/media/upload/initiate,body.tenant_id,UNTRUSTED CLIENT ASSERTION,"uuid.UUID(body[""tenant_id""]) passed straight into quota + storage_key generation; no comparison to principal"
-POST /v1/media/upload/{session_id}/confirm,session.tenant_id (inherited),UNTRUSTED (indirect),"the session's tenant was asserted at initiate; confirm does not re-verify against the confirming principal"
-DELETE /v1/media/tenants/{tenant_id}/files/{file_id},path tenant_id,UNTRUSTED CLIENT ASSERTION,"require_permission(TENANT_UPDATE) admits by permission only; MediaService.delete_file scopes the QUERY by this value but the ROUTER never compares it to user.tenant_id"

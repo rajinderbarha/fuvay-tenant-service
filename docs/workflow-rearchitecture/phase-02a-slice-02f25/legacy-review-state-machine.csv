@@ -1,7 +1,0 @@
-entity,source_state,result_state,trigger,persona,ownership_required,aggregate_effect,reversible
-Review,published|pending,flagged,flag_review,tenant (P.TENANT_UPDATE),review.tenant_id == JWT tenant,none,admin resolve
-Review,flagged,flagged,repeat flag,tenant,same,none,CONFLICT raised -- explicit
-Review,flagged,published,resolve_flag(publish),super_admin,platform-wide,recomputed,no
-Review,flagged,removed,resolve_flag(remove),super_admin,platform-wide,recomputed,no
-Review,(reply null),(reply set),submit_reply,tenant (P.TENANT_UPDATE),review.tenant_id == JWT tenant,none,"no -- one reply only, 409"
-ReviewRequest,(none),pending,create_request,tenant (P.TENANT_UPDATE),tenant pinned to JWT,none,expires

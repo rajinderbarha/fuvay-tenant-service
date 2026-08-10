@@ -1,7 +1,0 @@
-service_method,internal_callers,preserved,evidence
-MediaAssetService.set_tenant_business_logo,none found,n/a,grep of app/ shows only the route as a caller
-MediaAssetService.set_user_profile_photo,none found,n/a,same
-MediaAssetService.replace_asset,none found,n/a,same
-MediaService.initiate_upload,none found,n/a,only POST /v1/media/upload/initiate calls it
-MediaService.confirm_upload,none found,n/a,only POST /v1/media/upload/{session_id}/confirm calls it
-MediaService.delete_file,none found,n/a,only DELETE /v1/media/tenants/{tenant_id}/files/{file_id} calls it

@@ -1,9 +1,0 @@
-source_status,cancel_legal,expected_result,status_mutation,audit_event,persistence,classification
-confirmed,legal,cancelled,confirmed->cancelled,appointment_cancelled,add+flush+commit,ALLOWED
-accepted,legal,cancelled,accepted->cancelled,appointment_cancelled,add+flush+commit,ALLOWED
-scheduled,legal,cancelled,scheduled->cancelled,appointment_cancelled,add+flush+commit,ALLOWED
-started,illegal,ERR_INVALID_TRANSITION,none (unchanged),none,none,STATE_TRANSITION_REJECTED
-completed,illegal (final),ERR_INVALID_TRANSITION,none,none,none,STATE_TRANSITION_REJECTED
-no_show,illegal (final),ERR_INVALID_TRANSITION,none,none,none,STATE_TRANSITION_REJECTED
-rejected,illegal (final),ERR_INVALID_TRANSITION,none,none,none,STATE_TRANSITION_REJECTED
-cancelled,illegal (final -- repeated cancel),ERR_INVALID_TRANSITION,none,none,none,STATE_TRANSITION_REJECTED

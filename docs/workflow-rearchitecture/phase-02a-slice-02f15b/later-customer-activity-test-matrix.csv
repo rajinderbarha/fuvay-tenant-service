@@ -1,6 +1,0 @@
-customer_action,writes_to_booking_status_history,from_status_value,can_satisfy_creation_filter,test
-cancellation (cancel_booking),yes,real prior status (b.status before mutation),no,TestLaterCustomerActivityCannotEstablishProvenance::test_customer_cancel_writes_non_null_from_status
-reschedule request (request_reschedule),no (writes BookingRescheduleRequest only -- confirmed via grep, no _write_history call in this method),n/a,no (table not touched at all),TestLaterCustomerActivityCannotEstablishProvenance::test_customer_reschedule_writes_non_null_from_status
-note (add_note),no (writes BookingNote table only),n/a,no (different table entirely),booking-status-history-schema.md (writer audit)
-rejection,yes (tenant-side action only -- customer role cannot reach reject_booking's TENANT_ONLY_MUTATION guard),real prior status,no,exact-booking-route-reconciliation.csv (2F-15A) -- reject_booking is TENANT_ONLY_MUTATION, not reachable by customer role at all
-read/acknowledgement (get_booking/get_timeline),no (read-only, no db.add),n/a,no,booking-status-history-schema.md (reader audit -- no write path)

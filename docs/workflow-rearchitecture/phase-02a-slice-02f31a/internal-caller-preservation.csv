@@ -1,3 +1,0 @@
-caller,change_required,preserved
-app/engines/media/router.py _svc(),yes -- must supply actor_role/actor_tenant_id to the new constructor parameters,yes -- updated in this slice, verified live (access_scope_gated / guard wiring unchanged for the routes that already had guards)
-(no other caller exists),n/a,n/a -- git grep confirms MediaService is constructed exactly once in the codebase

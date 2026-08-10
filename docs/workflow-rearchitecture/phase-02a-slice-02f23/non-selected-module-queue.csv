@@ -1,8 +1,0 @@
-rank,router_module,route_count,canonical_row_references,severity,primary_gap,main_risk,product_decision_dependency,prerequisites,recommended_future_slice,implementation_readiness
-1,app.engines.analytics.provider_router,1,AN-01,HIGH,AUTHENTICATED_ONLY,zero-auth report/export generation over tenant data with client filters,export/download policy may need a decision,none,2F-25,yes
-2,app.engines.profile.router,3,PR-01;PR-02;PR-03,HIGH,PERMISSION_WITHOUT_SCOPE,"technician can rewrite tenant legal identity (GST, business name) and drive verification",which roles may edit the business profile,none,2F-25 or 2F-26,yes
-3,app.engines.media.new_router,6,ME-01..ME-06,MEDIUM,PERMISSION_WITHOUT_SCOPE,technician can replace/delete tenant brand assets; ownership already enforced,tenant-brand vs self-photo persona split,none,bundle with profile.router,yes
-4,app.engines.marketing_automation.provider_router,3,MA-01;MA-02;MA-03,MEDIUM,AUTHENTICATED_ONLY,zero-auth draft campaign creation and state transition; no external send exists,none,none,small future slice,yes
-5,app.engines.admin_catalog.brand_provider_router,2,BR-01;BR-02,MEDIUM,PERMISSION_WITHOUT_SCOPE,parent service ownership unverified on supported-brands mapping,global vs tenant-specific brand model,none,bundle catalog routers,yes
-6,app.engines.admin_catalog.service_option_provider_router,1,SO-01,MEDIUM,PERMISSION_WITHOUT_SCOPE,parent service ownership unverified on supported-options mapping,none,none,bundle catalog routers,yes
-7,app.engines.admin_catalog.recommendation_router,1,RC-01,LOW,PERMISSION_WITHOUT_SCOPE,self-tenant recommendation generation,none,none,bundle catalog routers,yes

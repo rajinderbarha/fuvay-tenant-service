@@ -1,2 +1,0 @@
-canonical_row_key,route,canonical_persona,existing_permission,required_access_scope,tenant_authority,notes
-R-27,POST /v1/tenant/packages/{package_id}/purchase,tenant_owner,none (role-based via require_tenant_owner),mutation (must deny read-only access_scope tenant_owner),JWT tenant_id (server-derived, confirmed not client-controlled),Single unambiguous persona -- no combined/vague persona used. super_admin also admitted (consistent with require_tenant_owner's existing role set); staff/technician NOT admitted, consistent with this being a financial/entitlement action.

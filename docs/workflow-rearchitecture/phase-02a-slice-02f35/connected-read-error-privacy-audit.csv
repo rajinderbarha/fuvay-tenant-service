@@ -1,8 +1,0 @@
-read_or_error_path,tenant_scope,foreign_object_oracle,cross_tenant_metadata_disclosure,client_actor_tenant_reflected_as_fact,internal_ids_exposed
-WebhookService.delete_endpoint foreign/missing endpoint,scoped by WebhookEndpoint.tenant_id == actor_tenant_id (this slice),NO -- both raise identical NotFoundException(WebhookEndpoint),NO,NO -- tenant comes from server-derived actor_tenant_id only,endpoint_id echoed back (pre-existing, caller already supplied it)
-RAGService.query foreign/missing KB,scoped by KnowledgeBase.tenant_id == actor_tenant_id (this slice),NO -- identical NotFoundException(KnowledgeBase),NO,NO,kb_id echoed (pre-existing)
-SecurityService.rotate/revoke_api_key foreign/missing key,scoped by APIKey.tenant_id == actor_tenant_id (this slice),NO -- identical NotFoundException(APIKey),NO,NO,key_id echoed (pre-existing)
-DocumentService.generate_document foreign tenant_id,PERMISSION_DENIED raised before any row is created (this slice),NO -- identical PERMISSION_DENIED regardless of whether the tenant_id is real,NO,NO,none (no object exists yet)
-DocumentService.send/void_document foreign/missing document,scoped by Document.tenant_id == actor_tenant_id (this slice),NO -- identical NotFoundException(Document),NO,NO,document_id echoed (pre-existing)
-GET /v1/documents/{document_id} (get_doc, Set C -- untouched),NONE -- still queries by document_id alone,YES -- pre-existing gap, NOT in this slice's scope,not re-audited this slice (out of scope),n/a,document_id echoed (pre-existing)
-GET /v1/rag/knowledge-bases/{kb_id} (get_kb, Set C -- untouched),NONE -- still uses the original unscoped _get_kb,YES -- pre-existing gap, NOT in this slice's scope,not re-audited this slice (out of scope),n/a,kb_id echoed (pre-existing)

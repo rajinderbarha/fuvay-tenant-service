@@ -1,6 +1,0 @@
-method,path,router_file,handler,guard_before,guard_after,access_scope_gated_after,tenant_authority_after
-POST,/v1/media/upload,app/engines/media/new_router.py,upload_media,get_current_user,require_mutation_access_scope,true,derived server-side via MediaAssetService(actor)
-POST,/v1/media/{media_id}/replace,app/engines/media/new_router.py,replace_media,get_current_user,require_mutation_access_scope,true,derived server-side via MediaAssetService(actor)
-POST,/v1/media/upload/initiate,app/engines/media/router.py,initiate_upload,get_current_user,get_current_user (guard unchanged; enforcement pushed into MediaService),false,MediaService._require_trusted_tenant(tenant_id)
-POST,/v1/media/upload/{session_id}/confirm,app/engines/media/router.py,confirm_upload,get_current_user,get_current_user (guard unchanged; enforcement pushed into MediaService),false,MediaService.confirm_upload session ownership/tenant check
-DELETE,/v1/media/tenants/{tenant_id}/files/{file_id},app/engines/media/router.py,delete_file,require_permission(P.TENANT_UPDATE),require_permission(P.TENANT_UPDATE) (unchanged; enforcement pushed into MediaService),true,MediaService._require_trusted_tenant(tenant_id)

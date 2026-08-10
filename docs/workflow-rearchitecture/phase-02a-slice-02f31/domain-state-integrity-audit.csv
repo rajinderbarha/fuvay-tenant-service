@@ -1,7 +1,0 @@
-condition,policy,evidence,status
-repeated delete of MediaFile,is_deleted flag checked implicitly via NotFound on re-query pattern used elsewhere,not independently re-verified for delete_file,NOT VERIFIED (out of allow-list to fix if broken)
-upload record before storage succeeds,MediaUploadSession created at initiate; MediaFile created at confirm,existing two-phase pattern,CONFIRMED (unchanged)
-duplicate confirm,"CONFLICT (""Upload already confirmed"") raised",read from source,CONFIRMED
-expired session confirm,"CONFLICT (""Upload session expired"") raised",read from source,CONFIRMED
-quota reservation,checked before create in initiate_upload,read from source,CONFIRMED (unchanged)
-parent tenant deleted before media mutation,not evaluated,no test evidence,PRODUCT DECISION / not evaluated this slice

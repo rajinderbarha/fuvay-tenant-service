@@ -1,7 +1,0 @@
-suite,result,note
-tests/test_phase2f30_post_m01_selection.py,see test-report,
-verify_selection_2f30.py,21/21 PASS,canonical + matrix unchanged
-verify_selection_2f30.py --selftest,exit 0,all fixtures fire
-M01 non-regression,12/12 still protected,
-canonical hash,fbe7cf863afa0d84,unchanged
-matrix hash,753653ed32916f4e,unchanged

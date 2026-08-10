@@ -1,5 +1,0 @@
-read,tenant_scoped,foreign_oracle,secret_leak,status
-MediaFile lookup (delete_file),yes at query level,none (NotFound),n/a,CONFIRMED
-MediaUploadSession lookup (confirm_upload),NO principal check,partial -- 404 on missing session only,storage_key returned in response,GAP documented (out of allow-list)
-signed_url generation (confirm_upload),inherits session tenant,n/a,expiring signature only; not logged,CONFIRMED (existing behaviour)
-MediaAsset view (assert_can_view path),yes,yes (403/404 per policy),n/a,CONFIRMED (unchanged)

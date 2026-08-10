@@ -1,3 +1,0 @@
-method,path,endpoint_function,capability,confirmed_mounted,current_guard,target_guard
-POST,/v1/provider/reviews/{review_id}/reply,submit_reply,Provider reply to a customer review,YES,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE
-POST,/v1/provider/reviews/{review_id}/flag,flag_review,Flag a review for moderation,YES,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK,TENANT_MUTATION_ROLE_SCOPE_AWARE

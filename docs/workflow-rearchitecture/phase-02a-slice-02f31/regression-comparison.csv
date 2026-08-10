@@ -1,8 +1,0 @@
-suite,result,note
-tests/test_phase2f31_n01_media_closure.py,35 passed,
-full phase-2F suite,2290 passed 0 failed,
-verify_n01_2f31.py,20/20 PASS,N01 scope only
-verify_n01_2f31.py --selftest,exit 0,all fixtures fire
-m01 non-regression,43 tests + 27 verifier conditions pass,unchanged
-rebaselined current assertions,~30,226->233 / 259->262 / 33->29 / new hashes
-canonical alignment,6 rows,require_staff_or_above_mutation classifies as STAFF_EXECUTION_ROLE_SCOPE_AWARE not TENANT_MUTATION_ROLE_SCOPE_AWARE; canonical + historical snapshots aligned to the live classifier

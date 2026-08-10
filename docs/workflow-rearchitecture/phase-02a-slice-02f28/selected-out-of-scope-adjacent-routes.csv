@@ -1,9 +1,0 @@
-method,path,relationship,exclusion_reason
-POST,/v1/security/api-keys/{key_id}/rotate,"same API-key DOMAIN, different subsystem",held candidate; distinct model/table (tenant_api_keys) + router + service
-POST,/v1/security/api-keys/{key_id}/revoke,"same API-key DOMAIN, different subsystem",held candidate; distinct model/table + router + service
-POST,/v1/security/sessions/{session_id}/revoke,identity/session domain,"security.router; static security observation, not canonical; separate module"
-POST,/v1/auth/mfa/setup,"same router, MFA family",already PROTECTED in canonical (not in the 45-route queue) -- must not be re-opened
-POST,/v1/auth/logout,"same router, session family",already protected/self-scoped; not in the 45-route queue
-DELETE,/v1/auth/sessions/{session_id},"same router, session family",already protected/self-scoped (ownership predicate verified in 2F-26F); not in queue
-PUT,/v1/auth/staff/{user_id}/schedule,"same router, staff family","held candidate (2F-27), not canonical; adjudicate at module level before closure claim"
-POST,/v1/auth/staff/{user_id}/invite/resend,"same router, staff-invite family","held candidate (2F-27), not canonical; adjudicate at module level before closure claim"

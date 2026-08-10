@@ -1,4 +1,0 @@
-item,module,in_authorization_queue,reduces_n01_protected_count,status,source_slice
-confirm_upload storage-existence verification,N01_media_assets (domain-integrity, not authorization),NO -- not canonical/unprotected for authorization reasons; this is a data-integrity gap on an already-VERIFIED route,NO -- N01's protected count (238) is unaffected; this is tracked separately,OPEN -- awaiting a future domain-integrity/media-maintenance slice,2F-31A
-Expired-session/orphaned-storage cleanup,N01_media_assets (domain-integrity, not authorization),NO,NO,OPEN -- resource-leak backlog item, not a security defect,2F-31A
-Media quota GET tenant-trust tightening,N01_media_assets (read-path privacy, not a canonical mutation),NO -- GET /v1/media/tenants/{tenant_id}/quota is not a canonical mutation row,NO,OPEN -- flagged for a future slice's authorization sweep if it is ever added to the canonical mutation inventory,2F-31A

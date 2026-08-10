@@ -1,7 +1,0 @@
-method,path,classification,denominator_effect,evidence
-POST,/v1/reviews,DEPRECATED,none -- excluded,route raises 410 GONE; no service call
-POST,/v1/reviews/{review_id}/reply,MISSING_CANONICAL_TENANT_ROW,+1,mounted; P.TENANT_UPDATE tenant persona; mutates tenant-owned review
-POST,/v1/reviews/{review_id}/flag,MISSING_CANONICAL_TENANT_ROW,+1,mounted; tenant persona after 2F-25; mutates review.status
-POST,/v1/reviews/requests,MISSING_CANONICAL_TENANT_ROW,+1,mounted; P.TENANT_UPDATE; creates tenant-owned ReviewRequest
-POST,/v1/reviews/{review_id}/resolve,PLATFORM_ADMIN_OUTSIDE_XY,none,"require_super_admin -- platform moderation, outside the tenant denominator"
-GET,(all 10 legacy reads),FALSE_POSITIVE_NON_MUTATION,none,reads; the canonical CSV tracks mutations only

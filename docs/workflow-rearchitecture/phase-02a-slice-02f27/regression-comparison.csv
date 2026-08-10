@@ -1,6 +1,0 @@
-suite,result,note
-tests/test_phase2f27_dual_review.py,16 passed,
-verify_dualreview_2f27.py,PASS 12/12,canonical unchanged
-verify_dualreview_2f27.py --selftest,exit 0,all fixtures fire
-A/B stream agreement,89/123 persona,41 disagreements resolved
-canonical add-candidates,59,NOT applied

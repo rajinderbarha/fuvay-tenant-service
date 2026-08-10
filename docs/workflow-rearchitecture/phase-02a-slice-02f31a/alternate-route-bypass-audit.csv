@@ -1,6 +1,0 @@
-bypass_vector,checked,finding
-Direct MediaService(...) construction elsewhere in app/,git grep "MediaService(" across app/,exactly one construction site (router.py _svc()); no bypass
-Direct .initiate_upload(/.confirm_upload(/.delete_file( calls outside service.py/router.py,git grep -E across app/,zero call sites found; no bypass
-Alternate router mounting the same MediaService methods under a different prefix,grep for "MediaService" imports across app/engines,only app/engines/media/router.py imports MediaService; no alternate mount
-MediaAssetService methods reachable without going through new_router.py's _svc(),grep "MediaAssetService(" across app/,only app/engines/media/new_router.py constructs it, always via the actor-bearing _svc() dependency; no bypass
-Profile-photo shortcut routes (/v1/me/profile-photo etc.) reusing MediaService directly,inspected new_router.py -- these routes are backed by MediaAssetService.upload_profile_photo helpers, not MediaService,not applicable to the 5 residual routes; separate closure (2F-31, C7 set), unaffected by this slice

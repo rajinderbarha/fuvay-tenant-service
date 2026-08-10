@@ -1,5 +1,0 @@
-module,total_rows,tenant_facing_mutations,platform_admin_rows,false_positive_rows,protected,pct_of_tenant_facing_plus_platform
-app.engines.booking.router,10,9,1,1 (excluded -- booking_preflight),10,100%
-app.engines.field_ops.router,28,28,0,0,28,100%
-app.engines.field_ops.staff_router,6,6,0,0,6,100%
-GLOBAL (canonical CSV),220,,,,179,81.4%

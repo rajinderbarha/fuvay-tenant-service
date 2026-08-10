@@ -1,2 +1,0 @@
-module,total_endpoints_before,total_endpoints_after,fully_protected_before,fully_protected_after,pct_before,pct_after
-app.engines.geo.router,1,3,0,3,0%,100%

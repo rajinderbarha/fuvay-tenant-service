@@ -237,15 +237,25 @@ export function HomeScreen() {
 
   if (!home.address && !browsingZipcode) {
     return (
-      <AppScreen>
+      /**
+       * Scrollable, and stacked rather than vertically centred.
+       *
+       * Real bug this fixes: the prompt sat in a `flex: 1` centred block with Global
+       * Services as its sibling inside a NON-scrolling screen. Global Services is a
+       * six-card grid, so the content was always taller than the phone, and with
+       * nothing able to scroll the two blocks drew on top of each other -- "Set your
+       * location" overlapped "Build with Fuvay", and the caption landed across the
+       * section's own subtitle.
+       */
+      <AppScreen scroll edges={["top"]}>
         <OfflineBanner />
-        <View style={{ flex: 1, justifyContent: "center" }}>
+        <View style={{ paddingTop: theme.spacing.xxl, paddingBottom: theme.spacing.xl }}>
           <NoAddressState onAddAddress={() => setLocationPickerVisible(true)} />
         </View>
         {/* Shown even with no address on file -- Global Services is
             nationwide/fixed, never gated by serviceability (see
             GlobalServicesSection). */}
-        <View style={{ paddingHorizontal: theme.layout.screenHorizontalPadding, paddingBottom: theme.spacing.lg }}>
+        <View style={{ paddingBottom: theme.spacing.xxl }}>
           <GlobalServicesSection defaultName={customerFirstName !== "there" ? customerFirstName : undefined} />
         </View>
         <LocationPickerModal

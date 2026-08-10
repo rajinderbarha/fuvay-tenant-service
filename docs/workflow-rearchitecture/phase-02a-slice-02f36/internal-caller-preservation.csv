@@ -1,7 +1,0 @@
-service,internal_caller,method_called,affected_by_this_slice,action
-ChatService,app/engines/dispatch/service.py (dispatch_job),get_or_create_conversation,NO (different method than send_message),none needed
-ServiceCatalogService,app/engines/booking/service.py,get_by_service_type_id,NO (different method than create_item/update_item),none needed
-ServiceCatalogService,app/engines/field_ops/service.py,get_by_service_type_id,NO (different method than create_item/update_item),none needed
-DSService,app/engines/field_ops/service.py,update_staff_signal,NO (different method than the 4 touched),none needed
-SettingsService,app/engines/booking/service.py,resolve,NO (different method than set/delete_tenant_setting),none needed
-SettingsService,app/engines/dispatch/service.py,resolve,NO (different method than set/delete_tenant_setting),none needed

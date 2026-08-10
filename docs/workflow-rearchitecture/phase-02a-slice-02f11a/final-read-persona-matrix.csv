@@ -1,7 +1,0 @@
-endpoint_name,tenant_owner,canonical_staff,assigned_staff,technician,assigned_technician,customer,platform_admin,read_only_tenant,final_classification
-agent_timeline,allowed,allowed,allowed,DENIED,DENIED,denied,allowed (via super_admin),allowed (no access-scope check on reads),TENANT_OWNER_OR_CANONICAL_STAFF_READ
-provider_timeline,allowed,allowed,allowed,DENIED,DENIED,denied,allowed,allowed,TENANT_OWNER_OR_CANONICAL_STAFF_READ
-provider_notes,allowed,allowed,allowed,DENIED,DENIED,denied,allowed,allowed,TENANT_OWNER_OR_CANONICAL_STAFF_READ
-customer_tracking,denied,denied,denied,denied,denied,allowed (own lead only),denied (must use admin_router),n/a,CUSTOMER_SELF_TRACKING_READ
-admin_timeline,denied,denied,denied,denied,denied,denied,allowed,n/a,PLATFORM_ADMIN_READ
-admin_notes,denied,denied,denied,denied,denied,denied,allowed,n/a,PLATFORM_ADMIN_READ

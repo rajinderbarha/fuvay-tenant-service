@@ -1,4 +1,0 @@
-method,path,held_module,shares_router_service_model,mandatory_before_closure,required_evidence,reason,canonical_yet
-POST,/v1/media/upload/initiate,media,yes,YES,mounted route + genuine side effect + tenant/provider persona + ownership proof,same MediaService boundary; session-based upload start,NO
-POST,/v1/media/upload/{session_id}/confirm,media,yes,YES,mounted route + genuine side effect + tenant/provider persona + ownership proof,same MediaService boundary; completes the upload session,NO
-DELETE,/v1/media/tenants/{tenant_id}/files/{file_id},media,yes,YES,mounted route + genuine side effect + tenant/provider persona + ownership proof,same media boundary; CLIENT-ASSERTED tenant delete - highest-value adjudication in this module,NO

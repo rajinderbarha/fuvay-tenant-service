@@ -1,4 +1,0 @@
-service_method,target_lookup,tenant_scoped,foreign_target_behavior,oracle,status
-AuthService.update_permissions,_get_user_by_id(target_user_id),yes,NotFoundException,REMOVED this slice (was PERMISSION_DENIED),CLOSED
-AuthService.deactivate_staff,_get_user_by_id(user_id),yes,NotFoundException,none (pre-existing correct),CONFIRMED
-AuthService.invite_staff,_get_user_by_email(email),tenant compared,ALREADY_EXISTS only when same tenant,see known-limitations,CONFIRMED

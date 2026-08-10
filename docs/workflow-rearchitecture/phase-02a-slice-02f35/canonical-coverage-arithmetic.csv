@@ -1,5 +1,0 @@
-metric,before_2f35,delta,after_2f35,formula
-denominator,264,9,273,264 + a where a = 9 (Set B routes added: 2 security + 3 documents + 4 rag)
-protected,241,11,252,241 + c + h where c = 2 (Set A routes closed) and h = 9 (all 9 added Set B routes fully protected)
-unprotected,23,-2,21,final_denominator - final_protected = 273 - 252
-pending_held,54,-9,45,54 - r where r = 9 (all 9 Set B routes received a final RESOLVED_ADDED_CANONICALLY disposition)

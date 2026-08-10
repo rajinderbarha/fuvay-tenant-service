@@ -428,7 +428,7 @@ function BusinessVerticalCreateModal({ open, onClose, onCreated }: {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="New Business Vertical">
+    <Modal open={open} onClose={onClose} title="New Business Vertical" size="xl">
       <CategoryForm form={form} setF={setF} error={createAction.error}/>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 14 }}>
         <Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn>
@@ -460,8 +460,13 @@ function CategoryForm({
   };
   const hint = form.vertical_type ? verticalHint[form.vertical_type] : null;
 
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)",
+    textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2,
+  };
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxHeight: "75vh", overflowY: "auto", paddingRight: 4 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {error && (
         <div style={{ padding: "10px 14px", borderRadius: 9, background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
           <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>{error}</p>
@@ -469,10 +474,11 @@ function CategoryForm({
       )}
 
       {/* Basic */}
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", paddingBottom: 8 }}>
-        Basic Details
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+        <Input label="Name *" placeholder="Home Repairs" value={form.name} onChange={v => setF("name", v)}/>
+        <Input label="Display Order" type="number" placeholder="0"
+          value={String(form.display_order)} onChange={v => setF("display_order", Number(v) || 0)}/>
       </div>
-      <Input label="Name *" placeholder="Home Repairs" value={form.name} onChange={v => setF("name", v)}/>
       <div>
         <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Description</label>
         <textarea value={form.description} onChange={e => setF("description", e.target.value)}
@@ -480,50 +486,37 @@ function CategoryForm({
       </div>
 
       {/* Universal classification */}
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", paddingBottom: 8 }}>
-        Behavior &amp; Finance
-      </div>
+      <div style={sectionLabel}>Behavior &amp; Finance</div>
       {hint && (
         <div style={{ padding: "8px 12px", borderRadius:"var(--radius-md)", background: "rgba(37,99,235,0.06)", border: "1px solid rgba(37,99,235,0.2)", fontSize: 12, color: "var(--brand)" }}>
           {hint}
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 }}>
         <Select label="Vertical Type *" value={form.vertical_type} onChange={v => setF("vertical_type", v)}
-          options={VERTICAL_OPTIONS} placeholder="Select vertical…"/>
+          options={VERTICAL_OPTIONS} placeholder="Select…"/>
         <Select label="Finance Model *" value={form.finance_model} onChange={v => setF("finance_model", v)}
-          options={FINANCE_OPTIONS} placeholder="Select model…"/>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          options={FINANCE_OPTIONS} placeholder="Select…"/>
         <Select label="Customer Flow Type *" value={form.customer_flow_type} onChange={v => setF("customer_flow_type", v)}
-          options={FLOW_OPTIONS} placeholder="Select flow…"/>
+          options={FLOW_OPTIONS} placeholder="Select…"/>
         <Select label="Provider Business Model" value={form.provider_business_model} onChange={v => setF("provider_business_model", v)}
           options={PROVIDER_BIZ_OPTIONS} placeholder="Select…"/>
       </div>
 
-      {/* Visibility -- Brand/Type/Schedule/Address/pricing requirements
-          removed (migration 160): those vary per Master Service and Job
-          Type and are configured in each service's Job-Type Blueprint. */}
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", paddingBottom: 8 }}>
-        Visibility
-      </div>
-      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer" }}>
-        <input type="checkbox" checked={form.tenant_selectable}
-          onChange={e => setF("tenant_selectable", e.target.checked)}
-          style={{ width: 15, height: 15 }}/>
-        Tenant Selectable
-      </label>
-
-      {/* Appearance */}
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", paddingBottom: 8 }}>
-        Appearance
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      {/* Visibility + Appearance combined -- Brand/Type/Schedule/Address/
+          pricing requirements removed (migration 160): those vary per
+          Master Service and Job Type and are configured in each service's
+          Job-Type Blueprint. */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 12, alignItems: "end" }}>
         <IconPicker label="Icon" context="category_icon" value={form.icon_url} onChange={v => setF("icon_url", v ?? "")}/>
         <IconPicker label="Image" context="category_icon" value={form.image_url} onChange={v => setF("image_url", v ?? "")}/>
+        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", paddingBottom: 8 }}>
+          <input type="checkbox" checked={form.tenant_selectable}
+            onChange={e => setF("tenant_selectable", e.target.checked)}
+            style={{ width: 15, height: 15 }}/>
+          Tenant Selectable
+        </label>
       </div>
-      <Input label="Display Order" type="number" placeholder="0"
-        value={String(form.display_order)} onChange={v => setF("display_order", Number(v) || 0)}/>
     </div>
   );
 }
@@ -1021,7 +1014,7 @@ export default function CategoriesPage() {
       {/* Edit Modal (existing verticals only -- deprecated Brand/Type/Schedule/
           Address/pricing fields removed; editing other fields never touches
           them, so their existing values are preserved untouched) */}
-      <Modal open={modal === "edit"} onClose={() => setModal("none")} title={`Edit: ${editing?.name}`}>
+      <Modal open={modal === "edit"} onClose={() => setModal("none")} title={`Edit: ${editing?.name}`} size="xl">
         <CategoryForm form={form} setF={setF} error={editAction.error}/>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 16 }}>
           <Btn variant="ghost" size="sm" onClick={() => setModal("none")}>Cancel</Btn>

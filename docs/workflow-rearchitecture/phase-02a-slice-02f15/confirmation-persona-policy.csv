@@ -1,7 +1,0 @@
-persona,may_confirm,may_create_the_booking_being_confirmed,represents_customer_consent,classification
-tenant_owner,yes,yes (same actor may do both -- this was the exploit chain, now closed at creation),no,PROVIDER_ACCEPTS_BOOKING
-staff,no (BOOKING_MANAGE not granted to staff per ROLE_PERMISSIONS),n/a,n/a,NOT_APPLICABLE
-technician,no,n/a,n/a,NOT_APPLICABLE
-customer,no (explicit 403 CUSTOMER_CANNOT_CONFIRM_BOOKING),yes (may create their own booking),n/a (customer never confirms; their OWN act of creation is their consent),CUSTOMER_CONSENT_NOT_ESTABLISHED_VIA_CONFIRM (established via creation instead, for self-bookings)
-super_admin,yes (BOOKING_MANAGE granted broadly per existing permission structure),yes,no,PROVIDER_ACCEPTS_BOOKING (platform-wide)
-read-only tenant_owner,no (require_tenant_mutation_permission denies read-only access_scope, fixed 2F-15),no,n/a,DENIED

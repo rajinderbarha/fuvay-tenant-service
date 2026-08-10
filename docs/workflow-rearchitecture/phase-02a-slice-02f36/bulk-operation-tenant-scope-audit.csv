@@ -1,2 +1,0 @@
-route,bulk_operation,finding
-N/A,N/A,"None of the 18 Set A or 24 canonically-included Set B routes accept a batch/array of object IDs or perform a bulk write across multiple rows in a single call. No bulk-operation tenant-scope defect exists in this slice's scope."

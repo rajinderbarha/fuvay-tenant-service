@@ -1,4 +1,0 @@
-metric,before_2f33,delta,after_2f33,formula
-denominator,262,2,264,262 + a where a = 2 (Set B routes added: create_zone, update_location)
-protected,238,3,241,238 + c + h where c = 1 (delete_zone closes) and h = 2 (both added Set B routes fully protected)
-unprotected,24,-1,23,final_denominator - final_protected = 264 - 241

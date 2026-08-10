@@ -1,4 +1,0 @@
-method,path,endpoint,module,repository_boundary,reason_for_inclusion
-GET,/v1/commerce/tenants/{tenant_id}/deposit/transactions,get_deposit_transactions,app.engines.platform_commerce.router,app.engines.platform_commerce.router,missing access-scope-aware guard only
-POST,/v1/commerce/tenants/{tenant_id}/deposit/initiate,initiate_deposit,app.engines.platform_commerce.router,app.engines.platform_commerce.router,missing access-scope-aware guard only
-GET,/v1/commerce/tenants/{tenant_id}/deposit,get_deposit,app.engines.platform_commerce.router,app.engines.platform_commerce.router,missing access-scope-aware guard only -- cross-tenant already blocked at service layer

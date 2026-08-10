@@ -1,6 +1,0 @@
-alternate_route,reaches,classification,action
-GET /v1/media/signed/{token},read-only signed URL resolution,Set C (protected/read),unchanged
-DELETE /v1/media/{media_id},MediaAssetService.delete_asset,Set C (held elsewhere, not canonical),unchanged
-POST /v1/security/api-keys/*,SecurityService (different subsystem),separate subsystem,unchanged
-PUT /v1/me/profile,ProfileService (different module boundary),Set C / N03 module,unchanged
-PUT /v1/staff/profile,ProfileService (different module boundary),Set C / N03 module,unchanged

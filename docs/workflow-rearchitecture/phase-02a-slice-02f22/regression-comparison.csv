@@ -1,5 +1,0 @@
-scope,before_node_ids_failing,after_node_ids_failing,newly_failing,resolved,verdict
-"directly affected suites (7 files, 356 tests)",0,0,0,0,IDENTICAL
-"wider package/credit/payment/registration/finance (14 files, 757 tests)",5,5,0,0,"IDENTICAL -- node IDs byte-identical, all httpx.ConnectError live-env"
-2F-21 selection suite,0,"1 (transient, during coverage update)",0 after reconciliation,0,RESOLVED within slice -- see regression-report.md
-new 2F-22 suite,n/a,0 (50 passed),0,0,PASS

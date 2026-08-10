@@ -1,4 +1,0 @@
-router_module,domain,total_mutation_routes,fully_protected,before_slice_status,verification_level
-app.engines.quote_checklist.provider_router,ServiceJob quote/checklist tenant-provider administration (staff_router + checklist_router live in this file),11,11,AUTHENTICATED_ONLY_NO_PERMISSION_CHECK (get_current_user only -- zero persona/permission enforcement),SLICE_2F16_VERIFIED (runtime tool exit 0 + direct authorization test proof)
-app.engines.quote_checklist.customer_router,Customer quote decision self-service,3,3,AUTHENTICATED_ONLY_NO_EXPLICIT_ROLE_CHECK (get_current_user + implicit ownership only),SLICE_2F16_VERIFIED (runtime tool exit 0 + direct authorization test proof)
-app.engines.quote_checklist.admin_router,Platform checklist template + quote read admin,2,2,PLATFORM_ADMIN_ONLY (already correct, unchanged),SLICE_2F16_VERIFIED (runtime tool exit 0, unchanged)

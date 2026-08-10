@@ -20,10 +20,6 @@ export interface ServiceSearchProps {
 
 const HOLD_MS = 2000;
 const SLIDE_MS = 500;
-/** The strip's line height. Fixed rather than measured because it has to clip to
- * exactly one line for the effect to read as scrolling rather than as two words
- * briefly overlapping. */
-const LINE_HEIGHT = 22;
 
 /**
  * Full-width elevated search field.
@@ -69,6 +65,23 @@ export function ServiceSearch({
     return () => sub.remove();
   }, []);
 
+  /**
+   * The hint's own text style, taken from the SAME token the input uses, and the strip
+   * height taken from that style's line height.
+   *
+   * Both were being set by hand: `{ height: 22, lineHeight: 22, ...typography.body }`
+   * spread the token AFTER the line height, so the token's own `lineHeight` won its
+   * own override and the hint could sit on a different baseline from the text it is
+   * standing in for -- which reads as a different font.
+   */
+  const hintStyle = {
+    ...theme.typography.body,
+    color: theme.colors.textTertiary,
+  };
+  // The token always defines one; the fallback keeps TypeScript honest about the type
+  // rather than pretending it cannot be absent.
+  const lineHeight = theme.typography.body.lineHeight ?? 22;
+
   const items = suggestions ?? [];
   const count = items.length;
   const rotating =
@@ -76,37 +89,38 @@ export function ServiceSearch({
 
   useEffect(() => {
     if (!rotating) return;
-    let cancelled = false;
-    let current: Animated.CompositeAnimation | null = null;
 
-    const step = (line: number) => {
-      if (cancelled) return;
-      current = Animated.sequence([
-        Animated.delay(HOLD_MS),
-        Animated.timing(position, {
-          toValue: line + 1,
-          duration: SLIDE_MS,
-          // Eased both ends, so a word settles rather than stopping dead. A linear
-          // slide is what makes a ticker feel mechanical.
-          easing: Easing.inOut(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]);
-      current.start(({ finished }) => {
-        if (cancelled || !finished) return;
-        // Landed on the repeated first item: snap to the real one. Identical pixels,
-        // so there is nothing to see, and the next run starts from the top again
-        // instead of the strip creeping away forever.
-        const next = line + 1 >= count ? 0 : line + 1;
-        if (next === 0) position.setValue(0);
-        step(next);
-      });
-    };
+    /**
+     * One declarative loop: hold, slide a line, hold, slide... through the whole strip,
+     * then start over from the top -- where the repeated first word means the reset is
+     * invisible.
+     *
+     * Built as a single `Animated.loop` rather than a chain that re-armed itself from
+     * each step's completion callback. That chain stopped for good the moment a step
+     * reported `finished: false`, which any interruption can cause, so the hint could
+     * silently freeze on one word for the rest of the session and look like no
+     * animation at all. A loop has no such state to lose.
+     */
+    position.setValue(0);
+    const animation = Animated.loop(
+      Animated.sequence(
+        Array.from({ length: count }, (_, line) => [
+          Animated.delay(HOLD_MS),
+          Animated.timing(position, {
+            toValue: line + 1,
+            duration: SLIDE_MS,
+            // Eased both ends, so a word settles rather than stopping dead. A linear
+            // slide is what makes a ticker feel mechanical.
+            easing: Easing.inOut(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]).flat(),
+      ),
+    );
+    animation.start();
 
-    step(0);
     return () => {
-      cancelled = true;
-      current?.stop();
+      animation.stop();
       position.setValue(0);
     };
   }, [rotating, count, position]);
@@ -117,15 +131,8 @@ export function ServiceSearch({
   // full strip including the seam.
   const translateY = position.interpolate({
     inputRange: [0, Math.max(1, count)],
-    outputRange: [0, -LINE_HEIGHT * Math.max(1, count)],
+    outputRange: [0, -lineHeight * Math.max(1, count)],
   });
-
-  const wordStyle = {
-    height: LINE_HEIGHT,
-    lineHeight: LINE_HEIGHT,
-    color: theme.colors.textTertiary,
-    ...theme.typography.body,
-  };
 
   return (
     <View
@@ -164,15 +171,15 @@ export function ServiceSearch({
             importantForAccessibility="no-hide-descendants"
             style={{ position: "absolute", left: 0, right: 0, flexDirection: "row" }}
           >
-            <Animated.Text style={wordStyle}>Search </Animated.Text>
+            <Animated.Text style={hintStyle}>Search </Animated.Text>
             {/* One line tall and clipped: the outgoing and incoming words are never
                 both visible, which is what separates a scroll from a glitch. */}
-            <View style={{ flex: 1, height: LINE_HEIGHT, overflow: "hidden" }}>
+            <View style={{ flex: 1, height: lineHeight, overflow: "hidden" }}>
               <Animated.View style={{ transform: [{ translateY }] }}>
                 {[...items, items[0]].map((word, i) => (
                   // Index-keyed on purpose: this is a positional strip, and the first
                   // word deliberately appears twice, so its name is not a unique key.
-                  <Animated.Text key={`${i}-${word}`} numberOfLines={1} style={wordStyle}>
+                  <Animated.Text key={`${i}-${word}`} numberOfLines={1} style={hintStyle}>
                     {`${word}…`}
                   </Animated.Text>
                 ))}

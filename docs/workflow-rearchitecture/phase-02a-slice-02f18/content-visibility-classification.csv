@@ -1,9 +1,0 @@
-field,model,classification,notes
-message_text,ChatMessage,CUSTOMER_VISIBLE / TENANT_INTERNAL (per visibility),gated by visibility field, now validated+enum-restricted this slice
-media_urls / media_ids,ChatMessage,CUSTOMER_VISIBLE / TENANT_INTERNAL (per visibility),ownership of the referenced asset itself is NOT validated -- see known-limitations.md
-title / body,InAppNotification,CUSTOMER_VISIBLE_RECORD,scoped strictly to user_id == recipient; never cross-user readable
-action_url / action_label,InAppNotification,CUSTOMER_VISIBLE_RECORD,server-generated deep links only (e.g. /provider/chat/{thread_id}) -- never client-supplied
-provider_message_id / provider_name / failure_code / failure_message,NotificationOutbox,DELIVERY_INTERNAL / NEVER_CLIENT_VISIBLE,not reachable from this router at all (admin_router only)
-thread_number,ChatThread,CUSTOMER_VISIBLE_RECORD,opaque generated identifier, no sensitive content
-sender_type,ChatMessage,CUSTOMER_VISIBLE_RECORD,role label only (customer/provider/staff/admin), not a raw role string with permission info
-audit resource payloads,PlatformAuditLog (via audit_service),AUDIT_INTERNAL,redacted via SENSITIVE_FIELDS before storage (pre-existing, unchanged)

@@ -1,5 +1,0 @@
-slice,pending_at_start,candidates_assigned,expected_resolved_added,expected_resolved_excluded,expected_product_decision,expected_remaining_pending_at_end
-2F-35,54,9,unknown -- depends on 2F-35's own evidence-based adjudication,unknown,0-3 (security/document routes are unlikely to need policy decisions),0 (all 9 receive a terminal disposition by 2F-35's own approval gate)
-2F-36,45 (54-9),28,unknown,unknown,2-5 (operational routes occasionally hit undecided product behavior, e.g. appointment cancellation policy),0 (all 28 receive a terminal disposition)
-2F-37,17,17,unknown,unknown,2-4 (compliance/deletion-requests are the most likely to require an explicit, currently-undecided policy),0 (all 17 receive a terminal disposition, though some as PRODUCT_DECISION_REQUIRED rather than closed)
-2F-38,0,0,n/a -- 2F-38 implements nothing new,n/a,carries forward whatever 2F-35/36/37 left as PRODUCT_DECISION_REQUIRED,0 (program-wide target: zero PENDING_MODULE_ADJUDICATION rows by the end of 2F-38)
