@@ -269,6 +269,8 @@ async def list_my_bookings(
             if b.job_type_id in job_types:
                 item["job_type_label"] = job_types[b.job_type_id]
 
+        await _attach_urgency(db, items, rows)
+
     return ok({
         "items":  items,
         "total":  total or 0,
@@ -280,6 +282,55 @@ async def list_my_bookings(
         "limit":  limit,
         "offset": offset,
     }, _RID(r), "final_records")
+
+
+# ── Lateness, computed once, on the server ───────────────────────────────────
+
+async def _attach_urgency(db: AsyncSession, items: list[dict], rows) -> None:
+    """Adds the COMMITTED slot and its urgency to each booking in the page.
+
+    Why this is here rather than in the app: the customer's list and the provider's
+    dashboard must never disagree about which jobs are late. Two clients each deriving
+    it from a date string is exactly how a customer comes to see "Today" for a job the
+    provider's board is already calling overdue.
+
+    Why the committed slot and not `preferred_*`: what the customer ASKED for is not a
+    promise anyone made. Only `service_jobs.scheduled_date/_time_window` is a
+    commitment, so only that can be late.
+
+    One query for the whole page, never one per row. Bookings with no job yet simply
+    get `urgency: "unscheduled"`, which is a real answer -- nobody has committed to
+    them.
+    """
+    from app.engines.home_service_assignment import urgency as urgency_rules
+
+    booking_ids = [b.id for b in rows]
+    if not booking_ids:
+        return
+
+    job_rows = (await db.execute(
+        select(
+            ServiceJob.booking_id, ServiceJob.status,
+            ServiceJob.scheduled_date, ServiceJob.scheduled_time_window,
+        ).where(ServiceJob.booking_id.in_(booking_ids))
+    )).all()
+    by_booking = {r[0]: r for r in job_rows}
+
+    for item, b in zip(items, rows):
+        job = by_booking.get(b.id)
+        # The booking's own status when there is no job row yet: an unassigned booking
+        # is still not late, and its status is what decides whether urgency applies.
+        status = job[1] if job else b.status
+        scheduled_date = job[2] if job else None
+        window = job[3] if job else None
+
+        item["scheduled_date"] = scheduled_date.isoformat() if scheduled_date else None
+        item["scheduled_time_window"] = window
+        item["urgency"] = urgency_rules.classify(status, scheduled_date, window)
+        late_by = urgency_rules.minutes_late(status, scheduled_date, window)
+        item["minutes_late"] = late_by
+        # Pre-worded so the phrasing is identical wherever it is shown.
+        item["lateness_label"] = urgency_rules.describe(late_by)
 
 
 # ── GET /bookings/{booking_id} ────────────────────────────────────────────────

@@ -29,6 +29,7 @@ function booking(overrides: Partial<CustomerBookingListItem> = {}): CustomerBook
     stage: "active" as never, statusLabel: "Request confirmed",
     activityText: null, supportingText: null, createdAt: null,
     serviceName: "AC Repair", jobType: null, summaryFields: [],
+    urgency: null, scheduledDate: null, scheduledTimeWindow: null, latenessLabel: null,
     address: { label: null, formatted: "Model Town, Ludhiana", zipcode: null },
     pricing: { state: "unavailable" as never, inspection: null },
     ...overrides,

@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { View, FlatList, RefreshControl, ActivityIndicator, Pressable, Animated } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../../design-system/theme";
@@ -23,6 +23,8 @@ import { bookingStatusFilterLabel } from "../../domain/bookingStatusFilter";
 import { useCustomerBookingsListQuery } from "../../api/customerBookings/useCustomerBookingsListQuery";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
 import { BookingListFilter, isActiveBookingStatus } from "../../domain/bookingFilters";
+import { groupByUrgency, countLate } from "../../domain/bookingUrgencyGroups";
+import type { BookingUrgency } from "../../domain/bookingList";
 import { CustomerBookingListItem } from "../../domain/bookingList";
 import { createAssistantCardEntryContext } from "../../domain/assistantEntry";
 import { formatRelativeUpdateTime } from "../../domain/dates";
@@ -36,6 +38,11 @@ import { isOffline } from "../../api/networkState";
  */
 /** Measured height of the title + subtitle block, at the smaller type it now
  * uses (headingSmall + caption rather than headingLarge + bodySmall). */
+/** A row in the list: either a group heading or a booking card. */
+type BookingRow =
+  | { kind: "heading"; urgency: BookingUrgency; title: string; subtitle: string | null; count: number }
+  | { kind: "booking"; booking: CustomerBookingListItem };
+
 const HEADER_HEIGHT = 40;
 /** Scroll distance over which it folds away. Short enough that the space is
  * reclaimed almost immediately, long enough not to snap. */
@@ -96,6 +103,34 @@ export function MyBookingsScreen() {
 
   const debouncedSearch = useDebouncedValue(search, 350);
   const query = useCustomerBookingsListQuery(filter, debouncedSearch, statusFilter);
+
+  /**
+   * Headings and cards in ONE flat list, so the FlatList keeps recycling rows -- nesting
+   * a list per group would render every card at once and lose that.
+   *
+   * The order and the wording come from `groupByUrgency`, which reads the SERVER's
+   * urgency. Nothing here compares a date: the provider's dashboard uses the same rule,
+   * and a customer seeing "Today" for a job the provider calls overdue is worse than no
+   * grouping at all.
+   *
+   * Finished bookings have no urgency, so the Completed tab keeps its plain
+   * newest-first list with no headings at all.
+   */
+  const rows: BookingRow[] = useMemo(() => {
+    const { groups, ungrouped } = groupByUrgency(query.items);
+    const out: BookingRow[] = [];
+    for (const group of groups) {
+      out.push({
+        kind: "heading", urgency: group.urgency, title: group.title,
+        subtitle: group.subtitle, count: group.items.length,
+      });
+      for (const booking of group.items) out.push({ kind: "booking", booking });
+    }
+    for (const booking of ungrouped) out.push({ kind: "booking", booking });
+    return out;
+  }, [query.items]);
+
+  const lateCount = countLate(query.items);
   const { data: home } = useCustomerHomeQuery();
 
   function goToDetails(bookingId: string) {
@@ -111,12 +146,34 @@ export function MyBookingsScreen() {
     (navigation as { navigate: (name: string, params: unknown) => void }).navigate("BookingSupportEntry", { mode: "help" });
   }
 
-  const renderItem = useCallback(({ item }: { item: CustomerBookingListItem }) => (
-    isActiveBookingStatus(item.rawStatus)
-      ? <ActiveBookingCard item={item} onViewDetails={() => goToDetails(item.bookingId)} onContactSupport={goToSupport} />
-      : <CompletedBookingCard item={item} onViewDetails={() => goToDetails(item.bookingId)} />
+  const renderItem = useCallback(({ item }: { item: BookingRow }) => {
+    if (item.kind === "heading") {
+      return (
+        <View style={{ marginTop: theme.spacing.base, marginBottom: theme.spacing.xs }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xs }}>
+            {item.urgency === "late" ? (
+              <Icon name="alert-circle" size="compact" color={theme.colors.statusDanger} decorative />
+            ) : null}
+            <AppText
+              variant="labelStrong"
+              style={item.urgency === "late" ? { color: theme.colors.statusDanger } : undefined}
+              accessibilityRole="header"
+            >
+              {`${item.title} (${item.count})`}
+            </AppText>
+          </View>
+          {item.subtitle ? (
+            <AppText variant="caption" color="secondary" style={{ marginTop: 2 }}>{item.subtitle}</AppText>
+          ) : null}
+        </View>
+      );
+    }
+    const booking = item.booking;
+    return isActiveBookingStatus(booking.rawStatus)
+      ? <ActiveBookingCard item={booking} onViewDetails={() => goToDetails(booking.bookingId)} onContactSupport={goToSupport} />
+      : <CompletedBookingCard item={booking} onViewDetails={() => goToDetails(booking.bookingId)} />;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), []);
+  }, [theme]);
 
   if (query.isPending) {
     return (
@@ -180,6 +237,27 @@ export function MyBookingsScreen() {
             <AppText variant="caption">{bookingStatusFilterLabel(statusFilter)}</AppText>
             <Icon name="close-circle" size="compact" color={theme.colors.iconDefault} decorative />
           </Pressable>
+        ) : null}
+
+        {/* Says how many need attention BEFORE any scrolling, and only when there are
+            any -- "0 past their slot" is noise. Tapping it is not offered: the group is
+            already first in the list, so a jump would land where the eye already is. */}
+        {lateCount > 0 ? (
+          <View
+            style={{
+              flexDirection: "row", alignItems: "center", gap: theme.spacing.xs,
+              paddingVertical: theme.spacing.xs, paddingHorizontal: theme.spacing.sm,
+              borderRadius: theme.radiusUsage.card,
+              backgroundColor: theme.colors.statusDangerSurface,
+            }}
+          >
+            <Icon name="alert-circle" size="compact" color={theme.colors.statusDanger} decorative />
+            <AppText variant="caption" style={{ flex: 1, color: theme.colors.statusDanger }}>
+              {lateCount === 1
+                ? "1 booking is past its scheduled slot"
+                : `${lateCount} bookings are past their scheduled slot`}
+            </AppText>
+          </View>
         ) : null}
 
         {/* The tabs are what customers actually use to switch views, so the search
@@ -262,8 +340,8 @@ export function MyBookingsScreen() {
           </View>
         ) : (
           <FlatList
-            data={query.items}
-            keyExtractor={item => item.bookingId}
+            data={rows}
+            keyExtractor={row => (row.kind === "heading" ? `h:${row.urgency}` : row.booking.bookingId)}
             renderItem={renderItem}
             onScroll={Animated.event(
               [{ nativeEvent: { contentOffset: { y: scrollY } } }],

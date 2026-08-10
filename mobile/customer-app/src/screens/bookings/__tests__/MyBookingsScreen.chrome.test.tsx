@@ -85,3 +85,58 @@ describe("MyBookingsScreen chrome", () => {
     expect(screen.getByLabelText("Search and filter bookings")).toBeTruthy();
   });
 });
+
+describe("MyBookingsScreen: finding what is late", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  function withItems(items: unknown[]) {
+    (homeQueryModule.useCustomerHomeQuery as jest.Mock).mockReturnValue({ data: undefined });
+    mockList({ items, counts: { active: items.length, completed: 0, all: items.length } });
+    return render(
+      <AppProviders>
+        <NavigationContainer>
+          <MyBookingsScreen />
+        </NavigationContainer>
+      </AppProviders>,
+    );
+  }
+
+  function item(id: string, urgency: string | null) {
+    return {
+      bookingId: id, bookingNumber: id, rawStatus: "confirmed",
+      stage: "active", statusLabel: "Request confirmed",
+      activityText: null, supportingText: null, createdAt: null,
+      serviceName: `Service ${id}`, jobType: null, summaryFields: [],
+      address: { label: null, formatted: "Ludhiana", zipcode: null },
+      pricing: { state: { kind: "unavailable" }, inspection: null },
+      urgency, scheduledDate: null, scheduledTimeWindow: null, latenessLabel: null,
+    };
+  }
+
+  it("heads each group and counts it, late first", () => {
+    // The whole complaint: with one newest-first list, a six-day-overdue visit sat below
+    // something scheduled for next week and could only be found by reading every card.
+    withItems([item("a", "upcoming"), item("b", "late"), item("c", "today")]);
+
+    expect(screen.getByText("Past their slot (1)")).toBeTruthy();
+    expect(screen.getByText("Today (1)")).toBeTruthy();
+    expect(screen.getByText("Upcoming (1)")).toBeTruthy();
+  });
+
+  it("says how many are late before any scrolling", () => {
+    withItems([item("b", "late"), item("c", "late")]);
+    expect(screen.getByText("2 bookings are past their scheduled slot")).toBeTruthy();
+  });
+
+  it("uses the singular for exactly one", () => {
+    withItems([item("b", "late")]);
+    expect(screen.getByText("1 booking is past its scheduled slot")).toBeTruthy();
+  });
+
+  it("shows no late summary and no headings when nothing is grouped", () => {
+    // Finished bookings carry no urgency, so the Completed tab stays a plain list.
+    withItems([item("d", null)]);
+    expect(screen.queryByText(/past its scheduled slot|past their scheduled slot/)).toBeNull();
+    expect(screen.queryByText(/Past their slot/)).toBeNull();
+  });
+});

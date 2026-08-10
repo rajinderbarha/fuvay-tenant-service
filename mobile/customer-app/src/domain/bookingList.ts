@@ -1,4 +1,9 @@
 import { ServerTimestamp } from "./dates";
+
+/** How soon a booking needs attention. The SERVER decides this (see
+ * `home_service_assignment/urgency.py`) so the customer's list and the provider's
+ * dashboard can never disagree about which visits are late. */
+export type BookingUrgency = "late" | "today" | "upcoming" | "unscheduled";
 import { BookingReceiptStage } from "./bookingStatus";
 import { FinalizedPricingPresentation, ReceiptAddress } from "./bookingReceipt";
 
@@ -31,6 +36,14 @@ export interface CustomerBookingListItem {
   summaryFields: BookingSummaryField[];
   address: ReceiptAddress;
   pricing: FinalizedPricingPresentation;
+  /** Null for finished work, and on an older backend that does not send it -- the list
+   * then simply renders ungrouped rather than guessing. */
+  urgency: BookingUrgency | null;
+  /** The COMMITTED slot, not what the customer asked for. */
+  scheduledDate: string | null;
+  scheduledTimeWindow: string | null;
+  /** "2 days late", worded by the server. */
+  latenessLabel: string | null;
 }
 
 export interface BookingListCounts {

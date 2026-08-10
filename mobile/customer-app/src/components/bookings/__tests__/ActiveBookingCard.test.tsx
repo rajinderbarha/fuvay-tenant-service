@@ -19,6 +19,7 @@ function item(overrides: Partial<CustomerBookingListItem> = {}): CustomerBooking
     summaryFields: [],
     address: { label: null, formatted: "Model Town, Ludhiana - 141002", zipcode: "141002" },
     pricing: { state: { kind: "unavailable" }, inspection: null },
+    urgency: null, scheduledDate: null, scheduledTimeWindow: null, latenessLabel: null,
     ...overrides,
   };
 }

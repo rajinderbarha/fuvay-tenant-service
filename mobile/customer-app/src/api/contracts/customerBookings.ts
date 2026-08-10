@@ -80,6 +80,22 @@ export const serviceBookingDtoSchema = z.object({
   address_snapshot: z.record(z.string(), z.unknown()).nullable(),
   preferred_date: z.string().nullable(),
   preferred_time_window: z.string().nullable(),
+  /**
+   * The COMMITTED slot and how urgent it is, both computed server-side.
+   *
+   * `urgency` is the server's own answer -- "late" | "today" | "upcoming" |
+   * "unscheduled", or null for finished work. The app does not re-derive it: the
+   * customer's list and the provider's dashboard must agree about which jobs are late,
+   * and two sides each reading a date string is exactly how they stop agreeing.
+   *
+   * Optional so an older backend simply yields no grouping rather than failing to parse.
+   */
+  scheduled_date: z.string().nullable().optional(),
+  scheduled_time_window: z.string().nullable().optional(),
+  urgency: z.enum(["late", "today", "upcoming", "unscheduled"]).nullable().optional(),
+  minutes_late: z.number().nullable().optional(),
+  /** Pre-worded by the server ("2 days late") so the phrasing is identical everywhere. */
+  lateness_label: z.string().nullable().optional(),
   price_snapshot: z.record(z.string(), z.unknown()).nullable(),
   // Deliberately NOT typed/consumed beyond existence -- the staff-
   // dependent safety boundary (spec section 5) means provider_snapshot's

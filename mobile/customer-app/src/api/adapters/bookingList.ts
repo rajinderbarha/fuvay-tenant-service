@@ -55,6 +55,13 @@ export function adaptBookingListItem(dto: ServiceBookingDto): CustomerBookingLis
     summaryFields: adaptSummaryFields(dto),
     address: formatAddress(dto.address_snapshot, dto.city, dto.zipcode),
     pricing: { state, inspection },
+    // Straight through from the server, never re-derived here. The provider's dashboard
+    // reads the same field from the same rule, so the two cannot disagree about which
+    // visits are late.
+    urgency: dto.urgency ?? null,
+    scheduledDate: dto.scheduled_date ?? null,
+    scheduledTimeWindow: dto.scheduled_time_window ?? null,
+    latenessLabel: dto.lateness_label ?? null,
   };
 }
 
