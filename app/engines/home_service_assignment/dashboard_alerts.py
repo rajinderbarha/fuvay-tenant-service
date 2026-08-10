@@ -87,9 +87,16 @@ async def build_alerts(
         if created is not None:
             if created.tzinfo is None:
                 created = created.replace(tzinfo=dt.timezone.utc)
-            # Only jobs nobody has picked up yet count as "new" -- once it is assigned or
-            # under way, arrival is no longer the news.
-            if created > cutoff and str(job.status or "").lower() == "pending_assignment":
+            # Any job that ARRIVED recently and is still live counts as new.
+            #
+            # This used to require `pending_assignment`, which made the whole feature
+            # silent on this platform: bookings come in already `accepted`, so a service
+            # booked from the customer app produced no popup at all -- verified live, the
+            # newest three bookings were all "accepted" within minutes of being made and
+            # `new_job_total` was 0. Arrival is the news, not the assignment state; the
+            # only exclusions are jobs already finished or cancelled, where congratulating
+            # anyone would be absurd.
+            if created > cutoff and str(job.status or "").lower() not in urgency_rules.TERMINAL_STATUSES:
                 new_jobs.append({
                     "job_id": str(job.id),
                     "label": _job_label(job),

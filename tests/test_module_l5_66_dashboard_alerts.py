@@ -56,9 +56,18 @@ class TestNewJobs:
         assert "New job" in alert["title"]
 
     @pytest.mark.asyncio
-    async def test_an_already_assigned_job_is_not_news(self):
-        # Arrival stops being the story once somebody has picked it up.
+    async def test_a_job_that_arrived_already_accepted_is_still_news(self):
+        # Real bug this pins: "new" required `pending_assignment`, and on this platform
+        # bookings arrive already `accepted` -- so a service booked from the customer app
+        # produced no popup at all. Verified live: the newest three bookings were
+        # "accepted" within minutes of being made, and new_job_total was 0.
         result = await alerts_for([job(status="accepted", created_at=NOW - dt.timedelta(minutes=5))])
+        assert result["new_job_total"] == 1
+
+    @pytest.mark.asyncio
+    async def test_a_job_that_arrived_and_is_already_finished_is_not_news(self):
+        # Congratulating someone for work already done would be absurd.
+        result = await alerts_for([job(status="completed", created_at=NOW - dt.timedelta(minutes=5))])
         assert result["new_job_total"] == 0
 
     @pytest.mark.asyncio

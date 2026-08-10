@@ -155,6 +155,24 @@ export default function DashboardPage() {
     [jobRows, todayIso],
   );
 
+  /**
+   * Ten rows a page.
+   *
+   * A dashboard table is a summary, not the jobs list -- there is a "View all jobs" link
+   * for that. Rendering every one of today's jobs pushed the panels beside it off screen
+   * and made the page scroll for something that is meant to be glanceable.
+   */
+  const JOBS_PER_PAGE = 10;
+  const [jobPage, setJobPage] = useState(0);
+  const jobPageCount = Math.max(1, Math.ceil(todaysJobs.length / JOBS_PER_PAGE));
+  // Clamped rather than trusted: the list refreshes on a timer, and a page that no longer
+  // exists after jobs complete would otherwise render an empty table.
+  const currentJobPage = Math.min(jobPage, jobPageCount - 1);
+  const visibleJobs = todaysJobs.slice(
+    currentJobPage * JOBS_PER_PAGE,
+    currentJobPage * JOBS_PER_PAGE + JOBS_PER_PAGE,
+  );
+
   const pendingPayments = safeNum(pendingPaymentsApi.data?.pagination?.total);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const teamSummary: any = teamSummaryApi.data?.summary ?? {};
@@ -315,7 +333,7 @@ export default function DashboardPage() {
                   <tr><td colSpan={8} style={{ padding: 20 }}><Skeleton height={16} /></td></tr>
                 ) : todaysJobs.length === 0 ? (
                   <tr><td colSpan={8} style={{ padding: "24px 20px", fontSize: 13, color: "var(--text-tertiary)", textAlign: "center" }}>No jobs scheduled for today.</td></tr>
-                ) : todaysJobs.map((j) => {
+                ) : visibleJobs.map((j) => {
                   const slaStatus = j?.sla?.sla_status as string | undefined;
                   const slaTone = slaStatus === "BREACHED" ? "danger" : slaStatus === "AT_RISK" ? "warning" : "success";
                   return (
@@ -339,6 +357,38 @@ export default function DashboardPage() {
                 })}
               </tbody>
             </table>
+            {jobPageCount > 1 ? (
+              <div
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  gap: 12, padding: "10px 20px", borderTop: "1px solid var(--border)",
+                }}
+              >
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                  {/* The real range and the real total, so the table never understates how
+                      much work today holds. */}
+                  {`${currentJobPage * JOBS_PER_PAGE + 1}\u2013${currentJobPage * JOBS_PER_PAGE + visibleJobs.length} of ${todaysJobs.length}`}
+                </span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={currentJobPage === 0}
+                    onClick={() => setJobPage(p => Math.max(0, p - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={currentJobPage >= jobPageCount - 1}
+                    onClick={() => setJobPage(p => Math.min(jobPageCount - 1, p + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </Card>
 
