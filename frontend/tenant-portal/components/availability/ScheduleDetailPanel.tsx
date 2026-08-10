@@ -198,7 +198,9 @@ export function ScheduleDetailPanel({
           </Section>
 
           <div style={{ display: "flex", gap: 8, margin: "18px 0 16px" }}>
-            <div style={{ flex: 1 }}><Btn variant="primary" fullWidth onClick={onEditAvailability}>Edit availability</Btn></div>
+            {/* "Edit availability" implied this changed what customers could book. It
+                did not -- that is business hours. This edits one date for one person. */}
+            <div style={{ flex: 1 }}><Btn variant="primary" fullWidth onClick={onEditAvailability}>Override date</Btn></div>
             <div style={{ flex: 1 }}><Btn variant="secondary" fullWidth onClick={onAddTimeOff}>Add time off</Btn></div>
           </div>
 

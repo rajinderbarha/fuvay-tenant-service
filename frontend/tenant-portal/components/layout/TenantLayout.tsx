@@ -13,7 +13,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ArrowRight,
   CreditCard, Shield,
   MapPin, Clock, Star, Truck, Wallet, ListChecks,
-  Image, UserCog, Lock,
+  Image, UserCog, Lock, Building2,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import { useTour } from "../../hooks/useTour";
@@ -75,12 +75,28 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // Business Setup + Business Profile removed from nav 2026-08-04 (user:
-    // "no longer using") -- routes still exist and are reachable by direct
-    // URL, just no longer linked from the sidebar.
-    label: "Setup & Profile",
+    // Business Profile was pulled from the nav on 2026-08-04 as "no longer using",
+    // leaving only Compliance here. What went with it was every route to the business's
+    // own settings: Business Hours lives at /tenant/setup/availability and was reachable
+    // ONLY through Business Profile, so once setup finished there was no way, anywhere in
+    // the portal, to change opening hours, slot length or bookings per slot. Those are
+    // the numbers customer booking slots are generated from -- a provider who wanted to
+    // open an hour earlier had no screen to say so on.
+    //
+    // Restored as a Business group, matching the reference IA, which groups Business
+    // Profile and Documents exactly this way.
+    label: "Business",
     items: [
-      { id: "provider-compliance", href: "/provider/compliance", label: "Compliance", icon: <Shield size={16}/> },
+      // These point at the SETUP flow's own screens, not the older standalone
+      // /profile and /tenant/setup/availability pages. The setup screens are the ones
+      // that match how this product actually works -- coverage, weekly business hours
+      // and booking controls together on one page -- and pointing the menu somewhere
+      // else would give a provider two different editors for the same settings, only
+      // one of which reflects the real workflow.
+      { id: "business-profile",    href: "/tenant/home-services/setup/business-profile",      label: "Business Profile", icon: <Building2 size={16}/> },
+      { id: "business-hours",      href: "/tenant/home-services/setup/coverage-availability", label: "Coverage & Hours", icon: <Clock size={16}/> },
+      { id: "documents",           href: "/tenant/home-services/setup/documents",             label: "Documents", icon: <FileText size={16}/> },
+      { id: "provider-compliance", href: "/provider/compliance",                              label: "Compliance", icon: <Shield size={16}/> },
     ],
   },
   {

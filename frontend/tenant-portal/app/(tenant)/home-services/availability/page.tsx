@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 /**
- * Home Services — Availability & Capacity Planner.
+ * Home Services â€” Availability & Capacity Planner.
  *
  * Data layer is unchanged from the original build this session:
  *   GET /v1/tenant/home-services/availability?from=&to=&staff_id=
@@ -46,7 +46,7 @@ import {
   type ReadinessState,
 } from "../../../../components/availability/ScheduleDetailPanel";
 
-// ── Types (mirror the real backend response shapes exactly) ─────────────────
+// â”€â”€ Types (mirror the real backend response shapes exactly) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface Technician {
   id: string; full_name: string; designation: string | null;
   status: string; max_concurrent_jobs: number | null; profile_photo_url: string | null;
@@ -98,12 +98,11 @@ interface TeamOverview {
   schedule_conflicts: number;
 }
 
-interface ImpactPreview {
-  future_assignments_affected: number;
-  affected_dates: { date: string; existing_assignment_count: number; job_numbers: string[]; reasons: string[] }[];
-  capacity_would_drop_below_existing: boolean;
-  requires_confirmation: boolean;
-}
+// The impact-preview shape lived here for the weekly-pattern editor this page used to
+// carry. That editor is gone -- weekly patterns are not what customers book against --
+// so the type went with it. /v1/tenant/home-services/availability/preview-change is
+// untouched and still serves whoever edits a pattern; this page is simply no longer that
+// caller.
 
 function toISODate(d: Date): string { return d.toISOString().slice(0, 10); }
 function addDays(iso: string, n: number): string {
@@ -121,20 +120,20 @@ function fmtRange(from: string, to: string): string {
   const t = new Date(to + "T00:00:00");
   const fs = f.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
   const ts = t.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  return from === to ? t.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short", year: "numeric" }) : `${fs} – ${ts}`;
+  return from === to ? t.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short", year: "numeric" }) : `${fs} â€“ ${ts}`;
 }
 
 // Groups the current week's 7 daily working-hours ranges into contiguous
-// same-value runs, e.g. "Mon – Sat: 9:00 AM – 6:00 PM" / "Sunday: Off" --
+// same-value runs, e.g. "Mon â€“ Sat: 9:00 AM â€“ 6:00 PM" / "Sunday: Off" --
 // purely a client-side aggregation of already-fetched real data, no guess.
 function summarizeWeeklyPattern(days: string[], schedules: EffectiveSchedule[], staffId: string): WeeklyPatternLine[] {
   const dayName = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short" });
   const values = days.map(d => {
     const s = schedules.find(x => x.staff_id === staffId && x.date === d);
-    // The panel writes hours out the way a person would ("9:00 AM – 6:00 PM"); the grid
+    // The panel writes hours out the way a person would ("9:00 AM â€“ 6:00 PM"); the grid
     // keeps 24-hour because its cells have no room for the suffix.
     return s?.working_hours?.start && s?.working_hours?.end
-      ? `${to12h(s.working_hours.start)} – ${to12h(s.working_hours.end)}`
+      ? `${to12h(s.working_hours.start)} â€“ ${to12h(s.working_hours.end)}`
       : "Off";
   });
   const lines: WeeklyPatternLine[] = [];
@@ -142,7 +141,7 @@ function summarizeWeeklyPattern(days: string[], schedules: EffectiveSchedule[], 
   while (i < values.length) {
     let j = i;
     while (j + 1 < values.length && values[j + 1] === values[i]) j++;
-    const label = i === j ? dayName(days[i]) : `${dayName(days[i])} – ${dayName(days[j])}`;
+    const label = i === j ? dayName(days[i]) : `${dayName(days[i])} â€“ ${dayName(days[j])}`;
     lines.push({ label, value: values[i] });
     i = j + 1;
   }
@@ -202,7 +201,7 @@ function AddTimeOffModal({ staffId, staffName, defaultDate, onClose, onSaved }: 
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
           <strong style={{ fontSize: 14, color: "var(--text-primary)" }}>Add time off</strong>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer" }}>✕</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer" }}>âœ•</button>
         </div>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 16px" }}>{staffName}</p>
 
@@ -245,12 +244,12 @@ function AddTimeOffModal({ staffId, staffName, defaultDate, onClose, onSaved }: 
 
           <div>
             <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Reason (optional)</label>
-            <input type="text" value={reason} maxLength={300} placeholder="Annual leave, sick, training…"
+            <input type="text" value={reason} maxLength={300} placeholder="Annual leave, sick, trainingâ€¦"
               onChange={e => setReason(e.target.value)} style={input}/>
           </div>
 
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-            A part-day absence blocks only those hours — the technician stays bookable for the rest of the day.
+            A part-day absence blocks only those hours â€” the technician stays bookable for the rest of the day.
           </p>
 
           {save.error && (
@@ -268,206 +267,113 @@ function AddTimeOffModal({ staffId, staffName, defaultDate, onClose, onSaved }: 
   );
 }
 
-function EditAvailabilityDrawer({
-  staffId, staffName, dayOfWeek, dayLabel, weekdayLabel, initial, onClose, onSaved,
+/** Changes ONE technician's hours for ONE date.
+ *
+ * This drawer used to edit the technician's recurring weekly pattern too, with an
+ * impact-preview step. That was the wrong control on the wrong page. Bookable slots come
+ * from the BUSINESS hours -- opening time, slot length, and bookings per slot, which the
+ * provider sizes against how many technicians they have -- and none of that is
+ * per-technician. Editing a technician's weekly pattern here changed a number the booking
+ * engine does not read, so the page offered a setting that looked load-bearing and was
+ * not. Business hours are edited in one place now, Business > Business Hours, and this
+ * drawer does the thing that genuinely is per-person and per-day: a one-off override.
+ */
+function DateOverrideDrawer({
+  staffId, staffName, dateISO, initial, onClose, onSaved,
 }: {
-  staffId: string; staffName: string; dayOfWeek: number; dayLabel: string; weekdayLabel: string;
-  initial: { start: string | null; end: string | null; breakStart: string | null; breakEnd: string | null; dailyCapacity: number | null };
+  staffId: string; staffName: string; dateISO: string;
+  initial: { start: string | null; end: string | null };
   onClose: () => void; onSaved: () => void;
 }) {
-  // Which question the provider is answering. These are genuinely different edits and
-  // conflating them is how a one-off "he's in at 10 on Wednesday" silently becomes
-  // "he's in at 10 every Wednesday" -- so the form makes you say which one you mean.
-  const [scope, setScope] = useState<"pattern" | "date">("pattern");
   const [startTime, setStartTime] = useState(initial.start ?? "09:00");
   const [endTime, setEndTime] = useState(initial.end ?? "18:00");
-  const [breakStart, setBreakStart] = useState(initial.breakStart ?? "");
-  const [breakEnd, setBreakEnd] = useState(initial.breakEnd ?? "");
-  const [dailyCapacity, setDailyCapacity] = useState(initial.dailyCapacity != null ? String(initial.dailyCapacity) : "");
   const [closed, setClosed] = useState(false);
   const [reason, setReason] = useState("");
-  const [preview, setPreview] = useState<ImpactPreview | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const saveOverride = useAction(useCallback(async () => {
+  const save = useAction(useCallback(async () => {
     return await apiFetch<Record<string, unknown>>(`/v1/provider/team/${staffId}/overrides`, {
       method: "PUT",
       body: JSON.stringify({
-        override_date: dayLabel,
+        override_date: dateISO,
         start_time: closed ? null : startTime,
         end_time: closed ? null : endTime,
         full_day_closed: closed,
         reason: reason.trim() || null,
       }),
     });
-  }, [staffId, dayLabel, closed, startTime, endTime, reason]));
+  }, [staffId, dateISO, closed, startTime, endTime, reason]));
 
-  const previewAction = useAction(useCallback(async () => {
-    return await apiFetch<ImpactPreview>("/v1/tenant/home-services/availability/preview-change", {
-      method: "POST",
-      body: JSON.stringify({
-        staff_id: staffId, day_of_week: dayOfWeek, is_active: true,
-        start_time: startTime, end_time: endTime,
-        max_jobs_per_day: dailyCapacity ? Number(dailyCapacity) : null,
-      }),
-    });
-  }, [staffId, dayOfWeek, startTime, endTime, dailyCapacity]));
-
-  const saveAction = useAction(useCallback(async (confirmImpact: boolean) => {
-    return await apiFetch<Record<string, unknown>>("/v1/provider/availability", {
-      method: "POST",
-      body: JSON.stringify({
-        scope_type: "staff_member", scope_id: staffId, day_of_week: dayOfWeek,
-        start_time: startTime, end_time: endTime,
-        break_start_time: breakStart || null, break_end_time: breakEnd || null,
-        max_jobs_per_day: dailyCapacity ? Number(dailyCapacity) : null,
-        confirm_impact: confirmImpact,
-      }),
-    });
-  }, [staffId, dayOfWeek, startTime, endTime, breakStart, breakEnd, dailyCapacity]));
-
-  const handleSaveClick = async () => {
-    setSaved(false);
-    // A single-date override touches one day. The impact preview answers a
-    // weekly-pattern question ("every Wednesday for the next 60 days"), so running it
-    // here would report jobs on dates this edit does not touch.
-    if (scope === "date") {
-      const res = await saveOverride.execute();
-      if (res) { setSaved(true); onSaved(); }
-      return;
-    }
-    if (!preview) {
-      const p = await previewAction.execute();
-      if (p) setPreview(p);
-      return;
-    }
-    const res = await saveAction.execute(preview.requires_confirmation);
+  const handleSave = async () => {
+    const res = await save.execute();
     if (res) { setSaved(true); onSaved(); }
   };
 
-  const dirty = () => { setPreview(null); setSaved(false); };
+  const input: React.CSSProperties = {
+    flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)",
+    background: "var(--surface-sunken)", color: "var(--text-primary)",
+  };
+  const dateLabel = new Date(dateISO + "T00:00:00").toLocaleDateString("en-IN", {
+    weekday: "long", day: "2-digit", month: "short", year: "numeric",
+  });
 
   return (
     <>
-      {/* Real bug fixed here: this drawer had zIndex:50 and no backdrop of
-          its own, so opening it from the Schedule Details drawer (zIndex
-          900) rendered it BEHIND that drawer -- clicking "Edit availability"
-          appeared to do nothing. Now stacks above it with its own backdrop. */}
+      {/* Stacks above the Schedule Details drawer (z 900) with its own backdrop --
+          without one it rendered behind, and the button appeared to do nothing. */}
       <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 949 }}/>
       <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 380, background: "var(--surface)",
         borderLeft: "1px solid var(--border)", boxShadow: "-4px 0 24px rgba(0,0,0,0.3)", zIndex: 950,
         padding: 20, overflowY: "auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-        <strong style={{ fontSize: 14, color: "var(--text-primary)" }}>Edit availability</strong>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", fontSize: 14 }}>✕</button>
-      </div>
-      <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 0, marginBottom: 16 }}>{staffName} · {dayLabel}</p>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 12 }}>
-        <div>
-          <label style={{ display: "block", marginBottom: 6, color: "var(--text-tertiary)" }}>Apply to</label>
-          <div style={{ display: "flex", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, padding: 3 }}>
-            {([["pattern", `Every ${weekdayLabel}`], ["date", "This date only"]] as const).map(([v, label]) => (
-              <button key={v} onClick={() => { setScope(v); dirty(); }}
-                style={{ flex: 1, padding: "6px 8px", fontSize: 11.5, fontWeight: 600, borderRadius: 6, border: "none", cursor: "pointer",
-                  background: scope === v ? "var(--brand)" : "transparent",
-                  color: scope === v ? "var(--text-on-brand)" : "var(--text-secondary)" }}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
-            {scope === "pattern"
-              ? "Changes this technician's recurring weekly hours."
-              : `Overrides ${dayLabel} only. The weekly pattern is untouched.`}
-          </p>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <strong style={{ fontSize: 14, color: "var(--text-primary)" }}>Override this date</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", fontSize: 14 }}>✕</button>
         </div>
+        <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 0, marginBottom: 16 }}>
+          {staffName} · {dateLabel}
+        </p>
 
-        {scope === "date" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 12 }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--text-secondary)" }}>
-            <input type="checkbox" checked={closed} onChange={e => { setClosed(e.target.checked); dirty(); }}/>
+            <input type="checkbox" checked={closed} onChange={e => { setClosed(e.target.checked); setSaved(false); }}/>
             Not working this day
           </label>
-        )}
 
-        <div style={{ display: closed && scope === "date" ? "none" : "block" }}>
-          <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Working hours</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input type="time" value={startTime} onChange={e => { setStartTime(e.target.value); setPreview(null); setSaved(false); }}
-              style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }} />
-            <input type="time" value={endTime} onChange={e => { setEndTime(e.target.value); setPreview(null); setSaved(false); }}
-              style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }} />
+          <div style={{ display: closed ? "none" : "block" }}>
+            <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Hours for this date</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="time" value={startTime} style={input}
+                onChange={e => { setStartTime(e.target.value); setSaved(false); }}/>
+              <input type="time" value={endTime} style={input}
+                onChange={e => { setEndTime(e.target.value); setSaved(false); }}/>
+            </div>
           </div>
-        </div>
-        {/* Break and daily capacity belong to the weekly pattern. An override records
-            hours for one date and has no columns for either, so offering them here
-            would accept input the save silently drops. */}
-        {scope === "pattern" && (
-          <>
-            <div>
-              <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Break (optional)</label>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input type="time" value={breakStart} onChange={e => { setBreakStart(e.target.value); dirty(); }}
-                  style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }} />
-                <input type="time" value={breakEnd} onChange={e => { setBreakEnd(e.target.value); dirty(); }}
-                  style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }} />
-              </div>
-            </div>
-            <div>
-              <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Daily job capacity</label>
-              <input type="number" min={0} value={dailyCapacity}
-                onChange={e => { setDailyCapacity(e.target.value); dirty(); }}
-                style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", boxSizing: "border-box" }} />
-            </div>
-          </>
-        )}
 
-        {scope === "date" && (
           <div>
             <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Reason (optional)</label>
             <input type="text" value={reason} maxLength={300} placeholder="Late start, half day, training…"
               onChange={e => setReason(e.target.value)}
-              style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", boxSizing: "border-box" }} />
+              style={{ ...input, width: "100%", boxSizing: "border-box" }}/>
           </div>
-        )}
 
-        {(previewAction.error || saveAction.error || saveOverride.error) && (
-          <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)" }}>
-            {previewAction.error || saveAction.error || saveOverride.error}
+          <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
+            Applies to {dateLabel} only. The weekly pattern is untouched, and bookable slots still
+            come from your business hours.
+          </p>
+
+          {save.error && (
+            <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--danger-bg)",
+              border: "1px solid var(--danger-border)", color: "var(--danger-text)" }}>{save.error}</div>
+          )}
+          {saved && (
+            <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--success-bg)", color: "var(--success-text)" }}>Saved.</div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <Btn variant="primary" size="sm" onClick={handleSave} loading={save.loading}>Save override</Btn>
+            <Btn variant="secondary" size="sm" onClick={onClose}>Cancel</Btn>
           </div>
-        )}
-
-        {preview && preview.requires_confirmation && (
-          <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--warning-bg)", border: "1px solid var(--warning-border)" }}>
-            <div style={{ fontWeight: 600, color: "var(--warning-text)", marginBottom: 6 }}>
-              {preview.future_assignments_affected} real upcoming assignment(s) would be affected
-            </div>
-            {preview.affected_dates.map(a => (
-              <div key={a.date} style={{ fontSize: 11, color: "var(--warning-text)" }}>
-                {a.date}: {a.existing_assignment_count} job(s) — {a.job_numbers.join(", ")}
-              </div>
-            ))}
-            <div style={{ fontSize: 11, color: "var(--warning-text)", marginTop: 6 }}>
-              Saving will not move or cancel these jobs — it only changes future capacity/hours. Confirm you&apos;re aware.
-            </div>
-          </div>
-        )}
-
-        {saved && (
-          <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--success-bg)", color: "var(--success-text)" }}>Saved.</div>
-        )}
-
-        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-          <Btn variant="primary" size="sm" onClick={handleSaveClick}
-            loading={previewAction.loading || saveAction.loading || saveOverride.loading}>
-            {scope === "date"
-              ? "Save override"
-              : !preview ? "Check impact & save"
-              : preview.requires_confirmation ? "Confirm and save" : "Save"}
-          </Btn>
-          <Btn variant="secondary" size="sm" onClick={onClose}>Cancel</Btn>
         </div>
-      </div>
       </div>
     </>
   );
@@ -675,7 +581,7 @@ export default function AvailabilityCapacityPlannerPage() {
             <button onClick={() => setView("week")} style={{ background: view === "week" ? "var(--brand)" : "none", color: view === "week" ? "var(--text-on-brand)" : "var(--text-secondary)", border: "none", borderRadius: 7, padding: "6px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Week</button>
             <button onClick={() => setView("day")} style={{ background: view === "day" ? "var(--brand)" : "none", color: view === "day" ? "var(--text-on-brand)" : "var(--text-secondary)", border: "none", borderRadius: 7, padding: "6px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Day</button>
           </div>
-          <span title="Not available yet — no weekly-pattern copy endpoint exists.">
+          <span title="Not available yet â€” no weekly-pattern copy endpoint exists.">
             <Btn variant="secondary" disabled>Copy previous week</Btn>
           </span>
           {/* Jumps to the first overlapping-assignment conflict in the visible range and
@@ -693,11 +599,13 @@ export default function AvailabilityCapacityPlannerPage() {
             Review conflicts {conflictCount > 0 ? conflictCount : ""}
           </Btn>
           <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={planner.refetch}>Refresh</Btn>
-          <span title="Select a technician on a conflicted day, then use Edit availability.">
-            <Btn variant="primary" disabled={!selectedStaffId} onClick={() => selectedStaffId && setEditingStaffId(selectedStaffId)}>
-              Edit schedule
-            </Btn>
-          </span>
+          {/* The primary action on this page is NOT editing a technician's schedule.
+              What customers can book is set by the business's own opening hours, slot
+              length and bookings per slot, so that is where the button goes. This board
+              plans people against those hours; it does not define them. */}
+          <Btn variant="primary" onClick={() => router.push("/tenant/home-services/setup/coverage-availability")}>
+            Business hours
+          </Btn>
         </div>
       </div>
 
@@ -768,7 +676,7 @@ export default function AvailabilityCapacityPlannerPage() {
                 id: t.id,
                 name: t.full_name,
                 // Mirrors the roster's "2/4 jobs" so the two panels read as one row.
-                subtitle: cap != null ? `${s?.assignments_today.length ?? 0}/${cap} jobs` : "—",
+                subtitle: cap != null ? `${s?.assignments_today.length ?? 0}/${cap} jobs` : "â€”",
               };
             })}
             days={days} scheduleFor={scheduleFor}
@@ -780,7 +688,7 @@ export default function AvailabilityCapacityPlannerPage() {
             // Named from the selected technician's actual break, not a hardcoded
             // "13:00-14:00" -- the design's label is that tenant's break, not a constant.
             breakLabel={selectedSchedule?.break
-              ? `${selectedSchedule.break.start}–${selectedSchedule.break.end}`
+              ? `${selectedSchedule.break.start}â€“${selectedSchedule.break.end}`
               : null}
           />
           </div>
@@ -791,7 +699,7 @@ export default function AvailabilityCapacityPlannerPage() {
               readiness={readiness}
               weeklyPattern={weeklyPattern}
               breakLine={selectedSchedule?.break
-                ? `${to12h(selectedSchedule.break.start)} – ${to12h(selectedSchedule.break.end)}`
+                ? `${to12h(selectedSchedule.break.start)} â€“ ${to12h(selectedSchedule.break.end)}`
                 : null}
               maxJobsPerDay={selectedSchedule?.daily_capacity?.limit ?? null}
               maxConcurrentJobs={selectedTech.max_concurrent_jobs}
@@ -819,17 +727,11 @@ export default function AvailabilityCapacityPlannerPage() {
       {editingStaffId && (() => {
         const staff = technicians.find(t => t.id === editingStaffId);
         const d = detail.data && detail.data.staff_id === editingStaffId ? detail.data : null;
-        const dow = new Date(selectedDate + "T00:00:00Z").getUTCDay();
         return (
-          <EditAvailabilityDrawer
+          <DateOverrideDrawer
             staffId={editingStaffId} staffName={staff?.full_name ?? "Technician"}
-            dayOfWeek={dow} dayLabel={selectedDate}
-            weekdayLabel={new Date(selectedDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long" })}
-            initial={{
-              start: d?.working_hours?.start ?? null, end: d?.working_hours?.end ?? null,
-              breakStart: d?.break?.start ?? null, breakEnd: d?.break?.end ?? null,
-              dailyCapacity: d?.daily_capacity?.limit ?? null,
-            }}
+            dateISO={selectedDate}
+            initial={{ start: d?.working_hours?.start ?? null, end: d?.working_hours?.end ?? null }}
             onClose={() => setEditingStaffId(null)}
             onSaved={() => { bumpMutation(); detail.refetch(); }}
           />

@@ -571,6 +571,34 @@ async def create_availability(
     return ok(dict(row.fetchone()._mapping), request_id=rid)
 
 
+# Declared BEFORE `/availability/{rule_id}`, and it has to stay that way.
+#
+# FastAPI matches routes in declaration order. This route used to sit further down the
+# file, below the `{rule_id}` route, so `GET /availability/exceptions` matched
+# `{rule_id}` first, tried to parse the literal string "exceptions" as a UUID, and
+# returned 422 for every caller. Holidays and closure dates could therefore never be
+# listed, and the Coverage & Availability page -- which loads areas, rules and exceptions
+# together -- failed its entire load on that one rejection and rendered "We couldn't load
+# your coverage and availability settings" instead of the page.
+#
+# A literal path segment must be registered before the parameterised one that would
+# otherwise swallow it. The POST/PUT/DELETE exception routes below do not collide: those
+# are two or three segments deep and the `{rule_id}` routes are one.
+@router.get("/availability/exceptions")
+async def list_availability_exceptions(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+):
+    tid = _tid(user)
+    rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
+    result = await db.execute(
+        text("SELECT * FROM tenant_availability_exceptions WHERE tenant_id=:tid AND status='active' ORDER BY date"),
+        {"tid": str(tid)})
+    rows = [dict(r._mapping) for r in result.fetchall()]
+    return ok({"exceptions": rows, "count": len(rows)}, request_id=rid)
+
+
 @router.get("/availability/{rule_id}")
 async def get_availability(
     rule_id: uuid.UUID, request: Request,
@@ -645,20 +673,8 @@ async def delete_availability(
 
 
 # ── Availability Exceptions / Holidays (HS5B) ─────────────────────────────────
-
-@router.get("/availability/exceptions")
-async def list_availability_exceptions(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
-):
-    tid = _tid(user)
-    rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    result = await db.execute(
-        text("SELECT * FROM tenant_availability_exceptions WHERE tenant_id=:tid AND status='active' ORDER BY date"),
-        {"tid": str(tid)})
-    rows = [dict(r._mapping) for r in result.fetchall()]
-    return ok({"exceptions": rows, "count": len(rows)}, request_id=rid)
+# The GET for this group lives above the `/availability/{rule_id}` route, which is the
+# only place it can work from; see the note there.
 
 
 def _parse_date(value):
