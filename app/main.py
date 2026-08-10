@@ -811,6 +811,13 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.places.router import router as places_router
     app.include_router(places_router)
 
+    # Per-technician time off and date overrides -- the writes behind the availability
+    # board's override and time-off cells, which had nothing to read until now.
+    from app.engines.home_service_assignment.staff_availability_router import (
+        router as staff_availability_router,
+    )
+    app.include_router(staff_availability_router)
+
     # Real bug fixed here: the customer_campaigns engine -- which powers the
     # promotional banner carousel on the customer Home screen -- had BOTH of
     # its routers written but NEITHER ever mounted. The carousel still
