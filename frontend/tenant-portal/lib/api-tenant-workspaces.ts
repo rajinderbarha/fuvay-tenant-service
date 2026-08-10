@@ -199,14 +199,23 @@ export const homeServicesDispatchApi = {
     )}`),
   getAssignmentOptions: <T = HsAssignmentOptions>(jobId: string) =>
     apiFetch<T>(`/v1/tenant/home-services/jobs/${jobId}/assignment-options`),
-  /** Assigning may also (re)schedule the visit in the same call, which is
-   * why the board passes the chosen date and window through. */
+  /**
+   * Assigning may also (re)schedule the visit in the same call, which is why the board
+   * passes the chosen date and window through.
+   *
+   * Real bug fixed here: this sent `staff_id`, and both endpoints require
+   * `staff_member_id` (AssignRequest / ReassignRequest). Every assign and reassign from
+   * the Dispatch board answered 422 "One or more request fields failed validation" --
+   * reproduced live against a real unassigned job before the change. The endpoint was
+   * right; only the field name was wrong, which is why it looked like the board's assign
+   * button did nothing.
+   */
   assign: <T = WsPayload>(jobId: string, staffId: string, scheduledDate?: string, timeWindow?: string) =>
     apiFetch<T>(`/v1/provider/service-jobs/${jobId}/assign`, post({
-      staff_id: staffId, scheduled_date: scheduledDate, scheduled_time_window: timeWindow,
+      staff_member_id: staffId, scheduled_date: scheduledDate, scheduled_time_window: timeWindow,
     })),
   reassign: <T = WsPayload>(jobId: string, staffId: string, reason?: string) =>
-    apiFetch<T>(`/v1/provider/service-jobs/${jobId}/reassign`, post({ staff_id: staffId, reason: reason ?? "" })),
+    apiFetch<T>(`/v1/provider/service-jobs/${jobId}/reassign`, post({ staff_member_id: staffId, reason: reason ?? "" })),
   unassign: <T = WsPayload>(jobId: string, reason?: string) =>
     apiFetch<T>(`/v1/provider/service-jobs/${jobId}/cancel-assignment`, post({ reason: reason ?? "" })),
 };
