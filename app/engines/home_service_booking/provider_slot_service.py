@@ -53,6 +53,7 @@ import datetime as dt
 import uuid
 from zoneinfo import ZoneInfo
 
+import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,6 +68,8 @@ FALLBACK_SLOT_MINUTES = 60
 # Used only when a provider has rules but left per-slot capacity unset.
 # 1 is the safe reading of "unconfigured": never silently overbook someone.
 FALLBACK_MAX_PER_SLOT = 1
+
+logger = structlog.get_logger("home_service_booking.provider_slots")
 
 # How many days that actually HAVE bookable slots to offer the customer.
 # Product rule: today's remaining slots, plus the next open day's -- so a
@@ -216,6 +219,52 @@ def _slots_from_rule(rule: dict) -> list[tuple[dt.time, dt.time]]:
     return slots
 
 
+async def assignable_technician_count(db: AsyncSession, tenant_id: uuid.UUID) -> int:
+    """How many of this provider's people can actually be given a job right now.
+
+    This is the real ceiling on concurrent visits, and nothing was enforcing it: per-slot
+    capacity is typed into the availability rule by hand, so a provider with two
+    technicians could set five bookings per slot and the engine would offer all five. The
+    fifth customer gets a confirmed slot that no human can attend.
+
+    Counts only active staff who are allowed to receive assignments -- somebody on leave or
+    switched off is not capacity. Falls back to the rule's own number when the team cannot
+    be read, because refusing every booking is a worse failure than the one this prevents.
+    """
+    try:
+        # `provider_team_members` is the real table -- confirmed against the live schema.
+        # Column names checked there too: `can_receive_assignment`, singular, and `status`
+        # rather than a boolean `is_active`. A guessed name here would have thrown, been
+        # swallowed by the fallback below, and left the cap silently doing nothing.
+        row = (await db.execute(text(
+            "SELECT count(*) FROM provider_team_members "
+            "WHERE tenant_id = CAST(:tid AS uuid) "
+            "  AND status = 'active' "
+            "  AND COALESCE(can_receive_assignment, true) = true "
+            "  AND member_type IN ('technician', 'owner_technician')"
+        ), {"tid": str(tenant_id)})).first()
+        return int(row[0]) if row and row[0] is not None else 0
+    except Exception:  # noqa: BLE001 -- see the fallback note above
+        logger.warning("slots.technician_count_failed", tenant_id=str(tenant_id))
+        return -1
+
+
+def _effective_cap(rule: dict, technicians: int) -> int:
+    """The rule's per-slot capacity, never above the number of technicians.
+
+    `technicians < 0` means the count could not be read, in which case the rule stands --
+    an unreadable team must not silently close a provider's whole calendar.
+
+    A provider with ZERO assignable technicians genuinely has no capacity, and that is
+    reported as such rather than quietly offering one slot anyway: a booking nobody can
+    attend is the thing being prevented.
+    """
+    configured = rule.get("max_bookings_per_slot") or FALLBACK_MAX_PER_SLOT
+    if technicians < 0:
+        return configured
+    return min(configured, technicians)
+
+
 async def find_earliest_available_slot(
     db: AsyncSession,
     *,
@@ -239,6 +288,9 @@ async def find_earliest_available_slot(
     horizon. Callers must treat that as "cannot promise a time", never as
     "book it anyway".
     """
+    # Read once per call, not per slot: it is the same answer for every window.
+    technicians = await assignable_technician_count(db, tenant_id)
+
     settings = await booking_window_settings(db, tenant_id)
     now = from_datetime or _tenant_now(settings)
     cutoff = _notice_cutoff(settings, now, emergency)
@@ -264,7 +316,7 @@ async def find_earliest_available_slot(
         booked = await _booked_counts(db, tenant_id, target)
 
         for rule in rules:
-            cap = rule.get("max_bookings_per_slot") or FALLBACK_MAX_PER_SLOT
+            cap = _effective_cap(rule, technicians)
             for start, end in _slots_from_rule(rule):
                 # Never offer a window inside the notice period. With
                 # emergency + opted-in this reduces to "has not started yet",
@@ -318,6 +370,9 @@ async def list_available_slots(
     `maximum_advance_booking_days` horizon when a caller needs to reach a
     specific day.
     """
+    # Read once per call, not per slot: it is the same answer for every window.
+    technicians = await assignable_technician_count(db, tenant_id)
+
     settings = await booking_window_settings(db, tenant_id)
     now = from_datetime or _tenant_now(settings)
     cutoff = _notice_cutoff(settings, now, emergency)
@@ -347,7 +402,7 @@ async def list_available_slots(
         found_today = False
 
         for rule in rules:
-            cap = rule.get("max_bookings_per_slot") or FALLBACK_MAX_PER_SLOT
+            cap = _effective_cap(rule, technicians)
             for start, end in _slots_from_rule(rule):
                 if dt.datetime.combine(target, start) < cutoff:
                     continue
@@ -390,6 +445,9 @@ async def slot_has_capacity(
     `list_available_slots` (the same function that applied it when the
     slot was first offered).
     """
+    # Read once per call, not per slot: it is the same answer for every window.
+    technicians = await assignable_technician_count(db, tenant_id)
+
     if await _is_closed(db, tenant_id, day):
         return False
     dow = day.isoweekday() % 7
@@ -398,7 +456,7 @@ async def slot_has_capacity(
         return False
     booked = (await _booked_counts(db, tenant_id, day)).get(time_window, 0)
     for rule in rules:
-        cap = rule.get("max_bookings_per_slot") or FALLBACK_MAX_PER_SLOT
+        cap = _effective_cap(rule, technicians)
         for start, end in _slots_from_rule(rule):
             if _window_label(start, end) == time_window:
                 return booked < cap
