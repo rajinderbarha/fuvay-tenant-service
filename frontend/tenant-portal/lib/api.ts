@@ -3345,6 +3345,36 @@ export interface WeatherRescheduleVerdict {
   } | null;
 }
 
+/** One thing the dashboard should interrupt about.
+ *
+ * `tone` is the SERVER's judgement of how serious this is, taken from the notification
+ * registry's own severity vocabulary. The popup reads it rather than inferring urgency
+ * from the wording, so a celebration and a warning can never end up looking alike. */
+export interface DashboardAlert {
+  job_id: string;
+  label: string;
+  city: string | null;
+  tone: "success" | "warning" | "info" | "critical";
+  title: string;
+  message: string;
+  minutes_late?: number;
+  lateness_label?: string | null;
+  scheduled_date?: string | null;
+  scheduled_time_window?: string | null;
+  created_at?: string;
+}
+
+export interface DashboardAlerts {
+  new_jobs: DashboardAlert[];
+  /** The REAL total, which can exceed the list -- the list is capped for a popup. */
+  new_job_total: number;
+  delayed_jobs: DashboardAlert[];
+  delayed_total: number;
+  /** Send this back as `since` next time. */
+  as_of: string;
+  notifications_raised?: number;
+}
+
 export interface EligibleStaffRecord {
   staff_member_id: string;
   name: string;
@@ -3398,6 +3428,23 @@ export const serviceJobAssignmentApi = {
       `/v1/provider/service-jobs/${jobId}/schedule`,
       { method: "POST", body: JSON.stringify(payload) }
     ),
+  /** New and delayed jobs for the dashboard, each carrying its own tone.
+   *
+   * `since` is echoed back from the previous response's `as_of`, which is what makes
+   * "new" mean "new to you" instead of "new to the platform" -- without it a refresh
+   * congratulates the provider for the same job again.
+   *
+   * `notify=false` for a passive poll: the GET raises the delay notification as a side
+   * effect (once per job), and a background refresh should not be what triggers it. */
+  dashboardAlerts: (opts?: { since?: string | null; notify?: boolean }) => {
+    const params = new URLSearchParams();
+    if (opts?.since) params.set("since", opts.since);
+    if (opts?.notify === false) params.set("notify", "false");
+    const query = params.toString();
+    return apiFetch<DashboardAlerts>(
+      `/v1/provider/service-jobs/dashboard-alerts${query ? `?${query}` : ""}`
+    );
+  },
   /** Whether "weather" is an available reason for moving this job to `date`/`window`.
    *
    * This is the ONE call that spends a weather API request, and only because a

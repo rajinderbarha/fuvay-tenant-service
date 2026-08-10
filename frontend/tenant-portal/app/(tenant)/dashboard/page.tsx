@@ -21,6 +21,8 @@ import { useApi } from "../../../hooks/useApi";
 import { useSetupStatus } from "../../../hooks/useSetupStatus";
 import { PageShell, PageHeader, Card, Button } from "@serviceos/design-system";
 import { Badge, Skeleton } from "../../../components/shared/ui";
+import { JobAlertPopup } from "../../../components/dashboard/JobAlertPopup";
+import { useJobAlerts } from "../../../hooks/useJobAlerts";
 
 const safeNum = (v: unknown): number => (typeof v === "number" && isFinite(v)) ? v : 0;
 function safeStr(v: unknown, fb = "—"): string { const s = String(v ?? "").trim(); return s || fb; }
@@ -43,6 +45,7 @@ function timeAgo(iso: string): string {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const alerts = useJobAlerts();
   const [tenantName, setTenantName] = useState("Your Business");
   // Still needed for the Bookable/Not Bookable badge -- the setup banner,
   // Setup Readiness card and Setup% pill that used to read from this hook
@@ -181,6 +184,19 @@ export default function DashboardPage() {
 
   return (
     <PageShell>
+      {/* Interrupts only for something that has not been shown before: a job that just
+          arrived, or one that has gone past its slot. Both come from the server with
+          their own tone, so the popup never has to guess how serious it is. */}
+      {alerts.pending.length > 0 ? (
+        <JobAlertPopup
+          alerts={alerts.pending}
+          newTotal={alerts.newTotal}
+          delayedTotal={alerts.delayedTotal}
+          onDismiss={alerts.dismiss}
+          onOpenJob={jobId => { alerts.dismiss(); router.push(`/service-jobs/${jobId}`); }}
+          onSeeAllDelayed={() => { alerts.dismiss(); router.push("/home-services/bookings-jobs"); }}
+        />
+      ) : null}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16, marginBottom: 20 }}>
         <PageHeader title="Home Services Dashboard" description="Manage today's bookings, staff capacity and service operations." />
         <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>

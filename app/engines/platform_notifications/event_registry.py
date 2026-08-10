@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from app.engines.platform_notifications.constants import (
+    EVT_JOB_DELAYED,
     CHANNEL_IN_APP, CHANNEL_EMAIL, CHANNEL_SMS, CHANNEL_PUSH,
     RECIP_CUSTOMER, RECIP_PROVIDER, RECIP_STAFF, RECIP_ADMIN,
     SEV_INFO, SEV_SUCCESS, SEV_WARNING, SEV_CRITICAL,
@@ -63,6 +64,10 @@ _reg(NotificationEventConfig(EVT_BOOKING_CONFIRMED, "Booking Confirmed",
      "home_service", [CHANNEL_IN_APP], RECIP_CUSTOMER,
      "booking.confirmed.in_app", SEV_SUCCESS,
      also_notify=[RECIP_PROVIDER]))
+
+_reg(NotificationEventConfig(EVT_JOB_DELAYED, "Job Delayed",
+     "home_service", [CHANNEL_IN_APP], RECIP_PROVIDER,
+     "job.delayed.in_app", SEV_WARNING))
 
 _reg(NotificationEventConfig(EVT_JOB_CREATED, "Job Created",
      "home_service", [CHANNEL_IN_APP], RECIP_CUSTOMER,

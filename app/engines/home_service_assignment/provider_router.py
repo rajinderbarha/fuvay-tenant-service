@@ -1,6 +1,7 @@
 """Sprint 20 — Provider Service Job Assignment APIs."""
 from __future__ import annotations
 import uuid
+import datetime as dt
 from datetime import date
 
 from fastapi import APIRouter, Depends, Request
@@ -214,6 +215,49 @@ async def cancel_assignment(
         code = str(exc)
         return ok(_err(code), _RID(r), "assignment")
     return ok({"success": True, "data": result}, _RID(r), "assignment")
+
+
+@router.get("/dashboard-alerts", response_model=ApiResponse,
+            summary="New and delayed jobs for the provider dashboard")
+async def get_dashboard_alerts(
+    since: dt.datetime | None = None,
+    notify: bool = True,
+    r:    Request      = ...,
+    user: UserContext  = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+):
+    """What the dashboard should interrupt the provider about.
+
+    Declared BEFORE `/{job_id}/...` on purpose: FastAPI matches in order, so a literal
+    path registered after a parameterised one is swallowed by it -- "dashboard-alerts"
+    would arrive as a job id and 422 on the UUID parse.
+
+    `since` is when this dashboard last looked, echoed back from `as_of`. Without it a
+    stated window applies instead of "everything", because "42 new jobs" on a first
+    login is a backlog, not news.
+
+    `notify` raises `job.delayed` for any delay not reported before -- once per job, by
+    checking what was actually sent rather than a flag on the job that could drift. A
+    caller polling every thirty seconds therefore does not produce a notification every
+    thirty seconds. It is a query parameter so a passive refresh can opt out.
+    """
+    from app.engines.home_service_assignment import dashboard_alerts
+
+    tenant_id = uuid.UUID(user.tenant_id)
+    alerts = await dashboard_alerts.build_alerts(db, tenant_id, since=since)
+
+    # Notify on EVERY delay, before the display cap is applied: a provider with 25 late
+    # jobs must be told about 25, not about the five the popup has room for.
+    if notify and alerts["delayed_jobs"]:
+        raised = await dashboard_alerts.notify_delayed_jobs(db, tenant_id, alerts["delayed_jobs"])
+        if raised:
+            await db.commit()
+        alerts["notifications_raised"] = raised
+
+    cap = dashboard_alerts.MAX_ALERTS
+    alerts["new_jobs"] = alerts["new_jobs"][:cap]
+    alerts["delayed_jobs"] = alerts["delayed_jobs"][:cap]
+    return ok(alerts, _RID(r), "assignment")
 
 
 @router.get("/{job_id}/weather-reschedule-eligibility", response_model=ApiResponse,

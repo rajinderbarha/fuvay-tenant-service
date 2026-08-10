@@ -132,6 +132,9 @@ EVT_JOB_INSPECTION_STARTED= "job.inspection_started"
 EVT_JOB_QUOTE_REQUIRED    = "job.quote_required"
 EVT_JOB_WORK_DONE         = "job.work_done"
 EVT_JOB_COMPLETED         = "job.completed"
+# Raised once per job, the first time its committed slot is found to have passed with
+# the work unfinished. Goes to the PROVIDER: they are the only party who can act on it.
+EVT_JOB_DELAYED           = "job.delayed"
 # Quote
 EVT_QUOTE_SENT            = "quote.sent_to_customer"
 EVT_QUOTE_APPROVED        = "quote.customer_approved"
