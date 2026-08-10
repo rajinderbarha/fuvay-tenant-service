@@ -84,6 +84,41 @@ describe("AddressFormScreen address lookup", () => {
     }));
   });
 
+  it("reveals the remaining fields once a place is chosen, and restates it", async () => {
+    // The point of leading with search: after choosing, the customer adds only what the
+    // lookup cannot know -- the flat, the floor, the landmark -- and the card above says
+    // which place those belong to.
+    resolve.mockResolvedValue({
+      data: {
+        resolved: true,
+        address: {
+          formatted_address: "Bassi Pathana, Punjab 140412, India", line1: "Main Road",
+          city: "Bassi Pathana", state: "Punjab",
+          zipcode: "140412", latitude: 30.6861187, longitude: 76.4042404,
+        },
+      },
+    });
+    const { getByLabelText, getByText, queryByLabelText } = renderWithProviders(<AddressFormScreen />);
+
+    expect(queryByLabelText("House, flat, or floor")).toBeNull();
+
+    fireEvent.changeText(getByLabelText("Search your address"), "Bassi");
+    await waitFor(() => expect(getByText("Bassi Pathana, Punjab, India")).toBeTruthy(), { timeout: 4000 });
+    fireEvent.press(getByText("Bassi Pathana, Punjab, India"));
+
+    await waitFor(() => expect(getByLabelText("House, flat, or floor")).toBeTruthy());
+    expect(getByText("Bassi Pathana, Punjab, 140412")).toBeTruthy();
+    expect(getByLabelText("Change the searched address")).toBeTruthy();
+  });
+
+  it("shows the fields immediately when the deployment has no lookup", async () => {
+    // A search gate nobody can pass is just a broken screen.
+    suggest.mockResolvedValue({ data: { configured: false, suggestions: [] } });
+    const { getByLabelText } = renderWithProviders(<AddressFormScreen />);
+    fireEvent.changeText(getByLabelText("Search your address"), "Bassi");
+    await waitFor(() => expect(getByLabelText("House, flat, or floor")).toBeTruthy(), { timeout: 4000 });
+  });
+
   it("never invents a PIN code the lookup did not return", async () => {
     // Rural Indian localities frequently have no postal_code, and the PIN decides
     // serviceability -- so it stays empty and blocks save until entered by hand.

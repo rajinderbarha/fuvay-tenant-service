@@ -47,6 +47,18 @@ function render() {
   return renderWithProviders(<AddressFormScreen />);
 }
 
+/**
+ * Add mode now leads with address search and reveals the fields once there is a place
+ * to attach them to (or once the customer says they would rather type it). Tests that
+ * are about the FIELDS take the manual escape so they are not also testing the lookup.
+ */
+function renderWithFields() {
+  const screen = render();
+  const manual = screen.queryByLabelText("Enter address manually");
+  if (manual) fireEvent.press(manual);
+  return screen;
+}
+
 describe("AddressFormScreen", () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -83,13 +95,29 @@ describe("AddressFormScreen", () => {
       expect(getByText("Your first saved address is automatically your default.")).toBeTruthy();
     });
 
+    it("leads with search and keeps the fields back until there is a place", () => {
+      // People filled every field by hand and never touched the search, so the lookup
+      // that supplies city, state, PIN and coordinates went unused and addresses were
+      // saved with no point on the map.
+      const { getByLabelText, queryByLabelText, getByText } = render();
+      expect(getByLabelText("Search your address")).toBeTruthy();
+      expect(queryByLabelText("House, flat, or floor")).toBeNull();
+      expect(getByText(/Search for your area or building/)).toBeTruthy();
+    });
+
+    it("never traps someone who would rather type it", () => {
+      const { getByLabelText, queryByLabelText } = render();
+      fireEvent.press(getByLabelText("Enter address manually"));
+      expect(queryByLabelText("House, flat, or floor")).toBeTruthy();
+    });
+
     it("submits an allowlisted create payload and navigates back on success", async () => {
       const mutateAsync = jest.fn().mockResolvedValue({ data: address() });
       jest.spyOn(createMutationModule, "useCreateAddressMutation").mockReturnValue({
         mutateAsync, isPending: false,
       } as unknown as ReturnType<typeof createMutationModule.useCreateAddressMutation>);
 
-      const { getByLabelText, getByText } = render();
+      const { getByLabelText, getByText } = renderWithFields();
       fireEvent.changeText(getByLabelText("House, flat, or floor"), "House 24");
       fireEvent.changeText(getByLabelText("City"), "Ludhiana");
       fireEvent.changeText(getByLabelText("State"), "Punjab");
@@ -106,7 +134,7 @@ describe("AddressFormScreen", () => {
     });
 
     it("shows the 6-digit valid indicator only for a valid PIN", () => {
-      const { getByLabelText, getByText, queryByText } = render();
+      const { getByLabelText, getByText, queryByText } = renderWithFields();
       expect(queryByText("6-digit valid")).toBeNull();
       fireEvent.changeText(getByLabelText("PIN code"), "141002");
       expect(getByText("6-digit valid")).toBeTruthy();

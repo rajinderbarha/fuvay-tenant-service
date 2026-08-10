@@ -4,6 +4,7 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { useTheme } from "../../design-system/theme";
 import { AppScreen } from "../../components/AppScreen";
 import { AppText } from "../../components/AppText";
+import { Icon } from "../../components/Icon";
 import { LoadingState } from "../../components/LoadingState";
 import { ErrorState } from "../../components/States";
 import { AddressFormHeader } from "../../components/address-form/AddressFormHeader";
@@ -84,6 +85,21 @@ export function AddressFormScreen() {
   const [interacted, setInteracted] = useState(false);
   const [search, setSearch] = useState("");
   const autocomplete = useAddressAutocomplete();
+  /**
+   * The rest of the form is hidden until the customer has picked a place -- or has said
+   * they would rather type it.
+   *
+   * Real behaviour this changes: with every field on screen at once, people typed the
+   * whole address by hand and never touched the search, so the lookup that supplies the
+   * city, state, PIN and coordinates went unused and every address was saved without a
+   * point on the map. Leading with search makes the fast path the obvious one.
+   *
+   * It is never a wall: "Enter address manually" is always there, and edit mode shows
+   * the full form immediately, because the address already exists and re-searching for
+   * it is not what the customer came to do.
+   */
+  const [manualEntry, setManualEntry] = useState(false);
+  const [placeChosen, setPlaceChosen] = useState(false);
 
   useEffect(() => {
     if (mode === "edit" && detailQuery.data && !loadedOnce) {
@@ -128,6 +144,15 @@ export function AddressFormScreen() {
   const saving = mode === "add" ? createMutation.isPending : updateMutation.isPending;
   const canSave = valid && canSaveDirty && !saving;
 
+  /**
+   * Whether to show the address fields.
+   *
+   * Always in edit mode -- the address exists and re-searching for it is not the job.
+   * Always when lookup is unavailable on this deployment, because a search gate nobody
+   * can pass is just a broken screen.
+   */
+  const detailsRevealed = mode === "edit" || manualEntry || placeChosen || !autocomplete.available;
+
   function updateField<K extends keyof AddressFormState>(key: K, value: AddressFormState[K]) {
     setInteracted(true);
     setForm(prev => ({ ...prev, [key]: value }));
@@ -143,6 +168,7 @@ export function AddressFormScreen() {
     if (!resolved) return;
     setInteracted(true);
     setSearch(resolved.formattedAddress ?? "");
+    setPlaceChosen(true);
     setForm(prev => ({
       ...prev,
       // Only fields Google actually returned are filled -- a partial result never
@@ -220,15 +246,65 @@ export function AddressFormScreen() {
           onSelect={pickSuggestion}
         />
 
-        <AddressLabelSelector value={form.label} onChange={label => updateField("label", label)} />
+        {/* The chosen place, restated. Without it the search box holds the answer and
+            the fields below hold pieces of it, and nothing says which one is being
+            saved. "Change" clears the search rather than the fields, so the customer
+            does not lose the house number they already typed. */}
+        {placeChosen && detailsRevealed ? (
+          <View
+            style={{
+              flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.sm,
+              padding: theme.spacing.base,
+              borderRadius: theme.radiusUsage.card,
+              backgroundColor: theme.colors.surfaceSecondary,
+            }}
+          >
+            <Icon name="location" size="standard" color={theme.colors.brandPrimaryStrong} decorative />
+            <AppText variant="bodySmall" style={{ flex: 1 }}>
+              {[form.city, form.state, form.pinCode].filter(Boolean).join(", ") || search}
+            </AppText>
+            <AppText
+              variant="bodySmall"
+              color="link"
+              accessibilityRole="button"
+              accessibilityLabel="Change the searched address"
+              onPress={() => { setPlaceChosen(false); setSearch(""); autocomplete.clear(); }}
+            >
+              Change
+            </AppText>
+          </View>
+        ) : null}
 
-        <AddressFormFields
-          form={form}
-          errors={errors}
-          touched={touched}
-          onChange={updateField}
-          onBlur={markTouched}
-        />
+        {/* Search first. The rest appears once there is a place to attach it to --
+            see `manualEntry`/`detailsRevealed` for why, and for the escape hatch. */}
+        {!detailsRevealed ? (
+          <View style={{ gap: theme.spacing.sm, alignItems: "center" }}>
+            <AppText variant="bodySmall" color="secondary" align="center">
+              Search for your area or building, then add the flat and floor.
+            </AppText>
+            <AppText
+              variant="bodySmall"
+              color="link"
+              accessibilityRole="button"
+              accessibilityLabel="Enter address manually"
+              onPress={() => setManualEntry(true)}
+            >
+              Enter address manually
+            </AppText>
+          </View>
+        ) : (
+          <>
+            <AddressLabelSelector value={form.label} onChange={label => updateField("label", label)} />
+
+            <AddressFormFields
+              form={form}
+              errors={errors}
+              touched={touched}
+              onChange={updateField}
+              onBlur={markTouched}
+            />
+          </>
+        )}
 
         <DefaultAddressToggle
           checked={form.isDefault}

@@ -43,6 +43,13 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
   const [longitude, setLongitude] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const autocomplete = useAddressAutocomplete();
+  /** Same rule as the saved-address form: search first, type only what the lookup
+   * cannot know. With every field on screen people typed all of it and the lookup went
+   * unused, so no address carried a real point. Never a wall -- "type it instead" is
+   * always offered, and it is the only path when no lookup is configured. */
+  const [manualEntry, setManualEntry] = useState(false);
+  const [placeChosen, setPlaceChosen] = useState(false);
+  const detailsRevealed = manualEntry || placeChosen || !autocomplete.available;
 
   const matching = (addresses ?? []).filter(a => a.postalCode === zipcode);
   const excludedCount = (addresses ?? []).length - matching.length;
@@ -57,6 +64,7 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
     const resolved = await autocomplete.select(placeId);
     if (!resolved) return;
     setSearch(resolved.formattedAddress ?? "");
+    setPlaceChosen(true);
     // Each field is filled only if Google actually returned it, so a partial
     // result never blanks out something the customer already typed.
     if (resolved.line1) setLine1(resolved.line1);
@@ -150,14 +158,27 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
               text: BOT.textPrimary, placeholder: BOT.textFaint, muted: BOT.textMuted,
             }}
           />
-          {([
+          {!detailsRevealed ? (
+            <Pressable
+              onPress={() => setManualEntry(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Type the address instead"
+              style={{ paddingVertical: 8 }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>
+                Type the address instead
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {(detailsRevealed ? [
             ["Label (Home/Work/Other)", label, setLabel],
             ["Address line 1", line1, setLine1],
             ["Address line 2 (optional)", line2, setLine2],
             ["Landmark (optional)", landmark, setLandmark],
             ["City", city, setCity],
             ["State", state, setState],
-          ] as const).map(([placeholder, value, setter]) => (
+          ] as const : []).map(([placeholder, value, setter]) => (
             <TextInput
               key={placeholder}
               value={value}
@@ -171,13 +192,17 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
               }}
             />
           ))}
-          {/* Zipcode is shown, never editable -- see component doc. */}
-          <View style={{ height: 40, borderRadius: 10, paddingHorizontal: 12, justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border }}>
-            <Text style={{ fontSize: 15, color: BOT.textMuted }}>ZIP {zipcode} (fixed to this request)</Text>
-          </View>
-          <View style={{ marginTop: 4 }}>
-            <BotPrimaryButton label="Save & use this address" onPress={submitNew} disabled={!canSubmit || submitting} loading={submitting} />
-          </View>
+          {detailsRevealed ? (
+            <>
+              {/* Zipcode is shown, never editable -- see component doc. */}
+              <View style={{ height: 40, borderRadius: 10, paddingHorizontal: 12, justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border }}>
+                <Text style={{ fontSize: 15, color: BOT.textMuted }}>ZIP {zipcode} (fixed to this request)</Text>
+              </View>
+              <View style={{ marginTop: 4 }}>
+                <BotPrimaryButton label="Save & use this address" onPress={submitNew} disabled={!canSubmit || submitting} loading={submitting} />
+              </View>
+            </>
+          ) : null}
         </View>
       )}
     </BotCard>
