@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Card, Btn, Badge, Modal, Input, Skeleton, StarRating } from "../../../../components/shared/ui";
 import { serviceJobAssignmentApi, reviewsApi } from "../../../../lib/api";
 import type { EligibleStaffRecord, WeatherRescheduleVerdict } from "../../../../lib/api";
@@ -72,7 +72,7 @@ function WeatherReasonCheck({
 
   if (!date || !slotWindow) {
     return (
-      <p style={{ fontSize: 13, color: "#6b7280" }}>
+      <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
         Enter the new date and time window to check the forecast for that slot.
       </p>
     );
@@ -102,18 +102,18 @@ function WeatherReasonCheck({
           : <XCircle size={15} color="#6b7280" />}
         <span>{verdict.permitted ? "Weather reschedule allowed" : "Weather isn't an available reason"}</span>
       </div>
-      <p style={{ color: "#4b5563", marginTop: 6 }}>{verdict.detail}</p>
+      <p style={{ color: "var(--text-secondary)", marginTop: 6 }}>{verdict.detail}</p>
       {/* The reading itself, so the decision is auditable rather than a verdict the
           provider has to take on faith. Shown only when there IS one. */}
       {reading && (
-        <p style={{ color: "#6b7280", marginTop: 6 }}>
+        <p style={{ color: "var(--text-secondary)", marginTop: 6 }}>
           {reading.condition ? reading.condition + ", " : ""}
           {reading.temperature_c}&deg;C &middot; rain {reading.rain_mm}mm &middot; wind {reading.wind_kmh}km/h
           {" "}(measured {new Date(reading.observed_at).toLocaleString()})
         </p>
       )}
       {!verdict.permitted && (
-        <p style={{ color: "#4b5563", marginTop: 6 }}>
+        <p style={{ color: "var(--text-secondary)", marginTop: 6 }}>
           You can still move this visit — choose the reason that actually applies.
         </p>
       )}
@@ -150,6 +150,26 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
   const eligible   = staff.data?.eligible_staff ?? [];
   const isJobDone  = job?.status === "completed";
 
+  /**
+   * Start the schedule fields from the slot that already exists.
+   *
+   * The customer picks a slot during booking, and the job carries it -- but the Assign
+   * modal opened with empty "(optional)" fields, so a provider was asked to retype what
+   * had already been agreed, and leaving them blank looked like a choice to schedule
+   * nothing. Prefilled, the provider confirms or changes it, which is the real decision.
+   *
+   * Only fills what the job actually has: a job with a date but no window still shows an
+   * empty window rather than inventing one.
+   */
+  useEffect(() => {
+    const committedDate = job?.scheduled_date ?? assignment?.scheduled_date ?? null;
+    const committedWindow = job?.scheduled_time_window ?? assignment?.scheduled_time_window ?? null;
+    if (committedDate) setSchedDate(prev => prev || String(committedDate));
+    if (committedWindow) setSchedWindow(prev => prev || String(committedWindow));
+  }, [job?.scheduled_date, job?.scheduled_time_window,
+      assignment?.scheduled_date, assignment?.scheduled_time_window]);
+
+
   const jobReviews = useApi(useCallback(
     () => reviewsApi.list({ limit: "50" }),
     []
@@ -161,7 +181,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
   }
 
   if (!job) {
-    return <Card><div style={{ padding: 32, textAlign: "center", color: "#888" }}>Job not found.</div></Card>;
+    return <Card><div style={{ padding: 32, textAlign: "center", color: "var(--text-secondary)" }}>Job not found.</div></Card>;
   }
 
   const canAssign   = ["unassigned", "rejected"].includes(job.assignment_status);
@@ -175,8 +195,8 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
         {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: "#111", margin: 0 }}>{job.job_number}</h1>
-            <p style={{ color: "#888", fontSize: 13, marginTop: 2 }}>{job.city || "No city"}</p>
+            <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{job.job_number}</h1>
+            <p style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 2 }}>{job.city || "No city"}</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <Badge variant={assignVariant(job.assignment_status)}>{job.assignment_status}</Badge>
@@ -212,27 +232,27 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
           {/* Job Summary */}
           <Card>
-            <h2 style={{ fontWeight: 600, color: "#333", marginBottom: 12 }}>Job Details</h2>
+            <h2 style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>Job Details</h2>
             <dl style={{ display: "flex", flexDirection: "column" as const, gap: 8, fontSize: 13 }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <dt style={{ color: "#888" }}>Job Number</dt>
+                <dt style={{ color: "var(--text-secondary)" }}>Job Number</dt>
                 <dd style={{ fontFamily: "monospace", fontWeight: 600 }}>{job.job_number}</dd>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <dt style={{ color: "#888" }}>Status</dt>
+                <dt style={{ color: "var(--text-secondary)" }}>Status</dt>
                 <dd><Badge variant="muted">{job.status}</Badge></dd>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <dt style={{ color: "#888" }}>Assignment</dt>
+                <dt style={{ color: "var(--text-secondary)" }}>Assignment</dt>
                 <dd><Badge variant={assignVariant(job.assignment_status)}>{job.assignment_status}</Badge></dd>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <dt style={{ color: "#888" }}>City</dt>
+                <dt style={{ color: "var(--text-secondary)" }}>City</dt>
                 <dd>{job.city || "—"}</dd>
               </div>
               {job.scheduled_date && (
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <dt style={{ color: "#888" }}>Scheduled</dt>
+                  <dt style={{ color: "var(--text-secondary)" }}>Scheduled</dt>
                   <dd>{job.scheduled_date} {job.scheduled_time_window || ""}</dd>
                 </div>
               )}
@@ -241,28 +261,28 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
 
           {/* Current Assignment */}
           <Card>
-            <h2 style={{ fontWeight: 600, color: "#333", marginBottom: 12 }}>Current Assignment</h2>
+            <h2 style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>Current Assignment</h2>
             {!assignment ? (
-              <p style={{ color: "#888", fontSize: 13 }}>No active assignment.</p>
+              <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No active assignment.</p>
             ) : (
               <dl style={{ display: "flex", flexDirection: "column" as const, gap: 8, fontSize: 13 }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <dt style={{ color: "#888" }}>Status</dt>
+                  <dt style={{ color: "var(--text-secondary)" }}>Status</dt>
                   <dd><Badge variant={assignVariant(assignment.assignment_status)}>{assignment.assignment_status}</Badge></dd>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <dt style={{ color: "#888" }}>Type</dt>
+                  <dt style={{ color: "var(--text-secondary)" }}>Type</dt>
                   <dd>{assignment.assignment_type}</dd>
                 </div>
                 {assignment.scheduled_date && (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <dt style={{ color: "#888" }}>Scheduled</dt>
+                    <dt style={{ color: "var(--text-secondary)" }}>Scheduled</dt>
                     <dd>{assignment.scheduled_date} {assignment.scheduled_time_window || ""}</dd>
                   </div>
                 )}
                 {assignment.accepted_at && (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <dt style={{ color: "#888", display: "flex", alignItems: "center", gap: 4 }}>
+                    <dt style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4 }}>
                       <CheckCircle size={12} style={{ color: "var(--success)" }} /> Accepted
                     </dt>
                     <dd style={{ fontSize: 11 }}>{new Date(assignment.accepted_at).toLocaleString()}</dd>
@@ -270,7 +290,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                 )}
                 {assignment.rejected_at && (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <dt style={{ color: "#888", display: "flex", alignItems: "center", gap: 4 }}>
+                    <dt style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4 }}>
                       <XCircle size={12} style={{ color: "var(--danger)" }} /> Rejected
                     </dt>
                     <dd style={{ fontSize: 11 }}>{new Date(assignment.rejected_at).toLocaleString()}</dd>
@@ -278,7 +298,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                 )}
                 {assignment.rejection_reason && (
                   <div>
-                    <dt style={{ color: "#888", marginBottom: 4 }}>Rejection Reason</dt>
+                    <dt style={{ color: "var(--text-secondary)", marginBottom: 4 }}>Rejection Reason</dt>
                     <dd style={{ background: "#fef2f2", color: "#b91c1c", borderRadius: 6, padding: "6px 8px", fontSize: 12 }}>
                       {assignment.rejection_reason}
                     </dd>
@@ -286,8 +306,8 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                 )}
                 {assignment.notes && (
                   <div>
-                    <dt style={{ color: "#888", marginBottom: 4 }}>Notes</dt>
-                    <dd style={{ background: "#f9fafb", borderRadius: 6, padding: "6px 8px", fontSize: 12 }}>
+                    <dt style={{ color: "var(--text-secondary)", marginBottom: 4 }}>Notes</dt>
+                    <dd style={{ background: "var(--surface-raised, rgba(255,255,255,0.03))", borderRadius: 6, padding: "6px 8px", fontSize: 12 }}>
                       {assignment.notes}
                     </dd>
                   </div>
@@ -300,7 +320,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
         {/* Customer Review — only meaningful once the job is completed */}
         {isJobDone && (
           <Card>
-            <h2 style={{ fontWeight: 600, color: "#333", marginBottom: 12 }}>Customer Review</h2>
+            <h2 style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>Customer Review</h2>
             {jobReviews.loading ? (
               <Skeleton height={60} />
             ) : jobReview ? (
@@ -331,10 +351,10 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
 
         {/* Assignment Timeline */}
         <Card>
-          <h2 style={{ fontWeight: 600, color: "#333", marginBottom: 16 }}>Assignment Timeline</h2>
+          <h2 style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 16 }}>Assignment Timeline</h2>
           {timeline.loading && <Skeleton height={60} />}
           {!timeline.loading && (timeline.data?.events ?? []).length === 0 && (
-            <p style={{ color: "#888", fontSize: 13 }}>No assignment events yet.</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No assignment events yet.</p>
           )}
           {!timeline.loading && (timeline.data?.events ?? []).length > 0 && (
             <ol style={{ borderLeft: "2px solid #e5e7eb", marginLeft: 12, paddingLeft: 0, listStyle: "none" }}>
@@ -342,14 +362,14 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                 <li key={ev.id || i} style={{ marginBottom: 20, marginLeft: 20, position: "relative" }}>
                   <Clock size={12} style={{ position: "absolute", left: -28, top: 2, color: "#6366f1" }} />
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                    <p style={{ fontWeight: 600, fontSize: 13, color: "#111", margin: 0 }}>
+                    <p style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)", margin: 0 }}>
                       {EVENT_LABELS[ev.event_type] || ev.event_type}
                     </p>
-                    <time style={{ fontSize: 11, color: "#9ca3af" }}>
+                    <time style={{ fontSize: 11, color: "var(--text-secondary)" }}>
                       {ev.created_at ? new Date(ev.created_at).toLocaleString() : "—"}
                     </time>
                   </div>
-                  {ev.actor_role && <p style={{ fontSize: 12, color: "#6b7280", margin: "2px 0 0" }}>by {ev.actor_role}</p>}
+                  {ev.actor_role && <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "2px 0 0" }}>by {ev.actor_role}</p>}
                   {ev.reason && (
                     <p style={{ fontSize: 12, color: "var(--danger)", margin: "2px 0 0" }}>
                       {/* Falls back to the stored value: a reason recorded by an older
@@ -369,11 +389,11 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
         <div style={{ display: "flex", flexDirection: "column" as const, gap: 16 }}>
           {staff.loading && <Skeleton height={40} />}
           {!staff.loading && eligible.length === 0 && (
-            <p style={{ color: "#888", fontSize: 13 }}>No eligible technicians found.</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No eligible technicians found.</p>
           )}
           {!staff.loading && eligible.length > 0 && (
             <div>
-              <label style={{ fontSize: 13, fontWeight: 500, color: "#374151", display: "block", marginBottom: 4 }}>
+              <label style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", display: "block", marginBottom: 4 }}>
                 Select Technician
               </label>
               <select
@@ -390,9 +410,9 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
               </select>
             </div>
           )}
-          <Input label="Scheduled Date (optional)" type="date"
+          <Input label="Scheduled Date" type="date"
                  value={schedDate} onChange={(v) => setSchedDate(v)} />
-          <Input label="Time Window (optional)" placeholder="e.g. 10:00-12:00"
+          <Input label="Time Window" placeholder="e.g. 10:00-12:00"
                  value={schedWindow} onChange={(v) => setSchedWindow(v)} />
           <Input label="Notes (optional)" placeholder="Any notes for the technician"
                  value={notes} onChange={(v) => setNotes(v)} />
@@ -420,7 +440,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                  value={schedWindow} onChange={(v) => setSchedWindow(v)} />
 
           <div>
-            <label style={{ fontSize: 13, fontWeight: 500, color: "#374151", display: "block", marginBottom: 4 }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", display: "block", marginBottom: 4 }}>
               Reason (optional)
             </label>
             <select
@@ -433,7 +453,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>
-            <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
               Recorded on this job&apos;s timeline.
             </p>
           </div>
@@ -467,7 +487,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
       {/* Cancel Modal */}
       <Modal open={showCancel} onClose={() => setShowCancel(false)} title="Cancel Assignment">
         <div style={{ display: "flex", flexDirection: "column" as const, gap: 16 }}>
-          <p style={{ fontSize: 13, color: "#6b7280" }}>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
             The technician will be unassigned and the job returns to unassigned status.
           </p>
           <Input label="Reason (required)" placeholder="Why are you cancelling this assignment?"
