@@ -149,9 +149,15 @@ async def send_otp(
         limit_type="auth:otp_send",
         identifier=str(body.phone or body.email),
     )
-    data = await svc.send_phone_otp(
-        phone=body.phone or "", purpose=body.purpose
-    )
+    # The email branch was advertised in this endpoint's own summary and never
+    # implemented: `phone=body.phone or ""` dropped the address, stored a record
+    # against an empty recipient, and answered "OTP sent."
+    if body.email and not body.phone:
+        data = await svc.send_email_otp(email=str(body.email))
+    else:
+        data = await svc.send_phone_otp(
+            phone=body.phone or "", purpose=body.purpose
+        )
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
 
@@ -166,16 +172,24 @@ async def verify_otp(
     request: Request,
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
+    recipient = body.phone or str(body.email or "")
     await rate_limiter.check_and_raise(
-        limit_key=f"otp_verify:{body.phone}",
+        limit_key=f"otp_verify:{recipient}",
         limit_type="auth:otp_verify",
-        identifier=body.phone,
+        identifier=recipient,
     )
-    data = await svc.verify_phone_otp_login(
-        phone=body.phone, otp=body.otp,
-        device_id=body.device_id, device_name=body.device_name,
-        user_agent=request.headers.get("User-Agent"),
-    )
+    if body.email and not body.phone:
+        data = await svc.verify_email_otp_login(
+            email=str(body.email), otp=body.otp,
+            device_id=body.device_id, device_name=body.device_name,
+            user_agent=request.headers.get("User-Agent"),
+        )
+    else:
+        data = await svc.verify_phone_otp_login(
+            phone=body.phone or "", otp=body.otp,
+            device_id=body.device_id, device_name=body.device_name,
+            user_agent=request.headers.get("User-Agent"),
+        )
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
 

@@ -500,6 +500,139 @@ class AuthService:
         logger.info("auth.otp_sent", purpose=purpose, phone=phone[:4] + "****", method="db_fallback")
         return {"message": "OTP sent.", "otp_hint": otp_plain}
 
+    # ── Email OTP Login ───────────────────────────────────────────────────────
+    EMAIL_OTP_PURPOSE = "email_login"
+
+    async def send_email_otp(self, email: str, purpose: str = EMAIL_OTP_PURPOSE) -> dict:
+        """Email a sign-in code.
+
+        `/otp/send` has advertised "phone or email" and accepted an `email` field since
+        it was written, but the router passed `phone=body.phone or ""` and dropped the
+        email on the floor -- so asking for an email code stored a record against an
+        empty recipient and told the caller it had been sent. This is the real path.
+
+        Enumeration-safe: the response is identical whether or not the address has an
+        account, exactly like password reset. A sign-in form that reveals which emails
+        are registered is an account list for anyone who asks.
+
+        The code is only stored when there is a user to sign in, so an unknown address
+        cannot fill the table with records nobody will ever use.
+        """
+        from app.email_client import is_email_configured, send_login_code_email
+
+        normalized = email.lower().strip()
+        generic = {"message": "If an account exists, a sign-in code has been sent."}
+
+        if not is_email_configured():
+            # Refuse rather than pretend. A code the customer will never receive is
+            # worse than no option at all, because they wait for it.
+            raise ServiceOSException(
+                "SERVICE_UNAVAILABLE",
+                "Email sign-in codes are not available right now.",
+                resolution="Sign in with your password or a phone code instead.",
+            )
+
+        user = await self._get_user_by_email(normalized)
+        if not user or not user.is_active:
+            logger.info("auth.email_otp_skipped", reason="no_active_user")
+            return generic
+
+        otp_plain, otp_hashed = generate_otp()
+        self.db.add(OTPRecord(
+            purpose=purpose,
+            recipient_hash=hash_recipient(normalized),
+            hashed_otp=otp_hashed,
+            expires_at=utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES),
+        ))
+        await self.db.flush()
+
+        sent = await send_login_code_email(normalized, otp_plain, OTP_EXPIRE_MINUTES)
+        logger.info("auth.email_otp_sent", delivered=sent)
+        if not sent:
+            # Delivery failed after the record was written. Say so: the alternative is
+            # a customer waiting on an email that is not coming.
+            raise ServiceOSException(
+                "SERVICE_UNAVAILABLE",
+                "We couldn't send the code to that email. Please try again.",
+                resolution="Sign in with your password or a phone code instead.",
+            )
+        # `otp_hint` mirrors the phone path's dev-only convenience and is gated on the
+        # same DEBUG flag, so a production build never returns the code in the response.
+        return {**generic, **({"otp_hint": otp_plain} if get_settings().DEBUG else {})}
+
+    async def verify_email_otp_login(
+        self, email: str, otp: str, device_id: str, device_name: str | None,
+        user_agent: str | None, enabled_engines: list[str] | None = None,
+        tenant_name: str | None = None, plan_type: str | None = None,
+    ) -> dict:
+        """Exchange an emailed code for a session.
+
+        Mirrors `verify_phone_otp_login`, including its attempt limit and its
+        enumeration-safe failures: an unknown address and a wrong code for a real one
+        fail identically.
+        """
+        normalized = email.lower().strip()
+        recipient_hash = hash_recipient(normalized)
+        r = await self.db.execute(
+            select(OTPRecord).where(
+                and_(OTPRecord.purpose == self.EMAIL_OTP_PURPOSE,
+                     OTPRecord.recipient_hash == recipient_hash,
+                     OTPRecord.is_used == False,  # noqa: E712
+                     OTPRecord.expires_at > utcnow())
+            ).order_by(OTPRecord.created_at.desc()).limit(1)
+        )
+        otp_record = r.scalar_one_or_none()
+        if not otp_record:
+            raise ServiceOSException("UNAUTHORIZED", "Invalid or expired code.",
+                                     resolution="Request a new code.")
+        otp_record.attempts += 1
+        if otp_record.attempts > 3:
+            # Burned deliberately: three guesses at a 6-digit code is the whole
+            # protection, and leaving it live would make brute force a matter of time.
+            otp_record.is_used = True
+            raise ServiceOSException("UNAUTHORIZED",
+                                     "Too many incorrect attempts. Request a new code.")
+        if not verify_otp(otp, otp_record.hashed_otp):
+            raise ServiceOSException("UNAUTHORIZED", "Invalid or expired code.",
+                                     resolution=f"{3 - otp_record.attempts} attempts remaining.")
+        otp_record.is_used = True
+
+        user = await self._get_user_by_email(normalized)
+        if not user:
+            # Only reachable if the account was removed between send and verify.
+            raise ServiceOSException("UNAUTHORIZED", "Invalid or expired code.")
+        if not user.is_active:
+            raise ServiceOSException("UNAUTHORIZED", "Account is deactivated.")
+
+        user.last_login_at = utcnow()
+        # Holding the code proves the address, which is exactly what verification means.
+        if not user.is_verified:
+            user.is_verified = True
+
+        dname, dtype = parse_device_info(user_agent)
+        session = UserSession(
+            user_id=user.id, tenant_id=user.tenant_id,
+            device_id=device_id, device_name=device_name or dname,
+            device_type=dtype, ip_address=self.ip_address,
+            user_agent=user_agent, is_approved=True,
+        )
+        self.db.add(session)
+        await self.db.flush()
+
+        tokens = await self._build_token_pair(user, session, enabled_engines or [], tenant_name, plan_type)
+        await self._audit("login.email_otp_success", "success", actor_id=user.id,
+                          tenant_id=user.tenant_id, session_id=session.id)
+        await self._log_login_event(
+            "login_success", user_id=user.id, tenant_id=user.tenant_id,
+            device_id=device_id, user_agent=user_agent,
+        )
+        return {
+            "access_token": tokens["access_token"],
+            "refresh_token": tokens["refresh_token"],
+            "user": self._user_to_profile(user),
+            "tenant": await self._tenant_to_ctx(user.tenant_id),
+        }
+
     async def verify_phone_otp_login(
         self, phone: str, otp: str, device_id: str, device_name: str | None,
         user_agent: str | None, enabled_engines: list[str] | None = None,

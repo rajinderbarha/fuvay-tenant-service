@@ -45,7 +45,10 @@ export type PublicStackParamList = {
   // `otp_hint` field (never sent in production -- see AuthService.
   // send_phone_otp) and only when EXPO_PUBLIC_ENV is non-production. It
   // exists purely to pre-fill/auto-submit the code during local testing.
-  VerifyLoginOtp: { phone: string; devOtpHint?: string };
+  // Either channel: a texted code carries `phone`, an emailed one carries `email`.
+  // The verify screen handles both, because redeeming a 6-digit code is the same job
+  // either way.
+  VerifyLoginOtp: { phone?: string; email?: string; devOtpHint?: string };
   PasswordLogin: undefined;
   MfaChallenge: undefined;
   RecoveryCodeChallenge: undefined;

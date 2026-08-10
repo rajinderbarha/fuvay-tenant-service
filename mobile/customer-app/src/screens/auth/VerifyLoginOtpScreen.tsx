@@ -10,7 +10,9 @@ import { ResendCountdown } from "../../components/auth/ResendCountdown";
 import { AuthErrorBanner } from "../../components/auth/AuthErrorBanner";
 import { copyForAuthError, isRateLimited, retryAfterSecondsOf } from "../../components/auth/authErrorCopy";
 import { maskPhoneForDisplay } from "../../domain/phone";
-import { verifyLoginOtp, requestLoginOtp } from "../../api/session/sessionManager";
+import {
+  verifyLoginOtp, requestLoginOtp, verifyEmailLoginOtp, requestEmailLoginOtp,
+} from "../../api/session/sessionManager";
 import { PublicStackParamList } from "../../navigation/routeTypes";
 
 type Nav = NativeStackNavigationProp<PublicStackParamList, "VerifyLoginOtp">;
@@ -28,7 +30,16 @@ export function VerifyLoginOtpScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
-  const { phone, devOtpHint } = route.params;
+  /**
+   * One screen for both channels.
+   *
+   * `email` is set when the code was emailed instead of texted. Everything about
+   * redeeming a 6-digit code is identical, so duplicating this screen would only
+   * create two places for the attempt-limit and MFA branches to drift apart.
+   */
+  const { phone, email, devOtpHint } = route.params;
+  const sentToEmail = !!email && !phone;
+  const destinationLabel = sentToEmail ? (email as string) : maskPhoneForDisplay(phone as string);
 
   // Dev-only convenience: `devOtpHint` only ever exists outside production
   // (see LoginMethodScreen) -- pre-fills the code and auto-submits once, so
@@ -60,7 +71,9 @@ export function VerifyLoginOtpScreen() {
     setCodeError(undefined);
     setScreenError(undefined);
     try {
-      const result = await verifyLoginOtp(phone, value);
+      const result = sentToEmail
+        ? await verifyEmailLoginOtp(email as string, value)
+        : await verifyLoginOtp(phone as string, value);
       if ("status" in result && result.status === "challenge_required") {
         navigation.navigate("MfaChallenge");
       }
@@ -83,7 +96,11 @@ export function VerifyLoginOtpScreen() {
     setResending(true);
     setScreenError(undefined);
     try {
-      await requestLoginOtp(phone);
+      if (sentToEmail) {
+        await requestEmailLoginOtp(email as string);
+      } else {
+        await requestLoginOtp(phone as string);
+      }
     } catch (err) {
       const retryAfter = retryAfterSecondsOf(err);
       if (isRateLimited(err) && retryAfter) {
@@ -100,9 +117,11 @@ export function VerifyLoginOtpScreen() {
     <AppScreen scroll>
       <AppIconButton name="chevron-back" accessibilityLabel="Go back" onPress={() => navigation.goBack()} />
       <View style={{ marginTop: theme.spacing.xl }}>
-        <AppText variant="headingLarge" accessibilityRole="header" align="center">Verify your number</AppText>
+        <AppText variant="headingLarge" accessibilityRole="header" align="center">
+          {sentToEmail ? "Check your email" : "Verify your number"}
+        </AppText>
         <AppText variant="body" color="secondary" align="center" style={{ marginTop: theme.spacing.xs, marginBottom: theme.spacing.xl }}>
-          {`Enter the 6-digit code sent to ${maskPhoneForDisplay(phone)}`}
+          {`Enter the 6-digit code sent to ${destinationLabel}`}
         </AppText>
 
         {screenError ? <AuthErrorBanner message={screenError} /> : null}
@@ -140,7 +159,8 @@ export function VerifyLoginOtpScreen() {
             </AppText>
           )}
           <AppText variant="bodySmall" color="link" accessibilityRole="button" onPress={() => navigation.goBack()}>
-            Change number
+            {/* "Change number" is wrong when the code went to an inbox. */}
+            {sentToEmail ? "Change email" : "Change number"}
           </AppText>
         </View>
 

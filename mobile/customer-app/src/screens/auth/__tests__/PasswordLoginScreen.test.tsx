@@ -56,3 +56,67 @@ describe("PasswordLoginScreen", () => {
     await waitFor(() => expect(sessionManager.loginWithPassword).toHaveBeenCalled());
   });
 });
+
+describe("PasswordLoginScreen: the other two ways in", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  function render() {
+    return renderAuthScreen("PasswordLogin", PasswordLoginScreen, undefined, {
+      VerifyLoginOtp: "verify-otp-screen",
+      Signup: "signup-screen",
+      LoginMethod: "login-method-screen",
+    });
+  }
+
+  it("offers create-account, because this is where someone finds out they have none", async () => {
+    const screen = render();
+    fireEvent.press(screen.getByLabelText("New to Fuvay? Create an account"));
+    await waitFor(() => expect(screen.getByText("signup-screen")).toBeTruthy());
+  });
+
+  it("offers an emailed code only once the identifier looks like an email", () => {
+    // The code goes to an inbox, so offering it beside a phone number would be a
+    // button that cannot work.
+    const screen = render();
+    expect(screen.queryByText("Email me a code instead")).toBeNull();
+    fireEvent.changeText(screen.getByLabelText("Email or mobile"), "9876543210");
+    expect(screen.queryByText("Email me a code instead")).toBeNull();
+    fireEvent.changeText(screen.getByLabelText("Email or mobile"), "raj@example.com");
+    expect(screen.getByText("Email me a code instead")).toBeTruthy();
+  });
+
+  it("emails a code and moves to the code screen", async () => {
+    const send = jest.spyOn(sessionManager, "requestEmailLoginOtp")
+      .mockResolvedValue({ message: "If an account exists, a sign-in code has been sent." } as never);
+    const screen = render();
+    fireEvent.changeText(screen.getByLabelText("Email or mobile"), " raj@example.com ");
+    fireEvent.press(screen.getByText("Email me a code instead"));
+
+    await waitFor(() => expect(send).toHaveBeenCalledWith("raj@example.com"));
+    await waitFor(() => expect(screen.getByText("verify-otp-screen")).toBeTruthy());
+  });
+
+  it("cannot be used to find out whether an email is registered", async () => {
+    // The endpoint answers identically either way, so the screen must move on either
+    // way too -- branching here would rebuild the oracle the backend refuses to be.
+    jest.spyOn(sessionManager, "requestEmailLoginOtp")
+      .mockResolvedValue({ message: "If an account exists, a sign-in code has been sent." } as never);
+    const screen = render();
+    fireEvent.changeText(screen.getByLabelText("Email or mobile"), "nobody@example.com");
+    fireEvent.press(screen.getByText("Email me a code instead"));
+
+    await waitFor(() => expect(screen.getByText("verify-otp-screen")).toBeTruthy());
+  });
+
+  it("stays put and explains when the code could not be sent", async () => {
+    jest.spyOn(sessionManager, "requestEmailLoginOtp").mockRejectedValue(
+      new DomainError({ category: "BACKEND_UNAVAILABLE", diagnostic: "smtp down" }),
+    );
+    const screen = render();
+    fireEvent.changeText(screen.getByLabelText("Email or mobile"), "raj@example.com");
+    fireEvent.press(screen.getByText("Email me a code instead"));
+
+    await waitFor(() => expect(screen.getByText(/can't reach Fuvay/i)).toBeTruthy());
+    expect(screen.queryByText("verify-otp-screen")).toBeNull();
+  });
+});

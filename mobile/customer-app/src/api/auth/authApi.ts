@@ -92,6 +92,46 @@ export async function requestLoginOtp(input: RequestLoginOtpInput) {
   return parseApiSuccess(res.json, otpSendResponseSchema);
 }
 
+export interface RequestEmailOtpInput {
+  email: string;
+}
+
+/**
+ * Emails a sign-in code.
+ *
+ * The response is deliberately the SAME whether or not that address has an account --
+ * a sign-in form that reveals which emails are registered is an account list for
+ * anyone who asks. So a caller can never branch on "does this user exist".
+ */
+export async function requestEmailOtp(input: RequestEmailOtpInput) {
+  const res = await request({
+    method: "POST",
+    path: "/v1/auth/otp/send",
+    body: { email: input.email, purpose: "email_login" },
+  });
+  return parseApiSuccess(res.json, otpSendResponseSchema);
+}
+
+export interface VerifyEmailOtpInput {
+  email: string;
+  otp: string;
+  deviceId?: string;
+  deviceName?: string;
+}
+
+export async function verifyEmailOtp(input: VerifyEmailOtpInput) {
+  const res = await request({
+    method: "POST",
+    path: "/v1/auth/otp/verify",
+    body: {
+      email: input.email, otp: input.otp,
+      device_id: input.deviceId ?? "mobile",
+      device_name: input.deviceName,
+    },
+  });
+  return parseApiSuccess(res.json, loginOutcomeSchema);
+}
+
 export interface VerifyLoginOtpInput {
   phone: string;
   otp: string;

@@ -32,3 +32,57 @@ def _send_sync(to_email: str, subject: str, body: str) -> bool:
 async def send_email(to_email: str, subject: str, body: str) -> bool:
     """Send an email via SMTP. Returns True on success, False otherwise (never raises)."""
     return await asyncio.to_thread(_send_sync, to_email, subject, body)
+
+
+def is_email_configured() -> bool:
+    """Whether outbound email can actually be sent.
+
+    Read BEFORE offering an email-code sign-in: a code the customer will never receive
+    is worse than not offering the option, because they wait for it.
+    """
+    settings = get_settings()
+    return bool(settings.EMAIL_USERNAME and settings.EMAIL_PASSWORD)
+
+
+async def send_login_code_email(to_email: str, code: str, expires_minutes: int) -> bool:
+    """The sign-in code. Deliberately plain: no links, nothing to click.
+
+    A login email with a clickable link is the exact shape of a phishing message, and
+    teaching customers to click one trains them into the attack.
+    """
+    subject = "Your Fuvay sign-in code"
+    body = (
+        f"Your Fuvay sign-in code is {code}\n\n"
+        f"It expires in {expires_minutes} minutes and can be used once.\n\n"
+        "If you did not try to sign in, you can ignore this email -- nobody can use "
+        "this code without it.\n"
+    )
+    return await send_email(to_email, subject, body)
+
+
+async def send_password_reset_email(
+    to: str, full_name: str | None, reset_token: str, expires_hours: int,
+) -> bool:
+    """The admin-initiated password reset.
+
+    This function did not exist. `AuthService.admin_send_password_reset` imported it
+    inside a `try` whose `except Exception` logged a warning, so every admin-triggered
+    reset email since that code was written raised ImportError, was swallowed, and
+    recorded `email_sent: False` in the audit trail while the admin was told the reset
+    had been sent. The token itself was real -- it simply never reached anyone.
+
+    Plain text and no link, for the same reason as the sign-in code: a message that
+    trains customers to click through to a password form is the shape of the attack it
+    is trying to prevent.
+    """
+    greeting = f"Hi {full_name}," if full_name else "Hi,"
+    subject = "Reset your Fuvay password"
+    body = (
+        f"{greeting}\n\n"
+        "An administrator started a password reset for your Fuvay account.\n\n"
+        f"Your reset code is {reset_token}\n\n"
+        f"It expires in {expires_hours} hours.\n\n"
+        "If you were not expecting this, contact your administrator -- this code alone "
+        "cannot change anything without being entered in the app.\n"
+    )
+    return await send_email(to, subject, body)

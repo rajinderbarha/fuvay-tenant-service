@@ -120,6 +120,24 @@ export async function requestLoginOtp(phone: string) {
   return res.data;
 }
 
+/** Emails a sign-in code. Like the phone equivalent, requesting one is a
+ * pre-authentication side effect and changes no session state. */
+export async function requestEmailLoginOtp(email: string) {
+  const res = await authApi.requestEmailOtp({ email });
+  return res.data;
+}
+
+export async function verifyEmailLoginOtp(email: string, otp: string, deviceId?: string, deviceName?: string) {
+  setState("authenticating", null);
+  try {
+    const res = await authApi.verifyEmailOtp({ email, otp, deviceId, deviceName });
+    return await handleLoginOutcome(res.data);
+  } catch (err) {
+    setState("unauthenticated", null);
+    throw err;
+  }
+}
+
 export async function verifyLoginOtp(phone: string, otp: string, deviceId?: string, deviceName?: string) {
   setState("authenticating", null);
   try {

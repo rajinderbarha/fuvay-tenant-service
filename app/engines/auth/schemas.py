@@ -40,15 +40,27 @@ class PhoneLoginRequest(BaseModel):
     device_name: str | None = None
 
 class OTPVerifyRequest(BaseModel):
-    phone: str
+    # Either channel. `phone` was required, so the emailed code this endpoint's sibling
+    # now sends had no way to be redeemed.
+    phone: str | None = None
+    email: EmailStr | None = None
     otp: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
     device_id: str = Field(default="mobile")
     device_name: str | None = None
 
+    @model_validator(mode="after")
+    def phone_or_email(self):
+        if not self.phone and not self.email:
+            raise ValueError("Either phone or email is required.")
+        return self
+
 class OTPSendRequest(BaseModel):
     phone: str | None = None
     email: EmailStr | None = None
-    purpose: Literal["phone_login", "phone_verification", "password_reset", "job_approval"] = "phone_login"
+    # `email_login` is what an emailed sign-in code is stored under; the purpose is
+    # ignored for the email branch, which always uses it.
+    purpose: Literal["phone_login", "phone_verification", "password_reset",
+                     "job_approval", "email_login"] = "phone_login"
 
     @model_validator(mode="after")
     def phone_or_email(self):

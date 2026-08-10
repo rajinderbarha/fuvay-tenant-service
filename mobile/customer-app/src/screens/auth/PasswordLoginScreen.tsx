@@ -8,7 +8,8 @@ import { FuvayMark } from "../../components/FuvayMark";
 import { PasswordField } from "../../components/auth/PasswordField";
 import { AuthErrorBanner } from "../../components/auth/AuthErrorBanner";
 import { copyForAuthError } from "../../components/auth/authErrorCopy";
-import { loginWithPassword } from "../../api/session/sessionManager";
+import { ENV } from "../../config/environment";
+import { loginWithPassword, requestEmailLoginOtp } from "../../api/session/sessionManager";
 import { PublicStackParamList } from "../../navigation/routeTypes";
 
 type Nav = NativeStackNavigationProp<PublicStackParamList, "PasswordLogin">;
@@ -27,7 +28,37 @@ export function PasswordLoginScreen() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
   const [screenError, setScreenError] = useState<string | undefined>();
+
+  // Offered only for something that looks like an email, because the code is emailed.
+  // An "@" is the whole test on purpose: the backend validates the address, and being
+  // stricter here would refuse valid addresses this app has no business judging.
+  const identifierLooksLikeEmail = identifier.includes("@");
+
+  /**
+   * Emails a sign-in code instead of asking for the password.
+   *
+   * The endpoint's response is identical whether or not the address has an account, so
+   * this screen cannot and does not tell the customer which -- it says a code is on the
+   * way if an account exists, and moves to the code screen either way. Anything else
+   * would turn this form into an account-existence oracle.
+   */
+  async function handleEmailCode() {
+    if (sendingCode || !identifierLooksLikeEmail) return;
+    const email = identifier.trim();
+    setSendingCode(true);
+    setScreenError(undefined);
+    try {
+      const res = await requestEmailLoginOtp(email);
+      const devOtpHint = ENV.appEnv !== "production" ? res.otp_hint : undefined;
+      navigation.navigate("VerifyLoginOtp", { email, devOtpHint });
+    } catch (err) {
+      setScreenError(copyForAuthError(err));
+    } finally {
+      setSendingCode(false);
+    }
+  }
 
   async function handleSignIn() {
     if (submitting || !identifier.trim() || !password) return;
@@ -121,8 +152,35 @@ export function PasswordLoginScreen() {
           disabled={!identifier.trim() || !password}
           fullWidth
         />
+        {/* Only for an email identifier -- the code goes to an inbox, so offering it
+            beside a phone number would be a button that cannot work. */}
+        {identifierLooksLikeEmail ? (
+          <View style={{ marginTop: theme.spacing.sm }}>
+            <AppButton
+              label="Email me a code instead"
+              tone="secondary"
+              onPress={handleEmailCode}
+              loading={sendingCode}
+              fullWidth
+            />
+          </View>
+        ) : null}
+
         <View style={{ marginTop: theme.spacing.sm }}>
           <AppButton label="Use phone OTP instead" tone="secondary" onPress={() => navigation.navigate("LoginMethod")} fullWidth />
+        </View>
+
+        {/* A password screen is where someone discovers they have no account. */}
+        <View style={{ marginTop: theme.spacing.base, alignItems: "center" }}>
+          <AppText
+            variant="bodySmall"
+            color="link"
+            accessibilityRole="link"
+            accessibilityLabel="New to Fuvay? Create an account"
+            onPress={() => navigation.navigate("Signup")}
+          >
+            New to Fuvay? Create an account
+          </AppText>
         </View>
       </View>
     </AppScreen>

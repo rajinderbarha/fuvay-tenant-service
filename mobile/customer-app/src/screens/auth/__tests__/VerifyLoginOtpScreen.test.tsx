@@ -54,3 +54,47 @@ describe("VerifyLoginOtpScreen", () => {
     await findByText(/Resend code in/);
   });
 });
+
+describe("VerifyLoginOtpScreen: the emailed code", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  function renderEmail() {
+    return renderAuthScreen(
+      "VerifyLoginOtp", VerifyLoginOtpScreen, { email: "raj@example.com" },
+      { MfaChallenge: "mfa-screen" },
+    );
+  }
+
+  it("says where the code went, and does not call it a number", () => {
+    // One screen for both channels: redeeming a 6-digit code is the same job, and two
+    // copies would be two places for the attempt-limit and MFA branches to drift.
+    const screen = renderEmail();
+    expect(screen.getByText("Check your email")).toBeTruthy();
+    expect(screen.getByText(/raj@example.com/)).toBeTruthy();
+    expect(screen.queryByText("Verify your number")).toBeNull();
+    // And the way back is not "Change number" either.
+    expect(screen.getByText("Change email")).toBeTruthy();
+  });
+
+  it("redeems it through the email endpoint, not the phone one", async () => {
+    const email = jest.spyOn(sessionManager, "verifyEmailLoginOtp")
+      .mockResolvedValue({ status: "authenticated" } as never);
+    const phone = jest.spyOn(sessionManager, "verifyLoginOtp");
+
+    const screen = renderEmail();
+    fireEvent.changeText(screen.getByLabelText("Verification code"), "123456");
+
+    await waitFor(() => expect(email).toHaveBeenCalledWith("raj@example.com", "123456"));
+    expect(phone).not.toHaveBeenCalled();
+  });
+
+  it("resends by email as well", async () => {
+    jest.spyOn(sessionManager, "verifyEmailLoginOtp").mockResolvedValue({} as never);
+    const resend = jest.spyOn(sessionManager, "requestEmailLoginOtp")
+      .mockResolvedValue({ message: "sent" } as never);
+    const screen = renderEmail();
+
+    fireEvent.press(screen.getByText("Resend code"));
+    await waitFor(() => expect(resend).toHaveBeenCalledWith("raj@example.com"));
+  });
+});
