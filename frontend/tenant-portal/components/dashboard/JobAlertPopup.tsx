@@ -1,8 +1,8 @@
 "use client";
 import React from "react";
-import { PartyPopper, AlertTriangle, ArrowRight, X, Volume2, VolumeX } from "lucide-react";
+import { PartyPopper, AlertTriangle, ArrowRight, X } from "lucide-react";
 import type { DashboardAlert } from "../../lib/api";
-import { playAlertTone, isAlertSoundEnabled, setAlertSoundEnabled } from "../../lib/alertTone";
+import { playAlertTone } from "../../lib/alertTone";
 
 /**
  * The dashboard's interruption: a new job to celebrate, or a job past its slot to fix.
@@ -67,9 +67,6 @@ function toneWeight(tone: DashboardAlert["tone"]): number {
 export function JobAlertPopup({
   alerts, newTotal, delayedTotal, onDismiss, onOpenJob, onSeeAllDelayed,
 }: JobAlertPopupProps) {
-  const [soundOn, setSoundOn] = React.useState(true);
-  React.useEffect(() => { setSoundOn(isAlertSoundEnabled()); }, []);
-
   const leadTone = alerts.length > 0
     ? [...alerts].sort((a, b) => toneWeight(a.tone) - toneWeight(b.tone))[0].tone
     : null;
@@ -157,32 +154,14 @@ export function JobAlertPopup({
               </p>
             ) : null}
           </div>
-          <div style={{ display: "flex", gap: 4, alignItems: "flex-start" }}>
-            {/* The provider's own call. Someone on a shop floor wants the sound; someone
-                in a quiet office wants it gone, and wants it to STAY gone. */}
-            <button
-              type="button"
-              onClick={() => {
-                const next = !soundOn;
-                setSoundOn(next);
-                setAlertSoundEnabled(next);
-                if (next && leadTone) playAlertTone(leadTone);
-              }}
-              aria-label={soundOn ? "Turn alert sound off" : "Turn alert sound on"}
-              title={soundOn ? "Alert sound on" : "Alert sound off"}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", height: 24 }}
-            >
-              {soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
-            </button>
-            <button
-              type="button"
-              onClick={onDismiss}
-              aria-label="Dismiss"
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", height: 24 }}
-            >
-              <X size={18} />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Dismiss"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", height: 24 }}
+          >
+            <X size={18} />
+          </button>
         </div>
 
         {/* Everything else waiting, named rather than counted: "and 4 more" tells a

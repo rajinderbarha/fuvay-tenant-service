@@ -16,8 +16,10 @@
  *  - Fails silently. Browsers refuse to start audio before the user has interacted with
  *    the page, and some block it entirely. A dashboard must never break, or log noise,
  *    because a chime could not play.
- *  - Respects a stored preference, so a provider working in a quiet office can turn it
- *    off and stay off (see `setAlertSoundEnabled`).
+ *  - Respects the stored preference key below if something sets it, so the sound can be
+ *    switched off without a code change. There is no in-app control for it: the popup's
+ *    speaker toggle was removed by request, and an exported setter nothing calls would
+ *    just be dead code.
  *  - Keeps the volume low and the tone short. This fires while somebody is working; it
  *    is a notification, not an alarm.
  */
@@ -41,20 +43,11 @@ const NOTES: Record<Tone, [number, number]> = {
 export function isAlertSoundEnabled(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    // Default ON: an alert nobody hears is the problem being solved. Opting out is one
-    // click, and the choice sticks.
+    // Default ON: an alert nobody hears is the problem being solved. Setting the key to
+    // "off" silences it.
     return window.localStorage.getItem(PREF_KEY) !== "off";
   } catch {
     return true;
-  }
-}
-
-export function setAlertSoundEnabled(enabled: boolean): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(PREF_KEY, enabled ? "on" : "off");
-  } catch {
-    /* A blocked storage must not stop the sound working for this session. */
   }
 }
 
