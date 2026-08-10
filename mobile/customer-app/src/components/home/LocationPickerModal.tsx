@@ -115,25 +115,63 @@ export function LocationPickerModal({ visible, currentZipcode, onClose, onConfir
             paddingBottom: theme.spacing.base + insets.bottom,
           }}
         >
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.base }}>
-            <AppText variant="headingSmall" accessibilityRole="header">Change location</AppText>
+          {/* Grabber. A bottom sheet with a square top and no handle reads as a panel
+              that arrived rather than one that can be dismissed. */}
+          <View
+            style={{
+              alignSelf: "center", width: 36, height: 4,
+              borderRadius: theme.radius.radiusFull,
+              backgroundColor: theme.colors.borderDefault,
+              marginBottom: theme.spacing.base,
+            }}
+          />
+
+          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.sm }}>
+            <View style={{ flex: 1 }}>
+              <AppText variant="headingSmall" accessibilityRole="header">
+                {currentZipcode ? "Change location" : "Set your location"}
+              </AppText>
+              {/* Says what the ZIP is FOR. The sheet used to be a bare labelled box, so
+                  it read as a form field with no explanation of why it was being asked. */}
+              <AppText variant="bodySmall" color="secondary" style={{ marginTop: 2 }}>
+                We use it to show services and providers that cover your area.
+              </AppText>
+            </View>
             <AppIconButton name="close" accessibilityLabel="Close" onPress={dismissAndClose} />
           </View>
-          <AppInput
-            ref={inputRef}
-            label="ZIP code"
-            accessibilityLabel="ZIP code"
-            value={value}
-            onChangeText={t => { setValue(t.replace(/\D/g, "").slice(0, 6)); setError(undefined); }}
-            keyboardType="number-pad"
-            maxLength={6}
-            error={error}
-            placeholder="141001"
-            returnKeyType="done"
-            onSubmitEditing={handleConfirm}
-          />
-          <View style={{ marginTop: theme.spacing.base }}>
-            <AppButton label="Confirm location" onPress={handleConfirm} fullWidth />
+
+          <View style={{ marginTop: theme.spacing.lg }}>
+            <AppInput
+              ref={inputRef}
+              label="PIN code"
+              accessibilityLabel="ZIP code"
+              value={value}
+              onChangeText={t => { setValue(t.replace(/\D/g, "").slice(0, 6)); setError(undefined); }}
+              keyboardType="number-pad"
+              maxLength={6}
+              error={error}
+              placeholder="6-digit PIN code"
+              returnKeyType="done"
+              onSubmitEditing={handleConfirm}
+              // Roomier and centred with wide letter spacing: six digits in a
+              // full-width box left the value floating at the far left of an
+              // otherwise empty field.
+              style={{
+                height: 56, textAlign: "center", letterSpacing: 6,
+                ...theme.typography.headingSmall,
+              }}
+            />
+          </View>
+
+          <View style={{ marginTop: theme.spacing.lg }}>
+            <AppButton
+              label={currentZipcode ? "Update location" : "Show services here"}
+              onPress={handleConfirm}
+              // Disabled until six digits: a button that only ever answers "enter a
+              // valid PIN" is a button that does nothing.
+              disabled={!ZIPCODE_PATTERN.test(value)}
+              fullWidth
+            />
           </View>
         </View>
       </KeyboardAvoidingView>

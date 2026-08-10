@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import { View } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -41,11 +41,17 @@ export function VerifyLoginOtpScreen() {
   const sentToEmail = !!email && !phone;
   const destinationLabel = sentToEmail ? (email as string) : maskPhoneForDisplay(phone as string);
 
-  // Dev-only convenience: `devOtpHint` only ever exists outside production
-  // (see LoginMethodScreen) -- pre-fills the code and auto-submits once, so
-  // local testing never requires manually retyping the OTP.
+  /**
+   * Dev-only convenience: `devOtpHint` only ever exists outside production (the backend
+   * omits `otp_hint` there, and the callers gate on EXPO_PUBLIC_ENV as well). It
+   * PRE-FILLS the code and stops there.
+   *
+   * It used to auto-submit too, which made the verification step invisible: signing up
+   * went straight into the app with no code screen at all, so the one step that proves
+   * the customer owns the number could not be seen -- or tested -- on a dev build.
+   * Pre-filling keeps the convenience; submitting is left to the person.
+   */
   const [code, setCode] = useState(devOtpHint ?? "");
-  const autoSubmittedRef = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
   const [codeError, setCodeError] = useState<string | undefined>();
@@ -56,14 +62,6 @@ export function VerifyLoginOtpScreen() {
   // once the backend actually rate-limits and returns retry_after_seconds
   // (spec section 10: never hardcode a duration).
   const [resendCooldownUntil, setResendCooldownUntil] = useState<Date | null>(null);
-
-  useEffect(() => {
-    if (devOtpHint && devOtpHint.length === 6 && !autoSubmittedRef.current) {
-      autoSubmittedRef.current = true;
-      submitCode(devOtpHint);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function submitCode(value: string) {
     if (submitting || value.length !== 6) return;

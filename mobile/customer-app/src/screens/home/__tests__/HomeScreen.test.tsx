@@ -85,10 +85,13 @@ describe("HomeScreen", () => {
     expect(getByText("Try again")).toBeTruthy();
   });
 
-  it("shows NoAddressState when the customer has no address on file", () => {
-    mockHomeQuery({ data: baseHome({ address: null }) });
-    const { getAllByText } = renderHome();
-    expect(getAllByText("Choose your location").length).toBeGreaterThan(0);
+  it("asks for a location only when there is genuinely none to browse with", () => {
+    // No saved address AND no ZIP chosen. A ZIP alone is enough to browse (see the
+    // next test), so this state is for a customer the app knows nothing about.
+    mockHomeQuery({ data: baseHome({ address: null, serviceability: null }) });
+    const { getByText } = renderHome();
+    expect(getByText("Where do you need service?")).toBeTruthy();
+    expect(getByText("Set your location")).toBeTruthy();
   });
 
   it("shows UnserviceableState for a ZIP the backend does not service", () => {
@@ -497,7 +500,7 @@ describe("HomeScreen", () => {
     const { getByLabelText, getByText } = renderHome();
     fireEvent(getByLabelText(/Location: Ludhiana · 141001/), "touchEnd");
     fireEvent.changeText(getByLabelText("ZIP code"), "160001");
-    fireEvent.press(getByText("Confirm location"));
+    fireEvent.press(getByText("Update location"));
     // Re-rendering with a new zipcodeOverride calls useCustomerHomeQuery
     // again with the new value -- verified via the spy call arguments.
     expect(homeQueryModule.useCustomerHomeQuery).toHaveBeenLastCalledWith("160001");
@@ -554,5 +557,29 @@ describe("HomeScreen", () => {
     });
     const { getByLabelText } = renderHome();
     expect(getByLabelText(/Ludhiana/)).toBeTruthy();
+  });
+
+  it("browses a chosen ZIP even with no saved address", () => {
+    // Real bug: the gate was `if (!home.address)`, so a new customer who chose a ZIP got
+    // the "add an address" screen while the backend had answered with a fully
+    // serviceable payload for it -- verified live on a fresh account at 140412, which
+    // returned 7 categories and 24 problems that the app then discarded.
+    mockHomeQuery({
+      data: baseHome({
+        address: null,
+        serviceability: { zipcode: "140412", checked: true },
+        bookableCategories: [{
+          categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling",
+          iconUrl: null, description: null, startingPrice: null,
+        }],
+      }),
+    });
+    const { getByText, queryByText, getByLabelText } = renderHome();
+
+    expect(queryByText("Where do you need service?")).toBeNull();
+    expect(getByText("AC & Cooling")).toBeTruthy();
+    // The header shows the ZIP alone: there is no city to pair it with, and none is
+    // guessed from the PIN.
+    expect(getByLabelText(/140412/)).toBeTruthy();
   });
 });

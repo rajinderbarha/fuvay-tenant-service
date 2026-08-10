@@ -5,16 +5,30 @@ import { renderWithProviders } from "../../../testing/renderWithProviders";
 import { LocationPickerModal } from "../LocationPickerModal";
 
 describe("LocationPickerModal", () => {
-  it("rejects an incomplete ZIP code without calling onConfirm", () => {
+  it("cannot be confirmed with an incomplete ZIP code", () => {
+    // The action is disabled rather than answering "enter a valid PIN" -- a button that
+    // only ever refuses is a button that does nothing.
     const onConfirm = jest.fn();
-    const { getByLabelText, getByText, findByText } = renderWithProviders(
+    const { getByLabelText, getByText } = renderWithProviders(
       <LocationPickerModal visible currentZipcode={null} onClose={() => {}} onConfirm={onConfirm} />,
     );
     fireEvent.changeText(getByLabelText("ZIP code"), "141");
-    fireEvent.press(getByText("Confirm location"));
-    return findByText(/valid 6-digit ZIP code/).then(() => {
-      expect(onConfirm).not.toHaveBeenCalled();
-    });
+    fireEvent.press(getByText("Show services here"));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("names the action for what it does, first time and after", () => {
+    const first = renderWithProviders(
+      <LocationPickerModal visible currentZipcode={null} onClose={() => {}} onConfirm={() => {}} />,
+    );
+    expect(first.getByText("Set your location")).toBeTruthy();
+    expect(first.getByText("Show services here")).toBeTruthy();
+
+    const again = renderWithProviders(
+      <LocationPickerModal visible currentZipcode="141001" onClose={() => {}} onConfirm={() => {}} />,
+    );
+    expect(again.getByText("Change location")).toBeTruthy();
+    expect(again.getByText("Update location")).toBeTruthy();
   });
 
   it("confirms a valid 6-digit ZIP and closes", () => {
@@ -24,7 +38,7 @@ describe("LocationPickerModal", () => {
       <LocationPickerModal visible currentZipcode={null} onClose={onClose} onConfirm={onConfirm} />,
     );
     fireEvent.changeText(getByLabelText("ZIP code"), "141001");
-    fireEvent.press(getByText("Confirm location"));
+    fireEvent.press(getByText("Show services here"));
     expect(onConfirm).toHaveBeenCalledWith("141001");
     // Closing is deferred one frame so the blur is processed before the Modal
     // unmounts -- otherwise the keyboard is left behind (see the component).
@@ -40,7 +54,7 @@ describe("LocationPickerModal", () => {
       <LocationPickerModal visible currentZipcode={null} onClose={() => {}} onConfirm={() => {}} />,
     );
     fireEvent.changeText(getByLabelText("ZIP code"), "141001");
-    fireEvent.press(getByText("Confirm location"));
+    fireEvent.press(getByText("Show services here"));
     expect(dismiss).toHaveBeenCalled();
     dismiss.mockRestore();
   });

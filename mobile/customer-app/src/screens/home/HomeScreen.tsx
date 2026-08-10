@@ -222,7 +222,20 @@ export function HomeScreen() {
   const home = homeQuery.data;
   if (!home) return null;
 
-  if (!home.address) {
+  /**
+   * A ZIP is enough to browse with, whether it came from a saved address or from
+   * "Change location".
+   *
+   * Real bug this fixes: the gate below was `if (!home.address)`, so a customer with no
+   * saved address who chose a ZIP got the "add an address" screen even though the
+   * backend had answered with a fully serviceable payload for it -- verified live on a
+   * brand-new account at 140412: 7 categories and 24 problems returned, and the app
+   * threw all of it away. A new customer's first act is picking where they are, and an
+   * address is collected later, during the booking, where it is actually needed.
+   */
+  const browsingZipcode = home.serviceability?.zipcode ?? home.address?.zipcode ?? null;
+
+  if (!home.address && !browsingZipcode) {
     return (
       <AppScreen>
         <OfflineBanner />
@@ -276,7 +289,7 @@ export function HomeScreen() {
    * worse, tapping a service afterwards carried the OLD ZIP into the booking: browse
    * one city, get matched in another.
    */
-  const zipcode = (home.serviceability?.zipcode ?? home.address.zipcode) as string;
+  const zipcode = browsingZipcode as string;
 
   /** Which problems each of the two sections shows. Shuffled once per payload
    * rather than per render -- see selectProblems -- so tiles do not move under a
@@ -456,7 +469,7 @@ export function HomeScreen() {
       <HomeSectionErrorBoundary sectionLabel="global services">
         <GlobalServicesSection
           defaultName={customerFirstName !== "there" ? customerFirstName : undefined}
-          defaultZipcode={home.address.zipcode}
+          defaultZipcode={zipcode}
           title={sectionTitle("global_services")}
         />
       </HomeSectionErrorBoundary>
@@ -489,12 +502,14 @@ export function HomeScreen() {
    * which the app has no way to resolve. The saved address keeps its city because
    * that one is known.
    */
-  const browsingElsewhere = zipcode !== home.address.zipcode;
+  // With no saved address there is no city to pair the ZIP with, and none is guessed
+  // from the PIN -- the app cannot resolve one.
+  const browsingElsewhere = zipcode !== home.address?.zipcode;
   const locationLabel = browsingElsewhere
     ? zipcode
-    : home.address.city && home.address.zipcode
+    : home.address?.city
     ? `${home.address.city} · ${home.address.zipcode}`
-    : home.address.zipcode;
+    : home.address?.zipcode ?? zipcode;
 
   return (
     <AppScreen style={{ paddingHorizontal: 0 }}>

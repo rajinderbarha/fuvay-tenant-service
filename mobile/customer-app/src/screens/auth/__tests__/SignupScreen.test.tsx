@@ -122,3 +122,29 @@ describe("SignupScreen", () => {
     await waitFor(() => expect(screen.getByText("login-method-screen")).toBeTruthy());
   });
 });
+
+describe("signup verification is a real step", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it("stops at the code screen instead of signing the customer straight in", async () => {
+    // Real bug: the verify screen pre-filled the dev code AND auto-submitted it, so
+    // creating an account on a dev build went straight into the app with no code screen
+    // at all. The one step that proves the customer owns the number was invisible, and
+    // untestable.
+    jest.spyOn(authApi, "registerCustomer").mockResolvedValue(
+      { data: { user_id: "u-1", message: "OTP sent." } } as never,
+    );
+    jest.spyOn(sessionManager, "requestLoginOtp").mockResolvedValue(
+      { message: "OTP sent.", otp_hint: "123456" } as never,
+    );
+    const verify = jest.spyOn(sessionManager, "verifyLoginOtp");
+
+    const screen = render();
+    fillValid(screen);
+    fireEvent.press(screen.getByText("Create account"));
+
+    await waitFor(() => expect(screen.getByText("verify-otp-screen")).toBeTruthy());
+    // Nothing was redeemed on the customer's behalf.
+    expect(verify).not.toHaveBeenCalled();
+  });
+});
