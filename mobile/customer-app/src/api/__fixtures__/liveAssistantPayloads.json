@@ -1,0 +1,1151 @@
+{
+  "home": {
+    "response_version": 2,
+    "sections": [
+      {
+        "key": "active_booking",
+        "order": 10,
+        "title": null
+      },
+      {
+        "key": "quick_problems",
+        "order": 20,
+        "title": null
+      },
+      {
+        "key": "campaign_top",
+        "order": 30,
+        "title": null
+      },
+      {
+        "key": "service_grid",
+        "order": 40,
+        "title": null
+      },
+      {
+        "key": "campaign_after_services",
+        "order": 50,
+        "title": null
+      },
+      {
+        "key": "assistant_entry",
+        "order": 60,
+        "title": null
+      },
+      {
+        "key": "campaign_mid",
+        "order": 70,
+        "title": null
+      },
+      {
+        "key": "problem_circles",
+        "order": 75,
+        "title": null
+      },
+      {
+        "key": "campaign_after_circles",
+        "order": 78,
+        "title": null
+      },
+      {
+        "key": "global_services",
+        "order": 80,
+        "title": null
+      },
+      {
+        "key": "campaign_bottom",
+        "order": 110,
+        "title": null
+      }
+    ],
+    "season": "monsoon",
+    "season_label": "Monsoon picks",
+    "season_region": "north",
+    "address": {
+      "address_id": "978774b6-2995-44ef-abaa-2cf17328e427",
+      "city": "Bassi Pathana",
+      "state": "Punjab",
+      "zipcode": "140412",
+      "is_default": true
+    },
+    "serviceability": {
+      "zipcode": "140412",
+      "checked": true
+    },
+    "enabled_verticals": [
+      {
+        "vertical_id": "3cd678b9-8bfd-4561-acb4-d34a88ed49fb",
+        "key": "home_services",
+        "label": "Home Services",
+        "icon": "Wrench"
+      },
+      {
+        "vertical_id": "e80ccd44-8a44-4ca6-b99f-a5acc85a64ab",
+        "key": "real_estate",
+        "label": "Real Estate",
+        "icon": "Home"
+      }
+    ],
+    "bookable_categories": [
+      {
+        "category_id": "405cd796-9c97-4465-8a17-e7137e34d268",
+        "name": "Plumbing",
+        "slug": "plumbing",
+        "icon_url": "http://192.168.18.13:8000/uploads/category_icon/d2adbb2178651e03f1924e9c.png",
+        "description": "Plumbing services",
+        "starting_price": 45.0
+      },
+      {
+        "category_id": "3e235890-70e1-41d8-b63e-f4f26c2c5d17",
+        "name": "Electrical",
+        "slug": "electrical",
+        "icon_url": "/uploads/category_icon/3e24d8bfd5b505fbd3aa332a.png",
+        "description": "Electrical services",
+        "starting_price": 40.0
+      },
+      {
+        "category_id": "5c7b4b85-dca0-4a3a-8d4c-0bfba09eae50",
+        "name": "Pest Control",
+        "slug": "pest-control",
+        "icon_url": "http://192.168.18.13:8000/uploads/category_icon/3aa6a307a9040ab41fc7b843.png",
+        "description": "Pest Control services",
+        "starting_price": 90.0
+      },
+      {
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "name": "Air Conditioning",
+        "slug": "air-conditioning",
+        "icon_url": "/uploads/category_icon/5f8bc498ca27b3d017c91521.png",
+        "description": "test",
+        "starting_price": 800.0
+      },
+      {
+        "category_id": "467e5dfc-9a35-4854-a31e-8be898d4aac4",
+        "name": "Painting",
+        "slug": "painting",
+        "icon_url": "/uploads/category_icon/423bbd8050129273ff17a437.png",
+        "description": "Painting services",
+        "starting_price": 200.0
+      },
+      {
+        "category_id": "855a055f-6a49-4bce-9f88-c6173ba8ced3",
+        "name": "Home Cleaning",
+        "slug": "home-cleaning",
+        "icon_url": "/uploads/category_icon/954327ddd2f5544dde13683b.png",
+        "description": "Home Cleaning services",
+        "starting_price": 50.0
+      },
+      {
+        "category_id": "74a3b153-a5c1-49db-9131-376b688ae1ad",
+        "name": "Water Heater",
+        "slug": "water-heater",
+        "icon_url": null,
+        "description": "Geyser and water heater service, repair and installation",
+        "starting_price": null
+      }
+    ],
+    "active_booking": {
+      "booking_id": "68ba2391-101d-43e7-8e04-5305f9fbe238",
+      "booking_number": "BK-20260810-000001",
+      "status": "pending_assignment",
+      "assignment_status": "unassigned",
+      "issue_summary": "AC Not Cooling",
+      "service_name": "AC Service",
+      "preferred_date": null,
+      "preferred_time_window": null,
+      "scheduled_date": "2026-08-10",
+      "scheduled_time_window": "16:00-17:00",
+      "provider": {
+        "name": "Guramrit",
+        "verified": true,
+        "rating": 5.0,
+        "review_count": 3,
+        "badges": [
+          {
+            "name": "Bronze Partner",
+            "icon": "medal",
+            "color": "#b45309",
+            "level": 1
+          },
+          {
+            "name": "AC Specialist",
+            "icon": "snow",
+            "color": "#0ea5e9"
+          },
+          {
+            "name": "Verified Business",
+            "icon": "shield-check",
+            "color": "#3b82f6"
+          }
+        ]
+      },
+      "provider_name": "Guramrit",
+      "technician": null,
+      "created_at": "2026-08-10T03:32:54.850330+00:00"
+    },
+    "active_bookings": [
+      {
+        "booking_id": "68ba2391-101d-43e7-8e04-5305f9fbe238",
+        "booking_number": "BK-20260810-000001",
+        "status": "pending_assignment",
+        "assignment_status": "unassigned",
+        "issue_summary": "AC Not Cooling",
+        "service_name": "AC Service",
+        "preferred_date": null,
+        "preferred_time_window": null,
+        "scheduled_date": "2026-08-10",
+        "scheduled_time_window": "16:00-17:00",
+        "provider": {
+          "name": "Guramrit",
+          "verified": true,
+          "rating": 5.0,
+          "review_count": 3,
+          "badges": [
+            {
+              "name": "Bronze Partner",
+              "icon": "medal",
+              "color": "#b45309",
+              "level": 1
+            },
+            {
+              "name": "AC Specialist",
+              "icon": "snow",
+              "color": "#0ea5e9"
+            },
+            {
+              "name": "Verified Business",
+              "icon": "shield-check",
+              "color": "#3b82f6"
+            }
+          ]
+        },
+        "provider_name": "Guramrit",
+        "technician": null,
+        "created_at": "2026-08-10T03:32:54.850330+00:00"
+      },
+      {
+        "booking_id": "3c1293f1-202a-4125-b483-acdaaf0a1600",
+        "booking_number": "BK-20260809-000006",
+        "status": "pending_assignment",
+        "assignment_status": "unassigned",
+        "issue_summary": "Gas Refill Needed",
+        "service_name": "AC Service",
+        "preferred_date": null,
+        "preferred_time_window": null,
+        "scheduled_date": "2026-08-10",
+        "scheduled_time_window": "15:00-16:00",
+        "provider": {
+          "name": "Guramrit",
+          "verified": true,
+          "rating": 5.0,
+          "review_count": 3,
+          "badges": [
+            {
+              "name": "Bronze Partner",
+              "icon": "medal",
+              "color": "#b45309",
+              "level": 1
+            },
+            {
+              "name": "AC Specialist",
+              "icon": "snow",
+              "color": "#0ea5e9"
+            },
+            {
+              "name": "Verified Business",
+              "icon": "shield-check",
+              "color": "#3b82f6"
+            }
+          ]
+        },
+        "provider_name": "Guramrit",
+        "technician": null,
+        "created_at": "2026-08-09T21:04:13.364397+00:00"
+      },
+      {
+        "booking_id": "00b8f31a-65aa-4220-80ba-9464ebad9767",
+        "booking_number": "BK-20260809-000005",
+        "status": "scheduled",
+        "assignment_status": "unassigned",
+        "issue_summary": "Wall Painting Needed",
+        "service_name": "Interior Wall Painting",
+        "preferred_date": null,
+        "preferred_time_window": null,
+        "scheduled_date": "2026-08-11",
+        "scheduled_time_window": "14:00-15:00",
+        "provider": {
+          "name": "Guramrit",
+          "verified": true,
+          "rating": 5.0,
+          "review_count": 3,
+          "badges": [
+            {
+              "name": "Bronze Partner",
+              "icon": "medal",
+              "color": "#b45309",
+              "level": 1
+            },
+            {
+              "name": "AC Specialist",
+              "icon": "snow",
+              "color": "#0ea5e9"
+            },
+            {
+              "name": "Verified Business",
+              "icon": "shield-check",
+              "color": "#3b82f6"
+            }
+          ]
+        },
+        "provider_name": "Guramrit",
+        "technician": null,
+        "created_at": "2026-08-09T16:30:05.655350+00:00"
+      }
+    ],
+    "active_booking_total": 39,
+    "unread_notification_count": 92,
+    "campaigns": [
+      {
+        "campaign_id": "4aa67af7-f3ec-4d4a-a486-a64b77826d2c",
+        "eyebrow": "LIMITED TIME",
+        "title": "20% off your first AC service",
+        "description": "Book any AC service this month and save on the visit fee.",
+        "artwork_url_light": "/uploads/banner_artwork/919e516889aef8e5101647c3.png",
+        "artwork_url_dark": "/uploads/banner_artwork/919e516889aef8e5101647c3.png",
+        "cta_label": "Book now",
+        "cta_deeplink": "app://category/air-conditioning",
+        "priority": 10,
+        "display_style": "hero",
+        "placement": "campaign_top",
+        "accent_color": null,
+        "badge_text": null,
+        "ends_at": null
+      },
+      {
+        "campaign_id": "c95a55c9-063f-4159-ba53-ea6b791c5583",
+        "eyebrow": "MONSOON READY",
+        "title": "Leak-proof your home",
+        "description": "Free leak inspection with every plumbing booking.",
+        "artwork_url_light": "/uploads/banner_artwork/919e516889aef8e5101647c3.png",
+        "artwork_url_dark": "/uploads/banner_artwork/919e516889aef8e5101647c3.png",
+        "cta_label": "Explore plumbing",
+        "cta_deeplink": "app://category/plumbing",
+        "priority": 20,
+        "display_style": "hero",
+        "placement": "campaign_top",
+        "accent_color": null,
+        "badge_text": null,
+        "ends_at": null
+      },
+      {
+        "campaign_id": "7d8dfa06-23a9-4330-85e4-91d025b356a8",
+        "eyebrow": "FESTIVE OFFER",
+        "title": "Get your home festival-ready",
+        "description": "Deep AC service and cleaning before the guests arrive.",
+        "artwork_url_light": null,
+        "artwork_url_dark": null,
+        "cta_label": "Book now",
+        "cta_deeplink": "app://category/air-conditioning",
+        "priority": 20,
+        "display_style": "festival",
+        "placement": "campaign_mid",
+        "accent_color": "#f59e0b",
+        "badge_text": "Diwali Special",
+        "ends_at": "2026-11-05T18:29:59+00:00"
+      },
+      {
+        "campaign_id": "8b521cd5-d459-4c9f-9bc9-48ac3550bcf2",
+        "eyebrow": "SEASONAL",
+        "title": "Heater and AC check before winter",
+        "description": "One visit, both units serviced.",
+        "artwork_url_light": null,
+        "artwork_url_dark": null,
+        "cta_label": "Book a check",
+        "cta_deeplink": "app://category/air-conditioning",
+        "priority": 25,
+        "display_style": "festival",
+        "placement": "campaign_mid",
+        "accent_color": "#7c3aed",
+        "badge_text": "Winter ready",
+        "ends_at": "2026-12-20T18:29:59+00:00"
+      },
+      {
+        "campaign_id": "3e9c7715-d5f8-4013-a63a-018c31d0bd77",
+        "eyebrow": null,
+        "title": "Need it today? Same-day slots are open",
+        "description": null,
+        "artwork_url_light": null,
+        "artwork_url_dark": null,
+        "cta_label": "See slots",
+        "cta_deeplink": "app://category/air-conditioning",
+        "priority": 30,
+        "display_style": "strip",
+        "placement": "campaign_bottom",
+        "accent_color": "#0ea5e9",
+        "badge_text": null,
+        "ends_at": null
+      }
+    ],
+    "global_services": [
+      {
+        "name": "Web Development",
+        "tagline": "Modern, fast & scalable web solutions",
+        "description": "Modern, fast & scalable web solutions",
+        "icon_url": "/uploads/global_service_icon/e35c057345b9f732fcc0aa41.png",
+        "display_order": 1,
+        "is_active": true,
+        "created_by_user_id": "b336bd87-d66d-4b35-93f4-c5b483777e01",
+        "id": "a7795c3b-4fbf-4dd5-a490-9cc7b9be5af7",
+        "created_at": "2026-08-06T19:30:29.209002+00:00",
+        "updated_at": "2026-08-07T04:37:43.994593+00:00"
+      },
+      {
+        "name": "Mobile App Dev",
+        "tagline": "Modern, fast & scalable app solutions",
+        "description": "Modern, fast & scalable app solutions",
+        "icon_url": null,
+        "display_order": 2,
+        "is_active": true,
+        "created_by_user_id": "b336bd87-d66d-4b35-93f4-c5b483777e01",
+        "id": "c2791f2c-d247-493b-b967-9092c9f82d03",
+        "created_at": "2026-08-06T19:30:31.308667+00:00",
+        "updated_at": "2026-08-07T04:37:46.079207+00:00"
+      },
+      {
+        "name": "Software Development",
+        "tagline": "Modern, fast & scalable software solutions",
+        "description": "Modern, fast & scalable software solutions",
+        "icon_url": "/uploads/global_service_icon/6f3015698fbd7b4df3f42090.png",
+        "display_order": 3,
+        "is_active": true,
+        "created_by_user_id": "b336bd87-d66d-4b35-93f4-c5b483777e01",
+        "id": "0fb35cc7-78e4-4b7f-bddc-c1fe4aa528ce",
+        "created_at": "2026-08-06T19:30:33.376849+00:00",
+        "updated_at": "2026-08-07T04:37:48.155053+00:00"
+      },
+      {
+        "name": "Blockchain Dev",
+        "tagline": "Modern, fast & scalable blockchain solutions",
+        "description": null,
+        "icon_url": "http://192.168.18.13:8000/uploads/global_service_icon/f69d2ff13d25dd8a7fb69e4f.png",
+        "display_order": 4,
+        "is_active": true,
+        "created_by_user_id": "b336bd87-d66d-4b35-93f4-c5b483777e01",
+        "id": "b390fbc9-e17b-4c4f-abec-d35a200da9a6",
+        "created_at": "2026-08-06T19:30:35.459278+00:00",
+        "updated_at": "2026-08-07T04:39:05.611898+00:00"
+      },
+      {
+        "name": "AI & ML",
+        "tagline": "Modern, fast & scalable AI solutions",
+        "description": "Modern, fast & scalable AI solutions",
+        "icon_url": "/uploads/global_service_icon/916c96aff3f773565cf8ed22.png",
+        "display_order": 5,
+        "is_active": true,
+        "created_by_user_id": "b336bd87-d66d-4b35-93f4-c5b483777e01",
+        "id": "fc7d4bc1-a9be-4938-9ff2-b09bf9a293be",
+        "created_at": "2026-08-06T19:30:37.527934+00:00",
+        "updated_at": "2026-08-07T04:37:52.341298+00:00"
+      },
+      {
+        "name": "Data Analyst",
+        "tagline": "Modern, fast & scalable data solutions",
+        "description": "Modern, fast & scalable data solutions",
+        "icon_url": null,
+        "display_order": 6,
+        "is_active": true,
+        "created_by_user_id": "b336bd87-d66d-4b35-93f4-c5b483777e01",
+        "id": "299bb59a-fcd6-4c80-aa35-fe21f7f7790a",
+        "created_at": "2026-08-06T19:30:39.575346+00:00",
+        "updated_at": "2026-08-07T04:37:54.460874+00:00"
+      }
+    ],
+    "quick_issues": [
+      {
+        "issue_id": "d946a5fa-8ee7-4b48-abad-3ee5f81d667b",
+        "label": "Drain Blocked",
+        "slug": "drain-unblocking-drain_blocked",
+        "category_id": "405cd796-9c97-4465-8a17-e7137e34d268",
+        "category_slug": "plumbing",
+        "category_name": "Plumbing",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "c159cb14-86c9-42ce-8efa-22009e697d5c",
+        "label": "Pest Infestation",
+        "slug": "general-pest-control-pest_infestation",
+        "category_id": "5c7b4b85-dca0-4a3a-8d4c-0bfba09eae50",
+        "category_slug": "pest-control",
+        "category_name": "Pest Control",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "4b34c77d-6090-49f1-9c9f-e2b2b992de2b",
+        "label": "Pipe Leaking",
+        "slug": "pipe-repair-pipe_leaking",
+        "category_id": "405cd796-9c97-4465-8a17-e7137e34d268",
+        "category_slug": "plumbing",
+        "category_name": "Plumbing",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "2d2a9dad-92d7-4eb4-acdf-d5b468302543",
+        "label": "Water Leakage",
+        "slug": "ac_water_leakage",
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "category_slug": "air-conditioning",
+        "category_name": "Air Conditioning",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "52590a64-ceaa-400b-a785-6afa830bdc00",
+        "label": "Water Leaking From Geyser",
+        "slug": "geyser_water_leaking",
+        "category_id": "74a3b153-a5c1-49db-9131-376b688ae1ad",
+        "category_slug": "water-heater",
+        "category_name": "Water Heater",
+        "icon_url": null,
+        "severity": "high",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "c55a58b9-8194-4c41-9512-403d5faa2439",
+        "label": "Geyser Tripping The MCB",
+        "slug": "geyser_tripping",
+        "category_id": "74a3b153-a5c1-49db-9131-376b688ae1ad",
+        "category_slug": "water-heater",
+        "category_name": "Water Heater",
+        "icon_url": null,
+        "severity": "critical",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "88326e0c-6da5-4c71-9689-fedef0c7813e",
+        "label": "AC Not Cooling",
+        "slug": "ac_not_cooling",
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "category_slug": "air-conditioning",
+        "category_name": "Air Conditioning",
+        "icon_url": null,
+        "severity": "high",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "02fc1f4c-e9dd-4a99-b29a-09fe00d1d372",
+        "label": "AC Not Starting",
+        "slug": "ac_not_starting",
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "category_slug": "air-conditioning",
+        "category_name": "Air Conditioning",
+        "icon_url": null,
+        "severity": "critical",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "f5459c30-a6d9-4038-945d-3b51679a151e",
+        "label": "Bad Smell",
+        "slug": "ac_bad_smell",
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "category_slug": "air-conditioning",
+        "category_name": "Air Conditioning",
+        "icon_url": null,
+        "severity": "low",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "76529510-d08b-4597-8ab5-f482927461d3",
+        "label": "Cleaning Needed",
+        "slug": "regular-home-cleaning-cleaning_needed",
+        "category_id": "855a055f-6a49-4bce-9f88-c6173ba8ced3",
+        "category_slug": "home-cleaning",
+        "category_name": "Home Cleaning",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "consult"
+      },
+      {
+        "issue_id": "670a68a0-8a17-4644-8655-91e828400ff0",
+        "label": "Cooling Low",
+        "slug": "ac_cooling_low",
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "category_slug": "air-conditioning",
+        "category_name": "Air Conditioning",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "1269ee48-91b3-438b-9b59-bbeed25cdaf6",
+        "label": "Deep Cleaning Needed",
+        "slug": "full-home-deep-clean-deep_cleaning_needed",
+        "category_id": "855a055f-6a49-4bce-9f88-c6173ba8ced3",
+        "category_slug": "home-cleaning",
+        "category_name": "Home Cleaning",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "consult"
+      },
+      {
+        "issue_id": "8d0ec4f5-222a-4220-a870-f07996bea60c",
+        "label": "Gas Refill Needed",
+        "slug": "ac_gas_refill_needed",
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "category_slug": "air-conditioning",
+        "category_name": "Air Conditioning",
+        "icon_url": null,
+        "severity": "high",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "4d437580-edf5-4b59-904f-1823d7ee2196",
+        "label": "Geyser Not Heating",
+        "slug": "geyser_not_heating",
+        "category_id": "74a3b153-a5c1-49db-9131-376b688ae1ad",
+        "category_slug": "water-heater",
+        "category_name": "Water Heater",
+        "icon_url": null,
+        "severity": "high",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "a80d1753-f80d-4472-bfec-2607c2d57c2d",
+        "label": "Low Cooling / Gas Refill Needed",
+        "slug": "ac-gas-refilling-gas_refill_needed",
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "category_slug": "air-conditioning",
+        "category_name": "Air Conditioning",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "0ea5e195-9229-4b4b-91ad-efae11b04724",
+        "label": "New AC Installation",
+        "slug": "ac-installation-new-installation",
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "category_slug": "air-conditioning",
+        "category_name": "Air Conditioning",
+        "icon_url": null,
+        "severity": "low",
+        "intent": "consult"
+      },
+      {
+        "issue_id": "4dcff025-e7de-4118-994c-1c41dffbf03e",
+        "label": "New Installation",
+        "slug": "fan-light-installation-new_installation",
+        "category_id": "3e235890-70e1-41d8-b63e-f4f26c2c5d17",
+        "category_slug": "electrical",
+        "category_name": "Electrical",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "consult"
+      },
+      {
+        "issue_id": "77a7ce92-50de-48a9-be90-0d6581f23268",
+        "label": "Noise Issue",
+        "slug": "ac_noise_issue",
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "category_slug": "air-conditioning",
+        "category_name": "Air Conditioning",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "2754e2d8-3693-4297-9b06-ba712db4c842",
+        "label": "Power Not Working",
+        "slug": "electrical-fault-fix-power_not_working",
+        "category_id": "3e235890-70e1-41d8-b63e-f4f26c2c5d17",
+        "category_slug": "electrical",
+        "category_name": "Electrical",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "d48fb1b9-fa88-478a-951b-9a17461232b2",
+        "label": "Remote Not Working",
+        "slug": "ac_remote_not_working",
+        "category_id": "59d8f3aa-932d-429e-93bd-8d4f2ed615c3",
+        "category_slug": "air-conditioning",
+        "category_name": "Air Conditioning",
+        "icon_url": null,
+        "severity": "low",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "befe3501-549d-401a-bdf8-121c08b7344e",
+        "label": "Wall Painting Needed",
+        "slug": "interior-wall-painting-wall_painting_needed",
+        "category_id": "467e5dfc-9a35-4854-a31e-8be898d4aac4",
+        "category_slug": "painting",
+        "category_name": "Painting",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "consult"
+      },
+      {
+        "issue_id": "70646acc-6155-4bbf-8894-0e8b9d5edc97",
+        "label": "Not Enough Hot Water",
+        "slug": "geyser_low_hot_water",
+        "category_id": "74a3b153-a5c1-49db-9131-376b688ae1ad",
+        "category_slug": "water-heater",
+        "category_name": "Water Heater",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "f9214b58-7bbf-4f5b-a902-0e4720410e22",
+        "label": "Strange Noise From Geyser",
+        "slug": "geyser_noise",
+        "category_id": "74a3b153-a5c1-49db-9131-376b688ae1ad",
+        "category_slug": "water-heater",
+        "category_name": "Water Heater",
+        "icon_url": null,
+        "severity": "low",
+        "intent": "repair"
+      },
+      {
+        "issue_id": "73d3526f-dff3-443c-ad35-8f4d4ed46fbd",
+        "label": "New Geyser Installation",
+        "slug": "geyser_installation",
+        "category_id": "74a3b153-a5c1-49db-9131-376b688ae1ad",
+        "category_slug": "water-heater",
+        "category_name": "Water Heater",
+        "icon_url": null,
+        "severity": "medium",
+        "intent": "consult"
+      }
+    ],
+    "capabilities": {
+      "bargain_available": true,
+      "photo_attach_available": true,
+      "chatbot_language_selectable": true
+    }
+  },
+  "session": {
+    "id": "a00af3d5-2815-42d0-abc1-87ebb0c39fdf",
+    "session_key": "muYoJBB8Kagt172yuB2XTIn8SgwcqYdu3rf3Hv6jg7o",
+    "customer_id": "fa198861-455b-43f2-a426-47da0a8811af",
+    "category_id": "405cd796-9c97-4465-8a17-e7137e34d268",
+    "current_intent": "unknown",
+    "workflow_status": "active",
+    "collected_fields": {},
+    "context_data": {
+      "zipcode": "140412"
+    },
+    "turn_count": 0,
+    "last_activity_at": "2026-08-10T04:36:43.323525+00:00",
+    "completed_at": null,
+    "is_active": true,
+    "created_at": "2026-08-10T04:36:43.350825+00:00",
+    "updated_at": "2026-08-10T04:36:43.350825+00:00",
+    "language": "en",
+    "language_options": [
+      {
+        "code": "en",
+        "label": "English"
+      },
+      {
+        "code": "hi",
+        "label": "\u0939\u093f\u0928\u094d\u0926\u0940"
+      },
+      {
+        "code": "pa",
+        "label": "\u0a2a\u0a70\u0a1c\u0a3e\u0a2c\u0a40"
+      }
+    ]
+  },
+  "bootstrap": {
+    "schema_version": 1,
+    "category": {
+      "id": "405cd796-9c97-4465-8a17-e7137e34d268",
+      "slug": "plumbing",
+      "name": "Plumbing"
+    },
+    "zipcode": "140412",
+    "serviceable": true,
+    "issues": [
+      {
+        "id": "d946a5fa-8ee7-4b48-abad-3ee5f81d667b",
+        "label": "Drain Blocked",
+        "selection_mode": "compatible_multi",
+        "compatibility_group": "ms:40a26732-7b64-4ebd-b879-4e478e463994"
+      },
+      {
+        "id": "4b34c77d-6090-49f1-9c9f-e2b2b992de2b",
+        "label": "Pipe Leaking",
+        "selection_mode": "compatible_multi",
+        "compatibility_group": "ms:8c546b06-15ab-4496-94b9-fa5cb96538f8"
+      }
+    ],
+    "resumable_draft": {
+      "id": "30cc4209-05f1-496e-adc9-9b157143a19d",
+      "customer_id": "fa198861-455b-43f2-a426-47da0a8811af",
+      "guest_session_id": null,
+      "ai_session_id": null,
+      "category_id": "405cd796-9c97-4465-8a17-e7137e34d268",
+      "offering_id": "40a26732-7b64-4ebd-b879-4e478e463994",
+      "job_type_id": "8572b9f1-ef89-4113-bd63-7c204e42e01c",
+      "master_service_job_type_id": "4b8c7fd9-5e7a-4a1b-8506-b1ed736914a8",
+      "service_job_workflow_id": "55d1f5bc-b96f-4000-92b8-47bf01f38bb2",
+      "selected_problem_id": "d946a5fa-8ee7-4b48-abad-3ee5f81d667b",
+      "selected_tenant_id": "244beeec-fedc-452e-8054-317e45557d4d",
+      "status": "provider_matched",
+      "customer_name": null,
+      "customer_phone": null,
+      "address_id": "978774b6-2995-44ef-abaa-2cf17328e427",
+      "address_snapshot": {
+        "city": "Bassi Pathana",
+        "name": null,
+        "phone": null,
+        "state": "Punjab",
+        "country": "India",
+        "zipcode": "140412",
+        "landmark": "New sarian",
+        "address_line_1": "#5,bassi pathana",
+        "address_line_2": null
+      },
+      "city": "Bassi Pathana",
+      "zipcode": "140412",
+      "issue_summary": "Drain Blocked",
+      "issue_details": null,
+      "offering_type_id": null,
+      "brand_id": null,
+      "is_emergency": false,
+      "photo_urls": [],
+      "preferred_date": null,
+      "preferred_time_window": null,
+      "serviceability_status": "serviceable",
+      "price_status": "pending",
+      "provider_match_status": "matched",
+      "price_snapshot": {
+        "price_options": null,
+        "standard_price": 300.0,
+        "bargain_available": false
+      },
+      "provider_options": [],
+      "selected_provider_snapshot": {
+        "facts": {
+          "city": "punjab",
+          "is_new": false,
+          "rating": 5.0,
+          "verified": true,
+          "review_count": 3,
+          "jobs_completed": 6,
+          "recent_reviews": [
+            {
+              "text": "Great!",
+              "title": null,
+              "rating": 5,
+              "created_at": "2026-08-09T19:23:22.123714+00:00"
+            },
+            {
+              "text": "Great!",
+              "title": null,
+              "rating": 5,
+              "created_at": "2026-08-09T19:05:34.175805+00:00"
+            },
+            {
+              "text": "Great!",
+              "title": null,
+              "rating": 5,
+              "created_at": "2026-08-05T16:56:36.174595+00:00"
+            }
+          ],
+          "completion_rate": 86,
+          "rating_breakdown": {
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 3
+          },
+          "on_platform_since": "2026-08-08T18:35:54.586984+00:00",
+          "jobs_completed_for_service": 0
+        },
+        "rating": null,
+        "tenant_id": "244beeec-fedc-452e-8054-317e45557d4d",
+        "provider_name": "Guramrit",
+        "public_badges": [
+          {
+            "icon": "medal",
+            "name": "Bronze Partner",
+            "color": "#b45309",
+            "level": 1
+          },
+          {
+            "icon": "snow",
+            "name": "AC Specialist",
+            "color": "#0ea5e9"
+          },
+          {
+            "icon": "shield-check",
+            "name": "Verified Business",
+            "color": "#3b82f6"
+          }
+        ],
+        "internal_score": 73.0,
+        "customer_visible_reason": "Best matched provider based on service coverage, availability, quality, and completion history.",
+        "matching_score_snapshot": {
+          "health_score": 100.0,
+          "rating_score": 0.0,
+          "capacity_score": 100.0,
+          "distance_score": 100.0,
+          "availability_score": 100.0,
+          "cancellation_score": 100.0,
+          "health_score_source": "legacy_column",
+          "service_match_score": 80.0,
+          "job_completion_score": 50.0,
+          "health_score_calculated_at": null
+        }
+      },
+      "booking_summary": {
+        "city": "Bassi Pathana",
+        "errors": [],
+        "address": {
+          "city": "Bassi Pathana",
+          "name": null,
+          "phone": null,
+          "state": "Punjab",
+          "country": "India",
+          "zipcode": "140412",
+          "landmark": "New sarian",
+          "address_line_1": "#5,bassi pathana",
+          "address_line_2": null
+        },
+        "missing": [],
+        "zipcode": "140412",
+        "issue_summary": "Drain Blocked",
+        "offering_name": "Drain Unblocking",
+        "offering_slug": "drain-unblocking",
+        "promised_slot": {
+          "date": "2026-08-10",
+          "ends_at": "2026-08-10T17:00:00",
+          "capacity": 2,
+          "starts_at": "2026-08-10T16:00:00",
+          "days_ahead": 0,
+          "time_window": "16:00-17:00",
+          "slot_minutes": 60,
+          "already_booked": 1
+        },
+        "preferred_date": null,
+        "price_estimate": {
+          "price_options": null,
+          "standard_price": 300.0,
+          "bargain_available": false
+        },
+        "service_due_at": "2026-08-10T17:00:00",
+        "serviceability": {
+          "status": "serviceable",
+          "serviceable": true
+        },
+        "selected_provider": {
+          "facts": {
+            "city": "punjab",
+            "is_new": false,
+            "rating": 5.0,
+            "verified": true,
+            "review_count": 3,
+            "jobs_completed": 6,
+            "recent_reviews": [
+              {
+                "text": "Great!",
+                "title": null,
+                "rating": 5,
+                "created_at": "2026-08-09T19:23:22.123714+00:00"
+              },
+              {
+                "text": "Great!",
+                "title": null,
+                "rating": 5,
+                "created_at": "2026-08-09T19:05:34.175805+00:00"
+              },
+              {
+                "text": "Great!",
+                "title": null,
+                "rating": 5,
+                "created_at": "2026-08-05T16:56:36.174595+00:00"
+              }
+            ],
+            "completion_rate": 86,
+            "rating_breakdown": {
+              "1": 0,
+              "2": 0,
+              "3": 0,
+              "4": 0,
+              "5": 3
+            },
+            "on_platform_since": "2026-08-08T18:35:54.586984+00:00",
+            "jobs_completed_for_service": 0
+          },
+          "rating": null,
+          "tenant_id": "244beeec-fedc-452e-8054-317e45557d4d",
+          "provider_name": "Guramrit",
+          "public_badges": [
+            {
+              "icon": "medal",
+              "name": "Bronze Partner",
+              "color": "#b45309",
+              "level": 1
+            },
+            {
+              "icon": "snow",
+              "name": "AC Specialist",
+              "color": "#0ea5e9"
+            },
+            {
+              "icon": "shield-check",
+              "name": "Verified Business",
+              "color": "#3b82f6"
+            }
+          ],
+          "customer_visible_reason": "Best matched provider based on service coverage, availability, quality, and completion history."
+        },
+        "service_sla_minutes": 60,
+        "preferred_time_window": null,
+        "ready_for_confirmation": false,
+        "emergency_surcharge_preview": null
+      },
+      "failure_code": null,
+      "failure_message": null,
+      "expires_at": "2026-08-11T04:35:36.061448+00:00",
+      "created_at": "2026-08-10T04:35:36.063447+00:00",
+      "updated_at": "2026-08-10T04:35:37.050323+00:00",
+      "offering_name": "Drain Unblocking",
+      "offering_slug": "drain-unblocking",
+      "required_fields": [
+        "issue_summary",
+        "city"
+      ],
+      "pricing_model": "fixed",
+      "category_name": "Plumbing",
+      "category_slug": "plumbing",
+      "job_type_key": "service",
+      "job_type_label": "Service"
+    },
+    "current_stage": "questions"
+  },
+  "select_issue": {
+    "draft_id": "fca129db-d675-4b30-81f9-5e3768c341e6",
+    "envelope": {
+      "envelope_version": 1,
+      "session_id": null,
+      "draft_id": "fca129db-d675-4b30-81f9-5e3768c341e6",
+      "workflow_version": "55d1f5bc-b96f-4000-92b8-47bf01f38bb2",
+      "question_flow_version": 1,
+      "scope": {
+        "category_id": "405cd796-9c97-4465-8a17-e7137e34d268",
+        "offering_id": "40a26732-7b64-4ebd-b879-4e478e463994",
+        "job_type_id": "8572b9f1-ef89-4113-bd63-7c204e42e01c"
+      },
+      "current_question": {
+        "question_id": "f16633d4-2d56-4036-b373-0a712ae5a67f",
+        "question_key": "drain_location",
+        "question_type": "single_select",
+        "text": "Which drain is blocked?",
+        "help_text": null,
+        "required": true,
+        "options": [
+          {
+            "id": "206aa70e-a6ad-4b09-a0e3-ca364b7650d0",
+            "label": "Kitchen sink"
+          },
+          {
+            "id": "59a001dd-2644-4683-a9a4-cc8fd00e7438",
+            "label": "Bathroom"
+          },
+          {
+            "id": "bcebcf1c-bc73-4b31-8f55-6521a696c61a",
+            "label": "Toilet"
+          },
+          {
+            "id": "73bb40ae-6612-4ff4-92bf-5b9ef7928fff",
+            "label": "Floor drain"
+          }
+        ],
+        "validation_metadata": null,
+        "photo_capable": false
+      },
+      "progress": {
+        "answered_count": 0,
+        "remaining_count": 1,
+        "complete": false
+      },
+      "next_permitted_actions": [
+        "submit_answer"
+      ],
+      "answered_questions": []
+    },
+    "selected_issue_ids": [
+      "d946a5fa-8ee7-4b48-abad-3ee5f81d667b"
+    ]
+  },
+  "answer": {
+    "envelope_version": 1,
+    "session_id": null,
+    "draft_id": "fca129db-d675-4b30-81f9-5e3768c341e6",
+    "workflow_version": "55d1f5bc-b96f-4000-92b8-47bf01f38bb2",
+    "question_flow_version": 2,
+    "scope": {
+      "category_id": "405cd796-9c97-4465-8a17-e7137e34d268",
+      "offering_id": "40a26732-7b64-4ebd-b879-4e478e463994",
+      "job_type_id": "8572b9f1-ef89-4113-bd63-7c204e42e01c"
+    },
+    "current_question": null,
+    "progress": {
+      "answered_count": 1,
+      "remaining_count": 0,
+      "complete": true
+    },
+    "next_permitted_actions": [
+      "proceed_to_serviceability"
+    ],
+    "answered_questions": [
+      {
+        "question_id": "f16633d4-2d56-4036-b373-0a712ae5a67f",
+        "question_key": "drain_location",
+        "question_label": "Which drain is blocked?",
+        "answer_label": "Kitchen sink"
+      }
+    ]
+  },
+  "question_flow": {
+    "envelope_version": 1,
+    "session_id": null,
+    "draft_id": "fca129db-d675-4b30-81f9-5e3768c341e6",
+    "workflow_version": "55d1f5bc-b96f-4000-92b8-47bf01f38bb2",
+    "question_flow_version": 2,
+    "scope": {
+      "category_id": "405cd796-9c97-4465-8a17-e7137e34d268",
+      "offering_id": "40a26732-7b64-4ebd-b879-4e478e463994",
+      "job_type_id": "8572b9f1-ef89-4113-bd63-7c204e42e01c"
+    },
+    "current_question": null,
+    "progress": {
+      "answered_count": 1,
+      "remaining_count": 0,
+      "complete": true
+    },
+    "next_permitted_actions": [
+      "proceed_to_serviceability"
+    ],
+    "answered_questions": [
+      {
+        "question_id": "f16633d4-2d56-4036-b373-0a712ae5a67f",
+        "question_key": "drain_location",
+        "question_label": "Which drain is blocked?",
+        "answer_label": "Kitchen sink"
+      }
+    ]
+  }
+}

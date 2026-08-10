@@ -233,6 +233,17 @@ describe("a failure the customer can see", () => {
     expect(retry).toHaveBeenCalled();
   });
 
+  it("shows a recovered stale-question notice quietly, not as a failure", () => {
+    // The controller sets this after successfully refreshing a question whose choices
+    // moved on -- the answer was not lost and nothing needs retrying. Rendering it
+    // through the error card put a red alert and a "Try again" button on a flow that had
+    // just worked, which is how a working assistant came to look broken.
+    renderChat({ notice: "The choices were updated, so here is the latest question." });
+
+    expect(screen.getByText("The choices were updated, so here is the latest question.")).toBeTruthy();
+    expect(screen.queryByText("Try again")).toBeNull();
+  });
+
   it("shows no error card when nothing has failed", () => {
     renderChat({});
     expect(screen.queryByText("Try again")).toBeNull();

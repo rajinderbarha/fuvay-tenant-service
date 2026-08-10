@@ -50,6 +50,7 @@ function baseControllerState(overrides: Partial<ReturnType<typeof controllerModu
     envelope: null,
     messages: [],
     errorMessage: null,
+    notice: null,
     fallbackOffered: false,
     offeringChoice: null,
     languageChoice: null,

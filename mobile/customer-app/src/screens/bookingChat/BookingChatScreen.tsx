@@ -474,6 +474,17 @@ function BookingChatConversation({
                * ended: nothing after the animated text, no reason, no retry. A silent
                * failure is the one outcome a booking flow cannot afford, because the
                * customer's only remaining move is to assume the app is broken. */}
+              {/* A notice is not a failure: the flow recovered, and this explains why the
+                  question changed. Rendered as a quiet line rather than the alert card
+                  below -- a red box with "Try again" over a flow that just worked is
+                  how a working assistant looks broken. */}
+              {c.notice ? (
+                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, paddingHorizontal: 4 }}>
+                  <Ionicons name="information-circle-outline" size={14} color={BOT.textMuted} style={{ marginTop: 1 }} />
+                  <Text style={{ flex: 1, fontSize: 12, color: BOT.textMuted }}>{c.notice}</Text>
+                </View>
+              ) : null}
+
               {c.errorMessage ? (
                 <BotCard>
                   <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>

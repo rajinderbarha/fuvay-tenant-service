@@ -69,6 +69,9 @@ export interface AssistantControllerState {
   envelope: QuestionFlowEnvelope | null;
   messages: AssistantMessage[];
   errorMessage: string | null;
+  /** A non-failure explanation, e.g. the question changed under the customer. Rendered
+   * quietly -- never as an error with a retry. */
+  notice: string | null;
   fallbackOffered: boolean;
   /** Backend-first Booking Assistant bootstrap (Phase 1-4 of the
    * re-architecture): the real, zipcode-serviceable offering list for the
@@ -164,6 +167,17 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
   const [envelope, setEnvelope] = useState<QuestionFlowEnvelope | null>(null);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /**
+   * Something worth telling the customer that is NOT a failure.
+   *
+   * Kept apart from `errorMessage` because the two want different treatment and the
+   * screen cannot tell them apart otherwise: the stale-workflow path below recovers
+   * successfully and then explains why the question changed. Put through the error
+   * channel, that recovery rendered as a red alert with a "Try again" button on a flow
+   * that had just worked -- which is what the assistant's visible "error" turned out to
+   * be, once errors were rendered at all.
+   */
+  const [notice, setNotice] = useState<string | null>(null);
   const [fallbackOffered, setFallbackOffered] = useState(false);
   const [offeringChoice, setOfferingChoice] = useState<AssistantOfferingChoice | null>(null);
   const [languageChoice, setLanguageChoice] = useState<AssistantLanguageOption[] | null>(null);
@@ -257,6 +271,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
   const bootstrap = useCallback(async () => {
     const generation = ++generationRef.current;
     setErrorMessage(null);
+    setNotice(null);
     setFallbackOffered(false);
     setUiState("resolving_session");
     setActivityStage("understanding_request");
@@ -403,6 +418,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     autoSelectedIssueRef.current = null;
     languageRef.current = null;
     setErrorMessage(null);
+    setNotice(null);
     setFallbackOffered(false);
     setActivityStage(null);
     bootstrap();
@@ -420,6 +436,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     const generation = ++generationRef.current;
     abortControllerRef.current = new AbortController();
     setErrorMessage(null);
+    setNotice(null);
     setUiState("assistant_processing");
     setActivityStage("understanding_request");
     armFallbackTimer();
@@ -479,6 +496,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     busyRef.current = true;
     const generation = ++generationRef.current;
     setErrorMessage(null);
+    setNotice(null);
     setUiState("submitting_answer");
     setActivityStage("validating_answer");
     armFallbackTimer();
@@ -505,8 +523,10 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
       clearFallbackTimer();
       if (err instanceof DomainError && err.category === "CONFLICT_STALE_WORKFLOW") {
         // QF_STALE_QUESTION_FLOW_VERSION (409) -- refresh rather than retry
-        // the same stale submission (spec: never resubmit blindly).
-        setErrorMessage("Available choices were updated. Showing the latest question.");
+        // the same stale submission (spec: never resubmit blindly). A NOTICE, not an
+        // error: the answer was not lost and nothing needs retrying, the question in
+        // front of the customer simply moved on.
+        setNotice("The choices were updated, so here is the latest question.");
         try {
           await refreshQuestionFlow(draftId, generation, session?.id ?? null);
           setUiState("ready");
@@ -551,6 +571,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     busyRef.current = true;
     const generation = ++generationRef.current;
     setErrorMessage(null);
+    setNotice(null);
     setUiState("assistant_processing");
     setActivityStage("loading_requirements");
     armFallbackTimer();
@@ -597,6 +618,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     busyRef.current = true;
     const generation = ++generationRef.current;
     setErrorMessage(null);
+    setNotice(null);
     setUiState("assistant_processing");
     setActivityStage("understanding_request");
     armFallbackTimer();
@@ -666,6 +688,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     busyRef.current = true;
     const generation = ++generationRef.current;
     setErrorMessage(null);
+    setNotice(null);
     setUiState("assistant_processing");
     setActivityStage("understanding_request");
     armFallbackTimer();
@@ -731,6 +754,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     busyRef.current = true;
     const generation = ++generationRef.current;
     setErrorMessage(null);
+    setNotice(null);
     setLanguageChoice(null);
     // Set BEFORE the round-trip so the issue list / first question that
     // follow are already requested in the chosen language.
@@ -902,13 +926,14 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     autoSelectedIssueRef.current = null;
     languageRef.current = null;
     setErrorMessage(null);
+    setNotice(null);
     setFallbackOffered(false);
     setActivityStage(null);
     bootstrap();
   }, [bootstrap]);
 
   return {
-    uiState, activityStage, activityTrace, session, draftId, envelope, messages, errorMessage, fallbackOffered,
+    uiState, activityStage, activityTrace, session, draftId, envelope, messages, errorMessage, notice, fallbackOffered,
     offeringChoice, languageChoice, priceSnapshot,
     sendMessage, interpretFreeText, interpretOfferingText, selectOffering,
     submitAnswer, changeLanguage, chooseLanguage, continueWithGuidedFallback, cancelCurrentOperation, retry, restart,
