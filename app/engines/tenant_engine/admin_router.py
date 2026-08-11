@@ -184,6 +184,30 @@ async def list_tenants(
     return ok(await svc.list_tenants(filters), _rid(request))
 
 
+# Declared BEFORE `/{tenant_id}`, and it has to stay that way.
+#
+# FastAPI matches in declaration order, so with this below the parameterised route the
+# literal "change-requests" was handed to `tenant_id: uuid.UUID`, failed to parse and
+# returned 422 to every caller -- the admin queue was unreachable and the staged changes
+# it lists had no way of being seen. Exactly the collision that made
+# GET /v1/provider/availability/exceptions 422 earlier; a literal segment must be
+# registered ahead of the parameter that would otherwise swallow it.
+@router.get("/change-requests")
+async def list_pending_change_requests(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin),
+) -> dict:
+    """Every tenant waiting on a decision, with what they asked to change."""
+    # Returns the plain dict, matching verify_tenant/reject_verification either side of
+    # this. Wrapping it in ok() while the signature says `-> dict` made FastAPI validate
+    # an ApiResponse against dict and raise ResponseValidationError -- a 500 AFTER the
+    # work had already been done, which on the approve route meant the change was applied
+    # and the caller was told it had failed.
+    svc = _svc(db, request, user)
+    return await svc.list_pending_change_requests()
+
+
 @router.get("/{tenant_id}")
 async def get_tenant(
     tenant_id: uuid.UUID,
@@ -239,17 +263,6 @@ async def reject_verification(
 # These are the endpoints that resolve that state. Without them a provider could file a
 # change and it would sit forever, which is a worse outcome than the live edit it replaced.
 
-@router.get("/change-requests")
-async def list_pending_change_requests(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_super_admin),
-) -> dict:
-    """Every tenant waiting on a decision, with what they asked to change."""
-    svc = _svc(db, request, user)
-    return ok(await svc.list_pending_change_requests(), _rid(request))
-
-
 @router.post("/{tenant_id}/change-requests/approve")
 async def approve_change_request(
     tenant_id: uuid.UUID,
@@ -259,7 +272,7 @@ async def approve_change_request(
 ) -> dict:
     """Apply the staged values and require fresh paperwork where identity moved."""
     svc = _svc(db, request, user)
-    return ok(await svc.approve_change_request(tenant_id), _rid(request))
+    return await svc.approve_change_request(tenant_id)
 
 
 @router.post("/{tenant_id}/change-requests/reject")
@@ -273,7 +286,7 @@ async def reject_change_request(
     """Discard the staged values. The live profile was never changed, so there is
     nothing to roll back -- only the pending record and the review state to clear."""
     svc = _svc(db, request, user)
-    return ok(await svc.reject_change_request(tenant_id, payload.get("reason") or ""), _rid(request))
+    return await svc.reject_change_request(tenant_id, payload.get("reason") or "")
 
 
 @router.post("/{tenant_id}/activate")

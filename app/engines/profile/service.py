@@ -30,11 +30,14 @@ _VERIFIED_STATUSES = {"verified", "approved", "active"}
 # GST or registered address, these stop matching the paperwork on file and have to be
 # re-supplied -- a GST certificate naming a business that no longer exists proves nothing.
 # Trading details (description, website, logo) never invalidate a document.
+# Values taken from the doc_type column as it is actually populated, not from the labels
+# on the upload screen -- "owner_identity" was a guess and matches nothing, so an owner's
+# ID would silently have stayed valid through a change of business identity.
 _IDENTITY_DOC_TYPES = {
     "gst_certificate",
     "business_registration",
     "address_proof",
-    "owner_identity",
+    "identity_proof",
 }
 # Fields the user must NOT be able to set
 _FORBIDDEN_USER_FIELDS = {"role", "tenant_id", "customer_id", "hashed_password", "is_active",

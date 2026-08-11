@@ -566,7 +566,11 @@ class AdminTenantService:
                    meta -> 'pending_changes' AS pending
             FROM tenants
             WHERE verification_status = 'changes_pending_review'
-              AND meta ? 'pending_changes'
+              -- NOT `meta ? 'pending_changes'`: SQLAlchemy's text() reads a bare ? as a
+              -- bind placeholder, so the JSONB has-key operator made this query fail to
+              -- prepare and the endpoint 500'd. ->> IS NOT NULL asks the same question
+              -- without borrowing a character the driver has already claimed.
+              AND meta ->> 'pending_changes' IS NOT NULL
               AND terminated_at IS NULL AND archived_at IS NULL
             ORDER BY (meta -> 'pending_changes' ->> 'submitted_at')
         """))).fetchall()
@@ -585,9 +589,26 @@ class AdminTenantService:
             })
         return {"change_requests": items, "count": len(items)}
 
+    async def _load_pending(self, tenant_id: uuid.UUID) -> dict | None:
+        """Read the staged request straight from JSONB.
+
+        Going through the ORM attribute returned None here even when the row plainly held
+        the record -- `meta` is written by a different engine (ProfileService) in a
+        different request, and reading it back through the mapped attribute is subject to
+        the session's own view of that column. The queue endpoint already reads it with
+        SQL and always saw it correctly, so the decision endpoints do the same. There is
+        one source of truth for what a provider asked for, and it is the row.
+        """
+        row = (await self.db.execute(text(
+            "SELECT meta -> 'pending_changes' AS pc FROM tenants WHERE id = :tid"
+        ), {"tid": str(tenant_id)})).fetchone()
+        if not row or row.pc is None:
+            return None
+        return row.pc if isinstance(row.pc, dict) else json.loads(row.pc)
+
     async def approve_change_request(self, tenant_id: uuid.UUID) -> dict:
         t = await self._get_tenant(tenant_id)
-        pending = (t.meta or {}).get("pending_changes")
+        pending = await self._load_pending(tenant_id)
         if not pending or t.verification_status != "changes_pending_review":
             raise ServiceOSException(
                 "NO_PENDING_CHANGE_REQUEST",
@@ -619,16 +640,22 @@ class AdminTenantService:
             res = await self.db.execute(text("""
                 UPDATE tenant_documents
                 SET status = 'needs_reupload', updated_at = now()
-                WHERE tenant_id = :tid AND is_current = true
-                  AND doc_type = ANY(:types) AND status <> 'needs_reupload'
-            """), {"tid": str(tenant_id), "types": list(doc_types)})
+                WHERE tenant_id = CAST(:tid AS uuid) AND is_current = true
+                  AND doc_type = ANY(string_to_array(:types, ','))
+                  AND status <> 'needs_reupload'
+            """), {"tid": str(tenant_id), "types": ",".join(doc_types)})
             revalidated = res.rowcount or 0
 
         # Back to approved only when nothing is left to re-verify; otherwise the tenant is
         # trading on details whose proof is outstanding, and saying "approved" would hide
         # that.
         t.verification_status = "approved" if revalidated == 0 else "changes_requested"
-        t.meta = {k: v for k, v in (t.meta or {}).items() if k != "pending_changes"}
+        # Removed with a JSONB operator rather than by reassigning the mapped dict, for the
+        # same reason the read above uses SQL: the write has to land on the row, not on a
+        # session's copy of it.
+        await self.db.execute(text(
+            "UPDATE tenants SET meta = meta - 'pending_changes' WHERE id = :tid"
+        ), {"tid": str(tenant_id)})
         await self._audit(tenant_id, "admin_change_request_approved",
                           notes=json.dumps({"applied": applied,
                                             "documents_marked_for_reupload": revalidated}))
@@ -641,7 +668,7 @@ class AdminTenantService:
 
     async def reject_change_request(self, tenant_id: uuid.UUID, reason: str) -> dict:
         t = await self._get_tenant(tenant_id)
-        pending = (t.meta or {}).get("pending_changes")
+        pending = await self._load_pending(tenant_id)
         if not pending or t.verification_status != "changes_pending_review":
             raise ServiceOSException(
                 "NO_PENDING_CHANGE_REQUEST",
@@ -654,13 +681,15 @@ class AdminTenantService:
         # Nothing to roll back: the live profile was never changed. Only the request and
         # the review state are cleared, and the tenant returns to approved because its
         # verified details are exactly as they were.
-        rejected = {k: v for k, v in (t.meta or {}).items() if k != "pending_changes"}
-        rejected["last_rejected_change"] = {
+        await self.db.execute(text(
+            "UPDATE tenants SET meta = (meta - 'pending_changes') "
+            "  || jsonb_build_object('last_rejected_change', CAST(:rec AS jsonb)) "
+            "WHERE id = :tid"
+        ), {"tid": str(tenant_id), "rec": json.dumps({
             "fields": pending.get("fields") or {},
             "reason": reason.strip(),
             "rejected_at": utcnow().isoformat(),
-        }
-        t.meta = rejected
+        })})
         t.verification_status = "approved"
         await self._audit(tenant_id, "admin_change_request_rejected", notes=reason.strip())
         await self.db.commit()
