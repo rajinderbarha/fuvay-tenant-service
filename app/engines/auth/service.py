@@ -92,7 +92,22 @@ class AuthService:
 
     # ── Internal Helpers ──────────────────────────────────────────────────────
     async def _get_user_by_email(self, email: str) -> User | None:
-        r = await self.db.execute(select(User).where(User.email == email.lower().strip()))
+        # `scalar_one_or_none()` RAISES on more than one row, and this ran before any
+        # password check -- so a single duplicated email turned every login for that
+        # address into a 500 with nothing to explain it. It happened: a tenant owner
+        # signed up again on the customer side and locked themselves out of a live
+        # business account entirely.
+        #
+        # Migration 243 adds the unique index that should make this impossible. This
+        # stays deliberately tolerant anyway: an auth path is the worst place to
+        # discover a data problem by crashing, and the same defence has been on the
+        # phone lookup below for exactly this reason. Newest row wins, matching it.
+        r = await self.db.execute(
+            select(User)
+            .where(func.lower(User.email) == email.lower().strip())
+            .order_by(User.created_at.desc())
+            .limit(1)
+        )
         return r.scalar_one_or_none()
 
     async def _get_user_by_id(self, user_id: uuid.UUID) -> User | None:
@@ -100,9 +115,9 @@ class AuthService:
         return r.scalar_one_or_none()
 
     async def _get_user_by_phone(self, phone: str) -> User | None:
-        # Phone has no DB-level uniqueness constraint, so more than one user
-        # can share a number (e.g. seeded/test accounts); pick the most
-        # recently created rather than letting scalar_one_or_none() crash.
+        # Phone now HAS a unique index (migration 243), but this tolerance stays for the
+        # same reason as the email lookup above: crashing an auth path is a worse failure
+        # than picking the newest of two rows.
         r = await self.db.execute(
             select(User).where(User.phone == phone).order_by(User.created_at.desc()).limit(1)
         )
