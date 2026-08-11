@@ -233,6 +233,49 @@ async def reject_verification(
     return await svc.reject_verification(tenant_id, reason)
 
 
+# ── Pending profile change requests ──────────────────────────────────────────
+# A verified tenant's identity fields (business name, GST, registered address) can no
+# longer be edited live -- ProfileService stages them and sets 'changes_pending_review'.
+# These are the endpoints that resolve that state. Without them a provider could file a
+# change and it would sit forever, which is a worse outcome than the live edit it replaced.
+
+@router.get("/change-requests")
+async def list_pending_change_requests(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin),
+) -> dict:
+    """Every tenant waiting on a decision, with what they asked to change."""
+    svc = _svc(db, request, user)
+    return ok(await svc.list_pending_change_requests(), _rid(request))
+
+
+@router.post("/{tenant_id}/change-requests/approve")
+async def approve_change_request(
+    tenant_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin),
+) -> dict:
+    """Apply the staged values and require fresh paperwork where identity moved."""
+    svc = _svc(db, request, user)
+    return ok(await svc.approve_change_request(tenant_id), _rid(request))
+
+
+@router.post("/{tenant_id}/change-requests/reject")
+async def reject_change_request(
+    tenant_id: uuid.UUID,
+    payload: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_super_admin),
+) -> dict:
+    """Discard the staged values. The live profile was never changed, so there is
+    nothing to roll back -- only the pending record and the review state to clear."""
+    svc = _svc(db, request, user)
+    return ok(await svc.reject_change_request(tenant_id, payload.get("reason") or ""), _rid(request))
+
+
 @router.post("/{tenant_id}/activate")
 async def activate_tenant(
     tenant_id: uuid.UUID,

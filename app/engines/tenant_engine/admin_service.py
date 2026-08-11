@@ -11,6 +11,7 @@ All writes flush within the same session; the router's db middleware commits on 
 """
 from __future__ import annotations
 
+import json
 import re
 import secrets
 import uuid
@@ -547,6 +548,123 @@ class AdminTenantService:
         await self._get_tenant(tenant_id)  # 404s if not found
         await self._audit(tenant_id, "admin_note_added", notes=note.strip())
         return {"tenant_id": str(tenant_id), "note_added": True}
+
+    # ── Pending profile change requests ──────────────────────────────────────
+    #
+    # A verified tenant can no longer edit its identity fields live: ProfileService stages
+    # the proposed values in meta['pending_changes'] and moves the tenant to
+    # 'changes_pending_review'. These three methods are what resolves that -- the live
+    # profile keeps the details ServiceOS actually verified until one of them runs.
+    #
+    # The staged values are held on the tenant rather than in a change_requests table
+    # because there is exactly one open request per tenant at a time (a second edit
+    # replaces the first), and a table would have to enforce that anyway.
+
+    async def list_pending_change_requests(self) -> dict:
+        rows = (await self.db.execute(text("""
+            SELECT id, business_name, verification_status,
+                   meta -> 'pending_changes' AS pending
+            FROM tenants
+            WHERE verification_status = 'changes_pending_review'
+              AND meta ? 'pending_changes'
+              AND terminated_at IS NULL AND archived_at IS NULL
+            ORDER BY (meta -> 'pending_changes' ->> 'submitted_at')
+        """))).fetchall()
+        items = []
+        for r in rows:
+            pending = r.pending if isinstance(r.pending, dict) else json.loads(r.pending or "{}")
+            items.append({
+                "tenant_id": str(r.id),
+                # The name still in force, so an admin comparing old against new is not
+                # shown the requested name in both columns.
+                "current_business_name": r.business_name,
+                "requested_fields": pending.get("fields") or {},
+                "submitted_at": pending.get("submitted_at"),
+                "submitted_by_user_id": pending.get("submitted_by_user_id"),
+                "documents_to_revalidate": pending.get("documents_to_revalidate") or [],
+            })
+        return {"change_requests": items, "count": len(items)}
+
+    async def approve_change_request(self, tenant_id: uuid.UUID) -> dict:
+        t = await self._get_tenant(tenant_id)
+        pending = (t.meta or {}).get("pending_changes")
+        if not pending or t.verification_status != "changes_pending_review":
+            raise ServiceOSException(
+                "NO_PENDING_CHANGE_REQUEST",
+                "This tenant has no change request awaiting review.", status_code=409)
+
+        fields = pending.get("fields") or {}
+        # The staged keys are the request schema's names; these are the columns they map
+        # to. Anything unmapped is ignored rather than set blindly -- a staged key that no
+        # longer corresponds to a column must not silently vanish into an attribute.
+        COLUMN = {
+            "business_name": "business_name", "owner_name": "owner_name",
+            "business_phone": "phone", "business_email": "email",
+            "address_line1": "address_line1", "city": "city", "district": "district",
+            "state": "state", "pincode": "zipcode", "gst_number": "gst_number",
+        }
+        applied: dict[str, object] = {}
+        for key, value in fields.items():
+            col = COLUMN.get(key)
+            if col and hasattr(t, col):
+                setattr(t, col, value)
+                applied[key] = value
+
+        # Identity moved, so the paperwork proving it no longer matches. Marked for
+        # re-upload rather than deleted: the old document stays as the record of what was
+        # verified at the time, which is what an audit of this approval would need.
+        doc_types = pending.get("documents_to_revalidate") or []
+        revalidated = 0
+        if doc_types:
+            res = await self.db.execute(text("""
+                UPDATE tenant_documents
+                SET status = 'needs_reupload', updated_at = now()
+                WHERE tenant_id = :tid AND is_current = true
+                  AND doc_type = ANY(:types) AND status <> 'needs_reupload'
+            """), {"tid": str(tenant_id), "types": list(doc_types)})
+            revalidated = res.rowcount or 0
+
+        # Back to approved only when nothing is left to re-verify; otherwise the tenant is
+        # trading on details whose proof is outstanding, and saying "approved" would hide
+        # that.
+        t.verification_status = "approved" if revalidated == 0 else "changes_requested"
+        t.meta = {k: v for k, v in (t.meta or {}).items() if k != "pending_changes"}
+        await self._audit(tenant_id, "admin_change_request_approved",
+                          notes=json.dumps({"applied": applied,
+                                            "documents_marked_for_reupload": revalidated}))
+        await self.db.commit()
+        return {
+            "tenant_id": str(tenant_id), "approved": True, "applied_fields": applied,
+            "documents_marked_for_reupload": revalidated,
+            "verification_status": t.verification_status,
+        }
+
+    async def reject_change_request(self, tenant_id: uuid.UUID, reason: str) -> dict:
+        t = await self._get_tenant(tenant_id)
+        pending = (t.meta or {}).get("pending_changes")
+        if not pending or t.verification_status != "changes_pending_review":
+            raise ServiceOSException(
+                "NO_PENDING_CHANGE_REQUEST",
+                "This tenant has no change request awaiting review.", status_code=409)
+        if not reason.strip():
+            raise ServiceOSException(
+                "REJECTION_REASON_REQUIRED",
+                "A reason is required so the provider knows what to correct.", status_code=422)
+
+        # Nothing to roll back: the live profile was never changed. Only the request and
+        # the review state are cleared, and the tenant returns to approved because its
+        # verified details are exactly as they were.
+        rejected = {k: v for k, v in (t.meta or {}).items() if k != "pending_changes"}
+        rejected["last_rejected_change"] = {
+            "fields": pending.get("fields") or {},
+            "reason": reason.strip(),
+            "rejected_at": utcnow().isoformat(),
+        }
+        t.meta = rejected
+        t.verification_status = "approved"
+        await self._audit(tenant_id, "admin_change_request_rejected", notes=reason.strip())
+        await self.db.commit()
+        return {"tenant_id": str(tenant_id), "approved": False, "reason": reason.strip()}
 
     async def verify_tenant(self, tenant_id: uuid.UUID) -> dict:
         t = await self._get_tenant(tenant_id)
