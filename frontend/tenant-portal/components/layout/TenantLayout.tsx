@@ -93,7 +93,10 @@ const NAV_GROUPS: NavGroup[] = [
       // and booking controls together on one page -- and pointing the menu somewhere
       // else would give a provider two different editors for the same settings, only
       // one of which reflects the real workflow.
-      { id: "business-profile",    href: "/tenant/home-services/setup/business-profile",      label: "Business Profile", icon: <Building2 size={16}/> },
+      // /profile, not the setup step. The setup step is a wizard page for onboarding;
+      // this is the live profile a running business manages, and it is now the page
+      // built from components/business-profile/ rather than the older inline duplicate.
+      { id: "business-profile",    href: "/profile",                                          label: "Business Profile", icon: <Building2 size={16}/> },
       { id: "business-hours",      href: "/tenant/home-services/setup/coverage-availability", label: "Coverage & Hours", icon: <Clock size={16}/> },
       { id: "documents",           href: "/tenant/home-services/setup/documents",             label: "Documents", icon: <FileText size={16}/> },
       { id: "provider-compliance", href: "/provider/compliance",                              label: "Compliance", icon: <Shield size={16}/> },

@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_platform_audit
@@ -110,9 +110,100 @@ class ProfileService:
 
     # ── Business profile ──────────────────────────────────────────────────────
 
+    # The eleven things a Home Services business profile needs before it is complete.
+    # Lifted verbatim from the tenant portal's own `computeCompletion()`, which had been
+    # deciding this in the browser -- so the percentage the provider saw was a number the
+    # server had never agreed to, and nothing else (admin review, readiness gates) could
+    # reuse it. Same definition, now answered once, server-side.
+    _COMPLETENESS_FIELDS: tuple[tuple[str, str], ...] = (
+        ("owner_name", "Owner Full Name"),
+        ("phone", "Business Phone"),
+        ("business_name", "Business Name"),
+        ("email", "Business Email"),
+        ("gst_number", "GST Number"),
+        ("address_line1", "Business Address"),
+        ("city", "City"),
+        ("state", "State"),
+        ("logo_url", "Business Logo"),
+        ("description", "Business Description"),
+        ("shop_photo_media_id", "Storefront Photo"),
+    )
+
     async def get_business_profile(self) -> dict:
+        """The tenant row plus everything the Business Profile page reads.
+
+        The page's components were written against `completeness`, `operational_summary`,
+        `rating` and `documents`, and no endpoint returned any of them -- so the page had
+        nothing to render and an older, hand-rolled duplicate was serving in its place.
+        These are computed from the real tables rather than stored, because every one of
+        them is a live count that would go stale the moment it was cached on the tenant.
+        """
         tenant = await self._load_tenant()
-        return self._serialize_tenant(tenant)
+        data = self._serialize_tenant(tenant)
+        tid = str(tenant.id)
+
+        completed = [key for key, _ in self._COMPLETENESS_FIELDS if data.get(key)]
+        missing = [{"key": key, "label": label}
+                   for key, label in self._COMPLETENESS_FIELDS if not data.get(key)]
+        total = len(self._COMPLETENESS_FIELDS)
+        data["completeness"] = {
+            "percentage": round(len(completed) / total * 100) if total else 0,
+            "completed_count": len(completed),
+            "total_count": total,
+            "completed_requirements": completed,
+            "missing_requirements": missing,
+        }
+
+        # `address_line` is what the profile components read; the column is address_line1.
+        # Aliased rather than renamed -- the original key stays for existing callers.
+        data["address_line"] = data.get("address_line1")
+
+        counts = (await self.db.execute(text("""
+            SELECT
+              (SELECT count(*) FROM tenant_services
+                 WHERE tenant_id = CAST(:tid AS uuid) AND is_active = true)         AS active_services,
+              (SELECT count(*) FROM tenant_service_areas
+                 WHERE tenant_id = CAST(:tid AS uuid))                              AS service_areas,
+              (SELECT count(*) FROM provider_team_members
+                 WHERE tenant_id = CAST(:tid AS uuid)
+                   AND deleted_at IS NULL AND status = 'active')                    AS active_technicians
+        """), {"tid": tid})).fetchone()
+        data["operational_summary"] = {
+            "active_services": counts.active_services or 0,
+            "service_areas": counts.service_areas or 0,
+            "active_technicians": counts.active_technicians or 0,
+        }
+
+        # Only published reviews count. A rating shown to the provider that includes
+        # withheld or pending reviews is not the rating a customer would see.
+        rating = (await self.db.execute(text("""
+            SELECT COALESCE(AVG(overall_rating), 0) AS avg, COUNT(*) AS total
+            FROM customer_reviews
+            WHERE tenant_id = CAST(:tid AS uuid) AND status = 'published'
+        """), {"tid": tid})).fetchone()
+        data["rating"] = {
+            "average_rating": round(float(rating.avg or 0), 1),
+            "total_reviews": rating.total or 0,
+        }
+
+        # Current versions only: a superseded upload is history, and counting it would
+        # let a replaced-but-expired document keep the profile looking out of date.
+        doc_rows = (await self.db.execute(text("""
+            SELECT id, doc_type, label, status, expiry_date, file_url
+            FROM tenant_documents
+            WHERE tenant_id = CAST(:tid AS uuid) AND is_current = true
+            ORDER BY created_at DESC
+        """), {"tid": tid})).fetchall()
+        data["documents"] = [{
+            "id": str(d.id),
+            "doc_type": d.doc_type,
+            "label": d.label or d.doc_type,
+            "status": d.status,
+            "expiry_date": d.expiry_date.isoformat() if d.expiry_date else None,
+            "file_url": d.file_url,
+        } for d in doc_rows]
+
+        return data
 
     async def update_business_profile(self, body: UpdateBusinessProfileRequest) -> dict:
         if not self.actor.tenant_id:

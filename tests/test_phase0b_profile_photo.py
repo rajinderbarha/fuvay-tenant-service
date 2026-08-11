@@ -180,19 +180,38 @@ def test_tenant_provider_profile_page_exists():
     assert (TENANT / "app/(tenant)/profile/page.tsx").exists()
 
 
-# NOTE: logo/shop-photo upload moved from a generic media_context string +
-# ProfilePhotoUploader to dedicated uploadBusinessLogo/uploadShopPhoto calls
-# (backed by dedicated /v1/provider/profile/logo and .../shop-photo
-# endpoints) inside the inline HeroCard component. Real, working upload
-# functionality either way -- ProfilePhotoUploader is now an unused import.
+# Logo and storefront-photo upload have moved twice now. They began as a generic
+# media_context + ProfilePhotoUploader, became dedicated uploadBusinessLogo /
+# uploadShopPhoto calls inside an inline HeroCard on the profile page, and now live in
+# components/business-profile/MediaTab.tsx, back on ProfilePhotoUploader with explicit
+# `provider_business` / `provider_shop` owner types.
+#
+# What matters to this test is that a tenant can still upload both, so it asserts the
+# capability where it is actually implemented rather than pinning one call name to one
+# file -- which is what made these fail when the profile page was recomposed from its
+# design components, despite nothing about uploading having broken.
+MEDIA_TAB = TENANT / "components/business-profile/MediaTab.tsx"
+
+
 def test_tenant_provider_profile_page_has_business_logo_uploader():
-    content = (TENANT / "app/(tenant)/profile/page.tsx").read_text(encoding="utf-8")
-    assert "uploadBusinessLogo" in content
+    content = MEDIA_TAB.read_text(encoding="utf-8")
+    assert "ProfilePhotoUploader" in content
+    assert 'ownerType="provider_business"' in content
+    assert "business_logo_media_id" in content
 
 
 def test_tenant_provider_profile_page_has_shop_photo():
-    content = (TENANT / "app/(tenant)/profile/page.tsx").read_text(encoding="utf-8")
-    assert "uploadShopPhoto" in content
+    content = MEDIA_TAB.read_text(encoding="utf-8")
+    assert 'ownerType="provider_shop"' in content
+    assert "shop_photo_media_id" in content
+
+
+def test_media_tab_is_reachable_from_the_profile_page():
+    """Guards the failure mode that hid all of this: the component existing but being
+    imported by nothing, so the uploaders were unreachable in the running product."""
+    page = (TENANT / "app/(tenant)/profile/page.tsx").read_text(encoding="utf-8")
+    assert "components/business-profile/MediaTab" in page
+    assert "<MediaTab" in page
 
 
 # ── 9. Topbar / layout updates ────────────────────────────────────────────────
