@@ -26,6 +26,16 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 # Statuses that trigger re-verification when a critical field changes
 _VERIFIED_STATUSES = {"verified", "approved", "active"}
+# Documents that prove WHO the business is. If an approved business changes its name,
+# GST or registered address, these stop matching the paperwork on file and have to be
+# re-supplied -- a GST certificate naming a business that no longer exists proves nothing.
+# Trading details (description, website, logo) never invalidate a document.
+_IDENTITY_DOC_TYPES = {
+    "gst_certificate",
+    "business_registration",
+    "address_proof",
+    "owner_identity",
+}
 # Fields the user must NOT be able to set
 _FORBIDDEN_USER_FIELDS = {"role", "tenant_id", "customer_id", "hashed_password", "is_active",
                           "is_mfa_enabled", "force_password_change", "failed_login_attempts"}
@@ -158,6 +168,11 @@ class ProfileService:
         # Aliased rather than renamed -- the original key stays for existing callers.
         data["address_line"] = data.get("address_line1")
 
+        # Staged edits to verified fields, waiting on ServiceOS. Surfaced so the profile
+        # can show the provider what they asked for beside what is still live, rather than
+        # a status badge that says "pending" without saying pending WHAT.
+        data["pending_changes"] = (tenant.meta or {}).get("pending_changes")
+
         counts = (await self.db.execute(text("""
             SELECT
               (SELECT count(*) FROM tenant_services
@@ -226,45 +241,72 @@ class ProfileService:
         critical_changed = body.changed_critical_fields(current_snapshot)
         changed_keys: list[str] = []
 
+        # An approved business does not get to rename itself and have it take effect.
+        #
+        # This method used to write every field straight onto the tenant and THEN set
+        # verification_status = 'changes_pending_review'. So a provider could change their
+        # business name, GST or registered address after approval and it went live on their
+        # public profile immediately, with the review trailing behind it. The lock icons on
+        # the profile page and the "Change request required" notice described a rule the
+        # backend was not enforcing.
+        #
+        # Critical fields are now STAGED: the proposed values are held in
+        # meta['pending_changes'] and the live columns are left alone until an admin
+        # approves. Everything else -- description, website, logo, trading details -- still
+        # saves immediately, because none of it is what ServiceOS verified.
+        #
+        # Staging applies only to a business that has actually been verified. Before that
+        # there is nothing to protect and setup would be unusable if every keystroke needed
+        # approval.
+        stage_critical = critical_changed and tenant.verification_status in _VERIFIED_STATUSES
+        staged: dict[str, object] = {}
+
+        def _critical(field: str, value) -> bool:
+            """True when this field was staged rather than applied."""
+            if stage_critical and field in CRITICAL_BUSINESS_FIELDS and value is not None:
+                staged[field] = value
+                return True
+            return False
+
         # Apply non-critical fields
-        if body.business_name is not None:
+        if body.business_name is not None and not _critical("business_name", body.business_name):
             tenant.business_name = body.business_name
             changed_keys.append("business_name")
-        if body.owner_name is not None:
+        if body.owner_name is not None and not _critical("owner_name", body.owner_name):
             # owner_name may live in meta if not a direct column
             if hasattr(tenant, "owner_name"):
                 tenant.owner_name = body.owner_name  # type: ignore[attr-defined]
             else:
                 tenant.meta = {**(tenant.meta or {}), "owner_name": body.owner_name}
             changed_keys.append("owner_name")
-        if body.business_phone is not None:
+        if body.business_phone is not None and not _critical("business_phone", body.business_phone):
             tenant.phone = body.business_phone
             changed_keys.append("phone")
-        if body.business_email is not None:
+        if body.business_email is not None and not _critical("business_email", body.business_email):
             tenant.email = body.business_email
             changed_keys.append("email")
-        if body.address_line1 is not None:
+        if body.address_line1 is not None and not _critical("address_line1", body.address_line1):
             tenant.address_line1 = body.address_line1
             changed_keys.append("address_line1")
         if body.address_line2 is not None:
             tenant.address_line2 = body.address_line2
             changed_keys.append("address_line2")
-        if body.city is not None:
+        if body.city is not None and not _critical("city", body.city):
             tenant.city = body.city
             changed_keys.append("city")
-        if body.district is not None:
+        if body.district is not None and not _critical("district", body.district):
             tenant.district = body.district
             changed_keys.append("district")
-        if body.state is not None:
+        if body.state is not None and not _critical("state", body.state):
             tenant.state = body.state
             changed_keys.append("state")
         if body.country is not None:
             tenant.country = body.country
             changed_keys.append("country")
-        if body.pincode is not None:
+        if body.pincode is not None and not _critical("pincode", body.pincode):
             tenant.zipcode = body.pincode
             changed_keys.append("zipcode")
-        if body.gst_number is not None:
+        if body.gst_number is not None and not _critical("gst_number", body.gst_number):
             tenant.gst_number = body.gst_number
             changed_keys.append("gst_number")
         if body.legal_name is not None:
@@ -292,7 +334,26 @@ class ProfileService:
             changed_keys.append("description")
 
         requires_reverification = False
-        if critical_changed and tenant.verification_status in _VERIFIED_STATUSES:
+        if stage_critical and staged:
+            # Held, not applied. An admin approving the request is what moves these onto
+            # the tenant; until then the live business keeps trading on the details that
+            # were actually verified.
+            tenant.meta = {
+                **(tenant.meta or {}),
+                "pending_changes": {
+                    "fields": staged,
+                    "submitted_at": datetime.now(timezone.utc).isoformat(),
+                    "submitted_by_user_id": self.actor.user_id,
+                    # Which identity documents stop matching if this is approved. A business
+                    # renamed on paper needs paperwork in the new name, so approval marks
+                    # these for re-upload rather than leaving a GST certificate that names
+                    # a business that no longer exists.
+                    "documents_to_revalidate": sorted(_IDENTITY_DOC_TYPES) if (
+                        staged.keys() & {"business_name", "gst_number", "address_line1",
+                                         "city", "state", "pincode"}
+                    ) else [],
+                },
+            }
             tenant.verification_status = "changes_pending_review"
             requires_reverification = True
 
