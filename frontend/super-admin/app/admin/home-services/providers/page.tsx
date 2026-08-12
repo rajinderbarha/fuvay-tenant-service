@@ -25,16 +25,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Download, FileText } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, SummaryCard,} from "../../../../components/shared/ui";
-import { hsProviderDirectoryApi, adminOnboardingProvidersApi } from "../../../../lib/api";
+import { hsProviderDirectoryApi, adminOnboardingProvidersApi, adminTenantApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 
 function dt(v?: string | null) {
   return v ? new Date(v).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 }
-type TabKey = "directory" | "onboarding" | "suspended";
+type TabKey = "directory" | "onboarding" | "changes" | "suspended";
 const TABS: { key: TabKey; label: string }[] = [
   { key: "directory", label: "Provider Directory" },
   { key: "onboarding", label: "Onboarding Queue" },
+  { key: "changes", label: "Profile Change Requests" },
   { key: "suspended", label: "Suspended & Archived" },
 ];
 
@@ -50,7 +51,6 @@ function HomeServicesProvidersWorkspace() {
   const router = useRouter();
   const params = useSearchParams();
   const tab = (params.get("tab") as TabKey) || "directory";
-  const [auditOpen, setAuditOpen] = useState(false);
 
   function setTab(t: TabKey) {
     router.replace(`/admin/home-services/providers?tab=${t}`);
@@ -67,9 +67,10 @@ function HomeServicesProvidersWorkspace() {
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Badge variant="info">Home Services only</Badge>
-          <Btn variant="ghost" icon={<FileText size={14} />} onClick={() => setAuditOpen(true)}>View Audit</Btn>
+          <Btn variant="ghost" icon={<FileText size={14} />}
+            onClick={() => router.push("/admin/audit-logs?resource_type=tenant_onboarding")}>View Audit</Btn>
           <Btn variant="ghost" icon={<Download size={14} />} onClick={async () => {
-            const data = await hsProviderDirectoryApi.list({ pageSize: 5000 });
+            const data = await hsProviderDirectoryApi.export();
             if (data.items.length === 0) { alert("Nothing to export."); return; }
             const headers = Object.keys(data.items[0]);
             const csv = [headers.join(","), ...data.items.map(r => headers.map(h => JSON.stringify(r[h] ?? "")).join(","))].join("\n");
@@ -95,13 +96,9 @@ function HomeServicesProvidersWorkspace() {
 
       {tab === "directory" && <DirectoryTab />}
       {tab === "onboarding" && <OnboardingQueueTab />}
+      {tab === "changes" && <ProfileChangeRequestsTab />}
       {tab === "suspended" && <SuspendedArchivedTab />}
 
-      <Modal open={auditOpen} onClose={() => setAuditOpen(false)} title="Audit Trail" size="lg">
-        <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
-          Registration and verification audit history is not yet implemented for this workspace.
-        </p>
-      </Modal>
     </AdminLayout>
   );
 }
@@ -279,6 +276,9 @@ function OnboardingQueueTab() {
 
 function OnboardingReviewPanel({ tenantId, onDone }: { tenantId: string; onDone: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [decision, setDecision] = useState<"changes" | "reject" | null>(null);
+  const [reason, setReason] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   // Re-fetch the single record fresh so actions reflect the latest server state.
   const record = useApi(useCallback(async () => {
     const all = await adminOnboardingProvidersApi.list({ page_size: 200 });
@@ -287,9 +287,29 @@ function OnboardingReviewPanel({ tenantId, onDone }: { tenantId: string; onDone:
 
   async function run(action: string, fn: () => Promise<unknown>) {
     setBusy(action);
+    setActionError(null);
     try { await fn(); onDone(); }
-    catch (e) { alert(e instanceof Error ? e.message : `Failed to ${action}.`); }
+    catch (e) { setActionError(e instanceof Error ? e.message : `Failed to ${action}.`); }
     finally { setBusy(null); }
+  }
+
+  function openDecision(nextDecision: "changes" | "reject") {
+    setDecision(nextDecision);
+    setReason("");
+    setActionError(null);
+  }
+
+  function submitDecision() {
+    const notes = reason.trim();
+    if (!decision || !notes) {
+      setActionError(decision === "reject" ? "Enter a rejection reason." : "Describe the changes the provider needs to make.");
+      return;
+    }
+    if (decision === "changes") {
+      void run("changes", () => adminOnboardingProvidersApi.requestChanges(tenantId, notes));
+    } else {
+      void run("reject", () => adminOnboardingProvidersApi.reject(tenantId, notes));
+    }
   }
 
   if (record.loading) return <Skeleton height={200} />;
@@ -299,7 +319,7 @@ function OnboardingReviewPanel({ tenantId, onDone }: { tenantId: string; onDone:
   // Mirrors the backend's own gate (verify_tenant/reject_verification/
   // request_changes all now reject "not_started" as PROVIDER_NOT_SUBMITTED)
   // -- this is a UI convenience, the backend is the actual authority.
-  const canAct = r.review_status === "pending_review" || r.review_status === "changes_requested";
+  const canAct = r.review_status === "pending_review";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -317,6 +337,8 @@ function OnboardingReviewPanel({ tenantId, onDone }: { tenantId: string; onDone:
           <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
             {r.review_status === "not_submitted"
               ? "This provider has not submitted onboarding for review yet — view only until they submit."
+              : r.review_status === "changes_requested"
+              ? "Changes were requested. Review actions will reopen after the provider updates and resubmits."
               : r.review_status === "approved"
               ? "Already approved and active."
               : "No review action available for this status."}
@@ -324,27 +346,116 @@ function OnboardingReviewPanel({ tenantId, onDone }: { tenantId: string; onDone:
         </Card>
       )}
 
-      {canAct && (
+      {canAct && !decision && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Btn variant="primary" disabled={busy === "approve"}
             onClick={() => run("approve", () => adminOnboardingProvidersApi.approve(tenantId))}>
-            {busy === "approve" ? "Approving…" : "Approve & Activate"}
+            {busy === "approve" ? "Approving…" : "Approve setup"}
           </Btn>
           <Btn variant="ghost" disabled={busy === "changes"}
-            onClick={() => { const notes = prompt("What changes are needed?"); if (notes) run("changes", () => adminOnboardingProvidersApi.requestChanges(tenantId, notes)); }}>
+            onClick={() => openDecision("changes")}>
             {busy === "changes" ? "Requesting…" : "Request Changes"}
           </Btn>
           <Btn variant="ghost" disabled={busy === "reject"}
-            onClick={() => { const reason = prompt("Rejection reason:"); if (reason) run("reject", () => adminOnboardingProvidersApi.reject(tenantId, reason)); }}>
+            onClick={() => openDecision("reject")}>
             {busy === "reject" ? "Rejecting…" : "Reject"}
           </Btn>
         </div>
+      )}
+
+      {canAct && decision && (
+        <Card padding={14}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <label htmlFor="provider-review-reason" style={{ fontSize: 12, fontWeight: 700 }}>
+              {decision === "reject" ? "Rejection reason" : "Changes required"}
+            </label>
+            <textarea
+              id="provider-review-reason"
+              value={reason}
+              onChange={event => { setReason(event.target.value); setActionError(null); }}
+              rows={4}
+              autoFocus
+              placeholder={decision === "reject"
+                ? "Explain why this setup cannot be approved."
+                : "Tell the provider exactly what to update before resubmitting."}
+              style={{
+                width: "100%",
+                resize: "vertical",
+                border: "1px solid var(--border-default)",
+                borderRadius: 8,
+                padding: 10,
+                background: "var(--surface-raised)",
+                color: "var(--text-primary)",
+                font: "inherit",
+              }}
+            />
+            {actionError && <p role="alert" style={{ margin: 0, color: "var(--status-danger)", fontSize: 12 }}>{actionError}</p>}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Btn variant={decision === "reject" ? "ghost" : "primary"} disabled={busy !== null} onClick={submitDecision}>
+                {busy ? "Saving…" : decision === "reject" ? "Confirm rejection" : "Send change request"}
+              </Btn>
+              <Btn variant="ghost" disabled={busy !== null} onClick={() => { setDecision(null); setReason(""); setActionError(null); }}>
+                Cancel
+              </Btn>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {canAct && !decision && actionError && (
+        <p role="alert" style={{ margin: 0, color: "var(--status-danger)", fontSize: 12 }}>{actionError}</p>
       )}
     </div>
   );
 }
 
-// ── Tab 3: Suspended & Archived ──────────────────────────────────────────────
+// ── Profile change requests ──────────────────────────────────────────────────
+
+function ProfileChangeRequestsTab() {
+  const requests = useApi(useCallback(() => adminTenantApi.listProfileChangeRequests(), []), []);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function approve(tenantId: string) {
+    setBusy(tenantId); setError(null);
+    try { await adminTenantApi.approveProfileChangeRequest(tenantId); await requests.refetch(); }
+    catch (e) { setError(e instanceof Error ? e.message : "Could not approve this request."); }
+    finally { setBusy(null); }
+  }
+  async function reject() {
+    if (!rejecting || !reason.trim()) { setError("Enter a rejection reason."); return; }
+    setBusy(rejecting); setError(null);
+    try {
+      await adminTenantApi.rejectProfileChangeRequest(rejecting, reason.trim());
+      setRejecting(null); setReason(""); await requests.refetch();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not reject this request."); }
+    finally { setBusy(null); }
+  }
+
+  if (requests.loading) return <Skeleton height={300}/>;
+  if (requests.error) return <Card padding={24}><p role="alert" style={{ margin: 0, color: "var(--status-danger)", fontSize: 12 }}>Could not load profile change requests: {requests.error}</p></Card>;
+  const items = requests.data?.change_requests ?? [];
+  return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <Card padding={14}><p style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)" }}>Approved identity stays published until the requested fields and fresh supporting documents are reviewed together.</p></Card>
+    {error && <p role="alert" style={{ margin: 0, color: "var(--status-danger)", fontSize: 12 }}>{error}</p>}
+    {items.length === 0 ? <Card padding={30}><p style={{ textAlign: "center", margin: 0, color: "var(--text-tertiary)" }}>No profile changes are awaiting review.</p></Card> : items.map(item => <Card key={item.tenant_id} padding={18}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+        <div><h3 style={{ margin: "0 0 4px", fontSize: 15 }}>{item.current_business_name ?? "Unnamed provider"}</h3><p style={{ margin: 0, color: "var(--text-tertiary)", fontSize: 11.5 }}>Submitted {dt(item.submitted_at)}</p></div>
+        <Badge variant={item.documents_ready ? "success" : "warning"}>{item.documents_ready ? "Ready for decision" : "Waiting for documents"}</Badge>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10, marginTop: 14 }}>
+        {Object.entries(item.requested_fields).map(([field, value]) => <div key={field} style={{ padding: 10, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8 }}><div style={{ fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase" }}>{field.replace(/_/g, " ")}</div><div style={{ marginTop: 3, fontSize: 12.5, fontWeight: 600 }}>{String(value ?? "—")}</div></div>)}
+      </div>
+      {item.documents.length > 0 && <div style={{ marginTop: 14 }}><p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700 }}>Supporting documents</p>{item.documents.map(doc => <div key={doc.doc_type} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid var(--border)", fontSize: 12 }}><span>{doc.doc_type.replace(/_/g, " ")}</span><Badge variant={doc.submitted_for_request && ["pending_review", "verified"].includes(doc.status) ? "success" : "warning"}>{doc.status.replace(/_/g, " ")}</Badge></div>)}</div>}
+      <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}><Btn variant="primary" disabled={!item.documents_ready || busy === item.tenant_id} onClick={() => approve(item.tenant_id)}>{busy === item.tenant_id ? "Approving…" : "Approve & publish"}</Btn><Btn variant="ghost" disabled={busy === item.tenant_id} onClick={() => { setRejecting(item.tenant_id); setReason(""); setError(null); }}>Reject</Btn></div>
+    </Card>)}
+    <Modal open={!!rejecting} onClose={() => setRejecting(null)} title="Reject profile change"><div style={{ display: "flex", flexDirection: "column", gap: 10 }}><label htmlFor="profile-change-reason" style={{ fontSize: 12, fontWeight: 700 }}>Reason for the tenant</label><textarea id="profile-change-reason" rows={4} value={reason} onChange={e => setReason(e.target.value)} style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-raised)", color: "var(--text-primary)", font: "inherit" }}/><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Btn variant="ghost" onClick={() => setRejecting(null)}>Cancel</Btn><Btn variant="primary" onClick={reject}>Reject request</Btn></div></div></Modal>
+  </div>;
+}
+
+// ── Tab 4: Suspended & Archived ──────────────────────────────────────────────
 
 function SuspendedArchivedTab() {
   const router = useRouter();

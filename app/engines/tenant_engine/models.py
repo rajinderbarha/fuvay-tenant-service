@@ -26,6 +26,9 @@ class Tenant(ServiceOSBase):
         Index("ix_tenants_state_district_city", "state", "district", "city"),
         Index("ix_tenants_verification_created", "verification_status", "created_at"),
         Index("ix_tenants_status_created", "status", "created_at"),
+        Index("ix_tenants_vertical_created_id", "vertical", "created_at", "id"),
+        Index("ix_tenants_vertical_status_created", "vertical", "status", "created_at"),
+        Index("ix_tenants_vertical_verification_created", "vertical", "verification_status", "created_at"),
     )
     tenant_name: Mapped[str] = mapped_column(String(255), nullable=False)
     subdomain: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)

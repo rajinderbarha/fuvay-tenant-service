@@ -391,7 +391,7 @@ async def get_me(
 async def get_access_context(
     request: Request,
     user: UserContext = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
     """Every mobile client's session-establishment step calls this exact
     path immediately after login (see customer-app's sessionManager.
@@ -409,50 +409,7 @@ async def get_access_context(
     check for every single account, regardless of the tenant's real status,
     permanently showing "tenant suspended". Now resolved for real.
     """
-    from app.engines.auth.constants import AUDIENCE
-    from app.core.permissions import ROLE_PERMISSIONS
-
-    audience = AUDIENCE.get(user.role, "serviceos:customer")
-
-    tenant_status = None
-    enabled_verticals: list[str] = []
-    if user.tenant_id:
-        from app.engines.tenant_engine.models import Tenant
-        tenant = await db.get(Tenant, uuid.UUID(user.tenant_id))
-        if tenant:
-            tenant_status = tenant.status
-            enabled_verticals = [tenant.vertical]
-
-    technician_id = None
-    technician_status = None
-    if user.role in ("technician", "staff") and user.tenant_id:
-        # Same resolution order as home_service_assignment.staff_router.
-        # _resolve_staff_member_id: assigned_staff_id/technician identity may
-        # be a real ProviderTeamMember row, or (in real/demo data where that
-        # roster table is unpopulated) the raw auth user itself.
-        from app.engines.home_service_assignment.staff_model import ProviderTeamMember
-        from sqlalchemy import select as _select
-        ptm = (await db.execute(
-            _select(ProviderTeamMember).where(ProviderTeamMember.user_id == uuid.UUID(user.user_id))
-        )).scalars().first()
-        if ptm:
-            technician_id = str(ptm.id)
-            technician_status = ptm.status
-        else:
-            technician_id = user.user_id
-            technician_status = "active" if getattr(user, "is_verified", True) is not False else "suspended"
-
-    data = {
-        "user_id": user.user_id,
-        "canonical_role": user.role,
-        "audience": audience,
-        "tenant_id": user.tenant_id,
-        "tenant_status": tenant_status,
-        "technician_id": technician_id,
-        "technician_status": technician_status,
-        "enabled_verticals": enabled_verticals,
-        "capabilities": ROLE_PERMISSIONS.get(user.role, []),
-    }
+    data = await svc.get_mobile_access_context(uuid.UUID(user.user_id))
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
 

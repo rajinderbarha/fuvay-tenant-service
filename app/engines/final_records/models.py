@@ -20,6 +20,8 @@ class ServiceBooking(ServiceOSBase):
         Index("ix_sb_customer_id",    "customer_id"),
         Index("ix_sb_tenant_id",      "tenant_id"),
         Index("ix_sb_status",         "status"),
+        Index("ix_sb_customer_created", "customer_id", "created_at"),
+        Index("ix_sb_tenant_customer_created", "tenant_id", "customer_id", "created_at"),
     )
 
     booking_number:        Mapped[str]              = mapped_column(String(30), nullable=False)
@@ -117,6 +119,8 @@ class ServiceJob(ServiceOSBase):
         Index("ix_sj_customer_id", "customer_id"),
         Index("ix_sj_tenant_id",   "tenant_id"),
         Index("ix_sj_status",      "status"),
+        Index("ix_sj_customer_status_updated", "customer_id", "status", "updated_at"),
+        Index("ix_sj_tenant_customer_status_updated", "tenant_id", "customer_id", "status", "updated_at"),
     )
 
     job_number:             Mapped[str]              = mapped_column(String(30), nullable=False)

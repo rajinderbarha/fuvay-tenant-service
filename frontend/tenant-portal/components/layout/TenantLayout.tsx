@@ -77,7 +77,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     // Business Profile was pulled from the nav on 2026-08-04 as "no longer using",
     // leaving only Compliance here. What went with it was every route to the business's
-    // own settings: Business Hours lives at /tenant/setup/availability and was reachable
+    // own settings: Business Hours lives in the active Coverage & Hours workspace and is reachable
     // ONLY through Business Profile, so once setup finished there was no way, anywhere in
     // the portal, to change opening hours, slot length or bookings per slot. Those are
     // the numbers customer booking slots are generated from -- a provider who wanted to
@@ -88,7 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Business",
     items: [
       // These point at the SETUP flow's own screens, not the older standalone
-      // /profile and /tenant/setup/availability pages. The setup screens are the ones
+      // /profile and /business/coverage-hours pages. These active workspaces are the ones
       // that match how this product actually works -- coverage, weekly business hours
       // and booking controls together on one page -- and pointing the menu somewhere
       // else would give a provider two different editors for the same settings, only
@@ -97,8 +97,8 @@ const NAV_GROUPS: NavGroup[] = [
       // this is the live profile a running business manages, and it is now the page
       // built from components/business-profile/ rather than the older inline duplicate.
       { id: "business-profile",    href: "/profile",                                          label: "Business Profile", icon: <Building2 size={16}/> },
-      { id: "business-hours",      href: "/tenant/home-services/setup/coverage-availability", label: "Coverage & Hours", icon: <Clock size={16}/> },
-      { id: "documents",           href: "/tenant/home-services/setup/documents",             label: "Documents", icon: <FileText size={16}/> },
+      { id: "business-hours",      href: "/business/coverage-hours",              label: "Coverage & Hours", icon: <Clock size={16}/> },
+      { id: "verification-documents", href: "/business/verification-documents",   label: "Documents", icon: <FileText size={16}/> },
       { id: "provider-compliance", href: "/provider/compliance",                              label: "Compliance", icon: <Shield size={16}/> },
     ],
   },

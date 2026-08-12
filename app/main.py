@@ -444,6 +444,12 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     app.include_router(cflow_admin_router)
 
     # Sprint 4 — Admin Tenant Onboarding + Tenant 360 sub-resources
+    # Static package-commerce tenant paths must be mounted before the generic
+    # tenant portal `/{tenant_id}` paths. Otherwise `credit-wallet` is parsed
+    # as a tenant UUID and the real static endpoint is never reached.
+    from app.engines.package_commerce.tenant_router import router as pkg_tenant_router
+    app.include_router(pkg_tenant_router)
+
     from app.engines.tenant_engine.admin_router import router as admin_tenant_router
     # Sprint 4 — Tenant portal mirror (tenant_id from JWT)
     from app.engines.tenant_engine.portal_router import router as tenant_portal_router
@@ -452,10 +458,9 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
 
     # Sprint 5 — Package Commerce: packages, security deposit, credit wallet, commission
     from app.engines.package_commerce.admin_router import router as pkg_admin_router
-    from app.engines.package_commerce.tenant_router import router as pkg_tenant_router
     # Sprint 070 — Public signup packages (unauthenticated)
     from app.engines.package_commerce.public_router import router as pkg_public_router
-    for _r in [pkg_admin_router, pkg_tenant_router, pkg_public_router]:
+    for _r in [pkg_admin_router, pkg_public_router]:
         app.include_router(_r)
 
     # Scalability Sprint — Location Engine (states, districts, cities, zones)
@@ -628,6 +633,8 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     app.include_router(mobile_employment_tenant_router)
 
     from app.engines.home_service_assignment.mobile_documents_router import router as mobile_documents_router, tenant_router as mobile_documents_tenant_router
+    from app.engines.vertical_catalog.tenant_documents_workspace_router import router as tenant_documents_workspace_router
+    app.include_router(tenant_documents_workspace_router)
     app.include_router(mobile_documents_router)
     app.include_router(mobile_documents_tenant_router)
 

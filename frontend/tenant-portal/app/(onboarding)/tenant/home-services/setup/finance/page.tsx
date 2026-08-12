@@ -188,7 +188,7 @@ export default function FinanceReadinessPage() {
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Payment confirmation required</p>
                 <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Staff records method, amount and reference after payment.</p>
               </div>
-              <SwitchToggle checked={form.payment_confirmation_required}
+              <SwitchToggle label="Payment confirmation required" checked={form.payment_confirmation_required}
                 onChange={v => setForm({ ...form, payment_confirmation_required: v })}/>
             </div>
           </Card>
@@ -197,12 +197,12 @@ export default function FinanceReadinessPage() {
             <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 14px" }}>Business invoice details</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
               <Field label="Invoice business name">
-                <input value={form.invoice_business_name ?? manifest.invoice_defaults.business_name ?? ""}
+                <input aria-label="Invoice business name" value={form.invoice_business_name ?? manifest.invoice_defaults.business_name ?? ""}
                   onChange={e => setForm({ ...form, invoice_business_name: e.target.value })}
                   style={inputStyle}/>
               </Field>
               <Field label="GSTIN (optional)">
-                <input value={manifest.invoice_defaults.gstin ?? ""} disabled style={{ ...inputStyle, opacity: 0.7 }}/>
+                <input aria-label="GSTIN" value={manifest.invoice_defaults.gstin ?? ""} disabled style={{ ...inputStyle, opacity: 0.7 }}/>
                 {manifest.invoice_defaults.gstin_verified && (
                   <p style={{ fontSize: 11, color: "var(--success)", margin: "4px 0 0", display: "flex", alignItems: "center", gap: 4 }}>
                     <CheckCircle2 size={11}/> From verified profile
@@ -210,7 +210,7 @@ export default function FinanceReadinessPage() {
                 )}
               </Field>
               <Field label="Invoice prefix">
-                <input value={form.invoice_prefix ?? ""} maxLength={20}
+                <input aria-label="Invoice prefix" value={form.invoice_prefix ?? ""} maxLength={20}
                   onChange={e => setForm({ ...form, invoice_prefix: e.target.value.toUpperCase() })}
                   placeholder="e.g. ACME" style={inputStyle}/>
               </Field>
@@ -220,7 +220,7 @@ export default function FinanceReadinessPage() {
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Issue customer receipt</p>
                 <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Provider receipt for a direct payment — not a ServiceOS payment receipt.</p>
               </div>
-              <SwitchToggle checked={form.issue_customer_receipt}
+              <SwitchToggle label="Issue customer receipt" checked={form.issue_customer_receipt}
                 onChange={v => setForm({ ...form, issue_customer_receipt: v })}/>
             </div>
           </Card>
@@ -322,9 +322,9 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box", fontFamily: "inherit",
 };
 
-function SwitchToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function SwitchToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
+    <button type="button" role="switch" aria-label={label} aria-checked={checked} onClick={() => onChange(!checked)}
       style={{
         width: 40, height: 22, borderRadius: 999, border: "none", cursor: "pointer", flexShrink: 0,
         background: checked ? "var(--brand)" : "var(--border)", position: "relative", transition: "background 0.15s",

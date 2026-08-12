@@ -146,13 +146,18 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
 }
 
 function OverviewTab({ d }: { d: Record<string, unknown> }) {
+  const reliability = String(d.payment_reliability ?? "insufficient_data");
+  const reliabilityLabel = reliability === "reliable"
+    ? "Reliable"
+    : reliability === "needs_review" ? "Needs Review" : "Insufficient Data";
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
       <StatCard label="Completed Jobs" value={String(d.completed_jobs ?? 0)} />
       <StatCard label="Cancelled Jobs" value={String(d.cancelled_jobs ?? 0)} />
       <StatCard label="Confirmed Job Value" value={money(d.confirmed_job_value as string)} sub="Not platform collection" />
       <StatCard label="Open Complaints" value={String(d.open_complaints ?? 0)} />
-      <StatCard label="Payment Reliability" value={d.payment_reliability === "insufficient_data" ? "Insufficient Data" : "Not Implemented"} />
+      <StatCard label="Payment Reliability" value={reliabilityLabel}
+        sub={`${Number(d.payment_decisions ?? 0)} customer decisions`} />
     </div>
   );
 }

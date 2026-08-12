@@ -97,8 +97,10 @@ export async function apiFetch<T>(
             const retryHeaders = { ...headers, "Authorization": `Bearer ${newToken}` };
             const retry = await fetch(`${API_BASE}${path}`, { ...options, headers: retryHeaders });
             if (retry.ok) {
-              const json: ApiResponse<T> = await retry.json();
-              return json.data;
+              const json: ApiResponse<T> | T = await retry.json();
+              return (json && typeof json === "object" && "data" in json)
+                ? (json as ApiResponse<T>).data
+                : (json as T);
             }
           }
         }
@@ -121,8 +123,15 @@ export async function apiFetch<T>(
     );
   }
 
-  const json: ApiResponse<T> = await res.json();
-  return json.data;
+  // A few legacy admin engines return their domain payload directly while the
+  // newer engines use the standard { data } response envelope.  Treat both as
+  // first-class responses so a successful direct payload never becomes
+  // `undefined` in the UI (which previously made the profile-change queue look
+  // empty even though the API returned a ready request).
+  const json: ApiResponse<T> | T = await res.json();
+  return (json && typeof json === "object" && "data" in json)
+    ? (json as ApiResponse<T>).data
+    : (json as T);
 }
 
 // FINAL-L5-03: shared generic paginated-list fetch for EnterpriseDataGrid-style
@@ -1098,44 +1107,44 @@ export const homeServicesOperationsApi = {
 
 export const adminBookingsApi = {
   filterOptions: () =>
-    apiFetch<{ data: AdminBookingFilterOptions }>("/v1/admin/bookings/filters"),
+    apiFetch<AdminBookingFilterOptions>("/v1/admin/bookings/filters"),
 
   list: (params: AdminBookingListParams) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== "" && v !== null) qs.set(k, String(v));
     });
-    return apiFetch<{ data: AdminBookingListResponse }>(`/v1/admin/bookings?${qs}`);
+    return apiFetch<AdminBookingListResponse>(`/v1/admin/bookings?${qs}`);
   },
 
   summary: () =>
-    apiFetch<{ data: AdminBookingSummary }>("/v1/admin/bookings/summary"),
+    apiFetch<AdminBookingSummary>("/v1/admin/bookings/summary"),
 
   get: (id: string) =>
-    apiFetch<{ data: AdminBooking & Record<string, unknown> }>(`/v1/admin/bookings/${id}`),
+    apiFetch<AdminBooking & Record<string, unknown>>(`/v1/admin/bookings/${id}`),
 
   getTimeline: (id: string) =>
-    apiFetch<{ data: { timeline: { from_status: string | null; to_status: string; reason: string | null; occurred_at: string | null }[] } }>(
+    apiFetch<{ timeline: { from_status: string | null; to_status: string; reason: string | null; occurred_at: string | null }[] }>(
       `/v1/admin/bookings/${id}/timeline`
     ),
 
   listNotes: (id: string) =>
-    apiFetch<{ data: { notes: { note_id: string; content: string; author_role: string | null; is_internal: boolean; created_at: string | null }[] } }>(
+    apiFetch<{ notes: { note_id: string; content: string; author_role: string | null; is_internal: boolean; created_at: string | null }[] }>(
       `/v1/admin/bookings/${id}/notes`
     ),
 
   cancel: (id: string, reason: string) =>
-    apiFetch<{ data: { cancelled: boolean } }>(`/v1/admin/bookings/${id}/cancel`, {
+    apiFetch<{ cancelled: boolean }>(`/v1/admin/bookings/${id}/cancel`, {
       method: "POST", body: JSON.stringify({ reason }),
     }),
 
   void: (id: string, reason: string) =>
-    apiFetch<{ data: { voided: boolean } }>(`/v1/admin/bookings/${id}/void`, {
+    apiFetch<{ voided: boolean }>(`/v1/admin/bookings/${id}/void`, {
       method: "POST", body: JSON.stringify({ reason }),
     }),
 
   tenantSearch: (q: string) =>
-    apiFetch<{ data: { tenants: { id: string; name: string; city: string }[] } }>(
+    apiFetch<{ tenants: { id: string; name: string; city: string }[] }>(
       `/v1/admin/bookings/tenant-search?q=${encodeURIComponent(q)}`
     ),
 
@@ -4754,6 +4763,17 @@ export const adminTenantApi = {
   verify:            (tenantId: string) => apiFetch<AdminTenantRow>(`/v1/admin/tenants/${tenantId}/verify`, { method:"POST" }),
   rejectVerification:(tenantId: string, reason: string) =>
     apiFetch<AdminTenantRow>(`/v1/admin/tenants/${tenantId}/reject-verification`, { method:"POST", body:JSON.stringify({ reason }) }),
+  listProfileChangeRequests: () =>
+    apiFetch<{ change_requests: Array<{
+      tenant_id: string; current_business_name: string | null;
+      requested_fields: Record<string, unknown>; submitted_at: string | null;
+      documents_to_revalidate: string[]; documents_ready: boolean;
+      documents: Array<{ doc_type: string; document_id: string | null; status: string; uploaded_at: string | null; preview_url: string | null; submitted_for_request: boolean }>;
+    }>; count: number }>("/v1/admin/tenants/change-requests"),
+  approveProfileChangeRequest: (tenantId: string) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/tenants/${tenantId}/change-requests/approve`, { method:"POST" }),
+  rejectProfileChangeRequest: (tenantId: string, reason: string) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/tenants/${tenantId}/change-requests/reject`, { method:"POST", body:JSON.stringify({ reason }) }),
   activate:          (tenantId: string) => apiFetch<AdminTenantRow>(`/v1/admin/tenants/${tenantId}/activate`, { method:"POST" }),
   archive:           (tenantId: string) => apiFetch<AdminTenantRow>(`/v1/admin/tenants/${tenantId}/archive`, { method:"POST" }),
 
@@ -7146,11 +7166,9 @@ export const sprint27AdminApi = {
   getAuditTimeline: (resource_type: string, resource_id: string) =>
     apiFetch<{ timeline: AuditLogRecord[] }>(`/v1/admin/audit-logs/record-timeline?resource_type=${resource_type}&resource_id=${resource_id}`),
 
-  /** Delivery-channel health. There is no dedicated channel-status route;
-   * the outbox is the source of truth for what is actually being delivered,
-   * so this derives from it rather than inventing an endpoint. */
+  /** Delivery-channel health, computed from the active providers and outbox. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getChannelStatus: () => apiFetch<{ items: Record<string, any>[] }>("/v1/admin/notification-outbox?group_by=channel"),
+  getChannelStatus: () => apiFetch<{ items: Record<string, any>[] }>("/v1/admin/notification-outbox/channel-status"),
   /** Cancels a queued outbox message. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cancelOutbox: (outboxId: string) => apiFetch<Record<string, any>>(`/v1/admin/notification-outbox/${outboxId}`, { method: "DELETE" }),

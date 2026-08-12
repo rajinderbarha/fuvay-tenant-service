@@ -567,8 +567,16 @@ class PackageCommerceService:
     async def get_credit_wallet_detail(self, tenant_id: uuid.UUID) -> dict:
         wallet = await self._get_wallet(tenant_id)
         if wallet is None:
-            raise ServiceOSException("CREDIT_WALLET_NOT_FOUND",
-                                     "Credit wallet not found for this tenant.")
+            # A newly activated tenant can legitimately have no legacy package wallet:
+            # Home Services finance provisions usage credits separately. Returning a
+            # zero balance keeps dashboard reads total and avoids turning that valid
+            # state into a noisy 404 on every workspace visit.
+            return {
+                "tenant_id": str(tenant_id), "balance": 0.0, "reserved_balance": 0.0,
+                "currency": "INR", "low_balance_threshold": float(PLATFORM_DEFAULT_LOW_CREDIT_THRESHOLD),
+                "is_low_balance": True, "is_active": False, "lifetime_purchased": 0.0,
+                "lifetime_consumed": 0.0, "last_transaction_at": None,
+            }
         threshold = wallet.low_balance_threshold or PLATFORM_DEFAULT_LOW_CREDIT_THRESHOLD
         return {
             "tenant_id": str(tenant_id),

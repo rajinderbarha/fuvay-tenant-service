@@ -1,0 +1,11 @@
+http://localhost:3000/login
+S
+ServiceOS
+Portal reachable
+Platform control, in one place
+
+Oversee every tenant, service vertical, and platform-wide operation from a single secured console built for the ServiceOS operations team.
+
+Tenant oversight
+Manage onboarding, plans, and health across every tenant on the platform.
+Platform

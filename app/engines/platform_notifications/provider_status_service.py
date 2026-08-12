@@ -39,21 +39,39 @@ _LIVE_CHANNELS = {CHANNEL_IN_APP}
 class ProviderStatusService:
 
     async def list_channel_status(self, db: AsyncSession) -> list[dict]:
+        # One grouped aggregate keeps this admin health panel constant-query as
+        # the outbox grows; the previous implementation issued three queries
+        # for every configured channel.
+        result = await db.execute(
+            select(
+                NotificationOutbox.channel,
+                func.count(NotificationOutbox.id).filter(
+                    NotificationOutbox.delivery_status == DELIVERY_DELIVERED
+                ).label("delivered"),
+                func.count(NotificationOutbox.id).filter(
+                    NotificationOutbox.delivery_status == DELIVERY_FAILED
+                ).label("failed"),
+                func.max(NotificationOutbox.sent_at).filter(
+                    NotificationOutbox.delivery_status == DELIVERY_DELIVERED
+                ).label("last_success"),
+            ).group_by(NotificationOutbox.channel)
+        )
+        aggregates = {
+            row.channel: row
+            for row in result.all()
+        }
+
         rows = []
         for channel in ALL_CHANNELS:
             provider = CHANNEL_PROVIDERS.get(channel)
             provider_name = getattr(provider, "provider_name", None)
             is_live = channel in _LIVE_CHANNELS
-
-            delivered = await db.scalar(select(func.count(NotificationOutbox.id)).where(
-                NotificationOutbox.channel == channel, NotificationOutbox.delivery_status == DELIVERY_DELIVERED)) or 0
-            failed = await db.scalar(select(func.count(NotificationOutbox.id)).where(
-                NotificationOutbox.channel == channel, NotificationOutbox.delivery_status == DELIVERY_FAILED)) or 0
+            aggregate = aggregates.get(channel)
+            delivered = int(aggregate.delivered or 0) if aggregate else 0
+            failed = int(aggregate.failed or 0) if aggregate else 0
             total = delivered + failed
             failure_rate_pct = round(100 * failed / total, 1) if total else None
-
-            last_success = await db.scalar(select(func.max(NotificationOutbox.sent_at)).where(
-                NotificationOutbox.channel == channel, NotificationOutbox.delivery_status == DELIVERY_DELIVERED))
+            last_success = aggregate.last_success if aggregate else None
 
             if is_live:
                 state = "Available"
@@ -79,7 +97,9 @@ class ProviderStatusService:
                 "last_successful_delivery": last_success.isoformat() if last_success else None,
                 "failure_rate_pct": failure_rate_pct,
                 "rate_limit": None,          # not implemented at the channel-provider level yet
-                "webhook_status": None,      # no inbound delivery-webhook receiver exists yet
+                # In-app delivery is final when persisted and has no provider
+                # callback. Stub external channels cannot receive callbacks.
+                "webhook_status": "Not required" if is_live else "Unavailable",
                 "credential_reference": None,  # never populated -- no secrets exposed by this endpoint
                 "note": note,
             })

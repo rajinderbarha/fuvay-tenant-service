@@ -372,6 +372,45 @@ def _enrich_row(row: dict) -> dict:
     return row
 
 
+async def _sync_home_services_enrollment_decision(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    decision: str,
+    *,
+    actor_id: str | None,
+    reason: str | None = None,
+) -> dict | None:
+    """Apply an Admin review decision to the canonical HS enrollment.
+
+    The Admin queue is tenant-record based for backwards compatibility,
+    while tenant routing is enrollment based. A decision is only complete
+    when both projections have moved together.
+    """
+    row = (await db.execute(text("""
+        SELECT e.id, e.status
+        FROM tenant_vertical_enrollments e
+        JOIN verticals v ON v.id = e.vertical_id
+        WHERE e.tenant_id=:tid AND v.key='home_services'
+        LIMIT 1
+    """), {"tid": str(tenant_id)})).fetchone()
+    if not row:
+        return None
+
+    from app.engines.vertical_catalog.service import VerticalCatalogService
+    enrollment_id = uuid.UUID(str(row.id))
+    parsed_actor_id = uuid.UUID(str(actor_id)) if actor_id else None
+    if decision == "approve":
+        from app.engines.vertical_catalog.activation import approve_and_evaluate
+        return await approve_and_evaluate(
+            db, enrollment_id, tenant_id, actor_id=parsed_actor_id, reason=reason
+        )
+
+    status = "changes_requested" if decision == "request_changes" else "rejected"
+    return await VerticalCatalogService().transition_enrollment(
+        db, enrollment_id, status, actor_id=parsed_actor_id, reason=reason
+    )
+
+
 @admin_router.get("/onboarding/providers")
 async def list_provider_onboarding(
     request: Request,
@@ -507,6 +546,17 @@ async def approve_provider_onboarding(
     from app.engines.tenant_engine.admin_service import AdminTenantService
     svc = AdminTenantService(db=db, request_id=rid, actor_id=user.user_id, actor_role="super_admin")
     result = await svc.verify_tenant(tenant_id)
+    vertical_result = await _sync_home_services_enrollment_decision(
+        db, tenant_id, "approve", actor_id=user.user_id
+    )
+    if vertical_result:
+        result["vertical_status"] = vertical_result["status"]
+        if vertical_result["status"] != "active":
+            await db.execute(
+                text("UPDATE tenants SET status='pending_activation', updated_at=NOW() WHERE id=:tid"),
+                {"tid": str(tenant_id)},
+            )
+            result["status"] = "pending_activation"
     await db.commit()
     return ok(result, request_id=rid)
 
@@ -524,6 +574,11 @@ async def reject_provider_onboarding(
     from app.engines.tenant_engine.admin_service import AdminTenantService
     svc = AdminTenantService(db=db, request_id=rid, actor_id=user.user_id, actor_role="super_admin")
     result = await svc.reject_verification(tenant_id, reason=payload.get("reason", ""))
+    vertical_result = await _sync_home_services_enrollment_decision(
+        db, tenant_id, "reject", actor_id=user.user_id, reason=payload.get("reason", "")
+    )
+    if vertical_result:
+        result["vertical_status"] = vertical_result["status"]
     await db.commit()
     return ok(result, request_id=rid)
 
@@ -540,6 +595,15 @@ async def request_changes_provider_onboarding(
     svc = AdminTenantService(db=db, request_id=rid, actor_id=user.user_id, actor_role="super_admin")
     reason = payload.get("notes") or payload.get("reason", "")
     result = await svc.request_changes(tenant_id, reason=reason)
+    vertical_result = await _sync_home_services_enrollment_decision(
+        db, tenant_id, "request_changes", actor_id=user.user_id, reason=reason
+    )
+    if vertical_result:
+        result["vertical_status"] = vertical_result["status"]
+        await db.execute(
+            text("UPDATE tenants SET status='onboarding_pending', updated_at=NOW() WHERE id=:tid"),
+            {"tid": str(tenant_id)},
+        )
     await db.commit()
     return ok(result, request_id=rid)
 

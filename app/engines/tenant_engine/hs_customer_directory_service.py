@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, case, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.final_records.models import ServiceBooking, ServiceJob
@@ -34,6 +34,9 @@ from app.engines.tenant_engine.customer_operational_access_policy import custome
 from app.exceptions import NotFoundException
 
 JOB_STATUS_COMPLETED = "completed"
+PAYMENT_RELIABILITY_MIN_DECISIONS = 3
+PAYMENT_RELIABILITY_DECIDED_STATUSES = ("confirmed", "mismatched", "disputed")
+PAYMENT_RELIABILITY_REVIEW_STATUSES = ("mismatched", "disputed")
 
 # ── Policy constants -- the single source of truth for these window sizes.
 # The frontend must read these from get_metric_definitions(), never
@@ -44,6 +47,19 @@ NEW_CUSTOMER_WINDOW_DAYS = 30
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _payment_reliability_status(decided_records: int, review_records: int) -> str:
+    """Classify only canonical customer/provider payment decisions.
+
+    Pending confirmations are not treated as bad behaviour. A customer needs
+    review only while at least one canonical payment record is currently
+    mismatched or disputed; otherwise three decisions are required before the
+    UI may call the relationship reliable.
+    """
+    if decided_records < PAYMENT_RELIABILITY_MIN_DECISIONS:
+        return "insufficient_data"
+    return "needs_review" if review_records else "reliable"
 
 
 class HomeServicesCustomerDirectoryService:
@@ -75,9 +91,43 @@ class HomeServicesCustomerDirectoryService:
             "confirmed_job_value": "Sum of ServiceInvoice.customer_payable_amount for this "
                                     "customer's paid invoices. Not platform collection -- the "
                                     "customer pays the provider directly.",
-            "payment_reliability": "NOT_IMPLEMENTED -- no canonical payment-confirmation-mismatch "
-                                    "data model exists yet; never fabricated as Reliable/Needs Review.",
+            "payment_reliability": "Derived from canonical direct-payment reconciliation records. "
+                                    "Pending confirmations are neutral; at least 3 customer decisions "
+                                    "are required. Any current mismatch or dispute needs review.",
         }
+
+    async def _payment_reliability_by_customer(
+        self, customer_ids: list[uuid.UUID], *, tenant_id: uuid.UUID | None = None,
+    ) -> dict[uuid.UUID, dict]:
+        """Return payment decision counts in one grouped query (never N+1)."""
+        if not customer_ids:
+            return {}
+        clauses = [
+            ServicePaymentRecord.customer_id.in_(customer_ids),
+            ServicePaymentRecord.reconciliation_status.in_(PAYMENT_RELIABILITY_DECIDED_STATUSES),
+        ]
+        if tenant_id:
+            clauses.append(ServicePaymentRecord.tenant_id == tenant_id)
+        rows = (await self.db.execute(
+            select(
+                ServicePaymentRecord.customer_id,
+                func.count(ServicePaymentRecord.id),
+                func.sum(case(
+                    (ServicePaymentRecord.reconciliation_status.in_(PAYMENT_RELIABILITY_REVIEW_STATUSES), 1),
+                    else_=0,
+                )),
+            ).where(*clauses).group_by(ServicePaymentRecord.customer_id)
+        )).all()
+        result: dict[uuid.UUID, dict] = {}
+        for customer_id, decided, review in rows:
+            decided_count = int(decided or 0)
+            review_count = int(review or 0)
+            result[customer_id] = {
+                "status": _payment_reliability_status(decided_count, review_count),
+                "decided_records": decided_count,
+                "review_records": review_count,
+            }
+        return result
 
     # ── The one shared per-customer aggregate ────────────────────────────────
     async def _customer_aggregates(self, *, customer_ids: list[uuid.UUID] | None = None,
@@ -114,10 +164,22 @@ class HomeServicesCustomerDirectoryService:
             job_clauses.append(ServiceJob.customer_id.in_(customer_ids))
         if tenant_id:
             job_clauses.append(ServiceJob.tenant_id == tenant_id)
+        # Aggregate in PostgreSQL. The old implementation selected every job
+        # row and rebuilt these counters/sets in Python, so memory and transfer
+        # cost grew with total job history rather than customer count.
         job_rows = (await self.db.execute(
-            select(ServiceJob.customer_id, ServiceJob.status, ServiceJob.offering_id,
-                   ServiceJob.tenant_id, ServiceJob.updated_at)
-            .where(*job_clauses)
+            select(
+                ServiceJob.customer_id,
+                func.count(ServiceJob.id).filter(ServiceJob.status == JOB_STATUS_COMPLETED),
+                func.count(ServiceJob.id).filter(ServiceJob.status == "cancelled"),
+                func.max(ServiceJob.updated_at),
+                func.count(func.distinct(ServiceJob.offering_id)).filter(
+                    ServiceJob.status == JOB_STATUS_COMPLETED,
+                ),
+                func.count(func.distinct(ServiceJob.tenant_id)).filter(
+                    ServiceJob.status == JOB_STATUS_COMPLETED,
+                ),
+            ).where(*job_clauses).group_by(ServiceJob.customer_id)
         )).all()
 
         agg: dict[uuid.UUID, dict] = {}
@@ -126,21 +188,17 @@ class HomeServicesCustomerDirectoryService:
                 "first_booking_at": first_booking_at[cid],
                 "completed_jobs": 0, "cancelled_jobs": 0,
                 "last_activity_at": first_booking_at[cid],
-                "services_used": set(), "providers_used": set(),
+                "services_used_count": 0, "providers_used_count": 0,
                 "is_active": False,
             }
-        for cid, status, offering_id, tenant_id, updated_at in job_rows:
+        for cid, completed_jobs, cancelled_jobs, updated_at, services_used, providers_used in job_rows:
             if cid not in agg:
                 continue
             a = agg[cid]
-            if status == JOB_STATUS_COMPLETED:
-                a["completed_jobs"] += 1
-                if offering_id:
-                    a["services_used"].add(offering_id)
-                if tenant_id:
-                    a["providers_used"].add(tenant_id)
-            elif status == "cancelled":
-                a["cancelled_jobs"] += 1
+            a["completed_jobs"] = int(completed_jobs or 0)
+            a["cancelled_jobs"] = int(cancelled_jobs or 0)
+            a["services_used_count"] = int(services_used or 0)
+            a["providers_used_count"] = int(providers_used or 0)
             if updated_at and (a["last_activity_at"] is None or updated_at > a["last_activity_at"]):
                 a["last_activity_at"] = updated_at
             if updated_at and updated_at >= active_cutoff:
@@ -149,66 +207,257 @@ class HomeServicesCustomerDirectoryService:
         for cid, a in agg.items():
             a["is_new"] = a["first_booking_at"] is not None and a["first_booking_at"] >= new_cutoff
             a["repeat_status"] = "repeat" if a["completed_jobs"] >= 2 else ("one_time" if a["completed_jobs"] == 1 else "none")
-            a["multi_service"] = len(a["services_used"]) >= 2
-            a["multi_provider"] = len(a["providers_used"]) >= 2
+            a["multi_service"] = a["services_used_count"] >= 2
+            a["multi_provider"] = a["providers_used_count"] >= 2
 
         return agg
 
-    async def get_summary(self, *, tenant_id: uuid.UUID | None = None) -> dict:
-        agg = await self._customer_aggregates(tenant_id=tenant_id)
-        total = len(agg)
-        active = sum(1 for a in agg.values() if a["is_active"])
-        new = sum(1 for a in agg.values() if a["is_new"])
-        repeat = sum(1 for a in agg.values() if a["repeat_status"] == "repeat")
-        one_time = sum(1 for a in agg.values() if a["repeat_status"] == "one_time")
-        with_completed = sum(1 for a in agg.values() if a["completed_jobs"] >= 1)
-        multi_service = sum(1 for a in agg.values() if a["multi_service"])
-        multi_provider = sum(1 for a in agg.values() if a["multi_provider"])
-        inactive = total - active
+    def _customer_rollup_subquery(self, *, tenant_id: uuid.UUID | None = None):
+        """PostgreSQL customer rollup used by high-cardinality admin reads.
 
-        open_complaints = 0
-        confirmed_value = Decimal("0")
-        if agg:
-            customer_id_list = list(agg.keys())
-            complaint_clauses = [
-                CustomerComplaint.customer_id.in_(customer_id_list),
+        The result stays inside SQL so summary/list endpoints never transfer
+        one row per customer merely to count or paginate it in Python.
+        """
+        booking_clauses = [ServiceBooking.customer_id.isnot(None)]
+        job_clauses = [ServiceJob.customer_id.isnot(None)]
+        if tenant_id:
+            booking_clauses.append(ServiceBooking.tenant_id == tenant_id)
+            job_clauses.append(ServiceJob.tenant_id == tenant_id)
+
+        bookings = (
+            select(
+                ServiceBooking.customer_id.label("customer_id"),
+                func.min(ServiceBooking.created_at).label("first_booking_at"),
+            )
+            .where(*booking_clauses)
+            .group_by(ServiceBooking.customer_id)
+            .subquery("hs_customer_bookings")
+        )
+        jobs = (
+            select(
+                ServiceJob.customer_id.label("customer_id"),
+                func.count(ServiceJob.id).filter(
+                    ServiceJob.status == JOB_STATUS_COMPLETED
+                ).label("completed_jobs"),
+                func.count(ServiceJob.id).filter(
+                    ServiceJob.status == "cancelled"
+                ).label("cancelled_jobs"),
+                func.max(ServiceJob.updated_at).label("last_job_at"),
+                func.count(func.distinct(ServiceJob.offering_id)).filter(
+                    ServiceJob.status == JOB_STATUS_COMPLETED
+                ).label("services_used_count"),
+                func.count(func.distinct(ServiceJob.tenant_id)).filter(
+                    ServiceJob.status == JOB_STATUS_COMPLETED
+                ).label("providers_used_count"),
+            )
+            .where(*job_clauses)
+            .group_by(ServiceJob.customer_id)
+            .subquery("hs_customer_jobs")
+        )
+        return (
+            select(
+                bookings.c.customer_id,
+                bookings.c.first_booking_at,
+                func.coalesce(jobs.c.completed_jobs, 0).label("completed_jobs"),
+                func.coalesce(jobs.c.cancelled_jobs, 0).label("cancelled_jobs"),
+                jobs.c.last_job_at,
+                func.coalesce(jobs.c.last_job_at, bookings.c.first_booking_at).label("last_activity_at"),
+                func.coalesce(jobs.c.services_used_count, 0).label("services_used_count"),
+                func.coalesce(jobs.c.providers_used_count, 0).label("providers_used_count"),
+            )
+            .select_from(bookings.outerjoin(jobs, jobs.c.customer_id == bookings.c.customer_id))
+            .subquery("hs_customer_rollup")
+        )
+
+    async def _list_customers_sql(
+        self, *, q: str | None, activity: str | None, repeat_status: str | None,
+        page: int, page_size: int,
+    ) -> dict:
+        """Platform-admin list with filtering and pagination inside PostgreSQL."""
+        active_cutoff = _utcnow() - timedelta(days=ACTIVE_WINDOW_DAYS)
+        rollup = self._customer_rollup_subquery()
+        open_complaints = (
+            select(
+                CustomerComplaint.customer_id.label("customer_id"),
+                func.count(CustomerComplaint.id).label("open_complaints"),
+            )
+            .where(
+                CustomerComplaint.customer_id.isnot(None),
                 CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
-            ]
-            if tenant_id:
-                complaint_clauses.append(CustomerComplaint.tenant_id == tenant_id)
-            open_complaints = (await self.db.execute(
-                select(func.count(func.distinct(CustomerComplaint.customer_id))).where(*complaint_clauses)
-            )).scalar() or 0
-            invoice_clauses = [
-                ServiceInvoice.customer_id.in_(customer_id_list),
-                ServiceInvoice.payment_status == "paid",
-            ]
-            if tenant_id:
-                invoice_clauses.append(ServiceInvoice.tenant_id == tenant_id)
-            confirmed_value = (await self.db.execute(
-                select(func.coalesce(func.sum(ServiceInvoice.customer_payable_amount), 0)).where(*invoice_clauses)
-            )).scalar() or Decimal("0")
+            )
+            .group_by(CustomerComplaint.customer_id)
+            .subquery("hs_customer_open_complaints")
+        )
+        payment = (
+            select(
+                ServicePaymentRecord.customer_id.label("customer_id"),
+                func.count(ServicePaymentRecord.id).label("decided_records"),
+                func.sum(case(
+                    (ServicePaymentRecord.reconciliation_status.in_(PAYMENT_RELIABILITY_REVIEW_STATUSES), 1),
+                    else_=0,
+                )).label("review_records"),
+            )
+            .where(
+                ServicePaymentRecord.customer_id.isnot(None),
+                ServicePaymentRecord.reconciliation_status.in_(PAYMENT_RELIABILITY_DECIDED_STATUSES),
+            )
+            .group_by(ServicePaymentRecord.customer_id)
+            .subquery("hs_customer_payment_reliability")
+        )
+        joined = (
+            rollup.outerjoin(User, User.id == rollup.c.customer_id)
+            .outerjoin(open_complaints, open_complaints.c.customer_id == rollup.c.customer_id)
+            .outerjoin(payment, payment.c.customer_id == rollup.c.customer_id)
+        )
+        filters = []
+        if q:
+            needle = f"%{q.strip()}%"
+            filters.append(or_(
+                User.full_name.ilike(needle), User.email.ilike(needle),
+                User.phone.ilike(needle), cast(rollup.c.customer_id, String).ilike(needle),
+            ))
+        if activity == "active":
+            filters.append(rollup.c.last_job_at >= active_cutoff)
+        elif activity == "inactive":
+            filters.append(or_(rollup.c.last_job_at.is_(None), rollup.c.last_job_at < active_cutoff))
+        if repeat_status == "repeat":
+            filters.append(rollup.c.completed_jobs >= 2)
+        elif repeat_status == "one_time":
+            filters.append(rollup.c.completed_jobs == 1)
+        elif repeat_status == "none":
+            filters.append(rollup.c.completed_jobs == 0)
 
-        avg_completed = (sum(a["completed_jobs"] for a in agg.values()) / with_completed) if with_completed else 0
+        total = int((await self.db.execute(
+            select(func.count()).select_from(joined).where(*filters)
+        )).scalar() or 0)
+        rows = (await self.db.execute(
+            select(
+                rollup,
+                User.full_name.label("name"), User.email, User.phone,
+                func.coalesce(open_complaints.c.open_complaints, 0).label("open_complaints"),
+                func.coalesce(payment.c.decided_records, 0).label("decided_records"),
+                func.coalesce(payment.c.review_records, 0).label("review_records"),
+            )
+            .select_from(joined)
+            .where(*filters)
+            .order_by(rollup.c.last_activity_at.desc(), rollup.c.customer_id)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )).mappings().all()
+
+        items = []
+        for row in rows:
+            completed = int(row["completed_jobs"] or 0)
+            last_job_at = row["last_job_at"]
+            decided = int(row["decided_records"] or 0)
+            review = int(row["review_records"] or 0)
+            items.append({
+                "customer_id": str(row["customer_id"]),
+                "is_active": bool(last_job_at and last_job_at >= active_cutoff),
+                "repeat_status": "repeat" if completed >= 2 else ("one_time" if completed == 1 else "none"),
+                "completed_jobs": completed,
+                "cancelled_jobs": int(row["cancelled_jobs"] or 0),
+                "services_used_count": int(row["services_used_count"] or 0),
+                "providers_used_count": int(row["providers_used_count"] or 0),
+                "open_complaints": int(row["open_complaints"] or 0),
+                "first_booking_at": row["first_booking_at"].isoformat() if row["first_booking_at"] else None,
+                "last_activity_at": row["last_activity_at"].isoformat() if row["last_activity_at"] else None,
+                "payment_reliability": _payment_reliability_status(decided, review),
+                "name": row["name"], "email": row["email"], "phone": row["phone"],
+            })
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+    async def get_summary(self, *, tenant_id: uuid.UUID | None = None) -> dict:
+        active_cutoff = _utcnow() - timedelta(days=ACTIVE_WINDOW_DAYS)
+        new_cutoff = _utcnow() - timedelta(days=NEW_CUSTOMER_WINDOW_DAYS)
+        rollup = self._customer_rollup_subquery(tenant_id=tenant_id)
+        stats = (await self.db.execute(select(
+            func.count().label("total"),
+            func.count().filter(rollup.c.last_job_at >= active_cutoff).label("active"),
+            func.count().filter(rollup.c.first_booking_at >= new_cutoff).label("new"),
+            func.count().filter(rollup.c.completed_jobs >= 2).label("repeat"),
+            func.count().filter(rollup.c.completed_jobs == 1).label("one_time"),
+            func.count().filter(rollup.c.completed_jobs >= 1).label("with_completed"),
+            func.count().filter(rollup.c.services_used_count >= 2).label("multi_service"),
+            func.count().filter(rollup.c.providers_used_count >= 2).label("multi_provider"),
+            func.avg(rollup.c.completed_jobs).filter(
+                rollup.c.completed_jobs >= 1
+            ).label("avg_completed"),
+        ).select_from(rollup))).mappings().one()
+
+        complaint_clauses = [
+            CustomerComplaint.customer_id.isnot(None),
+            CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
+        ]
+        invoice_clauses = [
+            ServiceInvoice.customer_id.isnot(None), ServiceInvoice.payment_status == "paid",
+        ]
+        payment_clauses = [
+            ServicePaymentRecord.customer_id.isnot(None),
+            ServicePaymentRecord.reconciliation_status.in_(PAYMENT_RELIABILITY_DECIDED_STATUSES),
+        ]
+        if tenant_id:
+            complaint_clauses.append(CustomerComplaint.tenant_id == tenant_id)
+            invoice_clauses.append(ServiceInvoice.tenant_id == tenant_id)
+            payment_clauses.append(ServicePaymentRecord.tenant_id == tenant_id)
+
+        open_complaints = int((await self.db.execute(
+            select(func.count(func.distinct(CustomerComplaint.customer_id)))
+            .select_from(CustomerComplaint)
+            .join(rollup, rollup.c.customer_id == CustomerComplaint.customer_id)
+            .where(*complaint_clauses)
+        )).scalar() or 0)
+        confirmed_value = (await self.db.execute(
+            select(func.coalesce(func.sum(ServiceInvoice.customer_payable_amount), 0))
+            .select_from(ServiceInvoice)
+            .join(rollup, rollup.c.customer_id == ServiceInvoice.customer_id)
+            .where(*invoice_clauses)
+        )).scalar() or Decimal("0")
+        payment_rollup = (
+            select(
+                ServicePaymentRecord.customer_id.label("customer_id"),
+                func.count(ServicePaymentRecord.id).label("decided"),
+                func.sum(case(
+                    (ServicePaymentRecord.reconciliation_status.in_(PAYMENT_RELIABILITY_REVIEW_STATUSES), 1),
+                    else_=0,
+                )).label("review"),
+            )
+            .where(*payment_clauses)
+            .group_by(ServicePaymentRecord.customer_id)
+            .subquery("hs_customer_payment_summary")
+        )
+        payment_review = int((await self.db.execute(
+            select(func.count())
+            .select_from(payment_rollup.join(
+                rollup, rollup.c.customer_id == payment_rollup.c.customer_id
+            ))
+            .where(
+                payment_rollup.c.decided >= PAYMENT_RELIABILITY_MIN_DECISIONS,
+                payment_rollup.c.review > 0,
+            )
+        )).scalar() or 0)
+
+        total = int(stats["total"] or 0)
+        active = int(stats["active"] or 0)
+        repeat = int(stats["repeat"] or 0)
+        with_completed = int(stats["with_completed"] or 0)
 
         return {
             "total_customers": total,
             "active_customers": active,
-            "new_customers": new,
+            "new_customers": int(stats["new"] or 0),
             "repeat_customers": repeat,
-            "one_time_customers": one_time,
-            "inactive_customers": inactive,
+            "one_time_customers": int(stats["one_time"] or 0),
+            "inactive_customers": total - active,
             "returning_rate": round((repeat / with_completed * 100), 1) if with_completed else 0.0,
-            "multi_service_customers": multi_service,
-            "multi_provider_customers": multi_provider,
+            "multi_service_customers": int(stats["multi_service"] or 0),
+            "multi_provider_customers": int(stats["multi_provider"] or 0),
             "completed_job_customers": with_completed,
-            "average_completed_jobs": round(avg_completed, 1),
+            "average_completed_jobs": round(float(stats["avg_completed"] or 0), 1),
             "confirmed_job_value": str(confirmed_value),
             "open_complaints": open_complaints,
-            # Not fabricated -- no canonical payment-confirmation-mismatch
-            # data model exists yet to compute this honestly.
-            "payment_review": None,
-            "payment_review_available": False,
+            "payment_review": payment_review,
+            "payment_review_available": True,
             "active_window_days": ACTIVE_WINDOW_DAYS,
             "new_customer_window_days": NEW_CUSTOMER_WINDOW_DAYS,
         }
@@ -217,8 +466,16 @@ class HomeServicesCustomerDirectoryService:
                               repeat_status: str | None = None,
                               page: int = 1, page_size: int = 20,
                               tenant_id: uuid.UUID | None = None) -> dict:
+        if tenant_id is None:
+            return await self._list_customers_sql(
+                q=q, activity=activity, repeat_status=repeat_status,
+                page=page, page_size=page_size,
+            )
         agg = await self._customer_aggregates(tenant_id=tenant_id)
         customer_ids = list(agg.keys())
+        payment_reliability = await self._payment_reliability_by_customer(
+            customer_ids, tenant_id=tenant_id,
+        )
 
         users_by_id: dict[uuid.UUID, User] = {}
         if customer_ids:
@@ -267,10 +524,11 @@ class HomeServicesCustomerDirectoryService:
                 "repeat_status": a["repeat_status"],
                 "completed_jobs": a["completed_jobs"],
                 "cancelled_jobs": a["cancelled_jobs"],
-                "services_used_count": len(a["services_used"]),
+                "services_used_count": a["services_used_count"],
                 "open_complaints": open_complaints_by_customer.get(cid, 0),
                 "first_booking_at": a["first_booking_at"].isoformat() if a["first_booking_at"] else None,
                 "last_activity_at": a["last_activity_at"].isoformat() if a["last_activity_at"] else None,
+                "payment_reliability": payment_reliability.get(cid, {}).get("status", "insufficient_data"),
             }
             if tenant_id:
                 item["alias"] = customer_alias(tenant_id, cid)
@@ -280,7 +538,7 @@ class HomeServicesCustomerDirectoryService:
                 item["name"] = u.full_name if u else None
                 item["email"] = u.email if u else None
                 item["phone"] = u.phone if u else None
-                item["providers_used_count"] = len(a["providers_used"])
+                item["providers_used_count"] = a["providers_used_count"]
             items.append(item)
 
         items.sort(key=lambda x: x["last_activity_at"] or "", reverse=True)
@@ -294,6 +552,11 @@ class HomeServicesCustomerDirectoryService:
         if not a:
             raise NotFoundException("HomeServicesCustomer", str(customer_id))
         u = await self.db.get(User, customer_id)
+        payment_reliability = (
+            await self._payment_reliability_by_customer([customer_id], tenant_id=tenant_id)
+        ).get(customer_id, {
+            "status": "insufficient_data", "decided_records": 0, "review_records": 0,
+        })
 
         service_clauses = [ServiceJob.customer_id == customer_id, ServiceJob.status == JOB_STATUS_COMPLETED]
         if tenant_id:
@@ -340,7 +603,9 @@ class HomeServicesCustomerDirectoryService:
                 {"offering_id": str(o), "master_service_name": master_services.get(o), "completed_jobs": c}
                 for o, c in service_rows if o
             ],
-            "payment_reliability": "insufficient_data" if a["completed_jobs"] < 3 else "not_implemented",
+            "payment_reliability": payment_reliability["status"],
+            "payment_decisions": payment_reliability["decided_records"],
+            "payment_records_needing_review": payment_reliability["review_records"],
         }
         if tenant_id:
             # Customer-privacy policy: alias only, never raw name/phone/

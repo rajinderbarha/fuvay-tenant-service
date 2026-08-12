@@ -56,10 +56,14 @@ export const RESTRICTED_NAV_ITEMS: { id: OnboardingNavId; href: string; label: s
   { id: "messages", href: "/onboarding/messages", label: "Messages & Requests", icon: <Bell size={16}/> },
 ];
 
-export function OnboardingShell({ children, activeNav, restricted = false }: {
+export function OnboardingShell({ children, activeNav, restricted = false, showProgress = true }: {
   children: React.ReactNode;
   activeNav: OnboardingNavId;
   restricted?: boolean;
+  /** Active tenants may reuse a setup editor from an operational workspace.
+   * Their onboarding overview is intentionally locked (409), so that mode
+   * must not make the setup-progress request. */
+  showProgress?: boolean;
 }) {
   const navItems = restricted ? RESTRICTED_NAV_ITEMS : NAV_ITEMS;
 
@@ -83,7 +87,7 @@ export function OnboardingShell({ children, activeNav, restricted = false }: {
    */
   const [progress, setProgress] = useState<{ pct: number; done: number; total: number } | null>(null);
   useEffect(() => {
-    if (restricted) return;
+    if (restricted || !showProgress) return;
     let cancelled = false;
     homeServicesSetupOverviewApi
       .getOverview()
@@ -103,7 +107,7 @@ export function OnboardingShell({ children, activeNav, restricted = false }: {
       // trying to complete setup in.
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [restricted]);
+  }, [restricted, showProgress]);
   const tenant = useTenant();
   const [myName, setMyName] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);

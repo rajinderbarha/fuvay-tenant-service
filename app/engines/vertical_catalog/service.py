@@ -197,6 +197,64 @@ class VerticalCatalogService:
         await db.refresh(row)
         return self._enrollment_dict(row)
 
+    async def submit_for_review(self, db: AsyncSession, tenant_id, vertical_key: str, *,
+                                actor_id=None) -> dict:
+        """Validate and submit a tenant's vertical setup for Admin review.
+
+        This is the single tenant-to-Admin handoff.  The enrollment drives
+        tenant routing while ``tenants.verification_status`` drives the
+        existing Admin onboarding queue, so both records must move together.
+        """
+        from app.engines.vertical_catalog.declarations import get_declaration_status
+        from app.engines.vertical_catalog.home_services_setup_service import get_setup_overview
+        from app.exceptions import ServiceOSException
+
+        enrollment = await self.get_or_create_enrollment(db, tenant_id, vertical_key)
+        if enrollment["status"] not in ("draft", "draft_setup", "changes_requested"):
+            raise ServiceOSException(
+                "VERTICAL_SETUP_ALREADY_SUBMITTED",
+                f"This setup cannot be submitted from '{enrollment['status']}' status.",
+                status_code=409,
+            )
+
+        overview = await get_setup_overview(db, tenant_id)
+        incomplete = [
+            section["key"] for section in overview["sections"]
+            if section["required"] and section["status"] != "complete"
+        ]
+        if incomplete:
+            raise ServiceOSException(
+                "VERTICAL_SETUP_INCOMPLETE",
+                "Complete all required setup sections before submitting for review.",
+                status_code=422,
+                context={"incomplete_sections": incomplete},
+            )
+
+        declarations = await get_declaration_status(
+            db, uuid.UUID(str(tenant_id)), uuid.UUID(enrollment["vertical_id"])
+        )
+        if not declarations["all_accepted"]:
+            raise ServiceOSException(
+                "ONBOARDING_DECLARATIONS_REQUIRED",
+                "Accept all required declarations before submitting for review.",
+                status_code=422,
+            )
+
+        # The legacy Admin onboarding workspace is intentionally retained,
+        # but it reads Tenant.verification_status. Keep it synchronized with
+        # the canonical vertical enrollment in the same transaction committed
+        # by transition_enrollment below.
+        await db.execute(
+            text(
+                "UPDATE tenants SET verification_status='pending', "
+                "status='under_review', updated_at=NOW() WHERE id=:tid"
+            ),
+            {"tid": str(tenant_id)},
+        )
+        return await self.transition_enrollment(
+            db, uuid.UUID(enrollment["id"]), "submitted", actor_id=actor_id
+        )
+
     def _enrollment_dict(self, r: TenantVerticalEnrollment) -> dict:
         return {
             "id": str(r.id), "tenant_id": str(r.tenant_id), "vertical_id": str(r.vertical_id),

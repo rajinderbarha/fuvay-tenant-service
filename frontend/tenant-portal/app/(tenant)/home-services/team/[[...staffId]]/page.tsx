@@ -144,17 +144,17 @@ function TeamPageContent() {
                   border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }}
               />
             </div>
-            <select value={role} onChange={e => setRole(e.target.value)}
+            <select aria-label="Staff role" value={role} onChange={e => setRole(e.target.value)}
               style={{ padding: "8px 8px", borderRadius: 8, fontSize: 12, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }}>
               <option value="">All roles</option>
               {(data?.available_filters.role ?? []).map(r => <option key={r} value={r}>{r}</option>)}
             </select>
-            <select value={status} onChange={e => setStatus(e.target.value)}
+            <select aria-label="Staff status" value={status} onChange={e => setStatus(e.target.value)}
               style={{ padding: "8px 8px", borderRadius: 8, fontSize: 12, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }}>
               <option value="">All statuses</option>
               {(data?.available_filters.status ?? []).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select value={availability} onChange={e => setAvailability(e.target.value)}
+            <select aria-label="Staff availability" value={availability} onChange={e => setAvailability(e.target.value)}
               style={{ padding: "8px 8px", borderRadius: 8, fontSize: 12, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }}>
               <option value="">All availability</option>
               {(data?.available_filters.availability ?? []).map(a => <option key={a} value={a}>{a}</option>)}

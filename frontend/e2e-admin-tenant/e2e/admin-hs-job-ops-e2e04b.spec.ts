@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { loginAsSuperAdmin } from './helpers/admin-auth';
+import { apiGet, login, SEED, SUPER_ADMIN } from './helpers/api';
 
 const APP = process.env.E2E_APP || 'admin';
 const EVIDENCE_DIR = path.join(__dirname, '..', 'evidence', 'e2e04b');
@@ -11,26 +12,27 @@ function log(file: string, line: string) {
   fs.appendFileSync(path.join(EVIDENCE_DIR, file), line + '\n');
 }
 
-// The only job anywhere in this database with a real usage_credit_ledger
-// row (event_type='completed_job_deduction') is this one. No job in this
-// database has ever gone through the real staff-completion API with
-// completion_data populated -- confirmed via direct Postgres query -- so
-// there is no "fresh completed job with a nonzero deduction" to point at.
-// Per explicit user decision (AskUserQuestion, 2026-08-06): do not fabricate
-// one by mutating real business data through the completion API; instead
-// assert against whatever real state exists. This job's deduction happens
-// to be a zero-value entry (credit_delta/balance_before/balance_after all
-// 0.00), which is still a real, live ledger row and still exercises every
-// UI code path (deduction section renders, ledger link renders and
-// navigates, balance arithmetic holds, no duplicate rows) -- it just can't
-// prove a specific nonzero historical figure like the old fixture could.
-// Tenant is "T Co", verified vertical='home_services' per user's scope
-// constraint (home services only, for now).
-const JOB_ID = '9cf639a9-40ea-4eb3-809e-61fb49461536';
-const TENANT_ID = '29b67b33-09f2-4dea-a060-1edaa2829a58';
+// Resolve the current real completed job from the authoritative ledger. This
+// database is intentionally allowed to evolve; pinning the suite to one old
+// zero-value row made the admin UI look broken after newer native journeys
+// created valid non-zero deductions.
+let JOB_ID = '';
+const TENANT_ID = SEED.tenantId;
 
 test.describe('ADMIN-TENANT-E2E-04B home services job operations unification', () => {
   test.skip(APP !== 'admin', 'admin-only');
+
+  test.beforeAll(async () => {
+    const token = await login(SUPER_ADMIN.email, SUPER_ADMIN.password);
+    const ledger = await apiGet(`/v1/admin/tenants/${TENANT_ID}/usage-credit-ledger`, token);
+    expect(ledger.status).toBe(200);
+    const entry = (ledger.body.data?.entries ?? []).find(
+      (row: { event_type?: string; job_id?: string | null; credit_delta?: number }) =>
+        row.event_type === 'completed_job_deduction' && row.job_id && Number(row.credit_delta) < 0,
+    );
+    expect(entry, 'a real non-zero completed-job deduction is required').toBeTruthy();
+    JOB_ID = entry.job_id;
+  });
 
   test('canonical Home Services Jobs route opens with real jobs', async ({ page }) => {
     // /admin/home-services/service-jobs (the list page) was deleted in
@@ -59,7 +61,7 @@ test.describe('ADMIN-TENANT-E2E-04B home services job operations unification', (
     // 'JOB-20260710-000002' / 850 / payment-mode values.
     await loginAsSuperAdmin(page);
     const resp = await page.goto(`/admin/home-services/service-jobs/${JOB_ID}`);
-    await page.waitForTimeout(2000);
+    await expect(page.getByText(TENANT_ID, { exact: true })).toBeVisible({ timeout: 15_000 });
     const status = resp?.status() ?? -1;
     const bodyText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'job-detail.png'), fullPage: true });
@@ -70,18 +72,10 @@ test.describe('ADMIN-TENANT-E2E-04B home services job operations unification', (
     expect(bodyText).not.toMatch(/\bundefined\b/);
   });
 
-  test('Completed Job Deduction section shows the real (zero-value) live ledger entry', async ({ page }) => {
-    // No job in this database has ever completed with a nonzero deduction
-    // recorded (confirmed: zero rows anywhere with completion_data set).
-    // This is the ONE real usage_credit_ledger row of type
-    // completed_job_deduction that exists at all, and it happens to be a
-    // 0.00 -> 0.00 entry. The section still renders whenever `deduction` is
-    // truthy regardless of amount (verified in page.tsx ~L465-490), so this
-    // genuinely exercises the same UI code path the old fixture claimed to
-    // test -- it just can't assert a specific nonzero historical figure.
+  test('Completed Job Deduction section shows a real non-zero live ledger entry', async ({ page }) => {
     await loginAsSuperAdmin(page);
     await page.goto(`/admin/home-services/service-jobs/${JOB_ID}`);
-    await page.waitForTimeout(2000);
+    await expect(page.getByText('Balance Before', { exact: true })).toBeVisible({ timeout: 15_000 });
     const bodyText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'job-detail-deduction.png'), fullPage: true });
     log('deduction.log', `bodySnippet=${(bodyText.match(/Completed Job Deduction[\s\S]{0,400}/) || [''])[0].replace(/\n/g, ' | ')}`);
@@ -115,10 +109,10 @@ test.describe('ADMIN-TENANT-E2E-04B home services job operations unification', (
     // section (which carries "Balance Before"/"Balance After"/"Deduction
     // Credits" as label lines followed by value lines in innerText) rather
     // than asserting hardcoded historical figures, since this job's real
-    // entry is 0.00 -> 0.00.
+    // entry is read from the live API rather than a historical fixture.
     await loginAsSuperAdmin(page);
     await page.goto(`/admin/home-services/service-jobs/${JOB_ID}`);
-    await page.waitForTimeout(2000);
+    await expect(page.getByText('Balance Before', { exact: true })).toBeVisible({ timeout: 15_000 });
     const lines = (await page.locator('body').innerText()).split('\n').map(l => l.trim());
     const valueAfterLabel = (label: string) => {
       const idx = lines.findIndex(l => l === label);
@@ -140,10 +134,10 @@ test.describe('ADMIN-TENANT-E2E-04B home services job operations unification', (
   test('no duplicate ledger entry for the same job after refresh', async ({ page }) => {
     await loginAsSuperAdmin(page);
     await page.goto(`/admin/finance/usage-credits?tenant_id=${TENANT_ID}&job_id=${JOB_ID}`);
-    await page.waitForTimeout(1500);
+    await expect(page.locator('tbody tr')).toHaveCount(1, { timeout: 15_000 });
     const rowCountBefore = await page.locator('tbody tr').count();
     await page.reload();
-    await page.waitForTimeout(1500);
+    await expect(page.locator('tbody tr')).toHaveCount(1, { timeout: 15_000 });
     const rowCountAfter = await page.locator('tbody tr').count();
     log('exactly-once.log', `rowsBefore=${rowCountBefore} rowsAfter=${rowCountAfter}`);
     expect(rowCountBefore).toBe(1);

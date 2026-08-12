@@ -27,6 +27,27 @@ from app.schemas.base import ApiResponse, ok
 
 router = APIRouter(prefix="/v1", tags=["My Profile"])
 
+BUSINESS_ENTITY_TYPES = [
+    {"value": "sole_proprietorship", "label": "Sole proprietorship"},
+    {"value": "partnership", "label": "Partnership"},
+    {"value": "limited_liability_partnership", "label": "Limited liability partnership (LLP)"},
+    {"value": "one_person_company", "label": "One person company (OPC)"},
+    {"value": "private_limited", "label": "Private limited company"},
+    {"value": "public_limited", "label": "Public limited company"},
+    {"value": "trust_or_society", "label": "Trust or society"},
+    {"value": "other", "label": "Other"},
+]
+
+INDIA_STATES_AND_UTS = [
+    "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam",
+    "Bihar", "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu",
+    "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir",
+    "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh",
+    "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha",
+    "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana",
+    "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+]
+
 
 def _req_id(r: Request) -> str:
     return getattr(r.state, "request_id", "")
@@ -96,6 +117,22 @@ async def update_my_profile(
 
 
 # ── Provider: business profile ────────────────────────────────────────────────
+
+@router.get(
+    "/provider/business-profile/options",
+    response_model=ApiResponse[dict],
+    tags=["Provider Business Profile"],
+    summary="Get business-profile form options",
+)
+async def get_business_profile_options(
+    r: Request,
+    actor: UserContext = Depends(require_technician),
+) -> ApiResponse[dict]:
+    """Canonical values accepted by the onboarding profile selectors."""
+    return ok({
+        "entity_types": BUSINESS_ENTITY_TYPES,
+        "states": INDIA_STATES_AND_UTS,
+    }, _req_id(r))
 
 @router.get(
     "/provider/business-profile",

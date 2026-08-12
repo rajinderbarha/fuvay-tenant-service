@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, RefreshCw, Info, MapPin, Scale } from "lucide-react";
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
+import { TenantLayout } from "../../../../../../components/layout/TenantLayout";
 import { ProgressRing } from "../../../../../../components/onboarding/ProgressRing";
 import { StepProgressBar } from "../../../../../../components/onboarding/StepProgressBar";
 import { Card, Btn, Badge, Skeleton, Input } from "../../../../../../components/shared/ui";
@@ -25,8 +26,15 @@ const DAYS = [
   { idx: 6, name: "Saturday" },
 ];
 
-export default function CoverageAvailabilityPage() {
+function CoverageShell({ mode, children }: { mode: "onboarding" | "workspace"; children: React.ReactNode }) {
+  return mode === "workspace"
+    ? <TenantLayout activeNav="business-hours">{children}</TenantLayout>
+    : <OnboardingShell activeNav="coverage-availability">{children}</OnboardingShell>;
+}
+
+export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: "onboarding" | "workspace" }) {
   const router = useRouter();
+  const workspace = mode === "workspace";
   const [areas, setAreas] = useState<ProviderServiceArea[] | null>(null);
   const [rules, setRules] = useState<ProviderAvailabilityRule[] | null>(null);
   const [bookingWindow, setBookingWindow] = useState<BookingWindowSettings | null>(null);
@@ -280,7 +288,7 @@ export default function CoverageAvailabilityPage() {
   }
 
   function handleBack() {
-    router.push("/tenant/home-services/setup/services-pricing");
+    router.push(workspace ? "/dashboard" : "/tenant/home-services/setup/services-pricing");
   }
 
   async function handleSaveDraft() {
@@ -341,18 +349,18 @@ export default function CoverageAvailabilityPage() {
 
   if (loading) {
     return (
-      <OnboardingShell activeNav="coverage-availability">
+      <CoverageShell mode={mode}>
         <Skeleton height={70} style={{ marginBottom: 20 }}/>
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
           <Skeleton height={520}/><Skeleton height={520}/>
         </div>
-      </OnboardingShell>
+      </CoverageShell>
     );
   }
 
   if (error && !areas) {
     return (
-      <OnboardingShell activeNav="coverage-availability">
+      <CoverageShell mode={mode}>
         <Card>
           <div role="alert" style={{ textAlign: "center", padding: "32px 16px" }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
@@ -362,24 +370,24 @@ export default function CoverageAvailabilityPage() {
             <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={load}>Retry</Btn>
           </div>
         </Card>
-      </OnboardingShell>
+      </CoverageShell>
     );
   }
 
   if (!areas || !rules || !bookingWindow) return null;
 
   return (
-    <OnboardingShell activeNav="coverage-availability">
+    <CoverageShell mode={mode}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 4 }}>
         <div>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 4px" }}>TENANT ONBOARDING</p>
-          <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0, color: "var(--text-primary)" }}>Coverage &amp; availability</h1>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 4px" }}>{workspace ? "BUSINESS" : "TENANT ONBOARDING"}</p>
+          <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0, color: "var(--text-primary)" }}>{workspace ? "Coverage & Hours" : "Coverage & availability"}</h1>
           <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "6px 0 0" }}>Define where and when your business accepts Home Services bookings.</p>
         </div>
         <Badge variant={isReady ? "success" : "warning"} size="lg">{isReady ? "Ready for bookings" : "Setup incomplete"}</Badge>
       </div>
 
-      <StepProgressBar step={STEP_NUMBER} total={TOTAL_STEPS} />
+      {!workspace && <StepProgressBar step={STEP_NUMBER} total={TOTAL_STEPS} />}
 
       {error && (
         <div role="alert" style={{
@@ -402,7 +410,7 @@ export default function CoverageAvailabilityPage() {
       <div className="cov-grid">
         <div style={{ minWidth: 0 }}>
           <Card style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Service coverage</h3>
+            <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Service coverage</h2>
             <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>Choose the areas where your team can provide Home Services.</p>
 
             <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "var(--surface-sunken)", borderRadius: "var(--radius-lg)", padding: 4, width: "fit-content" }}>
@@ -455,7 +463,7 @@ export default function CoverageAvailabilityPage() {
                           {a.city && <span style={{ fontSize: 12, color: "var(--text-tertiary)", marginLeft: 8 }}>{a.city}{a.state ? `, ${a.state}` : ""}</span>}
                         </span>
                         <Badge variant="success">Active</Badge>
-                        <button onClick={() => handleRemovePincode(a.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", display: "flex" }}>
+                        <button aria-label={`Remove coverage for ${a.zipcode}`} onClick={() => handleRemovePincode(a.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", display: "flex" }}>
                           <Trash2 size={15}/>
                         </button>
                       </div>
@@ -493,7 +501,7 @@ export default function CoverageAvailabilityPage() {
                           {a.radius_km} km from ({a.latitude}, {a.longitude})
                         </span>
                         <Badge variant="success">Active</Badge>
-                        <button onClick={() => handleRemovePincode(a.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", display: "flex" }}>
+                        <button aria-label={`Remove coverage for ${a.city ?? a.zipcode ?? "area"}`} onClick={() => handleRemovePincode(a.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", display: "flex" }}>
                           <Trash2 size={15}/>
                         </button>
                       </div>
@@ -511,7 +519,7 @@ export default function CoverageAvailabilityPage() {
 
           <Card style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Weekly business hours</h3>
+              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Weekly business hours</h2>
               <Btn variant="secondary" size="sm" onClick={handleCopyMondayToWeekdays}>Copy Monday to weekdays</Btn>
             </div>
             <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 12px" }}>Timezone: {bookingWindow.timezone}</p>
@@ -522,7 +530,7 @@ export default function CoverageAvailabilityPage() {
                 <div key={d.idx} className="cov-day-row">
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{d.name}</span>
                   <label style={{ position: "relative", display: "inline-block", width: 40, height: 22 }}>
-                    <input type="checkbox" checked={enabled} onChange={e => handleToggleDay(d.idx, e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }}/>
+                    <input type="checkbox" aria-label={`${d.name} open`} checked={enabled} onChange={e => handleToggleDay(d.idx, e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }}/>
                     <span onClick={() => handleToggleDay(d.idx, !enabled)} style={{
                       position: "absolute", inset: 0, borderRadius: 999, cursor: "pointer",
                       background: enabled ? "var(--brand)" : "var(--border)",
@@ -532,9 +540,9 @@ export default function CoverageAvailabilityPage() {
                   </label>
                   {enabled ? (
                     <>
-                      <input type="time" value={rule!.start_time} onChange={e => handleTimeChange(d.idx, "start_time", e.target.value)}
+                      <input type="time" aria-label={`${d.name} opening time`} value={rule!.start_time} onChange={e => handleTimeChange(d.idx, "start_time", e.target.value)}
                         style={{ height: 34, padding: "0 8px", fontSize: 13, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)" }}/>
-                      <input type="time" value={rule!.end_time} onChange={e => handleTimeChange(d.idx, "end_time", e.target.value)}
+                      <input type="time" aria-label={`${d.name} closing time`} value={rule!.end_time} onChange={e => handleTimeChange(d.idx, "end_time", e.target.value)}
                         style={{ height: 34, padding: "0 8px", fontSize: 13, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)" }}/>
                     </>
                   ) : <span style={{ fontSize: 13, color: "var(--text-tertiary)", gridColumn: "span 2" }}>Closed</span>}
@@ -544,7 +552,7 @@ export default function CoverageAvailabilityPage() {
           </Card>
 
           <Card style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>Booking controls</h3>
+            <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>Booking controls</h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>
               <Input label="Minimum notice (minutes)" type="number" value={String(bookingWindow.minimum_notice_minutes)}
                 onChange={v => handleBookingWindowChange("minimum_notice_minutes", Number(v))}/>
@@ -569,10 +577,10 @@ export default function CoverageAvailabilityPage() {
           </Card>
 
           <Card>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Schedule exceptions</h3>
+            <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Schedule exceptions</h2>
             <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>Add holidays or one-time closures.</p>
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-              <input type="date" value={newExceptionDate} onChange={e => setNewExceptionDate(e.target.value)}
+              <input type="date" aria-label="Exception date" value={newExceptionDate} onChange={e => setNewExceptionDate(e.target.value)}
                 style={{ height: 38, padding: "0 10px", fontSize: 13, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text-primary)" }}/>
               <div style={{ flex: 1, minWidth: 160 }}>
                 <Input placeholder="Reason (e.g. Independence Day)" value={newExceptionReason} onChange={setNewExceptionReason}/>
@@ -584,7 +592,7 @@ export default function CoverageAvailabilityPage() {
             ) : (exceptions ?? []).map(ex => (
               <div key={ex.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
                 <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{ex.date} · {ex.full_day_closed ? "Closed" : "Custom hours"} · {ex.reason}</span>
-                <button onClick={() => handleRemoveException(ex.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", display: "flex" }}>
+                <button aria-label={`Remove schedule exception for ${ex.date}`} onClick={() => handleRemoveException(ex.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", display: "flex" }}>
                   <Trash2 size={15}/>
                 </button>
               </div>
@@ -594,7 +602,7 @@ export default function CoverageAvailabilityPage() {
 
         <div style={{ minWidth: 0 }}>
           <Card style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>Setup readiness</h3>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>{workspace ? "Booking readiness" : "Setup readiness"}</h3>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
               <ProgressRing pct={readinessPct} tone={isReady ? "success" : "brand"} />
             </div>
@@ -650,10 +658,17 @@ export default function CoverageAvailabilityPage() {
         background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)",
         display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap",
       }}>
-        <Btn variant="secondary" onClick={handleBack}>Back</Btn>
-        <Btn variant="secondary" loading={saving} onClick={handleSaveDraft}>Save draft</Btn>
-        <Btn variant="primary" loading={saving} onClick={handleSaveAndContinue}>Save &amp; continue</Btn>
+        <span style={{ marginRight: "auto", alignSelf: "center", fontSize: 12, color: "var(--text-tertiary)" }}>
+          {workspace ? "Changes save automatically." : ""}
+        </span>
+        <Btn variant="secondary" onClick={handleBack}>{workspace ? "Back to dashboard" : "Back"}</Btn>
+        {!workspace && <Btn variant="secondary" loading={saving} onClick={handleSaveDraft}>Save draft</Btn>}
+        {!workspace && <Btn variant="primary" loading={saving} onClick={handleSaveAndContinue}>Save &amp; continue</Btn>}
       </div>
-    </OnboardingShell>
+    </CoverageShell>
   );
+}
+
+export default function CoverageAvailabilityPage() {
+  return <CoverageAvailabilityWorkspace/>;
 }

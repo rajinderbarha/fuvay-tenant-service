@@ -72,17 +72,27 @@ class HomeServicesProviderDirectoryService:
         return stmt
 
     async def get_summary(self, *, q: str | None = None) -> dict:
-        base = self._base_query(q=q)
-        rows = (await self.db.execute(base)).scalars().all()
+        # Aggregate in PostgreSQL.  Loading every Tenant row and counting in
+        # Python made this dashboard endpoint O(n) in application memory and
+        # unusable for a large provider population.
+        base = self._base_query(q=q).subquery()
+        counts = (await self.db.execute(select(
+            func.count().label("total_providers"),
+            func.count().filter(base.c.verification_status.in_(("not_started", "pending"))).label("pending_verification"),
+            func.count().filter(base.c.status == "active").label("active"),
+            func.count().filter(base.c.status.in_(SETUP_INCOMPLETE_STATUSES)).label("setup_incomplete"),
+            func.count().filter(base.c.verification_status == "changes_requested").label("changes_requested"),
+            func.count().filter(base.c.status == "suspended").label("suspended"),
+            func.count().filter(or_(base.c.status == "rejected", base.c.verification_status == "rejected")).label("rejected"),
+            func.count().filter(or_(base.c.verification_status == "changes_requested", base.c.status == "suspended")).label("needs_attention"),
+        ).select_from(base))).one()
         return {
-            "total_providers": len(rows),
-            "pending_verification": sum(1 for t in rows if t.verification_status in ("not_started", "pending")),
-            "active": sum(1 for t in rows if t.status == "active"),
-            "setup_incomplete": sum(1 for t in rows if t.status in SETUP_INCOMPLETE_STATUSES),
-            "changes_requested": sum(1 for t in rows if t.verification_status == "changes_requested"),
-            "suspended": sum(1 for t in rows if t.status == "suspended"),
-            "rejected": sum(1 for t in rows if t.status == "rejected" or t.verification_status == "rejected"),
-            "needs_attention": sum(1 for t in rows if t.verification_status == "changes_requested" or t.status == "suspended"),
+            key: int(getattr(counts, key) or 0)
+            for key in (
+                "total_providers", "pending_verification", "active",
+                "setup_incomplete", "changes_requested", "suspended",
+                "rejected", "needs_attention",
+            )
         }
 
     async def list_providers(self, *, q: str | None = None, status: str | None = None,

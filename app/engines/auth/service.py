@@ -123,6 +123,130 @@ class AuthService:
         )
         return r.scalar_one_or_none()
 
+    async def resolve_post_login_destination(self, user: User) -> dict[str, str]:
+        """Project one backend-authoritative destination after authentication.
+
+        Tenant status protects the account as a whole; the vertical
+        enrollment then selects setup, review, activation, or operations.
+        Frontends map these stable keys to their own routes.
+        """
+        if user.role == "customer":
+            return {"next_destination": "access_rejected", "reason_code": "CUSTOMER_ROLE_NOT_PERMITTED"}
+        if user.role == "technician":
+            return {"next_destination": "technician_app", "reason_code": "TECHNICIAN_ROLE_NO_PORTAL_ACCESS"}
+        if user.role in ("super_admin", "admin_operations", "admin_finance", "admin_support", "admin_readonly"):
+            return {"next_destination": "admin_dashboard", "reason_code": "ADMIN_ROLE"}
+        if not user.tenant_id:
+            return {"next_destination": "resume_signup", "reason_code": "NO_TENANT_MEMBERSHIP"}
+
+        tenant_result = await self.db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+        tenant = tenant_result.scalar_one_or_none()
+        if not tenant:
+            return {"next_destination": "resume_signup", "reason_code": "TENANT_NOT_FOUND"}
+        if tenant.status in ("suspended", "terminated"):
+            return {"next_destination": "restricted_account", "reason_code": "TENANT_SUSPENDED"}
+
+        from app.engines.vertical_catalog.models import TenantVerticalEnrollment
+        enrollment_result = await self.db.execute(
+            select(TenantVerticalEnrollment)
+            .where(TenantVerticalEnrollment.tenant_id == user.tenant_id)
+            .order_by(TenantVerticalEnrollment.created_at.desc())
+        )
+        enrollments = enrollment_result.scalars().all()
+        if not enrollments:
+            return {"next_destination": "vertical_setup_wizard", "reason_code": "VERTICAL_SETUP_NOT_STARTED"}
+
+        status = enrollments[0].status
+        if status in ("draft", "draft_setup"):
+            return {"next_destination": "vertical_setup_wizard", "reason_code": "VERTICAL_SETUP_NOT_STARTED"}
+        if status == "changes_requested":
+            # The status page explains the admin's note and offers the
+            # explicit "Continue corrections" action. Dropping a provider
+            # straight into the wizard hides the reason they were sent back.
+            return {"next_destination": "application_status", "reason_code": "CHANGES_REQUESTED"}
+        if status in ("submitted", "under_review", "rejected"):
+            return {"next_destination": "application_status", "reason_code": "VERTICAL_UNDER_REVIEW"}
+        if status in ("approved", "approved_pending_activation", "activation_requirements_pending", "activating"):
+            return {"next_destination": "activation_center", "reason_code": "VERTICAL_APPROVED_PENDING_ACTIVATION"}
+        if status == "active":
+            return {"next_destination": "tenant_dashboard", "reason_code": "VERTICAL_ACTIVE"}
+        return {"next_destination": "restricted_account", "reason_code": "VERTICAL_STATUS_UNSUPPORTED"}
+
+    async def get_mobile_access_context(self, user_id: uuid.UUID) -> dict:
+        """Backend-authoritative access projection shared by native apps.
+
+        Tenant and vertical state come from their canonical tables. Staff
+        identity follows the same compatibility rule as assignment/execution:
+        use ProviderTeamMember when present, otherwise use the active auth user
+        id because existing jobs may legitimately be assigned to users.id.
+        """
+        user = await self._get_user_by_id(user_id)
+        if user is None:
+            raise NotFoundException("User", str(user_id))
+
+        tenant_status = None
+        enabled_verticals: list[str] = []
+        if user.tenant_id:
+            tenant_result = await self.db.execute(
+                select(Tenant).where(Tenant.id == user.tenant_id)
+            )
+            tenant = tenant_result.scalar_one_or_none()
+            if tenant is not None:
+                tenant_status = tenant.status
+
+            from app.engines.vertical_catalog.models import (
+                TenantVerticalEnrollment,
+                Vertical,
+            )
+            enrollment_result = await self.db.execute(
+                select(Vertical.key)
+                .join(
+                    TenantVerticalEnrollment,
+                    TenantVerticalEnrollment.vertical_id == Vertical.id,
+                )
+                .where(
+                    TenantVerticalEnrollment.tenant_id == user.tenant_id,
+                    TenantVerticalEnrollment.status == "active",
+                    Vertical.is_enabled.is_(True),
+                )
+                .order_by(Vertical.key)
+            )
+            enabled_verticals = list(enrollment_result.scalars().all())
+
+        technician_id = None
+        technician_status = None
+        if user.role in ("technician", "staff") and user.tenant_id:
+            from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+
+            member_result = await self.db.execute(
+                select(ProviderTeamMember).where(
+                    ProviderTeamMember.user_id == user.id,
+                    ProviderTeamMember.tenant_id == user.tenant_id,
+                )
+            )
+            member = member_result.scalar_one_or_none()
+            if member is not None:
+                technician_id = str(member.id)
+                technician_status = member.status
+            else:
+                # Current production/demo assignments use users.id when the
+                # optional roster row has not been created. Returning null here
+                # would lock that valid technician out of the native app.
+                technician_id = str(user.id)
+                technician_status = "active" if getattr(user, "is_active", True) else "suspended"
+
+        return {
+            "user_id": str(user.id),
+            "canonical_role": user.role,
+            "audience": AUDIENCE.get(user.role, "serviceos:customer"),
+            "tenant_id": str(user.tenant_id) if user.tenant_id else None,
+            "tenant_status": tenant_status,
+            "technician_id": technician_id,
+            "technician_status": technician_status,
+            "enabled_verticals": enabled_verticals,
+            "capabilities": ROLE_PERMISSIONS.get(user.role, []),
+        }
+
     async def _is_blacklisted(self, jti: str) -> bool:
         try:
             return await self.redis.exists(f"{REDIS_BLACKLIST_PREFIX}{jti}") > 0
@@ -367,7 +491,10 @@ class AuthService:
         tenant_name: str | None = None,
         plan_type: str | None = None,
     ) -> dict:
-        user = await self._get_user_by_email(email)
+        identifier = email.strip()
+        user = (await self._get_user_by_phone(identifier)) if "@" not in identifier else (
+            await self._get_user_by_email(identifier)
+        )
 
         if not user:
             await self._audit("login.failed", "failure", failure_reason="user_not_found")
@@ -471,6 +598,7 @@ class AuthService:
         logger.info("auth.login_success", user_id=str(user.id), role=user.role)
 
         requires_change = user.force_password_change or user.password_reset_required or user.temporary_password_active
+        destination = await self.resolve_post_login_destination(user)
         return {
             "mfa_required": False,
             "access_token": tokens["access_token"],
@@ -486,6 +614,7 @@ class AuthService:
             "redirect_to": "/change-password-required" if requires_change else None,
             "user": self._user_to_profile(user),
             "tenant": await self._tenant_to_ctx(user.tenant_id),
+            **destination,
         }
 
     # ── Phone OTP Login ───────────────────────────────────────────────────────
@@ -1462,20 +1591,22 @@ class AuthService:
         # Enumeration-safe: an unknown recipient and an expired/wrong OTP for
         # a real recipient both fail identically -- never reveal which.
         if not otp_record:
-            raise ServiceOSException("UNAUTHORIZED", "Invalid or expired reset code.",
-                                     resolution="Request a new reset code.")
+            raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Invalid or expired reset code.",
+                                     status_code=400, resolution="Request a new reset code.")
         otp_record.attempts += 1
         if otp_record.attempts > 3:
             otp_record.is_used = True
-            raise ServiceOSException("UNAUTHORIZED", "Too many incorrect attempts. Request a new reset code.")
+            raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Too many incorrect attempts. Request a new reset code.",
+                                     status_code=400)
         if not verify_otp(reset_token, otp_record.hashed_otp):
-            raise ServiceOSException("UNAUTHORIZED", "Invalid or expired reset code.",
+            raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Invalid or expired reset code.",
+                                     status_code=400,
                                      resolution=f"{3 - otp_record.attempts} attempts remaining.")
         otp_record.is_used = True
 
         user = await self._get_user_by_email(email) if email else await self._get_user_by_phone(phone)
         if not user or not user.is_active:
-            raise ServiceOSException("UNAUTHORIZED", "Invalid or expired reset code.")
+            raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Invalid or expired reset code.", status_code=400)
 
         errors = validate_password_strength(new_password, user.full_name, user.email)
         if errors:

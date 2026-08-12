@@ -1,0 +1,19 @@
+{
+  "action": "approve",
+  "started_at": "2026-08-11T15:53:40.873Z",
+  "admin": {
+    "queue_visible": true,
+    "decision_saved": true
+  },
+  "tenant": {
+    "login_destination": "activation_center",
+    "reason_code": "VERTICAL_APPROVED_PENDING_ACTIVATION",
+    "pathname": "/onboarding/activation-center",
+    "expected_destination": "activation_center",
+    "expected_pathname": "/onboarding/activation-center"
+  },
+  "failed_responses": [],
+  "console_errors": [],
+  "passed": true,
+  "finished_at": "2026-08-11T15:53:53.676Z"
+}

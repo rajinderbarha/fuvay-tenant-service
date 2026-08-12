@@ -1,0 +1,191 @@
+{
+  "phase": "draft",
+  "started_at": "2026-08-11T16:03:36.233Z",
+  "pages": [
+    {
+      "key": "setup-overview",
+      "route": "/tenant/home-services/setup/overview",
+      "final_pathname": "/tenant/home-services/setup/overview",
+      "features": {
+        "Home Services setup": true,
+        "Workspace status": true,
+        "What happens next?": true,
+        "Contact support": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 25
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-draft-01-setup-overview.png"
+    },
+    {
+      "key": "business-profile",
+      "route": "/tenant/home-services/setup/business-profile",
+      "final_pathname": "/tenant/home-services/setup/business-profile",
+      "features": {
+        "Business details": true,
+        "Registered address": true,
+        "Profile readiness": true,
+        "Business identity": true,
+        "Save & continue": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 7
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-draft-02-business-profile.png"
+    },
+    {
+      "key": "documents",
+      "route": "/tenant/home-services/setup/documents",
+      "final_pathname": "/tenant/home-services/setup/documents",
+      "features": {
+        "Required documents": true,
+        "Upload guidelines": true,
+        "Additional documents": true,
+        "Save & continue": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 15
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-draft-03-documents.png"
+    },
+    {
+      "key": "services-pricing",
+      "route": "/tenant/home-services/setup/services-pricing",
+      "final_pathname": "/tenant/home-services/setup/services-pricing",
+      "features": {
+        "Service groups": true,
+        "Offer this service": true,
+        "Pricing hierarchy": true,
+        "Admin blueprint": true,
+        "Save & continue": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 10
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-draft-04-services-pricing.png"
+    },
+    {
+      "key": "coverage",
+      "route": "/tenant/home-services/setup/coverage-availability",
+      "final_pathname": "/tenant/home-services/setup/coverage-availability",
+      "features": {
+        "Service coverage": true,
+        "Weekly business hours": true,
+        "Booking controls": true,
+        "Schedule exceptions": true,
+        "Save & continue": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 20
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-draft-05-coverage.png"
+    },
+    {
+      "key": "staff",
+      "route": "/tenant/home-services/setup/staff",
+      "final_pathname": "/tenant/home-services/setup/staff",
+      "features": {
+        "Team roster": true,
+        "Team readiness": true,
+        "Add team member": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 6
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-draft-06-staff.png"
+    },
+    {
+      "key": "finance-readiness",
+      "route": "/tenant/home-services/setup/finance",
+      "final_pathname": "/tenant/home-services/setup/finance",
+      "features": {
+        "Customer payment collection": true,
+        "Business invoice details": true,
+        "Home Services policy": true,
+        "Save & continue": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 21
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-draft-07-finance-readiness.png"
+    },
+    {
+      "key": "review-submit",
+      "route": "/tenant/home-services/setup/review",
+      "final_pathname": "/tenant/home-services/setup/review",
+      "features": {
+        "Setup review": true,
+        "Declarations": true,
+        "Submission summary": true,
+        "Submit for review": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 27
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-draft-08-review-submit.png"
+    },
+    {
+      "key": "onboarding-help",
+      "route": "/help",
+      "final_pathname": "/help",
+      "features": {
+        "Create a support request": true,
+        "Reviewer feedback and requests": true,
+        "Activation requirements": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 5
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-draft-09-onboarding-help.png"
+    }
+  ],
+  "failed_responses": [],
+  "console_errors": [],
+  "passed": true,
+  "finished_at": "2026-08-11T16:04:41.039Z"
+}

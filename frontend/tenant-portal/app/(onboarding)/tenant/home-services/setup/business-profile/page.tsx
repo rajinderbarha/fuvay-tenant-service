@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
+import { TenantLayout } from "../../../../../../components/layout/TenantLayout";
 import { ProfilePhotoUploader } from "../../../../../../components/shared/ProfilePhotoUploader";
 import { Card, Input, Select, Btn, Badge, Skeleton } from "../../../../../../components/shared/ui";
 import {
@@ -23,7 +24,7 @@ const EDITABLE_STATUSES = new Set(["draft_setup", "draft", "changes_requested"])
 // (app/engines/vertical_catalog/home_services_setup_service.py) so the ring
 // reflects the same real, persisted fields the setup checklist counts.
 const REQUIRED_FIELDS: (keyof BusinessProfile)[] = [
-  "business_name", "business_type", "phone", "email", "address_line1", "city", "state",
+  "business_name", "business_type", "phone", "email", "address_line1", "district", "city", "state", "zipcode",
 ];
 
 type FormState = {
@@ -50,8 +51,15 @@ function profileToForm(p: BusinessProfile): FormState {
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "failed";
 
-export default function BusinessProfilePage() {
+function ProfileShell({ mode, children }: { mode: "onboarding" | "workspace"; children: React.ReactNode }) {
+  return mode === "workspace"
+    ? <TenantLayout activeNav="business-profile">{children}</TenantLayout>
+    : <OnboardingShell activeNav="business-profile">{children}</OnboardingShell>;
+}
+
+export function BusinessProfileWorkspace({ mode = "onboarding" }: { mode?: "onboarding" | "workspace" }) {
   const router = useRouter();
+  const workspace = mode === "workspace";
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
   const [options, setOptions] = useState<BusinessProfileOptions | null>(null);
   const [verticalStatus, setVerticalStatus] = useState<string | null>(null);
@@ -61,6 +69,7 @@ export default function BusinessProfilePage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saving, setSaving] = useState(false);
+  const [submissionMessage, setSubmissionMessage] = useState<string | null>(null);
   const savingRef = useRef(false);
 
   const load = useCallback(() => {
@@ -69,7 +78,7 @@ export default function BusinessProfilePage() {
     Promise.all([
       businessProfileApi.get(),
       businessProfileApi.getOptions(),
-      homeServicesSetupOverviewApi.getOverview().catch(() => null),
+      workspace ? Promise.resolve(null) : homeServicesSetupOverviewApi.getOverview().catch(() => null),
     ])
       .then(([p, o, overview]) => {
         setProfile(p);
@@ -80,11 +89,12 @@ export default function BusinessProfilePage() {
       })
       .catch((e: unknown) => setError(e instanceof ServiceOSError ? e.message : "We couldn't load your business profile."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [workspace]);
 
   useEffect(() => { load(); }, [load]);
 
-  const readOnly = verticalStatus !== null && !EDITABLE_STATUSES.has(verticalStatus);
+  const changePending = profile?.verification_status === "changes_pending_review";
+  const readOnly = changePending || (!workspace && verticalStatus !== null && !EDITABLE_STATUSES.has(verticalStatus));
 
   const readiness = useMemo(() => {
     if (!profile) return { percentage: 0, completed: 0, total: REQUIRED_FIELDS.length, missing: [] as string[] };
@@ -182,7 +192,14 @@ export default function BusinessProfilePage() {
       const updated = await businessProfileApi.update(buildPayload(form));
       setProfile(updated);
       setSaveState("saved");
-      router.push("/tenant/home-services/setup/documents");
+      if (workspace) {
+        setSubmissionMessage(updated.reverification_triggered
+          ? "Your protected changes were sent to ServiceOS for review. Your current approved details stay published until fresh documents are uploaded and an admin approves the request."
+          : "Your business profile changes are now saved.");
+        load();
+      } else {
+        router.push("/tenant/home-services/setup/documents");
+      }
     } catch (e) {
       setSaveState("failed");
       setError(e instanceof ServiceOSError ? e.message : "Could not save your business profile.");
@@ -194,25 +211,25 @@ export default function BusinessProfilePage() {
 
   function handleBack() {
     if (saveState === "dirty" && !window.confirm("You have unsaved changes. Leave without saving?")) return;
-    router.push("/tenant/home-services/setup/overview");
+    router.push(workspace ? "/dashboard" : "/tenant/home-services/setup/overview");
   }
 
   if (loading) {
     return (
-      <OnboardingShell activeNav="business-profile">
+      <ProfileShell mode={mode}>
         <Skeleton height={70} style={{ marginBottom: 20 }}/>
         <Skeleton height={12} style={{ marginBottom: 20 }}/>
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
           <Skeleton height={520}/>
           <Skeleton height={520}/>
         </div>
-      </OnboardingShell>
+      </ProfileShell>
     );
   }
 
   if (error && !profile) {
     return (
-      <OnboardingShell activeNav="business-profile">
+      <ProfileShell mode={mode}>
         <Card>
           <div role="alert" style={{ textAlign: "center", padding: "32px 16px" }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
@@ -222,7 +239,7 @@ export default function BusinessProfilePage() {
             <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={load}>Retry</Btn>
           </div>
         </Card>
-      </OnboardingShell>
+      </ProfileShell>
     );
   }
 
@@ -240,24 +257,32 @@ export default function BusinessProfilePage() {
   }[saveState];
 
   return (
-    <OnboardingShell activeNav="business-profile">
+    <ProfileShell mode={mode}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
         <div>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 4px" }}>TENANT ONBOARDING</p>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Business profile</h1>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 4px" }}>{workspace ? "BUSINESS" : "TENANT ONBOARDING"}</p>
+          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Business Profile</h1>
           <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "6px 0 0", maxWidth: 560 }}>
-            Tell us about your business. These details will be reviewed before your workspace is activated.
+            {workspace
+              ? "Manage the same business identity, contact and address information approved during setup."
+              : "Tell us about your business. These details will be reviewed before your workspace is activated."}
           </p>
         </div>
         <Badge variant={saveBadge.variant} size="lg">{saveBadge.icon}{saveBadge.label}</Badge>
       </div>
 
-      <div style={{ marginBottom: 20 }}>
+      {!workspace && <div style={{ marginBottom: 20 }}>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 6px" }}>Step {STEP_NUMBER} of {TOTAL_STEPS}</p>
         <div style={{ height: 6, background: "var(--surface-sunken)", borderRadius: 999, overflow: "hidden", border: "1px solid var(--border)" }}>
           <div style={{ height: "100%", width: `${(STEP_NUMBER / TOTAL_STEPS) * 100}%`, background: "var(--brand)", borderRadius: 999 }}/>
         </div>
-      </div>
+      </div>}
+
+      {submissionMessage && (
+        <div role="status" style={{ padding: "12px 16px", marginBottom: 20, background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: "var(--radius-lg)", color: "var(--success-text)", fontSize: 13 }}>
+          {submissionMessage}
+        </div>
+      )}
 
       {readOnly && (
         <div style={{
@@ -266,8 +291,9 @@ export default function BusinessProfilePage() {
         }}>
           <ShieldCheck size={16} style={{ color: "var(--info-text)", flexShrink: 0 }}/>
           <p style={{ fontSize: 13, color: "var(--info-text)", margin: 0 }}>
-            This section is read-only while Home Services is {verticalStatus?.replace(/_/g, " ")}.
-            {profile && verticalStatus === "changes_requested" ? "" : " Contact support if you need to make a correction."}
+            {changePending
+              ? "A protected profile change is awaiting review. Upload the requested verification documents, then ServiceOS can approve and publish it."
+              : `This section is read-only while Home Services is ${verticalStatus?.replace(/_/g, " ")}. Contact support if you need to make a correction.`}
           </p>
         </div>
       )}
@@ -282,7 +308,7 @@ export default function BusinessProfilePage() {
       <div className="biz-profile-grid">
         <fieldset disabled={readOnly} style={{ border: "none", padding: 0, margin: 0, minWidth: 0 }}>
           <Card style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px", color: "var(--text-primary)" }}>Business details</h3>
+            <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px", color: "var(--text-primary)" }}>Business details</h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div className="biz-profile-row2">
                 <Input label="Business name" required value={form.business_name}
@@ -312,7 +338,7 @@ export default function BusinessProfilePage() {
                 placeholder="https://"/>
 
               <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }}/>
-              <h4 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Registered address</h4>
+              <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Registered address</h3>
               <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "-10px 0 0" }}>
                 This is your business&apos;s legal/compliance address, not your service coverage area — you&apos;ll set where your team works in Coverage &amp; Availability.
               </p>
@@ -340,7 +366,7 @@ export default function BusinessProfilePage() {
 
         <div style={{ minWidth: 0 }}>
           <Card style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>Profile readiness</h3>
+            <h2 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>Profile readiness</h2>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               <div style={{
                 width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
@@ -377,11 +403,13 @@ export default function BusinessProfilePage() {
           </Card>
 
           <Card style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 10px", color: "var(--text-primary)" }}>Why we need this</h3>
+            <h2 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 10px", color: "var(--text-primary)" }}>Why we need this</h2>
             <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
               <ShieldCheck size={16} style={{ color: "var(--brand)", flexShrink: 0, marginTop: 2 }}/>
               <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-                This information helps us verify your business and is reviewed by our team before your workspace is activated.
+                {workspace
+                  ? "Protected identity fields create an admin-reviewed change request. They never replace your published details immediately."
+                  : "This information helps us verify your business and is reviewed by our team before your workspace is activated."}
               </p>
             </div>
             <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
@@ -390,7 +418,7 @@ export default function BusinessProfilePage() {
           </Card>
 
           <Card>
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>Business identity</h3>
+            <h2 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>Business identity</h2>
             <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 8px" }}>Business logo</p>
             <ProfilePhotoUploader
               ownerType="provider_business"
@@ -424,11 +452,15 @@ export default function BusinessProfilePage() {
         <Btn variant="secondary" onClick={handleBack}>Back</Btn>
         {!readOnly && (
           <>
-            <Btn variant="secondary" loading={saving} onClick={handleSaveDraft}>Save draft</Btn>
-            <Btn variant="primary" loading={saving} onClick={handleSaveAndContinue}>Save &amp; continue</Btn>
+            {!workspace && <Btn variant="secondary" loading={saving} onClick={handleSaveDraft}>Save draft</Btn>}
+            <Btn variant="primary" loading={saving} onClick={handleSaveAndContinue}>{workspace ? "Save profile changes" : "Save & continue"}</Btn>
           </>
         )}
       </div>
-    </OnboardingShell>
+    </ProfileShell>
   );
+}
+
+export default function BusinessProfilePage() {
+  return <BusinessProfileWorkspace/>;
 }

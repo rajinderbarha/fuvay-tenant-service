@@ -147,7 +147,7 @@ _reg(NotificationEventConfig(EVT_COMMISSION_DEDUCTED, "Commission Deducted",
 
 _reg(NotificationEventConfig(EVT_COMMISSION_FAILED, "Commission Deduction Failed",
      "invoice_payment", [CHANNEL_IN_APP], RECIP_ADMIN,
-     "wallet.low_balance.in_app", SEV_CRITICAL))
+     "wallet.low_balance.in_app", SEV_CRITICAL, is_mandatory=True))
 
 _reg(NotificationEventConfig(EVT_WALLET_LOW, "Wallet Low Balance",
      "invoice_payment", [CHANNEL_IN_APP], RECIP_PROVIDER,

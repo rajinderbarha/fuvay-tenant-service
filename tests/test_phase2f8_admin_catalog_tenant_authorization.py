@@ -338,7 +338,10 @@ class TestModuleVerificationExitsClean:
         mod = self._load_inventory_module()
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] == "app.engines.admin_catalog.tenant_router"]
-        assert len(routes) == 10
+        # Three pricing/coverage-mode routes were added after the original
+        # ten-route inventory. Keep the count explicit so a newly added
+        # mutation still has to be reviewed by this authorization audit.
+        assert len(routes) == 13
         exempt = mod.CONFIRMED_FALSE_POSITIVE_ROUTES | mod.CONFIRMED_PLATFORM_ADMIN_PERMISSION_ROUTES
         unverified = [
             r for r in routes

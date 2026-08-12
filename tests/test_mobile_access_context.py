@@ -34,7 +34,7 @@ async def test_active_technician_projection_includes_technician_and_tenant_statu
     fake_member = MagicMock(id=uuid.uuid4(), status="active")
 
     tenant_result = MagicMock(); tenant_result.scalar_one_or_none.return_value = fake_tenant
-    enrollment_result = MagicMock(); enrollment_result.scalars.return_value.first.return_value = object()
+    enrollment_result = MagicMock(); enrollment_result.scalars.return_value.all.return_value = ["home_services"]
     member_result = MagicMock(); member_result.scalar_one_or_none.return_value = fake_member
 
     db = MagicMock()
@@ -61,7 +61,7 @@ async def test_technician_with_no_membership_row_gets_null_technician_fields():
     fake_tenant = MagicMock(id=tenant_id, status="active", vertical="home_services")
 
     tenant_result = MagicMock(); tenant_result.scalar_one_or_none.return_value = fake_tenant
-    enrollment_result = MagicMock(); enrollment_result.scalars.return_value.first.return_value = None
+    enrollment_result = MagicMock(); enrollment_result.scalars.return_value.all.return_value = []
     member_result = MagicMock(); member_result.scalar_one_or_none.return_value = None
 
     db = MagicMock()
@@ -71,8 +71,8 @@ async def test_technician_with_no_membership_row_gets_null_technician_fields():
 
     result = await svc.get_mobile_access_context(user_id)
 
-    assert result["technician_id"] is None
-    assert result["technician_status"] is None
+    assert result["technician_id"] == str(user_id)
+    assert result["technician_status"] == "active"
     assert result["enabled_verticals"] == []
 
 

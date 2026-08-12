@@ -33,7 +33,7 @@ from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
-from app.engines.admin_catalog.tenant_service import TenantCatalogService
+from app.engines.admin_catalog.tenant_service import TenantCatalogService, project_tenant_blueprint
 from app.engines.admin_catalog.models import (
     TenantService, MasterService, ServiceGroup, JobTypeDefinition,
     ServiceJobWorkflow, TenantServiceType, TenantServiceBrand,
@@ -160,13 +160,20 @@ async def get_offering_detail(
 
     job_type_label = None
     workflow = None
-    if ts_row.job_type_id:
-        job_type_label = await db.scalar(select(JobTypeDefinition.label).where(JobTypeDefinition.id == ts_row.job_type_id))
+    # Older TenantService rows may not carry job_type_id even though their
+    # MasterService does.  Setup reads the master row, so using only the
+    # tenant row here made the dashboard silently fall back to legacy fields
+    # for the very same offering.  Resolve one canonical job type for both.
+    workflow_job_type_id = ts_row.job_type_id or (master.job_type_id if master else None)
+    if workflow_job_type_id:
+        job_type_label = await db.scalar(select(JobTypeDefinition.label).where(JobTypeDefinition.id == workflow_job_type_id))
         workflow_row = (await db.execute(
             select(ServiceJobWorkflow).where(
                 ServiceJobWorkflow.master_service_id == ts_row.master_service_id,
-                ServiceJobWorkflow.job_type_id == ts_row.job_type_id,
-            )
+                ServiceJobWorkflow.job_type_id == workflow_job_type_id,
+                ServiceJobWorkflow.is_current.is_(True),
+                ServiceJobWorkflow.status == "published",
+            ).order_by(ServiceJobWorkflow.version_number.desc())
         )).scalars().first()
         if workflow_row:
             workflow = workflow_row.to_dict()
@@ -177,15 +184,7 @@ async def get_offering_detail(
     # ServiceJobWorkflow row when it exists; fall back to MasterService's own
     # scalar fields for tenants still on the legacy one-row-per-job-type
     # model (documented in this router's module docstring).
-    blueprint = {
-        "type_mode": (workflow.get("type_mode") if workflow else None) or ("required" if master and master.is_type_required else "optional"),
-        "brand_mode": (workflow.get("brand_mode") if workflow else None) or ("required" if master and master.is_brand_required else "optional"),
-        "requires_checklist": (workflow.get("requires_checklist") if workflow else None) if workflow else (master.requires_checklist if master else False),
-        "requires_estimate_approval": (workflow.get("allows_quote") if workflow else None) if workflow else bool(master and master.pricing_model == "inspection_based"),
-        "requires_technician": True,
-        "requires_schedule": (master.requires_schedule if master else True),
-        "source": "service_job_workflow" if workflow else "master_service_legacy",
-    }
+    blueprint = project_tenant_blueprint(master, workflow)
 
     validation = await svc.validate_for_publish(tenant_service_id)
     types = (await svc.get_tenant_service_types(tenant_service_id))["types"]

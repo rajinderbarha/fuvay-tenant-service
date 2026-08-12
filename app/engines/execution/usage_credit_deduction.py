@@ -83,6 +83,7 @@ async def resolve_commission_credits(
     master_service_id: uuid.UUID,
     offering_type_id: uuid.UUID | None,
     brand_id: uuid.UUID | None,
+    job_type_id: uuid.UUID | None = None,
 ) -> tuple[Decimal, str | None]:
     """Returns (credits, deduction_source_label). Each Home Services
     category carries its own commission rate (`ServiceCategory
@@ -95,7 +96,10 @@ async def resolve_commission_credits(
     table (see module docstring) if no PERCENTAGE_COMMISSION policy is
     published for Home Services at all."""
     from app.engines.vertical_catalog.models import Vertical
-    from app.engines.vertical_monetization.models import VerticalMonetizationPolicy
+    from app.engines.vertical_monetization.models import (
+        MonetizationJobTypeRule,
+        VerticalMonetizationPolicy,
+    )
     from app.engines.admin_catalog.models import ServiceCategory
 
     vertical = (await db.execute(
@@ -109,6 +113,24 @@ async def resolve_commission_credits(
                 VerticalMonetizationPolicy.is_current.is_(True),
             )
         )).scalar_one_or_none()
+
+    if policy is not None and policy.provider_model == "COMPLETION_CREDITS":
+        if job_type_id is not None:
+            override = (await db.execute(
+                select(MonetizationJobTypeRule).where(
+                    MonetizationJobTypeRule.policy_id == policy.id,
+                    MonetizationJobTypeRule.job_type_id == job_type_id,
+                    MonetizationJobTypeRule.status == "active",
+                )
+            )).scalar_one_or_none()
+            if override is not None:
+                source = f"monetization_job_type_rule:{override.id}"
+                if not override.provider_charge_enabled:
+                    return Decimal("0"), source
+                if override.provider_charge_credit_units is not None:
+                    return Decimal(str(override.provider_charge_credit_units)), source
+
+        return Decimal(str(policy.provider_credit_units or 0)), f"monetization_policy:{policy.id}"
 
     if (
         policy is not None
@@ -130,6 +152,12 @@ async def resolve_commission_credits(
             credits = (job_price * pct / Decimal("100")).quantize(Decimal("0.01"))
             return credits, source
 
+    # A current policy using NONE/SUBSCRIPTION/etc. explicitly means this
+    # usage-credit wallet must not be charged. Do not silently resurrect an
+    # older service-pricing rule underneath a published policy.
+    if policy is not None:
+        return Decimal("0"), f"monetization_policy:{policy.id}"
+
     legacy_credits, pricing_rule_id = await resolve_completed_job_deduction_credits(
         db, master_service_id, offering_type_id, brand_id,
     )
@@ -146,6 +174,7 @@ async def deduct_for_completed_job(
     offering_type_id: uuid.UUID | None,
     brand_id: uuid.UUID | None,
     category_id: uuid.UUID | None = None,
+    job_type_id: uuid.UUID | None = None,
     job_price: Decimal | None = None,
     request_id: str | None = None,
 ) -> dict:
@@ -166,6 +195,7 @@ async def deduct_for_completed_job(
     credits, deduction_source = await resolve_commission_credits(
         db, job_price=job_price, category_id=category_id,
         master_service_id=master_service_id, offering_type_id=offering_type_id, brand_id=brand_id,
+        job_type_id=job_type_id,
     )
 
     billing = (await db.execute(

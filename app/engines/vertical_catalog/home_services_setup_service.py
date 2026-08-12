@@ -20,7 +20,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.vertical_catalog.service import VerticalCatalogService
-from app.engines.vertical_catalog.document_requirements import required_keys as _resolve_required_doc_keys
+from app.engines.vertical_catalog.document_requirements import (
+    required_keys as _resolve_required_doc_keys,
+    is_business_profile_complete,
+)
 
 HOME_SERVICES_VERTICAL_KEY = "home_services"
 
@@ -74,7 +77,7 @@ def _project_lifecycle(enrollment_status: str) -> dict:
 async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     tenant_row = (await db.execute(
         text("SELECT id, tenant_name, business_name, business_type, phone, email, "
-             "address_line1, city, state, status, vertical, country, "
+             "address_line1, district, city, state, zipcode, status, vertical, country, "
              "verification_status, suspension_reason, owner_user_id FROM tenants WHERE id=:tid"),
         {"tid": str(tenant_id)},
     )).fetchone()
@@ -85,10 +88,7 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     # ── Business Profile ──────────────────────────────────────────────────
     # Mirrors the fields the real Business Profile onboarding page requires
     # (app/engines/profile/service.py's business-profile update surface).
-    profile_complete = bool(tenant_row) and all([
-        tenant_row.business_name, tenant_row.business_type, tenant_row.phone,
-        tenant_row.email, tenant_row.address_line1, tenant_row.city, tenant_row.state,
-    ])
+    profile_complete = is_business_profile_complete(tenant_row)
 
     # ── Documents ─────────────────────────────────────────────────────────
     # Required doc types are resolved the same way the Verification Documents
@@ -159,7 +159,9 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     # before then); optional_for_now is the honest state for a brand-new
     # workspace, matching the real absence of any assignable work yet.
     staff_required = published_count > 0
-    staff_ready = (not staff_required) or active_staff > 0
+    # Zero staff is not "complete". It is optional only until a service is
+    # published, then becomes required and incomplete until someone is ready.
+    staff_ready = active_staff > 0
 
     # ── Finance Readiness ─────────────────────────────────────────────────
     billing_row = (await db.execute(
@@ -207,7 +209,7 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
         })
 
     _add("BUSINESS_PROFILE", True, profile_complete,
-         "Business profile", "Logo, public details and operating hours",
+         "Business profile", "Business identity and registered address",
          blocking_reasons=[] if profile_complete else
          [{"code": "PROFILE_INCOMPLETE", "message": "Required business profile fields are missing."}])
     # Completion is upload-based, not verification-based: a tenant may submit
@@ -254,12 +256,15 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     declarations = await get_declaration_status(db, tenant_id, uuid.UUID(enrollment["vertical_id"]))
 
     review_submit_complete = enrollment["status"] not in ("draft_setup", "draft", "changes_requested")
-    _add("REVIEW_SUBMIT", True, review_submit_complete,
+    _add("REVIEW_SUBMIT", False, review_submit_complete,
          "Review & submit", "Available after required sections are complete",
          extra={"locked": not review_ready and enrollment["status"] in ("draft_setup", "draft", "changes_requested"),
                 "declarations_accepted": declarations["all_accepted"]},
-         blocking_reasons=[] if (review_submit_complete or review_ready) else
-         [{"code": "SECTIONS_INCOMPLETE", "message": "Complete all required sections above before submitting."}])
+         blocking_reasons=[])
+    # Review is an action derived from the five/six setup sections, not an
+    # additional required setup section. Give it an explicit action state so
+    # clients never count it as a sixth blocker.
+    sections[-1]["status"] = "complete" if review_submit_complete else ("ready" if review_ready else "locked")
 
     percentage = round((completed_required / total_required) * 100) if total_required else 0
     blocker_count = sum(len(s["blocking_reasons"]) for s in sections)
@@ -273,7 +278,12 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
             next_action_key = s["next_action"]
             break
 
-    owner_verified = bool(tenant_row) and tenant_row.verification_status not in (None, "not_started", "rejected")
+    owner_verified = False
+    if tenant_row and tenant_row.owner_user_id:
+        owner_verified = bool((await db.execute(
+            text("SELECT is_verified FROM users WHERE id=:uid"),
+            {"uid": str(tenant_row.owner_user_id)},
+        )).scalar())
 
     # BUG FIX (2026-08-04): the real admin reject/request-changes action
     # (provider_portal admin_router -> AdminTenantService.reject_verification/

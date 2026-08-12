@@ -1,0 +1,8 @@
+[
+  "POST http://localhost:8000/v1/auth/login",
+  "GET http://localhost:8000/v1/auth/me",
+  "GET http://localhost:8000/v1/admin/notifications/unread-count",
+  "GET http://localhost:8000/v1/auth/me",
+  "GET http://localhost:8000/v1/auth/me",
+  "GET http://localhost:8000/v1/admin/catalog/navigation/effective-menu"
+]

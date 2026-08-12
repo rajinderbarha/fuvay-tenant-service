@@ -131,7 +131,7 @@ function SectionTitle({ icon, title, subtitle, actions }: {
       <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
         {icon && <span style={{ color: "var(--accent)", display: "flex" }}>{icon}</span>}
         <div>
-          <h3 style={{ fontSize: 14.5, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{title}</h3>
+          <h2 style={{ fontSize: 14.5, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{title}</h2>
           {subtitle && <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "3px 0 0" }}>{subtitle}</p>}
         </div>
       </div>

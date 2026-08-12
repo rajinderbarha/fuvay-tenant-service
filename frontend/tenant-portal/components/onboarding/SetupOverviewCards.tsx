@@ -41,6 +41,8 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
 
 function statusMeta(s: HomeServicesSetupSection) {
   if (s.status === "complete") return { label: "Complete", variant: "success" as const };
+  if (s.status === "ready") return { label: "Ready", variant: "success" as const };
+  if (s.status === "locked") return { label: "Locked", variant: "muted" as const };
   if (s.status === "optional") return { label: "Optional for now", variant: "info" as const };
   if (s.status === "blocked") return { label: "Needs attention", variant: "danger" as const };
   if (s.key === "REVIEW_SUBMIT" && s.locked) return { label: "Locked", variant: "muted" as const };
@@ -74,7 +76,7 @@ export function SetupProgressCard({ overview }: { overview: HomeServicesSetupOve
               {progress.completed_required} of {progress.total_required} sections ready
             </span>
           </div>
-          <div role="progressbar" aria-valuenow={progress.percentage} aria-valuemin={0} aria-valuemax={100}
+          <div role="progressbar" aria-label="Home Services setup progress" aria-valuenow={progress.percentage} aria-valuemin={0} aria-valuemax={100}
             style={{ height: 8, background: "var(--surface-sunken)", borderRadius: 999, overflow: "hidden", border: "1px solid var(--border)" }}>
             <div style={{
               height: "100%", width: `${progress.percentage}%`, borderRadius: 999,

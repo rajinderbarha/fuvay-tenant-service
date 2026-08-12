@@ -8,6 +8,7 @@ The router-level tests exercise the real endpoints against the live dev DB
 tests/test_mfa_trusted_device.py's existing pattern).
 """
 import uuid
+from datetime import date
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -79,9 +80,10 @@ class TestSelectCurrentJob:
         assert _select_current_job(jobs)["id"] == "needs_accept"
 
     def test_earliest_scheduled_today_job_when_no_active_or_immediate_action_job(self):
+        today = date.today().isoformat()
         jobs = [
-            job("later", status="scheduled", scheduled_date="2026-07-31", scheduled_time_window="15:00"),
-            job("earlier", status="scheduled", scheduled_date="2026-07-31", scheduled_time_window="09:00"),
+            job("later", status="scheduled", scheduled_date=today, scheduled_time_window="15:00"),
+            job("earlier", status="scheduled", scheduled_date=today, scheduled_time_window="09:00"),
         ]
         assert _select_current_job(jobs)["id"] == "earlier"
 
@@ -94,10 +96,11 @@ class TestSelectCurrentJob:
         assert _select_current_job(jobs) is None
 
     def test_cancelled_and_completed_jobs_never_selected_as_current(self):
+        today = date.today().isoformat()
         jobs = [
-            job("cancelled", status="cancelled", scheduled_date="2026-07-31", scheduled_time_window="08:00"),
-            job("completed", status="completed", scheduled_date="2026-07-31", scheduled_time_window="07:00"),
-            job("real", status="scheduled", scheduled_date="2026-07-31", scheduled_time_window="09:00"),
+            job("cancelled", status="cancelled", scheduled_date=today, scheduled_time_window="08:00"),
+            job("completed", status="completed", scheduled_date=today, scheduled_time_window="07:00"),
+            job("real", status="scheduled", scheduled_date=today, scheduled_time_window="09:00"),
         ]
         assert _select_current_job(jobs)["id"] == "real"
 

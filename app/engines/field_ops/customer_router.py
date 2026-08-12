@@ -3,7 +3,7 @@ Read-only: customer can view progress but can never update job status."""
 import uuid
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import require_customer, UserContext
 from app.dependencies.db import get_db
 from app.engines.field_ops.service import FieldOpsService
 from app.engines.field_ops.billing_service import BillingService
@@ -15,7 +15,7 @@ ENGINE_ID = "field_ops"
 
 
 def _svc(r: Request, db: AsyncSession = Depends(get_db),
-         u: UserContext = Depends(get_current_user)) -> FieldOpsService:
+         u: UserContext = Depends(require_customer)) -> FieldOpsService:
     if u.role != "customer":
         raise ServiceOSException("CUSTOMER_JOB_ACCESS_DENIED",
             "This endpoint is for customer accounts only.", status_code=403)
@@ -25,7 +25,7 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db),
 
 
 def _billing_svc(r: Request, db: AsyncSession = Depends(get_db),
-                  u: UserContext = Depends(get_current_user)) -> BillingService:
+                  u: UserContext = Depends(require_customer)) -> BillingService:
     if u.role != "customer":
         raise ServiceOSException("CUSTOMER_JOB_ACCESS_DENIED",
             "This endpoint is for customer accounts only.", status_code=403)
@@ -40,7 +40,7 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 async def my_jobs(r: Request,
                    limit: int = Query(50, ge=1, le=200),
                    cursor: str | None = Query(None),
-                   u: UserContext = Depends(get_current_user),
+                   u: UserContext = Depends(require_customer),
                    s: FieldOpsService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.list_customer_jobs(s.actor_id, limit, cursor), _rid(r), ENGINE_ID)
 

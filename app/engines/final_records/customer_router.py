@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import require_customer, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 from app.engines.final_records.models import (
@@ -105,7 +105,7 @@ async def _customer_safe_job(db: AsyncSession, job: ServiceJob) -> dict:
 )
 async def get_activity_summary(
     r:    Request,
-    user: UserContext     = Depends(get_current_user),
+    user: UserContext     = Depends(require_customer),
     db:   AsyncSession   = Depends(get_db),
 ):
     customer_id = uuid.UUID(user.user_id)
@@ -140,7 +140,7 @@ async def list_my_bookings(
     q:      str | None = Query(None, description="Free-text: service name, booking number, or issue"),
     limit:  int        = Query(20, ge=1, le=100),
     offset: int        = Query(0, ge=0),
-    user:   UserContext  = Depends(get_current_user),
+    user:   UserContext  = Depends(require_customer),
     db:     AsyncSession = Depends(get_db),
 ):
     """My Bookings.
@@ -339,7 +339,7 @@ async def _attach_urgency(db: AsyncSession, items: list[dict], rows) -> None:
 async def get_my_booking(
     booking_id: uuid.UUID,
     r:          Request,
-    user:       UserContext  = Depends(get_current_user),
+    user:       UserContext  = Depends(require_customer),
     db:         AsyncSession = Depends(get_db),
 ):
     customer_id = uuid.UUID(user.user_id)
@@ -414,7 +414,7 @@ async def _catalog_labels(db: AsyncSession, booking: ServiceBooking) -> dict:
 async def get_my_job(
     job_id: uuid.UUID,
     r:      Request,
-    user:   UserContext  = Depends(get_current_user),
+    user:   UserContext  = Depends(require_customer),
     db:     AsyncSession = Depends(get_db),
 ):
     customer_id = uuid.UUID(user.user_id)
@@ -435,7 +435,7 @@ async def list_my_appointments(
     status: str | None = Query(None),
     limit:  int        = Query(20, ge=1, le=100),
     offset: int        = Query(0, ge=0),
-    user:   UserContext  = Depends(get_current_user),
+    user:   UserContext  = Depends(require_customer),
     db:     AsyncSession = Depends(get_db),
 ):
     customer_id = uuid.UUID(user.user_id)
@@ -466,7 +466,7 @@ async def list_my_appointments(
 async def get_my_appointment(
     appointment_id: uuid.UUID,
     r:              Request,
-    user:           UserContext  = Depends(get_current_user),
+    user:           UserContext  = Depends(require_customer),
     db:             AsyncSession = Depends(get_db),
 ):
     customer_id = uuid.UUID(user.user_id)
@@ -489,7 +489,7 @@ async def list_my_leads(
     status: str | None = Query(None),
     limit:  int        = Query(20, ge=1, le=100),
     offset: int        = Query(0, ge=0),
-    user:   UserContext  = Depends(get_current_user),
+    user:   UserContext  = Depends(require_customer),
     db:     AsyncSession = Depends(get_db),
 ):
     customer_id = uuid.UUID(user.user_id)
@@ -519,7 +519,7 @@ async def list_my_leads(
 async def get_my_lead(
     lead_id: uuid.UUID,
     r:       Request,
-    user:    UserContext  = Depends(get_current_user),
+    user:    UserContext  = Depends(require_customer),
     db:      AsyncSession = Depends(get_db),
 ):
     customer_id = uuid.UUID(user.user_id)

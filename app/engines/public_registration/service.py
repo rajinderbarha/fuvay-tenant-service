@@ -92,10 +92,6 @@ class RegistrationService:
         email_n = _normalize_email(email)
         mobile_n = _normalize_mobile(mobile)
 
-        if not authorized_declaration or not tos_privacy_accepted:
-            raise ServiceOSException("CONSENT_REQUIRED",
-                                      "You must accept the authorization declaration and Terms/Privacy Policy.",
-                                      status_code=422)
         if password != password_confirm:
             raise ServiceOSException("PASSWORD_MISMATCH", "Passwords do not match.", status_code=422)
         errors = validate_password_strength(password, full_name, email_n)
@@ -109,9 +105,11 @@ class RegistrationService:
             pending.email = email_n
             pending.mobile = mobile_n
             pending.hashed_password = hash_password(password)
-            pending.authorized_declaration = authorized_declaration
-            pending.tos_privacy_accepted = tos_privacy_accepted
-            pending.marketing_consent = marketing_consent
+            # Step 1 only establishes credentials and sends verification
+            # codes. Consent is captured atomically at completion (step 5).
+            pending.authorized_declaration = False
+            pending.tos_privacy_accepted = False
+            pending.marketing_consent = False
             await self.db.flush()
             dev_codes = await self._send_otps(pending)
             await self._audit("registration.owner_account_updated", "success", target_id=pending.id)
@@ -137,9 +135,9 @@ class RegistrationService:
         if existing_pending:
             existing_pending.full_name = full_name
             existing_pending.hashed_password = hash_password(password)
-            existing_pending.authorized_declaration = authorized_declaration
-            existing_pending.tos_privacy_accepted = tos_privacy_accepted
-            existing_pending.marketing_consent = marketing_consent
+            existing_pending.authorized_declaration = False
+            existing_pending.tos_privacy_accepted = False
+            existing_pending.marketing_consent = False
             await self.db.flush()
             dev_codes = await self._send_otps(existing_pending)
             await self._audit("registration.resumed", "success", target_id=existing_pending.id)
@@ -148,9 +146,9 @@ class RegistrationService:
         pending = PendingTenantRegistration(
             full_name=full_name.strip(), email=email_n, mobile=mobile_n,
             hashed_password=hash_password(password),
-            authorized_declaration=authorized_declaration,
-            tos_privacy_accepted=tos_privacy_accepted,
-            marketing_consent=marketing_consent,
+            authorized_declaration=False,
+            tos_privacy_accepted=False,
+            marketing_consent=False,
             status="in_progress",
         )
         self.db.add(pending)
@@ -210,10 +208,16 @@ class RegistrationService:
             "message": "OTP sent to your mobile and email. Verify both to continue.",
         }
         if dev_codes:
+            dev_otps: dict[str, str] = {}
             if dev_codes.get(MOBILE_OTP_PURPOSE):
                 data["dev_otp_mobile"] = dev_codes[MOBILE_OTP_PURPOSE]
+                dev_otps["mobile"] = dev_codes[MOBILE_OTP_PURPOSE]
             if dev_codes.get(EMAIL_OTP_PURPOSE):
                 data["dev_otp_email"] = dev_codes[EMAIL_OTP_PURPOSE]
+                dev_otps["email"] = dev_codes[EMAIL_OTP_PURPOSE]
+            # Canonical response consumed by the web wizard. The flat keys
+            # remain for compatibility with older API clients.
+            data["dev_otps"] = dev_otps
         return data
 
     # ── Step 2 — Verify Contact ──────────────────────────────────────────────
@@ -392,6 +396,22 @@ class RegistrationService:
                 gst_number=pending.gstin,
                 business_type=pending.business_type,
                 country="India",
+                address_line1=(pending.registered_address or {}).get("address_line1")
+                              or (pending.registered_address or {}).get("line1"),
+                address_line2=(pending.registered_address or {}).get("address_line2")
+                              or (pending.registered_address or {}).get("line2"),
+                city=(pending.registered_address or {}).get("city"),
+                district=(pending.registered_address or {}).get("district"),
+                state=(pending.registered_address or {}).get("state"),
+                zipcode=(pending.registered_address or {}).get("zipcode")
+                        or (pending.registered_address or {}).get("pincode"),
+                meta={
+                    "owner_name": pending.full_name,
+                    "year_established": pending.year_established,
+                    "website_url": pending.website_url,
+                    "description": pending.description,
+                    "registration_number": pending.cin,
+                },
             )
             self.db.add(tenant)
             await self.db.flush()
@@ -470,6 +490,9 @@ class RegistrationService:
             pending.completed_at = utcnow()
             pending.created_tenant_id = tenant.id
             pending.created_user_id = owner.id
+            pending.authorized_declaration = True
+            pending.tos_privacy_accepted = True
+            pending.marketing_consent = marketing_consent
 
             # Auto-login
             session = UserSession(
@@ -511,16 +534,58 @@ class RegistrationService:
             "user_id": str(owner.id),
             "enrollment_status": "draft_setup",
             "tenant_status": tenant.status,
+            "vertical_key": vertical.key,
             "access_token": access_token,
             "refresh_token": raw_refresh,
             "message": "Workspace created. Continue to the vertical setup wizard.",
         }
 
     async def _workspace_response(self, pending: PendingTenantRegistration) -> dict:
+        owner = await self.db.get(User, pending.created_user_id)
+        tenant = await self.db.get(Tenant, pending.created_tenant_id)
+        if not owner or not tenant:
+            raise ServiceOSException(
+                "REGISTRATION_RESULT_NOT_FOUND",
+                "The completed workspace could not be restored. Please sign in.",
+                status_code=409,
+            )
+
+        # A completion response may be lost after the transaction commits.
+        # Replaying the same idempotency key must therefore issue a fresh,
+        # usable session rather than returning a token-less partial result.
+        session = UserSession(
+            user_id=owner.id, tenant_id=tenant.id, device_id="signup-replay",
+            device_name="Signup replay", device_type="web",
+            ip_address=self.ip_address, user_agent=self.user_agent,
+            is_approved=True,
+        )
+        self.db.add(session)
+        await self.db.flush()
+        access_token, _ = create_access_token(
+            user_id=str(owner.id), email=owner.email, role=owner.role,
+            tenant_id=str(tenant.id), tenant_name=tenant.tenant_name,
+            plan_type=tenant.plan_type, session_id=str(session.id),
+            device_id=session.device_id, is_mfa_enabled=False,
+            onboarding_complete=False, enabled_engines=[],
+        )
+        family = RefreshTokenFamily(user_id=owner.id, session_id=session.id)
+        self.db.add(family)
+        await self.db.flush()
+        raw_refresh, refresh_jti, hashed_refresh = create_refresh_token()
+        self.db.add(RefreshToken(
+            family_id=family.id, user_id=owner.id, jti=refresh_jti,
+            hashed_token=hashed_refresh,
+            expires_at=utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        ))
+        await self.db.commit()
         return {
             "tenant_id": str(pending.created_tenant_id),
             "user_id": str(pending.created_user_id),
             "enrollment_status": "draft_setup",
+            "tenant_status": tenant.status,
+            "vertical_key": pending.selected_vertical_key,
+            "access_token": access_token,
+            "refresh_token": raw_refresh,
             "message": "This registration was already completed.",
             "replayed": True,
         }

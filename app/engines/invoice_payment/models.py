@@ -152,6 +152,8 @@ class ServicePaymentRecord(ServiceOSBase):
         Index("ix_spr_invoice_id", "invoice_id"),
         Index("ix_spr_job_id",     "job_id"),
         Index("ix_spr_tenant_id",  "tenant_id"),
+        Index("ix_spr_customer_reconciliation", "customer_id", "reconciliation_status"),
+        Index("ix_spr_tenant_customer_reconciliation", "tenant_id", "customer_id", "reconciliation_status"),
     )
     invoice_id:                    Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     booking_id:                    Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)

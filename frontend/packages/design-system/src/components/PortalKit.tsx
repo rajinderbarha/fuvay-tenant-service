@@ -247,7 +247,7 @@ export function PkInput({ label, placeholder, value, onChange, error, hint, icon
   error?: string; hint?: string; icon?: React.ReactNode; type?: string;
   disabled?: boolean; required?: boolean; rows?: number;
 }) {
-  const id = label?.toLowerCase().replace(/\s+/g, "-");
+  const id = React.useId();
   const base: React.CSSProperties = {
     width: "100%", fontSize: 14, fontFamily: "inherit",
     background: disabled ? "var(--surface-sunken)" : "var(--surface)",
@@ -272,12 +272,12 @@ export function PkInput({ label, placeholder, value, onChange, error, hint, icon
           }}>{React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 14 }) : icon}</span>
         )}
         {rows ? (
-          <textarea id={id} value={value} disabled={disabled} placeholder={placeholder} rows={rows}
+          <textarea id={id} aria-label={label ? undefined : placeholder || "Text input"} value={value} disabled={disabled} placeholder={placeholder} rows={rows}
             onChange={e => onChange?.(e.target.value)}
             style={{ ...base, padding: "10px 12px", resize: "vertical", minHeight: 80 }}
           />
         ) : (
-          <input id={id} type={type} value={value} disabled={disabled} placeholder={placeholder}
+          <input id={id} aria-label={label ? undefined : placeholder || "Input"} type={type} value={value} disabled={disabled} placeholder={placeholder}
             onChange={e => onChange?.(e.target.value)}
             style={{ ...base, height: 38, padding: icon ? "0 12px 0 36px" : "0 12px" }}
             onFocus={e => { e.currentTarget.style.borderColor = error ? "var(--danger)" : "var(--border-focus)"; e.currentTarget.style.boxShadow = `0 0 0 3px ${error ? "rgba(192,57,43,0.10)" : "rgba(63,117,108,0.12)"}`; }}
@@ -296,10 +296,11 @@ export function PkSelect({ label, value, onChange, options, placeholder, disable
   label?: string; value: string; onChange: (v: string) => void;
   options: { value: string; label: string }[]; placeholder?: string; disabled?: boolean;
 }) {
+  const id = React.useId();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      {label && <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", letterSpacing: "0.02em" }}>{label}</label>}
-      <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{
+      {label && <label htmlFor={id} style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", letterSpacing: "0.02em" }}>{label}</label>}
+      <select id={id} aria-label={label ? undefined : placeholder || "Select an option"} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{
         height: 38, padding: "0 12px", fontSize: 14, fontFamily: "inherit",
         background: disabled ? "var(--bg-secondary)" : "var(--surface)",
         border: "1px solid var(--border)", borderRadius: 10,

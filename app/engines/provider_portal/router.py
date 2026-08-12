@@ -5,8 +5,11 @@ and packages/status. All data is tenant-scoped via JWT.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import secrets
 import uuid
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -18,6 +21,8 @@ from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
 from app.core.permissions import P, require_tenant_mutation_permission, require_tenant_owner_mutation
+from app.config import get_settings
+from app.models.base import utcnow
 
 router = APIRouter(prefix="/v1/provider", tags=["Provider Portal"])
 
@@ -25,6 +30,8 @@ router = APIRouter(prefix="/v1/provider", tags=["Provider Portal"])
 # DEFAULT 4). Kept as a named constant so the fallback is explicit at the one
 # call site that needs it instead of a bare magic number.
 DEFAULT_MAX_CONCURRENT_JOBS = 4
+VALID_MEMBER_TYPES = {"technician", "staff", "manager"}
+settings = get_settings()
 
 
 def _validate_availability_time_range(start_time: str | None, end_time: str | None) -> None:
@@ -89,6 +96,20 @@ def _member_row(row) -> dict:
     return d
 
 
+async def _validate_offering_ids(
+    db: AsyncSession, tenant_id: uuid.UUID, offering_ids: list[str]
+) -> list[str]:
+    """Keep service assignments inside the current tenant's enabled catalog."""
+    if not offering_ids:
+        return []
+    rows = (await db.execute(text(
+        "SELECT id::text FROM tenant_services "
+        "WHERE tenant_id=:tid AND is_enabled=true AND deleted_at IS NULL "
+        "AND id = ANY(:ids)"
+    ), {"tid": str(tenant_id), "ids": [str(value) for value in offering_ids]})).fetchall()
+    return [row[0] for row in rows]
+
+
 # ── Team Members ──────────────────────────────────────────────────────────────
 
 @router.get("/team-members")
@@ -122,6 +143,32 @@ async def create_team_member(
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     if not str(payload.get("full_name") or "").strip():
         raise HTTPException(400, "full_name is required.")
+
+    member_type = str(payload.get("member_type") or "technician").lower()
+    if member_type not in VALID_MEMBER_TYPES:
+        raise ServiceOSException(
+            "INVALID_MEMBER_TYPE", "Choose technician, staff, or manager.", status_code=422
+        )
+
+    tenant_row = (await db.execute(
+        text("SELECT category_id FROM tenants WHERE id=:tid"), {"tid": str(tid)}
+    )).fetchone()
+    if tenant_row is None or tenant_row.category_id is None:
+        raise ServiceOSException(
+            "TENANT_CATEGORY_REQUIRED",
+            "Complete the business workspace setup before adding team members.",
+            status_code=422,
+        )
+    cat_id = str(tenant_row.category_id)
+
+    requested_offering_ids = [str(value) for value in (payload.get("supported_offering_ids") or [])]
+    valid_offering_ids = await _validate_offering_ids(db, tid, requested_offering_ids)
+    if set(valid_offering_ids) != set(requested_offering_ids):
+        raise ServiceOSException(
+            "INVALID_SERVICE_ASSIGNMENT",
+            "One or more selected services are not enabled for this workspace.",
+            status_code=422,
+        )
 
     # Capacity is validated the same way the PUT path validates it -- it
     # feeds the assignment resolver, and 0/negative would make the member
@@ -168,7 +215,7 @@ async def create_team_member(
                 :photo, :capacity, :reports_name, :reports_desig)
     """), {
         "id": new_id, "tid": str(tid),
-        "member_type": payload.get("member_type", "technician"),
+        "member_type": member_type,
         "full_name": str(payload.get("full_name")).strip(),
         "phone": payload.get("phone"),
         "email": payload.get("email"),
@@ -176,11 +223,11 @@ async def create_team_member(
         "status": payload.get("status") or "active",
         "recv": payload.get("can_receive_assignment", True),
         "skills": _arr("skills"),
-        "offering_ids": _arr("supported_offering_ids"),
+        "offering_ids": json.dumps(valid_offering_ids),
         "type_ids": _arr("supported_type_ids"),
         "brand_ids": _arr("supported_brand_ids"),
         "area_ids": _arr("service_area_ids"),
-        "cat_id": payload.get("category_id"),
+        "cat_id": cat_id,
         "photo": payload.get("profile_photo_url"),
         "capacity": capacity,
         "reports_name": payload.get("reports_to_display_name"),
@@ -190,6 +237,75 @@ async def create_team_member(
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id"), {"id": new_id})
     member = _member_row(row.fetchone())
     return ok({"member": member}, request_id=rid)
+
+
+@router.get("/team-members/service-coverage")
+async def get_team_member_service_coverage(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+):
+    """Return the real per-service ready-technician rollup used by setup.
+
+    This route intentionally appears before ``/{member_id}`` so the static
+    path can never be parsed as a UUID member id.
+    """
+    from app.engines.home_service_assignment.team_readiness_service import (
+        compute_service_coverage,
+    )
+
+    coverage = await compute_service_coverage(db, _tid(user))
+    rid = (getattr(request.state, "request_id", None)
+           or request.headers.get("X-Request-ID", "—"))
+    return ok({"coverage": coverage}, request_id=rid)
+
+
+@router.post("/team-members/activate")
+async def activate_team_member_account(
+    payload: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public, one-time activation endpoint for tenant-created team logins."""
+    from app.engines.auth.models import PasswordResetToken, User
+    from app.engines.auth.utils import hash_password, validate_password_strength
+
+    token_plain = str(payload.get("activation_token") or "").strip()
+    new_password = str(payload.get("new_password") or "")
+    token_hash = hashlib.sha256(token_plain.encode()).hexdigest()
+    token = (await db.execute(select(PasswordResetToken).where(
+        PasswordResetToken.token_hash == token_hash,
+        PasswordResetToken.purpose == "team_member_activation",
+        PasswordResetToken.status == "active",
+    ))).scalar_one_or_none()
+
+    invalid_message = "This activation link is invalid or has expired."
+    if token is None or token.expires_at <= utcnow():
+        raise ServiceOSException("INVALID_ACTIVATION_TOKEN", invalid_message, status_code=400)
+    account = (await db.execute(select(User).where(User.id == token.user_id))).scalar_one_or_none()
+    if account is None:
+        raise ServiceOSException("INVALID_ACTIVATION_TOKEN", invalid_message, status_code=400)
+
+    password_errors = validate_password_strength(new_password, account.full_name, account.email)
+    if password_errors:
+        raise ServiceOSException("WEAK_PASSWORD", password_errors[0], status_code=422)
+
+    account.hashed_password = hash_password(new_password)
+    account.password_history = [account.hashed_password]
+    account.is_active = True
+    account.is_verified = True
+    account.force_password_change = False
+    account.password_changed_at = utcnow()
+    token.status = "used"
+    token.used_at = utcnow()
+    await db.execute(text(
+        "UPDATE provider_team_members SET status='active', password_generated=false, updated_at=now() "
+        "WHERE user_id=:uid AND deleted_at IS NULL"
+    ), {"uid": str(account.id)})
+    await db.commit()
+    rid = (getattr(request.state, "request_id", None)
+           or request.headers.get("X-Request-ID", "—"))
+    return ok({"activated": True}, request_id=rid)
 
 
 @router.get("/team-members/{member_id}")
@@ -250,6 +366,23 @@ async def update_team_member(
                 raise HTTPException(400, "INVALID_CAPACITY: max_concurrent_jobs must be a whole number.")
             if payload["max_concurrent_jobs"] < 1:
                 raise HTTPException(400, "INVALID_CAPACITY: max_concurrent_jobs must be at least 1.")
+
+    if "member_type" in payload:
+        payload["member_type"] = str(payload["member_type"] or "").lower()
+        if payload["member_type"] not in VALID_MEMBER_TYPES:
+            raise ServiceOSException(
+                "INVALID_MEMBER_TYPE", "Choose technician, staff, or manager.", status_code=422
+            )
+    if "supported_offering_ids" in payload:
+        requested = [str(value) for value in (payload["supported_offering_ids"] or [])]
+        valid = await _validate_offering_ids(db, tid, requested)
+        if set(valid) != set(requested):
+            raise ServiceOSException(
+                "INVALID_SERVICE_ASSIGNMENT",
+                "One or more selected services are not enabled for this workspace.",
+                status_code=422,
+            )
+        payload["supported_offering_ids"] = valid
 
     sets = ", ".join(f"{k}=:{k}" for k in payload if k in allowed)
     if not sets:
@@ -381,12 +514,10 @@ async def create_member_login(
     -- deactivate_team_member above already revokes that user's sessions
     -- there was simply no path that ever populated it.
 
-    Mirrors AdminTenantService.create_staff's proven User-creation shape
-    (generated password + force_password_change) rather than inventing a
-    second credential scheme.
+    Creates an inactive account plus a one-time activation token. A temporary
+    password is never returned to the tenant owner or stored in plaintext.
     """
-    import secrets
-    from app.engines.auth.models import User
+    from app.engines.auth.models import PasswordResetToken, User
     from app.engines.auth.utils import hash_password
 
     tid = _tid(user)
@@ -417,7 +548,14 @@ async def create_member_login(
     email = (member.email or "").lower().strip()
     if email:
         existing = await db.execute(select(User).where(User.email == email))
-        if existing.scalar_one_or_none():
+        existing_user = existing.scalar_one_or_none()
+        if existing_user and str(existing_user.tenant_id) != str(tid):
+            raise ServiceOSException(
+                "CROSS_TENANT_ACCOUNT_EXISTS",
+                "That email already belongs to an account in another workspace.",
+                status_code=409,
+            )
+        if existing_user:
             raise ServiceOSException(
                 "TEAM_MEMBER_EMAIL_IN_USE",
                 f"A user with email {email} already exists. Change this member's email, "
@@ -429,20 +567,34 @@ async def create_member_login(
         # real-looking address. Same shape as create_staff's fallback.
         email = f"member.{uuid.uuid4().hex[:8]}@tenant.local"
 
-    raw_password = secrets.token_urlsafe(12)
+    # The random placeholder is deliberately unknowable and the account is
+    # inactive until the invitee proves possession of the one-time token.
+    unusable_password = secrets.token_urlsafe(48)
     new_user = User(
         email=email,
         phone=member.phone,
         full_name=full_name,
         role=_MEMBER_TYPE_TO_ROLE.get(member.member_type, "staff"),
         tenant_id=tid,
-        hashed_password=hash_password(raw_password),
-        is_active=True,
+        hashed_password=hash_password(unusable_password),
+        is_active=False,
         is_verified=False,
-        force_password_change=True,
+        force_password_change=False,
     )
     db.add(new_user)
     await db.flush()
+
+    token_plain = secrets.token_urlsafe(32)
+    activation_token = PasswordResetToken(
+        user_id=new_user.id,
+        token_hash=hashlib.sha256(token_plain.encode()).hexdigest(),
+        purpose="team_member_activation",
+        status="active",
+        expires_at=utcnow() + timedelta(hours=24),
+        created_by_user_id=uuid.UUID(user.user_id),
+        created_ip=request.client.host if request.client else None,
+    )
+    db.add(activation_token)
 
     await db.execute(
         text("UPDATE provider_team_members "
@@ -452,14 +604,26 @@ async def create_member_login(
     )
     await db.commit()
 
-    # Shown once, never stored in plaintext -- force_password_change makes
-    # the member set their own on first login. Key names match the existing
-    # frontend contract (providerTeamMembersApi.createLogin expects
-    # {username, password}), so no frontend change is needed.
+    activation_sent = False
+    if member.email:
+        try:
+            from app.email_client import send_email
+            activation_sent = await send_email(
+                email,
+                "Activate your ServiceOS team account",
+                (f"Hi {full_name},\n\nYour ServiceOS team account is ready. "
+                 f"Open the team activation page and enter this one-time code:\n\n"
+                 f"{token_plain}\n\nThis code expires in 24 hours."),
+            )
+        except Exception:
+            activation_sent = False
+
     return ok({
         "member_id": str(member_id),
         "user_id": str(new_user.id),
-        "credentials": {"username": email, "password": raw_password},
+        "activation_sent": activation_sent,
+        "activation_token": token_plain if settings.DEBUG else None,
+        "expires_at": activation_token.expires_at.isoformat(),
         "already_had_login": False,
     }, request_id=rid)
 

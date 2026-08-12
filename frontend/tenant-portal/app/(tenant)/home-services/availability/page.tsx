@@ -603,7 +603,7 @@ export default function AvailabilityCapacityPlannerPage() {
               What customers can book is set by the business's own opening hours, slot
               length and bookings per slot, so that is where the button goes. This board
               plans people against those hours; it does not define them. */}
-          <Btn variant="primary" onClick={() => router.push("/tenant/home-services/setup/coverage-availability")}>
+          <Btn variant="primary" onClick={() => router.push("/business/coverage-hours")}>
             Business hours
           </Btn>
         </div>

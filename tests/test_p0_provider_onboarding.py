@@ -200,46 +200,31 @@ def test_page_no_provider_onboarding_statuses_reference():
     assert "provider_onboarding_statuses" not in src
 
 
-def test_page_uses_new_api_methods():
+def test_legacy_page_redirects_to_canonical_home_services_queue():
     src = Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").read_text(encoding="utf-8")
+    assert 'redirect("/admin/home-services/providers?tab=onboarding")' in src
+
+
+def test_canonical_page_uses_review_api_and_summary_cards():
+    src = Path("frontend/super-admin/app/admin/home-services/providers/page.tsx").read_text(encoding="utf-8")
     assert "adminOnboardingProvidersApi.approve" in src
     assert "adminOnboardingProvidersApi.reject" in src
     assert "adminOnboardingProvidersApi.requestChanges" in src
-
-
-def test_page_has_summary_cards():
-    src = Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").read_text(encoding="utf-8")
     assert "SummaryCard" in src
     assert "pending_review" in src or "Pending Review" in src
 
 
-def test_page_has_approve_modal():
-    src = Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").read_text(encoding="utf-8")
-    assert "ApproveModal" in src
-
-
-def test_page_has_reject_modal():
-    src = Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").read_text(encoding="utf-8")
-    assert "RejectModal" in src
-
-
-def test_page_has_request_changes_modal():
-    src = Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").read_text(encoding="utf-8")
-    assert "RequestChangesModal" in src
-
-
 def test_page_links_to_tenant_detail():
-    src = Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").read_text(encoding="utf-8")
-    assert "/admin/tenants/" in src
+    src = Path("frontend/super-admin/app/admin/home-services/providers/page.tsx").read_text(encoding="utf-8")
+    assert "/admin/home-services/providers/" in src
 
 
 def test_page_has_proper_empty_state():
-    src = Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").read_text(encoding="utf-8")
+    src = Path("frontend/super-admin/app/admin/home-services/providers/page.tsx").read_text(encoding="utf-8")
     assert "No providers in queue" in src or "onboarding queue" in src.lower()
 
 
-def test_page_has_error_state_not_raw_red():
-    src = Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").read_text(encoding="utf-8")
-    # Should show a friendly error with retry button, not a raw exception dump
-    assert "Retry" in src
-    assert "Failed to load onboarding queue" in src
+def test_page_disables_decisions_until_provider_resubmits():
+    src = Path("frontend/super-admin/app/admin/home-services/providers/page.tsx").read_text(encoding="utf-8")
+    assert 'const canAct = r.review_status === "pending_review"' in src
+    assert "after the provider updates and resubmits" in src

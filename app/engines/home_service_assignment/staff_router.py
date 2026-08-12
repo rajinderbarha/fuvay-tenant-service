@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import require_staff_or_above_mutation
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import get_current_user, require_staff_or_technician_only, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
@@ -119,7 +119,7 @@ async def submit_job_location(
             summary="List service jobs assigned to me")
 async def list_my_jobs(
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_staff_or_technician_only),
     db:   AsyncSession = Depends(get_db),
 ):
     try:
@@ -136,7 +136,7 @@ async def list_my_jobs(
 async def get_my_job(
     job_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_staff_or_technician_only),
     db:   AsyncSession = Depends(get_db),
 ):
     staff_id = await _resolve_staff_member_id(user, db)
@@ -193,7 +193,7 @@ async def reject_job(
 async def get_my_job_timeline(
     job_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_staff_or_technician_only),
     db:   AsyncSession = Depends(get_db),
 ):
     staff_id = await _resolve_staff_member_id(user, db)

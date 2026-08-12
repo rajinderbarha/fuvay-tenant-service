@@ -23,14 +23,16 @@ import Link from "next/link";
 import {
   Building2, CheckCircle2, Clock, Eye, EyeOff, Lock, Mail,
   Phone, ShieldCheck, User, ArrowRight, ArrowLeft, FileText, RefreshCw,
+  Wrench, Scissors, GraduationCap, Car, Sparkles, Shirt, Utensils,
+  Briefcase, Pill, Hammer, Store,
 } from "lucide-react";
 import { Button, Alert, Card } from "@serviceos/design-system";
 import { publicSignupApi, SignupVertical } from "../../lib/api";
 
-const VERTICAL_ICONS: Record<string, string> = {
-  home_services: "🔧", real_estate: "🏘️", salon: "💇", coaching: "📚",
-  automotive: "🚗", cleaning_services: "🧹", laundry: "👕", restaurant: "🍽️",
-  repair_services: "🛠️", professional_services: "💼", pharmacy: "💊", hardware: "🔩",
+const VERTICAL_ICONS: Record<string, React.ElementType> = {
+  home_services: Wrench, real_estate: Building2, salon: Scissors, coaching: GraduationCap,
+  automotive: Car, cleaning_services: Sparkles, laundry: Shirt, restaurant: Utensils,
+  repair_services: Hammer, professional_services: Briefcase, pharmacy: Pill, hardware: Store,
 };
 
 type StepId = "account" | "verify" | "identity" | "vertical" | "review";
@@ -59,9 +61,10 @@ function Field({
   trailing?: React.ReactNode; autoComplete?: string;
 }) {
   const [focused, setFocused] = useState(false);
+  const id = React.useId();
   return (
     <div>
-      <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+      <label htmlFor={id} style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
         {label}{required && <span style={{ color: "var(--danger-text)" }}> *</span>}
       </label>
       {/* Bordered icon cell, matching the field style used on /login. */}
@@ -79,6 +82,7 @@ function Field({
           </span>
         )}
         <input
+          id={id}
           type={type} value={value} required={required} autoComplete={autoComplete}
           onChange={e => onChange(e.target.value)} placeholder={placeholder}
           onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -136,8 +140,10 @@ export default function RegisterPage() {
     vertical: "",
     authorized: false, agreedTerms: false, marketingOptIn: false,
   });
-  const set = useCallback(<K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
-    setForm(f => ({ ...f, [k]: v })), []);
+  const set = useCallback(<K extends keyof typeof form>(k: K, v: (typeof form)[K]) => {
+    setError("");
+    setForm(f => ({ ...f, [k]: v }));
+  }, []);
 
   const step = STEPS[stepIndex];
   const pct = Math.round(((stepIndex + 1) / STEPS.length) * 100);
@@ -176,11 +182,20 @@ export default function RegisterPage() {
         const res = await publicSignupApi.ownerAccount({
           full_name: form.owner_name, email: form.owner_email, mobile: form.owner_phone,
           password: form.password, password_confirm: form.confirmPassword,
-          authorized_declaration: true, tos_privacy_accepted: true,
-          marketing_consent: form.marketingOptIn, registration_id: registrationId ?? undefined,
+          registration_id: registrationId ?? undefined,
         });
+        if (res.existing_account || !res.registration_id) {
+          setError(res.message || "An account already exists. Sign in or recover your account.");
+          return;
+        }
         setRegistrationId(res.registration_id);
-        setDevOtps(res.dev_otps ?? null);
+        setMobileVerified(!!res.mobile_verified);
+        setEmailVerified(!!res.email_verified);
+        const compatibleDevOtps = res.dev_otps ?? {
+          ...(res.dev_otp_mobile ? { mobile: res.dev_otp_mobile } : {}),
+          ...(res.dev_otp_email ? { email: res.dev_otp_email } : {}),
+        };
+        setDevOtps(Object.keys(compatibleDevOtps).length ? compatibleDevOtps : null);
         setError("");
         setStepIndex(i => i + 1);
       } catch (e) {
@@ -249,7 +264,10 @@ export default function RegisterPage() {
     if (!registrationId) return;
     setOtpBusy(channel); setError("");
     try {
-      await publicSignupApi.resendOtp(registrationId, channel);
+      const res = await publicSignupApi.resendOtp(registrationId, channel);
+      if (res.dev_otp) {
+        setDevOtps(current => ({ ...(current ?? {}), [channel]: res.dev_otp as string }));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : `Couldn't resend the ${channel} code.`);
     } finally {
@@ -283,10 +301,25 @@ export default function RegisterPage() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+      <style>{`
+        .register-flow { flex: 1; display: flex; gap: 28px; padding: 40px 32px; flex-wrap: wrap; max-width: 1260px; margin: 0 auto; width: 100%; align-items: flex-start; box-sizing: border-box; }
+        .register-sidebar { flex: 1 1 300px; max-width: 340px; }
+        .register-form { flex: 2 1 600px; max-width: 860px; min-width: 0; }
+        .register-two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 720px) {
+          .register-flow { flex-direction: column; padding: 24px 16px; }
+          .register-form { order: 1; width: 100%; max-width: none; flex-basis: auto; }
+          .register-sidebar { order: 2; width: 100%; max-width: none; flex-basis: auto; }
+          .register-two-column { grid-template-columns: 1fr; }
+          .register-form-card { padding: 0 !important; }
+          .register-header { padding: 14px 16px !important; }
+          .register-header-prompt { display: none; }
+        }
+      `}</style>
       <header style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "18px 32px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", gap: 12,
-      }}>
+      }} className="register-header">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 30, height: 30, borderRadius: "var(--radius-md)", background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <span style={{ color: "var(--text-on-brand, #fff)", fontWeight: 800, fontSize: 14 }}>S</span>
@@ -294,18 +327,15 @@ export default function RegisterPage() {
           <span style={{ fontWeight: 800, fontSize: 17, color: "var(--text-primary)" }}>ServiceOS</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Already have an account?</span>
-          <Link href="/login"><Button variant="secondary">Sign in</Button></Link>
+          <span className="register-header-prompt" style={{ fontSize: 13, color: "var(--text-secondary)" }}>Already have an account?</span>
+          <Link href="/login" style={{ minHeight: 36, padding: "0 16px", display: "inline-flex", alignItems: "center", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-md)", color: "var(--text-primary)", background: "var(--surface)", fontSize: 14, fontWeight: 600, textDecoration: "none" }}>Sign in</Link>
           <Link href="/help" style={{ fontSize: 13, color: "var(--brand)", fontWeight: 600, textDecoration: "none" }}>Need help?</Link>
         </div>
       </header>
 
-      <div style={{
-        flex: 1, display: "flex", gap: 28, padding: "40px 32px", flexWrap: "wrap",
-        maxWidth: 1260, margin: "0 auto", width: "100%", alignItems: "flex-start",
-      }}>
+      <main className="register-flow">
         {/* Left rail */}
-        <div style={{ flex: "1 1 300px", maxWidth: 340 }}>
+        <aside className="register-sidebar" aria-label="Signup progress">
           <Card>
             <h2 style={{ fontSize: 19, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Create your workspace</h2>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 14px" }}>
@@ -365,11 +395,11 @@ export default function RegisterPage() {
               <span style={{ fontSize: 12.5, color: "var(--success-text)" }}>No package or payment required now.</span>
             </div>
           </div>
-        </div>
+        </aside>
 
         {/* Right form card */}
-        <div style={{ flex: "2 1 600px", maxWidth: 860 }}>
-          <Card style={{ padding: 40 }}>
+        <div className="register-form">
+          <Card className="register-form-card" style={{ padding: 40 }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-secondary)" }}>Step {stepIndex + 1} of {STEPS.length}</span>
               <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--brand)" }}>{pct}%</span>
@@ -382,18 +412,18 @@ export default function RegisterPage() {
 
             {step.id === "account" && (
               <>
-                <h3 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Create your owner account</h3>
+                <h1 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Create your owner account</h1>
                 <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 24px" }}>
                   Start with your secure login. Business and service setup comes next.
                 </p>
                 <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Owner details</p>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                <div className="register-two-column" style={{ marginBottom: 14 }}>
                   <Field label="Full name" icon={<User size={16} />} required value={form.owner_name}
                     onChange={v => set("owner_name", v)} placeholder="Enter your full name" autoComplete="name" />
                   <Field label="Mobile number" icon={<Phone size={16} />} type="tel" required value={form.owner_phone}
                     onChange={v => set("owner_phone", v)} placeholder="Enter mobile number" autoComplete="tel" />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 8 }}>
+                <div className="register-two-column" style={{ marginBottom: 8 }}>
                   <Field label="Email address" icon={<Mail size={16} />} type="email" required value={form.owner_email}
                     onChange={v => set("owner_email", v)} placeholder="Enter your email address" autoComplete="email" />
                   <PasswordField label="Password" value={form.password} onChange={v => set("password", v)} placeholder="Create a password" />
@@ -440,19 +470,15 @@ export default function RegisterPage() {
                 {form.confirmPassword && form.password !== form.confirmPassword && (
                   <p style={{ fontSize: 12, color: "var(--danger-text)", margin: "4px 0 0" }}>Passwords don&apos;t match.</p>
                 )}
-                {/* Honest disclosure: this endpoint does not accept a
-                    password today -- see the file header. Rather than
-                    silently drop what the tenant typed, this is stated
-                    plainly before submit. */}
                 <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "10px 0 0" }}>
-                  Your workspace login is issued by our team once your request is approved, using this email address.
+                  Your account and workspace are created immediately after contact verification and consent. Admin review happens after business setup.
                 </p>
               </>
             )}
 
             {step.id === "verify" && (
               <>
-                <h3 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Verify your contact details</h3>
+                <h1 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Verify your contact details</h1>
                 <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 24px" }}>
                   Enter the codes we sent to your mobile and email to continue.
                 </p>
@@ -484,7 +510,8 @@ export default function RegisterPage() {
                       {!row.verified && (
                         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                           <input
-                            value={row.otp} onChange={e => row.setOtp(e.target.value)} placeholder="Enter code"
+                            aria-label={`${row.label} verification code`} inputMode="numeric" autoComplete="one-time-code"
+                            value={row.otp} onChange={e => { setError(""); row.setOtp(e.target.value); }} placeholder="Enter code"
                             style={{
                               flex: 1, height: 38, padding: "0 12px", fontSize: 14, background: "var(--surface)",
                               border: "1px solid var(--border)", borderRadius: "var(--radius-md)",
@@ -508,23 +535,24 @@ export default function RegisterPage() {
 
             {step.id === "identity" && (
               <>
-                <h3 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Business identity</h3>
+                <h1 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Business identity</h1>
                 <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 24px" }}>
                   Legal and location details for your business.
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   <Field label="Business name" icon={<Building2 size={16} />} required value={form.business_name}
                     onChange={v => set("business_name", v)} placeholder="e.g. Rahul AC Services" />
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                  <div className="register-two-column">
                     <Field label="City" required value={form.city} onChange={v => set("city", v)} placeholder="e.g. Mumbai" />
                     <Field label="State" required value={form.state} onChange={v => set("state", v)} placeholder="e.g. Maharashtra" />
                   </div>
                   <Field label="GSTIN (optional)" value={form.gstin} onChange={v => set("gstin", v)} placeholder="22AAAAA0000A1Z5" />
                   <div>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+                    <label htmlFor="business-description" style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
                       Business description (optional)
                     </label>
                     <textarea
+                      id="business-description"
                       value={form.description} onChange={e => set("description", e.target.value)}
                       placeholder="A short description of the services you offer"
                       rows={3}
@@ -541,7 +569,7 @@ export default function RegisterPage() {
 
             {step.id === "vertical" && (
               <>
-                <h3 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Select your vertical</h3>
+                <h1 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Select your vertical</h1>
                 <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 24px" }}>
                   Choose the business you&apos;re starting with. You can request additional verticals later.
                 </p>
@@ -550,28 +578,30 @@ export default function RegisterPage() {
                   <Alert tone="danger">Couldn&apos;t load available verticals. Please refresh and try again.</Alert>
                 )}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>
-                  {verticals.map(v => (
-                    <button key={v.key} type="button" onClick={() => set("vertical", v.key)}
+                  {verticals.map(v => {
+                    const VerticalIcon = VERTICAL_ICONS[v.key] ?? Store;
+                    return (
+                    <button key={v.key} type="button" aria-pressed={form.vertical === v.key} onClick={() => set("vertical", v.key)}
                       style={{
                         display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6,
                         padding: "14px", borderRadius: "var(--radius-md)", cursor: "pointer", textAlign: "left",
                         border: `1px solid ${form.vertical === v.key ? "var(--brand)" : "var(--border)"}`,
                         background: form.vertical === v.key ? "var(--accent-muted)" : "var(--surface)",
                       }}>
-                      <span style={{ fontSize: 20 }}>{VERTICAL_ICONS[v.key] ?? "🏢"}</span>
+                      <VerticalIcon size={20} aria-hidden="true" color={form.vertical === v.key ? "var(--brand)" : "var(--text-secondary)"}/>
                       <span style={{ fontSize: 13, fontWeight: 600, color: form.vertical === v.key ? "var(--brand)" : "var(--text-primary)" }}>{v.label}</span>
                       {v.description && <span style={{ fontSize: 11.5, color: "var(--text-tertiary)" }}>{v.description}</span>}
                     </button>
-                  ))}
+                  )})}
                 </div>
               </>
             )}
 
             {step.id === "review" && (
               <>
-                <h3 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Review &amp; consent</h3>
+                <h1 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Review &amp; consent</h1>
                 <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 20px" }}>
-                  Confirm your details before submitting for review.
+                  Confirm your details before creating your workspace. Business setup is submitted for admin review later.
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
                   {[
@@ -611,7 +641,7 @@ export default function RegisterPage() {
                 : <Link href="/login" style={{ fontSize: 13, color: "var(--text-secondary)", textDecoration: "none" }}>Exit</Link>}
               {step.id === "review"
                 ? <Button variant="primary" loading={submitting} disabled={submitting} onClick={submit}>
-                    {submitting ? "Submitting…" : "Submit for review"}
+                    {submitting ? "Creating workspace…" : "Create workspace"}
                   </Button>
                 : <Button variant="primary" loading={submitting} disabled={submitting} onClick={goNext}>
                     Continue{stepIndex === 0 ? " to verification" : ""} <ArrowRight size={15} style={{ marginLeft: 6 }} />
@@ -622,7 +652,7 @@ export default function RegisterPage() {
             </p>
           </Card>
         </div>
-      </div>
+      </main>
 
       <footer style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",

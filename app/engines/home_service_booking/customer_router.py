@@ -11,7 +11,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import require_customer, UserContext
 from app.dependencies.db import get_db
 from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
 from app.schemas.base import ApiResponse, ok
@@ -56,7 +56,7 @@ async def get_assistant_bootstrap(
     category_slug: str = Query(...),
     zipcode: Optional[str] = Query(None),
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     customer_id = uuid.UUID(user.user_id)
     result = await svc.get_assistant_bootstrap(customer_id=customer_id, category_slug=category_slug, zipcode=zipcode)
@@ -77,7 +77,7 @@ def _oi_svc(db: AsyncSession = Depends(get_db)):
 async def interpret_assistant_bootstrap_text(
     r: Request,
     oi=Depends(_oi_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body = await r.json()
     text = (body.get("text") or "").strip()
@@ -117,7 +117,7 @@ async def select_assistant_bootstrap_issue(
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body = await r.json()
     customer_id = uuid.UUID(user.user_id)
@@ -159,7 +159,7 @@ async def select_assistant_bootstrap_issue(
 async def start_booking_draft(
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body           = await r.json() if r.headers.get("content-length", "0") != "0" else {}
     customer_id    = uuid.UUID(user.user_id)
@@ -188,7 +188,7 @@ async def get_booking_draft_by_ai_session(
     ai_session_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     customer_id = uuid.UUID(user.user_id)
     result = await svc.get_booking_draft_by_ai_session(ai_session_id=ai_session_id, customer_id=customer_id)
@@ -210,7 +210,7 @@ async def get_booking_draft(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     customer_id = uuid.UUID(user.user_id)
     result = await svc.get_booking_draft(draft_id=draft_id, customer_id=customer_id)
@@ -231,7 +231,7 @@ async def update_draft_fields(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body        = await r.json() if r.headers.get("content-length", "0") != "0" else {}
     customer_id = uuid.UUID(user.user_id)
@@ -252,7 +252,7 @@ async def check_serviceability(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     customer_id = uuid.UUID(user.user_id)
     result = await svc.check_serviceability(draft_id=draft_id, customer_id=customer_id)
@@ -273,7 +273,7 @@ async def resolve_price_estimate(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     customer_id = uuid.UUID(user.user_id)
     result = await svc.resolve_price_estimate(draft_id=draft_id, customer_id=customer_id)
@@ -300,7 +300,7 @@ async def match_and_price(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     customer_id = uuid.UUID(user.user_id)
     draft = await svc.get_booking_draft(draft_id=draft_id, customer_id=customer_id)
@@ -333,7 +333,7 @@ async def confirm_price_choice(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body        = await r.json() if r.headers.get("content-length", "0") != "0" else {}
     customer_id = uuid.UUID(user.user_id)
@@ -363,7 +363,7 @@ async def find_bookable_providers(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     customer_id = uuid.UUID(user.user_id)
     result = await svc.find_bookable_providers(draft_id=draft_id, customer_id=customer_id)
@@ -383,7 +383,7 @@ async def select_provider(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body         = await r.json() if r.headers.get("content-length", "0") != "0" else {}
     customer_id  = uuid.UUID(user.user_id)
@@ -404,7 +404,7 @@ async def build_booking_summary(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     customer_id = uuid.UUID(user.user_id)
     result = await svc.build_booking_summary(draft_id=draft_id, customer_id=customer_id)
@@ -429,7 +429,7 @@ async def get_service_checklist(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     from app.engines.checklist_catalog import service as checklist_svc
 
@@ -465,7 +465,7 @@ async def get_available_slots(
         "working hours or per-slot capacity."
     )),
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     customer_id = uuid.UUID(user.user_id)
     result = await svc.list_available_slots(draft_id=draft_id, customer_id=customer_id, emergency=emergency)
@@ -484,7 +484,7 @@ async def select_slot(
     body: dict,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     date_iso = body.get("date")
     time_window = body.get("time_window")
@@ -519,7 +519,7 @@ async def confirm_draft(
     r: Request,
     db: AsyncSession = Depends(get_db),
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     from app.engines.final_records.creation_service import HomeServiceFinalCreationService
     customer_id     = uuid.UUID(user.user_id)
@@ -571,7 +571,7 @@ async def get_question_flow(
     session_id: str | None = None,
     qf=Depends(_qf_svc),
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     """`language` presents the SAME canonical question in the customer's
     chosen conversation language (CUSTOMER-ASSISTANT-UX-04 Part 3). Only
@@ -598,7 +598,7 @@ async def submit_question_flow_answer(
     r: Request,
     qf=Depends(_qf_svc),
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body = await r.json()
     customer_id = uuid.UUID(user.user_id)
@@ -639,7 +639,7 @@ async def interpret_question_flow_text(
     draft_id: uuid.UUID,
     r: Request,
     qi=Depends(_qi_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body = await r.json()
     customer_id = uuid.UUID(user.user_id)
@@ -663,7 +663,7 @@ async def cancel_draft(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body        = await r.json() if r.headers.get("content-length", "0") != "0" else {}
     customer_id = uuid.UUID(user.user_id)
@@ -687,7 +687,7 @@ async def add_photo(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body        = await r.json() if r.headers.get("content-length", "0") != "0" else {}
     customer_id = uuid.UUID(user.user_id)
@@ -714,7 +714,7 @@ async def remove_photo(
     draft_id: uuid.UUID,
     r: Request,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
 ):
     body        = await r.json() if r.headers.get("content-length", "0") != "0" else {}
     customer_id = uuid.UUID(user.user_id)

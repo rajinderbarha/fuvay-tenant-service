@@ -431,7 +431,7 @@ async def test_create_user_duplicate_email():
     svc = await _make_svc(db)
     with pytest.raises(ServiceOSException) as exc:
         await svc.create_user(tenant.id, {
-            "name": "Test", "email": "taken@t.com", "role": "tenant_manager"
+            "name": "Test", "email": "taken@t.com", "role": "staff"
         })
     assert "TENANT_USER_ALREADY_EXISTS" == exc.value.error_code
 

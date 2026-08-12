@@ -44,36 +44,37 @@ def _register_tenant(client, suffix: str):
     password = "Sup3rSecret!"
 
     with patch("app.engines.public_registration.service.generate_otp", _fixed_otp):
-        r = client.post("/v1/public/register/owner-account", json={
+        r = client.post("/v1/public/signup/owner-account", json={
             "full_name": "Login E2E Owner", "email": email, "mobile": mobile,
             "password": password, "password_confirm": password,
             "authorized_declaration": True, "tos_privacy_accepted": True, "marketing_consent": False,
         })
-        assert r.status_code == 200, r.text
+        assert r.status_code == 201, r.text
         reg_id = r.json()["data"]["registration_id"]
 
         for channel in ("mobile", "email"):
-            r = client.post("/v1/public/register/verify-contact", json={
+            r = client.post("/v1/public/signup/verify-contact", json={
                 "registration_id": reg_id, "channel": channel, "otp": "123456",
             })
             assert r.status_code == 200, r.text
 
-    r = client.post("/v1/public/register/business-identity", json={
+    r = client.post("/v1/public/signup/business-identity", json={
         "registration_id": reg_id, "legal_name": "Login E2E Legal", "business_name": "Login E2E Biz",
         "business_type": "private_limited",
         "registered_address": {"line1": "1 Test Rd", "state": "MH", "district": "Mumbai", "city": "Mumbai", "pincode": "400001"},
     })
     assert r.status_code == 200, r.text
 
-    r = client.get("/v1/public/register/verticals")
+    r = client.get("/v1/public/signup/verticals")
     verticals = r.json()["data"]["verticals"]
     vkey = verticals[0]["key"]
-    r = client.post("/v1/public/register/select-vertical", json={"registration_id": reg_id, "vertical_key": vkey})
+    r = client.post("/v1/public/signup/select-vertical", json={"registration_id": reg_id, "vertical_key": vkey})
     assert r.status_code == 200, r.text
 
-    r = client.post("/v1/public/register/complete", json={
+    r = client.post("/v1/public/signup/complete", json={
         "registration_id": reg_id, "authorized_declaration": True,
         "tos_privacy_accepted": True, "marketing_consent": False,
+        "idempotency_key": f"login-e2e-{suffix}",
     })
     assert r.status_code == 201, r.text
     data = r.json()["data"]
@@ -154,7 +155,8 @@ class TestDestinationProjection:
         enrollment_result = MagicMock()
         enrollment_result.scalars.return_value.all.return_value = enrollments
         db.execute = AsyncMock(side_effect=[tenant_result, enrollment_result])
-        svc = AuthService(db=db)
+        svc = object.__new__(AuthService)
+        svc.db = db
         return await svc.resolve_post_login_destination(user)
 
     async def test_suspended_tenant_routes_to_restricted(self):
@@ -172,6 +174,14 @@ class TestDestinationProjection:
         dest = await self._resolve(user, tenant, [enrollment])
         assert dest == {"next_destination": "vertical_setup_wizard", "reason_code": "VERTICAL_SETUP_NOT_STARTED"}
 
+    async def test_changes_requested_routes_to_explanation_before_corrections(self):
+        from unittest.mock import MagicMock
+        user = MagicMock(role="tenant_owner", tenant_id=uuid.uuid4())
+        tenant = MagicMock(status="onboarding_pending")
+        enrollment = MagicMock(status="changes_requested")
+        dest = await self._resolve(user, tenant, [enrollment])
+        assert dest == {"next_destination": "application_status", "reason_code": "CHANGES_REQUESTED"}
+
     async def test_active_enrollment_routes_to_dashboard(self):
         from unittest.mock import MagicMock
         user = MagicMock(role="tenant_owner", tenant_id=uuid.uuid4())
@@ -183,7 +193,8 @@ class TestDestinationProjection:
     async def test_customer_role_rejected(self):
         from unittest.mock import MagicMock
         from app.engines.auth.service import AuthService
-        svc = AuthService(db=MagicMock())
+        svc = object.__new__(AuthService)
+        svc.db = MagicMock()
         user = MagicMock(role="customer", tenant_id=None)
         dest = await svc.resolve_post_login_destination(user)
         assert dest == {"next_destination": "access_rejected", "reason_code": "CUSTOMER_ROLE_NOT_PERMITTED"}
@@ -191,7 +202,8 @@ class TestDestinationProjection:
     async def test_technician_role_routes_to_technician_app(self):
         from unittest.mock import MagicMock
         from app.engines.auth.service import AuthService
-        svc = AuthService(db=MagicMock())
+        svc = object.__new__(AuthService)
+        svc.db = MagicMock()
         user = MagicMock(role="technician", tenant_id=None)
         dest = await svc.resolve_post_login_destination(user)
         assert dest == {"next_destination": "technician_app", "reason_code": "TECHNICIAN_ROLE_NO_PORTAL_ACCESS"}
@@ -199,7 +211,8 @@ class TestDestinationProjection:
     async def test_no_tenant_membership_resumes_signup(self):
         from unittest.mock import MagicMock
         from app.engines.auth.service import AuthService
-        svc = AuthService(db=MagicMock())
+        svc = object.__new__(AuthService)
+        svc.db = MagicMock()
         user = MagicMock(role="tenant_owner", tenant_id=None)
         dest = await svc.resolve_post_login_destination(user)
         assert dest == {"next_destination": "resume_signup", "reason_code": "NO_TENANT_MEMBERSHIP"}

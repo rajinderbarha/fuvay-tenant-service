@@ -82,9 +82,9 @@ export default function VerificationDocumentsPage() {
         <Card>
           <div style={{ textAlign: "center", padding: "40px 20px" }}>
             <Info size={28} style={{ color: "var(--text-tertiary)", marginBottom: 12 }}/>
-            <h2 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 8px" }}>
+            <h1 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 8px" }}>
               Complete your Business Profile first
-            </h2>
+            </h1>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 20px", maxWidth: 420, marginLeft: "auto", marginRight: "auto" }}>
               We need your legal business name, address and contact details before we can tell you which documents to upload.
             </p>

@@ -111,6 +111,16 @@ async def test_direct_payment_full_lifecycle_live():
         customer_id = uuid.uuid4()
 
         await db.execute(text(
+            "INSERT INTO tenants (id, tenant_name, business_name, slug, tenant_code, status, vertical, created_at, updated_at) "
+            "VALUES (:id, 'Mobile Flow Tenant', 'Mobile Flow Co', :slug, :code, 'active', 'home_services', now(), now())"
+        ), {"id": tenant_id, "slug": f"mobile-{tenant_id.hex[:8]}", "code": f"MF{tenant_id.hex[:6]}"})
+        await db.execute(text(
+            "INSERT INTO tenant_billing (id, tenant_id, billing_cycle, subscription_status, credit_balance, "
+            "security_deposit_paid, security_deposit_amount, vertical_key, created_at, updated_at) "
+            "VALUES (:id, :tid, 'monthly', 'active', 500, false, 0, 'home_services', now(), now())"
+        ), {"id": uuid.uuid4(), "tid": tenant_id})
+
+        await db.execute(text(
             "INSERT INTO job_types (id, key, label, is_active, created_at, updated_at) "
             "VALUES (:id, :key, 'Repair', true, now(), now())"
         ), {"id": jt_id, "key": f"repair_{jt_id.hex[:6]}"})
@@ -122,6 +132,13 @@ async def test_direct_payment_full_lifecycle_live():
             "INSERT INTO master_service_job_types (id, master_service_id, job_type_id, is_active, "
             "display_order, created_at, updated_at) VALUES (:id, :ms, :jt, true, 0, now(), now())"
         ), {"id": uuid.uuid4(), "ms": ms_id, "jt": jt_id})
+        pricing_rule_id = uuid.uuid4()
+        await db.execute(text(
+            "INSERT INTO service_pricing_rules (id, master_service_id, category_id, job_type, job_type_id, "
+            "pricing_model, base_price, visit_fee, platform_fee_percent, commission_percent, tax_percent, "
+            "priority, is_active, source, completed_job_deduction_credits, created_at, updated_at) "
+            "VALUES (:id, :ms, :cat, 'repair', :jt, 'fixed', 0, 0, 0, 0, 0, 100, true, 'test', 7, now(), now())"
+        ), {"id": pricing_rule_id, "ms": ms_id, "cat": cat_id, "jt": jt_id})
 
         booking_id, job_id = uuid.uuid4(), uuid.uuid4()
         await db.execute(text(
@@ -174,14 +191,38 @@ async def test_direct_payment_full_lifecycle_live():
                 assert declare_resp.status_code == 200
                 assert declare_resp.json()["data"]["status"] == "awaiting_customer"
 
-                # 3. Simulate handover acknowledgment + customer confirmation (no customer-app
-                #    surface exists yet -- these states are set directly, mirroring how Phase N
-                #    disclosed the same "acknowledged" state as unreachable from this app).
-                await db.execute(text("UPDATE service_job_completion_proofs SET handover_status='acknowledged' WHERE id=:pid"), {"pid": proof_id})
-                await db.execute(text("UPDATE service_payment_records SET customer_confirmed=true, customer_confirmed_at=now() WHERE job_id=:jid"), {"jid": job_id})
-                await db.commit()
+                # 3. The real native-app contract is now complete: staff requests
+                #    handover, then the authenticated owning customer acknowledges
+                #    it and confirms the provider's direct-payment declaration.
+                handover_request = await client.post(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-completion-proof/request-handover",
+                    headers=headers,
+                )
+                assert handover_request.status_code == 200
+
+                app.dependency_overrides[get_current_user] = lambda: UserContext(
+                    user_id=str(customer_id), email="customer@serviceos.local", role="customer",
+                    tenant_id=None, full_name="Demo Customer", is_verified=True,
+                )
+                handover = await client.get(f"/v1/customer/service-jobs/{job_id}/handover", headers=headers)
+                assert handover.status_code == 200
+                assert handover.json()["data"]["can_acknowledge"] is True
+
+                acknowledged = await client.post(f"/v1/customer/service-jobs/{job_id}/acknowledge-handover", headers=headers)
+                assert acknowledged.status_code == 200
+                assert acknowledged.json()["data"]["handover_status"] == "acknowledged"
+
+                payments = await client.get("/v1/customer/direct-payments", headers=headers)
+                payment = next(row for row in payments.json()["data"]["items"] if row["job_id"] == str(job_id))
+                assert payment["booking_id"] == str(booking_id)
+                assert payment["status"] == "awaiting_customer"
+                assert payment["customer_action"] is None
+                confirmed = await client.post(f"/v1/customer/direct-payments/{payment['payment_id']}/confirm", headers=headers)
+                assert confirmed.status_code == 200
+                assert confirmed.json()["data"]["status"] == "confirmed"
 
                 # 4. Now finalize succeeds -- job transitions to completed exactly once.
+                app.dependency_overrides[get_current_user] = lambda: make_technician_context(str(tenant_id), user_id=str(staff_user_id))
                 detail2 = (await client.get(f"/v1/staff/service-jobs/{job_id}/mobile-direct-payment", headers=headers)).json()["data"]
                 assert detail2["closure_readiness"]["can_finalize"] is True
 
@@ -189,9 +230,26 @@ async def test_direct_payment_full_lifecycle_live():
                 assert finalize_resp.status_code == 200
                 assert finalize_resp.json()["data"]["status"] == "completed"
 
+                ledger = (await db.execute(text(
+                    "SELECT credit_delta, balance_before, balance_after FROM usage_credit_ledger "
+                    "WHERE job_id=:jid AND event_type='completed_job_deduction'"
+                ), {"jid": job_id})).mappings().all()
+                assert len(ledger) == 1
+                assert ledger[0]["credit_delta"] < 0
+                assert ledger[0]["balance_before"] == 500
+                assert ledger[0]["balance_after"] == 500 + ledger[0]["credit_delta"]
+                wallet_balance = (await db.execute(text(
+                    "SELECT credit_balance FROM tenant_billing WHERE tenant_id=:tid"
+                ), {"tid": tenant_id})).scalar_one()
+                assert wallet_balance == ledger[0]["balance_after"]
+
                 # 5. A second finalize attempt is rejected, not double-fired.
                 finalize_again = await client.post(f"/v1/staff/service-jobs/{job_id}/mobile-direct-payment/finalize", headers=headers)
                 assert finalize_again.status_code >= 400
+                ledger_count = (await db.execute(text(
+                    "SELECT count(*) FROM usage_credit_ledger WHERE job_id=:jid AND event_type='completed_job_deduction'"
+                ), {"jid": job_id})).scalar_one()
+                assert ledger_count == 1
         finally:
             app.dependency_overrides.pop(get_current_user, None)
             await db.execute(text("DELETE FROM service_job_completion_proofs WHERE job_id=:jid"), {"jid": job_id})
@@ -202,6 +260,9 @@ async def test_direct_payment_full_lifecycle_live():
             await db.execute(text("DELETE FROM service_jobs WHERE id=:jid"), {"jid": job_id})
             await db.execute(text("DELETE FROM service_bookings WHERE id=:bid"), {"bid": booking_id})
             await db.execute(text("DELETE FROM master_service_job_types WHERE master_service_id=:ms"), {"ms": ms_id})
+            await db.execute(text("DELETE FROM service_pricing_rules WHERE id=:id"), {"id": pricing_rule_id})
             await db.execute(text("DELETE FROM master_services WHERE id=:ms"), {"ms": ms_id})
             await db.execute(text("DELETE FROM job_types WHERE id=:jt"), {"jt": jt_id})
+            await db.execute(text("DELETE FROM tenant_billing WHERE tenant_id=:tid"), {"tid": tenant_id})
+            await db.execute(text("DELETE FROM tenants WHERE id=:tid"), {"tid": tenant_id})
             await db.commit()

@@ -84,7 +84,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   // ── Optional login (separate endpoint, runs after member exists) ──
   const [wantsLogin, setWantsLogin] = useState(false);
   const [activation, setActivation] = useState<
-    { member_id: string; credentials?: { username: string; password: string } | null } | null
+    Awaited<ReturnType<typeof providerTeamMembersApi.createLogin>> | null
   >(null);
 
   const isTechnician = memberType === "technician";
@@ -321,19 +321,22 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
           {activation && (
             <div style={{ padding: 14, borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", marginTop: 12 }}>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 8px" }}>
-                {activation.credentials
-                  ? "Login created. Share these credentials with your team member — the password is shown only once."
-                  : "Login created for this team member."}
+                {activation.already_had_login
+                  ? "Login access already exists for this team member."
+                  : activation.activation_sent
+                    ? "Invitation sent. The team member will choose their own password using the one-time activation code."
+                    : activation.activation_token
+                      ? "Invitation created. Email delivery is not configured here; share this development activation code securely."
+                      : "Invitation created, but delivery could not be confirmed. Retry from the member profile."}
               </p>
-              {activation.credentials && (
+              {activation.activation_token && (
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <code style={{ fontSize: 11, background: "var(--surface)", padding: "6px 8px", borderRadius: 6, flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {activation.credentials.username} / {activation.credentials.password}
+                    {activation.activation_token}
                   </code>
                   <button
-                    onClick={() => navigator.clipboard?.writeText(
-                      `${activation.credentials!.username} / ${activation.credentials!.password}`,
-                    )}
+                    aria-label="Copy activation code"
+                    onClick={() => navigator.clipboard?.writeText(activation.activation_token!)}
                     style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}
                   ><Copy size={14}/></button>
                 </div>

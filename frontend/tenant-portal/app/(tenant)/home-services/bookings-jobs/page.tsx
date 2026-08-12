@@ -184,25 +184,25 @@ function BookingsJobsPageContent() {
                   border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)" }}
               />
             </div>
-            <select value={datePreset} onChange={e => setParam("date", e.target.value)}
+            <select aria-label="Booking date" value={datePreset} onChange={e => setParam("date", e.target.value)}
               style={selectStyle}>
               <option value="">All dates</option>
               <option value="today">Today</option>
               <option value="tomorrow">Tomorrow</option>
               <option value="week">This week</option>
             </select>
-            <select value={offeringId} onChange={e => setParam("service", e.target.value)} style={selectStyle}>
+            <select aria-label="Booking service" value={offeringId} onChange={e => setParam("service", e.target.value)} style={selectStyle}>
               <option value="">All services</option>
               {(list.data?.available_filters?.services ?? []).map(s => (
                 <option key={s.offering_id} value={s.offering_id}>{s.name}</option>
               ))}
             </select>
-            <select value={assignment} onChange={e => setParam("assignment", e.target.value)} style={selectStyle}>
+            <select aria-label="Assignment status" value={assignment} onChange={e => setParam("assignment", e.target.value)} style={selectStyle}>
               <option value="">All assignment</option>
               <option value="assigned">Assigned</option>
               <option value="unassigned">Unassigned</option>
             </select>
-            <select value={sla} onChange={e => setParam("sla", e.target.value)} style={selectStyle}>
+            <select aria-label="SLA status" value={sla} onChange={e => setParam("sla", e.target.value)} style={selectStyle}>
               <option value="">All SLA</option>
               <option value="ON_TRACK">On track</option>
               <option value="AT_RISK">At risk</option>

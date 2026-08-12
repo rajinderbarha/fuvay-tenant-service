@@ -71,6 +71,15 @@ class TestRouterHardening:
         for forbidden in ("salary", "bank_account", "security_deposit", "city_tier"):
             assert forbidden not in block
 
+    def test_service_coverage_is_exposed_before_dynamic_member_route(self):
+        c = _read(ROUTER)
+        static_idx = c.index('@router.get("/team-members/service-coverage")')
+        dynamic_idx = c.index('@router.get("/team-members/{member_id}")')
+        assert static_idx < dynamic_idx
+        block = c[static_idx:dynamic_idx]
+        assert "compute_service_coverage" in block
+        assert 'ok({"coverage": coverage}' in block
+
 
 class TestReadinessCalculation:
     def test_readiness_states_are_specific_not_generic_active_flag(self):
@@ -114,7 +123,9 @@ class TestEligibilityGateHardening:
     def test_technician_required_flag_looked_up_not_assumed(self):
         c = _read(ASSIGN_SVC)
         assert "_job_requires_technician" in c
-        assert "JobTypeDefinition.technician_required" in c
+        # technician_required belongs to the versioned ServiceJobWorkflow,
+        # not JobTypeDefinition; jobs snapshot that workflow id at creation.
+        assert "ServiceJobWorkflow.technician_required" in c
 
     def test_offering_match_uses_real_job_offering_id(self):
         c = _read(ASSIGN_SVC)

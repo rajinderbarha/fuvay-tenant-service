@@ -1,7 +1,7 @@
 """Sprint 23 — Customer invoice endpoints (customer-safe view only)."""
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import require_customer
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
@@ -34,7 +34,7 @@ async def customer_list_invoices(
     r: Request = None,
     status: str | None = None,
     page: int = 1, limit: int = 50,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_customer), db: AsyncSession = Depends(get_db),
 ):
     """The customer's own invoice history (customer-safe view)."""
     offset = max(0, (max(1, page) - 1) * limit)
@@ -46,7 +46,7 @@ async def customer_list_invoices(
 @customer_invoice_router.get("/{invoice_id}")
 async def customer_get_invoice(
     invoice_id: str, r: Request = None,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_customer), db: AsyncSession = Depends(get_db),
 ):
     try:
         data = await inv_svc.get_invoice_for_customer(db, invoice_id, str(user.user_id))
@@ -58,7 +58,7 @@ async def customer_get_invoice(
 @customer_invoice_router.get("/{invoice_id}/payment-status")
 async def customer_payment_status(
     invoice_id: str, r: Request = None,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_customer), db: AsyncSession = Depends(get_db),
 ):
     # MODULE-L5-02 bug #22: verify the customer actually owns the invoice before
     # returning its payment timeline (previously any customer could read any
@@ -85,7 +85,7 @@ async def customer_payment_status(
 @customer_invoice_router.post("/{invoice_id}/apply-credit")
 async def customer_apply_credit(
     invoice_id: str, body: dict, r: Request = None,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_customer), db: AsyncSession = Depends(get_db),
 ):
     """MODULE-L5-28: apply the customer's service credit to this invoice,
     reducing what they owe. Applied once per invoice (double-apply rejected)."""
@@ -112,7 +112,7 @@ async def customer_apply_credit(
 @customer_invoice_router.post("/{invoice_id}/confirm-payment")
 async def customer_confirm_payment(
     invoice_id: str, r: Request = None,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_customer), db: AsyncSession = Depends(get_db),
 ):
     try:
         data = await pay_svc.customer_confirm_payment(
@@ -126,7 +126,7 @@ async def customer_confirm_payment(
 @customer_invoice_router.get("/{invoice_id}/receipt")
 async def customer_get_receipt(
     invoice_id: str, r: Request = None,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_customer), db: AsyncSession = Depends(get_db),
 ):
     # Returns same safe invoice view as a receipt
     try:

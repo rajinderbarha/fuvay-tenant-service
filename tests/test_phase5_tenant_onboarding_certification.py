@@ -56,11 +56,11 @@ def test_request_id_no_longer_hardcoded_placeholder_in_provider_portal():
 
 
 # ── Bug 5: TenantPackageAssignment has no deleted_at column ─────────
-def test_tenant_package_assignment_has_no_deleted_at_column():
+def test_tenant_package_assignment_has_deleted_at_column():
     idx = PKG_MODELS.index("class TenantPackageAssignment")
     end = PKG_MODELS.index("class PackageAuditLog")
     snippet = PKG_MODELS[idx:end]
-    assert "deleted_at" not in snippet
+    assert "deleted_at" in snippet
 
 
 def test_package_activation_queries_do_not_filter_nonexistent_column():

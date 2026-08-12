@@ -608,7 +608,10 @@ class TestChecklists:
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
         db.add    = MagicMock()
-        db.execute = AsyncMock(return_value=_scalars_result([]))
+        # Checklist creation first validates that the target job exists and
+        # belongs to the caller's tenant.  Keep this unit test aligned with
+        # that production authorization boundary.
+        db.execute = AsyncMock(return_value=_scalars_result([_mock_job()]))
         result = await svc.create_checklist(
             db, str(JOB_ID), str(BOOKING_ID), str(TENANT_ID),
             "inspection", None, str(USER_ID), None,
@@ -768,10 +771,10 @@ class TestSwaggerRoutes:
         assert "/staff/quotes/{quote_id}/send-to-customer" in routes
 
     def test_customer_approve_route(self, routes):
-        assert "/customer/quotes/{quote_id}/approve" in routes
+        assert "/v1/customer/quotes/{quote_id}/approve" in routes
 
     def test_customer_reject_route(self, routes):
-        assert "/customer/quotes/{quote_id}/reject" in routes
+        assert "/v1/customer/quotes/{quote_id}/reject" in routes
 
     def test_staff_checklist_create_route(self, routes):
         assert "/staff/checklists" in routes

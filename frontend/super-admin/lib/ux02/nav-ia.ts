@@ -47,7 +47,7 @@ export const UX02_NAV_GROUPS: Ux02NavGroup[] = [
     items: [
       { id: "ux02-tenant-list", label: "Tenant List", href: "/admin/tenants", group: "tenants", description: "Enterprise list of all tenants with filters/bulk actions.", canonicalRoles: ["super_admin", "admin_operations", "admin_readonly"], backendCapability: "admin_catalog/tenant_service", readiness: "READ_ONLY_READY", readOnlyBehavior: "visible_read_only_view", mobileBehavior: "full" },
       { id: "ux02-tenant-360", label: "Tenant 360", href: "/admin/tenants/[id]", group: "tenants", description: "Full tenant detail across 15 sections.", canonicalRoles: ["super_admin", "admin_operations", "admin_readonly"], backendCapability: "admin_catalog/tenant_service + several engines", readiness: "MOCK_DESIGN_ONLY", readOnlyBehavior: "visible_read_only_view", mobileBehavior: "collapsed_summary" },
-      { id: "ux02-verification", label: "Verification Review", href: "/admin/onboarding/providers", group: "tenants", description: "Applicant checklist, documents, approve/reject.", canonicalRoles: ["super_admin", "admin_operations"], backendCapability: "onboarding engine", readiness: "MOCK_DESIGN_ONLY", readOnlyBehavior: "hidden", mobileBehavior: "collapsed_summary" },
+      { id: "ux02-verification", label: "Verification Review", href: "/admin/home-services/providers?tab=onboarding", group: "tenants", description: "Applicant checklist, documents, approve/reject.", canonicalRoles: ["super_admin", "admin_operations"], backendCapability: "onboarding engine", readiness: "READ_ONLY_READY", readOnlyBehavior: "hidden", mobileBehavior: "collapsed_summary" },
     ],
   },
   {

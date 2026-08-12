@@ -13,7 +13,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { Button, Alert } from "@serviceos/design-system";
-import { authApi, categoryDashboardApi, publicSignupStatusApi } from "../../lib/api";
+import { authApi, publicSignupStatusApi } from "../../lib/api";
 import {
   Mail, Lock, Eye, EyeOff, Smartphone, Wrench, UserCheck, ShieldCheck, Lock as LockIcon,
   Home, ClipboardList, User as UserIcon, Building2, UtensilsCrossed, Briefcase,
@@ -155,34 +155,38 @@ export default function LoginPage() {
       // had nothing to read). See FINAL_L5_01D_TENANT_READONLY_UX_REPORT.md.
       localStorage.setItem("serviceos_user_role",       u?.role ?? "");
       localStorage.setItem("serviceos_tenant_name",     u?.full_name ?? "");
-      localStorage.setItem("serviceos_tenant_vertical", "");
-      localStorage.setItem("serviceos_tenant_plan",     "");
-      localStorage.setItem("serviceos_tenant_health",   "0");
-
-      try {
-        const rt = await categoryDashboardApi.getRuntime() as unknown as Record<string, unknown>;
-        const tenant = rt?.tenant as Record<string, unknown> | undefined;
-        const tenantName = tenant?.business_name ?? rt?.tenant_name;
-        if (rt?.category_type) localStorage.setItem("serviceos_tenant_vertical", String(rt.category_type));
-        if (tenantName)         localStorage.setItem("serviceos_tenant_name",     String(tenantName));
-        if (rt?.tenant_plan)    localStorage.setItem("serviceos_tenant_plan",     String(rt.tenant_plan));
-        if (rt?.tenant_health != null) localStorage.setItem("serviceos_tenant_health", String(rt.tenant_health));
-      } catch { /* non-critical */ }
+      // Login already returns the tenant context needed by the shell. A
+      // second runtime request used to block navigation indefinitely when
+      // that optional endpoint was slow, even though authentication had
+      // succeeded and the backend had supplied the destination.
+      const tenant = res.tenant;
+      localStorage.setItem("serviceos_tenant_vertical", tenant?.vertical ?? "");
+      localStorage.setItem("serviceos_tenant_plan",     tenant?.plan_type ?? "");
+      localStorage.setItem("serviceos_tenant_health",   String(tenant?.health_score ?? 0));
+      if (tenant?.name) localStorage.setItem("serviceos_tenant_name", tenant.name);
 
       if (res.requires_password_change || u?.force_password_change) {
         localStorage.setItem("serviceos_force_pw_change", "1");
         window.location.href = "/change-password-required";
       } else {
         localStorage.removeItem("serviceos_force_pw_change");
-        // A tenant whose vertical setup isn't complete goes straight back
-        // into the setup wizard rather than a dashboard that has nothing
-        // to show yet -- only home_services has a built wizard today.
+        // The backend owns lifecycle projection. Keeping this map at the UI
+        // boundary prevents stale onboarding_complete flags from sending a
+        // submitted or approved provider into the operational dashboard.
+        const destinationRoutes: Record<string, string> = {
+          vertical_setup_wizard: "/tenant/home-services/setup/overview",
+          application_status: "/onboarding/application-status",
+          activation_center: "/onboarding/activation-center",
+          tenant_dashboard: "/dashboard",
+          resume_signup: "/register",
+          restricted_account: "/help",
+        };
+        const projectedRoute = res.next_destination ? destinationRoutes[res.next_destination] : undefined;
         const vertical = res.tenant?.vertical;
-        if (!u?.onboarding_complete && vertical === "home_services") {
-          window.location.href = "/tenant/home-services/setup/overview";
-        } else {
-          window.location.href = "/dashboard";
-        }
+        window.location.href = projectedRoute
+          ?? (!u?.onboarding_complete && vertical === "home_services"
+            ? "/tenant/home-services/setup/overview"
+            : "/dashboard");
       }
     } catch (e: unknown) {
       // Real bug fixed here: a "wrong password" message is misleading for

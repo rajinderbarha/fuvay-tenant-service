@@ -146,7 +146,7 @@ async function apiFetchMultipart<T>(path: string, formData: FormData, method: "P
 export const authApi = {
   // Session
   login:   (email: string, password: string) =>
-    apiFetch<{ access_token: string; refresh_token: string | null; user: TenantUser; tenant: TenantCtx; requires_password_change?: boolean; password_change_reason?: string; redirect_to?: string }>(
+    apiFetch<{ access_token: string; refresh_token: string | null; user: TenantUser; tenant: TenantCtx; requires_password_change?: boolean; password_change_reason?: string; redirect_to?: string; next_destination?: string; reason_code?: string }>(
       "/v1/auth/login", { method:"POST", body:JSON.stringify({ email, password }) }, true),
   me:      () => apiFetch<TenantUser>("/v1/auth/me"),
   updateMe:(data: Partial<TenantUser>) =>
@@ -326,7 +326,10 @@ export interface AdminMasterServiceRow {
   is_brand_required:boolean; is_type_required:boolean; is_active:boolean; is_enabled?:boolean;
   /** Grouping keys the Services & Pricing setup page groups by. */
   service_group_id?:string|null; service_group_name?:string|null;
-  requires_checklist?:boolean; tenant_override_allowed?:boolean;
+  requires_issue_type?:boolean; requires_checklist?:boolean;
+  requires_estimate_approval?:boolean; requires_technician?:boolean; requires_schedule?:boolean;
+  workflow_version?:number|null; blueprint_source?:"service_job_workflow"|"master_service_legacy";
+  tenant_override_allowed?:boolean;
   /** Admin-set service artwork (MasterService.icon_url/image_url). Previously
    * dropped by the backend projection, so it was never available here. */
   icon_url?:string|null; image_url?:string|null;
@@ -3007,6 +3010,15 @@ export interface ProviderTeamMemberPayload {
   create_login?: boolean;
 }
 
+export interface TeamMemberLoginInvite {
+  member_id: string;
+  user_id?: string;
+  activation_sent?: boolean;
+  activation_token?: string | null;
+  expires_at?: string;
+  already_had_login?: boolean;
+}
+
 export const providerTeamMembersApi = {
   list: () =>
     apiFetch<{ members: ProviderTeamMember[]; count: number }>("/v1/provider/team-members"),
@@ -3025,9 +3037,14 @@ export const providerTeamMembersApi = {
   deactivate: (id: string) =>
     apiFetch<ProviderTeamMember>(`/v1/provider/team-members/${id}/deactivate`, { method: "POST" }),
   createLogin: (id: string) =>
-    apiFetch<{ member_id: string; credentials?: { username: string; password: string } | null }>(
+    apiFetch<TeamMemberLoginInvite>(
       `/v1/provider/team-members/${id}/create-login`, { method: "POST" }
     ),
+  activateLogin: (activationToken: string, newPassword: string) =>
+    apiFetch<{ activated: boolean }>("/v1/provider/team-members/activate", {
+      method: "POST",
+      body: JSON.stringify({ activation_token: activationToken, new_password: newPassword }),
+    }),
   /**
    * Real bug fixed here: `readiness` used to call `/matching-readiness`,
    * which (a) REQUIRES a `master_service_id` query param and so returned
@@ -3057,23 +3074,8 @@ export const providerTeamMembersApi = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
   },
-  /**
-   * REAL, REMAINING GAP -- deliberately returns an empty list.
-   *
-   * The Staff step renders per-SERVICE technician coverage
-   * (`{offering_id, name, ready_technician_count}`). No endpoint exposes
-   * that: `/home-services/coverage` returns AREAS with an area-level
-   * technician count, and the services workspace carries no technician
-   * counts at all. Mapping areas onto services would be inventing a number
-   * the backend never computed.
-   *
-   * This previously returned the areas payload, whose missing `coverage`
-   * key left the page calling `.some()` on undefined -- a crash. An empty
-   * list renders the section's own empty state instead, and the page says
-   * plainly that the breakdown is unavailable rather than implying no
-   * services are enabled.
-   */
-  coverage: async (): Promise<{ coverage: ServiceCoverageRow[] }> => ({ coverage: [] }),
+  coverage: () =>
+    apiFetch<{ coverage: ServiceCoverageRow[] }>("/v1/provider/team-members/service-coverage"),
 };
 
 // ── Sprint 11 — Provider Availability ────────────────────────────────────────
@@ -4174,15 +4176,7 @@ export const profileApi = {
 export const businessProfileApi = {
   get: () =>
     apiFetch<BusinessProfile>("/v1/provider/business-profile"),
-  /**
-   * HONEST GAP: the Business Profile setup page wants the option lists for
-   * its dropdowns (business types, states...). There is no
-   * `/v1/provider/business-profile/options` route in the schema, so this
-   * reads the serviceability meta endpoint, which is the only real source of
-   * geography options a tenant may call. Business-type options are not
-   * served by any route today -- the page falls back to its own list.
-   */
-  getOptions: () => apiFetch<BusinessProfileOptions>("/v1/serviceability/meta"),
+  getOptions: () => apiFetch<BusinessProfileOptions>("/v1/provider/business-profile/options"),
   update: (data: UpdateBusinessProfilePayload) =>
     apiFetch<BusinessProfile & { reverification_triggered?: boolean; reverification_message?: string }>(
       "/v1/provider/business-profile",
@@ -4974,7 +4968,7 @@ export const publicTenantSignupApi = {
 export interface SignupOwnerAccountPayload {
   full_name: string; email: string; mobile: string;
   password: string; password_confirm: string;
-  authorized_declaration: boolean; tos_privacy_accepted: boolean;
+  authorized_declaration?: boolean; tos_privacy_accepted?: boolean;
   marketing_consent?: boolean; registration_id?: string;
 }
 export interface SignupBusinessIdentityPayload {
@@ -4984,6 +4978,17 @@ export interface SignupBusinessIdentityPayload {
   website_url?: string; description?: string; registered_address?: Record<string, unknown>;
 }
 export interface SignupVertical { key: string; label: string; description?: string }
+export interface SignupOwnerAccountResult {
+  existing_account: boolean;
+  registration_id?: string;
+  resumed?: boolean;
+  mobile_verified?: boolean;
+  email_verified?: boolean;
+  message: string;
+  dev_otps?: Record<string, string>;
+  dev_otp_mobile?: string;
+  dev_otp_email?: string;
+}
 export interface SignupCompleteResult {
   access_token: string; refresh_token: string;
   tenant_id: string; user_id: string; vertical_key: string;
@@ -4992,14 +4997,14 @@ export interface SignupCompleteResult {
 
 export const publicSignupApi = {
   ownerAccount: (payload: SignupOwnerAccountPayload) =>
-    apiFetch<{ registration_id: string; otp_channels_sent: string[]; dev_otps?: Record<string, string> }>(
+    apiFetch<SignupOwnerAccountResult>(
       "/v1/public/signup/owner-account", { method: "POST", body: JSON.stringify(payload) }, true),
   verifyContact: (registration_id: string, channel: "mobile" | "email", otp: string) =>
     apiFetch<{ mobile_verified: boolean; email_verified: boolean }>(
       "/v1/public/signup/verify-contact",
       { method: "POST", body: JSON.stringify({ registration_id, channel, otp }) }, true),
   resendOtp: (registration_id: string, channel: "mobile" | "email") =>
-    apiFetch<{ sent: boolean }>(
+    apiFetch<{ resent: boolean; channel: "mobile" | "email"; dev_otp?: string }>(
       "/v1/public/signup/resend-otp",
       { method: "POST", body: JSON.stringify({ registration_id, channel }) }, true),
   businessIdentity: (payload: SignupBusinessIdentityPayload) =>

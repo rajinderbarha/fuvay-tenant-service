@@ -16,7 +16,7 @@ from app.engines.admin_catalog.models import (
     MasterService, ServiceCategory, ServiceGroup, ServicePricingRule,
     TenantService, TenantServiceType, TenantServiceBrand,
     MasterServiceType, MasterServiceBrand, ServiceType, Brand,
-    ServiceBlueprintVersion, MasterServiceJobType,
+    ServiceBlueprintVersion, MasterServiceJobType, ServiceJobWorkflow,
 )
 from app.engines.admin_catalog.bargain_engine import (
     compute_symmetric_customer_price_tiers, BargainValidationError,
@@ -26,6 +26,23 @@ from app.engines.entitlement.service import entitlement_service
 from app.exceptions import ServiceOSException, NotFoundException
 
 utcnow = lambda: datetime.now(timezone.utc)
+
+
+def project_tenant_blueprint(master: MasterService | None, workflow: dict | None) -> dict:
+    """Canonical tenant-facing projection of Admin-owned service rules."""
+    return {
+        "type_mode": "required" if master and master.is_type_required else "optional",
+        "brand_mode": "required" if master and master.is_brand_required else "optional",
+        "requires_issue_type": bool(master and master.requires_issue_type),
+        "requires_checklist": workflow["checklist_required"] if workflow else bool(master and master.requires_checklist),
+        "requires_estimate_approval": workflow["quote_approval_required"] if workflow else bool(
+            master and master.pricing_model in {"inspection_based", "inspection_quote", "quote"}
+        ),
+        "requires_technician": workflow["technician_required"] if workflow else True,
+        "requires_schedule": workflow["schedule_required"] if workflow else bool(master and master.requires_schedule),
+        "workflow_version": workflow.get("version_number") if workflow else None,
+        "source": "service_job_workflow" if workflow else "master_service_legacy",
+    }
 
 
 class TenantCatalogService:
@@ -94,6 +111,34 @@ class TenantCatalogService:
         svc_res = await self.db.execute(stmt.order_by(MasterService.display_order, MasterService.service_name))
         services = svc_res.scalars().all()
 
+        # Load the current published workflow once for every visible master
+        # service.  Setup and the operational workspace both consume this
+        # same projection, so an old workflow row or renamed field can no
+        # longer make their Admin-blueprint cards disagree.
+        workflows_by_pair: dict[tuple[uuid.UUID, uuid.UUID], dict] = {}
+        # Only services with the normalized UUID job_type_id can have an
+        # exact workflow projection. Legacy/null rows intentionally use the
+        # MasterService fallback. The isinstance guard also keeps old test
+        # fixtures that predate this column from triggering a meaningless
+        # workflow query through MagicMock attributes.
+        workflow_service_ids = {
+            service.id for service in services
+            if isinstance(service.job_type_id, uuid.UUID)
+        }
+        if workflow_service_ids:
+            workflow_rows = (await self.db.execute(
+                select(ServiceJobWorkflow).where(
+                    ServiceJobWorkflow.master_service_id.in_(workflow_service_ids),
+                    ServiceJobWorkflow.is_current.is_(True),
+                    ServiceJobWorkflow.status == "published",
+                ).order_by(ServiceJobWorkflow.version_number.desc())
+            )).scalars().all()
+            for workflow_row in workflow_rows:
+                workflows_by_pair.setdefault(
+                    (workflow_row.master_service_id, workflow_row.job_type_id),
+                    workflow_row.to_dict(),
+                )
+
         # Which ones the tenant has already enabled
         enabled_res = await self.db.execute(
             select(TenantService).where(
@@ -112,8 +157,11 @@ class TenantCatalogService:
             )
             group_names = {gid: name for gid, name in grp_res.all()}
 
-        return {"services": [
-            {
+        projected_services = []
+        for s in services:
+            workflow = workflows_by_pair.get((s.id, s.job_type_id)) if isinstance(s.job_type_id, uuid.UUID) else None
+            blueprint = project_tenant_blueprint(s, workflow)
+            projected_services.append({
                 "service_id": str(s.id),
                 "category_id": str(s.category_id),
                 "service_name": s.service_name,
@@ -139,13 +187,18 @@ class TenantCatalogService:
                 "visit_fee": float(s.visit_fee),
                 "is_brand_required": s.is_brand_required,
                 "is_type_required": s.is_type_required,
-                "requires_checklist": s.requires_checklist,
+                "requires_issue_type": blueprint["requires_issue_type"],
+                "requires_checklist": blueprint["requires_checklist"],
+                "requires_estimate_approval": blueprint["requires_estimate_approval"],
+                "requires_technician": blueprint["requires_technician"],
+                "requires_schedule": blueprint["requires_schedule"],
+                "workflow_version": blueprint["workflow_version"],
+                "blueprint_source": blueprint["source"],
                 "tenant_override_allowed": s.tenant_override_allowed,
                 "is_active": s.is_active,
                 "is_enabled": s.id in enabled_set,
-            }
-            for s in services
-        ]}
+            })
+        return {"services": projected_services}
 
     # ═══════════════════════════════════════════════════════════
     # Service Requirements (READ-ONLY view of admin-authored catalog)

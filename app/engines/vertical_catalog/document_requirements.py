@@ -145,5 +145,6 @@ def is_business_profile_complete(tenant_row) -> bool:
     things between the overview card and the Documents-step gate."""
     return bool(tenant_row) and all([
         tenant_row.business_name, tenant_row.business_type, tenant_row.phone,
-        tenant_row.email, tenant_row.address_line1, tenant_row.city, tenant_row.state,
+        tenant_row.email, tenant_row.address_line1, tenant_row.district,
+        tenant_row.city, tenant_row.state, tenant_row.zipcode,
     ])

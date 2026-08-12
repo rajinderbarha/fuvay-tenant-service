@@ -13,27 +13,28 @@
  * /v1/tenant/catalog/enabled-services/...) -- no new backend mutation
  * surface was invented for this workspace.
  *
- * NOT built this pass: Add Services wizard (enabling a brand-new master
- * service), import pricing, customer preview, publish version/snapshot
- * history UI. Those are reported as open gaps, not faked.
+ * Add Services and the customer catalog preview are intentionally backed by
+ * the same list/enable endpoints as onboarding. Bulk import and publication
+ * history remain unavailable until their backend capabilities exist.
  *
  * Known gap (see backend module docstring): TenantService is scoped per
  * Master Service, not per (Master Service, Job Type) -- this workspace
  * reflects that live limitation rather than inventing UI for a hierarchy
  * the schema can't yet support for every tenant.
  */
-import React, { Suspense, useState } from "react";
+import React, { Suspense, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Eye, Upload, Plus, Wrench, CheckCircle2, FileEdit, AlertTriangle, Settings2, Tag, Save,
 } from "lucide-react";
 import { TenantLayout } from "../../../../../components/layout/TenantLayout";
 import {
-  PageShell, PageHeader, Card, StatCard, StatusBadge, Skeleton, Alert, Button, Input,
+  PageShell, PageHeader, Card, StatCard, StatusBadge, Skeleton, Alert, Button, Input, Modal,
 } from "@serviceos/design-system";
 import {
-  servicesWorkspaceApi, homeServicesSetupApi,
-  type SWCatalogService, type SWResolvedPrice, type SWOfferingDetail,
+  servicesWorkspaceApi, homeServicesSetupApi, ServiceOSError,
+  type SWCatalogService, type SWCatalogGroup, type SWResolvedPrice, type SWOfferingDetail,
+  type AdminMasterServiceRow, type TenantEnabledService,
   type HsSetupAvailableType, type HsSetupBrand,
 } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
@@ -52,6 +53,8 @@ function ServicesPricingPageContent() {
   const router = useRouter();
   const idParts = params.serviceId as string[] | undefined;
   const selectedId = idParts?.[0] ?? null;
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   const workspace = useApi(() => servicesWorkspaceApi.get(), []);
 
@@ -66,12 +69,13 @@ function ServicesPricingPageContent() {
           description="Choose what you provide and configure your own pricing within Admin-approved service blueprints."
           actions={
             <>
-              <Button variant="secondary" size="sm" leftIcon={<Eye size={14} />}>Preview customer view</Button>
+              <Button variant="secondary" size="sm" leftIcon={<Eye size={14} />}
+                onClick={() => setPreviewOpen(true)}>Preview customer view</Button>
               <Button variant="secondary" size="sm" leftIcon={<Upload size={14} />} disabled title="Not available — bulk import is not built on the backend yet">
                 Import pricing
               </Button>
               <Button variant="primary" size="sm" leftIcon={<Plus size={14} />}
-                onClick={() => router.push("/tenant/home-services/setup/services-pricing?return_to=/home-services/services")}>
+                onClick={() => setAddOpen(true)}>
                 Add services
               </Button>
             </>
@@ -132,8 +136,144 @@ function ServicesPricingPageContent() {
             </div></Card>
           )}
         </div>
+
+        <CustomerCatalogPreview
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          groups={workspace.data?.catalog_tree ?? []}
+        />
+        {addOpen && (
+          <AddServicesModal
+            onClose={() => setAddOpen(false)}
+            onAdded={(service) => {
+              setAddOpen(false);
+              workspace.refetch();
+              router.push(`/home-services/services/${service.tenant_service_id}`);
+            }}
+          />
+        )}
       </PageShell>
     </TenantLayout>
+  );
+}
+
+function CustomerCatalogPreview({ open, onClose, groups }: {
+  open: boolean; onClose: () => void; groups: SWCatalogGroup[];
+}) {
+  const publishedGroups = groups
+    .map(group => ({ ...group, services: group.services.filter(service => service.setup_status === "published" && !service.missing_pricing) }))
+    .filter(group => group.services.length > 0);
+
+  return (
+    <Modal open={open} onClose={onClose} title="Customer catalog preview"
+      footer={<Button variant="secondary" size="sm" onClick={onClose}>Close</Button>}>
+      <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-tertiary)" }}>
+        This is the set of published, fully priced services customers can discover. Draft services stay private.
+      </p>
+      {publishedGroups.length === 0 ? (
+        <Alert tone="info">No services are customer-visible yet. Finish pricing and publish a service to include it here.</Alert>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: "min(34rem, 80vw)" }}>
+          {publishedGroups.map(group => (
+            <section key={group.service_group_id} aria-labelledby={`preview-${group.service_group_id}`}>
+              <h3 id={`preview-${group.service_group_id}`} style={{ margin: "0 0 7px", fontSize: 12, color: "var(--text-tertiary)" }}>
+                {group.name}
+              </h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {group.services.map(service => (
+                  <div key={service.tenant_service_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                    padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 650, color: "var(--text-primary)" }}>{service.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{service.job_type_label ?? "Service"}</div>
+                    </div>
+                    <StatusBadge status="published" size="sm" />
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function AddServicesModal({ onClose, onAdded }: {
+  onClose: () => void; onAdded: (service: TenantEnabledService) => void;
+}) {
+  const available = useApi(() => homeServicesSetupApi.listAvailable(), []);
+  const enabled = useApi(() => homeServicesSetupApi.listEnabled(), []);
+  const [addingId, setAddingId] = useState<string | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const candidates = useMemo(() => {
+    const enabledIds = new Set((enabled.data?.services ?? []).map(service => service.master_service_id));
+    return (available.data?.services ?? []).filter(service => !enabledIds.has(service.service_id));
+  }, [available.data, enabled.data]);
+  const grouped = useMemo(() => {
+    const groups = new Map<string, { name: string; services: AdminMasterServiceRow[] }>();
+    for (const service of candidates) {
+      const key = service.service_group_id ?? "ungrouped";
+      if (!groups.has(key)) groups.set(key, { name: service.service_group_name ?? "Other services", services: [] });
+      groups.get(key)!.services.push(service);
+    }
+    return Array.from(groups.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  }, [candidates]);
+
+  async function addService(service: AdminMasterServiceRow) {
+    setAddingId(service.service_id);
+    setAddError(null);
+    try {
+      const created = await homeServicesSetupApi.enable({ master_service_id: service.service_id });
+      onAdded(created);
+    } catch (error) {
+      setAddError(error instanceof ServiceOSError ? error.message : "Could not add this service.");
+    } finally {
+      setAddingId(null);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Add services"
+      footer={<Button variant="secondary" size="sm" onClick={onClose}>Close</Button>}>
+      <div style={{ minWidth: "min(38rem, 82vw)" }}>
+        <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-tertiary)" }}>
+          Add a service from the same Admin-approved catalog used during setup. It will start as a private draft.
+        </p>
+        {addError && <Alert tone="danger">{addError}</Alert>}
+        {available.loading || enabled.loading ? <Skeleton height={220} /> : available.error || enabled.error ? (
+          <Alert tone="danger">{available.error ?? enabled.error}</Alert>
+        ) : grouped.length === 0 ? (
+          <Alert tone="info">Every available service is already in your catalog.</Alert>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: "55vh", overflowY: "auto" }}>
+            {grouped.map(([groupId, group]) => (
+              <section key={groupId} aria-labelledby={`add-${groupId}`}>
+                <h3 id={`add-${groupId}`} style={{ margin: "0 0 7px", fontSize: 12, color: "var(--text-tertiary)" }}>{group.name}</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {group.services.map(service => (
+                    <div key={service.service_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                      padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 650, color: "var(--text-primary)" }}>{service.service_name}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                          {service.job_type.replaceAll("_", " ")} · {service.pricing_model.replaceAll("_", " ")}
+                        </div>
+                      </div>
+                      <Button variant="secondary" size="sm" loading={addingId === service.service_id}
+                        disabled={addingId !== null} onClick={() => addService(service)}>
+                        Add
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -240,6 +380,7 @@ function OverviewTab({ data }: { data: SWOfferingDetail }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, fontSize: 12.5 }}>
           <BlueprintField label="Type" value={data.blueprint.type_mode} />
           <BlueprintField label="Brand" value={data.blueprint.brand_mode} />
+          <BlueprintField label="Customer issues" value={data.blueprint.requires_issue_type ? "Required" : "Optional"} />
           <BlueprintField label="Checklist" value={data.blueprint.requires_checklist ? "Required" : "Not required"} />
           <BlueprintField label="Estimate approval" value={data.blueprint.requires_estimate_approval ? "Required" : "Not required"} />
           <BlueprintField label="Technician" value={data.blueprint.requires_technician ? "Required" : "Optional"} />

@@ -50,8 +50,11 @@ class OwnerAccountBody(BaseModel):
     mobile: str = Field(..., min_length=10, max_length=20)
     password: str = Field(..., min_length=8)
     password_confirm: str
-    authorized_declaration: bool
-    tos_privacy_accepted: bool
+    # Consent belongs to step 5. Keep these optional for backwards
+    # compatibility with older clients, but never require or persist them
+    # as granted during owner-account creation.
+    authorized_declaration: bool = False
+    tos_privacy_accepted: bool = False
     marketing_consent: bool = False
     # Present when resuming a save (idempotent re-submit of step 1).
     registration_id: uuid.UUID | None = None

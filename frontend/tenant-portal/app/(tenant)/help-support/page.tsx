@@ -743,6 +743,7 @@ function HelpSupportPageInner() {
       </div>
 
       {/* Quick help */}
+      <h2 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Quick help</h2>
       <div style={{
         display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
         gap: 10, marginBottom: 20,
@@ -830,16 +831,16 @@ function HelpSupportPageInner() {
                       background: "var(--surface)", color: "var(--text-primary)", outline: "none",
                     }} />
                 </div>
-                <select value={fCategory} onChange={e => setFCategory(e.target.value)} style={selectStyle}>
+                <select aria-label="Filter support requests by category" value={fCategory} onChange={e => setFCategory(e.target.value)} style={selectStyle}>
                   <option value="">All categories</option>
                   {ws.form_options.categories.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                 </select>
-                <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={selectStyle}>
+                <select aria-label="Filter support requests by status" value={fStatus} onChange={e => setFStatus(e.target.value)} style={selectStyle}>
                   <option value="">All statuses</option>
                   <option value="open">Open only</option>
                   {ws.statuses.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
-                <select value={fPriority} onChange={e => setFPriority(e.target.value)} style={selectStyle}>
+                <select aria-label="Filter support requests by priority" value={fPriority} onChange={e => setFPriority(e.target.value)} style={selectStyle}>
                   <option value="">All priorities</option>
                   {ws.priorities.map(x => <option key={x} value={x}>{x}</option>)}
                 </select>

@@ -47,7 +47,8 @@ class UpdateUserProfileRequest(BaseModel):
 
 
 CRITICAL_BUSINESS_FIELDS = frozenset({
-    "business_name", "owner_name", "business_phone", "business_email",
+    "business_name", "legal_name", "business_type", "registration_number",
+    "owner_name", "business_phone", "business_email",
     "address_line1", "state", "district", "city", "pincode",
     "gst_number",
 })
@@ -88,6 +89,9 @@ class UpdateBusinessProfileRequest(BaseModel):
         changed = []
         mapping = {
             "business_name": self.business_name,
+            "legal_name": self.legal_name,
+            "business_type": self.business_type,
+            "registration_number": self.registration_number,
             "owner_name": self.owner_name,
             "business_phone": self.business_phone,
             "business_email": self.business_email,

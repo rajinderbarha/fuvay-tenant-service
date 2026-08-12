@@ -67,9 +67,9 @@ export default function CustomerPricePreviewPage() {
         background: "var(--info-bg, #eff6ff)", border: "1px solid var(--border)",
         display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
         <p style={{ fontSize: 13, color: "var(--info-text, var(--brand-hover))", margin: 0 }}>
-          This preview has moved into the Home Services setup flow.
+          This preview is now part of the operational Services &amp; Pricing workspace.
         </p>
-        <Link href="/tenant/setup/services" style={{
+        <Link href="/home-services/services" style={{
           fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none", whiteSpace: "nowrap" }}>
           Go to Service Setup →
         </Link>

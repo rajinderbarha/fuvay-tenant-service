@@ -454,7 +454,8 @@ async def test_staff_can_mark_item_complete():
 @pytest.mark.asyncio
 async def test_item_requiring_note_rejects_missing_note():
     me = uuid.uuid4()
-    job = make_job(job_type=JobType.SERVICE, assigned_staff_id=me)
+    job = make_job(job_type=JobType.SERVICE, assigned_staff_id=me,
+                   status=JS.CHECKLIST_STARTED)
     item = make_job_item(job_id=job.id, requires_note=True)
     db = db_seq(job, item)
     svc = FieldOpsService(db=db, actor_id=me, actor_role="staff")
@@ -465,7 +466,8 @@ async def test_item_requiring_note_rejects_missing_note():
 @pytest.mark.asyncio
 async def test_item_requiring_photo_rejects_missing_photo():
     me = uuid.uuid4()
-    job = make_job(job_type=JobType.SERVICE, assigned_staff_id=me)
+    job = make_job(job_type=JobType.SERVICE, assigned_staff_id=me,
+                   status=JS.CHECKLIST_STARTED)
     item = make_job_item(job_id=job.id, requires_photo=True)
     db = db_seq(job, item)
     svc = FieldOpsService(db=db, actor_id=me, actor_role="staff")
@@ -602,7 +604,7 @@ def test_job_checklist_item_has_field(field):
 def test_openapi_includes_customer_quote_endpoints():
     from app.main import app
     schema = app.openapi()
-    assert "/v1/customer/quotes" in schema["paths"]
+    assert "/v1/customer/quotes/jobs/{job_id}" in schema["paths"]
     assert "/v1/customer/quotes/{quote_id}" in schema["paths"]
     assert "/v1/customer/quotes/{quote_id}/approve" in schema["paths"]
     assert "/v1/customer/quotes/{quote_id}/reject" in schema["paths"]

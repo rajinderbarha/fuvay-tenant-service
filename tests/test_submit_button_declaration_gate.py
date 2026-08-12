@@ -25,7 +25,7 @@ OVERVIEW = os.path.join(BASE, "app/engines/vertical_catalog/home_services_setup_
 REVIEW_PAGE = os.path.join(
     BASE, "frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/review/page.tsx"
 )
-API_TYPES = os.path.join(BASE, "frontend/tenant-portal/lib/api.ts")
+API_TYPES = os.path.join(BASE, "frontend/tenant-portal/lib/api-tenant-workspaces.ts")
 
 
 def _read(path):

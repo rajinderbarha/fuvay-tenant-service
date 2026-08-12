@@ -24,9 +24,9 @@ from __future__ import annotations
 from pathlib import Path
 
 API_TS = Path("mobile/staff-app/src/lib/api.ts")
-LIST_SCREEN = Path("mobile/staff-app/src/screens/JobsListScreen.tsx")
-DETAIL_SCREEN = Path("mobile/staff-app/src/screens/JobDetailScreen.tsx")
-HOME_SCREEN = Path("mobile/staff-app/src/screens/HomeScreen.tsx")
+LIST_SCREEN = Path("mobile/staff-app/src/screens/jobs/JobsScreen.tsx")
+DETAIL_SCREEN = Path("mobile/staff-app/src/screens/jobDetail/JobDetailScreen.tsx")
+HOME_SCREEN = Path("mobile/staff-app/src/screens/home/TechnicianHomeScreen.tsx")
 TRANSITIONS = Path("mobile/staff-app/src/lib/transitions.ts")
 
 

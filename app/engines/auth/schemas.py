@@ -30,8 +30,8 @@ class LoginRequest(BaseModel):
     @classmethod
     def _normalise_email(cls, v: str) -> str:
         v = v.strip().lower()
-        if not _EMAIL_RE.match(v):
-            raise ValueError("Invalid email address")
+        if not (_EMAIL_RE.match(v) or _re.match(r"^\+?[1-9]\d{7,14}$", v)):
+            raise ValueError("Invalid email address or mobile number")
         return v
 
 class PhoneLoginRequest(BaseModel):

@@ -85,9 +85,8 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
     if (res) { refetchAll(); setVoidModal(false); }
   }
 
-  // Unwrap response — adminBookingsApi.get returns { data: AdminBooking & ... }
-  const raw = booking.data as { data?: Record<string, unknown> } | null;
-  const b   = raw?.data ?? null;
+  // apiFetch already unwraps the standard response envelope.
+  const b = booking.data as Record<string, unknown> | null;
 
   const fmtDate = (d?: string | null) =>
     d ? new Date(d).toLocaleString("en-IN", {
@@ -97,14 +96,12 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const fmtAmt = (n?: number | null) => n != null ? `₹${Number(n).toLocaleString("en-IN")}` : "—";
 
   // Timeline unwrap
-  const tlRaw = timeline.data as { data?: { timeline: unknown[] } } | null;
-  const tlItems = (tlRaw?.data?.timeline ?? []) as {
+  const tlItems = (timeline.data?.timeline ?? []) as {
     from_status: string | null; to_status: string; reason: string | null; occurred_at: string | null;
   }[];
 
   // Notes unwrap
-  const notesRaw = notes.data as { data?: { notes: unknown[] } } | null;
-  const noteItems = (notesRaw?.data?.notes ?? []) as {
+  const noteItems = (notes.data?.notes ?? []) as {
     note_id: string; content: string; author_role: string | null; created_at: string | null;
   }[];
 

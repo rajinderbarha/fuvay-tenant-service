@@ -751,8 +751,12 @@ export default function TeamMembersPage() {
 
   const createLoginAction = useAction(useCallback(async (id: string) => {
     const res = await providerTeamMembersApi.createLogin(id);
-    if (res.credentials) setCredentials(res.credentials);
-    else flash("Login already exists or could not be created.");
+    if (res.activation_sent) flash("Activation invitation sent.");
+    else if (res.activation_token) {
+      await navigator.clipboard?.writeText(res.activation_token);
+      flash("Development activation code copied to the clipboard.");
+    } else if (res.already_had_login) flash("Login access already exists.");
+    else flash("Invitation created, but delivery could not be confirmed.", true);
   }, []));
 
   function handleSaved(creds?: { username: string; password: string } | null) {

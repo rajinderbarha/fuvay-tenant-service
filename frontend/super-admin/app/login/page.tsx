@@ -15,8 +15,9 @@ import {
 import { authApi } from "../../lib/api";
 
 function IconField({
-  icon: Icon, type, value, onChange, placeholder, focused, onFocus, onBlur, rightSlot,
+  id, icon: Icon, type, value, onChange, placeholder, focused, onFocus, onBlur, rightSlot,
 }: {
+  id: string;
   icon: React.ComponentType<{ size?: number }>;
   type: string;
   value: string;
@@ -38,6 +39,7 @@ function IconField({
         <Icon size={16} />
       </div>
       <input
+        id={id}
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -200,10 +202,11 @@ export default function LoginPage() {
 
             <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>
+                <label htmlFor="admin-email" style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>
                   Email Address
                 </label>
                 <IconField
+                  id="admin-email"
                   icon={Mail}
                   type="email"
                   value={email}
@@ -215,10 +218,11 @@ export default function LoginPage() {
                 />
               </div>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>
+                <label htmlFor="admin-password" style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>
                   Password
                 </label>
                 <IconField
+                  id="admin-password"
                   icon={Lock}
                   type={showPassword ? "text" : "password"}
                   value={password}

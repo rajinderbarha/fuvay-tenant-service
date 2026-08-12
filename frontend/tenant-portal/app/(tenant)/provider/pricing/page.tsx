@@ -466,9 +466,9 @@ export default function PricingPage() {
         background: "var(--warning-bg, #fffbeb)", border: "1px solid var(--warning-border, #fde68a)",
         display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
         <p style={{ fontSize: 13, color: "var(--warning-text, #92400e)", margin: 0 }}>
-          This page has moved. Open the new Home Services setup flow.
+          This page has moved. Open the operational Services &amp; Pricing workspace.
         </p>
-        <Link href="/tenant/setup/services" style={{
+        <Link href="/home-services/services" style={{
           fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none", whiteSpace: "nowrap" }}>
           Go to Service Setup →
         </Link>

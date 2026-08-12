@@ -272,6 +272,25 @@ class MobileCompletionProofService:
         await db.commit()
         return proof.to_dict()
 
+    async def get_customer_handover(self, db: AsyncSession, customer_id: uuid.UUID, job_id: uuid.UUID) -> dict:
+        """Return the customer-safe handover state without creating a proof.
+
+        The technician projection can create a draft while preparing completion,
+        but a customer merely opening Booking Details must remain read-only.
+        """
+        from app.engines.final_records.models import ServiceJob
+        job = await db.get(ServiceJob, job_id)
+        if not job or str(job.customer_id) != str(customer_id):
+            raise ServiceOSException("ENTITY_NOT_FOUND", "Job not found.", status_code=404)
+        res = await db.execute(select(CompletionProof).where(CompletionProof.job_id == job.id))
+        proof = res.scalars().first()
+        return {
+            "job_id": str(job.id),
+            "status": proof.handover_status if proof else "not_requested",
+            "requested_at": proof.handover_requested_at.isoformat() if proof and proof.handover_requested_at else None,
+            "can_acknowledge": bool(proof and proof.handover_status in ("requested", "customer_unavailable")),
+        }
+
     async def mark_customer_unavailable(self, db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID, job_id: uuid.UUID) -> dict:
         job, staff_id = await self._get_assigned_job(db, user_id, tenant_id, job_id)
         proof = await self._get_or_create_proof(db, job, staff_id)

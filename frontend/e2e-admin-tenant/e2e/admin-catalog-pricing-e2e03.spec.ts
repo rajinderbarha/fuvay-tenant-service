@@ -64,11 +64,11 @@ test.describe('ADMIN-TENANT-E2E-03 catalog/pricing', () => {
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'ac-repair-general.png'), fullPage: true });
 
     await page.locator('.cw-wtab', { hasText: 'Problems & Questions' }).click();
-    await page.waitForTimeout(600);
+    await expect(page.getByText(SEED.issueSummary, { exact: true })).toBeVisible({ timeout: 15_000 });
     const bodyIssues = await page.locator('body').innerText();
-    log('catalog-content.log', `Problems & Questions tab contains cooling: ${/cooling/i.test(bodyIssues)}`);
+    log('catalog-content.log', `Problems & Questions tab contains ${SEED.issueSummary}: ${bodyIssues.includes(SEED.issueSummary)}`);
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'ac-repair-issues.png'), fullPage: true });
-    expect(/cooling/i.test(bodyIssues)).toBeTruthy();
+    expect(bodyIssues).toContain(SEED.issueSummary);
     // Type/brand pricing (Split AC / Window AC / LG) is covered by the
     // sibling 'pricing rules' test below, on its real home
     // (/admin/pricing-rules) -- not re-asserted here.

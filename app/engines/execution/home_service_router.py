@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from sqlalchemy import select
 
-from app.dependencies.auth import get_current_user, require_super_admin
+from app.dependencies.auth import get_current_user, require_customer, require_super_admin
 from app.dependencies.db import get_db
 from app.core.permissions import P, require_permission, require_staff_or_above_mutation
 from app.schemas.base import ApiResponse, ok
@@ -120,14 +120,14 @@ class CompleteJobBody(BaseModel):
 # without deleting the function body, in case any internal caller still
 # references it directly (grepped this session: none found, but preserved
 # per the brief's explicit "do not delete unless separately justified").
-async def staff_accept_job(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_accept_job(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.accept_job(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), request_id=rid)
     await db.commit()
     return ok(result, rid, "staff-exec-accept")
 
 
-async def staff_reject_job(job_id: uuid.UUID, body: RejectBody, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def staff_reject_job(job_id: uuid.UUID, body: RejectBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.reject_job(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), reason=body.reason, request_id=rid)
     await db.commit()
@@ -376,7 +376,7 @@ customer_router = APIRouter(prefix="/v1/customer/service-jobs", tags=["Sprint21-
 
 
 @customer_router.get("/{job_id}/tracking")
-async def customer_job_tracking(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db=Depends(get_db)):
+async def customer_job_tracking(job_id: uuid.UUID, r: Request, user=Depends(require_customer), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     from sqlalchemy import select
     from app.engines.final_records.models import ServiceJob

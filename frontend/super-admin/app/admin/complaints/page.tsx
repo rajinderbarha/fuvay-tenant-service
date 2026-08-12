@@ -106,6 +106,8 @@ function SummaryCard({
   return (
     <button
       onClick={onClick}
+      aria-pressed={Boolean(active)}
+      aria-label={`${label}: ${value}`}
       style={{
         background: active ? "var(--brand)" : "var(--surface)",
         border: `1.5px solid ${active ? "var(--brand)" : "var(--border)"}`,
@@ -126,6 +128,7 @@ function Chip({ label, active, onClick }: {
   return (
     <button
       onClick={onClick}
+      aria-pressed={Boolean(active)}
       style={{
         padding: "4px 12px", borderRadius: 20,
         border: `1.5px solid ${active ? "var(--brand)" : "var(--border)"}`,
@@ -253,23 +256,31 @@ export default function AdminComplaintsPage() {
   const [sortBy, setSortBy]     = useState("created_at");
   const [sortDir, setSortDir]   = useState<"asc" | "desc">("desc");
   const [cardFilter, setCardFilter] = useState("");
+  const [newToday, setNewToday] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: sumData } = useApi(() => complaintsApi.adminSummary(), []);
-  const summary: ComplaintSummary = (sumData?.data ?? {}) as ComplaintSummary;
+  // apiFetch unwraps the standard { data } envelope, so sumData already is
+  // the summary payload. Double-unwrapping hid every summary card.
+  const summary: Partial<ComplaintSummary> = sumData ?? {};
 
   const listParams = {
     q: q || undefined,
     status: cardFilter || status || undefined,
     sla_status: slaFilter || undefined,
     priority: priority || undefined,
+    date_from: newToday ? (() => {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      return start.toISOString();
+    })() : undefined,
     page, page_size: pageSize, sort_by: sortBy, sort_dir: sortDir,
   };
 
   const { data: listData, loading, error, refetch } = useApi(
     () => complaintsApi.adminList(listParams),
-    [q, status, slaFilter, priority, page, sortBy, sortDir, cardFilter],
+    [q, status, slaFilter, priority, page, sortBy, sortDir, cardFilter, newToday],
   );
 
   const items: ComplaintItem[] = (listData?.items ?? []) as unknown as ComplaintItem[];
@@ -400,9 +411,11 @@ export default function AdminComplaintsPage() {
             <SummaryCard label="High Priority" value={summary.high_priority ?? 0}
               active={priority === "high"} onClick={() => { setPriority(priority === "high" ? "" : "high"); setPage(1); }} />
             <SummaryCard label="AI Settlement" value={summary.in_ai_settlement ?? 0}
-              active={false} onClick={() => {}} />
+              active={cardFilter === "ai_settlement_started"}
+              onClick={() => { setCardFilter(cardFilter === "ai_settlement_started" ? "" : "ai_settlement_started"); setNewToday(false); setPage(1); }} />
             <SummaryCard label="New Today" value={summary.new_today ?? 0}
-              active={false} onClick={() => {}} />
+              active={newToday}
+              onClick={() => { setNewToday(v => !v); setCardFilter(""); setPage(1); }} />
             <SummaryCard label="Settled" value={summary.settled ?? 0}
               active={cardFilter === "settled"} onClick={() => { setCardFilter("settled"); setPage(1); }} />
           </div>
@@ -410,7 +423,7 @@ export default function AdminComplaintsPage() {
 
         {/* Quick filters */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-          <Chip label="All" active={!cardFilter && !slaFilter} onClick={() => { setCardFilter(""); setSla(""); setPage(1); }} />
+          <Chip label="All" active={!cardFilter && !slaFilter && !newToday} onClick={() => { setCardFilter(""); setSla(""); setNewToday(false); setPage(1); }} />
           <Chip label="SLA Breached" active={slaFilter === "breached"}
             onClick={() => { setSla(slaFilter === "breached" ? "" : "breached"); setPage(1); }} />
           <Chip label="Awaiting Provider" active={status === "awaiting_provider_response"}

@@ -200,9 +200,11 @@ function OverviewTab({ d, activity, activityLoading }: {
           <span style={{ fontSize: 11.5, color: "var(--text-tertiary)" }}>confirmed lifetime</span>
         </div>
         <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-          {d.payment_reliability === "not_implemented" || d.payment_reliability === "insufficient_data"
-            ? "Payment-reliability scoring isn't available yet — not enough confirmed jobs, or no canonical model exists for it."
-            : d.payment_reliability}
+          {d.payment_reliability === "insufficient_data"
+            ? "Insufficient confirmation history to classify this relationship."
+            : d.payment_reliability === "needs_review"
+              ? "A direct-payment mismatch or dispute needs review."
+              : "Direct-payment confirmations are reliable."}
         </p>
       </Section>
 

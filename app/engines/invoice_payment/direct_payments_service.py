@@ -1184,6 +1184,8 @@ class DirectPaymentsService:
         for pay, job, tenant in rows:
             items.append({
                 "payment_id":      str(pay.id),
+                "job_id":          str(pay.job_id),
+                "booking_id":      str(pay.booking_id) if pay.booking_id else None,
                 "job_ref":         getattr(job, "job_number", None),
                 "provider_business": getattr(tenant, "business_name", None),
                 "service_amount":  str(pay.collected_amount),
@@ -1193,6 +1195,7 @@ class DirectPaymentsService:
                 "evidence_available": bool(pay.evidence_media_id),
                 "status":          self.derive_status(pay),
                 "customer_confirmed": pay.customer_confirmed,
+                "customer_action": pay.customer_confirmation_action,
                 "notice": "You paid this amount directly to the provider. "
                           "ServiceOS did not collect it.",
             })

@@ -230,6 +230,9 @@ class ProfileService:
 
         current_snapshot = {
             "business_name": tenant.business_name,
+            "legal_name": tenant.legal_name,
+            "business_type": tenant.business_type,
+            "registration_number": (tenant.meta or {}).get("registration_number"),
             "owner_name": getattr(tenant, "owner_name", None),
             "business_phone": tenant.phone,
             "business_email": tenant.email,
@@ -266,7 +269,7 @@ class ProfileService:
 
         def _critical(field: str, value) -> bool:
             """True when this field was staged rather than applied."""
-            if stage_critical and field in CRITICAL_BUSINESS_FIELDS and value is not None:
+            if stage_critical and field in critical_changed and field in CRITICAL_BUSINESS_FIELDS and value is not None:
                 staged[field] = value
                 return True
             return False
@@ -312,10 +315,10 @@ class ProfileService:
         if body.gst_number is not None and not _critical("gst_number", body.gst_number):
             tenant.gst_number = body.gst_number
             changed_keys.append("gst_number")
-        if body.legal_name is not None:
+        if body.legal_name is not None and not _critical("legal_name", body.legal_name):
             tenant.legal_name = body.legal_name
             changed_keys.append("legal_name")
-        if body.business_type is not None:
+        if body.business_type is not None and not _critical("business_type", body.business_type):
             tenant.business_type = body.business_type
             changed_keys.append("business_type")
         if body.year_established is not None:
@@ -326,7 +329,7 @@ class ProfileService:
             # registration_number/website_url/description below.
             tenant.meta = {**(tenant.meta or {}), "year_established": body.year_established}
             changed_keys.append("year_established")
-        if body.registration_number is not None:
+        if body.registration_number is not None and not _critical("registration_number", body.registration_number):
             tenant.meta = {**(tenant.meta or {}), "registration_number": body.registration_number}
             changed_keys.append("registration_number")
         if body.website_url is not None:
@@ -341,6 +344,17 @@ class ProfileService:
             # Held, not applied. An admin approving the request is what moves these onto
             # the tenant; until then the live business keeps trading on the details that
             # were actually verified.
+            document_types: set[str] = set()
+            staged_keys = set(staged)
+            if staged_keys & {"business_name", "legal_name", "business_type", "registration_number"}:
+                document_types.add("business_registration")
+            if "gst_number" in staged_keys:
+                document_types.add("gst_certificate")
+            if staged_keys & {"address_line1", "city", "district", "state", "pincode"}:
+                document_types.add("address_proof")
+            if "owner_name" in staged_keys:
+                document_types.add("identity_proof")
+
             tenant.meta = {
                 **(tenant.meta or {}),
                 "pending_changes": {
@@ -351,10 +365,7 @@ class ProfileService:
                     # renamed on paper needs paperwork in the new name, so approval marks
                     # these for re-upload rather than leaving a GST certificate that names
                     # a business that no longer exists.
-                    "documents_to_revalidate": sorted(_IDENTITY_DOC_TYPES) if (
-                        staged.keys() & {"business_name", "gst_number", "address_line1",
-                                         "city", "state", "pincode"}
-                    ) else [],
+                    "documents_to_revalidate": sorted(document_types),
                 },
             }
             tenant.verification_status = "changes_pending_review"

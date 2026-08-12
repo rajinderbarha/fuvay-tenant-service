@@ -186,7 +186,15 @@ class HomeServiceJobExecutionService:
             raise ServiceOSException(
                 ERR_JOB_TYPE_CONTEXT_UNRESOLVED, MSG_JOB_TYPE_CONTEXT_UNRESOLVED, status_code=409,
             )
-        if not workflow.quote_approval_required:
+        # A workflow whose price is created only after inspection/custom
+        # diagnosis necessarily requires the customer's approval before
+        # work. Treat the structural pricing behavior as authoritative too,
+        # so a stale/misconfigured boolean cannot bypass the money gate.
+        requires_quote_approval = bool(workflow.quote_approval_required) or (
+            getattr(workflow, "pricing_behavior", None)
+            in {"inspection_required", "custom_quote"}
+        )
+        if not requires_quote_approval:
             return
         from app.engines.quote_checklist.models import ServiceJobQuote
         from app.engines.quote_checklist.constants import (
@@ -245,7 +253,11 @@ class HomeServiceJobExecutionService:
         if workflow is None:
             result["start_work_block_code"] = ERR_JOB_TYPE_CONTEXT_UNRESOLVED
             return result
-        result["quote_approval_required"] = bool(workflow.quote_approval_required)
+        requires_quote_approval = bool(workflow.quote_approval_required) or (
+            getattr(workflow, "pricing_behavior", None)
+            in {"inspection_required", "custom_quote"}
+        )
+        result["quote_approval_required"] = requires_quote_approval
 
         try:
             await self._assert_quote_approval_satisfied(db, job)
@@ -253,7 +265,7 @@ class HomeServiceJobExecutionService:
         except ServiceOSException as exc:
             result["start_work_block_code"] = exc.error_code
 
-        if workflow.quote_approval_required:
+        if requires_quote_approval:
             from app.engines.quote_checklist.models import ServiceJobQuote
             quote = (await db.execute(
                 select(ServiceJobQuote).where(
@@ -1028,6 +1040,7 @@ class HomeServiceJobExecutionService:
             db, tenant_id=tenant_id, job_id=job.id, booking_id=job.booking_id,
             master_service_id=job.offering_id, offering_type_id=offering_type_id,
             brand_id=brand_id_for_deduction, category_id=job.category_id,
+            job_type_id=job.job_type_id,
             job_price=Decimal(str(collected_amount)), request_id=request_id,
         )
         await db.flush()

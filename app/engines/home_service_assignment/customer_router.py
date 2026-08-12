@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import require_customer, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 
@@ -44,7 +44,7 @@ def _customer_safe_provider(snapshot: dict | None) -> dict | None:
             summary="List my Home Services bookings")
 async def list_bookings(
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_customer),
     db:   AsyncSession = Depends(get_db),
     page: int = 1,
     page_size: int = 20,
@@ -82,7 +82,7 @@ async def list_bookings(
 async def get_booking(
     booking_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_customer),
     db:   AsyncSession = Depends(get_db),
 ):
     from app.engines.final_records.models import ServiceBooking, ServiceJob
@@ -140,7 +140,7 @@ async def get_booking(
 async def get_booking_tracking(
     booking_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_customer),
     db:   AsyncSession = Depends(get_db),
 ):
     from app.engines.final_records.models import ServiceBooking, ServiceJob
@@ -218,7 +218,7 @@ async def get_booking_tracking(
 async def get_booking_tracking_location(
     booking_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_customer),
     db:   AsyncSession = Depends(get_db),
 ):
     """Returns {available: false, reason: ...} whenever the job isn't in an
@@ -273,7 +273,7 @@ def _dt_min():
 async def submit_booking_rating(
     booking_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_customer),
     db:   AsyncSession = Depends(get_db),
 ):
     # MODULE-L5-13: the booking rating used to write to the LEGACY review engine
@@ -348,7 +348,7 @@ async def submit_booking_rating(
 async def get_booking_rating(
     booking_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_customer),
     db:   AsyncSession = Depends(get_db),
 ):
     # MODULE-L5-13: read the review back from the same customer_reviews engine the
@@ -405,7 +405,7 @@ def _cancel_reschedule_error(exc: ValueError):
 async def get_cancel_reschedule_eligibility(
     booking_id: uuid.UUID,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_customer),
     db:   AsyncSession = Depends(get_db),
 ):
     from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
@@ -425,7 +425,7 @@ async def get_reschedule_availability(
     booking_id: uuid.UUID,
     r:    Request      = ...,
     horizon_days: int = 14,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_customer),
     db:   AsyncSession = Depends(get_db),
 ):
     from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
@@ -445,7 +445,7 @@ async def cancel_booking(
     booking_id: uuid.UUID,
     body: dict,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_customer),
     db:   AsyncSession = Depends(get_db),
 ):
     from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
@@ -466,7 +466,7 @@ async def reschedule_booking(
     booking_id: uuid.UUID,
     body: dict,
     r:    Request      = ...,
-    user: UserContext  = Depends(get_current_user),
+    user: UserContext  = Depends(require_customer),
     db:   AsyncSession = Depends(get_db),
 ):
     import datetime as _dt

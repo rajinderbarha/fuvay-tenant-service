@@ -32,30 +32,30 @@ export function AvailabilityFilters({
           </div>
         </div>
         <div>
-          <label style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Role</label>
-          <select value={roleFilter} onChange={e => onRole(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
+          <label htmlFor="availability-role" style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Role</label>
+          <select id="availability-role" value={roleFilter} onChange={e => onRole(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
             <option value="">All roles</option>
             {roles.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
         <div>
-          <label style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Availability</label>
-          <select value={availFilter} onChange={e => onAvail(e.target.value as "" | "available" | "unavailable")} style={{ ...selectStyle, width: "100%" }}>
+          <label htmlFor="availability-status" style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Availability</label>
+          <select id="availability-status" value={availFilter} onChange={e => onAvail(e.target.value as "" | "available" | "unavailable")} style={{ ...selectStyle, width: "100%" }}>
             <option value="">All</option>
             <option value="available">Available</option>
             <option value="unavailable">Unavailable</option>
           </select>
         </div>
         <div>
-          <label style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Capability</label>
-          <select value={capabilityFilter} onChange={e => onCapability(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
+          <label htmlFor="availability-capability" style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Capability</label>
+          <select id="availability-capability" value={capabilityFilter} onChange={e => onCapability(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
             <option value="">All</option>
             {capabilities.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
-          <label style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Timezone</label>
-          <select value={timezone ?? ""} disabled style={{ ...selectStyle, width: "100%", opacity: 0.7 }}>
+          <label htmlFor="availability-timezone" style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Timezone</label>
+          <select id="availability-timezone" value={timezone ?? ""} disabled style={{ ...selectStyle, width: "100%", opacity: 0.7 }}>
             <option value={timezone ?? ""}>{timezone ?? "—"}</option>
           </select>
         </div>

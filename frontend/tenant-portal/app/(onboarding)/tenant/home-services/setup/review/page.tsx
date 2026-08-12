@@ -140,6 +140,7 @@ export default function ReviewSubmitPage() {
   if (loading) {
     return (
       <OnboardingShell activeNav="review">
+        <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 16px" }}>Review &amp; submit</h1>
         <Skeleton height={70} style={{ marginBottom: 20 }}/>
         <Skeleton height={420} style={{ marginBottom: 20 }}/>
         <Skeleton height={160}/>
@@ -152,9 +153,9 @@ export default function ReviewSubmitPage() {
       <OnboardingShell activeNav="review">
         <Card>
           <div role="alert" style={{ textAlign: "center", padding: "32px 16px" }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
+            <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 8px" }}>
               We couldn&apos;t load your setup for review.
-            </p>
+            </h1>
             <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>{error}</p>
             <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={load}>Retry</Btn>
           </div>
@@ -164,8 +165,8 @@ export default function ReviewSubmitPage() {
   }
   if (!overview) return null;
 
-  const required = overview.sections.filter(s => s.required);
-  const completedRequired = required.filter(s => s.status === "complete").length;
+  const completedRequired = overview.progress.completed_required;
+  const requiredCount = overview.progress.total_required;
   const financeSection = overview.sections.find(s => s.key === "FINANCE_READINESS");
   const depositAmount = (financeSection?.security_deposit_amount as number | undefined) ?? 0;
   const depositDueAfterApproval = !!financeSection?.security_deposit_due_after_approval;
@@ -280,7 +281,7 @@ export default function ReviewSubmitPage() {
               <p style={{ fontSize: 34, fontWeight: 800, color: overview.blocker_count > 0 ? "var(--danger)" : "var(--success)", margin: 0 }}>
                 {overview.progress.percentage}%
               </p>
-              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{completedRequired} of {required.length} sections complete</p>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{completedRequired} of {requiredCount} sections complete</p>
             </div>
             {overview.blocker_count > 0 && (
               <p style={{ fontSize: 12, color: "var(--danger-text)", margin: "0 0 4px", textAlign: "center" }}>{overview.blocker_count} blocker{overview.blocker_count === 1 ? "" : "s"}</p>
@@ -357,6 +358,10 @@ function SectionRow({ section, expanded, onToggle, onRetryPublish, retryingPubli
   let statusBadge: { variant: "success" | "warning" | "danger" | "muted"; label: string; icon: React.ReactNode };
   if (section.status === "complete") {
     statusBadge = { variant: "success", label: "Complete", icon: <CheckCircle2 size={12}/> };
+  } else if (section.status === "locked") {
+    statusBadge = { variant: "muted", label: "Locked", icon: <Lock size={12}/> };
+  } else if (section.status === "ready") {
+    statusBadge = { variant: "success", label: "Ready to submit", icon: <CheckCircle2 size={12}/> };
   } else if (section.status === "optional") {
     statusBadge = { variant: "muted", label: "Optional", icon: <Info size={12}/> };
   } else if (section.blocking_reasons.length > 0) {

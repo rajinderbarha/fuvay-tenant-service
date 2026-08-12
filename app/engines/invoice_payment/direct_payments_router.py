@@ -14,7 +14,7 @@ from fastapi import APIRouter, Body, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import P, permission_checker
-from app.dependencies.auth import UserContext, get_current_user
+from app.dependencies.auth import UserContext, require_customer
 from app.dependencies.db import get_db
 from app.dependencies.vertical_guard import require_tenant_vertical_active
 from app.engines.invoice_payment.direct_payments_constants import (
@@ -232,7 +232,7 @@ async def open_dispute(
                      summary="My direct payments awaiting confirmation")
 async def customer_list(
     r: Request,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     svc = DirectPaymentsService(db, uuid.UUID(int=0), _RID(r))
@@ -245,7 +245,7 @@ async def customer_list(
 async def customer_confirm(
     payment_id: uuid.UUID,
     r: Request,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     svc = DirectPaymentsService(db, uuid.UUID(int=0), _RID(r))
@@ -259,7 +259,7 @@ async def customer_report_mismatch(
     payment_id: uuid.UUID,
     r: Request,
     payload: dict = Body(...),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     svc = DirectPaymentsService(db, uuid.UUID(int=0), _RID(r))
@@ -279,7 +279,7 @@ async def customer_open_dispute(
     payment_id: uuid.UUID,
     r: Request,
     payload: dict = Body(default={}),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
     from app.engines.invoice_payment.models import ServicePaymentRecord

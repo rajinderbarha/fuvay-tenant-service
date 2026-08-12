@@ -169,7 +169,10 @@ async def test_pending_quote_can_be_approved_once():
     q = _quote(status=QS_SENT_TO_CUSTOMER)
     db = _decision_db(q)
     svc = ServiceJobQuoteService()
-    with patch(NOTIFY_PATCH, new=AsyncMock()):
+    with patch(NOTIFY_PATCH, new=AsyncMock()), patch(
+        "app.engines.vertical_monetization.charge_service.create_charge_for_quote",
+        new=AsyncMock(return_value=None),
+    ):
         data = await svc.customer_approve(db, str(q.id), str(q.customer_id), idempotency_key="k1", user_id=str(q.customer_id), request_id="r1")
     assert data["status"] == QS_CUSTOMER_APPROVED
     assert "provider_internal_notes" not in data
@@ -180,7 +183,10 @@ async def test_approval_never_writes_a_payment_record():
     q = _quote(status=QS_SENT_TO_CUSTOMER)
     db = _decision_db(q)
     svc = ServiceJobQuoteService()
-    with patch(NOTIFY_PATCH, new=AsyncMock()):
+    with patch(NOTIFY_PATCH, new=AsyncMock()), patch(
+        "app.engines.vertical_monetization.charge_service.create_charge_for_quote",
+        new=AsyncMock(return_value=None),
+    ):
         data = await svc.customer_approve(db, str(q.id), str(q.customer_id), idempotency_key="k1", user_id=str(q.customer_id), request_id="r1")
     assert "payment" not in data
     assert "collected_amount" not in data

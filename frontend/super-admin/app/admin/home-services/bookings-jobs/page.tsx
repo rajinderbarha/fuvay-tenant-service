@@ -334,7 +334,7 @@ function WorkDetailDrawer({ row, onClose }: { row: UnifiedOperationRow; onClose:
   const sla = j?.sla;
   const priceSnapshot = j?.booking?.price_snapshot as Record<string, unknown> | null | undefined;
   const events = execTimeline.data ?? [];
-  const bookingEvents = bookingTimeline.data?.data.timeline ?? [];
+  const bookingEvents = bookingTimeline.data?.timeline ?? [];
   const loadingDetail = row.job_id ? (job.loading || execTimeline.loading) : bookingTimeline.loading;
 
   const allPriceRows = priceSnapshot
@@ -603,12 +603,6 @@ function WorkDetailDrawer({ row, onClose }: { row: UnifiedOperationRow; onClose:
           {row.job_id && (
             <Btn variant="secondary" size="sm" icon={<ExternalLink size={13}/>}
               onClick={() => window.open(`/admin/home-services/service-jobs/${row.job_id}`, "_blank")}>
-              Open Full Details
-            </Btn>
-          )}
-          {!row.job_id && row.booking_id && (
-            <Btn variant="secondary" size="sm" icon={<ExternalLink size={13}/>}
-              onClick={() => window.open(`/admin/bookings/${row.booking_id}`, "_blank")}>
               Open Full Details
             </Btn>
           )}

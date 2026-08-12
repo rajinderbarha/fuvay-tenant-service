@@ -577,6 +577,30 @@ class AdminTenantService:
         items = []
         for r in rows:
             pending = r.pending if isinstance(r.pending, dict) else json.loads(r.pending or "{}")
+            required_doc_types = pending.get("documents_to_revalidate") or []
+            documents = []
+            if required_doc_types:
+                doc_rows = (await self.db.execute(text("""
+                    SELECT id, doc_type, label, status, created_at, media_asset_id
+                    FROM tenant_documents
+                    WHERE tenant_id = CAST(:tid AS uuid) AND is_current = true
+                      AND doc_type = ANY(string_to_array(:types, ','))
+                    ORDER BY doc_type
+                """), {"tid": str(r.id), "types": ",".join(required_doc_types)})).fetchall()
+                submitted_at = pending.get("submitted_at") or ""
+                by_type = {d.doc_type: d for d in doc_rows}
+                for doc_type in required_doc_types:
+                    d = by_type.get(doc_type)
+                    uploaded_at = d.created_at.isoformat() if d and d.created_at else None
+                    documents.append({
+                        "doc_type": doc_type,
+                        "document_id": str(d.id) if d else None,
+                        "label": d.label if d else None,
+                        "status": d.status if d else "not_uploaded",
+                        "uploaded_at": uploaded_at,
+                        "preview_url": f"/v1/media/{d.media_asset_id}/view" if d and d.media_asset_id else None,
+                        "submitted_for_request": bool(uploaded_at and uploaded_at >= submitted_at),
+                    })
             items.append({
                 "tenant_id": str(r.id),
                 # The name still in force, so an admin comparing old against new is not
@@ -586,6 +610,11 @@ class AdminTenantService:
                 "submitted_at": pending.get("submitted_at"),
                 "submitted_by_user_id": pending.get("submitted_by_user_id"),
                 "documents_to_revalidate": pending.get("documents_to_revalidate") or [],
+                "documents": documents,
+                "documents_ready": all(
+                    d["submitted_for_request"] and d["status"] in ("pending_review", "verified")
+                    for d in documents
+                ),
             })
         return {"change_requests": items, "count": len(items)}
 
@@ -615,11 +644,49 @@ class AdminTenantService:
                 "This tenant has no change request awaiting review.", status_code=409)
 
         fields = pending.get("fields") or {}
+        required_doc_types = pending.get("documents_to_revalidate") or []
+        submitted_at = pending.get("submitted_at")
+        approved_document_ids: list[str] = []
+        if required_doc_types:
+            try:
+                submitted_at_value = datetime.fromisoformat(
+                    str(submitted_at).replace("Z", "+00:00")
+                )
+            except (TypeError, ValueError):
+                raise ServiceOSException(
+                    "INVALID_CHANGE_REQUEST",
+                    "This change request has an invalid submission timestamp.",
+                    status_code=409,
+                )
+            docs = (await self.db.execute(text("""
+                SELECT id, doc_type, status
+                FROM tenant_documents
+                WHERE tenant_id = CAST(:tid AS uuid) AND is_current = true
+                  AND doc_type = ANY(string_to_array(:types, ','))
+                  AND created_at >= CAST(:submitted_at AS timestamptz)
+            """), {
+                "tid": str(tenant_id), "types": ",".join(required_doc_types),
+                # asyncpg binds a timestamptz parameter as a Python datetime. Passing
+                # the ISO string stored in JSONB raises DataError before PostgreSQL can
+                # evaluate the explicit CAST.
+                "submitted_at": submitted_at_value,
+            })).fetchall()
+            by_type = {d.doc_type: d for d in docs}
+            missing = [doc_type for doc_type in required_doc_types if doc_type not in by_type]
+            if missing:
+                raise ServiceOSException(
+                    "CHANGE_REQUEST_DOCUMENTS_REQUIRED",
+                    "Upload fresh supporting documents before this change can be approved.",
+                    status_code=409,
+                    context={"missing_document_types": missing},
+                )
+            approved_document_ids = [str(d.id) for d in docs]
         # The staged keys are the request schema's names; these are the columns they map
         # to. Anything unmapped is ignored rather than set blindly -- a staged key that no
         # longer corresponds to a column must not silently vanish into an attribute.
         COLUMN = {
-            "business_name": "business_name", "owner_name": "owner_name",
+            "business_name": "business_name", "legal_name": "legal_name",
+            "business_type": "business_type", "owner_name": "owner_name",
             "business_phone": "phone", "business_email": "email",
             "address_line1": "address_line1", "city": "city", "district": "district",
             "state": "state", "pincode": "zipcode", "gst_number": "gst_number",
@@ -630,26 +697,30 @@ class AdminTenantService:
             if col and hasattr(t, col):
                 setattr(t, col, value)
                 applied[key] = value
+            elif key == "registration_number":
+                t.meta = {**(t.meta or {}), "registration_number": value}
+                applied[key] = value
+            elif key == "owner_name":
+                t.meta = {**(t.meta or {}), "owner_name": value}
+                applied[key] = value
 
         # Identity moved, so the paperwork proving it no longer matches. Marked for
         # re-upload rather than deleted: the old document stays as the record of what was
         # verified at the time, which is what an audit of this approval would need.
-        doc_types = pending.get("documents_to_revalidate") or []
         revalidated = 0
-        if doc_types:
+        if approved_document_ids:
             res = await self.db.execute(text("""
                 UPDATE tenant_documents
-                SET status = 'needs_reupload', updated_at = now()
-                WHERE tenant_id = CAST(:tid AS uuid) AND is_current = true
-                  AND doc_type = ANY(string_to_array(:types, ','))
-                  AND status <> 'needs_reupload'
-            """), {"tid": str(tenant_id), "types": ",".join(doc_types)})
+                SET status = 'verified', verified_at = now(), reviewed_by = CAST(:reviewer AS uuid),
+                    rejection_reason = NULL, review_notes = NULL, updated_at = now()
+                WHERE id = ANY(CAST(:ids AS uuid[]))
+            """), {"ids": approved_document_ids, "reviewer": str(self.actor_id)})
             revalidated = res.rowcount or 0
 
         # Back to approved only when nothing is left to re-verify; otherwise the tenant is
         # trading on details whose proof is outstanding, and saying "approved" would hide
         # that.
-        t.verification_status = "approved" if revalidated == 0 else "changes_requested"
+        t.verification_status = "approved"
         # Removed with a JSONB operator rather than by reassigning the mapped dict, for the
         # same reason the read above uses SQL: the write has to land on the row, not on a
         # session's copy of it.
@@ -697,7 +768,7 @@ class AdminTenantService:
 
     async def verify_tenant(self, tenant_id: uuid.UUID) -> dict:
         t = await self._get_tenant(tenant_id)
-        if t.verification_status not in ("not_started", "pending", "changes_requested"):
+        if t.verification_status not in ("pending", "under_review", "changes_requested"):
             raise ServiceOSException("TENANT_VERIFICATION_INVALID_STATUS",
                                      f"Cannot verify tenant in '{t.verification_status}' status.")
         now = utcnow()
@@ -726,6 +797,9 @@ class AdminTenantService:
 
     async def reject_verification(self, tenant_id: uuid.UUID, reason: str) -> dict:
         t = await self._get_tenant(tenant_id)
+        if t.verification_status not in ("pending", "under_review", "changes_requested"):
+            raise ServiceOSException("TENANT_VERIFICATION_INVALID_STATUS",
+                                     f"Cannot reject tenant in '{t.verification_status}' status.")
         t.verification_status = "rejected"
         t.status = "rejected"
         t.suspension_reason = reason
@@ -863,7 +937,7 @@ class AdminTenantService:
     async def create_user(self, tenant_id: uuid.UUID, data: dict) -> dict:
         await self._get_tenant(tenant_id)
         email = data.get("email", "").lower().strip()
-        role = data.get("role", "tenant_manager")
+        role = data.get("role", "staff")
         if role not in VALID_TENANT_ROLES:
             raise ServiceOSException("TENANT_USER_ROLE_INVALID", f"Role '{role}' is not valid.")
         existing = await self.db.execute(select(User).where(User.email == email))
@@ -1384,6 +1458,9 @@ class AdminTenantService:
         if not reason or not reason.strip():
             raise ServiceOSException("REASON_REQUIRED", "Reason is required for requesting changes.")
         t = await self._get_tenant(tenant_id)
+        if t.verification_status not in ("pending", "under_review", "changes_requested"):
+            raise ServiceOSException("TENANT_VERIFICATION_INVALID_STATUS",
+                                     f"Cannot request changes in '{t.verification_status}' status.")
         old_v = t.verification_status
         t.verification_status = "changes_requested"
         await self._audit(

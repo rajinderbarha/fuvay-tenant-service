@@ -10,10 +10,9 @@
  * disagree, the exact bug class already found and fixed for the Provider
  * Directory.
  *
- * Payment Reliability, segments and the attention queue are NOT built in
- * this pass -- they need canonical payment-confirmation-mismatch and
- * dispute data models this service doesn't have. Not fabricated as
- * Reliable/Needs Review.
+ * Payment Reliability is derived from canonical direct-payment
+ * reconciliation records. Pending confirmations are neutral; unresolved
+ * mismatches and disputes are the only records that enter Payment Review.
  */
 import { useCallback, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -159,6 +158,11 @@ function HomeServicesCustomersWorkspace() {
               { key: "completed_jobs", label: "Completed Jobs" },
               { key: "services_used_count", label: "Services Used" },
               { key: "providers_used_count", label: "Providers Used" },
+              { key: "payment_reliability", label: "Payment Reliability", render: v => (
+                <Badge variant={v === "reliable" ? "success" : v === "needs_review" ? "warning" : "default"}>
+                  {String(v).replace(/_/g, " ")}
+                </Badge>
+              ) },
               { key: "repeat_status", label: "Repeat Status", render: v => <Badge variant={v === "repeat" ? "success" : "default"}>{String(v).replace(/_/g, " ")}</Badge> },
               { key: "last_activity_at", label: "Last Activity", render: v => dt(v as string) },
               { key: "customer_id", label: "Actions", render: v => (

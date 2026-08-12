@@ -1,0 +1,50 @@
+{
+  "phase": "approved",
+  "started_at": "2026-08-11T16:02:23.986Z",
+  "pages": [
+    {
+      "key": "activation",
+      "route": "/onboarding/activation-center",
+      "final_pathname": "/onboarding/activation-center",
+      "features": {
+        "Your setup has been approved": true,
+        "Activation checklist": true,
+        "Activation progress": true,
+        "Finance policy": true,
+        "What goes live": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 17
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-approved-01-activation.png"
+    },
+    {
+      "key": "application-approved",
+      "route": "/onboarding/application-status",
+      "final_pathname": "/onboarding/application-status",
+      "features": {
+        "Submitted setup": true,
+        "Submission details": true,
+        "What happens next": true
+      },
+      "axe_violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 20
+        }
+      ],
+      "horizontal_overflow": false,
+      "screenshot": "reference-approved-02-application-approved.png"
+    }
+  ],
+  "failed_responses": [],
+  "console_errors": [],
+  "passed": true,
+  "finished_at": "2026-08-11T16:02:37.369Z"
+}

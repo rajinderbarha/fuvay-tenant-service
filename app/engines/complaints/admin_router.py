@@ -6,6 +6,7 @@ from pydantic import BaseModel, field_validator
 from typing import Optional
 import uuid
 from decimal import Decimal
+from datetime import datetime
 
 from app.dependencies.auth import get_current_user, require_super_admin, UserContext
 from app.dependencies.db import get_db
@@ -207,8 +208,8 @@ async def list_complaints_enterprise(
     sla_status:  Optional[str]       = Query(None),
     record_type: Optional[str]       = Query(None),
     complaint_type: Optional[str]    = Query(None),
-    date_from:   Optional[str]       = Query(None),
-    date_to:     Optional[str]       = Query(None),
+    date_from:   Optional[datetime]  = Query(None),
+    date_to:     Optional[datetime]  = Query(None),
     sort_by:     str                 = Query("created_at"),
     sort_dir:    str                 = Query("desc"),
     page:        int                 = Query(1, ge=1),
@@ -263,7 +264,8 @@ async def list_complaints_enterprise(
         "tenant_name": "t.tenant_name",
     }
     sort_col = _SORT_MAP.get(sort_by, "c.created_at")
-    sort_sql  = f"{sort_col} {sort_dir.upper()} NULLS LAST"
+    sort_direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
+    sort_sql = f"{sort_col} {sort_direction} NULLS LAST"
 
     count_sql = f"""
         SELECT COUNT(*)

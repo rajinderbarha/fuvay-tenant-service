@@ -34,6 +34,8 @@ import { usePartsRequestsQuery, useApprovePartsRequestMutation, useDeclinePartsR
 import { WorkCompletedCard } from "../../components/booking-details/WorkCompletedCard";
 import { RatingCard } from "../../components/booking-details/RatingCard";
 import { useBookingReviewQuery, useSubmitBookingRatingMutation } from "../../api/customerReview/useCustomerReviewQueries";
+import { useCustomerClosureQueries } from "../../api/customerClosure/useCustomerClosureQueries";
+import { CompletionConfirmationCard } from "../../components/booking-details/CompletionConfirmationCard";
 
 type Route = RouteProp<CustomerAppStackParamList, "BookingDetails">;
 
@@ -63,6 +65,7 @@ export function BookingDetailsScreen() {
   const isCompleted = foundDetails?.job?.rawStatus === "completed" && !!foundDetails?.job?.completion;
   const reviewQuery = useBookingReviewQuery(bookingId, isCompleted);
   const submitRatingMutation = useSubmitBookingRatingMutation(bookingId);
+  const closure = useCustomerClosureQueries(jobId, bookingId, !!jobId && !isCompleted);
 
   if (query.isPending) {
     return (
@@ -220,6 +223,16 @@ export function BookingDetailsScreen() {
             createdAt={details.createdAt}
           />
         )}
+
+        <CompletionConfirmationCard
+          handover={closure.handover.data ?? null}
+          payment={closure.payment}
+          busy={closure.acknowledge.isPending || closure.confirmPayment.isPending || closure.reportNotPaid.isPending}
+          failed={closure.acknowledge.isError || closure.confirmPayment.isError || closure.reportNotPaid.isError}
+          onAcknowledge={() => closure.acknowledge.mutate()}
+          onConfirmPayment={() => closure.payment && closure.confirmPayment.mutate(closure.payment.payment_id)}
+          onReportNotPaid={() => closure.payment && closure.reportNotPaid.mutate(closure.payment.payment_id)}
+        />
 
         {activeStage ? (
           <JobProgressTimeline activeStage={activeStage} />

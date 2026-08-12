@@ -269,7 +269,10 @@ class TestCustomerDecisionResponseFiltering:
         db = _db_returning(q, None, None)
         db.execute = AsyncMock(side_effect=[r1, r2, r3, items_result])
         with patch("app.engines.quote_checklist.notifications.notify_provider_quote_decision",
-                   new=AsyncMock()):
+                   new=AsyncMock()), patch(
+            "app.engines.vertical_monetization.charge_service.create_charge_for_quote",
+            new=AsyncMock(return_value=None),
+        ):
             result = await svc.customer_approve(
                 db, str(q.id), str(customer_id), idempotency_key="k1",
                 user_id=str(customer_id), request_id=None,

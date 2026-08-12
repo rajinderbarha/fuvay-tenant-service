@@ -1,0 +1,225 @@
+{
+  "started_at": "2026-08-11T18:04:09.031Z",
+  "pages": [
+    {
+      "slug": "business-profile",
+      "requested_url": "http://localhost:3001/profile",
+      "final_url": "http://localhost:3001/profile",
+      "heading": "Business Profile",
+      "has_error_copy": false,
+      "horizontal_overflow": false,
+      "axe_serious_or_critical": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 27
+        }
+      ]
+    },
+    {
+      "slug": "bookings-jobs",
+      "requested_url": "http://localhost:3001/home-services/bookings-jobs",
+      "final_url": "http://localhost:3001/home-services/bookings-jobs",
+      "heading": "Bookings & jobs",
+      "has_error_copy": false,
+      "horizontal_overflow": false,
+      "axe_serious_or_critical": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 48
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "nodes": 4
+        }
+      ]
+    },
+    {
+      "slug": "assignment-dispatch",
+      "requested_url": "http://localhost:3001/home-services/dispatch",
+      "final_url": "http://localhost:3001/home-services/dispatch",
+      "heading": "Dispatch board",
+      "has_error_copy": false,
+      "horizontal_overflow": false,
+      "axe_serious_or_critical": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 14
+        }
+      ]
+    },
+    {
+      "slug": "appointments",
+      "requested_url": "http://localhost:3001/appointments",
+      "final_url": "http://localhost:3001/appointments",
+      "heading": "Appointments",
+      "has_error_copy": false,
+      "horizontal_overflow": false,
+      "axe_serious_or_critical": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 12
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "nodes": 1
+        }
+      ]
+    },
+    {
+      "slug": "availability",
+      "requested_url": "http://localhost:3001/home-services/availability",
+      "final_url": "http://localhost:3001/home-services/availability",
+      "heading": "Availability & Capacity",
+      "has_error_copy": false,
+      "horizontal_overflow": false,
+      "axe_serious_or_critical": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 18
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "nodes": 4
+        }
+      ]
+    },
+    {
+      "slug": "services-pricing",
+      "requested_url": "http://localhost:3001/home-services/services",
+      "final_url": "http://localhost:3001/home-services/services",
+      "heading": "Services & Pricing",
+      "has_error_copy": false,
+      "horizontal_overflow": false,
+      "axe_serious_or_critical": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 40
+        }
+      ]
+    },
+    {
+      "slug": "service-areas",
+      "requested_url": "http://localhost:3001/home-services/coverage",
+      "final_url": "http://localhost:3001/home-services/coverage",
+      "heading": "Coverage & Service Areas",
+      "has_error_copy": false,
+      "horizontal_overflow": false,
+      "axe_serious_or_critical": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 21
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "nodes": 1
+        }
+      ]
+    },
+    {
+      "slug": "inventory",
+      "requested_url": "http://localhost:3001/inventory",
+      "final_url": "http://localhost:3001/inventory",
+      "heading": "Inventory",
+      "has_error_copy": false,
+      "horizontal_overflow": false,
+      "axe_serious_or_critical": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 24
+        }
+      ]
+    },
+    {
+      "slug": "team-members",
+      "requested_url": "http://localhost:3001/home-services/team",
+      "final_url": "http://localhost:3001/home-services/team",
+      "heading": "Staff & Technicians",
+      "has_error_copy": false,
+      "horizontal_overflow": false,
+      "axe_serious_or_critical": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": 23
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "nodes": 3
+        }
+      ]
+    }
+  ],
+  "nav_clicks": [
+    {
+      "label": "Edit profile",
+      "destination": "http://localhost:3001/profile",
+      "selected_tab_text": "padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; background: none; border-top-width: medium; border-right-width: medium; border-bottom: 2px solid var(--brand); border-left-width: medium; border-top-style: none; border-right-style: none; border-left-style: none; border-top-color: currentcolor; border-right-color: currentcolor; border-left-color: currentcolor; border-image: initial; white-space: nowrap; font-family: inherit; color: var(--brand); margin-bottom: -1px;"
+    },
+    {
+      "label": "Coverage & Hours",
+      "destination": "http://localhost:3001/tenant/home-services/setup/coverage-availability"
+    },
+    {
+      "label": "Documents",
+      "destination": "http://localhost:3001/dashboard"
+    }
+  ],
+  "failed_responses": [
+    {
+      "status": 404,
+      "url": "http://localhost:8000/v1/tenant/credit-wallet"
+    },
+    {
+      "status": 404,
+      "url": "http://localhost:8000/v1/tenant/credit-wallet"
+    },
+    {
+      "status": 409,
+      "url": "http://localhost:8000/v1/tenant/home-services/setup/overview"
+    },
+    {
+      "status": 409,
+      "url": "http://localhost:8000/v1/tenant/home-services/setup/overview"
+    },
+    {
+      "status": 404,
+      "url": "http://localhost:8000/v1/tenant/credit-wallet"
+    },
+    {
+      "status": 404,
+      "url": "http://localhost:8000/v1/tenant/credit-wallet"
+    },
+    {
+      "status": 404,
+      "url": "http://localhost:8000/v1/tenant/credit-wallet"
+    },
+    {
+      "status": 404,
+      "url": "http://localhost:8000/v1/tenant/credit-wallet"
+    }
+  ],
+  "console_errors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "finished_at": "2026-08-11T18:06:07.114Z"
+}

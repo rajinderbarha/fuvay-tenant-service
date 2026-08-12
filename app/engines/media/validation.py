@@ -65,6 +65,14 @@ CONTEXT_RULES: dict[str, dict] = {
     "marketing_asset":              {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 20},
 }
 
+_SIGNATURES = {
+    "application/pdf": lambda data: data.startswith(b"%PDF-"),
+    "image/jpeg": lambda data: data.startswith(b"\xff\xd8\xff"),
+    "image/png": lambda data: data.startswith(b"\x89PNG\r\n\x1a\n"),
+    "image/webp": lambda data: len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP",
+    "image/gif": lambda data: data.startswith((b"GIF87a", b"GIF89a")),
+}
+
 
 class MediaValidationService:
 
@@ -81,6 +89,7 @@ class MediaValidationService:
         self._validate_extension(original_filename)
         rules = CONTEXT_RULES[media_context]
         self._validate_mime_type(mime_type, rules["allowed_types"])
+        self._validate_signature(file_bytes, mime_type)
         self._validate_size(len(file_bytes), rules["max_mb"])
 
     def validate_context(self, media_context: str) -> None:
@@ -121,6 +130,20 @@ class MediaValidationService:
                 "MEDIA_TYPE_NOT_ALLOWED",
                 f"MIME type '{mime_type}' is not allowed for this context. "
                 f"Allowed: {', '.join(sorted(allowed))}",
+            )
+
+    @staticmethod
+    def _validate_signature(file_bytes: bytes, mime_type: str) -> None:
+        """Reject files whose bytes do not match their declared MIME type.
+
+        Upload headers and filename extensions are client-controlled. These
+        signatures cover every type currently accepted by CONTEXT_RULES.
+        """
+        matcher = _SIGNATURES.get(mime_type)
+        if matcher and not matcher(file_bytes):
+            raise ServiceOSException(
+                "MEDIA_SIGNATURE_MISMATCH",
+                "The file content does not match its declared file type.",
             )
 
     @staticmethod

@@ -16,6 +16,7 @@ import {
 import {
   tenantComplaintsApi, bookingsJobsApi, hsReviewsApi,
   homeServicesTeamApi, homeServicesDirectPaymentsApi, providerStatusApi, hsCustomersApi,
+  homeServicesSetupOverviewApi,
 } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
 import { useSetupStatus } from "../../../hooks/useSetupStatus";
@@ -44,6 +45,40 @@ function timeAgo(iso: string): string {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const [access, setAccess] = useState<"checking" | "allowed" | "redirecting">("checking");
+
+  useEffect(() => {
+    homeServicesSetupOverviewApi.getRouting()
+      .then(routing => {
+        if (routing.next_destination === "TENANT_DASHBOARD") {
+          setAccess("allowed");
+          return;
+        }
+        const routeByDestination: Record<string, string> = {
+          HOME_SERVICES_SETUP_OVERVIEW: "/tenant/home-services/setup/overview",
+          HOME_SERVICES_UNDER_REVIEW: "/onboarding/application-status",
+          HOME_SERVICES_CHANGES_REQUESTED: "/onboarding/application-status",
+          HOME_SERVICES_ACTIVATION: "/onboarding/activation-center",
+        };
+        setAccess("redirecting");
+        router.replace(routeByDestination[routing.next_destination] ?? "/tenant/home-services/setup/overview");
+      })
+      .catch(() => setAccess("allowed"));
+  }, [router]);
+
+  if (access !== "allowed") {
+    return (
+      <PageShell>
+        <PageHeader title="Loading your workspace" description="Checking your Home Services setup status." />
+        <Skeleton height={180}/>
+      </PageShell>
+    );
+  }
+  return <OperationalDashboard/>;
+}
+
+function OperationalDashboard() {
   const router = useRouter();
   const alerts = useJobAlerts();
   const [tenantName, setTenantName] = useState("Your Business");

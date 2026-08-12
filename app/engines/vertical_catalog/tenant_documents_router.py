@@ -137,7 +137,7 @@ async def get_requirements(
     tenant_row = await _tenant_row(db, tid)
 
     profile_row = (await db.execute(
-        text("SELECT business_name, business_type, phone, email, address_line1, city, state "
+        text("SELECT business_name, business_type, phone, email, address_line1, district, city, state, zipcode "
              "FROM tenants WHERE id=:tid"),
         {"tid": str(tid)},
     )).fetchone()

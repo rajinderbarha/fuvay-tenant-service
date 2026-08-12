@@ -88,7 +88,7 @@ export default function StaffTechniciansPage() {
   }
 
   const counts = readiness?.counts;
-  const statusLine = !counts ? "" : `${counts.ready} of ${counts.total} ready`;
+  const statusLine = !counts ? "" : counts.total === 0 ? "Optional for now" : `${counts.ready} of ${counts.total} ready`;
 
   return (
     <OnboardingShell activeNav="staff">
@@ -112,7 +112,7 @@ export default function StaffTechniciansPage() {
           <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Add your team and assign the services they can perform.</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {counts && <Badge variant={counts.ready === counts.total && counts.total > 0 ? "success" : "warning"}>{statusLine}</Badge>}
+          {counts && <Badge variant={counts.total === 0 ? "info" : counts.ready === counts.total ? "success" : "warning"}>{statusLine}</Badge>}
           <Btn variant="primary" onClick={() => { setEditingMember(null); setWizardOpen(true); }}>
             <UserPlus size={15}/> Add team member
           </Btn>
@@ -217,11 +217,8 @@ export default function StaffTechniciansPage() {
           <Card>
             <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Service coverage</p>
             {coverage.length === 0 && (
-              /* Honest empty state: per-service technician coverage has no
-                 backing endpoint yet (see providerTeamMembersApi.coverage),
-                 so this must not claim that no services are enabled. */
               <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                Per-service technician coverage isn&apos;t available yet. Team readiness above reflects each member&apos;s setup status.
+                No enabled services require technician coverage yet. You can continue and add your team after configuring services.
               </p>
             )}
             {coverage.map(c => (
@@ -248,7 +245,7 @@ export default function StaffTechniciansPage() {
         <div style={{ display: "flex", gap: 10 }}>
           <Btn variant="secondary" onClick={load}>Save draft</Btn>
           <Btn variant="primary"
-            disabled={!coverage.length || coverage.some(c => c.ready_technician_count === 0)}
+            disabled={coverage.some(c => c.ready_technician_count === 0)}
             onClick={() => router.push("/tenant/home-services/setup/finance")}>
             Save &amp; continue <ChevronRight size={15}/>
           </Btn>

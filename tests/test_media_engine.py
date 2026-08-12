@@ -61,20 +61,38 @@ def test_validation_rejects_wrong_mime_for_context():
 def test_validation_accepts_jpeg_for_profile():
     from app.engines.media.validation import MediaValidationService
     svc = MediaValidationService()
-    svc.validate_upload(b"x" * 1000, "photo.jpg", "image/jpeg", "customer_profile_photo")
+    svc.validate_upload(b"\xff\xd8\xff" + b"x" * 1000, "photo.jpg", "image/jpeg", "customer_profile_photo")
 
 
 def test_validation_accepts_pdf_for_document():
     from app.engines.media.validation import MediaValidationService
     svc = MediaValidationService()
-    svc.validate_upload(b"x" * 1000, "doc.pdf", "application/pdf", "provider_document")
+    svc.validate_upload(b"%PDF-1.7\n" + b"x" * 1000, "doc.pdf", "application/pdf", "provider_document")
+
+
+def test_validation_rejects_spoofed_pdf_signature():
+    from app.engines.media.validation import MediaValidationService
+    from app.exceptions import ServiceOSException
+    svc = MediaValidationService()
+    with pytest.raises(ServiceOSException) as exc_info:
+        svc.validate_upload(b"MZ" + b"x" * 100, "document.pdf", "application/pdf", "provider_document")
+    assert exc_info.value.error_code == "MEDIA_SIGNATURE_MISMATCH"
+
+
+def test_validation_rejects_spoofed_jpeg_signature():
+    from app.engines.media.validation import MediaValidationService
+    from app.exceptions import ServiceOSException
+    svc = MediaValidationService()
+    with pytest.raises(ServiceOSException) as exc_info:
+        svc.validate_upload(b"<script>alert(1)</script>", "photo.jpg", "image/jpeg", "provider_document")
+    assert exc_info.value.error_code == "MEDIA_SIGNATURE_MISMATCH"
 
 
 def test_validation_rejects_oversized_file():
     from app.engines.media.validation import MediaValidationService
     from app.exceptions import ServiceOSException
     svc = MediaValidationService()
-    big_bytes = b"x" * (6 * 1024 * 1024)  # 6MB — over 5MB profile photo limit
+    big_bytes = b"\xff\xd8\xff" + b"x" * (6 * 1024 * 1024)  # 6MB — over 5MB profile photo limit
     with pytest.raises(ServiceOSException) as exc_info:
         svc.validate_upload(big_bytes, "photo.jpg", "image/jpeg", "customer_profile_photo")
     assert exc_info.value.error_code == "MEDIA_FILE_TOO_LARGE"

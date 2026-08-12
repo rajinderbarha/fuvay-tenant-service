@@ -320,7 +320,7 @@ function ServicesPricingPageContent() {
 
   if (loading) {
     return (
-      <OnboardingShell activeNav="services-pricing">
+      <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
         <Skeleton height={70} style={{ marginBottom: 20 }}/>
         <div style={{ display: "grid", gridTemplateColumns: "280px 1fr 280px", gap: 20 }}>
           <Skeleton height={520}/><Skeleton height={520}/><Skeleton height={520}/>
@@ -331,7 +331,7 @@ function ServicesPricingPageContent() {
 
   if (error && !available) {
     return (
-      <OnboardingShell activeNav="services-pricing">
+      <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
         <Card>
           <div role="alert" style={{ textAlign: "center", padding: "32px 16px" }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
@@ -348,7 +348,7 @@ function ServicesPricingPageContent() {
   if (!available) return null;
 
   return (
-    <OnboardingShell activeNav="services-pricing">
+    <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 4 }}>
         <div>
           <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 4px" }}>TENANT ONBOARDING</p>
@@ -390,10 +390,10 @@ function ServicesPricingPageContent() {
         {/* Left: Service Groups */}
         <Card padding={0}>
           <div style={{ padding: "16px 16px 12px" }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", color: "var(--text-primary)" }}>Service groups</h3>
+            <h2 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", color: "var(--text-primary)" }}>Service groups</h2>
             <div style={{ position: "relative" }}>
               <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }}/>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groups"
+              <input aria-label="Search service groups" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groups"
                 style={{ width: "100%", height: 36, padding: "0 12px 0 32px", fontSize: 13, background: "var(--surface-sunken)",
                   border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", color: "var(--text-primary)", outline: "none", boxSizing: "border-box" }}/>
             </div>
@@ -433,7 +433,7 @@ function ServicesPricingPageContent() {
             <Card><p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Select a service group to configure it.</p></Card>
           ) : (
             <Card>
-              <h3 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 12px", color: "var(--text-primary)" }}>{selectedGroup.name}</h3>
+              <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 12px", color: "var(--text-primary)" }}>{selectedGroup.name}</h2>
               <div role="tablist" style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 16, overflowX: "auto" }}>
                 {selectedGroup.services.map(s => {
                   const active = s.service_id === selectedServiceId;
@@ -467,7 +467,7 @@ function ServicesPricingPageContent() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                     <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Offer this service</span>
                     <label style={{ position: "relative", display: "inline-block", width: 44, height: 24 }}>
-                      <input type="checkbox" checked={!!enrolled} disabled={toggling}
+                      <input type="checkbox" aria-label={`Offer ${selectedService.service_name}`} checked={!!enrolled} disabled={toggling}
                         onChange={e => handleToggleOffer(e.target.checked)}
                         style={{ opacity: 0, width: 0, height: 0 }}/>
                       <span onClick={() => !toggling && handleToggleOffer(!enrolled)} style={{
@@ -570,7 +570,7 @@ function ServicesPricingPageContent() {
                                     <tr style={{ borderBottom: "1px solid var(--border)" }}>
                                       <td style={{ padding: "8px", color: "var(--text-primary)" }}>{tp.name}</td>
                                       <td style={{ padding: "8px" }}>
-                                        <PriceCell min={tp.tenant_min_price} max={tp.tenant_max_price}
+                                        <PriceCell label={tp.name} min={tp.tenant_min_price} max={tp.tenant_max_price}
                                           onSave={(min, max) => handleTypePriceChange(tp.service_type_id, min, max)}/>
                                       </td>
                                       <td style={{ padding: "8px", color: "var(--brand)", fontWeight: 600 }}>Override</td>
@@ -590,7 +590,7 @@ function ServicesPricingPageContent() {
                                       <tr key={bp.tenant_service_brand_id} style={{ borderBottom: "1px solid var(--border)" }}>
                                         <td style={{ padding: "8px 8px 8px 24px", color: "var(--text-secondary)" }}>{tp.name} → {bp.name}</td>
                                         <td style={{ padding: "8px" }}>
-                                          <PriceCell min={bp.tenant_min_price} max={bp.tenant_max_price}
+                                          <PriceCell label={`${tp.name} ${bp.name}`} min={bp.tenant_min_price} max={bp.tenant_max_price}
                                             onSave={(min, max) => handleBrandPriceChange(bp.brand_id, min, max, tp.service_type_id)}/>
                                         </td>
                                         <td style={{ padding: "8px", color: "var(--brand)", fontWeight: 600 }}>Override</td>
@@ -602,7 +602,7 @@ function ServicesPricingPageContent() {
                                   <tr key={bp.tenant_service_brand_id} style={{ borderBottom: "1px solid var(--border)" }}>
                                     <td style={{ padding: "8px", color: "var(--text-primary)" }}>{bp.name}</td>
                                     <td style={{ padding: "8px" }}>
-                                      <PriceCell min={bp.tenant_min_price} max={bp.tenant_max_price}
+                                      <PriceCell label={bp.name} min={bp.tenant_min_price} max={bp.tenant_max_price}
                                         onSave={(min, max) => handleBrandPriceChange(bp.brand_id, min, max)}/>
                                     </td>
                                     <td style={{ padding: "8px", color: "var(--brand)", fontWeight: 600 }}>Override</td>
@@ -654,8 +654,11 @@ function ServicesPricingPageContent() {
                 {[
                   { label: "Type", value: selectedService.is_type_required ? "Required" : "Optional" },
                   { label: "Brand", value: selectedService.is_brand_required ? "Required" : "Optional" },
+                  { label: "Customer issues", value: selectedService.requires_issue_type ? "Required" : "Optional" },
                   { label: "Checklist", value: selectedService.requires_checklist ? "Required" : "Not required" },
-                  { label: "Price override", value: selectedService.tenant_override_allowed ? "Allowed" : "Not allowed" },
+                  { label: "Estimate approval", value: selectedService.requires_estimate_approval ? "Required" : "Not required" },
+                  { label: "Technician", value: selectedService.requires_technician ? "Required" : "Optional" },
+                  { label: "Schedule", value: selectedService.requires_schedule ? "Required" : "Optional" },
                 ].map(row => (
                   <li key={row.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }}/>
@@ -684,17 +687,17 @@ function ServicesPricingPageContent() {
   );
 }
 
-function PriceCell({ min, max, onSave }: { min: number | null; max: number | null; onSave: (min: string, max: string) => void }) {
+function PriceCell({ label, min, max, onSave }: { label: string; min: number | null; max: number | null; onSave: (min: string, max: string) => void }) {
   const [localMin, setLocalMin] = useState(min != null ? String(min) : "");
   const [localMax, setLocalMax] = useState(max != null ? String(max) : "");
   useEffect(() => { setLocalMin(min != null ? String(min) : ""); }, [min]);
   useEffect(() => { setLocalMax(max != null ? String(max) : ""); }, [max]);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <input value={localMin} onChange={e => setLocalMin(e.target.value)} onBlur={() => onSave(localMin, localMax)}
+      <input aria-label={`${label} minimum price`} inputMode="decimal" value={localMin} onChange={e => setLocalMin(e.target.value)} onBlur={() => onSave(localMin, localMax)}
         placeholder="Min" style={{ width: 70, height: 30, fontSize: 12, padding: "0 8px", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)" }}/>
       <span style={{ color: "var(--text-tertiary)" }}>–</span>
-      <input value={localMax} onChange={e => setLocalMax(e.target.value)} onBlur={() => onSave(localMin, localMax)}
+      <input aria-label={`${label} maximum price`} inputMode="decimal" value={localMax} onChange={e => setLocalMax(e.target.value)} onBlur={() => onSave(localMin, localMax)}
         placeholder="Max" style={{ width: 70, height: 30, fontSize: 12, padding: "0 8px", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)" }}/>
     </div>
   );

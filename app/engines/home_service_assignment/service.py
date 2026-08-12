@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone, date, timedelta
 from typing import Any
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.home_service_assignment.constants import (
@@ -88,6 +88,36 @@ class HomeServiceJobAssignmentService:
             )
         )
         return res.scalars().first()
+
+    async def _job_requires_technician(self, job) -> bool:
+        """Resolve the technician gate from the job's snapshotted workflow.
+
+        Jobs created before workflow snapshots are resolved through the
+        offering's master service and job type. If neither can be resolved,
+        fail closed so an unconfigured person is never assigned field work.
+        """
+        from app.engines.admin_catalog.models import ServiceJobWorkflow, TenantService
+
+        if getattr(job, "service_job_workflow_id", None):
+            result = await self.db.execute(select(ServiceJobWorkflow.technician_required).where(
+                ServiceJobWorkflow.id == job.service_job_workflow_id
+            ))
+            value = result.scalar_one_or_none()
+            if value is not None:
+                return bool(value)
+
+        if getattr(job, "offering_id", None) and getattr(job, "job_type_id", None):
+            result = await self.db.execute(select(ServiceJobWorkflow.technician_required).where(
+                ServiceJobWorkflow.master_service_id == select(TenantService.master_service_id).where(
+                    TenantService.id == job.offering_id
+                ).scalar_subquery(),
+                ServiceJobWorkflow.job_type_id == job.job_type_id,
+                ServiceJobWorkflow.is_current == True,
+            ))
+            value = result.scalar_one_or_none()
+            if value is not None:
+                return bool(value)
+        return True
 
     async def _emit_event(
         self, job_id: uuid.UUID, booking_id: uuid.UUID, tenant_id: uuid.UUID,
@@ -186,6 +216,20 @@ class HomeServiceJobAssignmentService:
 
         if designation and designation not in ELIGIBLE_DESIGNATIONS:
             blocked.append("role_not_allowed")
+
+        if await self._job_requires_technician(job) and not is_user:
+            job_offering_id = str(job.offering_id)
+            supported = {str(value) for value in (getattr(staff, "supported_offering_ids", None) or [])}
+            if job_offering_id not in supported:
+                blocked.append("no_matching_service_skill")
+
+            has_availability = (await self.db.execute(text(
+                "SELECT 1 FROM provider_availability_rules "
+                "WHERE tenant_id=:tid AND scope_type='staff_member' "
+                "AND scope_id=:sid AND is_active=true LIMIT 1"
+            ), {"tid": str(job.tenant_id), "sid": str(staff_member_id)})).first()
+            if not has_availability:
+                blocked.append("no_availability_configured")
 
         blocked.extend(await self._availability_block_reasons(job, staff_member_id))
         return staff, blocked

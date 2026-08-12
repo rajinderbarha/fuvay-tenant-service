@@ -138,14 +138,69 @@ export const homeServicesTeamApi = {
 };
 
 // ── Services workspace ─────────────────────────────────────────────────────
-export type SWCatalogService = WsPayload;
-export type SWResolvedPrice = WsPayload;
-export type SWOfferingDetail = WsPayload;
+export interface SWCatalogService {
+  tenant_service_id: string;
+  master_service_id: string;
+  name: string;
+  job_type_label: string | null;
+  setup_status: "draft" | "published";
+  missing_pricing: boolean;
+}
+export interface SWCatalogGroup {
+  service_group_id: string;
+  name: string;
+  services: SWCatalogService[];
+}
+export interface SWResolvedPrice {
+  resolved: boolean;
+  minimum_price?: number;
+  maximum_price?: number;
+  source?: string;
+  reason?: string;
+}
+export interface SWOfferingDetail {
+  tenant_service: WsPayload;
+  service_name: string;
+  job_type_label: string | null;
+  blueprint: {
+    type_mode: "required" | "optional";
+    brand_mode: "required" | "optional";
+    requires_issue_type: boolean;
+    requires_checklist: boolean;
+    requires_estimate_approval: boolean;
+    requires_technician: boolean;
+    requires_schedule: boolean;
+    workflow_version: number | null;
+    source: "service_job_workflow" | "master_service_legacy";
+  };
+  readiness: { ready: boolean; status: string; blockers: Array<{ code: string; message: string }> };
+  types: Array<{ service_type_id: string; name: string }>;
+  brands: Array<{ brand_id: string; name: string }>;
+  effective_pricing: {
+    default: SWResolvedPrice;
+    by_type: Array<SWResolvedPrice & {
+      service_type_id: string;
+      name: string;
+      brand_overrides: Array<SWResolvedPrice & { brand_id: string }>;
+    }>;
+  };
+}
+export interface SWWorkspace {
+  summary: {
+    enabled_services: number;
+    published: number;
+    draft: number;
+    missing_pricing: number;
+    type_overrides: number;
+    brand_overrides: number;
+  };
+  catalog_tree: SWCatalogGroup[];
+  generated_at: string;
+}
 export type HsSetupAvailableType = WsPayload;
 
 export const servicesWorkspaceApi = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  get: <T = WsPayload>(params?: Record<string, any>) =>
+  get: <T = SWWorkspace>(params?: Record<string, string | number | boolean | undefined>) =>
     apiFetch<T>(`/v1/tenant/home-services/services${query(params)}`),
   detail: <T = SWOfferingDetail>(tenantServiceId: string) =>
     apiFetch<T>(`/v1/tenant/home-services/services/${tenantServiceId}`),
@@ -221,9 +276,40 @@ export const homeServicesDispatchApi = {
 };
 
 // ── Onboarding: setup overview, application status, documents, finance ─────
-export type HomeServicesSetupOverview = WsPayload;
-export type HomeServicesSetupSection = WsPayload;
-export type HomeServicesLifecycleStage = WsPayload;
+export interface HomeServicesSetupSection {
+  key: string;
+  label: string;
+  description: string;
+  required: boolean;
+  status: "not_started" | "complete" | "optional" | "blocked" | "locked" | "ready";
+  locked?: boolean;
+  blocking_reasons: Array<{ code: string; message: string }>;
+  warnings: Array<{ code: string; message: string }>;
+  next_action: string;
+  [key: string]: unknown;
+}
+export interface HomeServicesLifecycleStage {
+  key: string;
+  status: "COMPLETED" | "CURRENT" | "UPCOMING";
+}
+export interface HomeServicesSetupOverview {
+  tenant: { id: string; name: string | null };
+  vertical: { key: string; status: string; rejection_reason?: string | null; changes_requested_note?: string | null; suspend_reason?: string | null };
+  lifecycle: { current_stage: string; stages: HomeServicesLifecycleStage[] };
+  declarations: { all_accepted: boolean; items: DeclarationItem[] };
+  blocker_count: number;
+  warning_count: number;
+  sections_ready: boolean;
+  can_submit: boolean;
+  progress: { percentage: number; completed_required: number; total_required: number; calculation_version: string };
+  sections: HomeServicesSetupSection[];
+  workspace_status: { owner_account_verified: boolean; business_profile_status: string; home_services_status: string; admin_review_status: string };
+  next_action: { key: string };
+}
+export interface DeclarationItem {
+  key: string;
+  accepted: boolean;
+}
 export type ApplicationStatus = WsPayload;
 export type ApplicationStatusLifecycleStage = WsPayload;
 export type ActivationGate = WsPayload;
@@ -261,6 +347,17 @@ export const tenantDocumentsApi = {
     apiFetch<T>("/v1/tenant/home-services/setup/documents", post(payload)),
   removeDocument: <T = WsPayload>(documentId: string) =>
     apiFetch<T>(`/v1/tenant/home-services/setup/documents/${documentId}`, del()),
+};
+
+/** Permanent post-activation verification workspace backed by the same
+ * TenantDocument records used during onboarding. */
+export const tenantVerificationDocumentsApi = {
+  workspace: <T = WsPayload>() => apiFetch<T>("/v1/tenant/documents/workspace"),
+  business: <T = WsPayload>() => apiFetch<T>("/v1/tenant/documents/business"),
+  versions: <T = WsPayload>(docType: string) =>
+    apiFetch<T>(`/v1/tenant/documents/versions/${encodeURIComponent(docType)}`),
+  submit: <T = WsPayload>(payload: Record<string, unknown>) =>
+    apiFetch<T>("/v1/tenant/documents", post(payload)),
 };
 
 export const financeReadinessApi = {

@@ -60,7 +60,7 @@ export function DeliveryProvidersPanel() {
                     <td style={{ padding: "10px 14px" }}>
                       {row.failure_rate_pct !== null ? `${row.failure_rate_pct}%` : "No attempts yet"}
                     </td>
-                    <td style={{ padding: "10px 14px", color: "var(--text-tertiary)" }}>{row.webhook_status ?? "Not implemented"}</td>
+                    <td style={{ padding: "10px 14px", color: "var(--text-tertiary)" }}>{row.webhook_status ?? "Unavailable"}</td>
                     <td style={{ padding: "10px 14px" }}>
                       {row.note && (
                         <span title={row.note} style={{ display: "inline-flex", color: "var(--text-tertiary)", cursor: "help" }}>

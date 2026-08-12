@@ -112,7 +112,7 @@ def test_admin_nav_service_options_present():
 
 def test_admin_nav_bookings_present():
     src = admin_layout_src()
-    assert '"/admin/bookings"' in src
+    assert '"/admin/home-services/bookings-jobs"' in src
 
 
 def test_admin_nav_customers_present():
@@ -127,7 +127,7 @@ def test_admin_nav_staff_present():
 
 def test_admin_nav_reviews_present():
     src = admin_layout_src()
-    assert '"/admin/reviews"' in src
+    assert '/admin/reviews route/API stay live, unlinked' in src
 
 
 def test_admin_nav_analytics_present():
@@ -291,10 +291,9 @@ def test_tenant_layout_has_api_nav_load():
 def test_tenant_layout_icon_map_has_common_routes():
     src = tenant_layout_src()
     assert '"/dashboard"' in src
-    assert '"/bookings"' in src
-    assert '"/jobs"' in src
-    assert '"/finance/package"' in src
-    assert '"/reviews"' in src
+    assert '"/home-services/bookings-jobs"' in src
+    assert '"/home-services/finance"' in src
+    assert '"/home-services/reviews"' in src
 
 
 # ── No raw enum display in key admin pages ────────────────────────────────────
@@ -359,18 +358,14 @@ def _extract_group_block(src: str, group_label: str) -> str:
 
 
 def test_admin_operations_group_order():
-    """Operations group should list: Bookings, Jobs, Customers, Staff, Reviews, Complaints."""
+    """Cross-vertical operations stay global; HS work stays in its vertical."""
     src = admin_layout_src()
     block = _extract_group_block(src, "Operations")
     assert block, "Operations group not found"
-    assert "/admin/bookings" in block,   "Bookings missing from Operations"
-    # FINAL-L5-05E: primary Jobs nav item migrated to the canonical
-    # service_jobs page; /admin/operations is now a redirect only.
-    assert "/admin/home-services/service-jobs" in block, "Jobs missing from Operations"
     assert "/admin/customers" in block,  "Customers missing from Operations"
     assert "/admin/staff" in block,      "Staff missing from Operations"
-    assert "/admin/reviews" in block,    "Reviews missing from Operations"
     assert "/admin/complaints" in block, "Complaints missing from Operations"
+    assert "/admin/home-services/bookings-jobs" in src, "Unified HS operations missing"
 
 
 def test_admin_service_catalog_group_order():

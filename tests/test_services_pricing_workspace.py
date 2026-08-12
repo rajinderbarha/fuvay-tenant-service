@@ -45,8 +45,11 @@ class TestRouterStructure:
     def test_blueprint_prefers_real_job_type_workflow_over_legacy_fields(self):
         c = _read()
         assert "ServiceJobWorkflow.master_service_id == ts_row.master_service_id" in c
-        assert "ServiceJobWorkflow.job_type_id == ts_row.job_type_id" in c
-        assert '"source": "service_job_workflow" if workflow else "master_service_legacy"' in c
+        # TenantService.job_type_id is nullable on older live rows; the
+        # workspace now falls back to MasterService.job_type_id and then uses
+        # the shared projection consumed by setup too.
+        assert "ServiceJobWorkflow.job_type_id == workflow_job_type_id" in c
+        assert "project_tenant_blueprint(master, workflow)" in c
 
     def test_effective_pricing_uses_shared_resolver_not_a_second_calculation(self):
         c = _read()

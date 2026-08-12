@@ -1186,12 +1186,25 @@ class HomeServiceChatbotBookingService:
                 "matching_score_snapshot": build_admin_provider(signals, score)["internal_score_breakdown"],
                 "internal_score": float(score),
             }
+            # Inspection-first is a complete pricing contract too: the
+            # visit fee and approval disclosure are the authoritative price
+            # shown before booking. The corrected provider-first endpoint is
+            # called directly by the customer flow, so it cannot assume the
+            # older /price-estimate endpoint ran first. Doing so left the
+            # snapshot with three null bargain fields and made every
+            # inspection booking impossible to confirm.
+            base_snapshot = (
+                await self._compute_price_snapshot(draft, offering)
+                if inspection_mode
+                else (draft.price_snapshot or {})
+            )
             draft.price_snapshot = {
-                **(draft.price_snapshot or {}),
+                **base_snapshot,
                 "bargain_available": bargain_available,
                 "price_options": price_options,
                 "standard_price": float(standard_price) if standard_price is not None else None,
             }
+            draft.price_status = PRICE_STATUS_ESTIMATED
             draft.provider_match_status = PROVIDER_MATCH_MATCHED
             draft.status = DRAFT_STATUS_PROVIDER_MATCHED
             draft.updated_at = utcnow()

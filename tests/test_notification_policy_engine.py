@@ -60,13 +60,27 @@ class TestChannelStatusHonesty:
         from app.engines.platform_notifications.provider_status_service import ProviderStatusService
 
         db = MagicMock()
-        db.scalar = AsyncMock(return_value=0)
+        aggregate_result = MagicMock()
+        aggregate_result.all.return_value = []
+        db.execute = AsyncMock(return_value=aggregate_result)
         items = asyncio.get_event_loop().run_until_complete(ProviderStatusService().list_channel_status(db))
         by_channel = {i["channel"]: i for i in items}
         assert by_channel["in_app"]["state"] == "Available"
         for ch in ("email", "sms", "whatsapp", "push"):
             assert by_channel[ch]["state"] != "Available"
             assert by_channel[ch]["credential_reference"] is None
+
+    def test_channel_status_uses_one_grouped_outbox_query(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        from app.engines.platform_notifications.provider_status_service import ProviderStatusService
+
+        db = MagicMock()
+        aggregate_result = MagicMock()
+        aggregate_result.all.return_value = []
+        db.execute = AsyncMock(return_value=aggregate_result)
+        asyncio.get_event_loop().run_until_complete(ProviderStatusService().list_channel_status(db))
+        assert db.execute.await_count == 1
 
     def test_channel_status_never_returns_credentials(self):
         src = _read(os.path.join(ROOT, "app", "engines", "platform_notifications", "provider_status_service.py"))
@@ -77,14 +91,14 @@ class TestMandatoryEventValidation:
     def test_validate_rejects_mandatory_event_without_in_app_required(self):
         from app.engines.platform_notifications.policy_service import NotificationPolicyService
         svc = NotificationPolicyService()
-        result = svc.validate({"required_channels": ["email"]}, "compliance.sla.critical")
+        result = svc.validate({"required_channels": ["email"]}, "commission.failed")
         assert result["valid"] is False
         assert any("in_app" in e and "mandatory" in e for e in result["errors"])
 
     def test_validate_accepts_mandatory_event_with_in_app_required(self):
         from app.engines.platform_notifications.policy_service import NotificationPolicyService
         svc = NotificationPolicyService()
-        result = svc.validate({"required_channels": ["in_app"]}, "compliance.sla.critical")
+        result = svc.validate({"required_channels": ["in_app"]}, "commission.failed")
         assert result["valid"] is True
 
     def test_validate_rejects_unknown_event(self):

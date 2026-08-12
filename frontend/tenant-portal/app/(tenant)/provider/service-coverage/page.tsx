@@ -593,7 +593,7 @@ function TypesBrandsTab({ service, types, brands, availBrands, loading, onSaved 
         {hasTypes && (
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
             Need different brand pricing per type (e.g. Split AC vs. Window AC)? Configure that in{" "}
-            <Link href="/tenant/setup/services" style={{ color: "var(--brand)" }}>Service Setup</Link>.
+            <Link href="/home-services/services" style={{ color: "var(--brand)" }}>Services &amp; Pricing</Link>.
           </p>
         )}
       </div>

@@ -72,3 +72,12 @@ async def customer_acknowledge_handover(
     real Home Services job."""
     data = await _proof_svc.acknowledge_handover(db, uuid.UUID(str(user.user_id)), job_id)
     return ok(data, _rid(r), "customer_acknowledge_handover")
+
+
+@router.get("/{job_id}/handover")
+async def customer_get_handover(
+    job_id: uuid.UUID, r: Request,
+    user=Depends(require_customer), db: AsyncSession = Depends(get_db),
+):
+    data = await _proof_svc.get_customer_handover(db, uuid.UUID(str(user.user_id)), job_id)
+    return ok(data, _rid(r), "customer_get_handover")

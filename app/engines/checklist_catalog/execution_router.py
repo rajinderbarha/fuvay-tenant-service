@@ -15,7 +15,12 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, require_super_admin
+from app.dependencies.auth import (
+    get_current_user,
+    require_customer,
+    require_staff_or_technician_only,
+    require_super_admin,
+)
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
@@ -65,7 +70,7 @@ async def _instance_detail(db: AsyncSession, instance: JobChecklistInstance, cus
 # ── Staff: list applicable instances for a job, resolve on demand ────────
 
 @staff_router.get("/{job_id}/checklists")
-async def staff_list_job_checklists(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def staff_list_job_checklists(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db)):
     job = await _get_job(db, job_id, uuid.UUID(str(user.tenant_id)))
     mappings = await svc.get_applicable_mappings(db, job)
     instances = []
@@ -89,7 +94,7 @@ async def _get_owned_instance(db: AsyncSession, instance_id: uuid.UUID, tenant_i
 @staff_router.post("/checklist-instances/{instance_id}/responses/{item_id}")
 async def staff_save_response(
     instance_id: uuid.UUID, item_id: uuid.UUID, body: dict, r: Request,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user=Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db),
 ):
     instance = await _get_owned_instance(db, instance_id, uuid.UUID(str(user.tenant_id)))
     response = await svc.save_response(
@@ -101,7 +106,7 @@ async def staff_save_response(
 
 
 @staff_router.post("/checklist-instances/{instance_id}/complete")
-async def staff_complete_instance(instance_id: uuid.UUID, r: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def staff_complete_instance(instance_id: uuid.UUID, r: Request, user=Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db)):
     instance = await _get_owned_instance(db, instance_id, uuid.UUID(str(user.tenant_id)))
     completed = await svc.complete_instance(db, instance, completed_by=uuid.UUID(str(user.user_id)))
     await db.commit()
@@ -109,7 +114,7 @@ async def staff_complete_instance(instance_id: uuid.UUID, r: Request, user=Depen
 
 
 @staff_router.get("/checklist-instances/{instance_id}")
-async def staff_get_instance(instance_id: uuid.UUID, r: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def staff_get_instance(instance_id: uuid.UUID, r: Request, user=Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db)):
     instance = await _get_owned_instance(db, instance_id, uuid.UUID(str(user.tenant_id)))
     return ok(await _instance_detail(db, instance), _rid(r), "staff_get_instance")
 
@@ -131,10 +136,22 @@ async def tenant_list_job_checklists(job_id: uuid.UUID, r: Request, user=Depends
 # ── Customer: only explicitly customer-visible items/evidence ───────────
 
 @customer_router.get("/{job_id}/checklists")
-async def customer_list_job_checklists(job_id: uuid.UUID, r: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def customer_list_job_checklists(job_id: uuid.UUID, r: Request, user=Depends(require_customer), db: AsyncSession = Depends(get_db)):
+    from app.engines.final_records.models import ServiceJob
+
+    job = (await db.execute(
+        select(ServiceJob).where(
+            ServiceJob.id == job_id,
+            ServiceJob.customer_id == uuid.UUID(str(user.user_id)),
+        )
+    )).scalar_one_or_none()
+    if job is None:
+        raise ServiceOSException("ERR_RECORD_NOT_FOUND", "Job not found.", status_code=404)
+
     res = await db.execute(
         select(JobChecklistInstance).where(
-            JobChecklistInstance.job_id == job_id, JobChecklistInstance.tenant_id == uuid.UUID(str(user.tenant_id)),
+            JobChecklistInstance.job_id == job_id,
+            JobChecklistInstance.tenant_id == job.tenant_id,
         )
     )
     instances = res.scalars().all()

@@ -113,6 +113,12 @@ class HomeServiceFinalCreationService:
         # 1. Idempotency — return existing if already confirmed
         existing = await self.lock.check_and_raise_if_duplicate(DRAFT_TYPE_HOME_SERVICE, draft_id)
         if existing:
+            # Keep retry responses contract-compatible with the first
+            # confirmation. Mobile/API callers need the job id immediately
+            # for tracking and a network retry must not mysteriously lose it.
+            existing_job = (await self.db.execute(
+                select(ServiceJob).where(ServiceJob.booking_id == existing.result_id)
+            )).scalars().first()
             await self._audit(AUDIT_CONFIRMATION_DUPLICATE, DRAFT_TYPE_HOME_SERVICE, draft_id,
                               RESULT_TYPE_SERVICE_BOOKING, existing.result_id, existing.result_number,
                               customer_id, None, request_id, {"reason": "duplicate_confirmation"})
@@ -120,6 +126,10 @@ class HomeServiceFinalCreationService:
                 "idempotent":      True,
                 "booking_number":  existing.result_number,
                 "booking_id":      str(existing.result_id),
+                "job_number":      existing_job.job_number if existing_job else None,
+                "job_id":          str(existing_job.id) if existing_job else None,
+                "status":          existing_job.status if existing_job else None,
+                "booking_status":  "confirmed",
                 "confirmation_id": str(existing.id),
             }
 

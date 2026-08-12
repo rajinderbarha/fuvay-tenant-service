@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import require_customer, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ApiResponse, ok
 from app.engines.final_records.constants import (
@@ -55,7 +55,7 @@ async def confirm_home_service_booking(
     draft_id:        uuid.UUID,
     body:            ConfirmRequest,
     r:               Request,
-    user:            UserContext  = Depends(get_current_user),
+    user:            UserContext  = Depends(require_customer),
     db:              AsyncSession = Depends(get_db),
     idempotency_key: str | None  = Header(None, alias="Idempotency-Key"),
 ):
@@ -99,7 +99,7 @@ async def confirm_coaching_appointment(
     draft_id:        uuid.UUID,
     body:            ConfirmRequest,
     r:               Request,
-    user:            UserContext  = Depends(get_current_user),
+    user:            UserContext  = Depends(require_customer),
     db:              AsyncSession = Depends(get_db),
     idempotency_key: str | None  = Header(None, alias="Idempotency-Key"),
 ):
@@ -141,7 +141,7 @@ async def confirm_real_estate_lead(
     draft_id:        uuid.UUID,
     body:            ConfirmRequest,
     r:               Request,
-    user:            UserContext  = Depends(get_current_user),
+    user:            UserContext  = Depends(require_customer),
     db:              AsyncSession = Depends(get_db),
     idempotency_key: str | None  = Header(None, alias="Idempotency-Key"),
 ):

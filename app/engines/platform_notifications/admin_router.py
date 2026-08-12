@@ -13,6 +13,7 @@ from app.schemas.base import ok
 from app.engines.platform_notifications.notification_service import NotificationService
 from app.engines.platform_notifications.chat_service import ChatThreadService, ChatMessageService
 from app.engines.platform_notifications.audit_service import PlatformAuditLogService
+from app.engines.platform_notifications.provider_status_service import ProviderStatusService
 from app.engines.platform_notifications.constants import RECIP_ADMIN
 from app.engines.platform_notifications.models import NotificationEvent
 from sqlalchemy import select
@@ -46,6 +47,7 @@ _notif_svc  = NotificationService()
 _thread_svc = ChatThreadService()
 _msg_svc    = ChatMessageService(_thread_svc)
 _audit_svc  = PlatformAuditLogService()
+_provider_status_svc = ProviderStatusService()
 
 
 def _rid(r: Request) -> str:
@@ -189,6 +191,16 @@ async def admin_list_outbox(
         limit=limit, offset=offset,
     )
     return ok(result, _rid(r), "admin.notification_outbox.list")
+
+
+@admin_outbox_router.get("/channel-status", summary="List notification delivery provider status")
+async def admin_channel_status(
+    r: Request,
+    u: UserContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    items = await _provider_status_svc.list_channel_status(db)
+    return ok({"items": items}, _rid(r), "admin.notification_outbox.channel_status")
 
 
 @admin_outbox_router.get("/{outbox_id}", summary="Get outbox record details")
