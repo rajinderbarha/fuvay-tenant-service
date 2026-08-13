@@ -58,7 +58,7 @@ export function Btn({
     lg: { padding: "10px 22px", fontSize: 14, borderRadius: 12, height: 44, gap: 7 },
   };
   return (
-    <button type={type} onClick={onClick} disabled={disabled || loading}
+    <button className="pk-btn" type={type} onClick={onClick} disabled={disabled || loading}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -179,7 +179,7 @@ export function PkBadge({ children, variant, tone, size = "md", dot }: {
     lg: { fontSize: 12, padding: "4px 12px" },
   };
   return (
-    <span style={{
+    <span className="pk-badge" style={{
       display: "inline-flex", alignItems: "center", gap: 4,
       borderRadius: 999, fontWeight: 700, letterSpacing: "0.03em",
       whiteSpace: "nowrap", ...V[resolved], ...S[size],
@@ -197,7 +197,7 @@ export function SurfaceCard({ children, style = {}, padding = 20, hover = false,
 }) {
   const [hov, setHov] = useState(false);
   return (
-    <div onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} style={{
+    <div className="ds-surface-card" onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} style={{
       background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl, 1rem)",
       padding, boxShadow: hov && hover ? "var(--shadow-md)" : "var(--shadow-sm)",
       transform: hov && hover ? "translateY(-1px)" : "none",
@@ -272,12 +272,12 @@ export function PkInput({ label, placeholder, value, onChange, error, hint, icon
           }}>{React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 14 }) : icon}</span>
         )}
         {rows ? (
-          <textarea id={id} aria-label={label ? undefined : placeholder || "Text input"} value={value} disabled={disabled} placeholder={placeholder} rows={rows}
+          <textarea className="pk-input" id={id} aria-label={label ? undefined : placeholder || "Text input"} value={value} disabled={disabled} placeholder={placeholder} rows={rows}
             onChange={e => onChange?.(e.target.value)}
             style={{ ...base, padding: "10px 12px", resize: "vertical", minHeight: 80 }}
           />
         ) : (
-          <input id={id} aria-label={label ? undefined : placeholder || "Input"} type={type} value={value} disabled={disabled} placeholder={placeholder}
+          <input className="pk-input" id={id} aria-label={label ? undefined : placeholder || "Input"} type={type} value={value} disabled={disabled} placeholder={placeholder}
             onChange={e => onChange?.(e.target.value)}
             style={{ ...base, height: 38, padding: icon ? "0 12px 0 36px" : "0 12px" }}
             onFocus={e => { e.currentTarget.style.borderColor = error ? "var(--danger)" : "var(--border-focus)"; e.currentTarget.style.boxShadow = `0 0 0 3px ${error ? "rgba(192,57,43,0.10)" : "rgba(63,117,108,0.12)"}`; }}
@@ -300,7 +300,7 @@ export function PkSelect({ label, value, onChange, options, placeholder, disable
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
       {label && <label htmlFor={id} style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", letterSpacing: "0.02em" }}>{label}</label>}
-      <select id={id} aria-label={label ? undefined : placeholder || "Select an option"} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{
+      <select className="pk-select" id={id} aria-label={label ? undefined : placeholder || "Select an option"} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{
         height: 38, padding: "0 12px", fontSize: 14, fontFamily: "inherit",
         background: disabled ? "var(--bg-secondary)" : "var(--surface)",
         border: "1px solid var(--border)", borderRadius: 10,
@@ -514,7 +514,7 @@ export function MetricCard({ label, value, change, trend, icon, onClick, alert, 
   const iconBg = alert ? "var(--danger-border)" : accent ? `${accent}18` : "var(--accent-muted)";
   const iconColor = alert ? "var(--danger-text)" : accent ?? "var(--accent)";
   return (
-    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={onClick} style={{
+    <div className="ds-metric-card" onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={onClick} style={{
       background: alert ? "var(--danger-bg)" : "var(--surface)",
       border: `1px solid ${alert ? "var(--danger-border)" : hov && onClick ? "var(--border-strong)" : "var(--border)"}`,
       borderRadius: "var(--radius-xl, 1rem)", padding: "18px 20px",
@@ -587,6 +587,7 @@ export function SummaryCard({
 
   return (
     <div
+      className="ds-summary-card"
       onClick={onClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
@@ -636,7 +637,7 @@ export function PkSectionHeader({ title, subtitle, actions, icon }: {
   title: string; subtitle?: string; actions?: React.ReactNode; icon?: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
+    <div className="ds-section-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         {icon && (
           <div style={{
@@ -694,7 +695,7 @@ export function SimpleTable<T extends Record<string, unknown>>({ columns, rows, 
   rows: T[]; loading?: boolean; emptyText?: string; onRowClick?: (row: T) => void;
 }) {
   return (
-    <div style={{
+    <div className="ds-simple-table" style={{
       background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl, 1rem)",
       boxShadow: "var(--shadow-sm)", overflow: "visible",
     }}>

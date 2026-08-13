@@ -411,7 +411,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
   return (
     <AdminShellCtx.Provider value={true}>
     <AdminMenuRefreshCtx.Provider value={loadEffectiveMenu}>
-    <div style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
+    <div className="admin-shell" style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
       <style>{`
         .sidebar-rail-item:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
         @media (prefers-reduced-motion: reduce) {
@@ -437,7 +437,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
       </a>
 
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-      <aside style={{
+      <aside className="admin-sidebar" style={{
         width: w, flexShrink: 0,
         background: "var(--sidebar-bg)",
         display: "flex", flexDirection: "column",
@@ -587,9 +587,9 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
       {/* ── Main ────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         <TopNav theme={theme} onToggleTheme={toggle} onLogout={handleLogout}/>
-        <main id="admin-main-content" tabIndex={-1} style={{ flex: 1, overflowY: "auto", padding: "28px 32px", position: "relative",
+        <main id="admin-main-content" className="admin-main" tabIndex={-1} style={{ flex: 1, overflowY: "auto", padding: "28px 32px", position: "relative",
           background: "var(--bg-gradient)", outline: "none" }}>
-          <div style={{ maxWidth: 1440, margin: "0 auto" }}>
+          <div className="admin-content" style={{ maxWidth: 1440, margin: "0 auto" }}>
             <Breadcrumbs/>
             {children}
           </div>
@@ -760,6 +760,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
     <div>
       <button
         onClick={() => setExpanded(e => !e)}
+        className="admin-vertical-item"
         style={{
           width: "100%", display: "flex", alignItems: "center", gap: 10,
           padding: "8px 12px", borderRadius: "var(--radius-full)", border: "none",
@@ -871,6 +872,7 @@ function SidebarItem({
       aria-current={active ? "page" : undefined}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
+      className="admin-nav-item"
       style={{
         display: "flex", alignItems: "center", gap: 10,
         padding: "8px 12px",
@@ -945,13 +947,13 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
     transition: "background 0.12s, border-color 0.12s",
   };
   return (
-    <header style={{
+    <header className="admin-topbar" style={{
       height: 58, display: "flex", alignItems: "center", gap: 14, padding: "0 28px",
       background: "var(--surface)", borderBottom: "1px solid var(--border)",
       boxShadow: "var(--shadow-sm)", flexShrink: 0, position: "sticky", top: 0, zIndex: 200,
     }}>
       {/* Search */}
-      <div style={{ flex: 1, maxWidth: 380 }}>
+      <div className="admin-search" style={{ flex: 1, maxWidth: 440 }}>
         <div style={{ position: "relative" }}>
           <Search size={14} style={{
             position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)",

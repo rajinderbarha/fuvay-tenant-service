@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.engines.auth.models import UserSession
 from app.engines.auth.schemas import MFAVerifyRequest
 from app.engines.auth.service import AuthService
 
@@ -60,7 +61,7 @@ async def test_verify_mfa_sets_is_trusted_when_remember_device_and_real_device_i
         remember_device=True,
     )
 
-    created_session = db.add.call_args[0][0]
+    created_session = next(call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], UserSession))
     assert created_session.is_trusted is True
     assert created_session.device_id == "mobile-real-device-id"
 
@@ -97,5 +98,42 @@ async def test_verify_mfa_never_trusts_without_remember_device_even_with_real_de
         remember_device=False,
     )
 
-    created_session = db.add.call_args[0][0]
+    created_session = next(call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], UserSession))
     assert created_session.is_trusted is False
+
+
+@pytest.mark.asyncio
+async def test_verify_mfa_preserves_forced_password_change_policy():
+    from app.engines.auth.utils import create_mfa_challenge_token
+    import pyotp
+
+    user_id = uuid.uuid4()
+    fake_user = MagicMock(
+        id=user_id, email="admin@serviceos.in", tenant_id=None, role="super_admin",
+        is_mfa_enabled=True, force_password_change=True,
+        password_reset_required=False, temporary_password_active=False,
+    )
+    fake_secret = MagicMock(encrypted_secret="JBSWY3DPEHPK3PXP", is_confirmed=True)
+
+    db = MagicMock()
+    svc = AuthService(db=db)
+    svc._get_user_by_id = AsyncMock(return_value=fake_user)
+    svc._audit = AsyncMock()
+    svc._build_token_pair = AsyncMock(return_value={"access_token": "a", "refresh_token": "r"})
+    svc._user_to_profile = MagicMock(return_value={"role": "super_admin"})
+    svc._tenant_to_ctx = AsyncMock(return_value=None)
+
+    secret_result = MagicMock(); secret_result.scalar_one_or_none.return_value = fake_secret
+    db.execute = AsyncMock(return_value=secret_result)
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+
+    result = await svc.verify_mfa(
+        mfa_challenge_token=create_mfa_challenge_token(str(user_id), fake_user.email),
+        code=pyotp.TOTP(fake_secret.encrypted_secret).now(),
+        device_id="web", device_name="Admin Browser", user_agent="ua",
+    )
+
+    assert result["requires_password_change"] is True
+    assert result["redirect_to"] == "/change-password-required"
+    assert result["refresh_token"] is None

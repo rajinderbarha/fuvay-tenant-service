@@ -27,8 +27,10 @@ from __future__ import annotations
 import uuid
 from typing import Awaitable, Callable
 
-from sqlalchemy import select, func
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.engines.enterprise_grid.filter_registry import EnterpriseFilterRegistry
 
 MAX_EXPORT_ROWS = 5000
 
@@ -145,17 +147,165 @@ async def _adapter_admin_categories(db: AsyncSession, tenant_scope: uuid.UUID | 
     # NOTE: Sprint 26's declared "status" field does not exist on
     # ServiceCategory (only boolean is_active) -- aliased below, same
     # documented-mismatch pattern as admin_audit_logs.
-    q = select(ServiceCategory).order_by(ServiceCategory.name.asc()).limit(MAX_EXPORT_ROWS)
+    q = select(ServiceCategory)
+    search = filters.get("q") or filters.get("search")
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(ServiceCategory.name.ilike(term), ServiceCategory.slug.ilike(term)))
+    if filters.get("status") == "active":
+        q = q.where(ServiceCategory.is_active.is_(True))
+    elif filters.get("status") == "inactive":
+        q = q.where(ServiceCategory.is_active.is_(False))
+    for field in ("vertical_type", "finance_model", "customer_flow_type"):
+        if filters.get(field):
+            q = q.where(getattr(ServiceCategory, field) == filters[field])
+    for field in ("is_customer_visible", "tenant_selectable", "pricing_supported"):
+        filter_key = "customer_visible" if field == "is_customer_visible" else field
+        value = _optional_bool(filters.get(filter_key))
+        if value is not None:
+            q = q.where(getattr(ServiceCategory, field) == value)
+    q = q.order_by(ServiceCategory.display_order.asc(), ServiceCategory.id.asc()).limit(MAX_EXPORT_ROWS)
     rows = (await db.execute(q)).scalars().all()
     return [
         {
             "name": r.name,
             "slug": r.slug,
             "status": "active" if r.is_active else "inactive",
+            "vertical_type": r.vertical_type or "", "finance_model": r.finance_model or "",
+            "customer_flow_type": r.customer_flow_type or "",
+            "is_customer_visible": r.is_customer_visible, "tenant_selectable": r.tenant_selectable,
+            "pricing_supported": r.pricing_supported, "display_order": r.display_order,
             "created_at": r.created_at.isoformat() if getattr(r, "created_at", None) else "",
+            "updated_at": r.updated_at.isoformat() if getattr(r, "updated_at", None) else "",
         }
         for r in rows
     ]
+
+
+async def _adapter_admin_service_groups(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
+    from app.engines.admin_catalog.models import ServiceCategory, ServiceGroup
+    retired = _optional_bool(filters.get("retired")) is True
+    q = (
+        select(ServiceGroup, ServiceCategory.name)
+        .join(ServiceCategory, ServiceCategory.id == ServiceGroup.category_id)
+        .where(ServiceGroup.deleted_at.isnot(None) if retired else ServiceGroup.deleted_at.is_(None))
+    )
+    search = filters.get("q") or filters.get("search")
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(ServiceGroup.name.ilike(term), ServiceGroup.code.ilike(term), ServiceGroup.slug.ilike(term)))
+    if filters.get("status"):
+        q = q.where(ServiceGroup.status == filters["status"])
+    if filters.get("category_id"):
+        q = q.where(ServiceGroup.category_id == uuid.UUID(str(filters["category_id"])))
+    rows = (await db.execute(q.order_by(ServiceGroup.display_order, ServiceGroup.id).limit(MAX_EXPORT_ROWS))).all()
+    return [{
+        "name": row.name, "code": row.code, "slug": row.slug, "category_name": category_name,
+        "status": row.status, "display_order": row.display_order,
+        "created_at": row.created_at.isoformat() if row.created_at else "",
+        "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+        "deleted_at": row.deleted_at.isoformat() if row.deleted_at else "",
+    } for row, category_name in rows]
+
+
+async def _adapter_admin_verticals(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
+    from app.engines.vertical_catalog.models import Vertical
+    q = select(Vertical)
+    search = filters.get("q") or filters.get("search")
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(Vertical.label.ilike(term), Vertical.key.ilike(term), Vertical.slug.ilike(term)))
+    if filters.get("status") == "enabled":
+        q = q.where(Vertical.is_enabled.is_(True))
+    elif filters.get("status") == "disabled":
+        q = q.where(Vertical.is_enabled.is_(False))
+    for field in ("finance_model", "lifecycle_status", "release_stage"):
+        if filters.get(field):
+            q = q.where(getattr(Vertical, field) == filters[field])
+    for field in ("registration_allowed", "is_beta"):
+        value = _optional_bool(filters.get(field))
+        if value is not None:
+            q = q.where(getattr(Vertical, field) == value)
+    rows = (await db.execute(q.order_by(Vertical.sort_order.asc(), Vertical.id.asc()).limit(MAX_EXPORT_ROWS))).scalars().all()
+    return [{
+        "label": row.label, "key": row.key, "status": "enabled" if row.is_enabled else "disabled",
+        "finance_model": row.finance_model or "", "lifecycle_status": row.lifecycle_status,
+        "release_stage": row.release_stage, "registration_allowed": row.registration_allowed,
+        "is_beta": row.is_beta, "sort_order": row.sort_order,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+    } for row in rows]
+
+
+def _optional_bool(value):
+    if value in (True, "true", "yes", "1", 1):
+        return True
+    if value in (False, "false", "no", "0", 0):
+        return False
+    return None
+
+
+async def _adapter_admin_customers(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
+    from sqlalchemy import text
+    from app.engines.auth.admin_customers_router import _SELECT_COLS, _JOINS, _build_filters, _where_clause
+
+    conditions, params = _build_filters(
+        filters.get("q") or filters.get("search"), filters.get("tenant_id"),
+        filters.get("health_band"), filters.get("engagement_status"), filters.get("city"),
+        filters.get("state"), filters.get("zipcode"), _optional_bool(filters.get("has_complaints")),
+        _optional_bool(filters.get("has_reviews")), filters.get("booking_count_min"),
+        filters.get("booking_count_max"), filters.get("last_booking_from"), filters.get("last_booking_to"),
+        filters.get("created_from"), filters.get("created_to"),
+    )
+    outer = []
+    if filters.get("health_band"):
+        outer.append("sq.health_band = :health_band")
+        params["health_band"] = filters["health_band"]
+    if filters.get("engagement_status") == "active":
+        outer.append("sq.health_band IN ('healthy','active')")
+    outer_sql = " AND " + " AND ".join(outer) if outer else ""
+    rows = (await db.execute(text(f"""
+        SELECT * FROM ({_SELECT_COLS} {_JOINS} {_where_clause(conditions)}) sq
+        WHERE TRUE {outer_sql}
+        ORDER BY sq.created_at DESC LIMIT {MAX_EXPORT_ROWS}
+    """), params)).mappings().all()
+    allowed = EnterpriseFilterRegistry.get_allowed_export_fields("admin_customers")
+    return [{key: (value.isoformat() if hasattr(value, "isoformat") else value) for key, value in row.items() if key in allowed} for row in rows]
+
+
+async def _adapter_admin_staff(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
+    from sqlalchemy import text
+    from app.engines.auth.admin_staff_router import _SELECT_COLS, _JOINS, _build_filters
+
+    where, params = _build_filters(
+        filters.get("q") or filters.get("search"), filters.get("tenant_id"), filters.get("role"),
+        filters.get("availability_status"), _optional_bool(filters.get("is_active")),
+        _optional_bool(filters.get("is_verified")), filters.get("city"), filters.get("job_count_min"),
+        filters.get("job_count_max"), filters.get("rating_min"), filters.get("created_from"), filters.get("created_to"),
+    )
+    rows = (await db.execute(text(f"""
+        SELECT {_SELECT_COLS} {_JOINS} WHERE {where}
+        ORDER BY u.full_name LIMIT {MAX_EXPORT_ROWS}
+    """), params)).mappings().all()
+    allowed = EnterpriseFilterRegistry.get_allowed_export_fields("admin_staff")
+    return [{key: (value.isoformat() if hasattr(value, "isoformat") else value) for key, value in row.items() if key in allowed} for row in rows]
+
+
+async def _adapter_admin_complaints(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
+    from app.engines.complaints.models import CustomerComplaint
+
+    q = select(CustomerComplaint).order_by(CustomerComplaint.created_at.desc()).limit(MAX_EXPORT_ROWS)
+    if filters.get("tenant_id"):
+        q = q.where(CustomerComplaint.tenant_id == uuid.UUID(str(filters["tenant_id"])))
+    for key in ("status", "priority", "severity", "sla_status", "record_type", "complaint_type"):
+        value = filters.get(key)
+        if value and hasattr(CustomerComplaint, key):
+            q = q.where(getattr(CustomerComplaint, key) == value)
+    rows = (await db.execute(q)).scalars().all()
+    return [{
+        "complaint_number": row.complaint_number, "status": row.status,
+        "priority": row.priority, "complaint_type": row.complaint_type,
+        "created_at": row.created_at.isoformat() if row.created_at else "",
+    } for row in rows]
 
 
 # resource_key -> adapter. Only these 5 are RUNTIME_SUPPORTED this sprint.
@@ -165,6 +315,11 @@ RESOURCE_ADAPTERS: dict[str, AdapterFn] = {
     "admin_audit_logs":      _adapter_admin_audit_logs,
     "admin_tenants":         _adapter_admin_tenants,
     "admin_categories":      _adapter_admin_categories,
+    "admin_service_groups":  _adapter_admin_service_groups,
+    "admin_verticals":       _adapter_admin_verticals,
+    "admin_customers":       _adapter_admin_customers,
+    "admin_staff":           _adapter_admin_staff,
+    "admin_complaints":      _adapter_admin_complaints,
 }
 
 

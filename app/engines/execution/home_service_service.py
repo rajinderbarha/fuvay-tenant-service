@@ -1036,17 +1036,54 @@ class HomeServiceJobExecutionService:
             if draft:
                 offering_type_id = draft.offering_type_id
                 brand_id_for_deduction = draft.brand_id
-        deduction = await deduct_for_completed_job(
-            db, tenant_id=tenant_id, job_id=job.id, booking_id=job.booking_id,
-            master_service_id=job.offering_id, offering_type_id=offering_type_id,
-            brand_id=brand_id_for_deduction, category_id=job.category_id,
-            job_type_id=job.job_type_id,
-            job_price=Decimal(str(collected_amount)), request_id=request_id,
+        try:
+            async with db.begin_nested():
+                deduction = await deduct_for_completed_job(
+                    db, tenant_id=tenant_id, job_id=job.id, booking_id=job.booking_id,
+                    master_service_id=job.offering_id, offering_type_id=offering_type_id,
+                    brand_id=brand_id_for_deduction, category_id=job.category_id,
+                    job_type_id=job.job_type_id,
+                    job_price=Decimal(str(collected_amount)), request_id=request_id,
+                )
+        except Exception as exc:
+            # A finance-side failure must not roll back genuine completed work.
+            # The savepoint keeps this session usable so the independent
+            # recovery event below is still attempted and the API exposes the
+            # failed status for reconciliation/retry tooling.
+            deduction = {
+                "deduction_status": "failed",
+                "error_type": type(exc).__name__,
+                "retry_required": True,
+            }
+        # The customer pays the provider directly, including any platform
+        # fee snapshotted by the published vertical policy. Recover that fee
+        # from the provider's usage-credit balance as its own idempotent
+        # ledger event; it must never be folded into the provider commission.
+        from app.engines.vertical_monetization.customer_charge_recovery import (
+            deduct_customer_platform_charge_recovery,
         )
+        try:
+            async with db.begin_nested():
+                platform_charge_recovery = await deduct_customer_platform_charge_recovery(
+                    db,
+                    tenant_id=tenant_id,
+                    job_id=job.id,
+                    booking_id=job.booking_id,
+                    vertical_key="home_services",
+                    chargeable_amount=Decimal(str(collected_amount)),
+                    request_id=request_id,
+                )
+        except Exception as exc:
+            platform_charge_recovery = {
+                "recovery_status": "failed",
+                "error_type": type(exc).__name__,
+                "retry_required": True,
+            }
         await db.flush()
 
         result = job.to_dict()
         result["usage_credit_deduction"] = deduction
+        result["customer_platform_charge_recovery"] = platform_charge_recovery
         return result
 
     # ── timeline / status read ────────────────────────────────────────────────

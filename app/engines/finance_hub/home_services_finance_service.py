@@ -154,7 +154,12 @@ class HomeServicesFinanceService:
         recon = await self._compute_reconciliation(date_from, date_to)
 
         low_balance_tenants = (await self.db.execute(
-            select(func.count(TenantBilling.id)).where(TenantBilling.credit_balance < LOW_BALANCE_DEFAULT_THRESHOLD)
+            select(func.count(TenantBilling.id))
+            .join(Tenant, Tenant.id == TenantBilling.tenant_id)
+            .where(
+                Tenant.vertical == HOME_SERVICES_VERTICAL,
+                TenantBilling.credit_balance < LOW_BALANCE_DEFAULT_THRESHOLD,
+            )
         )).scalar() or 0
 
         return {
@@ -382,7 +387,11 @@ class HomeServicesFinanceService:
 
     async def list_credit_accounts(self, *, q: str | None = None, low_balance_only: bool = False,
                                     page: int = 1, page_size: int = 50) -> dict:
-        stmt = select(TenantBilling, Tenant).join(Tenant, Tenant.id == TenantBilling.tenant_id)
+        stmt = (
+            select(TenantBilling, Tenant)
+            .join(Tenant, Tenant.id == TenantBilling.tenant_id)
+            .where(Tenant.vertical == HOME_SERVICES_VERTICAL)
+        )
         if low_balance_only:
             stmt = stmt.where(TenantBilling.credit_balance < LOW_BALANCE_DEFAULT_THRESHOLD)
         if q:
@@ -411,11 +420,13 @@ class HomeServicesFinanceService:
     # create_manual_adjustment below. This method only reads -- it never
     # writes a ledger row itself.
     async def list_credit_ledger(
-        self, *, tenant_id: str | None = None, event_type: str | None = None,
+        self, *, tenant_id: uuid.UUID | None = None, job_id: uuid.UUID | None = None,
+        event_type: str | None = None,
         page: int = 1, page_size: int = 50,
     ) -> dict:
         clauses = [Tenant.vertical == HOME_SERVICES_VERTICAL]
-        if tenant_id: clauses.append(UsageCreditLedger.tenant_id == uuid.UUID(tenant_id))
+        if tenant_id: clauses.append(UsageCreditLedger.tenant_id == tenant_id)
+        if job_id: clauses.append(UsageCreditLedger.job_id == job_id)
         if event_type: clauses.append(UsageCreditLedger.event_type == event_type)
         stmt = (
             select(UsageCreditLedger, Tenant)

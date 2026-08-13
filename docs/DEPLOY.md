@@ -74,7 +74,7 @@ docker push ghcr.io/YOUR_ORG/serviceos/serviceos-api:rc-1
 # 3. Run migrations (ALWAYS before starting app)
 docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 
-# 4. Start all services
+# 4. Start all services (one API container, four Uvicorn workers)
 docker compose -f docker-compose.prod.yml up -d
 
 # 5. Verify health
@@ -104,6 +104,10 @@ docker compose -f docker-compose.prod.yml run --rm api \
 | `SECRET_KEY` | Yes | dev placeholder | 64-char hex; app refuses to start in prod if placeholder |
 | `JWT_SECRET_KEY` | Yes | dev placeholder | 64-char hex; same enforcement |
 | `DATABASE_URL` | Yes | localhost dev | Full asyncpg connection string |
+| `DATABASE_POOL_SIZE` | Yes | `10` in prod compose | Per-worker persistent DB connections |
+| `DATABASE_MAX_OVERFLOW` | Yes | `5` in prod compose | Per-worker burst DB connections |
+| `DATABASE_POOL_TIMEOUT` | Optional | `30` | Seconds to wait for a pooled connection |
+| `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_SECONDS` | Optional | `60` | PostgreSQL safety cutoff for interrupted transactions |
 | `REDIS_URL` | Yes | localhost dev | Include password if auth enabled |
 | `ALLOWED_ORIGINS` | Yes | localhost ports | Comma-separated; no wildcard in prod |
 | `DEEPSEEK_API_KEY` | Required for AI | empty | AI conversations disabled if not set |
@@ -113,6 +117,29 @@ docker compose -f docker-compose.prod.yml run --rm api \
 | `FCM_SERVER_KEY` | Optional | empty | Push channel skipped if not set |
 | `SENTRY_DSN` | Optional | empty | Error tracking disabled if not set |
 | `ENABLE_METRICS` | Optional | `true` | Set `false` to disable /metrics |
+
+### Scaling and database connection budget
+
+The API image runs four Uvicorn workers. SQLAlchemy pools are per process, so
+the upper bound is:
+
+```text
+api containers * 4 workers * (DATABASE_POOL_SIZE + DATABASE_MAX_OVERFLOW)
+```
+
+The production Compose defaults therefore allow at most 60 application
+connections for one API container. Reserve database connections for migrations,
+workers, monitoring, and administration. To add API containers, verify the
+managed PostgreSQL connection limit first, then run:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --scale api=2
+```
+
+Do not rely on `deploy.replicas` with ordinary Docker Compose; that field is a
+Swarm deployment control. High user counts require a production-sized dataset,
+distributed load tests, connection-pool monitoring, and horizontal scaling;
+they cannot be certified from a local smoke test.
 
 ---
 

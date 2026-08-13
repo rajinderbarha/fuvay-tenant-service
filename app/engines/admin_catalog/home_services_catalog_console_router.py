@@ -8,16 +8,21 @@ Low/Mid/High preview, audit trail). Hard-scoped to the Home Services
 category — never reads or writes any other vertical's catalog data.
 """
 import uuid
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import P, require_permission
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
+from app.dependencies.vertical_guard import require_vertical_enabled
 from app.engines.admin_catalog.service import AdminCatalogService
 from app.schemas.base import ApiResponse, ok
 
-router = APIRouter(prefix="/v1/admin/home-services/service-catalog", tags=["Home Services Catalog Console"])
+router = APIRouter(
+    prefix="/v1/admin/home-services/service-catalog",
+    tags=["Home Services Catalog Console"],
+    dependencies=[Depends(require_vertical_enabled("home_services"))],
+)
 ENGINE_ID = "admin_catalog"
 
 
@@ -34,9 +39,18 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 @router.get("/services", response_model=ApiResponse[dict],
             summary="Grouped Home Services catalog for the console's left panel")
 async def list_console_services(r: Request,
+                                 q: str | None = Query(None, max_length=200),
+                                 service_id: uuid.UUID | None = Query(None),
+                                 service_group_id: uuid.UUID | None = Query(None),
+                                 is_active: bool | None = Query(None),
+                                 limit: int = Query(50, ge=1, le=100),
+                                 offset: int = Query(0, ge=0),
                                  u: UserContext = Depends(require_permission(P.CATALOG_PRICING_READ)),
                                  s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.list_home_services_catalog_console(), _rid(r), ENGINE_ID)
+    return ok(await s.list_home_services_catalog_console(
+        q=q, service_id=service_id, service_group_id=service_group_id, is_active=is_active,
+        limit=limit, offset=offset,
+    ), _rid(r), ENGINE_ID)
 
 
 @router.get("/services/{service_id}", response_model=ApiResponse[dict],

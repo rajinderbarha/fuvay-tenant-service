@@ -54,7 +54,7 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
   const bookingsFetch = useApi(
     useCallback(() => adminCustomersApi.bookings(customerId, { page: 1 }), [customerId]), [customerId],
   );
-  type BookingRow = { id: string; booking_number: string; tenant_name: string; category_name: string; status: string; amount: number | null; city: string; created_at: string | null };
+  type BookingRow = { id: string; job_id: string | null; booking_number: string; tenant_name: string; category_name: string; status: string; amount: number | null; city: string; created_at: string | null };
   type BookingsData = { bookings: BookingRow[]; meta: { page: number; total: number; total_pages: number } };
   const bookingsData: BookingsData | undefined =
     (bookingsFetch.data as unknown as { data?: BookingsData } | null)?.data;
@@ -110,7 +110,7 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
     {
       key: "booking_number", label: "Booking #", width: 130,
       render: (_: unknown, row: BookingRow) => (
-        <Link href={`/admin/bookings/${row.id}`}
+        <Link href={row.job_id ? `/admin/home-services/service-jobs/${row.job_id}` : "/admin/home-services/bookings-jobs"}
           style={{ fontFamily: "monospace", fontSize: 12, color: "var(--primary)", textDecoration: "none", fontWeight: 600 }}>
           {row.booking_number}
         </Link>
@@ -148,7 +148,7 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
     {
       key: "id", label: "", width: 36,
       render: (_: unknown, row: BookingRow) => (
-        <Link href={`/admin/bookings/${row.id}`} style={{ color: "var(--muted-text)" }}>
+        <Link href={row.job_id ? `/admin/home-services/service-jobs/${row.job_id}` : "/admin/home-services/bookings-jobs"} style={{ color: "var(--muted-text)" }}>
           <ExternalLink size={14} />
         </Link>
       ),
@@ -162,7 +162,9 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
     background: "transparent", whiteSpace: "nowrap",
   });
 
-  const isBlocked = customer && !customer.is_active;
+  const isBlocked = customer?.account_status === "locked";
+  const isSuspended = customer?.account_status === "suspended";
+  const isDeactivated = customer?.account_status === "disabled" || (customer && !customer.is_active && !isBlocked && !isSuspended);
 
   return (
     <>
@@ -186,9 +188,11 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
           <div style={{ display: "flex", gap: 8 }}>
             {isBlocked
               ? <Btn variant="secondary" size="sm" onClick={() => setReasonModal("unblock")}>Unblock</Btn>
-              : <Btn variant="danger" size="sm" onClick={() => setReasonModal("block")}>Block</Btn>}
-            <Btn variant="secondary" size="sm" onClick={() => setReasonModal("suspend")}>Suspend</Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setReasonModal("reactivate")}>Reactivate</Btn>
+              : !isSuspended && !isDeactivated && <Btn variant="danger" size="sm" onClick={() => setReasonModal("block")}>Block</Btn>}
+            {isSuspended
+              ? <Btn variant="secondary" size="sm" onClick={() => setReasonModal("reactivate")}>Reactivate</Btn>
+              : !isDeactivated && !isBlocked && <Btn variant="secondary" size="sm" onClick={() => setReasonModal("suspend")}>Suspend</Btn>}
+            {isDeactivated && <Btn variant="secondary" size="sm" onClick={() => setReasonModal("reactivate")}>Reactivate</Btn>}
             <Btn variant="danger" size="sm" onClick={() => setReasonModal("revoke_sessions")}>Force Logout</Btn>
           </div>
         ) : undefined}
@@ -260,7 +264,7 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
                     <InfoRow label="Full Name" value={customer.full_name} />
                     <InfoRow label="Phone" value={customer.phone} />
                     <InfoRow label="Email" value={customer.email} />
-                    <InfoRow label="Status" value={customer.is_active ? "Active" : "Blocked/Inactive"} />
+                    <InfoRow label="Status" value={customer.account_status.replace(/_/g, " ")} />
                     <InfoRow label="Member Since" value={customer.created_at ? new Date(customer.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : undefined} />
                   </div>
                   <div>

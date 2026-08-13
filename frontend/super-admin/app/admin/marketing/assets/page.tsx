@@ -94,7 +94,7 @@ export default function AdminMarketingAssetsPage() {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)" }}>Marketing Assets</h1>
           <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>Review and approve provider marketing assets.</p>
         </div>
-        <Btn onClick={() => refetch()} disabled>Refresh</Btn>
+        <Btn onClick={() => { window.location.href = "/admin/marketing"; }}>Open Marketing Workspace</Btn>
       </div>
 
       <Card>

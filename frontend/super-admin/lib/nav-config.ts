@@ -95,7 +95,6 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "finance",            label: "Finance Hub",     href: "/admin/finance",             icon: "💰", group: "finance" },
       { id: "service-invoices",   label: "Invoices",        href: "/admin/service-invoices",    icon: "🧾", group: "finance" },
-      { id: "provider-wallets",   label: "Wallets",         href: "/admin/provider-wallets",    icon: "👛", group: "finance" },
       { id: "commission-records", label: "Commissions",     href: "/admin/commission-records",  icon: "💹", group: "finance" },
       { id: "payments",           label: "Payments",        href: "/admin/payments",            icon: "💳", group: "finance" },
       { id: "financial-events",   label: "Financial Events",href: "/admin/financial-events",    icon: "📊", group: "finance" },
@@ -182,7 +181,6 @@ export const ADMIN_PATH_TO_NAV_ID: Record<string, string> = {
   "customer-flow":        "customer-flow",
   finance:                "finance",
   "service-invoices":     "service-invoices",
-  "provider-wallets":     "provider-wallets",
   "commission-records":   "commission-records",
   payments:               "payments",
   "financial-events":     "financial-events",

@@ -152,6 +152,34 @@ class CreateSettlementProposalIn(BaseModel):
 
 
 # ── Enterprise summary endpoint ───────────────────────────────────────────────
+@admin_complaint_router.get("/filters")
+async def complaint_filter_options(
+    u=Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bounded filter vocabulary for the platform complaint directory."""
+    rows = (await db.execute(text("""
+        SELECT id::text AS value, COALESCE(business_name, tenant_name) AS label
+        FROM tenants
+        WHERE COALESCE(business_name, tenant_name) IS NOT NULL
+        ORDER BY COALESCE(business_name, tenant_name)
+        LIMIT 500
+    """))).mappings().all()
+    distinct = (await db.execute(text("""
+        SELECT
+          COALESCE(array_agg(DISTINCT complaint_type) FILTER (WHERE complaint_type IS NOT NULL), '{}') complaint_types,
+          COALESCE(array_agg(DISTINCT record_type) FILTER (WHERE record_type IS NOT NULL), '{}') record_types,
+          COALESCE(array_agg(DISTINCT severity) FILTER (WHERE severity IS NOT NULL), '{}') severities
+        FROM customer_complaints
+    """))).mappings().one()
+    return {"data": {
+        "tenants": [dict(row) for row in rows],
+        "complaint_types": [{"value": v, "label": v.replace("_", " ").title()} for v in distinct["complaint_types"]],
+        "record_types": [{"value": v, "label": v.replace("_", " ").title()} for v in distinct["record_types"]],
+        "severities": [{"value": v, "label": v.title()} for v in distinct["severities"]],
+    }}
+
+
 @admin_complaint_router.get("/summary")
 async def complaints_summary(
     tenant_id: Optional[uuid.UUID] = Query(None),
@@ -197,6 +225,85 @@ async def complaints_summary(
     return {"data": data}
 
 
+@admin_complaint_router.get("/export")
+async def export_complaints(
+    q: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    priority: Optional[str] = Query(None),
+    tenant_id: Optional[uuid.UUID] = Query(None),
+    severity: Optional[str] = Query(None),
+    sla_status: Optional[str] = Query(None),
+    record_type: Optional[str] = Query(None),
+    complaint_type: Optional[str] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    u = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Authenticated, server-side export using the same filters as the grid."""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    conditions = ["1=1"]
+    params: dict = {}
+    if q:
+        conditions.append(
+            "(c.complaint_number ILIKE :q OR c.title ILIKE :q OR c.description ILIKE :q "
+            "OR cu.full_name ILIKE :q OR t.tenant_name ILIKE :q)"
+        )
+        params["q"] = f"%{q}%"
+    if tenant_id:
+        conditions.append("c.tenant_id = :tenant_id")
+        params["tenant_id"] = tenant_id
+    for column, value in (("status", status), ("sla_status", sla_status),
+                          ("severity", severity), ("record_type", record_type),
+                          ("complaint_type", complaint_type)):
+        if value:
+            conditions.append(f"c.{column} = :{column}")
+            params[column] = value
+    if priority:
+        priority_values = [value.strip() for value in priority.split(",") if value.strip()]
+        if len(priority_values) > 1:
+            conditions.append("c.priority = ANY(CAST(:priority_values AS text[]))")
+            params["priority_values"] = priority_values
+        else:
+            conditions.append("c.priority = :priority")
+            params["priority"] = priority
+    if date_from:
+        conditions.append("c.created_at >= :date_from")
+        params["date_from"] = date_from
+    if date_to:
+        conditions.append("c.created_at <= :date_to")
+        params["date_to"] = date_to
+
+    rows = (await db.execute(text(f"""
+        SELECT c.complaint_number, c.status, c.priority,
+               COALESCE(c.severity, 'medium') AS severity,
+               COALESCE(c.sla_status, 'on_time') AS sla_status,
+               c.complaint_type, c.title, t.tenant_name,
+               cu.full_name AS customer_name, c.created_at
+        FROM customer_complaints c
+        LEFT JOIN tenants t ON t.id = c.tenant_id
+        LEFT JOIN users cu ON cu.id = c.customer_id
+        WHERE {' AND '.join(conditions)}
+        ORDER BY c.created_at DESC
+        LIMIT 5000
+    """), params)).mappings().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Complaint #", "Status", "Priority", "Severity", "SLA", "Type", "Title", "Tenant", "Customer", "Created"])
+    for row in rows:
+        writer.writerow([row["complaint_number"], row["status"], row["priority"], row["severity"],
+                         row["sla_status"], row["complaint_type"], row["title"] or "",
+                         row["tenant_name"] or "", row["customer_name"] or "",
+                         row["created_at"].isoformat() if row["created_at"] else ""])
+    output.seek(0)
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
+                             headers={"Content-Disposition": "attachment; filename=complaints.csv"})
+
+
 # ── Enhanced platform-wide list ───────────────────────────────────────────────
 @admin_complaint_router.get("/list")
 async def list_complaints_enterprise(
@@ -233,8 +340,13 @@ async def list_complaints_enterprise(
         conditions.append("c.status = :status")
         params["status"] = status
     if priority:
-        conditions.append("c.priority = :priority")
-        params["priority"] = priority
+        priority_values = [value.strip() for value in priority.split(",") if value.strip()]
+        if len(priority_values) > 1:
+            conditions.append("c.priority = ANY(CAST(:priority_values AS text[]))")
+            params["priority_values"] = priority_values
+        else:
+            conditions.append("c.priority = :priority")
+            params["priority"] = priority
     if severity:
         conditions.append("c.severity = :severity")
         params["severity"] = severity

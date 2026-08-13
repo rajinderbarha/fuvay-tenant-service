@@ -22,6 +22,7 @@ SERVICE_FILE = os.path.join(ROOT, "app", "engines", "admin_catalog", "service.py
 ADMIN_ROUTER = os.path.join(ROOT, "app", "engines", "admin_catalog", "admin_router.py")
 SA_API       = os.path.join(ROOT, "frontend", "super-admin", "lib", "api.ts")
 SG_PAGE      = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "service-groups", "page.tsx")
+SG_DETAIL_PAGE = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "service-groups", "[id]", "page.tsx")
 MS_PAGE      = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "master-services", "page.tsx")
 
 
@@ -273,19 +274,21 @@ def test_sg_page_has_labeled_action_menu():
     # Should have menu items with text labels
     assert "View Details" in src or "Edit Group" in src
 
-def test_sg_page_has_detail_drawer():
+def test_sg_page_has_durable_detail_route():
     src = _read(SG_PAGE)
-    assert "DetailDrawer" in src or "detailGroup" in src
+    detail = _read(SG_DETAIL_PAGE)
+    assert "/admin/service-groups/${row.id}" in src
+    assert "getServiceGroupAudit" in detail
 
 def test_sg_page_has_activate_deactivate_actions():
     src = _read(SG_PAGE)
     assert "activateServiceGroup" in src or "activateAction" in src
     assert "deactivateServiceGroup" in src or "deactivateAction" in src
 
-def test_sg_page_has_archive_confirm():
+def test_sg_page_has_retire_confirm():
     src = _read(SG_PAGE)
     assert "archiveServiceGroup" in src or "archiveAction" in src
-    assert "Archive" in src
+    assert "Retire" in src
 
 def test_sg_page_has_export_button():
     src = _read(SG_PAGE)
@@ -304,9 +307,9 @@ def test_sg_page_no_tailwind():
         assert cn == "skeleton", f"Forbidden className found: '{cn}' — use CSS variables instead"
 
 def test_sg_page_hierarchy_breadcrumb():
-    src = _read(SG_PAGE)
-    # Detail drawer should show Category → Group → services hierarchy
-    assert "ChevronRight" in src or "›" in src
+    src = _read(SG_DETAIL_PAGE)
+    assert "/admin/categories/" in src
+    assert "/admin/master-services?service_group_id=" in src
 
 
 # ── Frontend: master-services/page.tsx enterprise upgrade ─────────────────────

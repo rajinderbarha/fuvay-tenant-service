@@ -377,6 +377,16 @@ class P:
     FINANCE_WALLETS_READ      = "finance:wallets:read"
     FINANCE_WALLETS_ADJUST    = "finance:wallets:adjust"
     FINANCE_AUDIT_READ        = "finance:audit:read"
+    # Home Services usage-credit administration. These are intentionally
+    # distinct from customer service credits and generic cash-wallet access.
+    FINANCE_HOME_SERVICES_CREDITS_VIEW         = "finance.home_services.credits.view"
+    FINANCE_HOME_SERVICES_CREDITS_EXPORT       = "finance.home_services.credits.export"
+    FINANCE_HOME_SERVICES_CREDITS_AUDIT        = "finance.home_services.credits.audit"
+    FINANCE_HOME_SERVICES_TOPUPS_VIEW          = "finance.home_services.topups.view"
+    FINANCE_HOME_SERVICES_TOPUPS_RECONCILE     = "finance.home_services.topups.reconcile"
+    FINANCE_HOME_SERVICES_ADJUSTMENTS_CREATE   = "finance.home_services.adjustments.create"
+    FINANCE_HOME_SERVICES_ADJUSTMENTS_APPROVE  = "finance.home_services.adjustments.approve"
+    FINANCE_HOME_SERVICES_LEDGER_VIEW          = "finance.home_services.ledger.view"
     # Vertical Monetization policy workspace (vertical_monetization engine).
     # These constants were referenced by the engine's admin_router but never
     # declared here, so importing that router raised AttributeError and the
@@ -765,6 +775,12 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     "admin_finance": [
         P.FINANCE_READ, P.FINANCE_USAGE_CREDITS_READ, P.FINANCE_USAGE_CREDITS_TOP_UP,
         P.FINANCE_USAGE_CREDITS_ADJUST, P.FINANCE_USAGE_CREDITS_LEDGER_READ,
+        P.FINANCE_HOME_SERVICES_CREDITS_VIEW, P.FINANCE_HOME_SERVICES_CREDITS_EXPORT,
+        P.FINANCE_HOME_SERVICES_CREDITS_AUDIT, P.FINANCE_HOME_SERVICES_TOPUPS_VIEW,
+        P.FINANCE_HOME_SERVICES_TOPUPS_RECONCILE,
+        P.FINANCE_HOME_SERVICES_ADJUSTMENTS_CREATE,
+        P.FINANCE_HOME_SERVICES_ADJUSTMENTS_APPROVE,
+        P.FINANCE_HOME_SERVICES_LEDGER_VIEW,
         P.FINANCE_COMPLETED_JOB_DEDUCTION_RULES_READ,
         P.FINANCE_TOPUPS_READ, P.FINANCE_TOPUPS_UPDATE, P.FINANCE_TOPUPS_REFUND,
         # FINAL-L5-05U: the canonical Security Deposit permission family is
@@ -777,7 +793,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # the full removal rationale).
         P.FINANCE_DEPOSITS_READ, P.FINANCE_DEPOSITS_APPROVE, P.FINANCE_DEPOSITS_UPDATE,
         P.FINANCE_DEPOSITS_REFUND,
-        P.FINANCE_SETTINGS_READ, P.PACKAGES_AUDIT_READ, P.FINANCE_EXPORT,
+        P.FINANCE_SETTINGS_READ, P.FINANCE_AUDIT_READ, P.PACKAGES_AUDIT_READ, P.FINANCE_EXPORT,
         P.TENANT_READ, P.TENANT_BILLING_READ, P.TENANT_HEALTH_READ,
         # FINAL-L5-05O: base dashboard read (Finance Admin already had the
         # domain-specific DASHBOARD_FINANCE_READ below).
@@ -822,6 +838,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.STAFF_READ,
         P.FINANCE_READ,  # base gate required by finance_hub's shared _svc dependency
         P.FINANCE_USAGE_CREDITS_READ, P.FINANCE_USAGE_CREDITS_LEDGER_READ,
+        P.FINANCE_HOME_SERVICES_CREDITS_VIEW,
+        P.FINANCE_HOME_SERVICES_TOPUPS_VIEW,
+        P.FINANCE_HOME_SERVICES_LEDGER_VIEW,
         # FINAL-L5-05U: was P.FINANCE_SECURITY_DEPOSITS_READ (deprecated
         # alias that authorized nothing -- zero live endpoints check it,
         # so Read Only held a "read" grant that couldn't actually read the
@@ -829,7 +848,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # Migrated to the canonical key so this role's existing read-only
         # intent actually works end-to-end.
         P.FINANCE_TOPUPS_READ, P.FINANCE_DEPOSITS_READ,
-        P.FINANCE_COMPLETED_JOB_DEDUCTION_RULES_READ,
+        P.FINANCE_COMPLETED_JOB_DEDUCTION_RULES_READ, P.FINANCE_AUDIT_READ,
         P.SECURITY_READ, P.SECURITY_SESSIONS_READ, P.SECURITY_AUDIT_READ,
         P.PLATFORM_ROLES_READ, P.PLATFORM_PERMISSIONS_READ,
         P.AUTH_USERS_READ,

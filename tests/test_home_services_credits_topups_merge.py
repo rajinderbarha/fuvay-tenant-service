@@ -69,7 +69,16 @@ class TestNavigationConsolidation:
             "frontend/super-admin/app/admin/finance/topups/page.tsx",
         ]:
             src = pathlib.Path(path).read_text(encoding="utf-8")
-            assert "router.replace(`/admin/home-services/finance?" in src, f"{path} is not a redirect"
+            assert (
+                "router.replace(`/admin/home-services/finance?" in src
+                or "redirect(`/admin/home-services/finance?" in src
+            ), f"{path} is not a redirect"
+
+    def test_usage_credit_redirect_preserves_exact_filters(self):
+        import pathlib
+        src = pathlib.Path("frontend/super-admin/app/admin/finance/usage-credits/page.tsx").read_text(encoding="utf-8")
+        assert "Object.entries(incoming)" in src
+        assert 'next.set("credits_tab", "ledger")' in src
 
     def test_credits_tab_has_four_subtabs(self):
         import pathlib
@@ -96,6 +105,23 @@ class TestCanonicalCreditAccount:
         r1 = await admin.get(f"/v1/admin/finance/home-services/credit-accounts?q={tenant_id}")
         r2 = await admin.get(f"/v1/admin/finance/home-services/credit-ledger?tenant_id={tenant_id}")
         assert r1.status_code == 200 and r2.status_code == 200
+
+    async def test_credit_ledger_can_be_filtered_to_exact_job(self, admin):
+        tenant_id = await _hs_tenant_id(admin)
+        all_rows = await admin.get(
+            f"/v1/admin/finance/home-services/credit-ledger?tenant_id={tenant_id}&page_size=1000"
+        )
+        assert all_rows.status_code == 200, all_rows.text
+        entry = next((row for row in all_rows.json()["data"]["items"] if row.get("job_id")), None)
+        if not entry:
+            pytest.skip("No job-linked usage-credit entry exists in this environment.")
+        exact = await admin.get(
+            f"/v1/admin/finance/home-services/credit-ledger?tenant_id={tenant_id}&job_id={entry['job_id']}"
+        )
+        assert exact.status_code == 200, exact.text
+        rows = exact.json()["data"]["items"]
+        assert rows
+        assert all(row["tenant_id"] == tenant_id and row["job_id"] == entry["job_id"] for row in rows)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

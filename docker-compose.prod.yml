@@ -2,19 +2,23 @@
 # Uses pre-built image from GHCR. Secrets via Docker secrets / env.
 # Deploy: docker compose -f docker-compose.prod.yml up -d
 
-version: "3.9"
-
 services:
   # ── FastAPI API (multiple replicas behind nginx) ─────────────────────────
   api:
     image: ghcr.io/${GITHUB_REPOSITORY}/serviceos-api:${IMAGE_TAG:-latest}
     restart: always
-    env_file: .env.production
+    env_file: ${SERVICEOS_ENV_FILE:-.env.production}
     environment:
       APP_ENV:       production
-      WORKERS:       4
       LOG_LEVEL:     info
       ENABLE_METRICS: "true"
+      # Four workers are fixed by the image command. With the defaults below,
+      # one API container can use at most 60 DB connections (4 * (10 + 5)).
+      # Recalculate against the managed DB limit before scaling replicas.
+      DATABASE_POOL_SIZE:     10
+      DATABASE_MAX_OVERFLOW:  5
+      DATABASE_POOL_TIMEOUT:  30
+      DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_SECONDS: 60
     depends_on:
       postgres: { condition: service_healthy }
       redis:    { condition: service_healthy }
@@ -24,12 +28,14 @@ services:
       timeout:  10s
       retries:  3
     networks: [serviceos_net]
+    # `deploy.replicas` is intentionally omitted: ordinary `docker compose`
+    # ignores/does not reliably apply Swarm deployment topology. Scale with
+    # `--scale api=N` only after sizing the database connection budget.
     deploy:
-      replicas: 2
       update_config:
         parallelism: 1
         delay:       10s
-        order:       rolling_update
+        order:       start-first
       restart_policy:
         condition: on-failure
         max_attempts: 3

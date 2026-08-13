@@ -87,7 +87,7 @@ test.describe('ADMIN-TENANT-E2E-04B home services job operations unification', (
   test('click Usage Credit Ledger link navigates to filtered ledger with the real entry', async ({ page }) => {
     const apiCalls: string[] = [];
     page.on('response', (resp) => {
-      if (resp.url().includes('/usage-credit-ledger')) apiCalls.push(`${resp.status()} ${resp.url()}`);
+      if (resp.url().includes('/finance/home-services/credit-ledger')) apiCalls.push(`${resp.status()} ${resp.url()}`);
     });
     await loginAsSuperAdmin(page);
     await page.goto(`/admin/home-services/service-jobs/${JOB_ID}`);
@@ -96,11 +96,15 @@ test.describe('ADMIN-TENANT-E2E-04B home services job operations unification', (
     await expect(ledgerLink).toBeVisible();
     await ledgerLink.click();
     await page.waitForTimeout(2000);
-    await expect(page).toHaveURL(/\/admin\/finance\/usage-credits\?tenant_id=.*job_id=/);
+    await expect(page).toHaveURL(/\/admin\/home-services\/finance\?tab=credits&credits_tab=ledger&tenant_id=.*job_id=/);
+    // A cached navigation may not emit a fresh Playwright response event;
+    // assert the user-facing exact filter and its one-row result instead.
+    await expect(page.getByText(new RegExp(`job ${JOB_ID}`))).toBeVisible();
+    await expect(page.locator('tbody tr')).toHaveCount(1);
+    await expect(page.locator('tbody tr').first()).toContainText('Completed Job Deduction');
     const bodyText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'ledger-filtered.png'), fullPage: true });
     log('ledger.log', `apiCalls=${apiCalls.join(' ;; ')} url=${page.url()}`);
-    expect(apiCalls.some(c => c.includes(`job_id=${JOB_ID}`))).toBeTruthy();
     expect(bodyText.toLowerCase()).toContain('completed job deduction');
   });
 
@@ -133,7 +137,7 @@ test.describe('ADMIN-TENANT-E2E-04B home services job operations unification', (
 
   test('no duplicate ledger entry for the same job after refresh', async ({ page }) => {
     await loginAsSuperAdmin(page);
-    await page.goto(`/admin/finance/usage-credits?tenant_id=${TENANT_ID}&job_id=${JOB_ID}`);
+    await page.goto(`/admin/home-services/finance?tab=credits&credits_tab=ledger&tenant_id=${TENANT_ID}&job_id=${JOB_ID}`);
     await expect(page.locator('tbody tr')).toHaveCount(1, { timeout: 15_000 });
     const rowCountBefore = await page.locator('tbody tr').count();
     await page.reload();
@@ -164,7 +168,7 @@ test.describe('ADMIN-TENANT-E2E-04B home services job operations unification', (
     for (const url of [
       '/admin/home-services/bookings-jobs',
       `/admin/home-services/service-jobs/${JOB_ID}`,
-      `/admin/finance/usage-credits?tenant_id=${TENANT_ID}&job_id=${JOB_ID}`,
+      `/admin/home-services/finance?tab=credits&credits_tab=ledger&tenant_id=${TENANT_ID}&job_id=${JOB_ID}`,
     ]) {
       await page.goto(url);
       await page.waitForTimeout(1500);

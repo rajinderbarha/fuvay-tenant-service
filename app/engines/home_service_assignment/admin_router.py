@@ -17,6 +17,7 @@ from app.core.audit import record_platform_audit
 from app.core.permissions import P, require_permission
 from app.dependencies.auth import get_current_user, require_super_admin, UserContext
 from app.dependencies.db import get_db
+from app.dependencies.vertical_guard import require_vertical_enabled
 from app.exceptions import ServiceOSException
 from app.schemas.base import ApiResponse, ok
 from app.engines.home_service_assignment.constants import (
@@ -33,6 +34,7 @@ from app.engines.home_service_assignment.service import HomeServiceJobAssignment
 router = APIRouter(
     prefix="/v1/admin/service-job-assignments",
     tags=["Admin Service Job Assignments"],
+    dependencies=[Depends(require_vertical_enabled("home_services"))],
 )
 
 _RID = lambda r: getattr(r.state, "request_id", "—")
@@ -128,6 +130,7 @@ async def get_assignment(
 admin_jobs_router = APIRouter(
     prefix="/v1/admin/service-jobs",
     tags=["Admin Service Job Assignments"],
+    dependencies=[Depends(require_vertical_enabled("home_services"))],
 )
 
 

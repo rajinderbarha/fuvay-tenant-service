@@ -480,7 +480,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                     </p>
                   )}
                   <a
-                    href={`/admin/finance/usage-credits?tenant_id=${d.tenant_id}&job_id=${d.id}`}
+                    href={`/admin/home-services/finance?tab=credits&credits_tab=ledger&tenant_id=${d.tenant_id}&job_id=${d.id}`}
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
                       color: "var(--brand)", textDecoration: "none", marginTop: 4 }}
                   >

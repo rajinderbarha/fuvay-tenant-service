@@ -86,8 +86,8 @@ async def resolve_commission_credits(
     job_type_id: uuid.UUID | None = None,
 ) -> tuple[Decimal, str | None]:
     """Returns (credits, deduction_source_label). Each Home Services
-    category carries its own commission rate (`ServiceCategory
-    .commission_pct`, edited per-category in the Monetization tab) —
+    category can carry an optional commission override (`ServiceCategory
+    .commission_pct`, edited in Home Services Finance > Provider Charges) —
     PERCENTAGE_COMMISSION must be published on the Home Services vertical's
     Monetization policy for this to be live at all, but the actual rate
     applied is the job's own category's rate, falling back to the policy's
@@ -111,6 +111,7 @@ async def resolve_commission_credits(
             select(VerticalMonetizationPolicy).where(
                 VerticalMonetizationPolicy.vertical_id == vertical.id,
                 VerticalMonetizationPolicy.is_current.is_(True),
+                VerticalMonetizationPolicy.status == "published",
             )
         )).scalar_one_or_none()
 

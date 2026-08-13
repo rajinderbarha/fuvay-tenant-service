@@ -4,8 +4,10 @@ import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, SectionHeader, DataTable, SummaryCard,} from "../../../components/shared/ui";
 import { adminStaffApi, AdminStaffMember, AdminStaffSummary, AdminStaffFilterOptions } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
-import { Users, ChevronDown, X, Filter, Download } from "lucide-react";
+import { Users, ChevronDown, X, Filter, Download, RefreshCw, Search } from "lucide-react";
 import Link from "next/link";
+import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
+import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
 
 const AVAIL_BADGE: Record<string, "success" | "warning" | "danger" | "muted"> = {
   available: "success", busy: "warning", inactive: "muted",
@@ -99,14 +101,31 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
 }
 
 function StaffContent() {
+  const [columnState, setColumnState] = useState<ColumnDef[]>([
+    { key: "full_name", label: "Staff member", visible: true, order: 0 },
+    { key: "phone", label: "Phone", visible: true, order: 1 },
+    { key: "role", label: "Role", visible: true, order: 2 },
+    { key: "tenant_name", label: "Provider", visible: true, order: 3 },
+    { key: "availability_status", label: "Status", visible: true, order: 4 },
+    { key: "total_jobs", label: "Jobs", visible: true, order: 5 },
+    { key: "average_rating", label: "Rating", visible: true, order: 6 },
+    { key: "last_job_at", label: "Last active", visible: true, order: 7 },
+  ]);
   const [q, setQ] = useState("");
   const [inputQ, setInputQ] = useState("");
   const [availFilter, setAvailFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [cityFilter, setCityFilter] = useState("");
   const [isActiveFilter, setIsActiveFilter] = useState<string>("");
+  const [verifiedFilter, setVerifiedFilter] = useState<string>("");
+  const [tenantFilter, setTenantFilter] = useState("");
+  const [jobCountMin, setJobCountMin] = useState("");
+  const [ratingMin, setRatingMin] = useState("");
+  const [joinedFrom, setJoinedFrom] = useState("");
+  const [joinedTo, setJoinedTo] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
 
   const filters = useApi(useCallback(() => adminStaffApi.filterOptions(), []));
   const filterOpts: AdminStaffFilterOptions | null =
@@ -123,17 +142,57 @@ function StaffContent() {
       availability_status: availFilter || undefined,
       city: cityFilter || undefined,
       is_active: isActiveFilter === "" ? undefined : isActiveFilter === "true",
+      is_verified: verifiedFilter === "" ? undefined : verifiedFilter === "true",
+      tenant_id: tenantFilter || undefined,
+      job_count_min: jobCountMin ? Number(jobCountMin) : undefined,
+      rating_min: ratingMin ? Number(ratingMin) : undefined,
+      created_from: joinedFrom || undefined, created_to: joinedTo || undefined,
       page,
       page_size: 25,
-    }), [q, roleFilter, availFilter, cityFilter, isActiveFilter, page]),
-    [q, roleFilter, availFilter, cityFilter, isActiveFilter, page],
+    }), [q, roleFilter, availFilter, cityFilter, isActiveFilter, verifiedFilter, tenantFilter, jobCountMin, ratingMin, joinedFrom, joinedTo, page]),
+    [q, roleFilter, availFilter, cityFilter, isActiveFilter, verifiedFilter, tenantFilter, jobCountMin, ratingMin, joinedFrom, joinedTo, page],
   );
 
   const listData = (listFetch.data as { data?: { staff: AdminStaffMember[]; meta: { page: number; total: number; total_pages: number } } } | null)?.data;
   const staffList = listData?.staff ?? [];
   const meta = listData?.meta;
 
-  const activeFilterCount = [roleFilter, availFilter, cityFilter, isActiveFilter].filter(Boolean).length;
+  const activeFilterCount = [roleFilter, availFilter, cityFilter, isActiveFilter, verifiedFilter, tenantFilter, jobCountMin, ratingMin, joinedFrom, joinedTo].filter(Boolean).length;
+
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const params: Record<string, string> = {};
+      if (q) params.q = q;
+      if (roleFilter) params.role = roleFilter;
+      if (availFilter) params.availability_status = availFilter;
+      if (cityFilter) params.city = cityFilter;
+      if (isActiveFilter) params.is_active = isActiveFilter;
+      if (verifiedFilter) params.is_verified = verifiedFilter;
+      if (tenantFilter) params.tenant_id = tenantFilter;
+      if (jobCountMin) params.job_count_min = jobCountMin;
+      if (ratingMin) params.rating_min = ratingMin;
+      if (joinedFrom) params.created_from = joinedFrom;
+      if (joinedTo) params.created_to = joinedTo;
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+      const token = localStorage.getItem("serviceos_admin_token") ?? "";
+      const response = await fetch(`${API_BASE}${adminStaffApi.export(params)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error(`Export failed (${response.status})`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `staff-${new Date().toISOString().slice(0, 10)}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.alert("Staff export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const goToPage = (p: number) => { if (meta && p >= 1 && p <= meta.total_pages) setPage(p); };
 
@@ -230,9 +289,29 @@ function StaffContent() {
       },
     },
   ];
+  const visibleKeys = new Set(columnState.filter(c => c.visible).sort((a, b) => a.order - b.order).map(c => c.key));
+  const visibleColumns = columns.filter(column => visibleKeys.has(column.key));
+  const enterpriseFilters: Record<string, unknown> = {
+    ...(q ? { q } : {}), ...(roleFilter ? { role: roleFilter } : {}),
+    ...(availFilter ? { availability_status: availFilter } : {}), ...(cityFilter ? { city: cityFilter } : {}),
+    ...(isActiveFilter ? { is_active: isActiveFilter === "true" } : {}),
+    ...(verifiedFilter ? { is_verified: verifiedFilter === "true" } : {}),
+    ...(tenantFilter ? { tenant_id: tenantFilter } : {}), ...(jobCountMin ? { job_count_min: Number(jobCountMin) } : {}),
+    ...(ratingMin ? { rating_min: Number(ratingMin) } : {}), ...(joinedFrom ? { created_from: joinedFrom } : {}),
+    ...(joinedTo ? { created_to: joinedTo } : {}),
+  };
+
+  function applySavedView(view: Record<string, unknown>) {
+    setQ(String(view.q ?? view.search ?? "")); setInputQ(String(view.q ?? view.search ?? ""));
+    setRoleFilter(String(view.role ?? "")); setAvailFilter(String(view.availability_status ?? ""));
+    setCityFilter(String(view.city ?? "")); setIsActiveFilter(view.is_active === undefined ? "" : String(view.is_active));
+    setVerifiedFilter(view.is_verified === undefined ? "" : String(view.is_verified)); setTenantFilter(String(view.tenant_id ?? ""));
+    setJobCountMin(String(view.job_count_min ?? "")); setRatingMin(String(view.rating_min ?? ""));
+    setJoinedFrom(String(view.created_from ?? "")); setJoinedTo(String(view.created_to ?? "")); setPage(1);
+  }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="operations-admin-page" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Summary cards */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         {summary ? (
@@ -255,7 +334,6 @@ function StaffContent() {
             />
             <SummaryCard
               label="Unverified" value={summary.unverified}
-              onClick={() => { setIsActiveFilter(""); setPage(1); }}
             />
             <SummaryCard label="New This Week" value={summary.new_this_week} />
           </>
@@ -267,16 +345,20 @@ function StaffContent() {
       </div>
 
       {/* Toolbar */}
+      <OperationsDirectoryControls resourceKey="admin_staff" filters={enterpriseFilters}
+        sort={{ sort_by: "full_name", sort_direction: "asc" }} columns={columnState}
+        onApplyView={applySavedView} onColumnsChange={setColumnState} />
       <Card padding={0}>
         <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+            <Search size={14} style={{ position: "absolute", left: 11, top: 11, color: "var(--text-tertiary)" }} />
             <input
               placeholder="Search by name, email, or phone…"
               value={inputQ}
               onChange={e => setInputQ(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") { setQ(inputQ); setPage(1); } }}
               style={{
-                width: "100%", height: 36, padding: "0 12px", border: "1px solid var(--border)",
+                width: "100%", height: 36, padding: "0 12px 0 34px", border: "1px solid var(--border)",
                 borderRadius:"var(--radius-md)", fontSize: 13, background: "var(--card-bg)", color: "var(--text)",
                 outline: "none", boxSizing: "border-box",
               }}
@@ -306,19 +388,13 @@ function StaffContent() {
             Filters {activeFilterCount > 0 && <span style={{ marginLeft: 4, background: "var(--primary)", color: "#fff", borderRadius: 10, padding: "0 6px", fontSize: 10 }}>{activeFilterCount}</span>}
           </Btn>
 
-          <a
-            href={adminStaffApi.export({
-              ...(q ? { q } : {}),
-              ...(roleFilter ? { role: roleFilter } : {}),
-              ...(availFilter ? { availability_status: availFilter } : {}),
-              ...(cityFilter ? { city: cityFilter } : {}),
-            })}
-            download="staff_export.csv"
-          >
-            <Btn variant="ghost" size="sm"><Download size={13} style={{ marginRight: 4 }} />CSV</Btn>
-          </a>
+          <Btn variant="ghost" size="sm" disabled={exporting} onClick={exportCsv}>
+            <Download size={13} style={{ marginRight: 4 }} />{exporting ? "Exporting…" : "CSV"}
+          </Btn>
 
-          <Btn variant="ghost" size="sm" onClick={() => listFetch.refetch()}>↻</Btn>
+          <Btn variant="ghost" size="sm" onClick={() => { listFetch.refetch(); summaryFetch.refetch(); }}>
+            <RefreshCw size={13} style={{ marginRight: 4 }} />Refresh
+          </Btn>
         </div>
 
         {/* Advanced filters */}
@@ -336,6 +412,16 @@ function StaffContent() {
               value={isActiveFilter}
               onChange={v => { setIsActiveFilter(v); setPage(1); }}
             />
+            <SearchDropdown label="Verification" options={ACTIVE_OPTIONS.map(o => ({ value: o.value, label: o.value === "true" ? "Verified" : "Unverified" }))}
+              value={verifiedFilter} onChange={v => { setVerifiedFilter(v); setPage(1); }} />
+            <SearchDropdown label="Provider" options={filterOpts?.tenants ?? []} value={tenantFilter}
+              onChange={v => { setTenantFilter(v); setPage(1); }} />
+            <input aria-label="Minimum jobs" type="number" min="0" placeholder="Min jobs" value={jobCountMin}
+              onChange={e => { setJobCountMin(e.target.value); setPage(1); }} className="operations-filter-input" />
+            <input aria-label="Minimum rating" type="number" min="0" max="5" step="0.5" placeholder="Min rating" value={ratingMin}
+              onChange={e => { setRatingMin(e.target.value); setPage(1); }} className="operations-filter-input" />
+            <input aria-label="Joined from" type="date" value={joinedFrom} onChange={e => { setJoinedFrom(e.target.value); setPage(1); }} className="operations-filter-input" />
+            <input aria-label="Joined to" type="date" value={joinedTo} onChange={e => { setJoinedTo(e.target.value); setPage(1); }} className="operations-filter-input" />
           </div>
         )}
 
@@ -346,15 +432,26 @@ function StaffContent() {
             {availFilter && <FilterChip label={`Status: ${availFilter}`} onRemove={() => { setAvailFilter(""); setPage(1); }} />}
             {cityFilter && <FilterChip label={`City: ${cityFilter}`} onRemove={() => { setCityFilter(""); setPage(1); }} />}
             {isActiveFilter && <FilterChip label={isActiveFilter === "true" ? "Active only" : "Deactivated only"} onRemove={() => { setIsActiveFilter(""); setPage(1); }} />}
+            {verifiedFilter && <FilterChip label={verifiedFilter === "true" ? "Verified" : "Unverified"} onRemove={() => { setVerifiedFilter(""); setPage(1); }} />}
+            {tenantFilter && <FilterChip label="Provider filter" onRemove={() => { setTenantFilter(""); setPage(1); }} />}
+            {jobCountMin && <FilterChip label={`Jobs ≥ ${jobCountMin}`} onRemove={() => { setJobCountMin(""); setPage(1); }} />}
+            {ratingMin && <FilterChip label={`Rating ≥ ${ratingMin}`} onRemove={() => { setRatingMin(""); setPage(1); }} />}
             <Btn variant="ghost" size="sm" onClick={() => {
-              setRoleFilter(""); setAvailFilter(""); setCityFilter(""); setIsActiveFilter(""); setQ(""); setInputQ(""); setPage(1);
+              setRoleFilter(""); setAvailFilter(""); setCityFilter(""); setIsActiveFilter(""); setVerifiedFilter("");
+              setTenantFilter(""); setJobCountMin(""); setRatingMin(""); setJoinedFrom(""); setJoinedTo(""); setQ(""); setInputQ(""); setPage(1);
             }} style={{ fontSize: 11 }}>Clear all</Btn>
           </div>
         )}
 
         {/* Table */}
+        {listFetch.error && (
+          <div role="alert" style={{ margin: "0 16px 12px", padding: 12, borderRadius: "var(--radius-md)",
+            background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 13 }}>
+            Could not load staff. {listFetch.error}
+          </div>
+        )}
         <DataTable
-          columns={columns as unknown as Parameters<typeof DataTable>[0]["columns"]}
+          columns={visibleColumns as unknown as Parameters<typeof DataTable>[0]["columns"]}
           rows={staffList as unknown as Record<string, unknown>[]}
           loading={listFetch.loading}
           emptyText={activeFilterCount > 0 || q ? "No staff match the current filters." : "No staff members found on this platform."}
@@ -382,7 +479,7 @@ export default function AdminStaffPage() {
     <AdminLayout activeNav="staff">
       <SectionHeader
         title="Staff Management"
-        subtitle="View and manage staff across the entire platform"
+        subtitle="Platform-wide team availability, workload, verification and provider assignment."
         icon={<Users size={18} />}
       />
       <StaffContent />

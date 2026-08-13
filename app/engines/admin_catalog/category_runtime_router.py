@@ -30,12 +30,13 @@ from datetime import timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from sqlalchemy import text
+from sqlalchemy import bindparam, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import require_super_admin, get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.engines.admin_catalog.service import AdminCatalogService
+from app.engines.admin_catalog.models import ServiceCategory
 from app.schemas.base import ok
 
 router = APIRouter(prefix="/v1/admin/categories", tags=["Category Runtime"])
@@ -102,9 +103,7 @@ async def _linked_counts(db: AsyncSession, category_ids: list[str]) -> dict[str,
     if not category_ids:
         return {}
 
-    id_list = ", ".join(f"'{cid}'" for cid in category_ids)
-
-    sql = text(f"""
+    sql = text("""
         SELECT
             sc.id::text                                              AS category_id,
             COALESCE(sg.cnt, 0)                                      AS service_groups,
@@ -117,58 +116,57 @@ async def _linked_counts(db: AsyncSession, category_ids: list[str]) -> dict[str,
         LEFT JOIN (
             SELECT category_id, COUNT(*) AS cnt
             FROM service_groups
-            WHERE deleted_at IS NULL
+            WHERE deleted_at IS NULL AND category_id IN :category_ids
             GROUP BY category_id
         ) sg ON sg.category_id = sc.id
         LEFT JOIN (
             SELECT category_id, COUNT(*) AS cnt
             FROM master_services
-            WHERE is_active = TRUE AND deleted_at IS NULL
+            WHERE is_active = TRUE AND deleted_at IS NULL AND category_id IN :category_ids
             GROUP BY category_id
         ) ms ON ms.category_id = sc.id
         LEFT JOIN (
             SELECT category_id, COUNT(*) AS cnt
             FROM service_pricing_rules
-            WHERE is_active = TRUE AND deleted_at IS NULL AND category_id IS NOT NULL
+            WHERE is_active = TRUE AND deleted_at IS NULL AND category_id IN :category_ids
             GROUP BY category_id
         ) pr ON pr.category_id = sc.id
         LEFT JOIN (
             SELECT category_id, COUNT(*) AS cnt
             FROM brands
-            WHERE is_active = TRUE AND deleted_at IS NULL AND category_id IS NOT NULL
+            WHERE is_active = TRUE AND deleted_at IS NULL AND category_id IN :category_ids
             GROUP BY category_id
         ) br ON br.category_id = sc.id
         LEFT JOIN (
-            SELECT category_id, COUNT(DISTINCT tpa.id) AS cnt
-            FROM master_services ms2
-            JOIN tenant_package_assignments tpa ON tpa.category_id = ms2.category_id
-            WHERE ms2.is_active = TRUE AND ms2.deleted_at IS NULL
-            GROUP BY ms2.category_id
+            SELECT sc2.id AS category_id, COUNT(DISTINCT sp.id) AS cnt
+            FROM service_categories sc2
+            JOIN service_packages sp ON sp.vertical_type = sc2.vertical_type
+            WHERE sp.is_active = TRUE AND sp.deleted_at IS NULL
+              AND sc2.id IN :category_ids
+            GROUP BY sc2.id
         ) pkg ON pkg.category_id = sc.id
         LEFT JOIN (
             SELECT ts2.category_id, COUNT(DISTINCT ts2.tenant_id) AS cnt
             FROM tenant_services ts2
             WHERE ts2.is_active = TRUE AND ts2.deleted_at IS NULL
+              AND ts2.category_id IN :category_ids
             GROUP BY ts2.category_id
         ) ts ON ts.category_id = sc.id
-        WHERE sc.id::text IN ({id_list})
-    """)
-    try:
-        rows = (await db.execute(sql)).mappings().all()
-        return {
-            row["category_id"]: {
-                "service_groups": int(row["service_groups"] or 0),
-                "services": int(row["services"] or 0),
-                "pricing_rules": int(row["pricing_rules"] or 0),
-                "brands": int(row["brands"] or 0),
-                "packages": int(row["packages"] or 0),
-                "providers": int(row["providers"] or 0),
-            }
-            for row in rows
+        WHERE sc.id IN :category_ids
+    """).bindparams(bindparam("category_ids", expanding=True))
+    ids = [uuid.UUID(str(cid)) for cid in category_ids]
+    rows = (await db.execute(sql, {"category_ids": ids})).mappings().all()
+    return {
+        row["category_id"]: {
+            "service_groups": int(row["service_groups"] or 0),
+            "services": int(row["services"] or 0),
+            "pricing_rules": int(row["pricing_rules"] or 0),
+            "brands": int(row["brands"] or 0),
+            "packages": int(row["packages"] or 0),
+            "providers": int(row["providers"] or 0),
         }
-    except Exception:
-        return {cid: {"service_groups": 0, "services": 0, "pricing_rules": 0, "brands": 0, "packages": 0, "providers": 0}
-                for cid in category_ids}
+        for row in rows
+    }
 
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -260,79 +258,78 @@ async def list_categories(
     svc: AdminCatalogService = Depends(_svc),
     db: AsyncSession = Depends(get_db),
 ):
-    data = await svc.list_categories(is_active=is_active if isinstance(is_active, bool) else None)
-    cats = data["categories"]
-
-    # Apply category_type filter (legacy)
-    if category_type:
-        cats = [c for c in cats if c.get("category_type") == category_type]
-
-    # Apply server-side filters
-    if q:
-        ql = q.lower()
-        cats = [c for c in cats if ql in c["name"].lower()
-                or ql in (c.get("slug") or "").lower()
-                or ql in (c.get("description") or "").lower()]
+    # This endpoint previously loaded every category, filtered/sorted it in
+    # Python, fetched relationship counts for every match, and only then
+    # sliced a page. The UI looked paginated but memory and query work grew
+    # with the entire catalog. Keep the response contract while making the
+    # database own filtering, counting, sorting, and pagination.
+    conditions = []
+    if q and q.strip():
+        needle = f"%{q.strip()}%"
+        conditions.append(or_(ServiceCategory.name.ilike(needle), ServiceCategory.slug.ilike(needle),
+                              ServiceCategory.description.ilike(needle)))
     if vertical_type:
-        cats = [c for c in cats if c.get("vertical_type") == vertical_type]
+        conditions.append(ServiceCategory.vertical_type == vertical_type)
     if finance_model:
-        cats = [c for c in cats if c.get("finance_model") == finance_model]
+        conditions.append(ServiceCategory.finance_model == finance_model)
     if customer_flow_type:
-        cats = [c for c in cats if c.get("customer_flow_type") == customer_flow_type]
+        conditions.append(ServiceCategory.customer_flow_type == customer_flow_type)
+    if category_type:
+        conditions.append(ServiceCategory.category_type == category_type)
     if status == "active":
-        cats = [c for c in cats if c.get("is_active")]
+        conditions.append(ServiceCategory.is_active.is_(True))
     elif status == "inactive":
-        cats = [c for c in cats if not c.get("is_active")]
+        conditions.append(ServiceCategory.is_active.is_(False))
+    elif isinstance(is_active, bool):
+        conditions.append(ServiceCategory.is_active == is_active)
     if customer_visible is not None:
-        cats = [c for c in cats if c.get("is_customer_visible") == customer_visible]
+        conditions.append(ServiceCategory.is_customer_visible == customer_visible)
     if tenant_selectable is not None:
-        cats = [c for c in cats if c.get("tenant_selectable") == tenant_selectable]
+        conditions.append(ServiceCategory.tenant_selectable == tenant_selectable)
     if pricing_supported is not None:
-        cats = [c for c in cats if c.get("pricing_supported") == pricing_supported]
+        conditions.append(ServiceCategory.pricing_supported == pricing_supported)
 
-    # Fetch linked counts for all filtered categories
-    cat_ids = [c["category_id"] for c in cats]
-    counts_map = await _linked_counts(db, cat_ids)
+    # Readiness is a derived state. Express its precedence rules in SQL so a
+    # readiness filter is still applied before COUNT/LIMIT (never to one page).
+    has_services = "(EXISTS (SELECT 1 FROM master_services ms WHERE ms.category_id = service_categories.id AND ms.is_active AND ms.deleted_at IS NULL) OR EXISTS (SELECT 1 FROM service_groups sg WHERE sg.category_id = service_categories.id AND sg.deleted_at IS NULL))"
+    has_pricing = "EXISTS (SELECT 1 FROM service_pricing_rules pr WHERE pr.category_id = service_categories.id AND pr.is_active AND pr.deleted_at IS NULL)"
+    # Package readiness means an administratively configured, active package
+    # exists for the category's vertical type. Tenant assignments are usage
+    # records and intentionally do not own category identity.
+    has_packages = "EXISTS (SELECT 1 FROM service_packages sp WHERE sp.vertical_type = service_categories.vertical_type AND sp.is_active AND sp.deleted_at IS NULL)"
+    pricing_ready = f"(NOT service_categories.pricing_supported OR {has_pricing})"
+    readiness_filters = {
+        "inactive": "NOT service_categories.is_active",
+        "missing_services": f"service_categories.is_active AND NOT {has_services}",
+        "missing_pricing": f"service_categories.is_active AND {has_services} AND service_categories.pricing_supported AND NOT {has_pricing}",
+        "missing_flow_config": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.customer_flow_type IS NULL",
+        "missing_package": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.customer_flow_type IS NOT NULL AND service_categories.tenant_selectable AND NOT {has_packages}",
+        "ready": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.customer_flow_type IS NOT NULL AND service_categories.finance_model IS NOT NULL AND (NOT service_categories.tenant_selectable OR {has_packages})",
+        "incomplete": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.customer_flow_type IS NOT NULL AND service_categories.finance_model IS NULL AND (NOT service_categories.tenant_selectable OR {has_packages})",
+    }
+    if readiness_status in readiness_filters:
+        conditions.append(text(readiness_filters[readiness_status]))
 
-    # Attach linked counts + readiness to each category
-    enriched = []
-    for c in cats:
-        cid = c["category_id"]
-        linked = counts_map.get(cid, {"service_groups": 0, "services": 0, "pricing_rules": 0, "brands": 0, "packages": 0, "providers": 0})
-        c_copy = {**c, "linked_counts": linked}
-        rd = _compute_readiness(c_copy)
-        c_copy["readiness_status"] = rd["readiness_status"]
-        c_copy["readiness_items"] = rd["readiness_items"]
-        enriched.append(c_copy)
-
-    # Filter by readiness_status after computing
-    if readiness_status:
-        enriched = [c for c in enriched if c.get("readiness_status") == readiness_status]
-
-    total = len(enriched)
-
-    # Sort
-    valid_sort = {"display_order", "name", "vertical_type", "finance_model", "readiness_status", "updated_at"}
-    sort_key = sort_by if sort_by in valid_sort else "display_order"
-    reverse = sort_dir == "desc"
-    # FINAL-L5-05AK: `c.get(sort_key) or ""` treated falsy-but-valid values
-    # (display_order == 0, e.g. the real seeded "Home Services" category)
-    # as "missing" and substituted "" -- mixing int and str in the same
-    # sort comparison raises TypeError on every call with the default
-    # sort_by="display_order", which is exactly why GET /v1/admin/categories
-    # 500'd unconditionally. Use an explicit None-check with a
-    # type-appropriate default instead of a truthy/falsy fallback.
-    _numeric_sort_keys = {"display_order"}
-    def _sort_value(c: dict):
-        v = c.get(sort_key)
-        if v is not None:
-            return v
-        return 0 if sort_key in _numeric_sort_keys else ""
-    enriched.sort(key=_sort_value, reverse=reverse)
-
-    # Paginate
-    offset = (page - 1) * page_size
-    page_items = enriched[offset: offset + page_size]
+    total = int((await db.execute(select(func.count()).select_from(ServiceCategory).where(*conditions))).scalar_one())
+    sort_columns = {
+        "display_order": ServiceCategory.display_order, "name": ServiceCategory.name,
+        "vertical_type": ServiceCategory.vertical_type, "finance_model": ServiceCategory.finance_model,
+        "updated_at": ServiceCategory.updated_at,
+    }
+    sort_column = sort_columns.get(sort_by, ServiceCategory.display_order)
+    ordering = sort_column.desc().nullslast() if sort_dir == "desc" else sort_column.asc().nullsfirst()
+    rows = (await db.execute(
+        select(ServiceCategory).where(*conditions).order_by(ordering, ServiceCategory.id.asc())
+        .offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    cats = [svc._cat_dict(c) for c in rows]
+    counts_map = await _linked_counts(db, [c["category_id"] for c in cats])
+    page_items = []
+    for cat in cats:
+        linked = counts_map.get(cat["category_id"], {"service_groups": 0, "services": 0, "pricing_rules": 0, "brands": 0, "packages": 0, "providers": 0})
+        item = {**cat, "linked_counts": linked}
+        item.update(_compute_readiness(item))
+        page_items.append(item)
 
     return ok({
         "items": page_items,
@@ -447,7 +444,40 @@ async def get_category_runtime(
     rd = _compute_readiness({**data, "linked_counts": linked})
     data["readiness_status"] = rd["readiness_status"]
     data["readiness_items"] = rd["readiness_items"]
-    return ok(data, _rid(r), "category_runtime")
+
+    # The detail console consumes a composite runtime view, not the flat
+    # category record returned by GET /{id}. This contract was accidentally
+    # flattened, causing the page to dereference a missing engine_summary and
+    # render blank. Build the view from canonical stored fields/counts.
+    engines = []
+    if data.get("primary_engine_key"):
+        key = data["primary_engine_key"]
+        engines.append({
+            "engine_id": key, "engine_key": key,
+            "name": key.replace("_", " ").title(), "display_name": key.replace("_", " ").title(),
+            "is_primary": True, "is_required": True, "is_enabled": True, "display_order": 0,
+        })
+    modules = []
+    if data.get("provider_dashboard_type"):
+        modules = [
+            {"module_id": "jobs", "module_key": "jobs", "display_name": "Jobs", "module_type": "table", "is_enabled": True, "is_required": True, "display_order": 1},
+            {"module_id": "wallet", "module_key": "wallet", "display_name": "Wallet", "module_type": "metric_card", "is_enabled": True, "is_required": False, "display_order": 2},
+            {"module_id": "analytics", "module_key": "analytics", "display_name": "Analytics", "module_type": "chart", "is_enabled": True, "is_required": False, "display_order": 3},
+        ]
+    tenant_row = (await db.execute(text("""
+        SELECT COUNT(DISTINCT tenant_id) AS total,
+               COUNT(DISTINCT tenant_id) FILTER (WHERE is_active = TRUE AND deleted_at IS NULL) AS active
+        FROM tenant_services WHERE category_id = :category_id
+    """), {"category_id": category_id})).mappings().one()
+    return ok({
+        "category": data,
+        "running_engines": engines,
+        "engine_summary": {"total": len(engines), "required": len(engines), "optional": 0,
+                           "primary": engines[0] if engines else None},
+        "dashboard_modules": modules,
+        "tenant_count": int(tenant_row["total"] or 0),
+        "active_tenant_count": int(tenant_row["active"] or 0),
+    }, _rid(r), "category_runtime")
 
 
 @router.put("/{category_id}/runtime", summary="Update category runtime config")

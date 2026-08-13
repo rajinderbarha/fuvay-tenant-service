@@ -3,7 +3,10 @@ import { useCallback, useState, useEffect, useRef } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { complaintsApi, adminComplaintPolicyApi, ComplaintPolicyRecord } from "../../../lib/api";
-import { Btn } from "../../../components/shared/ui";
+import { Btn, SectionHeader } from "../../../components/shared/ui";
+import { AlertOctagon, Download, RefreshCw, Radio } from "lucide-react";
+import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
+import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface ComplaintItem {
@@ -246,11 +249,27 @@ function ComplaintRow({ item, onView, onAISettle, onFinalize }: {
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function AdminComplaintsPage() {
+  const [columnState, setColumnState] = useState<ColumnDef[]>([
+    { key: "complaint_number", label: "Complaint #", visible: true, order: 0 },
+    { key: "status", label: "Status / SLA", visible: true, order: 1 },
+    { key: "priority", label: "Priority", visible: true, order: 2 },
+    { key: "complaint_type", label: "Type", visible: true, order: 3 },
+    { key: "title", label: "Title", visible: true, order: 4 },
+    { key: "tenant_name", label: "Tenant / customer", visible: true, order: 5 },
+    { key: "activity", label: "Activity", visible: true, order: 6 },
+    { key: "actions", label: "Actions", visible: true, order: 7 },
+  ]);
   const [tab, setTab] = useState<"complaints" | "policies">("complaints");
   const [q, setQ]               = useState("");
   const [status, setStatus]     = useState("");
   const [slaFilter, setSla]     = useState("");
   const [priority, setPriority] = useState("");
+  const [tenantId, setTenantId] = useState("");
+  const [severity, setSeverity] = useState("");
+  const [recordType, setRecordType] = useState("");
+  const [complaintType, setComplaintType] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [page, setPage]         = useState(1);
   const [pageSize]              = useState(25);
   const [sortBy, setSortBy]     = useState("created_at");
@@ -258,9 +277,11 @@ export default function AdminComplaintsPage() {
   const [cardFilter, setCardFilter] = useState("");
   const [newToday, setNewToday] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: sumData } = useApi(() => complaintsApi.adminSummary(), []);
+  const { data: filterOptions } = useApi(() => complaintsApi.filterOptions(), []);
   // apiFetch unwraps the standard { data } envelope, so sumData already is
   // the summary payload. Double-unwrapping hid every summary card.
   const summary: Partial<ComplaintSummary> = sumData ?? {};
@@ -270,17 +291,19 @@ export default function AdminComplaintsPage() {
     status: cardFilter || status || undefined,
     sla_status: slaFilter || undefined,
     priority: priority || undefined,
-    date_from: newToday ? (() => {
+    tenant_id: tenantId || undefined, severity: severity || undefined,
+    record_type: recordType || undefined, complaint_type: complaintType || undefined,
+    date_from: dateFrom || (newToday ? (() => {
       const start = new Date();
       start.setHours(0, 0, 0, 0);
       return start.toISOString();
-    })() : undefined,
+    })() : undefined), date_to: dateTo || undefined,
     page, page_size: pageSize, sort_by: sortBy, sort_dir: sortDir,
   };
 
   const { data: listData, loading, error, refetch } = useApi(
     () => complaintsApi.adminList(listParams),
-    [q, status, slaFilter, priority, page, sortBy, sortDir, cardFilter, newToday],
+    [q, status, slaFilter, priority, tenantId, severity, recordType, complaintType, dateFrom, dateTo, page, sortBy, sortDir, cardFilter, newToday],
   );
 
   const items: ComplaintItem[] = (listData?.items ?? []) as unknown as ComplaintItem[];
@@ -309,21 +332,50 @@ export default function AdminComplaintsPage() {
     }, [refetch])
   );
 
-  const handleExport = useCallback(() => {
-    const rows = [
-      ["Complaint #", "Status", "Priority", "Severity", "SLA", "Type", "Title", "Tenant", "Customer", "Created"],
-      ...items.map((c: ComplaintItem) => [
-        c.complaint_number, c.status, c.priority, c.severity ?? "", c.sla_status ?? "",
-        c.complaint_type, c.title ?? "", c.tenant_name ?? "", c.customer_name ?? "", c.created_at ?? "",
-      ]),
-    ];
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const a = Object.assign(document.createElement("a"), {
-      href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
-      download: `complaints-${new Date().toISOString().slice(0, 10)}.csv`,
-    });
-    a.click();
-  }, [items]);
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const filters: Record<string, string> = {};
+      if (q) filters.q = q;
+      if (cardFilter || status) filters.status = cardFilter || status;
+      if (slaFilter) filters.sla_status = slaFilter;
+      if (priority) filters.priority = priority;
+      if (tenantId) filters.tenant_id = tenantId;
+      if (severity) filters.severity = severity;
+      if (recordType) filters.record_type = recordType;
+      if (complaintType) filters.complaint_type = complaintType;
+      if (dateFrom) filters.date_from = dateFrom;
+      if (dateTo) filters.date_to = dateTo;
+      if (newToday && listParams.date_from) filters.date_from = listParams.date_from;
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+      const token = localStorage.getItem("serviceos_admin_token") ?? "";
+      const response = await fetch(`${API_BASE}${complaintsApi.exportUrl(filters)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error(`Export failed (${response.status})`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `complaints-${new Date().toISOString().slice(0, 10)}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.alert("Complaint export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }, [q, cardFilter, status, slaFilter, priority, tenantId, severity, recordType, complaintType, dateFrom, dateTo, newToday, listParams.date_from]);
+
+  const enterpriseFilters: Record<string, unknown> = Object.fromEntries(Object.entries(listParams).filter(([key, value]) =>
+    !["page", "page_size", "sort_by", "sort_dir"].includes(key) && value !== undefined && value !== ""));
+  function applySavedView(view: Record<string, unknown>, savedSort: Record<string, unknown>) {
+    setQ(String(view.q ?? view.search ?? "")); setStatus(String(view.status ?? "")); setSla(String(view.sla_status ?? ""));
+    setPriority(String(view.priority ?? "")); setTenantId(String(view.tenant_id ?? "")); setSeverity(String(view.severity ?? ""));
+    setRecordType(String(view.record_type ?? "")); setComplaintType(String(view.complaint_type ?? ""));
+    setDateFrom(String(view.date_from ?? "")); setDateTo(String(view.date_to ?? ""));
+    setSortBy(String(savedSort.sort_by ?? "created_at")); setSortDir(savedSort.sort_direction === "asc" ? "asc" : "desc"); setPage(1);
+  }
 
   const toggleSort = (col: string) => {
     if (sortBy === col) setSortDir((d: "asc" | "desc") => d === "asc" ? "desc" : "asc");
@@ -353,32 +405,37 @@ export default function AdminComplaintsPage() {
       {label}
     </th>
   );
+  const visibleComplaintColumns = new Set(columnState.filter(column => column.visible).map(column => column.key));
+  const complaintColumnCss = [
+    ["complaint_number", 1], ["status", 2], ["priority", 3], ["complaint_type", 4],
+    ["title", 5], ["tenant_name", 6], ["activity", 7], ["actions", 8],
+  ].filter(([key]) => !visibleComplaintColumns.has(String(key)))
+    .map(([, position]) => `.admin-complaints-grid th:nth-child(${position}), .admin-complaints-grid td:nth-child(${position}) { display: none; }`)
+    .join("\n");
 
   return (
-    <AdminLayout>
-      <div style={{ padding: "24px 32px", maxWidth: 1400, margin: "0 auto" }}>
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, gap: 16, flexWrap: "wrap" }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>Complaints & Disputes</h1>
-            <p style={{ margin: "4px 0 0", fontSize: 14, color: "var(--text-tertiary)" }}>
-              Platform-wide complaint monitoring with SLA tracking and AI settlement
-            </p>
-          </div>
-          {tab === "complaints" && (
-            <div style={{ display: "flex", gap: 8 }}>
+    <AdminLayout activeNav="complaints">
+      <div className="operations-admin-page">
+        <SectionHeader
+          title="Complaints & Disputes"
+          subtitle="Platform-wide complaint monitoring, SLA response and governed settlement."
+          icon={<AlertOctagon size={18} />}
+          actions={tab === "complaints" ? (
+            <>
               <Btn
                 size="sm"
                 variant={autoRefresh ? "success" : "secondary"}
                 onClick={() => setAutoRefresh((a: boolean) => !a)}
               >
-                {autoRefresh ? "● Live" : "Auto-refresh"}
+                <Radio size={14} style={{ marginRight: 5 }} />{autoRefresh ? "Live · 30s" : "Auto-refresh"}
               </Btn>
-              <Btn size="sm" variant="secondary" onClick={handleExport}>Export CSV</Btn>
-              <Btn size="sm" variant="primary" onClick={refetch}>Refresh</Btn>
-            </div>
-          )}
-        </div>
+              <Btn size="sm" variant="secondary" disabled={exporting} onClick={handleExport}>
+                <Download size={14} style={{ marginRight: 5 }} />{exporting ? "Exporting…" : "Export CSV"}
+              </Btn>
+              <Btn size="sm" variant="primary" onClick={refetch}><RefreshCw size={14} style={{ marginRight: 5 }} />Refresh</Btn>
+            </>
+          ) : undefined}
+        />
 
         {/* Tabs -- Policies folded in here 2026-08-05 (was a separate
             /admin/complaint-policies page/nav item) at explicit user
@@ -397,11 +454,17 @@ export default function AdminComplaintsPage() {
         {tab === "policies" && <ComplaintPoliciesPanel />}
 
         {tab === "complaints" && <>
+        <div style={{ marginBottom: 16 }}>
+          <OperationsDirectoryControls resourceKey="admin_complaints" filters={enterpriseFilters}
+            sort={{ sort_by: sortBy, sort_direction: sortDir }} columns={columnState}
+            onApplyView={applySavedView} onColumnsChange={setColumnState} />
+        </div>
         {/* Summary Cards */}
         {Object.keys(summary).length > 0 && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
             <SummaryCard label="Total" value={summary.total ?? 0}
-              active={cardFilter === ""} onClick={() => { setCardFilter(""); setPage(1); }} />
+              active={!cardFilter && !status && !slaFilter && !priority && !newToday}
+              onClick={() => { setCardFilter(""); setStatus(""); setSla(""); setPriority(""); setNewToday(false); setPage(1); }} />
             <SummaryCard label="Open" value={summary.open ?? 0}
               active={cardFilter === "open"} onClick={() => { setCardFilter("open"); setPage(1); }} />
             <SummaryCard label="SLA Breached" value={summary.sla_breached ?? 0}
@@ -409,7 +472,7 @@ export default function AdminComplaintsPage() {
             <SummaryCard label="Pending Admin" value={summary.pending_admin ?? 0}
               active={cardFilter === "under_admin_review"} onClick={() => { setCardFilter("under_admin_review"); setPage(1); }} />
             <SummaryCard label="High Priority" value={summary.high_priority ?? 0}
-              active={priority === "high"} onClick={() => { setPriority(priority === "high" ? "" : "high"); setPage(1); }} />
+              active={priority === "high,urgent"} onClick={() => { setPriority(priority === "high,urgent" ? "" : "high,urgent"); setPage(1); }} />
             <SummaryCard label="AI Settlement" value={summary.in_ai_settlement ?? 0}
               active={cardFilter === "ai_settlement_started"}
               onClick={() => { setCardFilter(cardFilter === "ai_settlement_started" ? "" : "ai_settlement_started"); setNewToday(false); setPage(1); }} />
@@ -423,7 +486,7 @@ export default function AdminComplaintsPage() {
 
         {/* Quick filters */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-          <Chip label="All" active={!cardFilter && !slaFilter && !newToday} onClick={() => { setCardFilter(""); setSla(""); setNewToday(false); setPage(1); }} />
+          <Chip label="All" active={!cardFilter && !status && !slaFilter && !priority && !newToday} onClick={() => { setCardFilter(""); setStatus(""); setSla(""); setPriority(""); setNewToday(false); setPage(1); }} />
           <Chip label="SLA Breached" active={slaFilter === "breached"}
             onClick={() => { setSla(slaFilter === "breached" ? "" : "breached"); setPage(1); }} />
           <Chip label="Awaiting Provider" active={status === "awaiting_provider_response"}
@@ -476,6 +539,7 @@ export default function AdminComplaintsPage() {
             <option value="">All Priorities</option>
             <option value="urgent">Urgent</option>
             <option value="high">High</option>
+            <option value="high,urgent">High + Urgent</option>
             <option value="normal">Normal</option>
             <option value="low">Low</option>
           </select>
@@ -490,6 +554,24 @@ export default function AdminComplaintsPage() {
             <option value="breached">Breached</option>
             <option value="escalated">Escalated</option>
           </select>
+          <select value={tenantId} onChange={e => { setTenantId(e.target.value); setPage(1); }} className="operations-filter-input">
+            <option value="">All Providers</option>
+            {filterOptions?.tenants?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }} className="operations-filter-input">
+            <option value="">All Severities</option>
+            {filterOptions?.severities?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <select value={recordType} onChange={e => { setRecordType(e.target.value); setPage(1); }} className="operations-filter-input">
+            <option value="">All Records</option>
+            {filterOptions?.record_types?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <select value={complaintType} onChange={e => { setComplaintType(e.target.value); setPage(1); }} className="operations-filter-input">
+            <option value="">All Complaint Types</option>
+            {filterOptions?.complaint_types?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <input aria-label="Complaints from date" type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }} className="operations-filter-input" />
+          <input aria-label="Complaints to date" type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }} className="operations-filter-input" />
         </div>
 
         {/* Error */}
@@ -501,7 +583,7 @@ export default function AdminComplaintsPage() {
 
         {/* Table */}
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className="admin-complaints-grid" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr>
                 <SortTh col="created_at" label="Complaint #" />
@@ -532,6 +614,7 @@ export default function AdminComplaintsPage() {
               ))}
             </tbody>
           </table>
+          {complaintColumnCss && <style>{complaintColumnCss}</style>}
         </div>
 
         {/* Pagination */}
@@ -566,14 +649,31 @@ const policyInputStyle: React.CSSProperties = {
 function ComplaintPoliciesPanel() {
   const { data: policies, loading, error, refetch } = useApi(useCallback(() => adminComplaintPolicyApi.list(), []), []);
   const [editing, setEditing] = useState<ComplaintPolicyRecord | null>(null);
+  const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<Partial<ComplaintPolicyRecord>>({});
 
   const saveAction = useAction(useCallback(async () => {
-    if (!editing) return;
-    await adminComplaintPolicyApi.update(editing.id, form);
+    if (!editing && !creating) return;
+    if (creating) await adminComplaintPolicyApi.create(form);
+    else await adminComplaintPolicyApi.update(editing!.id, form);
     setEditing(null);
+    setCreating(false);
     refetch();
-  }, [editing, form, refetch]));
+  }, [editing, creating, form, refetch]));
+
+  const startCreate = () => {
+    setEditing(null);
+    setCreating(true);
+    setForm({
+      policy_key: "default", policy_name: "Default complaint policy",
+      complaint_window_hours: 72, allow_duplicate_open_complaints: false,
+      allow_rework: true, allow_refund_request: true, require_admin_review: true,
+      is_active: true, ai_settlement_enabled: true,
+      ai_auto_start_on_provider_failure: true, ai_settlement_max_pct: 25,
+      ai_settlement_allowed_remedies: ["credit_points", "rework"],
+      settlement_payout_in_credits_only: true,
+    });
+  };
 
   const startEdit = (p: ComplaintPolicyRecord) => {
     setEditing(p);
@@ -606,6 +706,13 @@ function ComplaintPoliciesPanel() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 900 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        <div>
+          <h2 style={{ fontSize: 16, margin: 0, color: "var(--text-primary)" }}>Complaint policies</h2>
+          <p style={{ fontSize: 12, margin: "3px 0 0", color: "var(--text-tertiary)" }}>Configure response windows, review gates and settlement boundaries.</p>
+        </div>
+        <Btn size="sm" variant="primary" onClick={startCreate}>Create policy</Btn>
+      </div>
       {loading && <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Loading…</p>}
       {error   && <p style={{ fontSize: 13, color: "var(--danger-text)" }}>{error}</p>}
       {policies && policies.length === 0 && <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No policies configured.</p>}
@@ -684,18 +791,32 @@ function ComplaintPoliciesPanel() {
         </div>
       ))}
 
-      {editing && (
+      {(editing || creating) && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex",
           alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div style={{ background: "var(--surface)", borderRadius:"var(--radius-lg)", padding: 24, width: "100%",
             maxWidth: 480, display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-                Edit Policy: {editing.policy_key}
+                {creating ? "Create Complaint Policy" : `Edit Policy: ${editing?.policy_key}`}
               </h2>
-              <button onClick={() => setEditing(null)} style={{ fontSize: 18, background: "none", border: "none",
+              <button onClick={() => { setEditing(null); setCreating(false); }} style={{ fontSize: 18, background: "none", border: "none",
                 cursor: "pointer", color: "var(--text-tertiary)" }}>✕</button>
             </div>
+            {creating && (
+              <>
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Policy key</label>
+                  <input style={{ ...policyInputStyle, width: "100%", boxSizing: "border-box" }} value={form.policy_key ?? ""}
+                    onChange={e => setForm(prev => ({ ...prev, policy_key: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Policy name</label>
+                  <input style={{ ...policyInputStyle, width: "100%", boxSizing: "border-box" }} value={form.policy_name ?? ""}
+                    onChange={e => setForm(prev => ({ ...prev, policy_name: e.target.value }))} />
+                </div>
+              </>
+            )}
             <div>
               <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
                 Complaint Window (hours)

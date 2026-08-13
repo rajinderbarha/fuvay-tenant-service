@@ -20,13 +20,14 @@ require_vertical_not_active(vertical_key)   -> the INVERSE: this tenant has
 """
 from typing import Callable
 
-from fastapi import Depends
-from sqlalchemy import select
+from fastapi import Depends, Request
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.engines.vertical_catalog.models import Vertical, TenantVerticalEnrollment
+from app.engines.tenant_engine.models import Tenant
 from app.exceptions import (
     VerticalDisabledException, TenantVerticalNotActiveException,
     VerticalCapabilityUnavailableException, VerticalAlreadyActiveException,
@@ -49,6 +50,52 @@ def require_vertical_enabled(vertical_key: str) -> Callable:
 
     _guard.__name__ = f"vertical_guard_{vertical_key}"
     return _guard
+
+
+_RESOURCE_TENANT_SQL = {
+    "complaint_id": "SELECT tenant_id FROM customer_complaints WHERE id = :resource_id",
+    "rework_id": "SELECT tenant_id FROM service_rework_requests WHERE id = :resource_id",
+    "refund_id": "SELECT tenant_id FROM refund_requests WHERE id = :resource_id",
+    "review_id": (
+        "SELECT tenant_id FROM customer_reviews WHERE id = :resource_id "
+        "UNION ALL SELECT tenant_id FROM review_replies WHERE review_id = :resource_id LIMIT 1"
+    ),
+    "flag_id": "SELECT tenant_id FROM review_flags WHERE id = :resource_id",
+    "job_id": "SELECT tenant_id FROM service_jobs WHERE id = :resource_id",
+    "quote_id": "SELECT tenant_id FROM service_job_quotes WHERE id = :resource_id",
+}
+
+
+async def require_dynamic_vertical_enabled(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Guard a shared admin route using its resource's owning tenant.
+
+    The vertical is always resolved server-side. A missing resource is passed
+    through so the endpoint can return its normal 404; the guard must never
+    turn a not-found response into a misleading vertical error.
+    """
+    tenant_id = request.path_params.get("tenant_id")
+    if tenant_id is None:
+        for parameter, query in _RESOURCE_TENANT_SQL.items():
+            resource_id = request.path_params.get(parameter)
+            if resource_id is not None:
+                tenant_id = await db.scalar(text(query), {"resource_id": resource_id})
+                break
+    if tenant_id is None:
+        return
+
+    vertical_key = await db.scalar(
+        select(Tenant.vertical).where(Tenant.id == tenant_id)
+    )
+    if vertical_key:
+        vertical = await _load_vertical(db, vertical_key)
+        if not vertical or not vertical.is_enabled:
+            raise VerticalDisabledException(vertical_key)
+
+
+require_dynamic_vertical_enabled.__name__ = "vertical_guard_dynamic"
 
 
 def require_tenant_vertical_active(vertical_key: str) -> Callable:

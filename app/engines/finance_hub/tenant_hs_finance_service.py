@@ -580,6 +580,7 @@ class TenantHomeServicesFinanceService:
                 select(VerticalMonetizationPolicy).where(
                     VerticalMonetizationPolicy.vertical_id == vertical.id,
                     VerticalMonetizationPolicy.is_current.is_(True),
+                    VerticalMonetizationPolicy.status == "published",
                 )
             )).scalar_one_or_none()
 

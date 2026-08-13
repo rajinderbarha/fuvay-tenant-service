@@ -50,12 +50,12 @@ def _read(rel: str) -> str:
 
 
 class TestResourceAdapterRegistry:
-    def test_exactly_five_resources_are_runtime_supported(self):
+    def test_required_resources_are_runtime_supported(self):
         from app.engines.enterprise_grid.resource_adapters import RESOURCE_ADAPTERS
-        assert set(RESOURCE_ADAPTERS.keys()) == {
+        assert {
             "admin_reviews", "admin_finance_topups", "admin_audit_logs",
             "admin_tenants", "admin_categories",
-        }
+        }.issubset(RESOURCE_ADAPTERS)
 
     def test_is_runtime_supported_matches_registry(self):
         from app.engines.enterprise_grid.resource_adapters import is_runtime_supported

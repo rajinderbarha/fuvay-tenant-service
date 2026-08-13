@@ -156,7 +156,10 @@ class TenantFinanceReadiness(ServiceOSBase):
 
 class TenantBilling(ServiceOSBase):
     __tablename__ = "tenant_billing"
-    __table_args__ = (UniqueConstraint("tenant_id", name="uq_tbl_tenant"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", name="uq_tbl_tenant"),
+        UniqueConstraint("tenant_id", "vertical_key", name="uq_tenant_billing_tenant_vertical"),
+    )
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
     billing_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     billing_cycle: Mapped[str] = mapped_column(String(20), nullable=False, default="monthly")

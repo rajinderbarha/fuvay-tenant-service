@@ -28,6 +28,8 @@ class HomeServiceBookingDraft(ServiceOSBase):
         Index("ix_hsbd_category_offering", "category_id", "offering_id"),
         Index("ix_hsbd_city_zipcode",      "city", "zipcode"),
         Index("ix_hsbd_selected_tenant",   "selected_tenant_id"),
+        Index("ix_hsbd_status_created",     "status", "created_at"),
+        Index("ix_hsbd_tenant_status_created", "selected_tenant_id", "status", "created_at"),
     )
 
     # ── Linkage ────────────────────────────────────────────────────────────────

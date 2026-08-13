@@ -1,6 +1,8 @@
 "use client";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
+import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   homeServicesCatalogConsoleApi, catalogWorkspaceApi, checklistCatalogApi,
@@ -60,11 +62,22 @@ type WorkspaceTabKey = typeof WORKSPACE_TABS[number]["key"];
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AdminCatalogWorkspacePage() {
+  const searchParams = useSearchParams();
   const perm = usePermissions();
   const canRead = perm.loading || perm.has("catalog:services:read");
   const canWrite = perm.has("catalog:services:write");
 
-  const listApi = useApi(useCallback(() => homeServicesCatalogConsoleApi.listServices(), []), []);
+  const [serviceQuery, setServiceQuery] = useState("");
+  const [serviceGroupFilter, setServiceGroupFilter] = useState("");
+  const [servicePage, setServicePage] = useState(1);
+  const servicePageSize = 50;
+  const listApi = useApi(useCallback(() => homeServicesCatalogConsoleApi.listServices({
+    q: serviceQuery || undefined,
+    service_id: searchParams.get("service_id") || undefined,
+    service_group_id: serviceGroupFilter || undefined,
+    limit: servicePageSize,
+    offset: (servicePage - 1) * servicePageSize,
+  }), [serviceQuery, serviceGroupFilter, servicePage, searchParams]), [serviceQuery, serviceGroupFilter, servicePage, searchParams]);
   // Global job-type catalog (platform-wide definitions) -- used only to pick
   // from when attaching a job type to a service, never as the tab source.
   const jobTypesApi = useApi(useCallback(() => catalogWorkspaceApi.listJobTypes(), []), []);
@@ -83,6 +96,13 @@ export default function AdminCatalogWorkspacePage() {
   const grouped = groups.map(g => ({ group: g, services: services.filter(s => s.service_group_id === g.group_id) }));
   const ungrouped = services.filter(s => !s.service_group_id);
   const jobTypes = jobTypesApi.data?.items ?? [];
+
+  useEffect(() => {
+    const requested = searchParams.get("service_id");
+    if (requested && services.some(service => service.service_id === requested)) {
+      setSelectedId(requested);
+    }
+  }, [searchParams, services]);
 
   // Job types actually added to the SELECTED service (master_service_job_types)
   // -- the real, per-service tab source. Fixes a gap where the tabs used to
@@ -186,12 +206,26 @@ export default function AdminCatalogWorkspacePage() {
         </button>
       </div>
 
+      <HomeServicesCatalogNav active="workspace" />
+
       <div className="cw-shell">
         {/* ── Column 1: Catalog Structure ─────────────────────────────────── */}
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 14, maxHeight: 760, overflowY: "auto" }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--text-tertiary)", margin: "0 0 10px", padding: "0 4px" }}>
             Catalog Structure
           </p>
+          <div style={{ position: "relative", marginBottom: 8 }}>
+            <Search size={13} style={{ position: "absolute", left: 10, top: 9, color: "var(--text-tertiary)" }}/>
+            <input aria-label="Search master services" value={serviceQuery}
+              onChange={e => { setServiceQuery(e.target.value); setServicePage(1); }}
+              placeholder="Search services…" style={{ width: "100%", boxSizing: "border-box", padding: "7px 9px 7px 30px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-sunken)", color: "var(--text-primary)", fontSize: 12 }}/>
+          </div>
+          <select aria-label="Filter service group" value={serviceGroupFilter}
+            onChange={e => { setServiceGroupFilter(e.target.value); setServicePage(1); }}
+            style={{ width: "100%", padding: "7px 9px", marginBottom: 10, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-sunken)", color: "var(--text-primary)", fontSize: 12 }}>
+            <option value="">All service groups</option>
+            {groups.map(group => <option key={group.group_id} value={group.group_id}>{group.name}</option>)}
+          </select>
           {listApi.error ? (
             <SectionError title="Couldn't load catalog" error={listApi.error} requestId={listApi.requestId} onRetry={listApi.refetch}/>
           ) : listApi.loading ? (
@@ -212,6 +246,13 @@ export default function AdminCatalogWorkspacePage() {
               )}
               {services.length === 0 && <p style={{ fontSize: 12, color: "var(--text-tertiary)", padding: 8 }}>No services configured yet.</p>}
             </>
+          )}
+          {(listApi.data?.total ?? 0) > servicePageSize && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, paddingTop: 10, marginTop: 10, borderTop: "1px solid var(--border)" }}>
+              <button disabled={servicePage <= 1} onClick={() => setServicePage(p => p - 1)} style={{ border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", background: "var(--surface-sunken)", color: "var(--text-secondary)", cursor: servicePage <= 1 ? "default" : "pointer" }}>Previous</button>
+              <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{servicePage} / {Math.ceil((listApi.data?.total ?? 0) / servicePageSize)}</span>
+              <button disabled={servicePage * servicePageSize >= (listApi.data?.total ?? 0)} onClick={() => setServicePage(p => p + 1)} style={{ border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", background: "var(--surface-sunken)", color: "var(--text-secondary)", cursor: servicePage * servicePageSize >= (listApi.data?.total ?? 0) ? "default" : "pointer" }}>Next</button>
+            </div>
           )}
         </div>
 

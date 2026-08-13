@@ -84,13 +84,21 @@ class TestHomeServicesOnlyScope:
         assert before_data == after_data
 
     async def test_disabling_home_services_blocks_finance_route(self, admin, ensure_hs_enabled):
-        await admin.post("/v1/admin/verticals/home_services/disable", json={"reason": "test"})
+        disabled = await admin.post(
+            "/v1/admin/verticals/home_services/disable",
+            json={"reason": "finance scope isolation test"},
+        )
+        assert disabled.status_code == 200, disabled.text
         r = await admin.get("/v1/admin/home-services/finance/monetization/current")
         assert r.status_code == 403, r.text
         assert r.json().get("error_code") == "VERTICAL_DISABLED"
 
     async def test_disabling_home_services_does_not_affect_coaching_route(self, admin, ensure_hs_enabled):
-        await admin.post("/v1/admin/verticals/home_services/disable", json={"reason": "test"})
+        disabled = await admin.post(
+            "/v1/admin/verticals/home_services/disable",
+            json={"reason": "cross vertical isolation test"},
+        )
+        assert disabled.status_code == 200, disabled.text
         r = await admin.get("/v1/admin/monetization/verticals/coaching")
         assert r.status_code == 200, r.text
 

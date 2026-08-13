@@ -59,7 +59,10 @@ test.describe('ADMIN-TENANT-E2E-04 matching/operations/deduction', () => {
   test('provider matching page: header, ranking factors, links to diagnostics', async ({ page }) => {
     await loginAsSuperAdmin(page);
     await page.goto('/admin/home-services/provider-matching');
-    await page.waitForTimeout(1000);
+    // The root permission gate makes a real /auth/me round trip before it
+    // exposes the protected workspace. A fixed 1s sleep was flaky whenever
+    // the API was concurrently processing the wider browser suite.
+    await expect(page.getByRole('heading', { name: 'Provider Matching' })).toBeVisible({ timeout: 15_000 });
     const bodyText = await page.locator('body').innerText();
     expect(bodyText).toContain('Provider Matching');
     expect(bodyText).toContain('Ranking Factors');

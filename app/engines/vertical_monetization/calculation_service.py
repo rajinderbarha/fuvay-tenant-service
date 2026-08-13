@@ -41,6 +41,7 @@ async def get_current_policy(db: AsyncSession, vertical_id: uuid.UUID) -> Vertic
         select(VerticalMonetizationPolicy).where(
             VerticalMonetizationPolicy.vertical_id == vertical_id,
             VerticalMonetizationPolicy.is_current == True,  # noqa: E712
+            VerticalMonetizationPolicy.status == "published",
         )
     )).scalar_one_or_none()
 

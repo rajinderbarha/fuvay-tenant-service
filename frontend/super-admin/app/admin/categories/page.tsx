@@ -4,6 +4,9 @@ import Link from "next/link";
 import { AdminLayout, useAdminMenuRefresh } from "../../../components/layout/AdminLayout";
 import { Card, SectionHeader, Badge, Btn, Modal, Input, Select, Skeleton } from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
+import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
+import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
+import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
 import {
   categoryRuntimeApi, catalogApi,
   type ServiceCategory, type EnterpriseCategory, type CategorySummaryData,
@@ -13,8 +16,8 @@ import {
   Layers, Plus, Pencil, ExternalLink, Power, PowerOff, Search, Filter,
   X, Download, RefreshCw, CheckSquare, Square, ChevronDown, Eye,
   Settings2, Zap, DollarSign, Package, AlertCircle, CheckCircle,
-  Clock, MinusCircle, XCircle, MoreVertical, MapPin, Calendar,
-  Tag, FileText, TrendingUp, Users, ArrowUpDown, ChevronLeft, ChevronRight,
+  Clock, MinusCircle, XCircle, MoreVertical,
+  FileText, TrendingUp, Users, ArrowUpDown, ChevronLeft, ChevronRight,
   Trash2,
 } from "lucide-react";
 
@@ -112,6 +115,18 @@ const BLANK_FILTERS: Filters = {
   status: "", readiness_status: "", tenant_selectable: "", pricing_supported: "",
 };
 
+const DEFAULT_CATEGORY_COLUMNS: ColumnDef[] = [
+  { key: "name", label: "Category", visible: true, order: 0 },
+  { key: "vertical_type", label: "Vertical", visible: true, order: 1 },
+  { key: "customer_flow_type", label: "Customer Flow", visible: true, order: 2 },
+  { key: "finance_model", label: "Finance Model", visible: true, order: 3 },
+  { key: "readiness_status", label: "Readiness", visible: true, order: 4 },
+  { key: "linked_setup", label: "Linked Setup", visible: true, order: 5 },
+  { key: "visibility", label: "Visibility", visible: true, order: 6 },
+  { key: "status", label: "Status", visible: true, order: 7 },
+  { key: "actions", label: "Actions", visible: true, order: 8 },
+];
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function SummaryCard({
@@ -142,32 +157,6 @@ function ReadinessBadge({ status }: { status: string }) {
   const label = READINESS_LABELS[status] ?? status;
   const variant = (READINESS_COLOR[status] ?? "muted") as "success" | "warning" | "muted" | "danger" | "info";
   return <Badge variant={variant} size="sm">{label}</Badge>;
-}
-
-function RequirementsChips({ cat }: { cat: ServiceCategory }) {
-  const chips = [
-    cat.requires_location && { key: "location", label: "Location", icon: <MapPin size={9}/> },
-    cat.requires_schedule && { key: "schedule", label: "Schedule", icon: <Calendar size={9}/> },
-    cat.requires_brand    && { key: "brand",    label: "Brand",    icon: <Tag size={9}/> },
-    cat.requires_service_option && { key: "option", label: "Option", icon: <Settings2 size={9}/> },
-    cat.requires_issue_type && { key: "issue", label: "Issue", icon: <AlertCircle size={9}/> },
-  ].filter(Boolean) as { key: string; label: string; icon: React.ReactNode }[];
-
-  if (!chips.length) return <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>None</span>;
-
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
-      {chips.map(chip => (
-        <span key={chip.key} style={{
-          display: "inline-flex", alignItems: "center", gap: 3,
-          fontSize: 10, padding: "2px 6px", borderRadius: 20, fontWeight: 600,
-          background: "rgba(37,99,235,0.08)", color: "var(--brand)",
-        }}>
-          {chip.icon}{chip.label}
-        </span>
-      ))}
-    </div>
-  );
 }
 
 function LinkedCountsBadges({ counts }: { counts: EnterpriseCategory["linked_counts"] }) {
@@ -536,6 +525,9 @@ export default function CategoriesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [activeCard, setActiveCard] = useState<string | null>(null);
+  const [columns, setColumns] = useState<ColumnDef[]>(DEFAULT_CATEGORY_COLUMNS);
+  const [sortBy, setSortBy] = useState("display_order");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const PAGE_SIZE = 25;
 
@@ -552,8 +544,8 @@ export default function CategoriesPage() {
     readiness_status: filters.readiness_status || undefined,
     tenant_selectable: filters.tenant_selectable ? filters.tenant_selectable === "true" : undefined,
     pricing_supported: filters.pricing_supported ? filters.pricing_supported === "true" : undefined,
-    page, page_size: PAGE_SIZE,
-  }), [filters, page]));
+    page, page_size: PAGE_SIZE, sort_by: sortBy, sort_dir: sortDir,
+  }), [filters, page, sortBy, sortDir]));
 
   const notify = (msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -640,20 +632,6 @@ export default function CategoriesPage() {
     cats.refetch(); summary.refetch(); refreshMenu(); notify("Category deactivated.");
   }, [cats, summary, refreshMenu]));
 
-  const exportAction = useAction(useCallback(async () => {
-    const resp = await categoryRuntimeApi.exportCategories({
-      status: filters.status || undefined,
-      vertical_type: filters.vertical_type || undefined,
-    });
-    if (!resp.ok) { notify("Export failed", false); return; }
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "service_categories.csv"; a.click();
-    URL.revokeObjectURL(url);
-    notify("Export downloaded.");
-  }, [filters]));
-
   const items: EnterpriseCategory[] = cats.data?.items ?? cats.data?.categories ?? [];
   const totalPages = cats.data?.pages ?? 1;
   const total = cats.data?.total ?? 0;
@@ -689,19 +667,16 @@ export default function CategoriesPage() {
   return (
     <AdminLayout activeNav="categories">
       <SectionHeader
-        title="Service Categories"
-        subtitle="Master platform categories that define vertical behavior, finance model, onboarding, pricing, and customer flow."
+        title="Home Services Categories"
+        subtitle="Business categories and customer-flow policy. Service and job-type requirements are configured downstream in the blueprint workspace."
         icon={<Layers/>}
         actions={
           <div style={{ display: "flex", gap: 8 }}>
             <Btn size="sm" variant="ghost" onClick={() => { cats.refetch(); summary.refetch(); }}>
               <RefreshCw size={13}/> Refresh
             </Btn>
-            <Btn size="sm" variant="ghost" loading={exportAction.loading} onClick={() => exportAction.execute()}>
-              <Download size={13}/> Export
-            </Btn>
             <Btn size="sm" variant="primary" onClick={openCreate}>
-              <Plus size={14}/> New Business Vertical
+              <Plus size={14}/> New Category
             </Btn>
           </div>
         }
@@ -775,6 +750,12 @@ export default function CategoriesPage() {
           <option value="inactive">Inactive</option>
         </select>
 
+        <select aria-label="Sort categories" value={`${sortBy}:${sortDir}`} onChange={e => {
+          const [field, direction] = e.target.value.split(":"); setSortBy(field); setSortDir(direction as "asc" | "desc"); setPage(1);
+        }} style={{ height: 34, borderRadius:"var(--radius-md)", fontSize: 13, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", padding: "0 10px" }}>
+          <option value="display_order:asc">Configured order</option><option value="name:asc">Name A–Z</option><option value="name:desc">Name Z–A</option><option value="updated_at:desc">Recently updated</option>
+        </select>
+
         <Btn size="sm" variant={drawerOpen || activeFiltersCount > 2 ? "secondary" : "ghost"}
           onClick={() => setDrawerOpen(true)}>
           <Filter size={13}/>
@@ -801,6 +782,20 @@ export default function CategoriesPage() {
       {/* Active filter chips */}
       <FilterChips filters={filters} onRemove={clearFilter}/>
 
+      <OperationsDirectoryControls
+        resourceKey="admin_categories"
+        filters={Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== ""))}
+        sort={{ sort_by: sortBy, sort_direction: sortDir }} columns={columns} onColumnsChange={setColumns}
+        onApplyView={(nextFilters, nextSort) => {
+          setFilters({ ...BLANK_FILTERS, ...nextFilters } as Filters);
+          if (typeof nextSort.sort_by === "string") setSortBy(nextSort.sort_by);
+          if (nextSort.sort_direction === "asc" || nextSort.sort_direction === "desc") setSortDir(nextSort.sort_direction);
+          setPage(1);
+        }}
+      />
+
+      <HomeServicesCatalogNav active="categories" />
+
       {/* Bulk action bar */}
       {selected.size > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
@@ -815,9 +810,6 @@ export default function CategoriesPage() {
             selected.forEach(id => deactivateAction.execute(id));
             setSelected(new Set());
           }}>Deactivate</Btn>
-          <Btn size="xs" variant="ghost" onClick={() => exportAction.execute()}>
-            <Download size={11}/> Export Selected
-          </Btn>
           <Btn size="xs" variant="ghost" onClick={() => setSelected(new Set())}>
             <X size={11}/> Deselect
           </Btn>
@@ -860,7 +852,8 @@ export default function CategoriesPage() {
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <style>{columns.filter(column => !column.visible).map(column => `.catalog-categories-table .cat-col-${column.key}{display:none}`).join("\n")}</style>
+            <table className="catalog-categories-table" style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                   <th style={{ padding: "10px 14px", width: 32 }}>
@@ -868,8 +861,8 @@ export default function CategoriesPage() {
                       {allSelected ? <CheckSquare size={14}/> : <Square size={14}/>}
                     </button>
                   </th>
-                  {["Category", "Vertical", "Customer Flow", "Finance Model", "Requirements", "Readiness", "Linked Setup", "Visibility", "Status", "Actions"].map(h => (
-                    <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700,
+                  {[["name","Category"], ["vertical_type","Vertical"], ["customer_flow_type","Customer Flow"], ["finance_model","Finance Model"], ["readiness_status","Readiness"], ["linked_setup","Linked Setup"], ["visibility","Visibility"], ["status","Status"], ["actions","Actions"]].map(([key, h]) => (
+                    <th key={key} className={`cat-col-${key}`} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700,
                       color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em",
                       whiteSpace: "nowrap" }}>{h}</th>
                   ))}
@@ -890,7 +883,7 @@ export default function CategoriesPage() {
                     </td>
 
                     {/* Category */}
-                    <td style={{ padding: "12px 14px", minWidth: 180 }}>
+                    <td className="cat-col-name" style={{ padding: "12px 14px", minWidth: 180 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         {cat.icon_url ? (
                           <img src={cat.icon_url} alt="" width={32} height={32}
@@ -911,21 +904,21 @@ export default function CategoriesPage() {
                     </td>
 
                     {/* Vertical */}
-                    <td style={{ padding: "12px 14px" }}>
+                    <td className="cat-col-vertical_type" style={{ padding: "12px 14px" }}>
                       {cat.vertical_type
                         ? <Badge variant="info" size="sm">{VERTICAL_LABELS[cat.vertical_type] ?? cat.vertical_type}</Badge>
                         : <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>—</span>}
                     </td>
 
                     {/* Customer Flow */}
-                    <td style={{ padding: "12px 14px" }}>
+                    <td className="cat-col-customer_flow_type" style={{ padding: "12px 14px" }}>
                       {cat.customer_flow_type
                         ? <Badge variant="muted" size="sm">{FLOW_LABELS[cat.customer_flow_type] ?? cat.customer_flow_type}</Badge>
                         : <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>—</span>}
                     </td>
 
                     {/* Finance Model */}
-                    <td style={{ padding: "12px 14px", maxWidth: 160 }}>
+                    <td className="cat-col-finance_model" style={{ padding: "12px 14px", maxWidth: 160 }}>
                       {cat.finance_model
                         ? <span style={{ fontSize: 11, color: "var(--text-secondary)", display: "block" }}>
                             {FINANCE_LABELS[cat.finance_model] ?? cat.finance_model}
@@ -933,23 +926,18 @@ export default function CategoriesPage() {
                         : <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>—</span>}
                     </td>
 
-                    {/* Requirements */}
-                    <td style={{ padding: "12px 14px", minWidth: 140 }}>
-                      <RequirementsChips cat={cat}/>
-                    </td>
-
                     {/* Readiness */}
-                    <td style={{ padding: "12px 14px" }}>
+                    <td className="cat-col-readiness_status" style={{ padding: "12px 14px" }}>
                       <ReadinessBadge status={cat.readiness_status ?? "inactive"}/>
                     </td>
 
                     {/* Linked Setup */}
-                    <td style={{ padding: "12px 14px", minWidth: 160 }}>
+                    <td className="cat-col-linked_setup" style={{ padding: "12px 14px", minWidth: 160 }}>
                       <LinkedCountsBadges counts={cat.linked_counts}/>
                     </td>
 
                     {/* Visibility */}
-                    <td style={{ padding: "12px 14px" }}>
+                    <td className="cat-col-visibility" style={{ padding: "12px 14px" }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                         {cat.is_customer_visible
                           ? <span style={{ fontSize: 10, fontWeight: 600, color: "var(--success)" }}>Customer Visible</span>
@@ -961,14 +949,14 @@ export default function CategoriesPage() {
                     </td>
 
                     {/* Status */}
-                    <td style={{ padding: "12px 14px" }}>
+                    <td className="cat-col-status" style={{ padding: "12px 14px" }}>
                       <Badge variant={cat.is_active ? "success" : "muted"} size="sm">
                         {cat.is_active ? "Active" : "Inactive"}
                       </Badge>
                     </td>
 
                     {/* Actions */}
-                    <td style={{ padding: "12px 14px" }}>
+                    <td className="cat-col-actions" style={{ padding: "12px 14px" }}>
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                         <Link href={`/admin/categories/${cat.category_id}`}>
                           <Btn size="xs" variant="ghost"><Eye size={11}/> View</Btn>

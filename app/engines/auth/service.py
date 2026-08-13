@@ -770,11 +770,24 @@ class AuthService:
             "login_success", user_id=user.id, tenant_id=user.tenant_id,
             device_id=device_id, user_agent=user_agent,
         )
+        requires_change = user.force_password_change or user.password_reset_required or user.temporary_password_active
         return {
             "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
+            # Keep the email-OTP path aligned with password-only login: accounts
+            # under a mandatory password-change policy must not receive a
+            # reusable refresh token before completing that change.
+            "refresh_token": tokens["refresh_token"] if not requires_change else None,
             "user": self._user_to_profile(user),
             "tenant": await self._tenant_to_ctx(user.tenant_id),
+            "force_password_change": user.force_password_change,
+            "requires_password_change": requires_change,
+            "password_change_reason": (
+                "temporary_password" if user.temporary_password_active
+                else "force_change" if user.force_password_change
+                else "admin_reset" if user.password_reset_required
+                else None
+            ),
+            "redirect_to": "/change-password-required" if requires_change else None,
         }
 
     async def verify_phone_otp_login(
@@ -850,6 +863,7 @@ class AuthService:
     async def verify_mfa(
         self, mfa_challenge_token: str, code: str,
         device_id: str, device_name: str | None, user_agent: str | None,
+        remember_device: bool = False,
         enabled_engines: list[str] | None = None,
         tenant_name: str | None = None, plan_type: str | None = None,
     ) -> dict:
@@ -900,7 +914,9 @@ class AuthService:
             user_id=user.id, tenant_id=user.tenant_id,
             device_id=device_id, device_name=device_name or dname,
             device_type=dtype, ip_address=self.ip_address,
-            user_agent=user_agent, is_approved=True,
+            user_agent=user_agent,
+            is_trusted=remember_device and device_id != "web",
+            is_approved=True,
         )
         self.db.add(session)
         await self.db.flush()
@@ -911,11 +927,21 @@ class AuthService:
             "login_success", user_id=user.id, tenant_id=user.tenant_id,
             device_id=device_id, user_agent=user_agent,
         )
+        requires_change = user.force_password_change or user.password_reset_required or user.temporary_password_active
         return {
             "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
+            "refresh_token": tokens["refresh_token"] if not requires_change else None,
             "user": self._user_to_profile(user),
             "tenant": await self._tenant_to_ctx(user.tenant_id),
+            "force_password_change": user.force_password_change,
+            "requires_password_change": requires_change,
+            "password_change_reason": (
+                "temporary_password" if user.temporary_password_active
+                else "force_change" if user.force_password_change
+                else "admin_reset" if user.password_reset_required
+                else None
+            ),
+            "redirect_to": "/change-password-required" if requires_change else None,
         }
 
     async def setup_mfa(self, user_id: uuid.UUID) -> dict:

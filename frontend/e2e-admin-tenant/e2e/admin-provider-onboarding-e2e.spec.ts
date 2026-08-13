@@ -56,4 +56,26 @@ test.describe('admin provider onboarding handoff', () => {
     await expect(page).toHaveURL(/\/admin\/audit-logs\?resource_type=tenant_onboarding/);
     await expect(page.getByText(/^\d+ results?$/)).toBeVisible({ timeout: 15_000 });
   });
+
+  test('provider 360 exposes scoped lifecycle controls and the real enrollment record', async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await page.goto('/admin/home-services/providers');
+    await expect(page.getByRole('heading', { name: 'Home Services Providers' })).toBeVisible();
+
+    const viewProvider = page.getByRole('button', { name: /View 360/ }).first();
+    await expect(viewProvider).toBeVisible({ timeout: 15_000 });
+    await viewProvider.click();
+
+    await expect(page).toHaveURL(/\/admin\/home-services\/providers\/[0-9a-f-]+/);
+    await expect(page.getByRole('button', { name: 'Lifecycle Record' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Request Changes' })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Suspend Home Services' })
+        .or(page.getByRole('button', { name: 'Resume Home Services' })),
+    ).toBeVisible();
+
+    await page.getByRole('button', { name: 'Lifecycle Record' }).click();
+    await expect(page.getByRole('heading', { name: 'Home Services lifecycle' })).toBeVisible();
+    await expect(page.getByText('Enrollment decisions are audited independently')).toBeVisible();
+  });
 });

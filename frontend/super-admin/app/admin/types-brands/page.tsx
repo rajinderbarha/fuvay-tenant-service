@@ -1,6 +1,7 @@
 "use client";
 import React, { useCallback, useState, useEffect, useMemo } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
+import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Skeleton, EmptyState, SummaryCard,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
@@ -92,6 +93,7 @@ export default function TypesBrandsPage() {
         title="Types & Brands"
         subtitle="Master data for service variants and product brands — create once, map across services."
       />
+      <HomeServicesCatalogNav active="types-brands" />
 
       {/* Tab bar */}
       <div style={{ display:"flex", gap:4, marginBottom:20, borderBottom:"2px solid var(--border)", paddingBottom:0 }}>
@@ -628,6 +630,9 @@ const REQUEST_STATUS_VARIANT: Record<string, "success" | "warning" | "muted" | "
 
 function BrandRequestsTab() {
   const [statusFilter, setStatusFilter] = useState("pending");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [actionModal, setActionModal] = useState<{ type: "approve" | "reject" | "merge"; req: BrandRequest34D } | null>(null);
   const [adminNote, setAdminNote] = useState("");
   const [existingBrandId, setExistingBrandId] = useState("");
@@ -639,9 +644,9 @@ function BrandRequestsTab() {
   };
 
   const requests = useApi(useCallback(
-    () => catalogApi.listBrandRequests({ status: statusFilter || undefined }),
-    [statusFilter],
-  ), [statusFilter]);
+    () => catalogApi.listBrandRequests({ status: statusFilter || undefined, search: query || undefined, page, pageSize }),
+    [statusFilter, query, page],
+  ), [statusFilter, query, page]);
 
   const brands = useApi(useCallback(() => catalogApi.listBrands({ status: "active" }), []), []);
 
@@ -736,7 +741,7 @@ function BrandRequestsTab() {
             { value: "rejected", label: "Rejected" },
             { value: "", label: "All" },
           ].map(opt => (
-            <button key={opt.value} onClick={() => setStatusFilter(opt.value)} style={{
+            <button key={opt.value} onClick={() => { setStatusFilter(opt.value); setPage(1); }} style={{
               padding: "6px 14px", borderRadius: 20, fontSize: 13, fontWeight: 500,
               border: `1px solid ${statusFilter === opt.value ? "var(--brand, #1a56db)" : "var(--border)"}`,
               background: statusFilter === opt.value ? "var(--brand-muted, rgba(26,86,219,.08))" : "var(--surface)",
@@ -750,12 +755,31 @@ function BrandRequestsTab() {
         </Btn>
       </div>
 
+      <Card padding={14} style={{ marginBottom: 14 }}>
+        <div style={{ position: "relative" }}>
+          <Search size={14} style={{ position: "absolute", left: 11, top: 10, color: "var(--text-tertiary)" }}/>
+          <input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }}
+            aria-label="Search brand requests" placeholder="Search requested brand, normalized name, or reason…"
+            style={{ width: "100%", height: 36, boxSizing: "border-box", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--input-bg)", color: "var(--text-primary)", fontSize: 13, padding: "0 10px 0 34px" }}/>
+        </div>
+      </Card>
+
       <DataTable
         columns={columns as unknown as Parameters<typeof DataTable>[0]["columns"]}
         rows={rows as unknown as Record<string, unknown>[]}
         loading={requests.loading}
         emptyText="No brand requests found for this status."
       />
+      {(requests.data?.pages ?? 1) > 1 && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{requests.data?.total ?? 0} requests</span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Btn>
+            <Badge variant="muted">Page {page} of {requests.data?.pages ?? 1}</Badge>
+            <Btn size="sm" variant="secondary" disabled={page >= (requests.data?.pages ?? 1)} onClick={() => setPage(p => p + 1)}>Next</Btn>
+          </div>
+        </div>
+      )}
 
       <Modal open={!!modal} onClose={() => setActionModal(null)} title={modalTitle}>
         {modal && (

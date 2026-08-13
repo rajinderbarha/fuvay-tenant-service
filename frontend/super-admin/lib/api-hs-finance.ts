@@ -132,11 +132,22 @@ export const homeServicesFinanceApi = {
   getInvoiceDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/service-invoices/${id}`),
 
   // ── Credits (customer service credit) ───────────────────────────────────
-  listCreditAccounts: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/credits${_q(params)}`),
+  listCreditAccounts: <T = FinanceListEnvelope>(params?: ListParams) =>
+    apiFetch<T>(`/v1/admin/finance/home-services/credit-accounts${_q({
+      ...params,
+      lowBalanceOnly: params?.lowBalanceOnly ?? params?.low_balance_only,
+      page_size: params?.pageSize ?? params?.page_size,
+    })}`),
   /** Filterable credit ledger -- the page filters by tenant or event type
    * rather than fetching a single credit by id. */
   listCreditLedger: <T = FinanceListEnvelope>(params?: ListParams) =>
-    apiFetch<T>(`/v1/admin/finance/credits${_q(params)}`),
+    apiFetch<T>(`/v1/admin/finance/home-services/credit-ledger${_q({
+      ...params,
+      tenant_id: params?.tenantId ?? params?.tenant_id,
+      job_id: params?.jobId ?? params?.job_id,
+      event_type: params?.eventType ?? params?.event_type,
+      page_size: params?.pageSize ?? params?.page_size,
+    })}`),
 
   // ── Refund requests ─────────────────────────────────────────────────────
   listRefunds: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/refund-requests${_q(params)}`),
@@ -167,8 +178,8 @@ export const homeServicesFinanceApi = {
     apiFetch<T>(`/v1/admin/financial-events${_q(params)}`),
   getFinancialEventsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/summary"),
   getFinancialEventDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/financial-events/${id}`),
-  getLedgerEntryDetail: <T = FinRow>(walletId: string) =>
-    apiFetch<T>(`/v1/admin/finance/wallets/${walletId}/ledger`),
+  getLedgerEntryDetail: <T = FinRow>(entryId: string) =>
+    apiFetch<T>(`/v1/admin/finance/home-services/credit-ledger/${entryId}`),
 
   // ── Provider charges (commission records) ───────────────────────────────
   listProviderCharges: <T = FinanceListEnvelope>(params?: ListParams) =>
@@ -204,7 +215,7 @@ export const homeServicesFinanceApi = {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   createAdjustment: <T = FinRow>(payload: any) =>
-    apiFetch<T>("/v1/admin/finance/credits", {
+    apiFetch<T>("/v1/admin/finance/home-services/adjustments", {
       method: "POST", body: JSON.stringify(payload),
     }),
 };

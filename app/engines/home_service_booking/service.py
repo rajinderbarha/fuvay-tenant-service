@@ -84,6 +84,15 @@ class HomeServiceChatbotBookingService:
         offering_slug: str,
     ) -> dict:
         """Create a new booking draft for a Home Service offering."""
+        # This guard intentionally lives in the shared service choke point,
+        # not only the HTTP router: the AI booking tool invokes this method
+        # directly and must obey the same platform vertical switch.
+        from app.dependencies.vertical_guard import _load_vertical
+        from app.exceptions import VerticalDisabledException
+        vertical = await _load_vertical(self.db, "home_services")
+        if not vertical or not vertical.is_enabled:
+            raise VerticalDisabledException("home_services")
+
         from app.engines.admin_catalog.models import ServiceCategory, MasterService
 
         # Resolve category

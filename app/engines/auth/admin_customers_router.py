@@ -45,8 +45,8 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db),
 # Computed from booking aggregates at query time; no stored health_band column needed.
 _HEALTH_BAND_EXPR = """
 CASE
-  WHEN bk.total_bookings IS NULL OR bk.total_bookings = 0 THEN 'new'
   WHEN u.is_active = FALSE THEN 'blocked'
+  WHEN bk.total_bookings IS NULL OR bk.total_bookings = 0 THEN 'new'
   WHEN cc.complaints_count > 0
        AND bk.last_booking_at >= NOW() - INTERVAL '90 days' THEN 'complaint_risk'
   WHEN bk.last_booking_at < NOW() - INTERVAL '120 days' THEN 'dormant'
@@ -67,6 +67,7 @@ SELECT
     u.phone,
     u.email,
     u.is_active,
+    u.account_status,
     u.created_at,
     COALESCE(ca.city, '')                                          AS city,
     COALESCE(ca.district, '')                                      AS district,
@@ -95,7 +96,7 @@ LEFT JOIN LATERAL (
         MAX(b2.created_at)                                         AS last_booking_at,
         COUNT(DISTINCT b2.tenant_id)                               AS tenant_count,
         (ARRAY_AGG(b2.tenant_id ORDER BY b2.created_at DESC))[1]  AS last_tenant_id
-    FROM bookings b2
+    FROM service_bookings b2
     WHERE b2.customer_id = u.id
 ) bk ON TRUE
 LEFT JOIN LATERAL (
@@ -110,6 +111,7 @@ LEFT JOIN LATERAL (
     SELECT COUNT(*) AS complaints_count
     FROM customer_complaints cc2
     WHERE cc2.customer_id = u.id
+      AND cc2.status NOT IN ('closed', 'cancelled', 'rejected', 'resolved', 'settled')
 ) cc ON TRUE
 LEFT JOIN LATERAL (
     SELECT
@@ -151,7 +153,7 @@ def _build_filters(
     if tenant_id:
         conditions.append("""
             EXISTS (
-                SELECT 1 FROM bookings bfilt
+                SELECT 1 FROM service_bookings bfilt
                 WHERE bfilt.customer_id = u.id
                   AND bfilt.tenant_id = :tenant_id ::uuid
             )
@@ -231,6 +233,7 @@ def _row_to_dict(row) -> dict:
         "phone":              row.phone or "",
         "email":              row.email or "",
         "is_active":          row.is_active,
+        "account_status":     row.account_status or ("active" if row.is_active else "disabled"),
         "city":               row.city or "",
         "district":           row.district or "",
         "state":              row.state or "",
@@ -271,9 +274,17 @@ async def customer_filter_options(
     """)
     cities  = (await db.execute(city_sql)).fetchall()
     states  = (await db.execute(state_sql)).fetchall()
+    tenants = (await db.execute(text("""
+        SELECT id, COALESCE(business_name, tenant_name) AS name
+        FROM tenants
+        WHERE COALESCE(business_name, tenant_name) IS NOT NULL
+        ORDER BY COALESCE(business_name, tenant_name)
+        LIMIT 500
+    """))).fetchall()
     return ok({
         "cities":  [{"value": row.name, "label": row.name} for row in cities],
         "states":  [{"value": row.name, "label": row.name} for row in states],
+        "tenants": [{"value": str(row.id), "label": row.name} for row in tenants],
     }, _rid(r), "customers")
 
 
@@ -299,7 +310,7 @@ async def customer_summary(
     """)
     row = (await db.execute(sql)).one()
     total = int(row.total) or 1
-    total_bk_sql = text("SELECT SUM(bk2.cnt) FROM (SELECT COUNT(*) AS cnt FROM bookings GROUP BY customer_id) bk2")
+    total_bk_sql = text("SELECT SUM(bk2.cnt) FROM (SELECT COUNT(*) AS cnt FROM service_bookings GROUP BY customer_id) bk2")
     total_bk = (await db.execute(total_bk_sql)).scalar() or 0
     return ok({
         "total":            int(row.total),
@@ -342,7 +353,12 @@ async def export_customers(
         has_complaints, has_reviews, booking_count_min, booking_count_max,
         last_booking_from, last_booking_to, created_from, created_to,
     )
-    hb_cond = "AND sq.health_band = :health_band" if health_band else ""
+    outer_conditions: list[str] = []
+    if health_band:
+        outer_conditions.append("sq.health_band = :health_band")
+    if engagement_status == "active":
+        outer_conditions.append("sq.health_band IN ('healthy', 'active')")
+    hb_cond = "AND " + " AND ".join(outer_conditions) if outer_conditions else ""
     where = _where_clause(conditions)
     if health_band:
         params["health_band"] = health_band
@@ -413,7 +429,12 @@ async def list_admin_customers(
         has_complaints, has_reviews, booking_count_min, booking_count_max,
         last_booking_from, last_booking_to, created_from, created_to,
     )
-    hb_cond = "AND sq.health_band = :health_band" if health_band else ""
+    outer_conditions: list[str] = []
+    if health_band:
+        outer_conditions.append("sq.health_band = :health_band")
+    if engagement_status == "active":
+        outer_conditions.append("sq.health_band IN ('healthy', 'active')")
+    hb_cond = "AND " + " AND ".join(outer_conditions) if outer_conditions else ""
     where = _where_clause(conditions)
     if health_band:
         params["health_band"] = health_band
@@ -430,17 +451,50 @@ async def list_admin_customers(
 
     offset = (page - 1) * page_size
 
-    list_sql = text(f"""
-        SELECT * FROM ({_SELECT_COLS} {_JOINS} {where}) sq
-        WHERE TRUE {hb_cond}
-        ORDER BY {order}
-        LIMIT :limit OFFSET :offset
-    """)
+    # The common directory query (search/provider/date only) must not execute
+    # four per-customer aggregate laterals merely to obtain a total count.
+    # Enriched counts are reserved for filters that actually depend on them.
+    needs_enriched_count = any((
+        health_band, engagement_status, city, state, zipcode,
+        has_complaints is not None, has_reviews is not None,
+        booking_count_min is not None, booking_count_max is not None,
+        last_booking_from, last_booking_to,
+    ))
+    needs_enriched_list = needs_enriched_count or sort_by in {"last_booking_at", "total_bookings"}
+    if needs_enriched_list:
+        list_sql = text(f"""
+            SELECT * FROM ({_SELECT_COLS} {_JOINS} {where}) sq
+            WHERE TRUE {hb_cond}
+            ORDER BY {order}
+            LIMIT :limit OFFSET :offset
+        """)
+    else:
+        # Page indexed user IDs first, then enrich only the bounded page.
+        # This avoids executing activity/review/complaint aggregates for every
+        # customer in a million-row directory on the normal browse path.
+        base_order = "u.full_name ASC, u.id ASC" if sort_by == "full_name" and sort_dir == "asc" else \
+                     "u.full_name DESC, u.id DESC" if sort_by == "full_name" else \
+                     f"u.created_at {'ASC' if sort_dir == 'asc' else 'DESC'}, u.id {'ASC' if sort_dir == 'asc' else 'DESC'}"
+        paged_joins = _JOINS.replace("FROM users u", "FROM base_ids base JOIN users u ON u.id = base.id", 1)
+        list_sql = text(f"""
+            WITH base_ids AS (
+                SELECT u.id FROM users u
+                WHERE u.role = 'customer' AND u.deleted_at IS NULL {where}
+                ORDER BY {base_order}
+                LIMIT :limit OFFSET :offset
+            )
+            SELECT * FROM ({_SELECT_COLS} {paged_joins}) sq
+            ORDER BY {order}
+        """)
     count_sql = text(f"""
         SELECT COUNT(*) FROM (
             SELECT sq.id FROM ({_SELECT_COLS} {_JOINS} {where}) sq
             WHERE TRUE {hb_cond}
         ) counted
+    """) if needs_enriched_count else text(f"""
+        SELECT COUNT(*)
+        FROM users u
+        WHERE u.role = 'customer' AND u.deleted_at IS NULL {where}
     """)
 
     rows  = (await db.execute(list_sql,  {**params, "limit": page_size, "offset": offset})).fetchall()
@@ -498,18 +552,24 @@ async def customer_booking_history(
     sql = text(f"""
         SELECT
             b.id, b.booking_number, b.status,
-            b.service_category AS category_name,
-            b.quoted_price AS amount,
-            b.city, b.created_at, b.scheduled_at, b.preferred_date,
+            COALESCE(ms.service_name, b.issue_summary, 'Home Service') AS category_name,
+            COALESCE(
+                NULLIF(b.price_snapshot->>'estimated_total', '')::numeric,
+                NULLIF(b.price_snapshot->>'max_price', '')::numeric,
+                NULLIF(b.price_snapshot->>'visit_fee', '')::numeric
+            ) AS amount,
+            b.city, b.created_at, sj.scheduled_date, b.preferred_date,
             COALESCE(t.business_name, t.tenant_name, '') AS tenant_name,
-            b.tenant_id
-        FROM bookings b
+            b.tenant_id, sj.id AS job_id
+        FROM service_bookings b
         LEFT JOIN tenants t ON t.id = b.tenant_id
+        LEFT JOIN master_services ms ON ms.id = b.offering_id
+        LEFT JOIN service_jobs sj ON sj.booking_id = b.id
         WHERE {where}
         ORDER BY b.created_at DESC
         LIMIT :limit OFFSET :offset
     """)
-    count_sql = text(f"SELECT COUNT(*) FROM bookings b WHERE {where}")
+    count_sql = text(f"SELECT COUNT(*) FROM service_bookings b WHERE {where}")
 
     rows  = (await db.execute(sql, {**params, "limit": page_size, "offset": offset})).fetchall()
     total = (await db.execute(count_sql, params)).scalar() or 0
@@ -520,12 +580,13 @@ async def customer_booking_history(
             "booking_number": row.booking_number,
             "tenant_name":   row.tenant_name,
             "tenant_id":     str(row.tenant_id),
+            "job_id":        str(row.job_id) if row.job_id else None,
             "category_name": row.category_name or "",
             "status":        row.status,
             "amount":        float(row.amount) if row.amount else None,
             "city":          row.city or "",
             "created_at":    row.created_at.isoformat() if row.created_at else None,
-            "scheduled_at":  row.scheduled_at.isoformat() if row.scheduled_at else (row.preferred_date or None),
+            "scheduled_at":  row.scheduled_date.isoformat() if row.scheduled_date else (row.preferred_date.isoformat() if row.preferred_date else None),
         } for row in rows],
         "meta": {
             "page": page, "page_size": page_size,

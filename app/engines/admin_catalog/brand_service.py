@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
@@ -716,15 +716,31 @@ class BrandService:
     # BRAND REQUESTS
     # ─────────────────────────────────────────────────────────
 
-    async def list_brand_requests(self, status: str | None = None, tenant_id: uuid.UUID | None = None) -> dict:
+    async def list_brand_requests(
+        self, status: str | None = None, tenant_id: uuid.UUID | None = None,
+        search: str | None = None, page: int = 1, page_size: int = 50,
+    ) -> dict:
         stmt = select(BrandRequest)
         if status:
             stmt = stmt.where(BrandRequest.status == status)
         if tenant_id:
             stmt = stmt.where(BrandRequest.tenant_id == tenant_id)
-        stmt = stmt.order_by(BrandRequest.created_at.desc())
+        if search and search.strip():
+            term = f"%{search.strip().lower()}%"
+            stmt = stmt.where(or_(
+                func.lower(BrandRequest.requested_brand_name).like(term),
+                func.lower(BrandRequest.normalized_name).like(term),
+                func.lower(BrandRequest.reason).like(term),
+            ))
+        total = int(await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+        stmt = (stmt.order_by(BrandRequest.created_at.desc())
+                .offset((page - 1) * page_size).limit(page_size))
         res = await self.db.execute(stmt)
-        return {"requests": [self._request_dict(r) for r in res.scalars().all()]}
+        return {
+            "requests": [self._request_dict(r) for r in res.scalars().all()],
+            "total": total, "page": page, "page_size": page_size,
+            "pages": max(1, (total + page_size - 1) // page_size),
+        }
 
     async def create_brand_request(self, data: dict) -> dict:
         name = (data.get("requested_brand_name") or "").strip()

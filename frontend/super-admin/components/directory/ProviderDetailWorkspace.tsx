@@ -17,11 +17,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ShieldCheck, ArrowLeft, FileText, Wrench, Users, Briefcase, Star,
   Wallet, ShieldCheck as DepositIcon, AlertTriangle, ChevronRight, MoreHorizontal,
+  PauseCircle, RotateCcw, Send,
 } from "lucide-react";
 import { AdminLayout } from "../layout/AdminLayout";
 import { Card, Badge, Btn, Skeleton, Modal, DataTable } from "../shared/ui";
-import { hsProviderDirectoryApi, hsReviewApi } from "../../lib/api";
-import { useApi } from "../../hooks/useApi";
+import { hsProviderDirectoryApi, hsReviewApi, verticalCatalogApi } from "../../lib/api";
+import { useApi, useAction } from "../../hooks/useApi";
 
 function dt(v?: string | null) {
   return v ? new Date(v).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -52,14 +53,41 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
   const search = useSearchParams();
   const tab = (search.get("tab") as TabKey) || "overview";
   const [auditOpen, setAuditOpen] = useState(false);
+  const [action, setAction] = useState<"changes_requested" | "suspended" | "approved_pending_activation" | null>(null);
+  const [reason, setReason] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
 
   const detail = useApi(useCallback(() => hsProviderDirectoryApi.getDetail(providerId), [providerId]));
+  const enrollment = useApi(useCallback(
+    () => verticalCatalogApi.listEnrollments("home_services", { tenant_id: providerId }),
+    [providerId],
+  ));
+  const transition = useAction(useCallback(
+    (enrollmentId: string, status: string, note: string) =>
+      verticalCatalogApi.transitionEnrollment(enrollmentId, status, note),
+    [],
+  ));
 
   function setTab(t: TabKey) {
     router.replace(`${basePath}/${providerId}?tab=${t}`);
   }
   function backToProviders() {
     router.back();
+  }
+
+  async function submitLifecycleAction() {
+    const row = enrollment.data?.items?.[0];
+    if (!row || !action || !reason.trim()) return;
+    const result = await transition.execute(row.id, action, reason.trim());
+    if (result) {
+      setNotice(
+        action === "changes_requested" ? "Change request sent to the provider." :
+        action === "suspended" ? "Home Services enrollment suspended." :
+        "Home Services enrollment returned to activation review.",
+      );
+      setAction(null); setReason("");
+      enrollment.refetch(); detail.refetch();
+    }
   }
 
   if (detail.loading) return <AdminLayout activeNav="home_services-providers"><Skeleton height={400} /></AdminLayout>;
@@ -84,6 +112,8 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
   const isActive = d.registration_status === "active";
   const isVerified = d.verification_status === "approved";
   const isBookable = Boolean(d.is_discoverable);
+  const enrollmentRow = enrollment.data?.items?.[0];
+  const enrollmentStatus = enrollmentRow?.status;
 
   return (
     <AdminLayout activeNav="home_services-providers">
@@ -115,6 +145,9 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
               </Badge>
               <Badge variant={isVerified ? "success" : "default"}>{isVerified ? "Verified" : String(d.verification_status)}</Badge>
               <Badge variant={isBookable ? "info" : "muted"}>{isBookable ? "Bookable" : "Not Bookable"}</Badge>
+              {enrollmentStatus && <Badge variant={enrollmentStatus === "active" ? "success" : enrollmentStatus === "suspended" ? "danger" : "warning"}>
+                Home Services: {enrollmentStatus.replace(/_/g, " ")}
+              </Badge>}
             </div>
             <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 12, color: "var(--text-tertiary)", flexWrap: "wrap" }}>
               <span>Provider ID: {String(d.tenant_code ?? providerId.slice(0, 8))}</span>
@@ -130,15 +163,35 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <Btn variant="ghost" icon={<FileText size={14} />} onClick={() => setAuditOpen(true)}>View Audit</Btn>
-          <span title="Not yet implemented for this workspace"><Btn variant="ghost" disabled>Request Changes</Btn></span>
-          <span title="Not yet implemented for this workspace"><Btn variant="danger" disabled>Suspend Home Services</Btn></span>
+          <Btn variant="ghost" icon={<FileText size={14} />} onClick={() => setAuditOpen(true)}>Lifecycle Record</Btn>
+          <Btn variant="ghost" icon={<Send size={14}/>} disabled={!enrollmentRow}
+            onClick={() => { setAction("changes_requested"); setReason(""); }}>
+            Request Changes
+          </Btn>
+          {enrollmentStatus === "suspended" ? (
+            <Btn variant="success" icon={<RotateCcw size={14}/>} disabled={!enrollmentRow}
+              onClick={() => { setAction("approved_pending_activation"); setReason(""); }}>
+              Resume Home Services
+            </Btn>
+          ) : (
+            <Btn variant="danger" icon={<PauseCircle size={14}/>} disabled={!enrollmentRow}
+              onClick={() => { setAction("suspended"); setReason(""); }}>
+              Suspend Home Services
+            </Btn>
+          )}
           <button style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, width: 32, height: 32,
             display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--text-tertiary)" }}>
             <MoreHorizontal size={16} />
           </button>
         </div>
       </Card>
+
+      {notice && (
+        <div role="status" style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10,
+          background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success-text)", fontSize: 13 }}>
+          {notice}
+        </div>
+      )}
 
       <Card padding={12} style={{ marginTop: 12, background: "var(--surface-sunken)", display: "flex", gap: 8, alignItems: "flex-start" }}>
         <AlertTriangle size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0, marginTop: 1 }} />
@@ -167,10 +220,37 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
       {tab === "documents" && <ActivityTab providerId={providerId} />}
       {tab === "services" && <ServicesTab providerId={providerId} />}
 
-      <Modal open={auditOpen} onClose={() => setAuditOpen(false)} title="Audit Trail" size="lg">
-        <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
-          Provider-specific audit history is not yet implemented for this workspace.
+      <Modal open={auditOpen} onClose={() => setAuditOpen(false)} title="Home Services lifecycle" size="lg">
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 14 }}>
+          Enrollment decisions are audited independently from the provider&apos;s other business operations.
         </p>
+        <DataTable rows={enrollment.data?.items ?? []} emptyText="No Home Services enrollment found."
+          columns={[
+            { key: "status", label: "Status", render: v => <Badge variant={v === "active" ? "success" : v === "suspended" ? "danger" : "info"}>{String(v).replace(/_/g, " ")}</Badge> },
+            { key: "requested_at", label: "Requested", render: v => dt(v as string) },
+            { key: "reviewed_at", label: "Last reviewed", render: v => dt(v as string) },
+            { key: "suspend_reason", label: "Latest reason", render: (v, row) => String(v || row.changes_requested_note || row.rejection_reason || "—") },
+          ]}
+        />
+      </Modal>
+
+      <Modal open={action !== null} onClose={() => { setAction(null); setReason(""); }}
+        title={action === "changes_requested" ? "Request provider changes" : action === "suspended" ? "Suspend Home Services" : "Resume Home Services"}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
+            This affects only the provider&apos;s Home Services enrollment. Enter a clear reason for the audit trail and provider communication.
+          </p>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
+            aria-label="Action reason" placeholder="Reason is required"
+            style={{ width: "100%", resize: "vertical", padding: 12, borderRadius: 10,
+              border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit" }} />
+          {transition.error && <p role="alert" style={{ color: "var(--danger-text)", fontSize: 12, margin: 0 }}>{transition.error}</p>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Btn variant="secondary" onClick={() => { setAction(null); setReason(""); }}>Cancel</Btn>
+            <Btn variant={action === "suspended" ? "danger" : "primary"} loading={transition.loading}
+              disabled={!reason.trim()} onClick={submitLifecycleAction}>Confirm action</Btn>
+          </div>
+        </div>
       </Modal>
     </AdminLayout>
   );

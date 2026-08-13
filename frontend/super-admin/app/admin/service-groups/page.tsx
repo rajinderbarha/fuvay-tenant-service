@@ -1,20 +1,24 @@
 "use client";
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
+import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
+import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
+import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, SummaryCard,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   catalogApi,
-  type ServiceGroup, type ServiceGroupEnriched,
-  type ServiceGroupsSummary, type ServiceCategory,
+  type ServiceGroupEnriched, type ServiceCategory,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
-import { ChevronRight, RefreshCw, Download, BarChart2, Package, AlertCircle, CheckCircle2, Settings } from "lucide-react";
+import { RefreshCw, Archive, AlertCircle, CheckSquare, Square } from "lucide-react";
 
 // ── Label maps ─────────────────────────────────────────────────────────────────
 const STATUS_LABEL: Record<string, string> = {
-  active: "Active", inactive: "Inactive", deleted: "Archived",
+  active: "Active", inactive: "Inactive", deleted: "Retired",
 };
 const STATUS_VARIANT: Record<string, "success" | "warning" | "muted"> = {
   active: "success", inactive: "warning", deleted: "muted",
@@ -40,6 +44,16 @@ const BLANK: FormState = {
   display_order: 0, status: "active", icon_url: "",
 };
 function slugify(s: string) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""); }
+
+const DEFAULT_COLUMNS: ColumnDef[] = [
+  { key:"name", label:"Service Group", visible:true, order:0 },
+  { key:"category_id", label:"Category", visible:true, order:1 },
+  { key:"linked_counts", label:"Linked Records", visible:true, order:2 },
+  { key:"runtime_readiness", label:"Readiness", visible:true, order:3 },
+  { key:"status", label:"Status", visible:true, order:4 },
+  { key:"updated_at", label:"Updated", visible:true, order:5 },
+  { key:"id", label:"Actions", visible:true, order:6 },
+];
 
 // ── Action menu ────────────────────────────────────────────────────────────────
 function GroupActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, onView }: {
@@ -69,7 +83,7 @@ function GroupActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, onV
               null,
               row.status !== "active" ? { label: "Activate", action: onActivate } : null,
               row.status === "active" ? { label: "Deactivate", action: onDeactivate } : null,
-              { label: "Archive", action: onArchive, danger: true },
+              { label: "Retire", action: onArchive, danger: true },
             ].map((item, i) =>
               item === null ? (
                 <hr key={i} style={{ margin: 0, border: "none", borderTop: "1px solid var(--border)" }} />
@@ -91,100 +105,35 @@ function GroupActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, onV
 }
 
 // ── Detail drawer ──────────────────────────────────────────────────────────────
-function GroupDetailDrawer({ group, catMap, onClose }: {
-  group: ServiceGroupEnriched | null;
-  catMap: Record<string, string>;
-  onClose: () => void;
-}) {
-  if (!group) return null;
-  const lc = group.linked_counts;
-  return (
-    <div style={{
-      position: "fixed", right: 0, top: 0, height: "100vh", width: 420, zIndex: 2000,
-      background: "var(--surface)", borderLeft: "1px solid var(--border)",
-      overflowY: "auto", boxShadow: "-4px 0 24px rgba(0,0,0,.12)",
-      display: "flex", flexDirection: "column",
-    }}>
-      <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{group.name}</h3>
-          <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--text-secondary)" }}>{group.code}</p>
-        </div>
-        <Btn variant="ghost" size="xs" onClick={onClose}>✕</Btn>
-      </div>
-
-      <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
-        {/* Status row */}
-        <div style={{ display: "flex", gap: 8 }}>
-          <Badge variant={STATUS_VARIANT[group.status] ?? "muted"}>{STATUS_LABEL[group.status] ?? group.status}</Badge>
-          <Badge variant={READINESS_VARIANT[group.runtime_readiness]}>{READINESS_LABEL[group.runtime_readiness]}</Badge>
-        </div>
-
-        {/* Overview */}
-        <section>
-          <p style={{ margin: "0 0 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-secondary)" }}>Overview</p>
-          {[
-            ["Category", catMap[group.category_id] ?? group.category_id],
-            ["Slug", group.slug],
-            ["Description", group.description || "—"],
-            ["Display Order", String(group.display_order)],
-            ["Created", group.created_at ? new Date(group.created_at).toLocaleDateString() : "—"],
-            ["Updated", group.updated_at ? new Date(group.updated_at).toLocaleDateString() : "—"],
-          ].map(([k, v]) => (
-            <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid var(--border-subtle, var(--border))", fontSize: 13 }}>
-              <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{k}</span>
-              <span style={{ color: "var(--text-primary)", textAlign: "right", maxWidth: 240, wordBreak: "break-word" }}>{v}</span>
-            </div>
-          ))}
-        </section>
-
-        {/* Linked counts */}
-        <section>
-          <p style={{ margin: "0 0 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-secondary)" }}>Linked Resources</p>
-          <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ flex: 1, background: "var(--surface-alt, var(--surface))", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
-              <p style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{lc.services}</p>
-              <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--text-secondary)" }}>Master Services</p>
-            </div>
-            <div style={{ flex: 1, background: "var(--surface-alt, var(--surface))", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
-              <p style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{lc.providers}</p>
-              <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--text-secondary)" }}>Providers Using</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Hierarchy */}
-        <section>
-          <p style={{ margin: "0 0 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-secondary)" }}>Catalog Hierarchy</p>
-          <div style={{ fontSize: 13, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span style={{ color: "var(--text-primary)" }}>{catMap[group.category_id] ?? "Category"}</span>
-            <ChevronRight size={14} />
-            <span style={{ color: "var(--brand, #1a56db)", fontWeight: 600 }}>{group.name}</span>
-            <ChevronRight size={14} />
-            <span style={{ color: "var(--text-tertiary, var(--text-secondary))" }}>{lc.services} service{lc.services !== 1 ? "s" : ""}</span>
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function ServiceGroupsPage() {
+  const router = useRouter();
   // Filters
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [hasServicesFilter, setHasServicesFilter] = useState<"" | "true" | "false">("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [sortBy, setSortBy] = useState("display_order");
+  const [sortDir, setSortDir] = useState("asc");
+  const [columnsConfig, setColumnsConfig] = useState<ColumnDef[]>(DEFAULT_COLUMNS);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Modal / detail
   const [modal, setModal] = useState<"none" | "create" | "edit">("none");
   const [editing, setEditing] = useState<ServiceGroupEnriched | null>(null);
-  const [detailGroup, setDetailGroup] = useState<ServiceGroupEnriched | null>(null);
   const [archiveId, setArchiveId] = useState<string | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
   const [form, setForm] = useState<FormState>(BLANK);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => { setDebouncedQ(q.trim()); setPage(1); }, 300);
+    return () => clearTimeout(timer);
+  }, [q]);
 
   // Data
   const summary = useApi(useCallback(() => catalogApi.getServiceGroupsSummary(), []));
@@ -193,11 +142,14 @@ export default function ServiceGroupsPage() {
     () => catalogApi.listServiceGroups({
       categoryId: categoryFilter || undefined,
       status: statusFilter || undefined,
-      q: q || undefined,
+      q: debouncedQ || undefined,
       hasServices: hasServicesFilter === "" ? undefined : hasServicesFilter === "true",
+      sortBy, sortDir,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
     }),
-    [categoryFilter, statusFilter, q, hasServicesFilter],
-  ));
+    [categoryFilter, statusFilter, debouncedQ, hasServicesFilter, sortBy, sortDir, page, pageSize],
+  ), [categoryFilter, statusFilter, debouncedQ, hasServicesFilter, sortBy, sortDir, page, pageSize]);
 
   const notify = (msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -229,7 +181,7 @@ export default function ServiceGroupsPage() {
   const editAction = useAction(async ({ id, data }: { id: string; data: FormState }) => {
     await catalogApi.updateServiceGroup(id, {
       name: data.name, description: data.description || undefined,
-      display_order: data.display_order, status: data.status,
+      display_order: data.display_order, expected_updated_at: editing?.updated_at,
       icon_url: data.icon_url || undefined,
     });
     groups.refetch(); summary.refetch(); setModal("none"); notify("Service group updated.");
@@ -245,26 +197,14 @@ export default function ServiceGroupsPage() {
     groups.refetch(); summary.refetch(); notify("Group deactivated.");
   });
 
-  const archiveAction = useAction(async (id: string) => {
-    await catalogApi.archiveServiceGroup(id);
-    groups.refetch(); summary.refetch(); setArchiveId(null); notify("Group archived.");
+  const archiveAction = useAction(async ({ id, reason }: { id:string; reason:string }) => {
+    await catalogApi.archiveServiceGroup(id, reason);
+    groups.refetch(); summary.refetch(); setArchiveId(null); setArchiveReason(""); notify("Group retired and recorded in the audit trail.");
   });
-
-  const exportAction = useAction(async () => {
-    const result = await catalogApi.exportServiceGroups({ categoryId: categoryFilter || undefined, status: statusFilter || undefined });
-    const rows = result?.rows ?? [];
-    const csv = [
-      ["Name", "Code", "Category", "Status", "Services", "Providers", "Readiness", "Updated"].join(","),
-      ...rows.map(r => [
-        `"${r.name}"`, r.code, `"${catMap[r.category_id] ?? r.category_id}"`,
-        r.status, r.linked_counts?.services ?? 0, r.linked_counts?.providers ?? 0,
-        r.runtime_readiness, r.updated_at ?? "",
-      ].join(","))
-    ].join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    a.download = "service-groups.csv"; a.click();
-    notify("Exported.");
+  const bulkAction = useAction(async (action: "activate" | "deactivate") => {
+    const result = await catalogApi.bulkServiceGroupStatus([...selected], action);
+    setSelected(new Set()); groups.refetch(); summary.refetch();
+    notify(`${result.updated_count} groups ${action === "activate" ? "activated" : "deactivated"}.${result.errors.length ? ` ${result.errors.length} failed.` : ""}`, result.errors.length === 0);
   });
 
   function openCreate() { setForm(BLANK); setEditing(null); setModal("create"); }
@@ -278,10 +218,12 @@ export default function ServiceGroupsPage() {
 
   const s = summary.data;
   const rows = groups.data?.groups ?? [];
+  useEffect(() => { setSelected(new Set()); }, [page, pageSize, categoryFilter, statusFilter, hasServicesFilter, debouncedQ]);
   const canSave = !!form.name && !!form.category_id;
   const activeAction = editing ? editAction : createAction;
 
-  const columns = [
+  const allColumns = [
+    { key:"select", label:"", width:38, render:(_:unknown,row:ServiceGroupEnriched)=><button aria-label={`Select ${row.name}`} onClick={e=>{e.stopPropagation();setSelected(current=>{const next=new Set(current);next.has(row.id)?next.delete(row.id):next.add(row.id);return next;})}} style={{background:"none",border:"none",cursor:"pointer",color:selected.has(row.id)?"var(--brand)":"var(--text-tertiary)",display:"flex"}}>{selected.has(row.id)?<CheckSquare size={15}/>:<Square size={15}/>}</button> },
     {
       key: "name", label: "Group",
       render: (_: unknown, row: ServiceGroupEnriched) => (
@@ -333,7 +275,7 @@ export default function ServiceGroupsPage() {
       render: (_: unknown, row: ServiceGroupEnriched) => (
         <GroupActionMenu
           row={row}
-          onView={() => setDetailGroup(row)}
+          onView={() => router.push(`/admin/service-groups/${row.id}`)}
           onEdit={() => openEdit(row)}
           onActivate={() => activateAction.execute(row.id)}
           onDeactivate={() => deactivateAction.execute(row.id)}
@@ -342,6 +284,8 @@ export default function ServiceGroupsPage() {
       ),
     },
   ];
+  const visibleKeys = new Set(columnsConfig.filter(column => column.visible).map(column => column.key));
+  const columns = allColumns.filter(column => column.key === "select" || visibleKeys.has(column.key));
 
   return (
     <AdminLayout activeNav="service-groups">
@@ -351,9 +295,7 @@ export default function ServiceGroupsPage() {
         subtitle="Intermediate grouping layer between Categories and Master Services (e.g. 'AC Services' under 'Home Services')"
         actions={
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="secondary" size="sm" loading={exportAction.loading} onClick={() => exportAction.execute()}>
-              <Download size={14} style={{ marginRight: 4 }} /> Export
-            </Btn>
+            <Link href="/admin/service-groups/retired"><Btn variant="secondary" size="sm"><Archive size={14}/> Retired groups{s?.retired ? ` (${s.retired})` : ""}</Btn></Link>
             <Btn variant="secondary" size="sm" onClick={() => { groups.refetch(); summary.refetch(); }}>
               <RefreshCw size={14} style={{ marginRight: 4 }} /> Refresh
             </Btn>
@@ -361,6 +303,19 @@ export default function ServiceGroupsPage() {
           </div>
         }
       />
+      <HomeServicesCatalogNav active="groups" />
+
+      <OperationsDirectoryControls resourceKey="admin_service_groups"
+        filters={{ q:debouncedQ, category_id:categoryFilter, status:statusFilter, has_services:hasServicesFilter }}
+        sort={{ sort_by:sortBy, sort_direction:sortDir }} columns={columnsConfig}
+        onColumnsChange={setColumnsConfig}
+        onApplyView={(filters, sort) => {
+          setQ(String(filters.q ?? filters.search ?? ""));
+          setCategoryFilter(String(filters.category_id ?? "")); setStatusFilter(String(filters.status ?? ""));
+          setHasServicesFilter(String(filters.has_services ?? "") as ""|"true"|"false");
+          setSortBy(String(sort.sort_by ?? "display_order")); setSortDir(String(sort.sort_direction ?? "asc")); setPage(1);
+        }}/>
+      <span className="sr-only">Export controls are available in the operations toolbar.</span>
 
       {/* Toast */}
       {toast && (
@@ -374,13 +329,14 @@ export default function ServiceGroupsPage() {
 
       {/* Summary cards */}
       {s && (
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap: 12, margin:"16px 0 20px" }}>
           <SummaryCard label="Total Groups" value={s.total} />
           <SummaryCard label="Active" value={s.active} accent="var(--success-text, #22543d)" />
           <SummaryCard label="Inactive" value={s.inactive} accent="var(--warning-text, #744210)" />
           <SummaryCard label="With Services" value={s.groups_with_services} />
           <SummaryCard label="Empty Groups" value={s.empty_groups} accent="var(--danger-text, #c53030)" sub="no services linked" />
           <SummaryCard label="Runtime Ready" value={s.runtime_ready} accent="var(--brand, #1a56db)" />
+          <SummaryCard label="Retired" value={s.retired} accent="var(--text-tertiary)" sub="recoverable" />
         </div>
       )}
       {summary.loading && (
@@ -406,11 +362,11 @@ export default function ServiceGroupsPage() {
             />
           </div>
           <div style={{ minWidth: 180 }}>
-            <Select label="" value={categoryFilter} onChange={setCategoryFilter}
+            <Select label="" value={categoryFilter} onChange={v => { setCategoryFilter(v); setPage(1); }}
               placeholder="All Categories" options={catFilterOptions} />
           </div>
           <div style={{ minWidth: 140 }}>
-            <Select label="" value={statusFilter} onChange={setStatusFilter}
+            <Select label="" value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}
               placeholder="All Statuses"
               options={[{ value: "", label: "All Statuses" }, { value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]} />
           </div>
@@ -428,9 +384,11 @@ export default function ServiceGroupsPage() {
           <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", paddingTop: 12, borderTop: "1px solid var(--border)" }}>
             <div style={{ minWidth: 180 }}>
               <Select label="Has Services" value={hasServicesFilter}
-                onChange={v => setHasServicesFilter(v as "" | "true" | "false")}
+                onChange={v => { setHasServicesFilter(v as "" | "true" | "false"); setPage(1); }}
                 options={[{ value: "", label: "Any" }, { value: "true", label: "Has Services" }, { value: "false", label: "Empty Groups" }]} />
             </div>
+            <div style={{ minWidth:180 }}><Select label="Sort by" value={sortBy} onChange={v=>{setSortBy(v);setPage(1)}} options={[{value:"display_order",label:"Display order"},{value:"name",label:"Name"},{value:"category",label:"Category"},{value:"status",label:"Status"},{value:"updated_at",label:"Last updated"}]}/></div>
+            <div style={{ minWidth:140 }}><Select label="Direction" value={sortDir} onChange={v=>{setSortDir(v);setPage(1)}} options={[{value:"asc",label:"Ascending"},{value:"desc",label:"Descending"}]}/></div>
           </div>
         )}
       </Card>
@@ -444,6 +402,8 @@ export default function ServiceGroupsPage() {
           {hasServicesFilter && <Badge variant="muted">Has Services: {hasServicesFilter}</Badge>}
         </div>
       )}
+
+      {selected.size > 0 && <Card padding={12} style={{ marginBottom:12, borderColor:"var(--brand)" }}><div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><b style={{fontSize:13}}>{selected.size} selected</b><Btn size="sm" variant="primary" loading={bulkAction.loading} onClick={()=>bulkAction.execute("activate")}>Activate</Btn><Btn size="sm" variant="secondary" loading={bulkAction.loading} onClick={()=>bulkAction.execute("deactivate")}>Deactivate</Btn><Btn size="sm" variant="ghost" onClick={()=>setSelected(new Set())}>Clear</Btn><span style={{marginLeft:"auto",fontSize:11,color:"var(--text-tertiary)"}}>Bulk actions are limited to 100 records per request.</span></div></Card>}
 
       {/* Error */}
       {groups.error && (
@@ -460,16 +420,16 @@ export default function ServiceGroupsPage() {
         columns={columns as unknown as Parameters<typeof DataTable>[0]["columns"]}
         rows={rows as unknown as Record<string, unknown>[]}
         loading={groups.loading}
-        onRowClick={row => setDetailGroup(row as unknown as ServiceGroupEnriched)}
+        onRowClick={row => router.push(`/admin/service-groups/${(row as unknown as ServiceGroupEnriched).id}`)}
         emptyText="No service groups found. Create your first service group to organize master services within a category."
       />
-
-      {/* Detail drawer */}
-      <GroupDetailDrawer group={detailGroup} catMap={catMap} onClose={() => setDetailGroup(null)} />
-      {detailGroup && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1999, background: "rgba(0,0,0,.4)" }}
-          onClick={() => setDetailGroup(null)} />
-      )}
+      <DirectoryPagination
+        page={page}
+        pageSize={pageSize}
+        total={groups.data?.total ?? 0}
+        onPage={setPage}
+        onPageSize={(value) => { setPageSize(value); setPage(1); }}
+      />
 
       {/* Create / Edit Modal */}
       <Modal open={modal !== "none"} onClose={() => setModal("none")}
@@ -501,10 +461,7 @@ export default function ServiceGroupsPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Input label="Display Order" type="number" value={String(form.display_order)}
               onChange={v => setF("display_order", parseInt(v) || 0)} />
-            {editing && (
-              <Select label="Status" value={form.status} onChange={v => setF("status", v)}
-                options={[{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]} />
-            )}
+            {editing && <div style={{alignSelf:"end",padding:"9px 11px",border:"1px solid var(--border)",borderRadius:8,fontSize:12,color:"var(--text-secondary)"}}>Status changes use audited row actions.</div>}
           </div>
           <IconPicker label="Icon" context="category_icon" value={form.icon_url}
             onChange={v => setF("icon_url", v ?? "")} />
@@ -521,23 +478,58 @@ export default function ServiceGroupsPage() {
         </div>
       </Modal>
 
-      {/* Archive confirm */}
-      <Modal open={!!archiveId} onClose={() => setArchiveId(null)} title="Archive Service Group">
+      {/* Retire confirm */}
+      <Modal open={!!archiveId} onClose={() => setArchiveId(null)} title="Retire Service Group">
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
-          This will archive the service group. It will no longer appear in active catalogs.
-          Only groups with no linked master services can be archived.
+          This will retire the service group. It will no longer appear in active catalogs.
+          Only groups with no linked master services can be retired.
         </p>
+        <textarea rows={3} value={archiveReason} onChange={e=>setArchiveReason(e.target.value)} placeholder="Retirement reason (minimum 10 characters)" style={{width:"100%",boxSizing:"border-box",padding:10,border:"1px solid var(--border)",borderRadius:8,background:"var(--input-bg)",color:"var(--text-primary)"}}/>
         {archiveAction.error && (
           <p style={{ fontSize: 13, color: "var(--danger-text)", marginBottom: 12 }}>{archiveAction.error}</p>
         )}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <Btn variant="secondary" size="sm" onClick={() => setArchiveId(null)}>Cancel</Btn>
-          <Btn variant="danger" size="sm" loading={archiveAction.loading}
-            onClick={() => archiveId && archiveAction.execute(archiveId)}>
-            Archive
+          <Btn variant="danger" size="sm" loading={archiveAction.loading} disabled={archiveReason.trim().length<10}
+            onClick={() => archiveId && archiveAction.execute({id:archiveId,reason:archiveReason})}>
+            Retire group
           </Btn>
         </div>
       </Modal>
     </AdminLayout>
+  );
+}
+
+function DirectoryPagination({
+  page,
+  pageSize,
+  total,
+  onPage,
+  onPageSize,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPage: (page: number) => void;
+  onPageSize: (pageSize: number) => void;
+}) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 14 }}>
+      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+        {total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}` : "0 records"}
+      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Select
+          label=""
+          value={String(pageSize)}
+          onChange={(value) => onPageSize(Number(value))}
+          options={[25, 50, 100].map(value => ({ value: String(value), label: `${value} / page` }))}
+        />
+        <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Btn>
+        <Badge variant="muted">Page {page} of {pages}</Badge>
+        <Btn size="sm" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</Btn>
+      </div>
+    </div>
   );
 }

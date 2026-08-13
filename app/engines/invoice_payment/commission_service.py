@@ -42,16 +42,17 @@ async def resolve_provider_commission_rate(db: AsyncSession, category_id) -> Dec
     flat default) no matter what an admin configured and "published".
 
     Precedence, most-specific first:
-      1. The vertical's CURRENT published PERCENTAGE_COMMISSION policy.
-      2. The category's own `commission_pct` override.
-      3. The platform default.
+      1. The category's own `commission_pct` override, but only while the
+         vertical's CURRENT published model is PERCENTAGE_COMMISSION.
+      2. The published vertical policy's `provider_percentage` default.
+      3. The legacy category/platform fallback when no vertical policy has
+         ever been published.
 
-    A policy whose `provider_model` is something other than
-    PERCENTAGE_COMMISSION (e.g. COMPLETION_CREDITS, SUBSCRIPTION) is
-    deliberately NOT treated as a rate source -- those models charge
-    providers through a different mechanism entirely, and silently
-    reinterpreting them as a percentage would invent a charge the admin
-    never configured.
+    A published policy whose `provider_model` is something other than
+    PERCENTAGE_COMMISSION (e.g. COMPLETION_CREDITS, SUBSCRIPTION) returns
+    zero. Category overrides are parameters of the percentage model, not an
+    independent charging switch; allowing them to survive a model change
+    would double-charge providers through two monetization mechanisms.
 
     Both the live invoice pipeline (`ServiceCommissionService._resolve_rate`)
     and the tenant Finance Readiness onboarding step call this, so they can
@@ -92,12 +93,13 @@ async def resolve_provider_commission_rate(db: AsyncSession, category_id) -> Dec
                 VerticalMonetizationPolicy.status == "published",
             )
         )).scalar_one_or_none()
-        if (
-            policy is not None
-            and policy.provider_model == "PERCENTAGE_COMMISSION"
-            and policy.provider_percentage is not None
-        ):
-            return Decimal(str(policy.provider_percentage))
+        if policy is not None:
+            if policy.provider_model != "PERCENTAGE_COMMISSION":
+                return Decimal("0")
+            if category_rate is not None:
+                return category_rate
+            if policy.provider_percentage is not None:
+                return Decimal(str(policy.provider_percentage))
 
     if category_rate is not None:
         return category_rate

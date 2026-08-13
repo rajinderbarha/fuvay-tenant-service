@@ -1004,7 +1004,10 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.customer_reviews.hs_review_router import router as hs_review_router
     from app.engines.invoice_payment.direct_payments_router import router as direct_payments_router
     from app.engines.finance_hub.tenant_hs_finance_router import router as tenant_hs_finance_router
-    from app.engines.finance_hub.admin_hs_finance_router import router as admin_hs_finance_router
+    from app.engines.finance_hub.admin_hs_finance_router import (
+        router as admin_hs_finance_router,
+        canonical_router as admin_hs_finance_canonical_router,
+    )
     from app.engines.vertical_monetization.home_services_finance_router import (
         router as hs_finance_monetization_router,
     )
@@ -1015,9 +1018,100 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         hs_provider_directory_router, hs_dashboard_router,
         notification_policy_router, platform_configuration_router,
         hs_review_router, direct_payments_router, admin_hs_finance_router,
+        admin_hs_finance_canonical_router,
         tenant_hs_finance_router, hs_finance_monetization_router, hs_topup_plan_router,
     ]:
         app.include_router(_unmounted)
+
+    # Shared admin routers mix platform-wide list routes with tenant-owned
+    # resource routes. Apply the dynamic guard only to the latter so a
+    # disabled vertical cannot be mutated through a shared surface while
+    # cross-vertical admin queues remain reachable.
+    from fastapi import Depends as _Depends
+    from fastapi.dependencies.utils import get_parameterless_sub_dependant
+    from app.dependencies.vertical_guard import require_dynamic_vertical_enabled
+
+    _dynamic_guard_routes = {
+        ("/v1/admin/onboarding/providers/{tenant_id}/send-reminder", "POST"),
+        ("/v1/admin/onboarding/providers/{tenant_id}", "GET"),
+        ("/v1/admin/onboarding/providers/{tenant_id}/approve", "POST"),
+        ("/v1/admin/onboarding/providers/{tenant_id}/reject", "POST"),
+        ("/v1/admin/onboarding/providers/{tenant_id}/request-changes", "POST"),
+        ("/v1/admin/onboarding/providers/{tenant_id}/refresh", "POST"),
+        ("/v1/admin/onboarding/providers/{tenant_id}/items/{checklist_key}/override", "PUT"),
+        ("/v1/admin/bookability/providers/{tenant_id}", "GET"),
+        ("/v1/admin/bookability/providers/{tenant_id}/audit-logs", "GET"),
+        ("/v1/admin/bookability/providers/{tenant_id}/refresh", "POST"),
+        ("/v1/admin/bookability/providers/{tenant_id}/override-visibility", "POST"),
+        ("/v1/admin/bookability/providers/{tenant_id}/override-visibility", "DELETE"),
+        ("/v1/admin/bookability/providers/{tenant_id}/override-bookability", "POST"),
+        ("/v1/admin/bookability/providers/{tenant_id}/override-bookability", "DELETE"),
+        ("/v1/admin/monetization/providers/{tenant_id}", "GET"),
+        ("/v1/admin/monetization/providers/{tenant_id}/sync", "POST"),
+        ("/v1/admin/complaints/{complaint_id}", "GET"),
+        ("/v1/admin/complaints/{complaint_id}/assign", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/priority", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/request-provider-response", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/messages", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/messages", "GET"),
+        ("/v1/admin/complaints/{complaint_id}/propose-resolution", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/resolutions", "GET"),
+        ("/v1/admin/complaints/{complaint_id}/reject", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/resolve", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/close", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/events", "GET"),
+        ("/v1/admin/complaints/{complaint_id}/start-ai-settlement", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/finalize-settlement", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/settlement-proposals", "POST"),
+        ("/v1/admin/complaints/{complaint_id}/settlement-proposals", "GET"),
+        ("/v1/admin/complaints/{complaint_id}/ai-session", "GET"),
+        ("/v1/admin/complaints/{complaint_id}/timeline", "GET"),
+        ("/v1/admin/rework-requests/{rework_id}/approve", "POST"),
+        ("/v1/admin/rework-requests/{rework_id}/reject", "POST"),
+        ("/v1/admin/rework-requests/{rework_id}/assign", "POST"),
+        ("/v1/admin/refund-requests/{refund_id}/approve", "POST"),
+        ("/v1/admin/refund-requests/{refund_id}/reject", "POST"),
+        ("/v1/admin/refund-requests/{refund_id}/record", "POST"),
+        ("/v1/admin/refund-requests/{refund_id}/verify", "POST"),
+        ("/v1/admin/reviews/{review_id}", "GET"),
+        ("/v1/admin/reviews/{review_id}/approve", "POST"),
+        ("/v1/admin/reviews/{review_id}/reject", "POST"),
+        ("/v1/admin/reviews/{review_id}/hide", "POST"),
+        ("/v1/admin/reviews/{review_id}", "DELETE"),
+        ("/v1/admin/reviews/{review_id}/events", "GET"),
+        ("/v1/admin/review-flags/{flag_id}/resolve", "POST"),
+        ("/v1/admin/review-replies/{review_id}/approve", "POST"),
+        ("/v1/admin/review-replies/{review_id}/reject", "POST"),
+        ("/v1/admin/rating-summaries/tenant/{tenant_id}/recompute", "POST"),
+        ("/admin/checklist-templates/jobs/{job_id}", "GET"),
+        ("/admin/quotes/jobs/{job_id}", "GET"),
+        ("/admin/quotes/{quote_id}", "GET"),
+        ("/admin/quotes/{quote_id}/events", "GET"),
+    }
+    _guard_dependant = lambda path: get_parameterless_sub_dependant(
+        depends=_Depends(require_dynamic_vertical_enabled), path=path,
+    )
+    for _included in app.routes:
+        if type(_included).__name__ != "_IncludedRouter":
+            continue
+        _guard_added = False
+        for _route in _included.original_router.routes:
+            _path = getattr(_route, "path", "")
+            _methods = getattr(_route, "methods", set()) or set()
+            if any((_path, _method) in _dynamic_guard_routes for _method in _methods):
+                _dependency = _Depends(require_dynamic_vertical_enabled)
+                _route.dependencies.insert(0, _dependency)
+                _route.dependant.dependencies.insert(0, get_parameterless_sub_dependant(
+                    depends=_dependency, path=_path,
+                ))
+                _guard_added = True
+        if _guard_added:
+            # FastAPI 0.116+ lazily caches an effective copy of every
+            # included route. Invalidate it after changing the original
+            # dependency graph; otherwise OpenAPI sees the guard while live
+            # requests may keep executing a previously cached copy.
+            _included._effective_candidates_version = None
+            _included._effective_low_priority_routes_version = None
 
     logger.info("routers.mounted", count="...analytics + ai_hardening + marketing_automation + provider_portal + vertical_catalog + setup_templates + bulk_wizard + marketing_command_center + dashboard_command_center + workflow_enterprise + roles_permissions")
 

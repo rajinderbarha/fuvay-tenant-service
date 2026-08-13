@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import require_super_admin, UserContext
 from app.dependencies.db import get_db
+from app.dependencies.vertical_guard import require_vertical_enabled
 from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
 from app.schemas.base import ApiResponse, ok
 
@@ -21,6 +22,7 @@ logger = structlog.get_logger("home_service.admin_router")
 router = APIRouter(
     prefix="/v1/admin/home-services/booking-drafts",
     tags=["Admin Home Service Booking Drafts"],
+    dependencies=[Depends(require_vertical_enabled("home_services"))],
 )
 
 

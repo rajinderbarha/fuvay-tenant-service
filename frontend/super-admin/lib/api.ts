@@ -152,8 +152,13 @@ export async function apiFetchPaginatedRaw(
 // ── Auth endpoints ─────────────────────────────────────────────────────────────
 export const authApi = {
   // Session
+  health:      () => apiFetch<{ status: string }>("/v1/health", {}, true),
   login:       (email: string, password: string) =>
-    apiFetch<{ access_token: string; refresh_token: string | null; user: AdminUser; requires_password_change?: boolean; password_change_reason?: string; redirect_to?: string }>(
+    apiFetch<{
+      access_token?: string; refresh_token?: string | null; user?: AdminUser;
+      mfa_required?: boolean; mfa_challenge_token?: string;
+      requires_password_change?: boolean; password_change_reason?: string; redirect_to?: string;
+    }>(
       "/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, true),
   refresh:     (refresh_token: string) =>
     apiFetch<{ access_token: string }>("/v1/auth/token/refresh",
@@ -181,9 +186,15 @@ export const authApi = {
   setupMfa:             () => apiFetch<MfaSetup>("/v1/auth/mfa/setup", { method: "POST" }),
   confirmMfa:           (code: string) =>
     apiFetch<MfaConfirm>("/v1/auth/mfa/confirm", { method: "POST", body: JSON.stringify({ code }) }),
-  verifyMfa:            (code: string) =>
-    apiFetch<{ access_token: string; refresh_token: string }>(
-      "/v1/auth/mfa/verify", { method: "POST", body: JSON.stringify({ code }) }),
+  verifyMfa:            (mfa_challenge_token: string, code: string) =>
+    apiFetch<{
+      access_token: string; refresh_token: string | null; user: AdminUser;
+      requires_password_change?: boolean; password_change_reason?: string; redirect_to?: string;
+    }>(
+      "/v1/auth/mfa/verify",
+      { method: "POST", body: JSON.stringify({ mfa_challenge_token, code }) },
+      true,
+    ),
   disableMfa:           (code: string) =>
     apiFetch<void>("/v1/auth/mfa/disable", { method: "POST", body: JSON.stringify({ code }) }),
   regenerateBackupCodes: () =>
@@ -847,6 +858,7 @@ export interface AdminCustomer {
   phone: string;
   email: string;
   is_active: boolean;
+  account_status: "active" | "locked" | "suspended" | "disabled" | string;
   city: string;
   district: string;
   state: string;
@@ -873,6 +885,7 @@ export interface AdminCustomerListResponse { customers: AdminCustomer[]; meta: A
 export interface AdminCustomerFilterOptions {
   cities: { value: string; label: string }[];
   states: { value: string; label: string }[];
+  tenants: { value: string; label: string }[];
 }
 
 // NOTE: apiFetch<T>() already unwraps the backend's {success, data: T}
@@ -888,7 +901,7 @@ export const adminCustomersApi = {
   filterOptions: () => apiFetch<AdminCustomerFilterOptions>("/v1/admin/customers/filters").then(data => ({ data })),
   summary: () => apiFetch<AdminCustomerSummary>("/v1/admin/customers/summary").then(data => ({ data })),
   list: (params: {
-    q?: string; tenant_id?: string; health_band?: string; city?: string; state?: string;
+    q?: string; tenant_id?: string; health_band?: string; engagement_status?: string; city?: string; state?: string;
     zipcode?: string; has_complaints?: boolean; has_reviews?: boolean;
     booking_count_min?: number; booking_count_max?: number;
     last_booking_from?: string; last_booking_to?: string;
@@ -1206,8 +1219,9 @@ export const adminStaffApi = {
   summary: () => apiFetch<AdminStaffSummary>("/v1/admin/staff/summary").then(data => ({ data })),
   list: (params: {
     q?: string; tenant_id?: string; role?: string;
-    availability_status?: string; is_active?: boolean;
-    city?: string; created_from?: string; created_to?: string;
+    availability_status?: string; is_active?: boolean; is_verified?: boolean;
+    city?: string; job_count_min?: number; job_count_max?: number; rating_min?: number;
+    created_from?: string; created_to?: string;
     sort_by?: string; sort_dir?: string; page?: number; page_size?: number;
   }) => {
     const qs = new URLSearchParams();
@@ -1227,6 +1241,12 @@ export const adminStaffApi = {
     return `/v1/admin/staff/export?${qs}`;
   },
 };
+
+export interface AdminStaffJobRow {
+  id: string; job_number: string; booking_number: string; tenant_name: string;
+  service_category: string; status: string; customer_rating: number | null;
+  city: string; completed_at: string | null; created_at: string | null;
+}
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
 export const pricingApi = {
@@ -1458,6 +1478,8 @@ export const catalogApi = {
       `/v1/admin/category-commission-rates/${categoryId}`,
       { method: "PUT", body: JSON.stringify({ customer_charge_pct: customerChargePct }) },
     ),
+  getCategoryCommissionAuthority: (categoryId: string) =>
+    apiFetch<CategoryCommissionAuthority>(`/v1/admin/category-commission-rates/${categoryId}`),
   hardDeleteCategory: (categoryId: string) =>
     apiFetch<{ deleted: boolean; category_id: string; hard_delete: boolean }>(`/v1/admin/service-categories/${categoryId}/hard-delete`, { method:"DELETE" }),
 
@@ -1560,13 +1582,19 @@ export const catalogApi = {
     apiFetch<{ brand_id:string; status:string }>(`/v1/admin/brands/${brandId}/archive`, { method:"POST", body:"{}" }),
 
   // Brand requests
-  listBrandRequests: (params?: { status?: string; tenantId?: string } | string, tenantId?: string) => {
+  listBrandRequests: (params?: { status?: string; tenantId?: string; search?: string; page?: number; pageSize?: number } | string, tenantId?: string) => {
     const qs = new URLSearchParams();
     const status = typeof params === "string" ? params : params?.status;
     const tid    = typeof params === "string" ? tenantId : params?.tenantId;
+    const search = typeof params === "string" ? undefined : params?.search;
+    const page = typeof params === "string" ? undefined : params?.page;
+    const pageSize = typeof params === "string" ? undefined : params?.pageSize;
     if (status) qs.set("status", status);
     if (tid)    qs.set("tenant_id", tid);
-    return apiFetch<{ requests: BrandRequest34D[] }>(`/v1/admin/brand-requests?${qs.toString()}`);
+    if (search) qs.set("search", search);
+    if (page) qs.set("page", String(page));
+    if (pageSize) qs.set("page_size", String(pageSize));
+    return apiFetch<{ requests: BrandRequest34D[]; total: number; page: number; page_size: number; pages: number }>(`/v1/admin/brand-requests?${qs.toString()}`);
   },
   approveBrandRequest: (requestId: string, adminNote?: string) =>
     apiFetch<{ request_id:string; status:string; brand?: Brand34D }>(
@@ -1669,33 +1697,41 @@ export const catalogApi = {
   // Service Groups — Enterprise (P0 upgrade)
   getServiceGroupsSummary: () =>
     apiFetch<ServiceGroupsSummary>("/v1/admin/service-groups/summary"),
-  listServiceGroups: (params?: { categoryId?: string; status?: string; q?: string; hasServices?: boolean; limit?: number; offset?: number }) => {
+  listServiceGroups: (params?: { categoryId?: string; status?: string; q?: string; hasServices?: boolean; retired?: boolean; sortBy?: string; sortDir?: string; limit?: number; offset?: number }) => {
     const p = new URLSearchParams();
     if (params?.categoryId)  p.set("category_id", params.categoryId);
     if (params?.status)      p.set("status", params.status);
     if (params?.q)           p.set("q", params.q);
     if (params?.hasServices !== undefined) p.set("has_services", String(params.hasServices));
+    if (params?.retired !== undefined) p.set("retired", String(params.retired));
+    if (params?.sortBy)      p.set("sort_by", params.sortBy);
+    if (params?.sortDir)     p.set("sort_dir", params.sortDir);
     if (params?.limit)       p.set("limit", String(params.limit));
     if (params?.offset)      p.set("offset", String(params.offset));
     return apiFetch<{ groups: ServiceGroupEnriched[]; total: number }>(`/v1/admin/service-groups?${p.toString()}`);
   },
-  getServiceGroup: (groupId: string) => apiFetch<ServiceGroupEnriched>(`/v1/admin/service-groups/${groupId}`),
+  getServiceGroup: (groupId: string, includeRetired = true) => apiFetch<ServiceGroupEnriched>(`/v1/admin/service-groups/${groupId}?include_retired=${includeRetired}`),
+  getServiceGroupAudit: (groupId: string) =>
+    apiFetch<{ audit_log: { id:string; action:string; actor_user_id:string|null; actor_role:string|null; change_summary:string|null; request_id:string|null; created_at:string|null }[]; total:number }>(`/v1/admin/service-groups/${groupId}/audit`),
   createServiceGroup: (data: { name:string; category_id:string; code?:string; description?:string; display_order?:number; icon_url?:string }) =>
     apiFetch<ServiceGroup>("/v1/admin/service-groups", { method:"POST", body:JSON.stringify(data) }),
-  updateServiceGroup: (groupId: string, data: Partial<ServiceGroup>) =>
+  updateServiceGroup: (groupId: string, data: Partial<ServiceGroup> & { expected_updated_at?: string }) =>
     apiFetch<ServiceGroup>(`/v1/admin/service-groups/${groupId}`, { method:"PUT", body:JSON.stringify(data) }),
-  deleteServiceGroup: (groupId: string) =>
-    apiFetch<{ deleted: boolean; group_id: string }>(`/v1/admin/service-groups/${groupId}`, { method:"DELETE" }),
   activateServiceGroup: (groupId: string) =>
     apiFetch<ServiceGroup>(`/v1/admin/service-groups/${groupId}/activate`, { method:"POST" }),
   deactivateServiceGroup: (groupId: string) =>
     apiFetch<ServiceGroup>(`/v1/admin/service-groups/${groupId}/deactivate`, { method:"POST" }),
-  archiveServiceGroup: (groupId: string) =>
-    apiFetch<{ archived: boolean }>(`/v1/admin/service-groups/${groupId}/archive`, { method:"POST" }),
-  exportServiceGroups: (params?: { categoryId?: string; status?: string }) => {
+  archiveServiceGroup: (groupId: string, reason: string) =>
+    apiFetch<{ archived: boolean }>(`/v1/admin/service-groups/${groupId}/archive`, { method:"POST", body:JSON.stringify({ reason }) }),
+  restoreServiceGroup: (groupId: string, reason: string) =>
+    apiFetch<ServiceGroup>(`/v1/admin/service-groups/${groupId}/restore`, { method:"POST", body:JSON.stringify({ reason }) }),
+  bulkServiceGroupStatus: (ids: string[], action: "activate" | "deactivate") =>
+    apiFetch<{ action:string; updated:string[]; updated_count:number; errors:{id:string;error:string}[] }>("/v1/admin/service-groups/bulk-status", { method:"POST", body:JSON.stringify({ ids, action }) }),
+  exportServiceGroups: (params?: { categoryId?: string; status?: string; retired?: boolean }) => {
     const p = new URLSearchParams();
     if (params?.categoryId) p.set("category_id", params.categoryId);
     if (params?.status)     p.set("status", params.status);
+    if (params?.retired !== undefined) p.set("retired", String(params.retired));
     return apiFetch<{ rows: ServiceGroupEnriched[]; count: number }>(`/v1/admin/service-groups/export?${p.toString()}`);
   },
   // Master Services — Enterprise (P0 upgrade)
@@ -3709,7 +3745,11 @@ export interface CategoryCommissionRate {
   vertical_type?: string | null;
   is_active: boolean;
   commission_pct: number | null;   // null = using the platform default
-  effective_pct: number;           // what actually applies
+  effective_pct: number | null;    // null when percentage commission is not the published model
+  effective_source?: string;
+  is_percentage_commission_live?: boolean;
+  provider_model?: string | null;
+  vertical_default_pct?: number | null;
   using_default: boolean;
   default_pct: number;
   customer_charge_pct: number | null;  // platform fee added to what the customer pays; null = 0%
@@ -3756,9 +3796,11 @@ export interface ServiceGroup {
 }
 
 export interface ServiceGroupEnriched extends ServiceGroup {
-  category_name: string;
-  runtime_readiness: "ready" | "empty_group" | "inactive" | "archived" | "category_inactive";
-  linked_counts: { services: number; providers: number };
+    category_name: string;
+    category_active: boolean;
+    deleted_at?: string | null;
+    runtime_readiness: "ready" | "empty_group" | "inactive" | "archived" | "category_inactive";
+    linked_counts: { services: number; active_services: number; providers: number };
 }
 
 export interface ServiceGroupsSummary {
@@ -3767,7 +3809,8 @@ export interface ServiceGroupsSummary {
   inactive: number;
   groups_with_services: number;
   empty_groups: number;
-  runtime_ready: number;
+    runtime_ready: number;
+    retired: number;
 }
 
 export interface MasterServiceEnriched extends MasterService {
@@ -3981,12 +4024,6 @@ export interface MonetizationAuditLog {
 }
 
 export const monetizationApi = {
-  getCategoryConfig: (catId: string) =>
-    apiFetch<MonetizationConfig>(`/v1/admin/categories/${catId}/monetization`),
-  upsertCategoryConfig: (catId: string, data: Partial<MonetizationConfig>) =>
-    apiFetch<MonetizationConfig>(`/v1/admin/categories/${catId}/monetization`, {
-      method: "PUT", body: JSON.stringify(data),
-    }),
   listConfigs: (isActive?: boolean) => {
     const qs = isActive !== undefined ? `?is_active=${isActive}` : "";
     return apiFetch<{ configs: MonetizationConfig[]; total: number }>(`/v1/admin/monetization/configs${qs}`);
@@ -8541,6 +8578,12 @@ export const trustQualityApi = {
 };
 
 export const complaintsApi = {
+  filterOptions: () => apiFetch<{
+    tenants: { value: string; label: string }[];
+    complaint_types: { value: string; label: string }[];
+    record_types: { value: string; label: string }[];
+    severities: { value: string; label: string }[];
+  }>("/v1/admin/complaints/filters"),
   adminSummary: (tenantId?: string) => {
     const qs = tenantId ? `?tenant_id=${tenantId}` : "";
     return apiFetch<Record<string, number>>(`/v1/admin/complaints/summary${qs}`);
@@ -8560,6 +8603,11 @@ export const complaintsApi = {
     return apiFetch<{ items: Record<string, unknown>[]; meta: Record<string, unknown> }>(
       `/v1/admin/complaints/list${qs ? `?${qs}` : ""}`
     );
+  },
+
+  exportUrl: (params?: Record<string, string>) => {
+    const qs = new URLSearchParams(params ?? {}).toString();
+    return `/v1/admin/complaints/export${qs ? `?${qs}` : ""}`;
   },
 
   adminGet: (id: string) =>
@@ -9317,17 +9365,44 @@ export interface VerticalItem {
   sort_order: number;
   finance_model: string | null;
   meta: Record<string, unknown> | null;
+  lifecycle_status: string;
+  release_stage: string;
+  registration_allowed: boolean;
+  capabilities: string[];
+  module_count?: number;
+  enabled_module_count?: number;
+  enrollment_count?: number;
+  active_enrollment_count?: number;
+}
+
+export interface CategoryCommissionAuthority {
+  category_id: string;
+  category_name: string;
+  vertical_key: string | null;
+  provider_model: string | null;
+  policy_version: number | null;
+  policy_published_at: string | null;
+  category_override_pct: number | null;
+  vertical_default_pct: number | null;
+  effective_pct: number | null;
+  effective_source: "category_override" | "vertical_default" | "model_not_percentage" | "percentage_default_missing" | "platform_legacy_default";
+  is_percentage_commission_live: boolean;
+  default_editor_path: string;
+  override_editor_path: string;
 }
 
 export interface CatalogModuleItem {
   id: string;
   key: string;
   label: string;
+  description: string | null;
   icon: string | null;
   admin_path: string | null;
   module_group: string | null;
   is_universal: boolean;
   sort_order: number;
+  navigation_status: "available" | "retired" | "not_implemented";
+  navigation_status_reason: string | null;
 }
 
 export interface VerticalModuleItem extends CatalogModuleItem {
@@ -9369,21 +9444,74 @@ export interface EffectiveMenu {
   };
 }
 
-/** Admin diagnostics payloads for a vertical. Deliberately permissive --
- * see the AdminPayload note in lib/api-hs-finance.ts. */
-export interface VerticalCapabilityRegistry { [key: string]: any }  // eslint-disable-line @typescript-eslint/no-explicit-any
-export interface VerticalDependencyHealth { [key: string]: any }    // eslint-disable-line @typescript-eslint/no-explicit-any
-export interface VerticalAuditEntry { [key: string]: any }          // eslint-disable-line @typescript-eslint/no-explicit-any
-
-/** Marks a diagnostics surface the backend genuinely does not implement, so
- * the page can say so plainly instead of rendering an empty list that reads
- * as "nothing wrong". Never fabricates rows. */
-export interface UnsupportedSurface { supported: false; reason: string }
+export interface VerticalCapability {
+  name: string;
+  status: string;
+  owner: string;
+  runtime_behaviour: string;
+  source?: string | null;
+  action_href?: string | null;
+  action_label?: string | null;
+}
+export interface VerticalCapabilityRegistry {
+  vertical_key: string;
+  groups: Array<{ name: string; capabilities: VerticalCapability[] }>;
+  policy_boundaries?: Array<{ policy: string; owner: string }>;
+}
+export interface VerticalDependencyCheck {
+  engine_key: string;
+  required: boolean;
+  status: "healthy" | "unhealthy" | "unverified";
+  last_checked_at: string | null;
+  detail?: string | null;
+}
+export interface VerticalDependencyHealth {
+  vertical_key: string;
+  checks: VerticalDependencyCheck[];
+  healthy_count: number;
+  total_count: number;
+}
+export interface VerticalAuditEntry {
+  id: string;
+  action_type: string;
+  notes: string | null;
+  actor_id: string | null;
+  before_state: Record<string, unknown> | null;
+  after_state: Record<string, unknown> | null;
+  created_at: string | null;
+}
+export interface TenantVerticalEnrollment {
+  [key: string]: unknown;
+  id: string;
+  tenant_id: string;
+  vertical_id: string;
+  status: string;
+  requested_at: string | null;
+  submitted_at: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  activated_at: string | null;
+  suspended_at: string | null;
+  suspend_reason: string | null;
+  rejection_reason: string | null;
+  changes_requested_note: string | null;
+}
 
 export const verticalCatalogApi = {
   listVerticals: (includeDisabled = false) =>
     apiFetch<{ items: VerticalItem[]; total: number }>(
       `/v1/admin/verticals?include_disabled=${includeDisabled}`
+      ),
+    listVerticalsDirectory: (params: Record<string, string | number | boolean | undefined>) => {
+      const qs = new URLSearchParams(Object.entries(params)
+        .filter(([, value]) => value !== undefined && value !== "")
+        .map(([key, value]) => [key, String(value)]));
+      return apiFetch<{ items: VerticalItem[]; total: number; page: number; page_size: number; pages: number }>(
+        `/v1/admin/verticals?${qs}`,
+      );
+    },
+    summary: () => apiFetch<{ total: number; enabled: number; disabled: number; beta: number; registration_open: number }>(
+      "/v1/admin/verticals/summary",
     ),
   getVertical: (key: string) =>
     apiFetch<VerticalDetail>(`/v1/admin/verticals/${key}`),
@@ -9404,38 +9532,45 @@ export const verticalCatalogApi = {
     apiFetch<{ vertical_key: string; module_key: string; is_enabled: boolean }>(
       `/v1/admin/verticals/${verticalKey}/modules/${moduleKey}/enable`, { method: "POST" }
     ),
-  disableModule: (verticalKey: string, moduleKey: string) =>
+  disableModule: (verticalKey: string, moduleKey: string, reason: string) =>
     apiFetch<{ vertical_key: string; module_key: string; is_enabled: boolean }>(
-      `/v1/admin/verticals/${verticalKey}/modules/${moduleKey}/disable`, { method: "POST" }
+      `/v1/admin/verticals/${verticalKey}/modules/${moduleKey}/disable`, {
+        method: "POST", body: JSON.stringify({ reason }),
+      }
     ),
   listModules: () =>
     apiFetch<{ items: CatalogModuleItem[]; total: number }>("/v1/admin/catalog/modules"),
   getEffectiveMenu: () =>
     apiFetch<EffectiveMenu>("/v1/admin/catalog/navigation/effective-menu"),
+  listEnrollments: (verticalKey: string, params?: { tenant_id?: string; status?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.tenant_id) q.set("tenant_id", params.tenant_id);
+    if (params?.status) q.set("status", params.status);
+    return apiFetch<{ items: TenantVerticalEnrollment[]; total: number }>(
+      `/v1/admin/verticals/${encodeURIComponent(verticalKey)}/enrollments${q.size ? `?${q}` : ""}`,
+    );
+  },
+
+  transitionEnrollment: (enrollmentId: string, status: string, reason: string) =>
+    apiFetch<TenantVerticalEnrollment>(
+      `/v1/admin/tenant-vertical-enrollments/${encodeURIComponent(enrollmentId)}/transition`,
+      { method: "POST", body: JSON.stringify({ status, reason }) },
+    ),
 
   /** Real route. Shows what breaks if this vertical is turned off. */
   getDisableImpact: (key: string) =>
     apiFetch<Record<string, any>>(`/v1/admin/verticals/${encodeURIComponent(key)}/disable-impact`),  // eslint-disable-line @typescript-eslint/no-explicit-any
 
-  /** A vertical's capabilities ARE its enabled modules, which
-   * `getVertical` already returns -- so this reads from the real detail
-   * route rather than a second endpoint that does not exist. */
-  getCapabilities: async (key: string): Promise<VerticalCapabilityRegistry> => {
-    const detail = await apiFetch<Record<string, any>>(`/v1/admin/verticals/${encodeURIComponent(key)}`);  // eslint-disable-line @typescript-eslint/no-explicit-any
-    return { vertical_key: key, modules: detail?.modules ?? [] };
-  },
+  getCapabilities: (key: string) =>
+    apiFetch<VerticalCapabilityRegistry>(`/v1/admin/verticals/${encodeURIComponent(key)}/capabilities`),
 
-  /** NOT IMPLEMENTED BACKEND-SIDE. There is no dependency-health endpoint
-   * for a vertical (verified against the live OpenAPI schema). Returning an
-   * explicit unsupported marker keeps the page honest -- an empty list here
-   * would read as "all dependencies healthy", which nobody has checked. */
-  getDependencyHealth: async (_key: string): Promise<VerticalDependencyHealth & UnsupportedSurface> =>
-    ({ supported: false, reason: "Dependency health is not yet available for verticals." }),
+  getDependencyHealth: (key: string) =>
+    apiFetch<VerticalDependencyHealth>(`/v1/admin/verticals/${encodeURIComponent(key)}/dependency-health`),
 
-  /** NOT IMPLEMENTED BACKEND-SIDE for verticals (only monetization policies
-   * carry their own audit trail). Same honesty rule as above. */
-  getAuditLog: async (_key: string): Promise<{ items: VerticalAuditEntry[] } & UnsupportedSurface> =>
-    ({ supported: false, reason: "Audit history is not yet available for verticals.", items: [] }),
+  getAuditLog: (key: string, limit = 100) =>
+    apiFetch<{ items: VerticalAuditEntry[]; total: number }>(
+      `/v1/admin/verticals/${encodeURIComponent(key)}/audit?limit=${limit}`,
+    ),
 };
 
 // ── Platform Settings Enterprise Upgrade ──────────────────────────────────────
@@ -10683,6 +10818,7 @@ export interface HsConsoleCatalogList {
   category_id: string;
   groups: HsConsoleServiceGroup[];
   services: HsConsoleService[];
+  total: number; limit: number; offset: number;
 }
 
 export interface HsSymmetricPricePreview {
@@ -10721,7 +10857,12 @@ export interface HsConsoleAuditEvent {
 }
 
 export const homeServicesCatalogConsoleApi = {
-  listServices: () => apiFetch<HsConsoleCatalogList>("/v1/admin/home-services/service-catalog/services"),
+  listServices: (params?: { q?: string; service_id?: string; service_group_id?: string; is_active?: boolean; limit?: number; offset?: number }) => {
+    const qs = params ? `?${new URLSearchParams(Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)])
+    ))}` : "";
+    return apiFetch<HsConsoleCatalogList>(`/v1/admin/home-services/service-catalog/services${qs}`);
+  },
   getServiceDetail: (serviceId: string) =>
     apiFetch<HsConsoleServiceDetail>(`/v1/admin/home-services/service-catalog/services/${serviceId}`),
   updateService: (serviceId: string, data: Record<string, unknown>) =>
@@ -11045,8 +11186,18 @@ export interface ChecklistExecutionHealth {
   in_progress_instances: number; required_completion_rate: number | null;
 }
 
+export interface ChecklistDirectoryResponse<T> {
+  items: T[]; total: number; page: number; page_size: number; pages: number;
+}
+
 export const checklistCatalogApi = {
   listTemplates: () => apiFetch<ChecklistTemplateRow[]>("/v1/admin/checklist-catalog/templates"),
+  listTemplatesDirectory: (params?: { q?: string; status?: string; purpose?: ChecklistPurpose; page?: number; page_size?: number }) => {
+    const qs = params ? `?${new URLSearchParams(Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)])
+    ))}` : "";
+    return apiFetch<ChecklistDirectoryResponse<ChecklistTemplateRow>>(`/v1/admin/checklist-catalog/templates-directory${qs}`);
+  },
   createTemplate: (data: { name: string; code: string; description?: string; icon_url?: string; purpose: ChecklistPurpose; owner_scope?: string }) =>
     apiFetch<ChecklistTemplateRow>("/v1/admin/checklist-catalog/templates", { method: "POST", body: JSON.stringify(data) }),
   updateTemplate: (templateId: string, data: { name?: string; description?: string; icon_url?: string | null }) =>
@@ -11072,6 +11223,12 @@ export const checklistCatalogApi = {
     }),
 
   listMappings: () => apiFetch<JobTypeChecklistMappingRow[]>("/v1/admin/checklist-catalog/mappings"),
+  listMappingsDirectory: (params?: { status?: string; usage?: ChecklistUsage; actor?: ChecklistActor; phase?: string; page?: number; page_size?: number }) => {
+    const qs = params ? `?${new URLSearchParams(Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)])
+    ))}` : "";
+    return apiFetch<ChecklistDirectoryResponse<JobTypeChecklistMappingRow>>(`/v1/admin/checklist-catalog/mappings-directory${qs}`);
+  },
   createMapping: (data: {
     master_service_job_type_id: string; service_job_workflow_id?: string | null;
     checklist_template_version_id: string; phase: string; usage: ChecklistUsage;

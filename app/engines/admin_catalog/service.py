@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import select, and_, or_, func, update as sa_update
+from sqlalchemy import select, and_, or_, func, update as sa_update, exists
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1346,8 +1346,7 @@ class AdminCatalogService:
         return {"groups": [g.to_dict() for g in groups], "total": len(groups)}
 
     async def get_service_group(self, group_id: uuid.UUID) -> dict:
-        g = await self._load_service_group(group_id)
-        return g.to_dict()
+        return await self.get_service_group_enterprise(group_id)
 
     async def create_service_group(self, data: dict) -> dict:
         name = (data.get("name") or "").strip()
@@ -1356,16 +1355,16 @@ class AdminCatalogService:
         category_id = data.get("category_id")
         if not category_id:
             raise ServiceOSException("SERVICE_GROUP_CATEGORY_REQUIRED", "category_id is required.", status_code=422)
-        await self._load_category(uuid.UUID(str(category_id)))
+        category = await self._load_category(uuid.UUID(str(category_id)))
+        if not category.is_active:
+            raise ServiceOSException("SERVICE_CATEGORY_INACTIVE", "A service group cannot be created in an inactive category.", status_code=422)
         code = (data.get("code") or "").strip() or re.sub(r"[^a-z0-9_]", "_", name.lower())[:100]
         slug = _slugify(name)
-        existing_code = await self.db.execute(
-            select(ServiceGroup).where(ServiceGroup.code == code, ServiceGroup.deleted_at.is_(None)))
+        existing_code = await self.db.execute(select(ServiceGroup).where(ServiceGroup.code == code))
         if existing_code.scalar_one_or_none():
             raise ServiceOSException("SERVICE_GROUP_CODE_DUPLICATE",
                 f"Service group code '{code}' already exists.", status_code=409)
-        existing_slug = await self.db.execute(
-            select(ServiceGroup).where(ServiceGroup.slug == slug, ServiceGroup.deleted_at.is_(None)))
+        existing_slug = await self.db.execute(select(ServiceGroup).where(ServiceGroup.slug == slug))
         if existing_slug.scalar_one_or_none():
             raise ServiceOSException("SERVICE_GROUP_SLUG_DUPLICATE",
                 f"Service group slug '{slug}' already exists.", status_code=409)
@@ -1380,34 +1379,34 @@ class AdminCatalogService:
         )
         self.db.add(g)
         await self.db.flush()
+        await self._audit("service_group", g.id, "create", None, g.to_dict(), f"Created service group '{g.name}'")
         return g.to_dict()
 
     async def update_service_group(self, group_id: uuid.UUID, data: dict) -> dict:
         g = await self._load_service_group(group_id)
-        for field in ("name", "description", "icon_url", "status", "display_order"):
-            if field in data and data[field] is not None:
+        old = g.to_dict()
+        expected_updated_at = data.get("expected_updated_at")
+        if expected_updated_at and g.updated_at and g.updated_at.isoformat() != expected_updated_at:
+            raise ServiceOSException(
+                "SERVICE_GROUP_CONFLICT",
+                "This service group changed after you opened it. Refresh and review the latest values.",
+                status_code=409,
+            )
+        if "name" in data:
+            name = (data.get("name") or "").strip()
+            if not name:
+                raise ServiceOSException("SERVICE_GROUP_NAME_REQUIRED", "Service group name is required.", status_code=422)
+            g.name = name
+        # Lifecycle is intentionally excluded: activate/deactivate are audited
+        # commands and must not be smuggled through a generic metadata update.
+        for field in ("name", "description", "icon_url", "display_order"):
+            if field != "name" and field in data and data[field] is not None:
                 setattr(g, field, data[field])
         if data.get("updated_by_user_id"):
             g.updated_by_user_id = data["updated_by_user_id"]
         await self.db.flush()
+        await self._audit("service_group", g.id, "update", old, g.to_dict(), f"Updated service group '{g.name}'")
         return g.to_dict()
-
-    async def delete_service_group(self, group_id: uuid.UUID) -> dict:
-        g = await self._load_service_group(group_id)
-        svc_check = await self.db.execute(
-            select(MasterService).where(
-                MasterService.service_group_id == group_id,
-                MasterService.deleted_at.is_(None),
-            ).limit(1))
-        if svc_check.scalar_one_or_none():
-            raise ServiceOSException(
-                "SERVICE_GROUP_HAS_SERVICES",
-                "Cannot delete a service group that has master services linked to it.",
-                status_code=409)
-        g.deleted_at = utcnow()
-        g.status = "deleted"
-        await self.db.flush()
-        return {"deleted": True, "group_id": str(group_id)}
 
     async def _load_service_group(self, group_id: uuid.UUID) -> ServiceGroup:
         result = await self.db.execute(
@@ -2417,7 +2416,15 @@ class AdminCatalogService:
                 "No Home Services category is configured.", status_code=422)
         return cat.id
 
-    async def list_home_services_catalog_console(self) -> dict:
+    async def list_home_services_catalog_console(
+        self,
+        q: str | None = None,
+        service_id: uuid.UUID | None = None,
+        service_group_id: uuid.UUID | None = None,
+        is_active: bool | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
         """Grouped service list for the console's left panel — Home Services
         category only (hard scope boundary: never returns other verticals)."""
         cat_id = await self.get_home_services_category_id()
@@ -2427,10 +2434,25 @@ class AdminCatalogService:
             ).order_by(ServiceGroup.display_order, ServiceGroup.name))
         groups = groups_res.scalars().all()
 
+        service_stmt = select(MasterService).where(
+            MasterService.category_id == cat_id, MasterService.deleted_at.is_(None),
+        )
+        if service_id:
+            service_stmt = service_stmt.where(MasterService.id == service_id)
+        if q and q.strip():
+            term = f"%{q.strip().lower()}%"
+            service_stmt = service_stmt.where(or_(
+                func.lower(MasterService.service_name).like(term),
+                func.lower(MasterService.slug).like(term),
+            ))
+        if service_group_id:
+            service_stmt = service_stmt.where(MasterService.service_group_id == service_group_id)
+        if is_active is not None:
+            service_stmt = service_stmt.where(MasterService.is_active == is_active)
+        total = int(await self.db.scalar(select(func.count()).select_from(service_stmt.subquery())) or 0)
         svcs_res = await self.db.execute(
-            select(MasterService).where(
-                MasterService.category_id == cat_id, MasterService.deleted_at.is_(None),
-            ).order_by(MasterService.display_order, MasterService.service_name))
+            service_stmt.order_by(MasterService.display_order, MasterService.service_name)
+            .offset(offset).limit(limit))
         svcs = svcs_res.scalars().all()
 
         # counts per service (types / brands) via a single grouped query each
@@ -2456,6 +2478,9 @@ class AdminCatalogService:
             "category_id": str(cat_id),
             "groups": [{"group_id": str(g.id), "name": g.name} for g in groups],
             "services": service_rows,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
         }
 
     async def get_home_services_service_console_detail(self, service_id: uuid.UUID) -> dict:
@@ -4543,36 +4568,43 @@ class AdminCatalogService:
         svc_result = await self.db.execute(svc_stmt)
         svc_counts = {str(r[0]): r[1] for r in svc_result.all()}
 
-        # Active master service IDs in these groups
-        ms_stmt = select(MasterService.id, MasterService.service_group_id).where(
-            MasterService.service_group_id.in_(group_ids),
-            MasterService.deleted_at.is_(None),
-            MasterService.is_active == True,
-        )
-        ms_result = await self.db.execute(ms_stmt)
-        ms_rows = ms_result.all()
-        ms_id_to_group = {str(row[0]): str(row[1]) for row in ms_rows}
-
-        # Providers (TenantService.is_enabled) per group via their services
-        provider_counts: dict[str, set[str]] = {}
-        if ms_id_to_group:
-            ms_ids = list(ms_id_to_group.keys())
-            ts_stmt = (
-                select(TenantService.master_service_id, TenantService.tenant_id)
-                .where(TenantService.master_service_id.in_([uuid.UUID(i) for i in ms_ids]),
-                       TenantService.is_enabled == True, TenantService.deleted_at.is_(None))
+        active_svc_result = await self.db.execute(
+            select(MasterService.service_group_id, func.count().label("cnt"))
+            .where(
+                MasterService.service_group_id.in_(group_ids),
+                MasterService.deleted_at.is_(None),
+                MasterService.is_active == True,
             )
-            ts_result = await self.db.execute(ts_stmt)
-            for ms_id, tenant_id in ts_result.all():
-                gid = ms_id_to_group.get(str(ms_id))
-                if gid:
-                    provider_counts.setdefault(gid, set()).add(str(tenant_id))
+            .group_by(MasterService.service_group_id)
+        )
+        active_svc_counts = {str(row[0]): int(row[1]) for row in active_svc_result.all()}
+
+        # Count distinct providers entirely in PostgreSQL.  The previous
+        # implementation materialised every tenant/service pair into Python
+        # sets, which grows with tenants rather than the 100-row directory page.
+        provider_result = await self.db.execute(
+            select(
+                MasterService.service_group_id,
+                func.count(func.distinct(TenantService.tenant_id)).label("cnt"),
+            )
+            .join(TenantService, TenantService.master_service_id == MasterService.id)
+            .where(
+                MasterService.service_group_id.in_(group_ids),
+                MasterService.deleted_at.is_(None),
+                MasterService.is_active == True,
+                TenantService.is_enabled == True,
+                TenantService.deleted_at.is_(None),
+            )
+            .group_by(MasterService.service_group_id)
+        )
+        provider_counts = {str(row[0]): int(row[1]) for row in provider_result.all()}
 
         out: dict[str, dict] = {}
         for gid in [str(g) for g in group_ids]:
             out[gid] = {
                 "services": svc_counts.get(gid, 0),
-                "providers": len(provider_counts.get(gid, set())),
+                "active_services": active_svc_counts.get(gid, 0),
+                "providers": provider_counts.get(gid, 0),
             }
         return out
 
@@ -4586,20 +4618,21 @@ class AdminCatalogService:
         return "ready"
 
     async def get_service_groups_summary(self) -> dict:
-        stmt = select(ServiceGroup).where(ServiceGroup.deleted_at.is_(None))
-        result = await self.db.execute(stmt)
-        groups = result.scalars().all()
-        group_ids = [g.id for g in groups]
-        counts = await self._sg_linked_counts(group_ids)
-        total = len(groups)
-        active = sum(1 for g in groups if g.status == "active")
-        inactive = sum(1 for g in groups if g.status == "inactive")
-        with_services = sum(1 for g in groups if counts.get(str(g.id), {}).get("services", 0) > 0)
-        empty = sum(1 for g in groups if counts.get(str(g.id), {}).get("services", 0) == 0)
-        runtime_ready = sum(
-            1 for g in groups
-            if g.status == "active" and counts.get(str(g.id), {}).get("services", 0) > 0
-        )
+        has_services = exists(select(MasterService.id).where(
+            MasterService.service_group_id == ServiceGroup.id,
+            MasterService.deleted_at.is_(None),
+        ))
+        live = ServiceGroup.deleted_at.is_(None)
+        summary = (await self.db.execute(select(
+            func.count(ServiceGroup.id).filter(live),
+            func.count(ServiceGroup.id).filter(live, ServiceGroup.status == "active"),
+            func.count(ServiceGroup.id).filter(live, ServiceGroup.status == "inactive"),
+            func.count(ServiceGroup.id).filter(live, has_services),
+            func.count(ServiceGroup.id).filter(live, ~has_services),
+            func.count(ServiceGroup.id).filter(live, ServiceGroup.status == "active", has_services),
+            func.count(ServiceGroup.id).filter(ServiceGroup.deleted_at.isnot(None)),
+        ))).one()
+        total, active, inactive, with_services, empty, runtime_ready, retired = map(int, summary)
         return {
             "total": total,
             "active": active,
@@ -4607,6 +4640,7 @@ class AdminCatalogService:
             "groups_with_services": with_services,
             "empty_groups": empty,
             "runtime_ready": runtime_ready,
+            "retired": retired,
         }
 
     async def list_service_groups_enterprise(
@@ -4615,14 +4649,17 @@ class AdminCatalogService:
         category_id: uuid.UUID | None = None,
         status: str | None = None,
         has_services: bool | None = None,
+        retired: bool = False,
+        sort_by: str = "display_order",
+        sort_dir: str = "asc",
         limit: int = 200,
         offset: int = 0,
     ) -> dict:
-        # Fetch categories for name resolution
-        cat_result = await self.db.execute(select(ServiceCategory).where(ServiceCategory.is_active.isnot(None)))
-        cat_map = {str(c.id): c.name for c in cat_result.scalars().all()}
-
-        stmt = select(ServiceGroup).where(ServiceGroup.deleted_at.is_(None))
+        stmt = (
+            select(ServiceGroup, ServiceCategory.name, ServiceCategory.is_active)
+            .join(ServiceCategory, ServiceCategory.id == ServiceGroup.category_id)
+            .where(ServiceGroup.deleted_at.isnot(None) if retired else ServiceGroup.deleted_at.is_(None))
+        )
         if category_id:
             stmt = stmt.where(ServiceGroup.category_id == category_id)
         if status:
@@ -4634,40 +4671,98 @@ class AdminCatalogService:
                 func.lower(ServiceGroup.code).like(like) |
                 func.lower(ServiceGroup.slug).like(like)
             )
-        stmt = stmt.order_by(ServiceGroup.display_order, ServiceGroup.name).limit(limit).offset(offset)
+        if has_services is not None:
+            service_count = (
+                select(func.count(MasterService.id))
+                .where(
+                    MasterService.service_group_id == ServiceGroup.id,
+                    MasterService.deleted_at.is_(None),
+                )
+                .correlate(ServiceGroup)
+                .scalar_subquery()
+            )
+            stmt = stmt.where(service_count > 0 if has_services else service_count == 0)
+        total = int(await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+        sort_columns = {
+            "name": ServiceGroup.name,
+            "category": ServiceCategory.name,
+            "status": ServiceGroup.status,
+            "display_order": ServiceGroup.display_order,
+            "updated_at": ServiceGroup.updated_at,
+        }
+        sort_column = sort_columns.get(sort_by, ServiceGroup.display_order)
+        order = sort_column.desc() if sort_dir.lower() == "desc" else sort_column.asc()
+        stmt = stmt.order_by(order, ServiceGroup.id).limit(limit).offset(offset)
         result = await self.db.execute(stmt)
-        groups = result.scalars().all()
+        group_rows = result.all()
+        groups = [row[0] for row in group_rows]
         group_ids = [g.id for g in groups]
         counts = await self._sg_linked_counts(group_ids)
 
-        # Apply has_services filter post-fetch (avoids complex subquery)
-        if has_services is not None:
-            groups = [g for g in groups if (counts.get(str(g.id), {}).get("services", 0) > 0) == has_services]
-
         out = []
-        for g in groups:
+        for g, category_name, category_active in group_rows:
             d = g.to_dict()
             lc = counts.get(str(g.id), {"services": 0, "providers": 0})
-            d["category_name"] = cat_map.get(str(g.category_id), "—")
+            d["category_name"] = category_name
+            d["category_active"] = bool(category_active)
+            d["deleted_at"] = g.deleted_at.isoformat() if g.deleted_at else None
             d["linked_counts"] = lc
-            d["runtime_readiness"] = self._sg_readiness(g, lc.get("services", 0))
+            d["runtime_readiness"] = "category_inactive" if not category_active and not retired else self._sg_readiness(g, lc.get("services", 0))
             out.append(d)
-        return {"groups": out, "total": len(out)}
+        return {"groups": out, "total": total, "limit": limit, "offset": offset, "retired": retired}
+
+    async def get_service_group_enterprise(self, group_id: uuid.UUID, include_retired: bool = False) -> dict:
+        row = (await self.db.execute(
+            select(ServiceGroup, ServiceCategory.name, ServiceCategory.is_active)
+            .join(ServiceCategory, ServiceCategory.id == ServiceGroup.category_id)
+            .where(ServiceGroup.id == group_id)
+        )).one_or_none()
+        if not row or (row[0].deleted_at is not None and not include_retired):
+            raise NotFoundException("ServiceGroup", str(group_id))
+        group, category_name, category_active = row
+        counts = (await self._sg_linked_counts([group.id])).get(str(group.id), {
+            "services": 0, "active_services": 0, "providers": 0,
+        })
+        data = group.to_dict()
+        data.update({
+            "category_name": category_name,
+            "category_active": bool(category_active),
+            "deleted_at": group.deleted_at.isoformat() if group.deleted_at else None,
+            "linked_counts": counts,
+            "runtime_readiness": "category_inactive" if not category_active and group.deleted_at is None
+                else self._sg_readiness(group, counts["services"]),
+        })
+        return data
+
+    async def get_service_group_audit(self, group_id: uuid.UUID, limit: int = 50) -> dict:
+        await self.get_service_group_enterprise(group_id, include_retired=True)
+        return await self.list_master_data_audit("service_group", group_id, limit)
 
     async def activate_service_group(self, group_id: uuid.UUID) -> dict:
         g = await self._load_service_group(group_id)
+        category = await self._load_category(g.category_id)
+        if not category.is_active:
+            raise ServiceOSException("SERVICE_CATEGORY_INACTIVE", "Activate the parent category before this service group.", status_code=422)
+        old = g.to_dict()
         g.status = "active"
         await self.db.flush()
+        await self._audit("service_group", g.id, "activate", old, g.to_dict(), f"Activated service group '{g.name}'")
         return g.to_dict()
 
     async def deactivate_service_group(self, group_id: uuid.UUID) -> dict:
         g = await self._load_service_group(group_id)
+        old = g.to_dict()
         g.status = "inactive"
         await self.db.flush()
+        await self._audit("service_group", g.id, "deactivate", old, g.to_dict(), f"Deactivated service group '{g.name}'")
         return g.to_dict()
 
-    async def archive_service_group(self, group_id: uuid.UUID) -> dict:
+    async def archive_service_group(self, group_id: uuid.UUID, reason: str) -> dict:
+        reason = (reason or "").strip()
+        if len(reason) < 10:
+            raise ServiceOSException("RETIRE_REASON_REQUIRED", "A retirement reason of at least 10 characters is required.", status_code=422)
         g = await self._load_service_group(group_id)
+        old = g.to_dict()
         svc_check = await self.db.execute(
             select(MasterService).where(
                 MasterService.service_group_id == group_id,
@@ -4683,15 +4778,60 @@ class AdminCatalogService:
         g.status = "deleted"
         g.deleted_at = utcnow()
         await self.db.flush()
+        await self._audit("service_group", g.id, "retire", old, g.to_dict(), reason)
         return {"archived": True, "group_id": str(group_id)}
 
+    async def restore_service_group(self, group_id: uuid.UUID, reason: str) -> dict:
+        reason = (reason or "").strip()
+        if len(reason) < 10:
+            raise ServiceOSException("RESTORE_REASON_REQUIRED", "A restore reason of at least 10 characters is required.", status_code=422)
+        g = await self.db.get(ServiceGroup, group_id)
+        if not g or g.deleted_at is None:
+            raise NotFoundException("RetiredServiceGroup", str(group_id))
+        old = g.to_dict()
+        g.deleted_at = None
+        g.status = "inactive"
+        await self.db.flush()
+        await self._audit("service_group", g.id, "restore", old, g.to_dict(), reason)
+        return g.to_dict()
+
+    async def bulk_service_group_status(self, ids: list[uuid.UUID], action: str, reason: str | None = None) -> dict:
+        if not ids or len(ids) > 100:
+            raise ServiceOSException("INVALID_BULK_SELECTION", "Select between 1 and 100 service groups.", status_code=422)
+        if action not in {"activate", "deactivate"}:
+            raise ServiceOSException("INVALID_BULK_ACTION", "Bulk action must be activate or deactivate.", status_code=422)
+        updated, errors = [], []
+        for group_id in ids:
+            try:
+                result = await (self.activate_service_group(group_id) if action == "activate" else self.deactivate_service_group(group_id))
+                updated.append(result["id"])
+            except (ServiceOSException, NotFoundException) as exc:
+                errors.append({"id": str(group_id), "error": str(exc)})
+        return {"action": action, "updated": updated, "updated_count": len(updated), "errors": errors}
+
     async def export_service_groups(
-        self, category_id: uuid.UUID | None = None, status: str | None = None
+        self, category_id: uuid.UUID | None = None, status: str | None = None,
+        retired: bool = False,
     ) -> list[dict]:
         data = await self.list_service_groups_enterprise(
-            category_id=category_id, status=status, limit=5000
+            category_id=category_id, status=status, retired=retired, limit=100
         )
-        return data["groups"]
+        rows = list(data["groups"])
+        while len(rows) < data["total"] and len(rows) < 10000:
+            page = await self.list_service_groups_enterprise(
+                category_id=category_id, status=status, retired=retired,
+                limit=100, offset=len(rows),
+            )
+            if not page["groups"]:
+                break
+            rows.extend(page["groups"])
+        if data["total"] > 10000:
+            raise ServiceOSException(
+                "EXPORT_TOO_LARGE",
+                "This export exceeds 10,000 rows. Narrow the filters before exporting.",
+                status_code=422,
+            )
+        return rows
 
     # ═══════════════════════════════════════════════════════════
     # MASTER SERVICES — Enterprise (P0 Upgrade)
@@ -4858,6 +4998,7 @@ class AdminCatalogService:
                 func.lower(MasterService.service_name).like(like) |
                 func.lower(MasterService.slug).like(like)
             )
+        total = int(await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
         stmt = stmt.order_by(MasterService.display_order, MasterService.service_name).limit(limit).offset(offset)
         result = await self.db.execute(stmt)
         svcs = result.scalars().all()
@@ -4876,7 +5017,7 @@ class AdminCatalogService:
             d["pricing_readiness"] = self._ms_pricing_readiness(s, lc.get("pricing_rules", 0))
             d["runtime_readiness"] = self._ms_runtime_readiness(s, lc)
             out.append(d)
-        return {"services": out, "total": len(out)}
+        return {"services": out, "total": total, "limit": limit, "offset": offset}
 
     async def activate_master_service(self, service_id: uuid.UUID) -> dict:
         result = await self.db.execute(select(MasterService).where(MasterService.id == service_id))

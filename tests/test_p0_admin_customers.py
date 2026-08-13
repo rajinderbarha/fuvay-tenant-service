@@ -76,7 +76,8 @@ def test_router_no_required_tenant_id():
 
 def test_router_joins_bookings_for_aggregation():
     src = BACKEND_ROUTER.read_text(encoding="utf-8")
-    assert "FROM bookings" in src
+    assert "FROM service_bookings" in src
+    assert "FROM bookings" not in src
 
 def test_router_joins_customer_addresses():
     src = BACKEND_ROUTER.read_text(encoding="utf-8")

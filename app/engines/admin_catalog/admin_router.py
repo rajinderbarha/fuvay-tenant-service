@@ -343,10 +343,39 @@ async def list_category_commission_rates(
     from sqlalchemy import select
     from app.engines.admin_catalog.models import ServiceCategory
     from app.engines.invoice_payment.constants import DEFAULT_COMMISSION_RATE
+    from app.engines.vertical_catalog.models import Vertical
+    from app.engines.vertical_monetization.models import VerticalMonetizationPolicy
     rows = (await db.execute(
         select(ServiceCategory).order_by(ServiceCategory.display_order, ServiceCategory.name)
     )).scalars().all()
     default = float(DEFAULT_COMMISSION_RATE)
+    vertical_keys = {c.vertical_type for c in rows if c.vertical_type}
+    policy_by_key = {}
+    if vertical_keys:
+        policy_rows = (await db.execute(
+            select(Vertical.key, VerticalMonetizationPolicy)
+            .join(VerticalMonetizationPolicy, VerticalMonetizationPolicy.vertical_id == Vertical.id)
+            .where(
+                Vertical.key.in_(vertical_keys),
+                VerticalMonetizationPolicy.is_current.is_(True),
+                VerticalMonetizationPolicy.status == "published",
+            )
+        )).all()
+        policy_by_key = {key: policy for key, policy in policy_rows}
+
+    def _resolution(c):
+        policy = policy_by_key.get(c.vertical_type)
+        own = float(c.commission_pct) if c.commission_pct is not None else None
+        if policy is not None and policy.provider_model != "PERCENTAGE_COMMISSION":
+            return None, "model_not_percentage", False
+        if own is not None:
+            return own, "category_override", True
+        if policy is not None and policy.provider_percentage is not None:
+            return float(policy.provider_percentage), "vertical_default", True
+        if policy is None:
+            return default, "platform_legacy_default", True
+        return None, "percentage_default_missing", False
+
     return ok([{
         "id":               str(c.id),
         "name":             c.name,
@@ -355,9 +384,17 @@ async def list_category_commission_rates(
         "is_active":        c.is_active,
         # provider commission (migration 139)
         "commission_pct":   float(c.commission_pct) if c.commission_pct is not None else None,
-        "effective_pct":    float(c.commission_pct) if c.commission_pct is not None else default,
+        "effective_pct":    _resolution(c)[0],
+        "effective_source": _resolution(c)[1],
+        "is_percentage_commission_live": _resolution(c)[2],
         "using_default":    c.commission_pct is None,
         "default_pct":      default,
+        "provider_model":   policy_by_key[c.vertical_type].provider_model if c.vertical_type in policy_by_key else None,
+        "vertical_default_pct": (
+            float(policy_by_key[c.vertical_type].provider_percentage)
+            if c.vertical_type in policy_by_key and policy_by_key[c.vertical_type].provider_percentage is not None
+            else None
+        ),
         # customer charge / platform fee (migration 140) — NULL = 0%
         "customer_charge_pct": float(c.customer_charge_pct) if c.customer_charge_pct is not None else None,
     } for c in rows], _rid(r), ENGINE_ID)
@@ -366,6 +403,82 @@ async def list_category_commission_rates(
 class CategoryCommissionIn(BaseModel):
     commission_pct: Optional[Decimal] = None       # None clears -> falls back to default
     customer_charge_pct: Optional[Decimal] = None  # the customer-side platform fee
+
+
+@router.get("/category-commission-rates/{category_id}", response_model=ApiResponse[dict],
+            summary="Get the authoritative commission resolution for one category", tags=["Commission"])
+async def get_category_commission_authority(
+    category_id: uuid.UUID,
+    r: Request,
+    db: AsyncSession = Depends(get_db),
+    u: UserContext = Depends(require_super_admin),
+):
+    """Read-only explanation of the rate the runtime will use.
+
+    Category Detail deliberately consumes this endpoint instead of exposing
+    another editor. Vertical defaults are edited in Monetization; optional
+    category overrides are edited in Provider Charges. Both runtime charging
+    engines follow this exact category -> published vertical default order.
+    """
+    from app.engines.admin_catalog.models import ServiceCategory
+    from app.engines.invoice_payment.constants import DEFAULT_COMMISSION_RATE
+    from app.engines.vertical_catalog.models import Vertical
+    from app.engines.vertical_monetization.models import VerticalMonetizationPolicy
+    from sqlalchemy import select
+
+    cat = await db.get(ServiceCategory, category_id)
+    if not cat:
+        raise ServiceOSException("NOT_FOUND", "Category not found.", status_code=404)
+
+    policy = None
+    if cat.vertical_type:
+        vertical = (await db.execute(
+            select(Vertical).where(Vertical.key == cat.vertical_type)
+        )).scalar_one_or_none()
+        if vertical:
+            policy = (await db.execute(select(VerticalMonetizationPolicy).where(
+                VerticalMonetizationPolicy.vertical_id == vertical.id,
+                VerticalMonetizationPolicy.is_current.is_(True),
+                VerticalMonetizationPolicy.status == "published",
+            ))).scalar_one_or_none()
+
+    own = Decimal(str(cat.commission_pct)) if cat.commission_pct is not None else None
+    default = Decimal(str(policy.provider_percentage)) if (
+        policy is not None and policy.provider_percentage is not None
+    ) else None
+    if policy is not None and policy.provider_model != "PERCENTAGE_COMMISSION":
+        effective, source, live = None, "model_not_percentage", False
+    elif own is not None:
+        effective, source, live = own, "category_override", True
+    elif default is not None:
+        effective, source, live = default, "vertical_default", True
+    elif policy is None:
+        effective, source, live = Decimal(str(DEFAULT_COMMISSION_RATE)), "platform_legacy_default", True
+    else:
+        effective, source, live = None, "percentage_default_missing", False
+
+    is_hs = cat.vertical_type == "home_services"
+    return ok({
+        "category_id": str(cat.id),
+        "category_name": cat.name,
+        "vertical_key": cat.vertical_type,
+        "provider_model": policy.provider_model if policy else None,
+        "policy_version": policy.version_number if policy else None,
+        "policy_published_at": policy.published_at.isoformat() if policy and policy.published_at else None,
+        "category_override_pct": float(own) if own is not None else None,
+        "vertical_default_pct": float(default) if default is not None else None,
+        "effective_pct": float(effective) if effective is not None else None,
+        "effective_source": source,
+        "is_percentage_commission_live": live,
+        "default_editor_path": (
+            "/admin/home-services/finance?tab=monetization" if is_hs
+            else "/admin/finance/vertical-monetization"
+        ),
+        "override_editor_path": (
+            "/admin/home-services/finance?tab=provider-charges" if is_hs
+            else "/admin/pricing/commission"
+        ),
+    }, _rid(r), ENGINE_ID)
 
 
 @router.put("/category-commission-rates/{category_id}", response_model=ApiResponse[dict],
@@ -557,9 +670,10 @@ async def service_groups_summary(r: Request,
 async def export_service_groups(r: Request,
                                  category_id: uuid.UUID | None = Query(None),
                                  status: str | None = Query(None),
+                                 retired: bool = Query(False),
                                  u: UserContext = Depends(require_super_admin),
                                  s: AdminCatalogService = Depends(_svc)):
-    rows = await s.export_service_groups(category_id=category_id, status=status)
+    rows = await s.export_service_groups(category_id=category_id, status=status, retired=retired)
     return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
 
 
@@ -570,14 +684,18 @@ async def list_service_groups(r: Request,
                                category_id: uuid.UUID | None = Query(None),
                                status: str | None = Query(None),
                                has_services: bool | None = Query(None),
-                               limit: int = Query(200, ge=1, le=1000),
+                               retired: bool = Query(False),
+                               sort_by: str = Query("display_order"),
+                               sort_dir: str = Query("asc", pattern="^(asc|desc)$"),
+                               limit: int = Query(50, ge=1, le=100),
                                offset: int = Query(0, ge=0),
                                u: UserContext = Depends(require_super_admin),
                                s: AdminCatalogService = Depends(_svc)):
     return ok(
         await s.list_service_groups_enterprise(
             q=q, category_id=category_id, status=status,
-            has_services=has_services, limit=limit, offset=offset,
+            has_services=has_services, retired=retired, sort_by=sort_by,
+            sort_dir=sort_dir, limit=limit, offset=offset,
         ),
         _rid(r), ENGINE_ID,
     )
@@ -592,12 +710,31 @@ async def create_service_group(r: Request,
     return ok(await s.create_service_group(body), _rid(r), ENGINE_ID)
 
 
+@router.post("/service-groups/bulk-status", response_model=ApiResponse[dict],
+             summary="Bulk activate or deactivate service groups", tags=["Service Groups"])
+async def bulk_service_group_status(r: Request,
+                                     u: UserContext = Depends(require_super_admin),
+                                     s: AdminCatalogService = Depends(_svc)):
+    body = await r.json()
+    ids = [uuid.UUID(str(value)) for value in body.get("ids", [])]
+    return ok(await s.bulk_service_group_status(ids, body.get("action", ""), body.get("reason")), _rid(r), ENGINE_ID)
+
+
 @router.get("/service-groups/{group_id}", response_model=ApiResponse[dict],
             summary="Get service group", tags=["Service Groups"])
 async def get_service_group(group_id: uuid.UUID, r: Request,
+                             include_retired: bool = Query(False),
                              u: UserContext = Depends(require_super_admin),
                              s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.get_service_group(group_id), _rid(r), ENGINE_ID)
+    return ok(await s.get_service_group_enterprise(group_id, include_retired=include_retired), _rid(r), ENGINE_ID)
+
+
+@router.get("/service-groups/{group_id}/audit", response_model=ApiResponse[dict],
+            summary="Service group audit trail", tags=["Service Groups"])
+async def get_service_group_audit(group_id: uuid.UUID, r: Request,
+                                   u: UserContext = Depends(require_super_admin),
+                                   s: AdminCatalogService = Depends(_svc)):
+    return ok(await s.get_service_group_audit(group_id), _rid(r), ENGINE_ID)
 
 
 @router.put("/service-groups/{group_id}", response_model=ApiResponse[dict],
@@ -610,11 +747,16 @@ async def update_service_group(group_id: uuid.UUID, r: Request,
 
 
 @router.delete("/service-groups/{group_id}", response_model=ApiResponse[dict],
-               summary="Archive service group", tags=["Service Groups"])
+               summary="Deprecated: use the audited retire endpoint", deprecated=True,
+               tags=["Service Groups"])
 async def delete_service_group(group_id: uuid.UUID, r: Request,
                                 u: UserContext = Depends(require_super_admin),
                                 s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.delete_service_group(group_id), _rid(r), ENGINE_ID)
+    raise ServiceOSException(
+        "AUDITED_RETIRE_REQUIRED",
+        "Use POST /service-groups/{id}/archive with a retirement reason.",
+        status_code=409,
+    )
 
 
 @router.post("/service-groups/{group_id}/activate", response_model=ApiResponse[dict],
@@ -638,7 +780,17 @@ async def deactivate_service_group(group_id: uuid.UUID, r: Request,
 async def archive_service_group(group_id: uuid.UUID, r: Request,
                                  u: UserContext = Depends(require_super_admin),
                                  s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.archive_service_group(group_id), _rid(r), ENGINE_ID)
+    body = await r.json()
+    return ok(await s.archive_service_group(group_id, body.get("reason", "")), _rid(r), ENGINE_ID)
+
+
+@router.post("/service-groups/{group_id}/restore", response_model=ApiResponse[dict],
+             summary="Restore retired service group as inactive", tags=["Service Groups"])
+async def restore_service_group(group_id: uuid.UUID, r: Request,
+                                 u: UserContext = Depends(require_super_admin),
+                                 s: AdminCatalogService = Depends(_svc)):
+    body = await r.json()
+    return ok(await s.restore_service_group(group_id, body.get("reason", "")), _rid(r), ENGINE_ID)
 
 
 @router.get("/master-services/summary", response_model=ApiResponse[dict],

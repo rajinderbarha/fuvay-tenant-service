@@ -22,10 +22,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import require_super_admin, UserContext
 from app.dependencies.db import get_db
+from app.dependencies.vertical_guard import require_vertical_enabled
 from app.schemas.base import ApiResponse, ok
 from app.engines.final_records.operations_service import list_operations, compute_metrics
 
-router = APIRouter(prefix="/v1/admin/home-services/operations", tags=["Home Services Operations"])
+router = APIRouter(
+    prefix="/v1/admin/home-services/operations",
+    tags=["Home Services Operations"],
+    dependencies=[Depends(require_vertical_enabled("home_services"))],
+)
 
 _RID = lambda r: getattr(r.state, "request_id", "—")
 

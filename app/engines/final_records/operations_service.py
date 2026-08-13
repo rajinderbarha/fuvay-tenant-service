@@ -30,7 +30,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select, func, or_, false as sa_false
+from sqlalchemy import String, and_, case, cast, false as sa_false, func, literal, or_, select, union_all
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.final_records.models import ServiceBooking, ServiceJob
@@ -192,18 +193,101 @@ async def list_operations(
     if technician_id or assignment == "assigned":
         draft_filters.append(sa_false())  # short-circuits to zero rows, not silently ignored
 
-    jobs = (await db.execute(
-        select(ServiceJob).where(*job_filters).order_by(ServiceJob.created_at.desc()).limit(2000)
-    )).scalars().all()
-    drafts = (await db.execute(
-        select(HomeServiceBookingDraft).where(*draft_filters)
-        .order_by(HomeServiceBookingDraft.created_at.desc()).limit(2000)
-    )).scalars().all()
+    jobs = []
+    drafts = []
 
     # Batch lookups — bounded, no N+1 (mirrors sla_summary.py's pattern).
     from app.engines.tenant_engine.models import Tenant
     from app.engines.auth.models import User
     from app.engines.admin_catalog.models import MasterService, JobTypeDefinition
+
+    current_quote_status = (
+        select(ServiceJobQuote.status)
+        .where(ServiceJobQuote.job_id == ServiceJob.id, ServiceJobQuote.is_current.is_(True))
+        .order_by(ServiceJobQuote.version_number.desc()).limit(1)
+        .correlate(ServiceJob).scalar_subquery()
+    )
+    job_stage = case(
+        (and_(ServiceJob.status.in_(["inspection_done", "quote_required"]),
+              current_quote_status.in_(QUOTE_AWAITING_APPROVAL_STATUSES)),
+         literal("AWAITING_APPROVAL")),
+        *[(ServiceJob.status == status, literal(mapped)) for status, mapped in JOB_STAGE_MAP.items()],
+        else_=literal("UNKNOWN"),
+    )
+    delayed_match_cutoff = _now() - timedelta(minutes=DEFAULT_SLA_MINUTES * 0.25)
+    draft_stage = case(
+        (and_(HomeServiceBookingDraft.status == "provider_matched",
+              HomeServiceBookingDraft.created_at < delayed_match_cutoff), literal("AT_RISK")),
+        (HomeServiceBookingDraft.status == "provider_matched", literal("MATCHING")),
+        (HomeServiceBookingDraft.status.in_(DRAFT_ACTIVE_STATUSES), literal("REQUEST")),
+        (HomeServiceBookingDraft.status.in_(DRAFT_EXCEPTION_STATUSES), literal("AT_RISK")),
+        else_=literal("UNKNOWN"),
+    )
+
+    if stage:
+        job_filters.append(job_stage == stage)
+        draft_filters.append(draft_stage == stage)
+    elif view != "all":
+        view_stages = {
+            "requests": {"REQUEST", "MATCHING"},
+            "active": {key for key, tab in STAGE_TO_TAB.items() if tab == "active"},
+            "approval": {"AWAITING_APPROVAL"},
+            "exceptions": {"AT_RISK", "CLOSED", "UNKNOWN"},
+            "completed": {"COMPLETED"},
+        }.get(view)
+        if view_stages is not None:
+            job_filters.append(job_stage.in_(view_stages))
+            draft_filters.append(draft_stage.in_(view_stages))
+
+    job_candidates = (
+        select(literal("JOB").label("work_type"), ServiceJob.id.label("record_id"),
+               ServiceJob.created_at.label("created_at"))
+        .where(*job_filters)
+    )
+    draft_candidates = (
+        select(literal("REQUEST").label("work_type"), HomeServiceBookingDraft.id.label("record_id"),
+               HomeServiceBookingDraft.created_at.label("created_at"))
+        .where(*draft_filters)
+    )
+    if search:
+        job_customer = aliased(User)
+        job_tenant = aliased(Tenant)
+        draft_customer = aliased(User)
+        draft_tenant = aliased(Tenant)
+        pattern = f"%{search.strip()}%"
+        job_candidates = (
+            job_candidates
+            .outerjoin(ServiceBooking, ServiceBooking.id == ServiceJob.booking_id)
+            .outerjoin(job_customer, job_customer.id == ServiceJob.customer_id)
+            .outerjoin(job_tenant, job_tenant.id == ServiceJob.tenant_id)
+            .where(or_(
+            ServiceJob.job_number.ilike(pattern), ServiceBooking.booking_number.ilike(pattern),
+            job_customer.full_name.ilike(pattern), job_tenant.business_name.ilike(pattern),
+            ))
+        )
+        request_number = func.concat(
+            "REQ-", func.upper(func.substr(cast(HomeServiceBookingDraft.id, String), 1, 8)))
+        draft_candidates = (
+            draft_candidates
+            .outerjoin(draft_customer, draft_customer.id == HomeServiceBookingDraft.customer_id)
+            .outerjoin(draft_tenant, draft_tenant.id == HomeServiceBookingDraft.selected_tenant_id)
+            .where(or_(
+            request_number.ilike(pattern), HomeServiceBookingDraft.customer_name.ilike(pattern),
+            draft_customer.full_name.ilike(pattern), draft_tenant.business_name.ilike(pattern),
+            ))
+        )
+
+    candidates = union_all(job_candidates, draft_candidates).subquery()
+    total = int(await db.scalar(select(func.count()).select_from(candidates)) or 0)
+    selected = (await db.execute(
+        select(candidates.c.work_type, candidates.c.record_id, candidates.c.created_at)
+        .order_by(candidates.c.created_at.desc(), candidates.c.record_id.desc())
+        .offset((page - 1) * page_size).limit(page_size)
+    )).all()
+    selected_job_ids = [row.record_id for row in selected if row.work_type == "JOB"]
+    selected_draft_ids = [row.record_id for row in selected if row.work_type == "REQUEST"]
+    jobs = (await db.execute(select(ServiceJob).where(ServiceJob.id.in_(selected_job_ids)))).scalars().all() if selected_job_ids else []
+    drafts = (await db.execute(select(HomeServiceBookingDraft).where(HomeServiceBookingDraft.id.in_(selected_draft_ids)))).scalars().all() if selected_draft_ids else []
 
     booking_ids = {j.booking_id for j in jobs}
     bookings_by_id = await _batch_lookup(db, ServiceBooking, booking_ids)
@@ -310,27 +394,16 @@ async def list_operations(
     # ── Search (server-side, applied post-projection since it spans two
     #    source tables + joined names — bounded by the 2000-row candidate
     #    window above, never the full table). ───────────────────────────────
-    if search:
-        s = search.strip().lower()
-        rows = [r for r in rows if s in (r["work_id"] or "").lower()
-                or s in (r["booking_number"] or "").lower()
-                or s in (r["customer_name"] or "").lower()
-                or s in (r["tenant_name"] or "").lower()]
-
-    if stage:
-        rows = [r for r in rows if r["current_stage"] == stage]
-
-    view_key = {"requests": "requests", "active": "active", "approval": "approval",
-                "exceptions": "exceptions", "completed": "completed", "all": None}.get(view)
-    if view_key == "approval":
-        rows = [r for r in rows if r["current_stage"] == "AWAITING_APPROVAL"]
-    elif view_key:
-        rows = [r for r in rows if STAGE_TO_TAB.get(r["current_stage"]) == view_key]
-
-    rows.sort(key=lambda r: r["created_at"] or "", reverse=True)
-    total = len(rows)
-    start = (page - 1) * page_size
-    page_rows = rows[start:start + page_size]
+    jobs_by_id = {row["job_id"]: row for row in rows if row["work_type"] == "JOB"}
+    requests_by_id = {row["work_id"]: row for row in rows if row["work_type"] == "REQUEST"}
+    page_rows = []
+    for selected_row in selected:
+        if selected_row.work_type == "JOB":
+            row = jobs_by_id.get(str(selected_row.record_id))
+        else:
+            row = requests_by_id.get(f"REQ-{str(selected_row.record_id)[:8].upper()}")
+        if row is not None:
+            page_rows.append(row)
 
     return {
         "records": page_rows,

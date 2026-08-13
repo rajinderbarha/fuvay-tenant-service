@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select, update, text, func
+from sqlalchemy import or_, select, update, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from datetime import datetime, timezone
@@ -47,6 +47,81 @@ class VerticalCatalogService:
             q = q.where(Vertical.is_enabled == True)  # noqa: E712
         rows = (await db.execute(q)).scalars().all()
         return [self._v_dict(v) for v in rows]
+
+    async def list_verticals_directory(
+        self, db: AsyncSession, *, include_disabled: bool = True, q: str | None = None,
+        status: str | None = None, finance_model: str | None = None,
+        lifecycle_status: str | None = None, release_stage: str | None = None,
+        registration_allowed: bool | None = None, is_beta: bool | None = None,
+        page: int = 1, page_size: int = 25, sort_by: str = "sort_order",
+        sort_dir: str = "asc",
+    ) -> dict:
+        """Database-backed administrative directory for the vertical registry."""
+        conditions = []
+        if not include_disabled:
+            conditions.append(Vertical.is_enabled.is_(True))
+        if status == "enabled":
+            conditions.append(Vertical.is_enabled.is_(True))
+        elif status == "disabled":
+            conditions.append(Vertical.is_enabled.is_(False))
+        if q and q.strip():
+            needle = f"%{q.strip()}%"
+            conditions.append(or_(Vertical.label.ilike(needle), Vertical.key.ilike(needle),
+                                  Vertical.slug.ilike(needle), Vertical.description.ilike(needle)))
+        if finance_model:
+            conditions.append(Vertical.finance_model == finance_model)
+        if lifecycle_status:
+            conditions.append(Vertical.lifecycle_status == lifecycle_status)
+        if release_stage:
+            conditions.append(Vertical.release_stage == release_stage)
+        if registration_allowed is not None:
+            conditions.append(Vertical.registration_allowed == registration_allowed)
+        if is_beta is not None:
+            conditions.append(Vertical.is_beta == is_beta)
+
+        total = int((await db.execute(
+            select(func.count()).select_from(Vertical).where(*conditions)
+        )).scalar_one())
+        sort_columns = {
+            "sort_order": Vertical.sort_order, "label": Vertical.label,
+            "key": Vertical.key, "finance_model": Vertical.finance_model,
+            "lifecycle_status": Vertical.lifecycle_status, "release_stage": Vertical.release_stage,
+            "updated_at": Vertical.updated_at,
+        }
+        column = sort_columns.get(sort_by, Vertical.sort_order)
+        ordering = column.desc().nullslast() if sort_dir == "desc" else column.asc().nullsfirst()
+        rows = (await db.execute(
+            select(Vertical).where(*conditions).order_by(ordering, Vertical.id.asc())
+            .offset((page - 1) * page_size).limit(page_size)
+        )).scalars().all()
+        ids = [row.id for row in rows]
+        module_counts: dict[uuid.UUID, tuple[int, int]] = {}
+        enrollment_counts: dict[uuid.UUID, tuple[int, int]] = {}
+        if ids:
+            for vid, total_modules, enabled_modules in (await db.execute(
+                select(VerticalCatalogModule.vertical_id, func.count(),
+                       func.count().filter(VerticalCatalogModule.is_enabled.is_(True)))
+                .join(CatalogModuleDefinition, CatalogModuleDefinition.id == VerticalCatalogModule.module_id)
+                .where(VerticalCatalogModule.vertical_id.in_(ids))
+                .where(CatalogModuleDefinition.navigation_status == "available")
+                .group_by(VerticalCatalogModule.vertical_id)
+            )).all():
+                module_counts[vid] = (int(total_modules), int(enabled_modules))
+            for vid, total_enrollments, active_enrollments in (await db.execute(
+                select(TenantVerticalEnrollment.vertical_id, func.count(),
+                       func.count().filter(TenantVerticalEnrollment.status == "active"))
+                .where(TenantVerticalEnrollment.vertical_id.in_(ids))
+                .group_by(TenantVerticalEnrollment.vertical_id)
+            )).all():
+                enrollment_counts[vid] = (int(total_enrollments), int(active_enrollments))
+        items = []
+        for row in rows:
+            item = self._v_dict(row)
+            item["module_count"], item["enabled_module_count"] = module_counts.get(row.id, (0, 0))
+            item["enrollment_count"], item["active_enrollment_count"] = enrollment_counts.get(row.id, (0, 0))
+            items.append(item)
+        return {"items": items, "total": total, "page": page, "page_size": page_size,
+                "pages": max(1, (total + page_size - 1) // page_size)}
 
     async def get_vertical(self, db: AsyncSession, key: str) -> dict | None:
         v = await self._by_key(db, key)
@@ -101,12 +176,107 @@ class VerticalCatalogService:
             .group_by(TenantVerticalEnrollment.status)
         )).all()
         by_status = {status: count for status, count in rows}
+        # These are operational records, not enrollment metadata. A disable
+        # blocks new entry but deliberately leaves existing work untouched,
+        # so administrators must see both counts before confirming it.
+        from app.engines.final_records.models import ServiceJob
+        from app.engines.home_service_booking.models import HomeServiceBookingDraft
+        active_jobs = (await db.execute(
+            select(func.count(ServiceJob.id)).where(
+                ServiceJob.status.notin_(("completed", "cancelled", "voided", "failed"))
+            )
+        )).scalar() or 0
+        draft_bookings = (await db.execute(
+            select(func.count(HomeServiceBookingDraft.id)).where(
+                HomeServiceBookingDraft.status.notin_(("converted", "expired", "cancelled", "failed"))
+            )
+        )).scalar() or 0
         return {
             "vertical_key": key,
             "active_tenant_enrollments": by_status.get("active", 0),
             "under_review_enrollments": by_status.get("under_review", 0) + by_status.get("submitted", 0),
+            "active_jobs": int(active_jobs),
+            "draft_bookings_in_progress": int(draft_bookings),
             "enrollments_by_status": by_status,
         }
+
+    async def get_capability_registry(self, db: AsyncSession, key: str) -> dict:
+        """Return ownership and runtime behaviour, not editable feature flags."""
+        if not await self._by_key(db, key):
+            raise ValueError(f"Vertical '{key}' not found")
+        if key != "home_services":
+            return {"vertical_key": key, "groups": []}
+        return {
+            "vertical_key": key,
+            "groups": [
+                {"name": "Customer experience", "capabilities": [
+                    {"name": "Tenant-owned pricing", "status": "enabled", "owner": "Tenant",
+                     "runtime_behaviour": "Providers configure prices within the published admin blueprint."},
+                    {"name": "Low / Mid / High price options", "status": "enabled", "owner": "Backend policy",
+                     "runtime_behaviour": "Deterministic backend policy derives choices; no platform fee is added here."},
+                    {"name": "Customer provider selection", "status": "disabled", "owner": "Code-controlled",
+                     "runtime_behaviour": "The matching engine selects the eligible provider."},
+                ]},
+                {"name": "Service execution", "capabilities": [
+                    {"name": "Native booking-to-completion", "status": "enabled", "owner": "Backend policy",
+                     "runtime_behaviour": "Booking, assignment, quote, work and completion use one canonical job."},
+                    {"name": "Exactly-once completion charge", "status": "enabled", "owner": "Backend policy",
+                     "runtime_behaviour": "A completed job posts one idempotent Usage Credit ledger deduction."},
+                ]},
+                {"name": "Commerce & AI", "capabilities": [
+                    {"name": "Usage Credits", "status": "enabled", "owner": "Platform",
+                     "runtime_behaviour": "Provider platform charges use the immutable credit ledger."},
+                    {"name": "AI-assisted booking", "status": "enabled", "owner": "Backend policy",
+                     "runtime_behaviour": "AI collects inputs; backend catalog and serviceability rules decide."},
+                ]},
+            ],
+        }
+
+    async def get_dependency_health(self, db: AsyncSession, key: str) -> dict:
+        """Project configured engine mappings and their latest persisted checks."""
+        v = await self._by_key(db, key)
+        if not v:
+            raise ValueError(f"Vertical '{key}' not found")
+        mappings = (await db.execute(
+            select(VerticalEngineMapping).where(VerticalEngineMapping.vertical_id == v.id)
+            .order_by(VerticalEngineMapping.sort_order)
+        )).scalars().all()
+        from app.engines.engine_mgmt.models import PlatformEngine, EngineHealthCheck
+        checks = []
+        for mapping in mappings:
+            engine = (await db.execute(
+                select(PlatformEngine).where(PlatformEngine.engine_key == mapping.engine_key)
+            )).scalar_one_or_none()
+            latest = None
+            if engine:
+                latest = (await db.execute(
+                    select(EngineHealthCheck).where(EngineHealthCheck.engine_id == engine.id)
+                    .order_by(EngineHealthCheck.checked_at.desc()).limit(1)
+                )).scalar_one_or_none()
+            status = "unverified"
+            if latest:
+                status = "healthy" if latest.health_status in ("healthy", "ok", "up") else "unhealthy"
+            # "locked" means core configuration is protected from admin
+            # mutation; it is not an outage. Only a genuinely unavailable
+            # registry state is unhealthy without a persisted health check.
+            elif engine and engine.global_status not in ("enabled", "locked"):
+                status = "unhealthy"
+            checks.append({
+                "engine_key": mapping.engine_key,
+                "required": mapping.is_required,
+                "status": status,
+                "last_checked_at": latest.checked_at.isoformat() if latest and latest.checked_at else None,
+            })
+        if not mappings:
+            checks.append({
+                "engine_key": "vertical_engine_mappings",
+                "required": True,
+                "status": "unverified",
+                "last_checked_at": None,
+                "detail": "No persisted engine dependency mappings are configured for this vertical.",
+            })
+        healthy = sum(1 for check in checks if check["status"] == "healthy")
+        return {"vertical_key": key, "checks": checks, "healthy_count": healthy, "total_count": len(checks)}
 
     async def update_vertical(self, db: AsyncSession, key: str, payload: dict, *, actor_id=None) -> dict:
         v = await self._by_key(db, key)
@@ -276,13 +446,22 @@ class VerticalCatalogService:
         )).scalars().all()
         return [self._mod_dict(m) for m in rows]
 
-    async def toggle_module(self, db: AsyncSession, vertical_key: str, module_key: str, enabled: bool) -> dict:
+    async def toggle_module(
+        self, db: AsyncSession, vertical_key: str, module_key: str, enabled: bool,
+        *, actor_id=None, reason: str | None = None,
+    ) -> dict:
         v = await self._by_key(db, vertical_key)
         if not v:
             raise ValueError(f"Vertical '{vertical_key}' not found")
         m = await self._module_by_key(db, module_key)
         if not m:
             raise ValueError(f"Module '{module_key}' not found")
+
+        if m.navigation_status != "available":
+            raise ValueError(
+                f"Module '{module_key}' cannot be enabled because its admin navigation status is "
+                f"'{m.navigation_status}'"
+            )
 
         vcm = (await db.execute(
             select(VerticalCatalogModule).where(
@@ -291,17 +470,29 @@ class VerticalCatalogService:
             )
         )).scalar_one_or_none()
 
-        if vcm:
-            if vcm.is_required and not enabled:
-                raise ValueError(f"Module '{module_key}' is required for this vertical and cannot be disabled")
-            vcm.is_enabled = enabled
-        else:
-            if not enabled:
-                return {"status": "no_change"}
-            vcm = VerticalCatalogModule(
-                vertical_id=v.id, module_id=m.id, is_enabled=True, is_required=False
-            )
-            db.add(vcm)
+        if not vcm:
+            # A module assignment is a curated vertical-to-screen contract,
+            # not a generic feature flag.  Silently creating one allowed an
+            # unrelated vertical to expose another vertical's admin page.
+            raise ValueError(f"Module '{module_key}' is not assigned to vertical '{vertical_key}'")
+        if vcm.is_required and not enabled:
+            raise ValueError(f"Module '{module_key}' is required for this vertical and cannot be disabled")
+        if vcm.is_enabled == enabled:
+            return {
+                "vertical_key": vertical_key, "module_key": module_key,
+                "is_enabled": enabled, "status": "no_change",
+            }
+
+        before = {"module_key": module_key, "is_enabled": vcm.is_enabled}
+        vcm.is_enabled = enabled
+        db.add(VerticalAuditLog(
+            vertical_id=v.id,
+            actor_id=actor_id,
+            action_type="vertical.navigation_module.enable" if enabled else "vertical.navigation_module.disable",
+            before_state=before,
+            after_state={"module_key": module_key, "is_enabled": enabled},
+            notes=(reason or f"{('Enabled' if enabled else 'Disabled')} {m.label} in the admin navigation").strip(),
+        ))
 
         await db.commit()
         return {"vertical_key": vertical_key, "module_key": module_key, "is_enabled": enabled}
@@ -365,7 +556,7 @@ class VerticalCatalogService:
         Leads CRM/Appointments/Finance items that must not show for every vertical)."""
         verticals = await self.list_verticals(db, include_disabled=True)
         modules = await self.list_modules(db)
-        universal = [m for m in modules if m["is_universal"]]
+        universal = [m for m in modules if m["is_universal"] and m["navigation_status"] == "available"]
 
         enabled_keys = {v["key"] for v in verticals if v["is_enabled"]}
 
@@ -379,7 +570,10 @@ class VerticalCatalogService:
                 "is_beta": v["is_beta"],
                 "icon": v["icon"],
                 "color": v["color"],
-                "modules": [m for m in mods if m["is_enabled"]],
+                "modules": [
+                    m for m in mods
+                    if m["is_enabled"] and m["navigation_status"] == "available"
+                ],
             })
 
         operation_visibility = {
@@ -409,8 +603,8 @@ class VerticalCatalogService:
     async def _modules_for_vertical(self, db: AsyncSession, vertical_id: uuid.UUID) -> list[dict]:
         rows = (await db.execute(text("""
             SELECT
-                cmd.key, cmd.label, cmd.icon, cmd.admin_path, cmd.module_group,
-                cmd.is_universal, cmd.sort_order,
+                cmd.id, cmd.key, cmd.label, cmd.description, cmd.icon, cmd.admin_path, cmd.module_group,
+                cmd.is_universal, cmd.sort_order, cmd.navigation_status, cmd.navigation_status_reason,
                 vcm.is_enabled, vcm.is_required, vcm.custom_label
             FROM vertical_catalog_modules vcm
             JOIN catalog_module_definitions cmd ON cmd.id = vcm.module_id
@@ -420,13 +614,18 @@ class VerticalCatalogService:
         return [
             {
                 "key": r.key,
+                "id": str(r.id),
                 "label": r.custom_label or r.label,
+                "description": r.description,
                 "icon": r.icon,
                 "admin_path": r.admin_path,
                 "module_group": r.module_group,
                 "is_universal": r.is_universal,
                 "is_enabled": r.is_enabled,
                 "is_required": r.is_required,
+                "sort_order": r.sort_order,
+                "navigation_status": r.navigation_status,
+                "navigation_status_reason": r.navigation_status_reason,
             }
             for r in rows
         ]
@@ -446,6 +645,7 @@ class VerticalCatalogService:
             "finance_model": v.finance_model,
             "meta": v.meta,
             "lifecycle_status": v.lifecycle_status,
+            "release_stage": v.release_stage,
             "registration_allowed": v.registration_allowed,
             "capabilities": v.capabilities or [],
             "onboarding_requirements": v.onboarding_requirements,
@@ -461,9 +661,12 @@ class VerticalCatalogService:
             "id": str(m.id),
             "key": m.key,
             "label": m.label,
+            "description": m.description,
             "icon": m.icon,
             "admin_path": m.admin_path,
             "module_group": m.module_group,
             "is_universal": m.is_universal,
             "sort_order": m.sort_order,
+            "navigation_status": m.navigation_status,
+            "navigation_status_reason": m.navigation_status_reason,
         }

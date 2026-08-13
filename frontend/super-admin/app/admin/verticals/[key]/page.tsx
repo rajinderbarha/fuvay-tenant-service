@@ -56,6 +56,8 @@ export default function VerticalDetailPage() {
   const caps = capApi.data as VerticalCapabilityRegistry | null;
   const health = healthApi.data as VerticalDependencyHealth | null;
   const impact = impactApi.data as Record<string, unknown> | null;
+  const enabledModules = v?.modules?.filter(module => module.is_enabled).length ?? null;
+  const configurationErrors = health?.checks.filter(check => check.required && check.status !== "healthy").length ?? null;
 
   function setTabParam(t: TabKey) {
     setTab(t);
@@ -102,7 +104,7 @@ export default function VerticalDetailPage() {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Btn variant="ghost" size="sm" onClick={() => setTabParam("audit")}><FileText size={14} style={{ marginRight: 4 }}/>View Audit</Btn>
-            <Btn variant="ghost" size="sm" onClick={() => { healthApi.refetch(); }}><ShieldCheck size={14} style={{ marginRight: 4 }}/>Validate Dependencies</Btn>
+            <Btn variant="ghost" size="sm" onClick={() => { healthApi.refetch(); }}><ShieldCheck size={14} style={{ marginRight: 4 }}/>Refresh Dependency Health</Btn>
             <Btn variant="primary" size="sm" onClick={() => setTabParam("impact")}><Sparkles size={14} style={{ marginRight: 4 }}/>Manage Availability</Btn>
           </div>
         </div>
@@ -123,9 +125,9 @@ export default function VerticalDetailPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
               <Metric icon={<Users size={16}/>} value={(impact?.active_tenant_enrollments as number) ?? "—"} label="Active tenants"/>
               <Metric icon={<Briefcase size={16}/>} value={(impact?.active_jobs as number) ?? "—"} label="Active jobs"/>
-              <Metric icon={<Package size={16}/>} value={v?.modules?.length ?? "—"} label="Published Job Types"/>
+              <Metric icon={<Package size={16}/>} value={enabledModules == null ? "—" : `${enabledModules} / ${v?.modules?.length ?? 0}`} label="Admin pages enabled"/>
               <Metric icon={<ShieldCheck size={16}/>} value={health ? `${health.healthy_count} / ${health.total_count}` : "—"} label="Dependencies healthy"/>
-              <Metric icon={<AlertTriangle size={16}/>} value={0} label="Configuration errors"/>
+              <Metric icon={<AlertTriangle size={16}/>} value={configurationErrors ?? "—"} label="Required checks unresolved"/>
             </div>
           </Card>
         )}
@@ -136,9 +138,9 @@ export default function VerticalDetailPage() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
                 <Metric icon={<Users size={16}/>} value={(impact?.active_tenant_enrollments as number) ?? "—"} label="Active tenants"/>
                 <Metric icon={<Briefcase size={16}/>} value={(impact?.active_jobs as number) ?? "—"} label="Active jobs"/>
-                <Metric icon={<Package size={16}/>} value={v?.modules?.length ?? "—"} label="Published Job Types"/>
+                <Metric icon={<Package size={16}/>} value={enabledModules == null ? "—" : `${enabledModules} / ${v?.modules?.length ?? 0}`} label="Admin pages enabled"/>
                 <Metric icon={<ShieldCheck size={16}/>} value={health ? `${health.healthy_count} / ${health.total_count}` : "—"} label="Dependencies healthy"/>
-                <Metric icon={<AlertTriangle size={16}/>} value={0} label="Configuration errors"/>
+                <Metric icon={<AlertTriangle size={16}/>} value={configurationErrors ?? "—"} label="Required checks unresolved"/>
               </div>
             </Card>
 
@@ -187,7 +189,7 @@ export default function VerticalDetailPage() {
                               <td style={{ padding: "10px 16px", width: 150 }}>
                                 <Badge variant="info" size="sm">{c.owner}</Badge>
                               </td>
-                              <td style={{ padding: "10px 16px", width: 170, color: "var(--text-secondary)" }}>{c.source}</td>
+                              <td style={{ padding: "10px 16px", width: 170, color: "var(--text-secondary)" }}>{c.source ?? "Canonical backend"}</td>
                               <td style={{ padding: "10px 16px", color: "var(--text-secondary)" }}>{c.runtime_behaviour}</td>
                               <td style={{ padding: "10px 16px", textAlign: "right", whiteSpace: "nowrap" }}>
                                 {c.action_href && (
@@ -225,7 +227,7 @@ export default function VerticalDetailPage() {
                   </div>
                 </>
               )}
-              <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>No duplicate feature switches.</p>
+              <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Admin-navigation switches are managed separately and never change these runtime capabilities.</p>
             </Card>
           </>
         )}
@@ -238,19 +240,23 @@ export default function VerticalDetailPage() {
                 {health ? `${health.healthy_count} / ${health.total_count} healthy` : "—"}
               </span>
             </div>
-            {healthApi.loading ? (
+            {healthApi.error ? (
+              <p style={{ fontSize: 13, color: "var(--danger-text)" }}>{healthApi.error}</p>
+            ) : healthApi.loading ? (
               <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Checking dependencies…</p>
+            ) : (health?.checks ?? []).length === 0 ? (
+              <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No dependency mappings are configured.</p>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
                 {(health?.checks ?? []).map(c => (
-                  <div key={c.name} style={{ padding: "10px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)",
+                  <div key={c.engine_key} style={{ padding: "10px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)",
                     display: "flex", alignItems: "flex-start", gap: 8 }}>
                     {c.status === "healthy" ? <CheckCircle2 size={15} style={{ color: "var(--success-text)", flexShrink: 0 }}/>
                       : c.status === "unverified" ? <HelpCircle size={15} style={{ color: "var(--text-tertiary)", flexShrink: 0 }}/>
                       : <XCircle size={15} style={{ color: "var(--danger-text)", flexShrink: 0 }}/>}
                     <div>
-                      <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>{c.name}</p>
-                      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "2px 0 0" }}>{c.reason}</p>
+                      <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>{c.engine_key.replaceAll("_", " ")}</p>
+                      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "2px 0 0" }}>{c.detail || `${c.required ? "Required" : "Optional"}${c.last_checked_at ? ` · checked ${new Date(c.last_checked_at).toLocaleString()}` : " · no persisted health check"}`}</p>
                     </div>
                   </div>
                 ))}
@@ -295,10 +301,12 @@ export default function VerticalDetailPage() {
 
         {tab === "audit" && (
           <Card style={{ padding: 0 }}>
-            {auditApi.loading ? (
+            {auditApi.error ? (
+              <div style={{ padding: 24, textAlign: "center", color: "var(--danger-text)", fontSize: 13 }}>{auditApi.error}</div>
+            ) : auditApi.loading ? (
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Loading audit history…</div>
             ) : ((auditApi.data as { items: VerticalAuditEntry[] } | null)?.items ?? []).length === 0 ? (
-              <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No availability changes recorded yet.</div>
+              <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No vertical or navigation changes recorded yet.</div>
             ) : (
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>

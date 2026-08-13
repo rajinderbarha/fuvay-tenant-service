@@ -17,6 +17,8 @@ import {
   ChevronDown, X, Users, AlertTriangle, Clock, Star,
 } from "lucide-react";
 import Link from "next/link";
+import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
+import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
 
 // ── Health band config ────────────────────────────────────────────────────────
 const HEALTH_BANDS = [
@@ -203,9 +205,23 @@ export default function AdminCustomersPage() {
 }
 
 function CustomersContent() {
+  const [columnState, setColumnState] = useState<ColumnDef[]>([
+    { key: "full_name", label: "Customer", visible: true, order: 0 },
+    { key: "phone", label: "Contact", visible: true, order: 1 },
+    { key: "city", label: "Location", visible: true, order: 2 },
+    { key: "health_band", label: "Health", visible: true, order: 3 },
+    { key: "total_bookings", label: "Bookings", visible: true, order: 4 },
+    { key: "last_tenant_name", label: "Last provider", visible: true, order: 5 },
+    { key: "complaints_count", label: "Issues", visible: true, order: 6 },
+    { key: "last_booking_at", label: "Last booking", visible: true, order: 7 },
+    { key: "id", label: "Open", visible: true, order: 8 },
+    { key: "actions", label: "Actions", visible: true, order: 9 },
+  ]);
   // Draft filter state (toolbar inputs)
   const [q, setQ]             = useState("");
   const [healthBand, setHealthBand] = useState("");
+  const [engagementStatus, setEngagementStatus] = useState("");
+  const [bookingCountMin, setBookingCountMin] = useState("");
   const [city, setCity]       = useState("");
   const [state, setState]     = useState("");
   const [tenantId, setTenantId] = useState("");
@@ -218,7 +234,7 @@ function CustomersContent() {
 
   // Applied state (triggers API)
   const [applied, setApplied] = useState({
-    q: "", healthBand: "", city: "", state: "", tenantId: "",
+    q: "", healthBand: "", engagementStatus: "", bookingCountMin: "", city: "", state: "", tenantId: "",
     hasComplaints: "", dateFrom: "", dateTo: "", page: 1,
   });
 
@@ -236,6 +252,8 @@ function CustomersContent() {
   const listFetch = useApi(useCallback(() => adminCustomersApi.list({
     q:               applied.q        || undefined,
     health_band:     applied.healthBand || undefined,
+    engagement_status: applied.engagementStatus || undefined,
+    booking_count_min: applied.bookingCountMin ? Number(applied.bookingCountMin) : undefined,
     city:            applied.city      || undefined,
     state:           applied.state     || undefined,
     tenant_id:       applied.tenantId  || undefined,
@@ -245,7 +263,7 @@ function CustomersContent() {
     last_booking_to:   applied.dateTo   || undefined,
     page:            applied.page,
     page_size:       25,
-    sort_by:         "last_booking_at",
+    sort_by:         "created_at",
     sort_dir:        "desc",
   }), [applied]), [applied]);
 
@@ -256,13 +274,13 @@ function CustomersContent() {
   const meta = listData?.meta;
 
   function applyFilters() {
-    setApplied({ q, healthBand, city, state, tenantId, hasComplaints, dateFrom, dateTo, page: 1 });
+    setApplied({ q, healthBand, engagementStatus, bookingCountMin, city, state, tenantId, hasComplaints, dateFrom, dateTo, page: 1 });
   }
 
   function resetFilters() {
-    setQ(""); setHealthBand(""); setCity(""); setState("");
+    setQ(""); setHealthBand(""); setEngagementStatus(""); setBookingCountMin(""); setCity(""); setState("");
     setTenantId(""); setHasComplaints(""); setDateFrom(""); setDateTo("");
-    setApplied({ q: "", healthBand: "", city: "", state: "", tenantId: "", hasComplaints: "", dateFrom: "", dateTo: "", page: 1 });
+    setApplied({ q: "", healthBand: "", engagementStatus: "", bookingCountMin: "", city: "", state: "", tenantId: "", hasComplaints: "", dateFrom: "", dateTo: "", page: 1 });
   }
 
   function goToPage(p: number) { setApplied(prev => ({ ...prev, page: p })); }
@@ -271,6 +289,24 @@ function CustomersContent() {
     const next = band === applied.healthBand ? "" : band;
     setHealthBand(next);
     setApplied(prev => ({ ...prev, healthBand: next, page: 1 }));
+  }
+
+  function applySavedView(viewFilters: Record<string, unknown>) {
+    const next = {
+      q: String(viewFilters.q ?? viewFilters.search ?? ""), healthBand: String(viewFilters.health_band ?? ""),
+      engagementStatus: String(viewFilters.engagement_status ?? ""), bookingCountMin: String(viewFilters.booking_count_min ?? ""),
+      city: String(viewFilters.city ?? ""), state: String(viewFilters.state ?? ""), tenantId: String(viewFilters.tenant_id ?? ""),
+      hasComplaints: viewFilters.has_complaints === true || viewFilters.has_complaints === "true" ? "yes" : viewFilters.has_complaints === false || viewFilters.has_complaints === "false" ? "no" : "",
+      dateFrom: String(viewFilters.last_booking_from ?? ""), dateTo: String(viewFilters.last_booking_to ?? ""), page: 1,
+    };
+    setQ(next.q); setHealthBand(next.healthBand); setEngagementStatus(next.engagementStatus);
+    setBookingCountMin(next.bookingCountMin); setCity(next.city); setState(next.state);
+    setTenantId(next.tenantId); setHasComplaints(next.hasComplaints); setDateFrom(next.dateFrom); setDateTo(next.dateTo);
+    setApplied(next);
+  }
+
+  function applySummaryFilter(update: Partial<typeof applied>) {
+    setApplied(prev => ({ ...prev, ...update, page: 1 }));
   }
 
   const blockAction = useAction(useCallback((id: string, r: string) => adminCustomersApi.block(id, r), []));
@@ -292,6 +328,8 @@ function CustomersContent() {
     const params: Record<string, string> = {};
     if (applied.q)         params.q           = applied.q;
     if (applied.healthBand) params.health_band = applied.healthBand;
+    if (applied.engagementStatus) params.engagement_status = applied.engagementStatus;
+    if (applied.bookingCountMin) params.booking_count_min = applied.bookingCountMin;
     if (applied.city)      params.city         = applied.city;
     if (applied.state)     params.state        = applied.state;
     if (applied.tenantId)  params.tenant_id    = applied.tenantId;
@@ -302,16 +340,18 @@ function CustomersContent() {
     const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
     const token = (typeof window !== "undefined" ? localStorage.getItem("serviceos_admin_token") : null) ?? "";
     fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.blob())
+      .then(r => { if (!r.ok) throw new Error(`Export failed (${r.status})`); return r.blob(); })
       .then(blob => {
         const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(blob);
+        a.href = url;
         a.download = `customers-${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
-      });
+        URL.revokeObjectURL(url);
+      }).catch(() => window.alert("Customer export failed. Please try again."));
   }
 
-  const hasFilters = !!(applied.q || applied.healthBand || applied.city || applied.state ||
+  const hasFilters = !!(applied.q || applied.healthBand || applied.engagementStatus || applied.bookingCountMin || applied.city || applied.state ||
     applied.tenantId || applied.hasComplaints || applied.dateFrom || applied.dateTo);
 
   const advancedActiveCount = [applied.city, applied.state, applied.tenantId, applied.hasComplaints, applied.dateFrom, applied.dateTo]
@@ -416,18 +456,36 @@ function CustomersContent() {
       render: (_: unknown, row: AdminCustomer) => (
         <ActionMenu items={[
           { label: "View Customer", onClick: () => { window.location.href = `/admin/customers/${row.id}`; } },
-          row.is_active
-            ? { label: "Block Customer", onClick: () => setActionModal({ customerId: row.id, type: "block" }), destructive: true }
-            : { label: "Unblock Customer", onClick: () => setActionModal({ customerId: row.id, type: "unblock" }) },
-          { label: "Suspend Customer", onClick: () => setActionModal({ customerId: row.id, type: "suspend" }), destructive: true },
-          { label: "Reactivate Customer", onClick: () => setActionModal({ customerId: row.id, type: "reactivate" }) },
-        ]} />
+          row.account_status === "locked"
+            ? { label: "Unblock Customer", onClick: () => setActionModal({ customerId: row.id, type: "unblock" }) }
+            : row.account_status === "active"
+              ? { label: "Block Customer", onClick: () => setActionModal({ customerId: row.id, type: "block" }), destructive: true }
+              : null,
+          row.account_status === "active"
+            ? { label: "Suspend Customer", onClick: () => setActionModal({ customerId: row.id, type: "suspend" }), destructive: true }
+            : null,
+          ["suspended", "disabled"].includes(row.account_status)
+            ? { label: "Reactivate Customer", onClick: () => setActionModal({ customerId: row.id, type: "reactivate" }) }
+            : null,
+        ].filter(Boolean) as Parameters<typeof ActionMenu>[0]["items"]} />
       ),
     },
   ];
+  const visibleKeys = new Set(columnState.filter(c => c.visible).sort((a, b) => a.order - b.order).map(c => c.key));
+  const visibleColumns = columns.filter(column => visibleKeys.has(column.key));
+  const enterpriseFilters: Record<string, unknown> = {
+    ...(applied.q ? { q: applied.q } : {}), ...(applied.healthBand ? { health_band: applied.healthBand } : {}),
+    ...(applied.engagementStatus ? { engagement_status: applied.engagementStatus } : {}),
+    ...(applied.bookingCountMin ? { booking_count_min: Number(applied.bookingCountMin) } : {}),
+    ...(applied.city ? { city: applied.city } : {}), ...(applied.state ? { state: applied.state } : {}),
+    ...(applied.tenantId ? { tenant_id: applied.tenantId } : {}),
+    ...(applied.hasComplaints ? { has_complaints: applied.hasComplaints === "yes" } : {}),
+    ...(applied.dateFrom ? { last_booking_from: applied.dateFrom } : {}),
+    ...(applied.dateTo ? { last_booking_to: applied.dateTo } : {}),
+  };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="operations-admin-page" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
       {/* Summary cards */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -437,12 +495,21 @@ function CustomersContent() {
           <>
             <SummaryCard label="Total" value={summary.total.toLocaleString()} />
             <SummaryCard label="Today" value={summary.today} />
-            <SummaryCard label="Active" value={summary.active} color="var(--primary)" onClick={() => applyHealthBand("active")} active={applied.healthBand === "active"} />
+            <SummaryCard label="Active" value={summary.active} color="var(--primary)" onClick={() => {
+              const next = applied.engagementStatus === "active" ? "" : "active";
+              setEngagementStatus(next); setHealthBand(""); applySummaryFilter({ engagementStatus: next, healthBand: "" });
+            }} active={applied.engagementStatus === "active"} />
             <SummaryCard label="New" value={summary.new_customers} color="var(--success-text,var(--success))" onClick={() => applyHealthBand("new")} active={applied.healthBand === "new"} />
-            <SummaryCard label="Repeat Customers" value={summary.repeat_customers} onClick={() => setApplied(p => ({ ...p, page: 1 }))} />
+            <SummaryCard label="Repeat Customers" value={summary.repeat_customers} onClick={() => {
+              const next = applied.bookingCountMin === "2" ? "" : "2";
+              setBookingCountMin(next); applySummaryFilter({ bookingCountMin: next });
+            }} active={applied.bookingCountMin === "2"} />
             <SummaryCard label="At Risk" value={summary.at_risk} color="var(--warning-text,#b45309)" onClick={() => applyHealthBand("at_risk")} active={applied.healthBand === "at_risk"} />
             <SummaryCard label="Dormant" value={summary.dormant} color="var(--muted-text)" onClick={() => applyHealthBand("dormant")} active={applied.healthBand === "dormant"} />
-            <SummaryCard label="Open Complaints" value={summary.has_complaints} color="var(--danger-text,#b91c1c)" onClick={() => setHasComplaints("yes")} />
+            <SummaryCard label="Open Complaints" value={summary.has_complaints} color="var(--danger-text,#b91c1c)" onClick={() => {
+              const next = applied.hasComplaints === "yes" ? "" : "yes";
+              setHasComplaints(next); applySummaryFilter({ hasComplaints: next });
+            }} active={applied.hasComplaints === "yes"} />
             <SummaryCard label="Blocked" value={summary.blocked} color="var(--danger-text,#b91c1c)" onClick={() => applyHealthBand("blocked")} active={applied.healthBand === "blocked"} />
             {summary.avg_rating != null && (
               <SummaryCard label="Avg Rating" value={`★ ${summary.avg_rating.toFixed(1)}`} />
@@ -453,6 +520,11 @@ function CustomersContent() {
       </div>
 
       {/* Toolbar */}
+      <OperationsDirectoryControls
+        resourceKey="admin_customers" filters={enterpriseFilters}
+        sort={{ sort_by: "created_at", sort_direction: "desc" }} columns={columnState}
+        onApplyView={applySavedView} onColumnsChange={setColumnState}
+      />
       <Card padding={14}>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div style={{ flex: 2, minWidth: 220 }}>
@@ -489,7 +561,7 @@ function CustomersContent() {
           </Btn>
           {hasFilters && <Btn variant="ghost" size="sm" onClick={resetFilters}>Clear</Btn>}
           <Btn variant="ghost" size="sm" onClick={() => { listFetch.refetch(); summaryFetch.refetch(); }}>
-            <RefreshCw size={14} />
+            <RefreshCw size={14} style={{ marginRight: 4 }} />Refresh
           </Btn>
           <Btn variant="ghost" size="sm" onClick={exportCsv}>
             <Download size={14} style={{ marginRight: 4 }} />CSV
@@ -517,6 +589,16 @@ function CustomersContent() {
               loading={filtersFetch.loading}
               allLabel="All States"
             />
+            <SearchDropdown
+              label="Provider"
+              value={tenantId}
+              onChange={setTenantId}
+              options={filterOpts?.tenants ?? []}
+              placeholder="Search providers…"
+              loading={filtersFetch.loading}
+              allLabel="All Providers"
+              minWidth={210}
+            />
             <div style={{ minWidth: 150 }}>
               <Select
                 label="Has Complaints"
@@ -539,6 +621,8 @@ function CustomersContent() {
         {hasFilters && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
             {applied.healthBand && <FilterChip label={`Health: ${applied.healthBand.replace(/_/g, " ")}`} onRemove={() => { setHealthBand(""); setApplied(p => ({ ...p, healthBand: "", page: 1 })); }} />}
+            {applied.engagementStatus && <FilterChip label="Active customers" onRemove={() => { setEngagementStatus(""); setApplied(p => ({ ...p, engagementStatus: "", page: 1 })); }} />}
+            {applied.bookingCountMin && <FilterChip label="Repeat customers" onRemove={() => { setBookingCountMin(""); setApplied(p => ({ ...p, bookingCountMin: "", page: 1 })); }} />}
             {applied.city      && <FilterChip label={`City: ${applied.city}`}   onRemove={() => { setCity(""); setApplied(p => ({ ...p, city: "", page: 1 })); }} />}
             {applied.state     && <FilterChip label={`State: ${applied.state}`} onRemove={() => { setState(""); setApplied(p => ({ ...p, state: "", page: 1 })); }} />}
             {applied.tenantId  && <FilterChip label="Tenant filter active"      onRemove={() => { setTenantId(""); setApplied(p => ({ ...p, tenantId: "", page: 1 })); }} />}
@@ -583,7 +667,7 @@ function CustomersContent() {
           </div>
         ) : (
           <DataTable
-            columns={columns as unknown as Parameters<typeof DataTable>[0]["columns"]}
+            columns={visibleColumns as unknown as Parameters<typeof DataTable>[0]["columns"]}
             rows={customers as unknown as Record<string, unknown>[]}
             loading={listFetch.loading}
             emptyText={

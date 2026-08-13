@@ -32,7 +32,17 @@ def create_engine() -> AsyncEngine:
         pool_pre_ping=True,
         echo=settings.DEBUG,
         future=True,
-        connect_args={"ssl": False},  # local PostgreSQL has no SSL
+        connect_args={
+            "ssl": False,  # local PostgreSQL has no SSL
+            # A cancelled client or worker must never retain an open
+            # transaction indefinitely. PostgreSQL enforces this per
+            # connection even if application cleanup itself is interrupted.
+            "server_settings": {
+                "idle_in_transaction_session_timeout": str(
+                    settings.DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_SECONDS * 1000
+                ),
+            },
+        },
     )
 
 

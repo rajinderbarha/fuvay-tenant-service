@@ -101,14 +101,14 @@ class TestNoDuplicates:
         hs = next(v for v in d["verticals"] if v["vertical_key"] == "home_services")
         module_keys = {m["key"] for m in hs["modules"]}
         for keep in ["categories", "service_groups", "master_services", "types_brands",
-                     "checklist_templates", "service_setup"]:
+                     "checklist_templates"]:
             assert keep in module_keys, f"{keep} should still be present under Home Services"
         # MODULE-L5-56 retired these as standalone nav entries (Job-Type
         # Blueprint consolidation) -- Options & Add-ons and Problems &
         # Questions are now configured only per exact Job Type inside
         # Catalog Workspace. Migration 173 closed the dynamic-module gap
         # that ticket's own test file explicitly deferred.
-        for retired in ["service_options", "issue_types"]:
+        for retired in ["service_options", "issue_types", "service_setup"]:
             assert retired not in module_keys, f"{retired} should be retired under Home Services"
 
     async def test_seed_idempotent_no_duplicates_on_rerun(self, client):

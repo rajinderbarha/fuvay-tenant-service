@@ -7,8 +7,8 @@ model. Tenant-admin read access is served from execution_router.py instead.
 """
 import uuid
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import require_super_admin
@@ -46,6 +46,94 @@ async def list_templates(r: Request, user=Depends(require_super_admin), db: Asyn
         d["mapping_count"] = mapping_count
         out.append(d)
     return ok(out, _rid(r), "list_templates")
+
+
+@router.get("/templates-directory")
+async def list_templates_directory(
+    r: Request,
+    q: str | None = Query(None, max_length=200),
+    status: str | None = Query(None),
+    purpose: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    user=Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Paged checklist library for the admin directory.
+
+    The legacy ``/templates`` route remains for bounded picker surfaces.  This
+    endpoint is deliberately batch-oriented so the main library never loads
+    an unbounded table or performs one latest-version/count query per row.
+    """
+    filters = []
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        filters.append(or_(
+            ChecklistTemplate.name.ilike(term),
+            ChecklistTemplate.code.ilike(term),
+            ChecklistTemplate.description.ilike(term),
+        ))
+    if status:
+        filters.append(ChecklistTemplate.status == status)
+    if purpose:
+        filters.append(ChecklistTemplate.purpose == purpose)
+
+    total = int((await db.execute(
+        select(func.count(ChecklistTemplate.id)).where(*filters)
+    )).scalar_one())
+    rows = (await db.execute(
+        select(ChecklistTemplate)
+        .where(*filters)
+        .order_by(ChecklistTemplate.updated_at.desc(), ChecklistTemplate.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )).scalars().all()
+
+    template_ids = [row.id for row in rows]
+    latest_by_template: dict[uuid.UUID, ChecklistTemplateVersion] = {}
+    mapping_counts: dict[uuid.UUID, int] = {}
+    if template_ids:
+        versions = (await db.execute(
+            select(ChecklistTemplateVersion)
+            .where(ChecklistTemplateVersion.checklist_template_id.in_(template_ids))
+            .order_by(
+                ChecklistTemplateVersion.checklist_template_id,
+                ChecklistTemplateVersion.version_number.desc(),
+            )
+        )).scalars().all()
+        for version in versions:
+            latest_by_template.setdefault(version.checklist_template_id, version)
+
+        count_rows = (await db.execute(
+            select(
+                ChecklistTemplateVersion.checklist_template_id,
+                func.count(JobTypeChecklistMapping.id),
+            )
+            .outerjoin(
+                JobTypeChecklistMapping,
+                JobTypeChecklistMapping.checklist_template_version_id == ChecklistTemplateVersion.id,
+            )
+            .where(ChecklistTemplateVersion.checklist_template_id.in_(template_ids))
+            .group_by(ChecklistTemplateVersion.checklist_template_id)
+        )).all()
+        mapping_counts = {template_id: int(count) for template_id, count in count_rows}
+
+    items = []
+    for template in rows:
+        item = template.to_dict()
+        latest = latest_by_template.get(template.id)
+        item["latest_version"] = latest.to_dict() if latest else None
+        item["mapping_count"] = mapping_counts.get(template.id, 0)
+        items.append(item)
+
+    pages = max(1, (total + page_size - 1) // page_size)
+    return ok({
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages,
+    }, _rid(r), "list_templates_directory")
 
 
 @router.post("/templates")
@@ -168,6 +256,47 @@ async def archive_template(template_id: str, r: Request, user=Depends(require_su
 async def list_mappings(r: Request, user=Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
     mappings = (await db.execute(select(JobTypeChecklistMapping).order_by(JobTypeChecklistMapping.created_at.desc()))).scalars().all()
     return ok([m.to_dict() for m in mappings], _rid(r), "list_mappings")
+
+
+@router.get("/mappings-directory")
+async def list_mappings_directory(
+    r: Request,
+    status: str | None = Query(None),
+    usage: str | None = Query(None),
+    actor: str | None = Query(None),
+    phase: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    user=Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    filters = []
+    for column, value in (
+        (JobTypeChecklistMapping.status, status),
+        (JobTypeChecklistMapping.usage, usage),
+        (JobTypeChecklistMapping.actor, actor),
+        (JobTypeChecklistMapping.phase, phase),
+    ):
+        if value:
+            filters.append(column == value)
+    total = int((await db.execute(
+        select(func.count(JobTypeChecklistMapping.id)).where(*filters)
+    )).scalar_one())
+    rows = (await db.execute(
+        select(JobTypeChecklistMapping)
+        .where(*filters)
+        .order_by(JobTypeChecklistMapping.updated_at.desc(), JobTypeChecklistMapping.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )).scalars().all()
+    pages = max(1, (total + page_size - 1) // page_size)
+    return ok({
+        "items": [row.to_dict() for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages,
+    }, _rid(r), "list_mappings_directory")
 
 
 @router.post("/mappings")

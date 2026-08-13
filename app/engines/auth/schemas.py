@@ -73,6 +73,9 @@ class OTPSendRequest(BaseModel):
 class MFAVerifyRequest(BaseModel):
     mfa_challenge_token: str
     code: str = Field(min_length=6, max_length=8)
+    device_id: str = Field(default="web", max_length=255)
+    device_name: str | None = Field(default=None, max_length=255)
+    remember_device: bool = False
 
 class MFASetupConfirmRequest(BaseModel):
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")

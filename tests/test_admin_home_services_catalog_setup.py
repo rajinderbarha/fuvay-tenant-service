@@ -235,9 +235,10 @@ def test_hs2b_hard_delete_service_type_checks_usage():
     assert "TenantServiceType" in fn
 
 
-def test_hs2b_delete_service_group_already_checks_usage():
-    fn = SERVICE_PY.split("async def delete_service_group")[1].split("async def _load_service_group")[0]
+def test_hs2b_retire_service_group_checks_usage():
+    fn = SERVICE_PY.split("async def archive_service_group")[1].split("async def restore_service_group")[0]
     assert "SERVICE_GROUP_HAS_SERVICES" in fn
+    assert "len(reason) < 10" in fn
 
 
 def test_hs2b_hard_delete_master_service_already_checks_usage():

@@ -271,6 +271,26 @@ class TestAdminRouterPaginationParams:
         assert "offset" in params
 
 
+class TestHomeServicesOperationsPagination:
+    """The unified admin feed must page in SQL before hydrating records."""
+
+    def test_operations_feed_does_not_materialize_candidate_window(self):
+        import inspect
+        from app.engines.final_records.operations_service import list_operations
+
+        src = inspect.getsource(list_operations)
+        assert ".limit(2000)" not in src
+        assert "union_all(job_candidates, draft_candidates)" in src
+        assert ".offset((page - 1) * page_size).limit(page_size)" in src
+
+    def test_operations_feed_hydrates_selected_ids_only(self):
+        import inspect
+        from app.engines.final_records.operations_service import list_operations
+
+        src = inspect.getsource(list_operations)
+        assert "ServiceJob.id.in_(selected_job_ids)" in src
+        assert "HomeServiceBookingDraft.id.in_(selected_draft_ids)" in src
+
 # ── 13. Migration 048 exists and has correct down_revision ───────────────────
 
 class TestMigration048:

@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useCallback } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
+import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import { Card, Badge, Btn, Modal, Input, SectionHeader, DataTable, EmptyState, SummaryCard,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
@@ -11,7 +12,7 @@ import {
   type ServiceCategory, type MasterService, type MasterServiceJobTypeLink,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
-import { Plus, ClipboardList, CheckCircle2, Pencil, Archive, ListChecks, ShieldAlert } from "lucide-react";
+import { Plus, ClipboardList, CheckCircle2, Pencil, Archive, ListChecks, ShieldAlert, RefreshCw, Search } from "lucide-react";
 
 const PURPOSES: ChecklistPurpose[] = [
   "PRE_ARRIVAL", "INSPECTION", "PRE_WORK", "EXECUTION", "SAFETY", "COMPLETION", "HANDOVER",
@@ -44,13 +45,27 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 
 export default function ChecklistLibraryPage() {
   const [tab, setTab] = useState<Tab>("templates");
+  const [templateQuery, setTemplateQuery] = useState("");
+  const [templatePurpose, setTemplatePurpose] = useState("");
+  const [templatePage, setTemplatePage] = useState(1);
+  const [mappingStatus, setMappingStatus] = useState("");
+  const [mappingPage, setMappingPage] = useState(1);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const notify = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); };
 
-  const templates = useApi(useCallback(() => checklistCatalogApi.listTemplates(), []));
-  const templateList: ChecklistTemplateRow[] = templates.data ?? [];
-  const mappings = useApi(useCallback(() => checklistCatalogApi.listMappings(), []));
-  const mappingList: JobTypeChecklistMappingRow[] = mappings.data ?? [];
+  const templates = useApi(useCallback(() => checklistCatalogApi.listTemplatesDirectory({
+    q: templateQuery || undefined,
+    purpose: (templatePurpose || undefined) as ChecklistPurpose | undefined,
+    page: templatePage,
+    page_size: 25,
+  }), [templateQuery, templatePurpose, templatePage]), [templateQuery, templatePurpose, templatePage]);
+  const templateList: ChecklistTemplateRow[] = templates.data?.items ?? [];
+  const mappings = useApi(useCallback(() => checklistCatalogApi.listMappingsDirectory({
+    status: mappingStatus || undefined,
+    page: mappingPage,
+    page_size: 25,
+  }), [mappingStatus, mappingPage]), [mappingStatus, mappingPage]);
+  const mappingList: JobTypeChecklistMappingRow[] = mappings.data?.items ?? [];
 
   const publishedCount = templateList.filter(t => t.latest_version?.status === "PUBLISHED").length;
   const draftCount = templateList.filter(t => t.latest_version?.status === "DRAFT").length;
@@ -63,12 +78,53 @@ export default function ChecklistLibraryPage() {
         subtitle="Create reusable checklists and publish them to exact job-type blueprints."
         actions={
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn size="sm" variant="secondary">Preview</Btn>
-            <Btn size="sm" variant="secondary">View Audit</Btn>
+            <Btn size="sm" variant="secondary" onClick={() => { templates.refetch(); mappings.refetch(); }}>
+              <RefreshCw size={14} style={{ marginRight: 4 }}/> Refresh
+            </Btn>
             <NewTemplateButton onCreated={() => { templates.refetch(); notify("Template created as a draft."); }} />
           </div>
         }
       />
+      <HomeServicesCatalogNav active="checklists" />
+
+      {tab === "templates" && (
+        <Card padding={14} style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <div style={{ position: "relative", flex: "1 1 280px" }}>
+              <Search size={14} style={{ position: "absolute", left: 11, top: 10, color: "var(--text-tertiary)" }}/>
+              <input aria-label="Search checklist templates" placeholder="Search name, code, or description…"
+                value={templateQuery} onChange={e => { setTemplateQuery(e.target.value); setTemplatePage(1); }}
+                style={{ ...selectStyle, paddingLeft: 34 }}/>
+            </div>
+            <select aria-label="Filter by checklist purpose" value={templatePurpose}
+              onChange={e => { setTemplatePurpose(e.target.value); setTemplatePage(1); }}
+              style={{ ...selectStyle, width: 210 }}>
+              <option value="">All purposes</option>
+              {PURPOSES.map(p => <option key={p} value={p}>{p.replace(/_/g, " ")}</option>)}
+            </select>
+            <span style={{ fontSize: 12, color: "var(--text-tertiary)", marginLeft: "auto" }}>
+              {templates.data?.total ?? 0} templates
+            </span>
+          </div>
+        </Card>
+      )}
+
+      {tab === "mappings" && (
+        <Card padding={14} style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <select aria-label="Filter mapping status" value={mappingStatus}
+              onChange={e => { setMappingStatus(e.target.value); setMappingPage(1); }}
+              style={{ ...selectStyle, width: 190 }}>
+              <option value="">All mapping statuses</option>
+              <option value="active">Active</option>
+              <option value="disabled">Disabled</option>
+            </select>
+            <span style={{ fontSize: 12, color: "var(--text-tertiary)", marginLeft: "auto" }}>
+              {mappings.data?.total ?? 0} mappings
+            </span>
+          </div>
+        </Card>
+      )}
 
       {toast && (
         <div style={{ padding: "10px 16px", borderRadius: 10, marginBottom: 12,
@@ -100,20 +156,41 @@ export default function ChecklistLibraryPage() {
       </div>
 
       {tab === "templates" && (
-        <TemplatesWorkspace
-          templates={templateList} loading={templates.loading}
-          onRefetch={() => { templates.refetch(); mappings.refetch(); }}
-          notify={notify}
-        />
+        <>
+          <TemplatesWorkspace
+            templates={templateList} loading={templates.loading}
+            onRefetch={() => { templates.refetch(); mappings.refetch(); }}
+            notify={notify}
+          />
+          <DirectoryPager page={templates.data?.page ?? templatePage} pages={templates.data?.pages ?? 1}
+            total={templates.data?.total ?? 0} onPage={setTemplatePage}/>
+        </>
       )}
       {tab === "mappings" && (
-        <MappingsTab
-          mappings={mappingList} loading={mappings.loading} templates={templateList}
-          onRefetch={() => mappings.refetch()} notify={notify}
-        />
+        <>
+          <MappingsTab
+            mappings={mappingList} loading={mappings.loading} templates={templateList}
+            onRefetch={() => mappings.refetch()} notify={notify}
+          />
+          <DirectoryPager page={mappings.data?.page ?? mappingPage} pages={mappings.data?.pages ?? 1}
+            total={mappings.data?.total ?? 0} onPage={setMappingPage}/>
+        </>
       )}
       {tab === "health" && <ExecutionHealthTab />}
     </AdminLayout>
+  );
+}
+
+function DirectoryPager({ page, pages, total, onPage }: { page: number; pages: number; total: number; onPage: (page: number) => void }) {
+  if (pages <= 1) return null;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 14 }}>
+      <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Page {page} of {pages} · {total} records</span>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Btn>
+        <Btn size="sm" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</Btn>
+      </div>
+    </div>
   );
 }
 

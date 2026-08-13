@@ -13,8 +13,11 @@ const AVAIL_BADGE: Record<string, "success" | "warning" | "danger" | "muted"> = 
 };
 
 const JOB_STATUS_BADGE: Record<string, "success" | "warning" | "danger" | "info" | "muted"> = {
-  completed: "success", in_progress: "info", assigned: "info",
-  pending_start: "warning", on_the_way: "warning", cancelled: "danger",
+  completed: "success", service_started: "info", assigned: "info", accepted: "info",
+  pending_assignment: "warning", scheduled: "info", on_the_way: "warning",
+  reached_site: "info", inspection_started: "info", inspection_done: "warning",
+  quote_required: "warning", work_done: "success", customer_not_available: "danger",
+  cancelled: "danger", failed: "danger", closed_estimate_declined: "muted",
 };
 
 function InfoRow({ label, value }: { label: string; value?: string | number | null }) {
@@ -34,7 +37,7 @@ function StaffDetailContent({ staffId, onClose }: { staffId: string; onClose?: (
     (staffFetch.data as { data?: AdminStaffMember } | null)?.data ?? null;
 
   const jobsFetch = useApi(useCallback(() => adminStaffApi.jobs(staffId, { page: 1 }), [staffId]), [staffId]);
-  type JobRow = { id: string; booking_number: string; tenant_name: string; service_category: string; status: string; customer_rating: number | null; city: string; completed_at: string | null; created_at: string | null };
+  type JobRow = { id: string; job_number: string; booking_number: string; tenant_name: string; service_category: string; status: string; customer_rating: number | null; city: string; completed_at: string | null; created_at: string | null };
   type JobsData = { jobs: JobRow[]; meta: { page: number; total: number; total_pages: number } };
   const jobsData: JobsData | undefined =
     (jobsFetch.data as { data?: JobsData } | null)?.data;
@@ -45,7 +48,7 @@ function StaffDetailContent({ staffId, onClose }: { staffId: string; onClose?: (
     {
       key: "booking_number", label: "Job #", width: 130,
       render: (_: unknown, row: JobRow) => (
-        <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 600 }}>{row.booking_number || "—"}</span>
+        <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 600 }}>{row.job_number || row.booking_number || "—"}</span>
       ),
     },
     {

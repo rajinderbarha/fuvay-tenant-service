@@ -124,7 +124,7 @@ function HomeServicesFinanceWorkspace() {
       {tab === "overview" && <OverviewTab onNavigate={setTab} />}
       {tab === "monetization" && <MonetizationTab />}
       {tab === "provider-charges" && <ProviderChargesTab />}
-      {tab === "credits" && <CreditsTab />}
+      {tab === "credits" && <CreditsTab params={params} />}
       {tab === "security-deposits" && <SecurityDepositsTab />}
       {tab === "invoices" && <InvoicesTab />}
       {tab === "customer-refunds" && <CustomerRefundsTab />}
@@ -500,7 +500,7 @@ function MonetizationTab() {
           ) : form.provider_model !== "NONE" && (
             <p style={{ fontSize: 11, color: "var(--warning-text, #b45309)", margin: "0 0 8px" }}>
               Not yet enforced for Home Services — job completion only charges via Percentage Commission
-              (Category Commission Rates in the Provider Charges tab). Saved here for record-keeping only.
+              (Category Commission Overrides in the Provider Charges tab). Saved here for record-keeping only.
             </p>
           )}
           {form.provider_model === "COMPLETION_CREDITS" && (
@@ -1095,7 +1095,7 @@ function ProviderChargesTab() {
 // map this with price that tenant will set and customer will see"). The
 // provider is now charged a % of what the tenant actually collected from
 // the customer for the job (job.completion_data.collected_amount), at a
-// rate set PER CATEGORY here -- reusing the existing, already-real
+// optional override set PER CATEGORY here -- reusing the existing, already-real
 // ServiceCategory.commission_pct field/API (previously only reachable via
 // the other, invoice-based verticals' Category Rates page). This only
 // takes effect once the Monetization tab's policy has provider_model =
@@ -1143,10 +1143,10 @@ function CategoryCommissionSection() {
 
   return (
     <Card padding={16}>
-      <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 4px" }}>Category Commission Rates</h3>
+      <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 4px" }}>Category Commission Overrides</h3>
       <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
         Provider commission, as a % of the price the tenant collects from the customer for a completed job —
-        set per category. A category left blank uses the Monetization tab&apos;s default rate
+        optional per-category overrides only. A category left blank uses the Monetization tab&apos;s published vertical default
         {policyDefaultPct != null ? ` (currently ${policyDefaultPct}%)` : " (none set yet)"}.
       </p>
       {!policyIsLivePercentage && (
@@ -1220,11 +1220,24 @@ function units(v: unknown): string {
   return `${n.toLocaleString("en-IN")} credits`;
 }
 
+function ledgerEventLabel(v: unknown): string {
+  return String(v ?? "")
+    .split("_")
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 const CREDIT_SUBTABS = ["accounts", "topups", "packages", "ledger", "adjustments"] as const;
 type CreditSubTab = typeof CREDIT_SUBTABS[number];
 
-function CreditsTab() {
-  const [subTab, setSubTab] = useState<CreditSubTab>("accounts");
+function CreditsTab({ params }: { params: ReturnType<typeof useSearchParams> }) {
+  const requestedSubTab = params.get("credits_tab") as CreditSubTab | null;
+  const [subTab, setSubTab] = useState<CreditSubTab>(
+    requestedSubTab && CREDIT_SUBTABS.includes(requestedSubTab) ? requestedSubTab : "accounts",
+  );
+  const tenantId = params.get("tenant_id") || undefined;
+  const jobId = params.get("job_id") || undefined;
   const [selectedTopup, setSelectedTopup] = useState<string | null>(null);
   const [selectedLedgerEntry, setSelectedLedgerEntry] = useState<string | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<Record<string, unknown> | null>(null);
@@ -1269,7 +1282,7 @@ function CreditsTab() {
       {subTab === "accounts" && <CreditAccountsView onSelect={setSelectedAccount} />}
       {subTab === "topups" && <TopupOrdersView onSelect={setSelectedTopup} />}
       {subTab === "packages" && <TopupPackagesPanel />}
-      {subTab === "ledger" && <CreditLedgerView onSelect={setSelectedLedgerEntry} />}
+      {subTab === "ledger" && <CreditLedgerView onSelect={setSelectedLedgerEntry} tenantId={tenantId} jobId={jobId} />}
       {subTab === "adjustments" && <AdjustmentsView onCreated={() => accountsSummary.refetch()} />}
 
       <Modal open={!!selectedTopup} onClose={() => setSelectedTopup(null)} title="Top-up Order Detail" size="lg">
@@ -1452,9 +1465,15 @@ const LEDGER_EVENT_TYPES = [
   "completed_job_deduction", "customer_platform_charge_recovery", "manual_credit_adjustment",
 ];
 
-function CreditLedgerView({ onSelect }: { onSelect: (id: string) => void }) {
+function CreditLedgerView({ onSelect, tenantId, jobId }: {
+  onSelect: (id: string) => void;
+  tenantId?: string;
+  jobId?: string;
+}) {
   const [eventType, setEventType] = useState<string | undefined>(undefined);
-  const ledger = useApi(useCallback(() => homeServicesFinanceApi.listCreditLedger({ eventType, pageSize: 100 }), [eventType]));
+  const ledger = useApi(useCallback(() => homeServicesFinanceApi.listCreditLedger({
+    tenantId, jobId, eventType, pageSize: 100,
+  }), [tenantId, jobId, eventType]));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1464,20 +1483,25 @@ function CreditLedgerView({ onSelect }: { onSelect: (id: string) => void }) {
           <Btn key={e} variant={eventType === e ? "primary" : "ghost"} onClick={() => setEventType(e)}>{e.toUpperCase()}</Btn>
         ))}
       </div>
+      {(tenantId || jobId) && (
+        <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>
+          Showing exact ledger activity{tenantId ? ` for provider ${tenantId}` : ""}{jobId ? ` and job ${jobId}` : ""}.
+        </p>
+      )}
       <DataTable
         loading={ledger.loading}
         rows={(ledger.data?.items ?? []) as unknown as Record<string, unknown>[]}
         emptyText="No ledger entries found for this filter."
-        onRowClick={row => onSelect(String((row as Record<string, unknown>).id))}
+        onRowClick={row => onSelect(String((row as Record<string, unknown>).ledger_id))}
         columns={[
           { key: "created_at", label: "Timestamp", render: v => dt(v as string) },
-          { key: "id", label: "Entry ID", render: v => <span style={{ fontFamily: "monospace", fontSize: 11 }}>{String(v).slice(0, 8)}</span> },
-          { key: "event_type", label: "Entry Type", render: v => <span style={{ fontFamily: "monospace", fontSize: 11 }}>{String(v).toUpperCase()}</span> },
+          { key: "ledger_id", label: "Entry ID", render: v => <span style={{ fontFamily: "monospace", fontSize: 11 }}>{String(v).slice(0, 8)}</span> },
+          { key: "event_type", label: "Entry Type", render: v => <span style={{ fontSize: 11 }}>{ledgerEventLabel(v)}</span> },
           { key: "tenant_name", label: "Provider" },
           { key: "direction", label: "Direction", render: v => <Badge variant={v === "credit" ? "success" : "default"}>{String(v)}</Badge> },
           { key: "credit_delta", label: "Credit Units", render: v => (Number(v) >= 0 ? "+" : "") + units(v) },
           { key: "balance_after", label: "Balance After", render: v => units(v) },
-          { key: "source_type", label: "Source", render: v => v ? String(v) : "—" },
+          { key: "deduction_source", label: "Source", render: (v, row) => v ? String(v) : String((row as Record<string, unknown>).source_type ?? "—") },
         ]}
       />
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>

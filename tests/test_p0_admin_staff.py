@@ -38,7 +38,7 @@ def test_router_prefix():
 
 def test_router_requires_super_admin():
     src = BACKEND_ROUTER.read_text(encoding="utf-8")
-    assert "require_super_admin" in src
+    assert "require_permission(P.STAFF_READ)" in src
 
 def test_router_excludes_customers():
     src = BACKEND_ROUTER.read_text(encoding="utf-8")
@@ -104,7 +104,8 @@ def test_router_computes_availability_inline():
 
 def test_router_joins_jobs_for_aggregation():
     src = BACKEND_ROUTER.read_text(encoding="utf-8")
-    assert "FROM jobs" in src or "FROM   jobs" in src
+    assert "FROM service_jobs" in src or "FROM   service_jobs" in src
+    assert "FROM jobs" not in src and "FROM   jobs" not in src
 
 def test_router_joins_staff_rating_summaries():
     src = BACKEND_ROUTER.read_text(encoding="utf-8")

@@ -250,10 +250,16 @@ async def list_brand_requests(
     r: Request,
     status: str | None = Query(None),
     tenant_id: uuid.UUID | None = Query(None),
+    search: str | None = Query(None, max_length=200),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
-    return ok(await s.list_brand_requests(status=status, tenant_id=tenant_id), _rid(r))
+    return ok(await s.list_brand_requests(
+        status=status, tenant_id=tenant_id, search=search,
+        page=page, page_size=page_size,
+    ), _rid(r))
 
 
 @req_router.post("/{request_id}/approve", response_model=ApiResponse[dict],

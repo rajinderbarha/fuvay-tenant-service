@@ -57,6 +57,11 @@ class CatalogModuleDefinition(ServiceOSBase):
     module_group: Mapped[str | None] = mapped_column(String(60),  nullable=True)
     is_universal: Mapped[bool]       = mapped_column(Boolean,     nullable=False, default=False)
     sort_order:   Mapped[int]        = mapped_column(Integer,     nullable=False, default=0)
+    # This registry controls ADMIN NAVIGATION only.  Retired and unfinished
+    # destinations remain in the registry for history/migrations, but cannot
+    # be switched back into the live menu.
+    navigation_status: Mapped[str] = mapped_column(String(24), nullable=False, default="available")
+    navigation_status_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class VerticalCatalogModule(ServiceOSBase):

@@ -54,7 +54,7 @@ class TestCommissionRateResolution:
         rate = await resolve_provider_commission_rate(db, "cat-missing")
         assert rate == Decimal(str(DEFAULT_COMMISSION_RATE))
 
-    async def test_published_percentage_commission_policy_takes_precedence(self):
+    async def test_category_override_takes_precedence_over_published_default(self):
         db = AsyncMock()
         db.execute.side_effect = [
             _result(_Category(commission_pct=Decimal("12.00"))),
@@ -62,9 +62,9 @@ class TestCommissionRateResolution:
             _result(_Policy("PERCENTAGE_COMMISSION", Decimal("18.500"))),
         ]
         rate = await resolve_provider_commission_rate(db, "cat-1")
-        assert rate == Decimal("18.500")
+        assert rate == Decimal("12.00")
 
-    async def test_policy_with_other_provider_model_does_not_override_category(self):
+    async def test_other_published_provider_model_disables_percentage_commission(self):
         db = AsyncMock()
         db.execute.side_effect = [
             _result(_Category(commission_pct=Decimal("12.00"))),
@@ -72,7 +72,17 @@ class TestCommissionRateResolution:
             _result(_Policy("COMPLETION_CREDITS", None)),
         ]
         rate = await resolve_provider_commission_rate(db, "cat-1")
-        assert rate == Decimal("12.00")
+        assert rate == Decimal("0")
+
+    async def test_published_percentage_default_applies_when_category_has_no_override(self):
+        db = AsyncMock()
+        db.execute.side_effect = [
+            _result(_Category(commission_pct=None)),
+            _result(_Vertical()),
+            _result(_Policy("PERCENTAGE_COMMISSION", Decimal("18.500"))),
+        ]
+        rate = await resolve_provider_commission_rate(db, "cat-1")
+        assert rate == Decimal("18.500")
 
     async def test_no_current_policy_falls_back_to_category_override(self):
         db = AsyncMock()

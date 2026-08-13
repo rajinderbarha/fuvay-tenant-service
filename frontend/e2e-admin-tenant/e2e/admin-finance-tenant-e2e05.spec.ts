@@ -71,14 +71,18 @@ test.describe('ADMIN-TENANT-E2E-05 admin finance + tenant detail', () => {
     // The page no longer pre-fills a (dead) demo tenant id, so the test must
     // supply one -- previously it relied on that hardcoded default and would
     // silently assert against whatever tenant the page happened to embed.
-    await page.goto(`/admin/finance/usage-credits?tenant_id=${SEED.tenantId}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(1000);
-    await page.locator('button:has-text("Load Ledger")').click();
-    await page.waitForTimeout(2000);
+    await page.goto(`/admin/home-services/finance?tab=credits&credits_tab=ledger&tenant_id=${SEED.tenantId}`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('Credit Ledger', { exact: true }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(`${balance.toLocaleString('en-IN')} credits`, { exact: true }).first())
+      .toBeVisible({ timeout: 15000 });
     const bodyText = await page.locator('body').innerText();
-    await page.screenshot({ path: path.join(EVIDENCE_DIR, 'usage-credits.png'), fullPage: true });
+    // Give this assertion its own evidence name; the suite-wide Playwright
+    // screenshot attachment can otherwise race a prior retained file on
+    // Windows when multiple verification runs reuse the same directory.
+    await page.screenshot({ path: path.join(EVIDENCE_DIR, 'usage-credits-live-balance.png'), fullPage: true });
     log('usage-credits.log', `API balance=${balance} rendered=${bodyText.includes(asInt) || bodyText.includes(grouped)}`);
-    expect(bodyText.includes(asInt) || bodyText.includes(grouped)).toBeTruthy();
+    expect(bodyText).toContain(`${balance.toLocaleString('en-IN')} credits`);
   });
 
   test('completed job deduction config page: renders real per-rule deduction credits', async ({ page }) => {

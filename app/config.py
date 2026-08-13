@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     DATABASE_POOL_SIZE: int = 20
     DATABASE_MAX_OVERFLOW: int = 10
     DATABASE_POOL_TIMEOUT: int = 30
+    DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_SECONDS: int = 60
 
     # ── Redis ──────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -150,6 +151,23 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
         return v
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug_flag(cls, value):
+        """Tolerate common build-environment DEBUG conventions.
+
+        Some Windows/CI toolchains expose DEBUG=release or DEBUG=debug as a
+        process-wide variable.  Treat those as false/true instead of making
+        ServiceOS fail before its own .env configuration can be used.
+        """
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized == "release":
+                return False
+            if normalized == "debug":
+                return True
+        return value
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

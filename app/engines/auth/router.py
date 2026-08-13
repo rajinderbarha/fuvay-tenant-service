@@ -212,9 +212,10 @@ async def verify_mfa(
     data = await svc.verify_mfa(
         mfa_challenge_token=body.mfa_challenge_token,
         code=body.code,
-        device_id="web",
-        device_name=None,
+        device_id=body.device_id,
+        device_name=body.device_name,
         user_agent=request.headers.get("User-Agent"),
+        remember_device=body.remember_device,
     )
     return ok(data, _meta(request).request_id, ENGINE_ID)
 

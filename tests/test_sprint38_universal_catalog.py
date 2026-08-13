@@ -6,7 +6,7 @@ Verifies:
   - AdminCatalogService: service group CRUD methods, VALID_VERTICAL_TYPES/FINANCE_MODELS constants
   - Admin router: /service-groups endpoints, master-services service_group_id filter
   - Customer router: /service-groups + /flow/config endpoints
-  - Frontend api.ts: ServiceGroup type, listServiceGroups/createServiceGroup/deleteServiceGroup methods
+  - Frontend api.ts: ServiceGroup type, listServiceGroups/createServiceGroup/audited retire methods
   - Frontend pages: service-groups page, categories page universal fields, pricing page dynamic categories
   - Frontend nav: service-groups link in AdminLayout
   - Seed scripts exist and cover all 14 verticals
@@ -198,9 +198,10 @@ def test_service_update_service_group_method():
     src = _read(SERVICE_FILE)
     assert "update_service_group" in src
 
-def test_service_delete_service_group_method():
+def test_service_retire_service_group_method():
     src = _read(SERVICE_FILE)
-    assert "delete_service_group" in src
+    assert "archive_service_group" in src
+    assert "restore_service_group" in src
 
 def test_service_list_master_services_has_service_group_filter():
     src = _read(SERVICE_FILE)
@@ -245,9 +246,11 @@ def test_admin_router_service_groups_put():
     src = _read(ADMIN_ROUTER)
     assert "update_service_group" in src
 
-def test_admin_router_service_groups_delete():
+def test_admin_router_service_groups_deprecated_delete_and_retire():
     src = _read(ADMIN_ROUTER)
     assert "delete_service_group" in src
+    assert "AUDITED_RETIRE_REQUIRED" in src
+    assert "/service-groups/{group_id}/archive" in src
 
 def test_admin_router_master_services_accepts_service_group_id():
     src = _read(ADMIN_ROUTER)
@@ -316,9 +319,11 @@ def test_api_ts_update_service_group():
     src = _read(SA_API)
     assert "updateServiceGroup" in src
 
-def test_api_ts_delete_service_group():
+def test_api_ts_retire_service_group():
     src = _read(SA_API)
-    assert "deleteServiceGroup" in src
+    assert "archiveServiceGroup" in src
+    assert "restoreServiceGroup" in src
+    assert "deleteServiceGroup" not in src
 
 def test_api_ts_get_flow_config():
     src = _read(SA_API)

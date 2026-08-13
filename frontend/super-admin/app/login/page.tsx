@@ -1,286 +1,274 @@
 "use client";
-/**
- * Login Page — Super Admin Portal
- * PROVEN: calls authApi.login (lib/api.ts) — no inline fetch calls.
- * Mirrors tenant-portal's login page visual design (split marketing panel +
- * sign-in card). Super admins are provisioned internally, never self-signed-up
- * — so unlike the tenant page, there is no "create account" / registration
- * entry point anywhere on this page.
- */
-import React, { useState } from "react";
-import { Button, Alert } from "@serviceos/design-system";
-import {
-  Mail, Lock, Eye, EyeOff, ShieldCheck, Building2, Users, Activity,
-} from "lucide-react";
-import { authApi } from "../../lib/api";
 
-function IconField({
-  id, icon: Icon, type, value, onChange, placeholder, focused, onFocus, onBlur, rightSlot,
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { Alert, Button } from "@serviceos/design-system";
+import {
+  Activity, ArrowLeft, CheckCircle2, Eye, EyeOff, KeyRound, Lock,
+  Mail, ShieldCheck, UserRoundCheck,
+} from "lucide-react";
+import { authApi, type AdminUser } from "../../lib/api";
+
+const PLATFORM_ADMIN_ROLES = new Set([
+  "super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly",
+]);
+
+type LoginStep = "credentials" | "mfa";
+
+function LoginField({
+  id, label, icon: Icon, type, value, onChange, placeholder, autoComplete, inputMode, maxLength, rightSlot,
 }: {
   id: string;
+  label: string;
   icon: React.ComponentType<{ size?: number }>;
   type: string;
   value: string;
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
   placeholder: string;
-  focused: boolean;
-  onFocus: () => void;
-  onBlur: () => void;
+  autoComplete: string;
+  inputMode?: "numeric";
+  maxLength?: number;
   rightSlot?: React.ReactNode;
 }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", height: 46, borderRadius: 10,
-      border: `1px solid ${focused ? "var(--border-focus)" : "var(--border)"}`,
-      background: "var(--surface)", transition: "border-color 0.15s",
-      boxShadow: focused ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
-    }}>
-      <div style={{ width: 42, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-tertiary)" }}>
-        <Icon size={16} />
+    <div className="admin-login-field-group">
+      <label htmlFor={id}>{label}</label>
+      <div className="admin-login-field">
+        <Icon size={17} aria-hidden="true" />
+        <input
+          id={id}
+          type={type}
+          value={value}
+          onChange={event => onChange(event.target.value)}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          inputMode={inputMode}
+          maxLength={maxLength}
+          required
+        />
+        {rightSlot}
       </div>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onFocus={onFocus}
-        onBlur={onBlur}
-        placeholder={placeholder}
-        required
-        style={{
-          flex: 1, height: "100%", border: "none", outline: "none", background: "transparent",
-          color: "var(--text-primary)", fontSize: 14, fontFamily: "inherit", paddingRight: 8,
-        }}
-      />
-      {rightSlot}
     </div>
   );
 }
 
-function BackgroundGlyphs() {
-  const items = [
-    { Icon: ShieldCheck, top: "8%", left: "12%", size: 28 },
-    { Icon: Building2, top: "68%", left: "8%", size: 22 },
-    { Icon: Users, top: "22%", left: "78%", size: 24 },
-    { Icon: Activity, top: "76%", left: "82%", size: 20 },
-  ];
+function Capability({ icon: Icon, title, description }: {
+  icon: React.ComponentType<{ size?: number }>;
+  title: string;
+  description: string;
+}) {
   return (
-    <div aria-hidden style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
-      {items.map(({ Icon, top, left, size }, i) => (
-        <div key={i} style={{ position: "absolute", top, left, opacity: 0.06, color: "var(--text-primary)" }}>
-          <Icon size={size} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function FeatureRow({ icon: Icon, title, description }: { icon: React.ComponentType<{ size?: number }>; title: string; description: string }) {
-  return (
-    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-      <div style={{
-        width: 36, height: 36, borderRadius: 9, background: "var(--surface)", border: "1px solid var(--border)",
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "var(--brand)",
-      }}>
-        <Icon size={17} />
-      </div>
-      <div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>{title}</div>
-        <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.4 }}>{description}</div>
-      </div>
+    <div className="admin-login-capability">
+      <span className="admin-login-capability-icon"><Icon size={18} /></span>
+      <span>
+        <strong>{title}</strong>
+        <small>{description}</small>
+      </span>
     </div>
   );
 }
 
 export default function LoginPage() {
+  const [step, setStep] = useState<LoginStep>("credentials");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaChallenge, setMfaChallenge] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
+  const [platformOnline, setPlatformOnline] = useState<boolean | null>(null);
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    if (!email || !password) { setError("Both fields are required."); return; }
-    setLoading(true); setError("");
+  useEffect(() => {
+    authApi.health()
+      .then(result => setPlatformOnline(result.status === "ok" || result.status === "healthy"))
+      .catch(() => setPlatformOnline(false));
+  }, []);
+
+  async function rejectNonAdmin(user?: AdminUser, accessToken?: string) {
+    if (user && PLATFORM_ADMIN_ROLES.has(user.role)) return false;
+    if (accessToken) {
+      localStorage.setItem("serviceos_admin_token", accessToken);
+      await authApi.logout().catch(() => undefined);
+    }
+    localStorage.removeItem("serviceos_admin_token");
+    localStorage.removeItem("serviceos_admin_refresh");
+    setError("This account does not have access to the ServiceOS Admin Control Center.");
+    return true;
+  }
+
+  async function establishAdminSession(result: {
+    access_token?: string;
+    refresh_token?: string | null;
+    user?: AdminUser;
+    requires_password_change?: boolean;
+  }) {
+    if (!result.access_token || await rejectNonAdmin(result.user, result.access_token)) return;
+    localStorage.setItem("serviceos_admin_token", result.access_token);
+    if (result.refresh_token) localStorage.setItem("serviceos_admin_refresh", result.refresh_token);
+    else localStorage.removeItem("serviceos_admin_refresh");
+    window.location.href = result.requires_password_change
+      ? "/change-password-required"
+      : "/admin/dashboard";
+  }
+
+  async function handleCredentials(event: React.FormEvent) {
+    event.preventDefault();
+    if (!email.trim() || !password) {
+      setError("Enter your administrator email and password.");
+      return;
+    }
+    setLoading(true);
+    setError("");
     try {
-      const res = await authApi.login(email, password);
-      localStorage.setItem("serviceos_admin_token", res.access_token);
-      if (res.refresh_token) localStorage.setItem("serviceos_admin_refresh", res.refresh_token);
-      if (res.requires_password_change) {
-        window.location.href = "/change-password-required";
-      } else {
-        window.location.href = "/admin/dashboard";
+      const result = await authApi.login(email.trim(), password);
+      if (result.mfa_required) {
+        if (!result.mfa_challenge_token) throw new Error("The MFA challenge could not be started. Sign in again.");
+        setMfaChallenge(result.mfa_challenge_token);
+        setStep("mfa");
+        return;
       }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Login failed. Check credentials.");
+      await establishAdminSession(result);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Sign-in failed. Check your credentials and try again.");
     } finally {
       setLoading(false);
     }
   }
 
+  async function handleMfa(event: React.FormEvent) {
+    event.preventDefault();
+    const cleanCode = mfaCode.trim();
+    if (cleanCode.length < 6) {
+      setError("Enter the 6-digit authenticator code or a valid backup code.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const result = await authApi.verifyMfa(mfaChallenge, cleanCode);
+      await establishAdminSession(result);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Verification failed. Check the code and try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function backToCredentials() {
+    setStep("credentials");
+    setMfaCode("");
+    setMfaChallenge("");
+    setError("");
+  }
+
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "18px 32px", borderBottom: "1px solid var(--border)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 34, height: 34, borderRadius: 9, background: "var(--brand)",
-            display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "var(--shadow-md)",
-          }}>
-            <span style={{ color: "white", fontWeight: 800, fontSize: 15 }}>S</span>
+    <main className="admin-login-page">
+      <section className="admin-login-shell" aria-label="ServiceOS administrator sign in">
+        <aside className="admin-login-command-panel">
+          <div className="admin-login-brand">
+            <span className="admin-login-brand-mark">S</span>
+            <span>
+              <strong>ServiceOS</strong>
+              <small>Admin Control Center</small>
+            </span>
           </div>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>ServiceOS</span>
-        </div>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-tertiary)",
-          padding: "5px 10px", borderRadius: 999, border: "1px solid var(--border)",
-        }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success-text, #16a34a)" }} />
-          Portal reachable
-        </div>
-      </div>
 
-      {/* Body */}
-      <div style={{
-        flex: 1, display: "flex", position: "relative", alignItems: "stretch",
-        flexWrap: "wrap",
-      }}>
-        {/* Marketing panel */}
-        <div style={{
-          flex: "1 1 480px", position: "relative", padding: "64px 48px",
-          display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 420,
-        }}>
-          <BackgroundGlyphs />
-          <div style={{ position: "relative", maxWidth: 460 }}>
-            <h1 style={{ fontSize: 30, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px", lineHeight: 1.25 }}>
-              Platform control, in one place
-            </h1>
-            <p style={{ fontSize: 15, color: "var(--text-secondary)", margin: "0 0 32px", lineHeight: 1.6 }}>
-              Oversee every tenant, service vertical, and platform-wide operation from a single
-              secured console built for the ServiceOS operations team.
+          <div className="admin-login-command-copy">
+            <span className="admin-login-eyebrow"><ShieldCheck size={14} /> Platform administration</span>
+            <h1>Operate the entire platform with clarity.</h1>
+            <p>
+              A secured command surface for tenant operations, service governance,
+              finance oversight and platform risk.
             </p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 32 }}>
-              <FeatureRow icon={Building2} title="Tenant oversight" description="Manage onboarding, plans, and health across every tenant on the platform." />
-              <FeatureRow icon={Users} title="Platform-wide access control" description="Provision and audit admin, staff, and support roles from one place." />
-              <FeatureRow icon={Activity} title="Real-time operational visibility" description="Monitor bookings, finance, and security signals as they happen." />
-            </div>
-
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10,
-              background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success-text)",
-              fontSize: 13,
-            }}>
-              <ShieldCheck size={16} />
-              Protected by role-based access, audit logging, and session controls.
+            <div className="admin-login-capabilities">
+              <Capability icon={UserRoundCheck} title="Controlled administrator access" description="Role-scoped tools and approval boundaries." />
+              <Capability icon={Activity} title="Live operational context" description="Cross-platform health, jobs and finance signals." />
+              <Capability icon={KeyRound} title="Audited sensitive actions" description="Traceable changes with session protection." />
             </div>
           </div>
-        </div>
 
-        {/* Sign-in card */}
-        <div style={{
-          flex: "1 1 420px", display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "48px 32px", borderLeft: "1px solid var(--border)", background: "var(--surface)",
-        }}>
-          <div style={{ width: "100%", maxWidth: 380 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, color: "var(--brand)", marginBottom: 8 }}>
-              SUPER ADMIN
-            </div>
-            <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 6px" }}>
-              Welcome back
-            </h2>
-            <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 24px" }}>
-              Sign in with your administrator credentials to continue.
+          <div className="admin-login-trust">
+            <span className="admin-login-trust-icon"><ShieldCheck size={17} /></span>
+            <span><strong>Authorized personnel only</strong><small>Access attempts and administrative actions are recorded.</small></span>
+          </div>
+        </aside>
+
+        <div className="admin-login-form-panel">
+          <div className="admin-login-status" role="status">
+            <span className={platformOnline === false ? "is-offline" : platformOnline ? "is-online" : "is-checking"} />
+            {platformOnline === false ? "Platform status unavailable" : platformOnline ? "Platform operational" : "Checking platform"}
+          </div>
+
+          <div className="admin-login-form-wrap">
+            {step === "mfa" && (
+              <button type="button" className="admin-login-back" onClick={backToCredentials}>
+                <ArrowLeft size={15} /> Back to sign in
+              </button>
+            )}
+
+            <span className="admin-login-form-icon">
+              {step === "credentials" ? <Lock size={21} /> : <ShieldCheck size={21} />}
+            </span>
+            <p className="admin-login-form-kicker">ADMIN CONTROL CENTER</p>
+            <h2>{step === "credentials" ? "Administrator sign in" : "Verify your identity"}</h2>
+            <p className="admin-login-form-description">
+              {step === "credentials"
+                ? "Use your provisioned platform administrator account."
+                : `Enter the authenticator code for ${email}.`}
             </p>
 
-            {error && <div style={{ marginBottom: 16 }}><Alert tone="danger" title="Sign in failed">{error}</Alert></div>}
+            {error && <Alert tone="danger" title="Access not granted">{error}</Alert>}
 
-            <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <label htmlFor="admin-email" style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>
-                  Email Address
-                </label>
-                <IconField
-                  id="admin-email"
-                  icon={Mail}
-                  type="email"
-                  value={email}
-                  onChange={setEmail}
-                  placeholder="you@serviceos.in"
-                  focused={focusedField === "email"}
-                  onFocus={() => setFocusedField("email")}
-                  onBlur={() => setFocusedField(null)}
+            {step === "credentials" ? (
+              <form onSubmit={handleCredentials} className="admin-login-form" noValidate>
+                <LoginField
+                  id="admin-email" label="Work email" icon={Mail} type="email" value={email}
+                  onChange={setEmail} placeholder="admin@serviceos.in" autoComplete="username"
                 />
-              </div>
-              <div>
-                <label htmlFor="admin-password" style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>
-                  Password
-                </label>
-                <IconField
-                  id="admin-password"
-                  icon={Lock}
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={setPassword}
-                  placeholder="••••••••••"
-                  focused={focusedField === "password"}
-                  onFocus={() => setFocusedField("password")}
-                  onBlur={() => setFocusedField(null)}
-                  rightSlot={
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(s => !s)}
-                      style={{
-                        border: "none", background: "transparent", cursor: "pointer",
-                        color: "var(--text-tertiary)", padding: "0 12px", display: "flex", alignItems: "center",
-                      }}
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                <LoginField
+                  id="admin-password" label="Password" icon={Lock} type={showPassword ? "text" : "password"}
+                  value={password} onChange={setPassword} placeholder="Enter your password" autoComplete="current-password"
+                  rightSlot={(
+                    <button type="button" className="admin-login-password-toggle"
+                      onClick={() => setShowPassword(value => !value)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}>
+                      {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                     </button>
-                  }
+                  )}
                 />
-              </div>
+                <div className="admin-login-form-meta">
+                  <span><CheckCircle2 size={14} /> Encrypted connection</span>
+                  <Link href="/forgot-password">Forgot password?</Link>
+                </div>
+                <Button type="submit" variant="primary" size="lg" loading={loading} className="admin-login-submit">
+                  Continue securely
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={handleMfa} className="admin-login-form" noValidate>
+                <LoginField
+                  id="admin-mfa-code" label="Authenticator or backup code" icon={KeyRound} type="text"
+                  value={mfaCode} onChange={value => setMfaCode(value.replace(/\s/g, ""))}
+                  placeholder="Enter verification code" autoComplete="one-time-code" inputMode="numeric" maxLength={8}
+                />
+                <Button type="submit" variant="primary" size="lg" loading={loading} className="admin-login-submit">
+                  Verify and continue
+                </Button>
+              </form>
+            )}
 
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <a href="/forgot-password" style={{ fontSize: 12.5, color: "var(--brand)", textDecoration: "none" }}>
-                  Forgot password?
-                </a>
-              </div>
-
-              <Button type="submit" variant="primary" disabled={loading} style={{ width: "100%", height: 44 }}>
-                {loading ? "Signing in..." : "Sign in"}
-              </Button>
-            </form>
-
-            <p style={{
-              fontSize: 11.5, color: "var(--text-tertiary)", margin: "24px 0 0", textAlign: "center",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            }}>
-              <Lock size={12} />
-              Secured by ServiceOS Auth Engine · JWT + TOTP
+            <p className="admin-login-help">
+              Need administrator access? Contact your ServiceOS platform owner.
             </p>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Footer */}
-      <div style={{
-        padding: "16px 32px", borderTop: "1px solid var(--border)", display: "flex",
-        justifyContent: "space-between", flexWrap: "wrap", gap: 8, fontSize: 12, color: "var(--text-tertiary)",
-      }}>
-        <span>© {new Date().getFullYear()} ServiceOS. All rights reserved.</span>
-        <div style={{ display: "flex", gap: 16 }}>
-          <a href="/terms" style={{ color: "inherit", textDecoration: "none" }}>Terms</a>
-          <a href="/privacy" style={{ color: "inherit", textDecoration: "none" }}>Privacy</a>
-          <a href="/security" style={{ color: "inherit", textDecoration: "none" }}>Security</a>
-        </div>
-      </div>
-    </div>
+      <footer className="admin-login-footer">
+        <span>© {new Date().getFullYear()} ServiceOS</span>
+        <span>Protected by session controls, MFA and audit logging</span>
+      </footer>
+    </main>
   );
 }

@@ -1,11 +1,38 @@
-http://localhost:3000/login
-S
+http://localhost:3000/admin/dashboard
+Skip to main content
+
 ServiceOS
-Portal reachable
-Platform control, in one place
 
-Oversee every tenant, service vertical, and platform-wide operation from a single secured console built for the ServiceOS operations team.
+SUPER ADMIN
 
-Tenant oversight
-Manage onboarding, plans, and health across every tenant on the platform.
-Platform
+OVERVIEW
+
+Dashboard
+
+OPERATIONS
+
+Customers
+Staff
+Complaints
+
+CATALOG
+
+Verticals
+Categories
+Home Services
+Real Estate
+
+MARKETING & GROWTH
+
+Campaigns
+Global Services
+Home Banners
+Home Layout
+Notifications
+Analytics
+AI Intelligence
+
+PLATFORM
+
+Engines
+Securi

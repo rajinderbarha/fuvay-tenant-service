@@ -54,6 +54,8 @@ def _make_module(**kwargs) -> MagicMock:
         "id": uuid.uuid4(), "key": "categories", "label": "Categories",
         "icon": "Layers", "admin_path": "/admin/categories",
         "module_group": "services", "is_universal": True, "sort_order": 1,
+        "description": None, "navigation_status": "available",
+        "navigation_status_reason": None,
     }
     defaults.update(kwargs)
     for k, val in defaults.items():

@@ -5,18 +5,7 @@ import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, SectionHeader, Skeleton } from "../../../../components/shared/ui";
 import { autoPriceOptionsApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
-import { CheckCircle2, XCircle, Search, History, RotateCcw } from "lucide-react";
-
-const WEIGHTS: { label: string; pct: number }[] = [
-  { label: "Health Score", pct: 20 },
-  { label: "Job Completion", pct: 20 },
-  { label: "Rating", pct: 15 },
-  { label: "Availability", pct: 15 },
-  { label: "Service Match", pct: 10 },
-  { label: "Area Match", pct: 10 },
-  { label: "Cancellation", pct: 5 },
-  { label: "Capacity", pct: 5 },
-];
+import { CheckCircle2, XCircle, Search, History, ShieldCheck } from "lucide-react";
 
 function SectionError({ title, message, requestId, onRetry }: {
   title: string; message: string; requestId?: string | null; onRetry?: () => void;
@@ -35,6 +24,7 @@ function SectionError({ title, message, requestId, onRetry }: {
 
 export default function ProviderMatchingPage() {
   const config = useApi(useCallback(() => autoPriceOptionsApi.getConfig(), []));
+  const policy = useApi(useCallback(() => autoPriceOptionsApi.getMatchingPolicy(), []));
 
   return (
     <AdminLayout activeNav="hs-provider-matching">
@@ -65,14 +55,27 @@ export default function ProviderMatchingPage() {
           Provider eligibility itself is a hard gate (bookable, coverage, technician, availability,
           pricing, package, credits, deposit) — only eligible providers are ever scored.
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-          {WEIGHTS.map(w => (
-            <div key={w.label} style={{ padding: 14, borderRadius: 10, background: "var(--surface-sunken)", textAlign: "center" }}>
-              <p style={{ fontSize: 20, fontWeight: 800, margin: "0 0 2px" }}>{w.pct}%</p>
-              <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>{w.label}</p>
+        {policy.loading ? <Skeleton height={112}/> : policy.error ? (
+          <SectionError title="Couldn't load matching policy" message={policy.error} requestId={policy.requestId} onRetry={policy.refetch}/>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+              <Badge variant="info">Policy v{policy.data?.version ?? "—"}</Badge>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-tertiary)" }}>
+                <ShieldCheck size={13}/> Platform-governed scoring policy
+              </span>
             </div>
-          ))}
-        </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+              {(policy.data?.factors ?? []).map(w => (
+                <div key={w.factor_key} style={{ padding: 14, borderRadius: 10, background: "var(--surface-sunken)", textAlign: "center", border: "1px solid var(--border)" }}>
+                  <p style={{ fontSize: 20, fontWeight: 800, margin: "0 0 2px" }}>{Math.round(Number(w.weight) * 100)}%</p>
+                  <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>{w.label}</p>
+                  <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "3px 0 0" }}>{w.source_engine}</p>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
         <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "12px 0 0" }}>
           Fair distribution / anti-monopoly rotation: ties are broken deterministically, and repeated
           selection is naturally dampened by the Capacity factor (open-job load vs. active technicians).
@@ -86,9 +89,6 @@ export default function ProviderMatchingPage() {
         <Link href="/admin/home-services/matching-diagnostics">
           <Btn size="sm" variant="secondary"><Search size={13} style={{ marginRight: 4 }}/>View Diagnostics</Btn>
         </Link>
-        <span title="Scoring weights are fixed platform constants for this phase — no persisted override exists to reset.">
-          <Btn size="sm" variant="secondary" disabled><RotateCcw size={13} style={{ marginRight: 4 }}/>Reset Defaults</Btn>
-        </span>
         <Link href="/admin/pricing/bargain-rules">
           <Btn size="sm" variant="secondary"><History size={13} style={{ marginRight: 4 }}/>View Audit (legacy)</Btn>
         </Link>

@@ -118,7 +118,10 @@ class ServiceJob(ServiceOSBase):
         Index("ix_sj_booking_id",  "booking_id"),
         Index("ix_sj_customer_id", "customer_id"),
         Index("ix_sj_tenant_id",   "tenant_id"),
+        Index("ix_sj_staff_status_created", "assigned_staff_id", "status", "created_at"),
         Index("ix_sj_status",      "status"),
+        Index("ix_sj_created",     "created_at"),
+        Index("ix_sj_tenant_created", "tenant_id", "created_at"),
         Index("ix_sj_customer_status_updated", "customer_id", "status", "updated_at"),
         Index("ix_sj_tenant_customer_status_updated", "tenant_id", "customer_id", "status", "updated_at"),
     )

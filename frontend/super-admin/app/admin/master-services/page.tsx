@@ -1,7 +1,8 @@
 "use client";
 import React, { useState, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
+import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, SummaryCard,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
@@ -458,14 +459,17 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function MasterServicesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   // Filters
   const [q, setQ] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [groupFilter, setGroupFilter] = useState("");
+  const [groupFilter, setGroupFilter] = useState(() => searchParams.get("service_group_id") ?? "");
   const [jobTypeFilter, setJobTypeFilter] = useState("");
   const [pricingModelFilter, setPricingModelFilter] = useState("");
   const [isActiveFilter, setIsActiveFilter] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
 
   // Modal / detail
   const [modal, setModal] = useState<"none" | "create-service" | "edit">("none");
@@ -495,9 +499,11 @@ export default function MasterServicesPage() {
       jobType: jobTypeFilter || undefined,
       pricingModel: pricingModelFilter || undefined,
       isActive: isActiveFilter === "" ? undefined : isActiveFilter === "true",
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
     }),
-    [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter],
-  ), [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter]);
+    [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter, page],
+  ), [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter, page]);
 
   const notify = (msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -704,6 +710,7 @@ export default function MasterServicesPage() {
           </div>
         }
       />
+      <HomeServicesCatalogNav active="services" />
 
       {/* Toast */}
       {toast && (
@@ -757,7 +764,7 @@ export default function MasterServicesPage() {
           <div style={{ flex: 1, minWidth: 200 }}>
             <input
               placeholder="Search by service name…"
-              value={q} onChange={e => setQ(e.target.value)}
+              value={q} onChange={e => { setQ(e.target.value); setPage(1); }}
               style={{
                 width: "100%", padding: "8px 12px", borderRadius:"var(--radius-md)", fontSize: 13,
                 border: "1px solid var(--border)", background: "var(--surface)",
@@ -766,17 +773,17 @@ export default function MasterServicesPage() {
             />
           </div>
           <div style={{ minWidth: 180 }}>
-            <Select label="" value={categoryFilter} onChange={v => { setCategoryFilter(v); setGroupFilter(""); }}
+            <Select label="" value={categoryFilter} onChange={v => { setCategoryFilter(v); setGroupFilter(""); setPage(1); }}
               placeholder="All Categories"
               options={[{ value: "", label: "All Categories" }, ...catOptions]} />
           </div>
           <div style={{ minWidth: 160 }}>
-            <Select label="" value={groupFilter} onChange={setGroupFilter}
+            <Select label="" value={groupFilter} onChange={v => { setGroupFilter(v); setPage(1); }}
               placeholder="All Groups"
               options={[{ value: "", label: "All Groups" }, ...groupOptions]} />
           </div>
           <div style={{ minWidth: 140 }}>
-            <Select label="" value={isActiveFilter} onChange={setIsActiveFilter}
+            <Select label="" value={isActiveFilter} onChange={v => { setIsActiveFilter(v); setPage(1); }}
               placeholder="Any Status"
               options={[{ value: "", label: "Any Status" }, { value: "true", label: "Active" }, { value: "false", label: "Inactive" }]} />
           </div>
@@ -833,6 +840,7 @@ export default function MasterServicesPage() {
         onRowClick={row => setDetailSvc(row as unknown as MasterServiceEnriched)}
         emptyText="No master services found. Create your first service to populate the catalog."
       />
+      <MasterServicesPagination page={page} pageSize={pageSize} total={services.data?.total ?? 0} onPage={setPage} />
 
       {/* Detail drawer */}
       <ServiceDetailDrawer svc={detailSvc} catMap={catMap} groupMap={groupMap} onClose={() => setDetailSvc(null)} />
@@ -947,5 +955,21 @@ export default function MasterServicesPage() {
         </div>
       </Modal>
     </AdminLayout>
+  );
+}
+
+function MasterServicesPagination({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage: (page: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 14 }}>
+      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+        {total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}` : "0 records"}
+      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Btn>
+        <Badge variant="muted">Page {page} of {pages}</Badge>
+        <Btn size="sm" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</Btn>
+      </div>
+    </div>
   );
 }

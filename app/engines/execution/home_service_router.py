@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.dependencies.auth import get_current_user, require_customer, require_super_admin
 from app.dependencies.db import get_db
+from app.dependencies.vertical_guard import require_vertical_enabled
 from app.core.permissions import P, require_permission, require_staff_or_above_mutation
 from app.schemas.base import ApiResponse, ok
 from app.engines.execution.home_service_service import HomeServiceJobExecutionService
@@ -392,7 +393,11 @@ async def customer_job_tracking(job_id: uuid.UUID, r: Request, user=Depends(requ
 
 
 # ── Admin router ──────────────────────────────────────────────────────────────
-admin_router = APIRouter(prefix="/v1/admin/service-jobs", tags=["Sprint21-Admin-HomeService"])
+admin_router = APIRouter(
+    prefix="/v1/admin/service-jobs",
+    tags=["Sprint21-Admin-HomeService"],
+    dependencies=[Depends(require_vertical_enabled("home_services"))],
+)
 
 
 @admin_router.get("/{job_id}/execution-timeline")
